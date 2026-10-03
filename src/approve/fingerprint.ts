@@ -18,8 +18,12 @@ export const OWNER_SECTIONS = [
   'tools',
 ] as const;
 
-/** Seat fields that `remove --keep`, `add` and the layout change without a new approval. */
-const SEAT_FREE_FIELDS = new Set(['parked', 'stopped', 'line']);
+/**
+ * Seat fields that change without a new approval: what `remove --keep` and
+ * `add` set, where the seat sits in the file, and how its entry is written
+ * (`count: 3` becoming `count: 2`, or explicit seats, when one is taken out).
+ */
+const SEAT_FREE_FIELDS = new Set(['parked', 'stopped', 'line', 'declared', 'count', 'instance']);
 
 /** A validated team file, as far as an approval reads it. */
 export type Approvable = Record<string, unknown> & {
