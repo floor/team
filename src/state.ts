@@ -12,7 +12,9 @@ export type SeatState = {
   cli_version?: string;
   rules?: 'option' | 'message' | 'undelivered';
   worked?: boolean;
-  temporary?: { like: string; until: string; task?: string };
+  // `own_commits` is the home for a temporary seat whose end is `merged:` and that has no worktree.
+  // A seat in a worktree keeps that record on the worktree instead.
+  temporary?: { like: string; until: string; task?: string; own_commits?: boolean };
 };
 
 export type WorktreeState = {

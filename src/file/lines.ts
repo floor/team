@@ -1,0 +1,171 @@
+// Edits the team file by the line. Comments, order and every other seat stay as written.
+// Nothing here re-serialises the file.
+
+export type SeatBlock = {
+  start: number;
+  end: number;
+  name: string | null;
+  count: number;
+};
+
+function indent(line: string): number {
+  let n = 0;
+  while (line[n] === ' ') n++;
+  return n;
+}
+
+function field(lines: string[], name: string): string | null {
+  for (const line of lines) {
+    const match = new RegExp(`^\\s*${name}:\\s*(.*)$`).exec(line);
+    if (!match) continue;
+    const raw = match[1] ?? '';
+    const value = raw.replace(/\s+#.*$/, '').trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      return value.slice(1, -1);
+    }
+    return value;
+  }
+  return null;
+}
+
+/** The seat entries under `seats:`, in order. A file with no seats section has none. */
+export function seatBlocks(text: string): SeatBlock[] {
+  const lines = text.split('\n');
+  const header = lines.findIndex((line) => /^seats:\s*(#.*)?$/.test(line));
+  if (header < 0) return [];
+  const key = indent(lines[header] ?? '');
+  const blocks: SeatBlock[] = [];
+  let start = -1;
+  const flush = (end: number) => {
+    if (start < 0) return;
+    const body = lines.slice(start, end);
+    const count = Number(field(body, 'count') ?? '1');
+    blocks.push({ start, end, name: field(body, 'name'), count: Number.isInteger(count) && count > 0 ? count : 1 });
+    start = -1;
+  };
+  for (let i = header + 1; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    if (line.trim() === '' || /^\s*#/.test(line)) continue;
+    if (indent(line) <= key) {
+      flush(i);
+      break;
+    }
+    if (/^\s*-\s+/.test(line)) {
+      flush(i);
+      start = i;
+    }
+  }
+  if (start >= 0) flush(lines.length);
+  return blocks;
+}
+
+function expanded(block: SeatBlock): string[] {
+  if (!block.name) return [];
+  const names = [block.name];
+  for (let instance = 2; instance <= block.count; instance++) names.push(`${block.name}-${instance}`);
+  return names;
+}
+
+/** Whether `name` is a seat entry, including one that `count` expands to. */
+export function hasSeat(text: string, name: string): boolean {
+  return seatBlocks(text).some((block) => expanded(block).includes(name));
+}
+
+function replaceLines(text: string, start: number, end: number, insert: string[]): string {
+  const lines = text.split('\n');
+  lines.splice(start, end - start, ...insert);
+  return lines.join('\n');
+}
+
+function body(text: string, block: SeatBlock): string[] {
+  return text.split('\n').slice(block.start, block.end);
+}
+
+function setValue(line: string, value: string): string {
+  const match = /^(\s*[A-Za-z0-9_-]+:\s*)(.*)$/.exec(line);
+  if (!match) return line;
+  const rest = match[2] ?? '';
+  const comment = /\s+#.*$/.exec(rest)?.[0] ?? '';
+  const raw = rest.slice(0, rest.length - comment.length).trim();
+  const quoted = raw.startsWith('"') ? `"${value}"` : raw.startsWith("'") ? `'${value}'` : value;
+  return `${match[1]}${quoted}${comment}`;
+}
+
+/** One `count` entry becomes one explicit seat per instance. Other lines are copied, not rebuilt. */
+export function rewriteCount(text: string, declared: string): string | null {
+  const block = seatBlocks(text).find((item) => item.name === declared && item.count > 1);
+  if (!block) return null;
+  const lines = body(text, block);
+  const label = field(lines, 'label');
+  const copies: string[] = [];
+  for (let instance = 1; instance <= block.count; instance++) {
+    const suffix = instance === 1 ? '' : `-${instance}`;
+    copies.push(...lines.flatMap((line) => {
+      if (/^\s*count:/.test(line)) return [];
+      if (instance === 1) return [line];
+      if (/^\s*name:/.test(line)) return [setValue(line, `${declared}${suffix}`)];
+      if (label !== null && /^\s*label:/.test(line)) return [setValue(line, `${label}${suffix}`)];
+      return [line];
+    }));
+  }
+  return replaceLines(text, block.start, block.end, copies);
+}
+
+/** True when this seat's own entry, or the count entry it comes from, says stopped. */
+export function seatIsStopped(text: string, name: string): boolean {
+  const lines = text.split('\n');
+  const exact = seatBlocks(text).find((block) => block.name === name);
+  const block = exact ?? seatBlocks(text).find((item) => expanded(item).includes(name));
+  if (!block) return false;
+  return lines.slice(block.start, block.end).some((line) => /^\s*stopped:\s*(true|yes)\b/.test(line));
+}
+
+/** Drops `stopped: true` from the entry whose name is `name`. A counted entry is split first. */
+export function clearStopped(text: string, name: string): string {
+  const counted = seatBlocks(text).find((block) => block.count > 1 && expanded(block).includes(name));
+  const rewritten = counted?.name ? rewriteCount(text, counted.name) ?? text : text;
+  const block = seatBlocks(rewritten).find((item) => item.name === name);
+  if (!block) return rewritten;
+  const lines = body(rewritten, block).filter((line) => !/^\s*stopped:\s*(true|yes)\s*(#.*)?$/.test(line));
+  return replaceLines(rewritten, block.start, block.end, lines);
+}
+
+/**
+ * Puts `name`'s entry back from `approved` when the current text lacks it.
+ * The entry is inserted after whichever approved neighbour is still present.
+ */
+export function restoreSeat(current: string, approved: string, name: string): string {
+  if (hasSeat(current, name)) return current;
+  const approvedBlocks = seatBlocks(approved);
+  const at = approvedBlocks.findIndex((block) => expanded(block).includes(name));
+  const source = approvedBlocks[at];
+  if (!source || at < 0) return current;
+  const lines = current.split('\n');
+  const header = lines.findIndex((line) => /^seats:\s*(#.*)?$/.test(line));
+  if (header < 0) return current;
+  const currentBlocks = seatBlocks(current);
+  let insertAt = header + 1;
+  let placed = false;
+  for (let i = at - 1; i >= 0 && !placed; i--) {
+    const neighbour = approvedBlocks[i];
+    const found = neighbour ? currentBlocks.find((block) => block.name === neighbour.name) : undefined;
+    if (found) {
+      insertAt = found.end;
+      placed = true;
+    }
+  }
+  for (let i = at + 1; i < approvedBlocks.length && !placed; i++) {
+    const neighbour = approvedBlocks[i];
+    const found = neighbour ? currentBlocks.find((block) => block.name === neighbour.name) : undefined;
+    if (found) {
+      insertAt = found.start;
+      placed = true;
+    }
+  }
+  if (!placed && currentBlocks.length > 0) {
+    const last = currentBlocks[currentBlocks.length - 1];
+    if (last) insertAt = last.end;
+  }
+  lines.splice(insertAt, 0, ...body(approved, source));
+  return lines.join('\n');
+}

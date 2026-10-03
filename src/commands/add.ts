@@ -1,0 +1,415 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, resolve } from 'node:path';
+import { approvalDifferences } from '../approve/approval.ts';
+import { readArgs } from '../args.ts';
+import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
+import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from '../commands/doctor.ts';
+import { rulesOf, type Launch } from '../commands/up.ts';
+import { branchPresent, readMerge } from '../end/condition.ts';
+import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines.ts';
+import { loadTeamFile, placedProblems } from '../file/load.ts';
+import type { Problem, Seat, TeamFile } from '../file/types.ts';
+import { validateTeamFile } from '../file/validate.ts';
+import {
+  agentList, agentRename, paneRead, paneRun, sessionRunning, sessionState, startServer, workspaceClose, workspaceCreate,
+  workspaceList, type HerdrAgent,
+} from '../herdr.ts';
+import type { Command, Io } from '../io.ts';
+import { executePlan, type Host } from '../launch/execute.ts';
+import { upPlan, type UpSeat } from '../launch/plan.ts';
+import { logLine } from '../log.ts';
+import { profileFor } from '../profiles/index.ts';
+import { emptySession, readState, updateState, withLock, type SeatState, type SessionState } from '../state.ts';
+import { approvedCopy, readApproval, recordLedger, storePath, type Ceilings } from '../store/store.ts';
+import { readMachine, type Machine } from '../watch/machine.ts';
+import { readScreen } from '../watch/screen.ts';
+
+export type AddSources = {
+  home: string;
+  sessionState(session: string): 'absent' | 'running' | 'stopped' | null;
+  agents(session: string): HerdrAgent[] | null;
+  workspaces(session: string): { id: string; label: string }[] | null;
+  doctor: DoctorSources;
+  machine?: (root: string) => Machine;
+  now(): Date;
+  launch: Launch;
+};
+
+const realLaunch: Launch = {
+  sessionState,
+  startServer,
+  sessionUp: sessionRunning,
+  createWorkspace: (session, cwd, label) => workspaceCreate(cwd, label, aim(session)),
+  paneRun: (session, pane, command) => paneRun(pane, command, aim(session)),
+  renameAgent: (session, pane, name) => agentRename(pane, name, aim(session)),
+  closeWorkspace: (session, workspace) => workspaceClose(workspace, aim(session)),
+  agentPanes(session) {
+    const agents = agentList(aim(session));
+    return agents === null ? null : agents.map((agent) => agent.pane);
+  },
+  paneText: (session, pane) => paneRead(pane, 200, aim(session)),
+  sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+  now: () => new Date(),
+};
+
+function aim(session: string): string | undefined {
+  return session === 'default' ? undefined : session;
+}
+
+export const realSources: AddSources = {
+  home: homedir(),
+  sessionState,
+  agents: (session) => agentList(aim(session)),
+  workspaces(session) {
+    const listed = workspaceList(aim(session));
+    return listed === null ? null : listed.map((workspace) => ({ id: workspace.id, label: workspace.label }));
+  },
+  doctor: doctorSources,
+  machine: readMachine,
+  now: () => new Date(),
+  launch: realLaunch,
+};
+
+const USAGE = `Usage: team add <name> [--session <name>] [--file <path>]
+       team add --temporary --like <seat> --until <result:path|merged:branch> [--worktree <task>] [--session <name>] [--file <path>]
+`;
+
+type Running = { name: string; vendor: string; temporary: boolean };
+type Until = { kind: 'result'; path: string } | { kind: 'merged'; branch: string };
+
+export const add: Command = (argv, io) => runAdd(argv, io, realSources);
+export default add;
+
+export async function runAdd(argv: string[], io: Io, sources: AddSources = realSources): Promise<number> {
+  const args = readArgs(argv, ['like', 'until', 'worktree', 'session', 'file'], ['temporary']);
+  if (args.error) {
+    io.stderr(`team add: ${args.error}\n${USAGE}`);
+    return 2;
+  }
+  const temporary = args.flags.has('temporary');
+  if (temporary ? args.rest.length > 0 : args.rest.length !== 1) {
+    io.stderr(`team add: ${temporary ? `unexpected "${args.rest[0]}"` : 'a seat name is required'}\n${USAGE}`);
+    return 2;
+  }
+  if (!temporary && (args.values.like || args.values.until || args.values.worktree)) {
+    io.stderr('team add: --like, --until and --worktree are for --temporary\n');
+    return 2;
+  }
+
+  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
+  if (!loaded.ok) {
+    for (const problem of loaded.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
+    return 2;
+  }
+  const caller = callerOf(io);
+  if (args.values.file && !isOwner(caller)) {
+    io.stderr(`team add: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
+    return 1;
+  }
+  if (!mayChangeTeam(caller, loaded.team)) {
+    io.stderr(`team add: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(caller)}\n`);
+    return 1;
+  }
+  const { team, root, path } = loaded;
+  const session = args.values.session ?? team.session;
+  if (session === 'default') {
+    io.stderr('team add: session can\'t be "default", herdr\'s own session\n');
+    return 1;
+  }
+  const differences = approvalDifferences(team, root, sources.home);
+  if (differences === null) {
+    io.stderr('team add: the file was never approved on this machine: run `team approve`\n');
+    return 1;
+  }
+  if (differences.length) {
+    io.stderr(`team add: the file is not the approved one (${differences.join('; ')}): run \`team approve\`\n`);
+    return 1;
+  }
+  const approvedText = approvedCopy(root, sources.home);
+  const approved = approvedText ? validateTeamFile(approvedText) : null;
+  if (!approvedText || !approved?.ok) {
+    io.stderr('team add: the approved copy can\'t be read: run `team approve`\n');
+    return 1;
+  }
+
+  const dir = dirname(path);
+  const live = sources.sessionState(session);
+  if (live === null) {
+    io.stderr('team add: herdr doesn\'t answer\n');
+    return 1;
+  }
+  if (live === 'stopped') {
+    io.stderr(`team add: session ${session} is stopped; clear it with \`herdr session delete ${session}\`\n`);
+    return 1;
+  }
+  const agents = live === 'running' ? sources.agents(session) : [];
+  const workspaces = live === 'running' ? sources.workspaces(session) : [];
+  if (agents === null || workspaces === null) {
+    io.stderr(`team add: session ${session} runs, and its agents can't be read\n`);
+    return 1;
+  }
+
+  const recorded = readState(dir).sessions[session] ?? emptySession();
+  const ceilings = readApproval(storePath(team.project, root, sources.home))?.approval.ceilings;
+  if (!ceilings) {
+    io.stderr('team add: the file was never approved on this machine: run `team approve`\n');
+    return 1;
+  }
+
+  const original = readFileSync(path, 'utf8');
+  const built = temporary
+    ? temporarySeat(args.values, original, approved.team, recorded, agents, root, team.workspace.base)
+    : declaredSeat(args.rest[0] ?? '', original, approvedText, approved.team);
+  if ('error' in built) {
+    io.stderr(`team add: ${built.error}\n`);
+    return 1;
+  }
+  if (agents.some((agent) => agent.name === built.name)) {
+    io.stderr(`team add: ${built.name} is already running\n`);
+    return 1;
+  }
+  if (!profileFor(built.seat.cli)) {
+    io.stderr(`team add: no launch profile for \`${built.seat.cli}\` in this version\n`);
+    return 1;
+  }
+
+  const prepared = validateTeamFile(built.edited);
+  if (!prepared.ok) {
+    for (const problem of prepared.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
+    return 1;
+  }
+  for (const problem of placedProblems(prepared.team, root)) {
+    io.stderr(`team add: ${problem.message}\n`);
+    return 1;
+  }
+  const doctorTeam = built.temporary
+    ? { ...prepared.team, seats: prepared.team.seats.map((item) => item.name === built.temporary?.like ? { ...item, stopped: false } : item) }
+    : prepared.team;
+  for (const finding of doctorFindings(doctorTeam, root, dir, session, sources.doctor, prepared.warnings)) {
+    if (blocksLaunch(finding)) {
+      io.stderr(`team add: ${finding.text}\n`);
+      return 1;
+    }
+  }
+  const machine = sources.machine?.(root);
+  if (machine) {
+    const problem = pastMachine(machine, team.machine);
+    if (problem) {
+      io.stderr(`team add: ${problem}\n`);
+      return 1;
+    }
+  }
+  const running = runningOf(agents, prepared.team, recorded);
+  const room = ceilingProblem(ceilings, running, built.seat, Boolean(built.temporary));
+  if (room) {
+    io.stderr(`team add: ${room}\n`);
+    return 1;
+  }
+  if (built.edited !== original) {
+    const changed = withLock(dir, () => {
+      if (readFileSync(path, 'utf8') !== original) return true;
+      writeFileSync(path, built.edited);
+      return false;
+    });
+    if (changed) {
+      io.stderr('team add: the file changed while add was checking; nothing was written\n');
+      return 1;
+    }
+  }
+
+  const stray = unnamedIn(built.seat.label, agents, workspaces);
+  const planned = stray
+    ? { ...seatPlan(prepared.team, built.seat), stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
+    : seatPlan(prepared.team, built.seat);
+  const plan = upPlan({ root, session, sessionRunning: live === 'running', seats: [planned], watchAlive: true });
+  const who = describeCaller(caller);
+  const host = hostOf({
+    dir, session, team: prepared.team, root, ceilings, running, seat: built.seat, temporary: built.temporary,
+    caller: who, now: sources.now, launch: sources.launch, machine, limits: team.machine, io,
+  });
+  const report = await executePlan(plan, session, host);
+  const afterwards = readState(dir).sessions[session]?.seats[built.name];
+  if (afterwards?.stage === 'ready' && built.temporary) {
+    recordLedger(storePath(team.project, root, sources.home), [built.seat]);
+  }
+  const ready = afterwards?.stage === 'ready';
+  if (ready) logLine(dir, 'add', who, `started ${built.name}${built.temporary ? ` like ${built.temporary.like} until ${built.temporary.until}` : ''}`, sources.now());
+  return ready && !report.serverFailed ? 0 : 1;
+}
+
+function declaredSeat(
+  name: string, current: string, approvedText: string, approved: TeamFile,
+): { name: string; seat: Seat; edited: string; temporary?: undefined } | { error: string } {
+  const seat = approved.seats.find((item) => item.name === name);
+  if (!seat) return { error: `the approved file has no seat ${JSON.stringify(name)}` };
+  let edited = hasSeat(current, name) ? current : restoreSeat(current, approvedText, name);
+  if (seat.stopped || seatIsStopped(edited, name)) edited = clearStopped(edited, name);
+  const again = validateTeamFile(edited);
+  const restored = again.ok ? again.team.seats.find((item) => item.name === name) : undefined;
+  if (!restored) return { error: `couldn't put ${name} back from the approved copy` };
+  return { name, seat: { ...restored, stopped: false }, edited, temporary: undefined };
+}
+
+function temporarySeat(
+  values: Record<string, string>, current: string, approved: TeamFile, state: SessionState, agents: readonly HerdrAgent[],
+  root: string, base: string | null,
+): { name: string; seat: Seat; edited: string; temporary: NonNullable<SeatState['temporary']> } | { error: string } {
+  const like = approved.seats.find((item) => item.name === values.like);
+  if (!like) return { error: `the approved file has no seat ${JSON.stringify(values.like)}` };
+  const until = parseUntil(values.until ?? '');
+  if (!until) return { error: '--until is result:<path> or merged:<branch>' };
+  let own: boolean | undefined;
+  if (until.kind === 'result') {
+    if (until.path.startsWith('/') || until.path.startsWith('~')) return { error: 'a result path is relative to the project' };
+    if (existsSync(resolve(root, until.path))) return { error: `${until.path} already exists` };
+  } else if (!base) {
+    return { error: 'workspace.base is required to read a merged end' };
+  } else {
+    const read = readMerge(root, until.branch, base, false);
+    const here = branchPresent(root, until.branch);
+    if (read.detail.includes('the branch is gone') || here === false) return { error: `branch ${until.branch} doesn't exist` };
+    if (here !== true && read.verdict === 'unproven') return { error: read.detail };
+    own = read.ownNow > 0;
+  }
+  const task = values.worktree;
+  const worktree = task ? state.worktrees[task] : undefined;
+  if (task && !worktree) return { error: `no worktree named ${JSON.stringify(task)} is recorded` };
+  if (worktree?.setup === 'failed') return { error: `worktree ${task} has a failed setup; team worktree remove ${task}` };
+  const name = temporaryName(like.name, approved, state, agents);
+  return {
+    name,
+    edited: current,
+    seat: { ...like, name, label: name, cwd: worktree?.path ?? like.cwd, stopped: false },
+    temporary: {
+      like: like.name,
+      until: values.until ?? '',
+      ...(task ? { task } : {}),
+      ...(until.kind === 'merged' && !task && own !== undefined ? { own_commits: own } : {}),
+    },
+  };
+}
+
+function temporaryName(like: string, team: TeamFile, state: SessionState, agents: readonly HerdrAgent[]): string {
+  const used = new Set([...team.seats.map((seat) => seat.name), ...Object.keys(state.seats), ...agents.map((agent) => agent.name ?? '')]);
+  let n = 1;
+  while (used.has(`${like}-tmp-${n}`)) n++;
+  return `${like}-tmp-${n}`;
+}
+
+function parseUntil(value: string): Until | null {
+  if (value.startsWith('result:') && value.length > 'result:'.length) return { kind: 'result', path: value.slice('result:'.length) };
+  if (value.startsWith('merged:') && value.length > 'merged:'.length) return { kind: 'merged', branch: value.slice('merged:'.length) };
+  return null;
+}
+
+function seatPlan(team: TeamFile, seat: Seat): UpSeat {
+  return {
+    name: seat.name,
+    cli: seat.cli,
+    launch: seat.launch,
+    cwd: seat.cwd,
+    label: seat.label,
+    stopped: false,
+    rules: rulesOf(team, seat),
+  };
+}
+
+function unnamedIn(label: string, agents: readonly HerdrAgent[], workspaces: readonly { id: string; label: string }[]): HerdrAgent | undefined {
+  const ids = new Set(workspaces.filter((workspace) => workspace.label === label).map((workspace) => workspace.id));
+  return agents.find((agent) => !agent.name && ids.has(agent.workspace));
+}
+
+function runningOf(agents: readonly HerdrAgent[], team: TeamFile, state: SessionState): Running[] {
+  const seats = new Map(team.seats.map((seat) => [seat.name, seat]));
+  const running: Running[] = [];
+  for (const agent of agents) {
+    if (!agent.name) continue;
+    const seat = seats.get(agent.name);
+    const known = state.seats[agent.name];
+    if (!seat && !known?.temporary) continue;
+    const like = known?.temporary ? seats.get(known.temporary.like) : undefined;
+    running.push({ name: agent.name, vendor: seat?.vendor ?? like?.vendor ?? 'unknown', temporary: Boolean(known?.temporary) });
+  }
+  return running;
+}
+
+function ceilingProblem(ceilings: Ceilings, running: readonly Running[], seat: Seat, temporary: boolean): string | null {
+  if (running.some((item) => item.name === seat.name)) return null;
+  if (running.length + 1 > ceilings.seats) return `the approval allows ${ceilings.seats} seats; ${running.length + 1} would be running`;
+  if (temporary && running.filter((item) => item.temporary).length + 1 > ceilings.temporary) {
+    return `the approval allows ${ceilings.temporary} temporary seats; ${running.filter((item) => item.temporary).length + 1} would be running`;
+  }
+  const cap = ceilings.vendors[seat.vendor];
+  if (cap !== undefined) {
+    const vendors = running.filter((item) => item.vendor === seat.vendor).length + 1;
+    if (vendors > cap) return `the approval allows ${cap} ${seat.vendor} seats; ${vendors} would be running`;
+  }
+  return null;
+}
+
+function pastMachine(machine: Machine, limits: TeamFile['machine']): string | null {
+  if (machine.loadPerCore !== null && machine.loadPerCore > limits.loadStart) {
+    return `the load is ${machine.loadPerCore.toFixed(1)} per core, above ${limits.loadStart}`;
+  }
+  if (machine.memoryFree !== null && machine.memoryFree < limits.memoryStart) {
+    return `free memory is ${Math.round(machine.memoryFree)}%, below ${limits.memoryStart}%`;
+  }
+  if (machine.diskFree !== null && machine.diskFree < limits.diskMin) return `free disk is below the file's minimum`;
+  if (machine.swapFree !== null && machine.swapFree < limits.swapFreeMin) return `free swap is below the file's minimum`;
+  return null;
+}
+
+function where(problem: Problem): string {
+  return problem.line ? `line ${problem.line}: ` : '';
+}
+
+function hostOf(input: {
+  dir: string; session: string; team: TeamFile; root: string; ceilings: Ceilings; running: Running[];
+  seat: Seat; temporary?: SeatState['temporary']; caller: string; now(): Date; launch: Launch;
+  machine?: Machine; limits: TeamFile['machine']; io: Io;
+}): Host {
+  const { dir, session, launch, seat, temporary } = input;
+  const running = [...input.running];
+  return {
+    startServer: launch.startServer,
+    sessionUp: launch.sessionUp,
+    createWorkspace: launch.createWorkspace,
+    paneRun: launch.paneRun,
+    typeLine: () => false,
+    renameAgent: launch.renameAgent,
+    closeWorkspace: launch.closeWorkspace,
+    stopSession: () => false,
+    kill: () => false,
+    agentPanes: launch.agentPanes,
+    classify: (_name, pane, cli) => readScreen(cli, launch.paneText(session, pane) ?? undefined).kind,
+    sleep: launch.sleep,
+    now: () => input.now().getTime(),
+    allow(name) {
+      if (input.machine) {
+        const problem = pastMachine(input.machine, input.limits);
+        if (problem) return problem;
+      }
+      if (name !== seat.name) return null;
+      return ceilingProblem(input.ceilings, running, seat, Boolean(temporary));
+    },
+    record(name, patch) {
+      updateState(dir, (file) => {
+        const current = (file.sessions[session] ??= emptySession());
+        const prior = current.seats[name] ?? { stage: patch.stage };
+        current.seats[name] = { ...prior, ...patch, ...(temporary && name === seat.name ? { temporary } : {}) };
+      });
+    },
+    running(name) {
+      if (!running.some((item) => item.name === name)) running.push({ name, vendor: seat.vendor, temporary: Boolean(temporary) });
+    },
+    drop(name) {
+      updateState(dir, (file) => {
+        const seats = file.sessions[session]?.seats;
+        if (seats) delete seats[name];
+      });
+    },
+    say: (line) => input.io.stdout(line),
+    log: (who, what) => logLine(dir, 'add', input.caller, `${who}: ${what}`, input.now()),
+  };
+}

@@ -14,6 +14,7 @@ const commands: Record<string, () => Promise<{ default: Command }>> = {
   up: () => import('./commands/up.ts'),
   watch: () => import('./commands/watch.ts'),
   worktree: () => import('./commands/worktree.ts'),
+  add: () => import('./commands/add.ts'),
 };
 
 const USAGE = `team: set up, change and watch a project's team of AI agents
