@@ -42,7 +42,8 @@ let file: string;
 let live: Live | null;
 let branch: string | null;
 
-const sources: StatusSources = { live: () => live, branch: () => branch, now: () => NOW };
+let approval: string[] | null;
+const sources: StatusSources = { live: () => live, branch: () => branch, approval: () => approval, now: () => NOW };
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'team-status-'));
@@ -51,6 +52,7 @@ beforeEach(() => {
   writeFileSync(file, example);
   live = built();
   branch = 'main';
+  approval = [];
   updateState(join(dir, '.agents'), (state) => {
     state.sessions['acme-web'] = { ...emptySession(), watch: { pid: 1, heartbeat: '2026-10-03T14:09:00Z' } };
   });
@@ -164,6 +166,15 @@ describe('team status', () => {
     const { code, out } = await status();
     expect(out).toContain('the protected checkout "." is on "fix/select-width", not on "main"');
     expect(code).toBe(1);
+  });
+
+  test('a file changed since the owner approved it, and one never approved', async () => {
+    approval = ['`rules` changed', 'seat grok-acme changed'];
+    const changed = await status();
+    expect(changed.out).toContain('difference: the file differs from the approved one: `rules` changed\n  repair: the owner runs team approve');
+    expect(changed.out).toContain('2 difference(s)');
+    approval = null;
+    expect((await status()).out).toContain('difference: the file was never approved on this machine');
   });
 
   test('--session reads another session, with its own state', async () => {

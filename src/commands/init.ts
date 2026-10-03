@@ -5,9 +5,10 @@ import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { TEAM_FILE, findRoot } from '../file/load.ts';
 import { validateTeamFile } from '../file/validate.ts';
-import type { Command } from '../io.ts';
+import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { LOCK_FILE, LOG_FILE, STATE_FILE, writeAtomic } from '../state.ts';
+import { approvedCopy } from '../store/store.ts';
 
 // What git must never pick up: the file and the runtime files beside it.
 export const EXCLUDED = [TEAM_FILE, `.agents/${STATE_FILE}`, `.agents/${LOG_FILE}*`, `.agents/${LOCK_FILE}`];
@@ -85,7 +86,11 @@ export function exclude(root: string): string[] {
   return missing;
 }
 
-export const init: Command = async (argv, io) => {
+export const init: Command = (argv, io) => runInit(argv, io);
+export default init;
+
+// `home` is where the user-level store is looked for; tests hand in a temporary one.
+export async function runInit(argv: string[], io: Io, home?: string): Promise<number> {
   const args = readArgs(argv, [], ['restore']);
   if (args.error || args.rest.length) {
     io.stderr(`team init: ${args.error ?? `unexpected "${args.rest[0]}"`}\nUsage: team init [--restore]\n`);
@@ -106,24 +111,32 @@ export const init: Command = async (argv, io) => {
     io.stderr(`team init: ${TEAM_FILE} is tracked by git, and a team file is private. Untrack it, keeping the file:\n  git rm --cached ${TEAM_FILE}\nthen run team init again. History is not rewritten.\n`);
     return 1;
   }
-  if (args.flags.has('restore')) {
-    io.stderr('team init: --restore needs the copy that team approve keeps, and this build has no approve yet\n');
-    return 2;
-  }
   if (existsSync(path)) {
     exclude(root);
     io.stderr(`team init: ${TEAM_FILE} exists already; it is left as it is. Its lines in .git/info/exclude were checked, and added where missing.\n`);
     return 1;
   }
 
-  const text = skeleton(basename(root), git(root, 'rev-parse', 'HEAD'));
-  const check = validateTeamFile(text);
-  if (!check.ok) throw new Error(`the skeleton doesn't validate: ${check.errors[0]?.message}`);
+  let text: string;
+  if (args.flags.has('restore')) {
+    const copy = home === undefined ? approvedCopy(root) : approvedCopy(root, home);
+    if (copy === null) {
+      io.stderr('team init: nothing to restore: no team file was approved for this folder on this machine. Run team init for a skeleton.\n');
+      return 1;
+    }
+    text = copy;
+  } else {
+    text = skeleton(basename(root), git(root, 'rev-parse', 'HEAD'));
+    const check = validateTeamFile(text);
+    if (!check.ok) throw new Error(`the skeleton doesn't validate: ${check.errors[0]?.message}`);
+  }
   mkdirSync(dirname(path), { recursive: true });
   const added = exclude(root);
   writeFileSync(path, text, { flag: 'wx' });
-  logLine(dirname(path), 'init', describeCaller(caller), `wrote ${TEAM_FILE}; excluded ${added.length} path(s)`);
-  io.stdout(`Wrote ${TEAM_FILE}: a skeleton with one seat. Edit it, then run team approve.\n\n${PRIVACY}\n`);
+  const what = args.flags.has('restore') ? 'restored the approved copy' : 'wrote a skeleton';
+  logLine(dirname(path), 'init', describeCaller(caller), `${what} as ${TEAM_FILE}; excluded ${added.length} path(s)`);
+  io.stdout(args.flags.has('restore')
+    ? `Restored ${TEAM_FILE} from the copy you last approved on this machine.\n\n${PRIVACY}\n`
+    : `Wrote ${TEAM_FILE}: a skeleton with one seat. Edit it, then run team approve.\n\n${PRIVACY}\n`);
   return 0;
-};
-export default init;
+}

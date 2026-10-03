@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { relative, resolve } from 'node:path';
+import { approvalDifferences } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { currentTeam } from '../file/current.ts';
 import type { Problem, TeamFile } from '../file/types.ts';
@@ -13,6 +14,8 @@ import type { Comparison, Difference, Live } from '../status/compare.ts';
 export type StatusSources = {
   live(session: string, team: TeamFile): Live | null;
   branch(path: string): string | null;
+  // How the file differs from the approved one: [] when it doesn't, null when it was never approved.
+  approval(team: TeamFile, root: string): string[] | null;
   now(): Date;
 };
 
@@ -39,6 +42,7 @@ export const realSources: StatusSources = {
       return null;
     }
   },
+  approval: (team, root) => approvalDifferences(team, root),
   now: () => new Date(),
 };
 
@@ -70,10 +74,16 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
   const state = readState(dir).sessions[session] ?? emptySession();
   const comparison = compare(team, session, state, live, sources.now());
   if (!live.running) comparison.notes.unshift(`the herdr session "${session}" is not running`);
-  comparison.differences.push(...protectedCheckouts(team, root, sources));
+  comparison.differences.push(...protectedCheckouts(team, root, sources), ...approvalDrift(sources.approval(team, root)));
 
   io.stdout(render(team, session, comparison));
   return comparison.differences.length ? 1 : 0;
+}
+
+// A file that was never approved, or was changed since, runs nothing until the owner approves it.
+export function approvalDrift(differences: string[] | null): Difference[] {
+  if (differences === null) return [{ what: 'the file was never approved on this machine', repair: 'the owner runs team approve' }];
+  return differences.map((line) => ({ what: `the file differs from the approved one: ${line}`, repair: 'the owner runs team approve' }));
 }
 
 function protectedCheckouts(team: TeamFile, root: string, sources: StatusSources): Difference[] {

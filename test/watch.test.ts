@@ -246,6 +246,15 @@ describe('a pass of the watch', () => {
     expect(pass(team(), emptySession(), live(), { ...fine, swapUsed: 2.4e9 }, 60 * MIN, slow).reports).toEqual([]);
   });
 
+  test('a file that differs from the approved one is the owner\'s, reported once', () => {
+    const memory = newMemory();
+    const first = pass(team(), emptySession(), live(), fine, 0, memory, ['`rules` changed']);
+    expect(first.reports).toEqual([{ key: 'approval', text: 'the file differs from the approved one: `rules` changed', to: 'owner' }]);
+    expect(pass(team(), emptySession(), live(), fine, MIN, memory, ['`rules` changed']).reports).toEqual([]);
+    expect(pass(team(), emptySession(), live(), fine, 0, newMemory(), null).reports[0]?.text).toBe('the file was never approved on this machine');
+    expect(pass(team(), emptySession(), live(), fine, 0, newMemory(), []).reports).toEqual([]);
+  });
+
   test('a figure that can\'t be read is never reported', () => {
     const blind: Machine = { loadPerCore: null, memoryFree: null, diskFree: null, swapFree: null, swapUsed: null };
     expect(pass(team(), emptySession(), live(), blind, 0, newMemory()).reports).toEqual([]);
@@ -308,6 +317,7 @@ describe('team watch', () => {
     return {
       live: () => scene,
       machine: () => fine,
+      approval: () => [],
       screen: () => screenNow,
       type: (pane, text) => { typed.push(`${pane} ${text}`); return true; },
       notify: (text) => { notified.push(text); },

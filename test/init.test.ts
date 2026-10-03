@@ -3,7 +3,9 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { init, skeleton } from '../src/commands/init.ts';
+import { init, runInit, skeleton } from '../src/commands/init.ts';
+import { approvalOf } from '../src/approve/approval.ts';
+import { storePath, writeApproval } from '../src/store/store.ts';
 import { loadTeamFile } from '../src/file/load.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import { testIo } from './helpers.ts';
@@ -38,7 +40,7 @@ describe('team init', () => {
     expect(loaded).toMatchObject({ ok: true, team: { project: 'acme', coordinator: 'coordinator' } });
     expect(io.out).toContain('private to this clone');
     expect(io.out).toContain('team approve');
-    expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8')).toMatch(/ init \[owner\] wrote \.agents\/team\.yaml/);
+    expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8')).toMatch(/ init \[owner\] wrote a skeleton as \.agents\/team\.yaml/);
   });
 
   test('suggests the current commit as identity.since, as a comment', async () => {
@@ -101,6 +103,26 @@ describe('team init', () => {
       expect(await init([], io)).toBe(1);
       expect(io.err).toContain('only the owner runs init');
     }
+    expect(existsSync(join(project, '.agents'))).toBe(false);
+  });
+
+  test('--restore brings back the copy last approved on this machine', async () => {
+    const home = join(base, 'home');
+    const text = readFileSync(new URL('./fixtures/example.yaml', import.meta.url), 'utf8');
+    const result = validateTeamFile(text);
+    if (!result.ok) throw new Error('the example does not validate');
+    writeApproval(storePath(result.team.project, project, home), { approval: approvalOf(result.team, project), file: text }, []);
+    const io = testIo(project, owner);
+    expect(await runInit(['--restore'], io, home)).toBe(0);
+    expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).toBe(text);
+    expect(io.out).toContain('Restored .agents/team.yaml');
+    expect(git(project, 'status', '--porcelain')).toBe('');
+  });
+
+  test('--restore with nothing approved writes nothing', async () => {
+    const io = testIo(project, owner);
+    expect(await runInit(['--restore'], io, join(base, 'home'))).toBe(1);
+    expect(io.err).toContain('nothing to restore');
     expect(existsSync(join(project, '.agents'))).toBe(false);
   });
 

@@ -40,7 +40,12 @@ const minutes = (ms: number) => Math.floor(ms / 60_000);
 const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
 
 // One pass of the watch. Pure: it reads what it is handed and changes only `memory`.
-export function pass(team: TeamFile, state: SessionState, live: Live, machine: Machine, now: number, memory: Memory): PassResult {
+// `approval` is how the file differs from the approved one: [] when it doesn't, null when it was
+// never approved, undefined when that wasn't looked at.
+export function pass(
+  team: TeamFile, state: SessionState, live: Live, machine: Machine, now: number, memory: Memory,
+  approval?: string[] | null,
+): PassResult {
   const reports: Report[] = [];
   const current = new Set<string>();
   // Reported when it starts, and again only after it has cleared.
@@ -134,6 +139,9 @@ export function pass(team: TeamFile, state: SessionState, live: Live, machine: M
     memory.teamIdleSince = null;
     memory.teamIdleTold = false;
   }
+
+  if (approval === null) once('approval', 'the file was never approved on this machine', 'owner');
+  else if (approval?.length) once('approval', `the file differs from the approved one: ${approval.join('; ')}`, 'owner');
 
   const limits = team.machine;
   if (machine.loadPerCore !== null && machine.loadPerCore > limits.loadMax) {

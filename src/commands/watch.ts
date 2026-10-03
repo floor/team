@@ -17,6 +17,7 @@ import { realSources } from './status.ts';
 export type WatchSources = {
   live(session: string, team: TeamFile): Live | null;
   machine(root: string): Machine;
+  approval(team: TeamFile, root: string): string[] | null;
   // The operator's screen, read again just before a nudge is typed.
   screen(pane: string, session: string): string | null;
   type(pane: string, text: string, session: string): boolean;
@@ -47,6 +48,7 @@ function waitOrStop(seconds: number): Promise<boolean> {
 export const realWatchSources: WatchSources = {
   live: realSources.live,
   machine: readMachine,
+  approval: realSources.approval,
   screen: (pane, session) => paneRead(pane, 14, session),
   type: typeLine,
   notify,
@@ -121,7 +123,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
       } else {
         silent = false;
         const state = readState(dir).sessions[session] ?? emptySession();
-        const result = pass(team, state, live, sources.machine(root), sources.now().getTime(), memory);
+        const result = pass(team, state, live, sources.machine(root), sources.now().getTime(), memory, sources.approval(team, root));
         for (const report of result.reports) say(report.text, true);
         if (result.nudge) {
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);
