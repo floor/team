@@ -127,11 +127,11 @@ the commands below read.
 | `team doctor` | checks this machine for what the file needs: herdr, each CLI, login, launcher, model, watch heartbeat | anyone; read only |
 | `team status` | prints the file's seats against the running session, each difference with its repair; exit 1 when they differ | anyone; read only |
 | `team up` / `team down` | starts / stops the session and its seats | `up`: the owner; `down`: the owner, the coordinator or the operator seat |
-| `team watch` | watches the session, reports idle seats and nudges the operator; `--no-nudge` and `--no-notify` turn those off | anyone; read only |
+| `team watch` | watches the session, reports idle seats and nudges the operator; `--no-nudge` and `--no-notify` turn those off | anyone, one per session; it types only its fixed nudge, into an empty idle prompt |
 
 The owner is a terminal outside herdr with no agent process above it: a seat, or a script a seat
-runs, cannot approve a file or start a team, and everything else is open to both. Every command that
-reads the file also takes `--file <path>` for a file other than `.agents/team.yaml`.
+runs, cannot approve a file or start a team. Every command that reads the file also takes
+`--file <path>` for a file other than `.agents/team.yaml`.
 
 In this build `up` and `down` run only with `--dry-run`: they print every command they would run,
 and every refusal, and change nothing. `add`, `remove`, `trust` and `worktree` are specified but not
