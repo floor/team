@@ -9,7 +9,11 @@ import { readScreen } from './screen.ts';
 // What the watch remembers between passes. It lives in the watch's process: a restarted watch
 // starts its timers again, and reports again what is still true.
 export type Memory = {
+  // When the watch first saw a seat quiet: the clock for a seat it has never seen working.
   idleSince: Record<string, number>;
+  // When each seat was last seen working — herdr said working, or its screen showed a running
+  // turn. The idle duration counts from here, the same for every profile.
+  lastWorking: Record<string, number>;
   idleTold: Record<string, number>;
   unsentSince: Record<string, number>;
   // Conditions that were reported and have not cleared since.
@@ -22,7 +26,7 @@ export type Memory = {
 };
 
 export function newMemory(): Memory {
-  return { idleSince: {}, idleTold: {}, unsentSince: {}, active: new Set(), teamIdleSince: null, teamIdleTold: false, swap: [], pending: [], pendingSince: null };
+  return { idleSince: {}, lastWorking: {}, idleTold: {}, unsentSince: {}, active: new Set(), teamIdleSince: null, teamIdleTold: false, swap: [], pending: [], pendingSince: null };
 }
 
 // A report says what is, never what to do about it. `to` is who can act on it.
@@ -78,6 +82,7 @@ export function pass(
     const agent = live.agents.find((candidate) => candidate.name === name);
     if (!agent) {
       delete memory.idleSince[name];
+      delete memory.lastWorking[name];
       delete memory.unsentSince[name];
       if (live.running) once(`missing:${name}`, `${name} is in the file and is not running`);
       continue;
@@ -86,8 +91,11 @@ export function pass(
     const lead = name === team.coordinator || name === team.operator;
     const screen = readScreen(cli, live.screens[agent.pane]);
     const quiet = agent.status === 'idle' || agent.status === 'done';
+    // Working is herdr's word or the screen's: a seat mid-turn is never idle, whatever its
+    // status says.
+    const working = agent.status === 'working' || screen.kind === 'working';
     const prompt = screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question';
-    if (!lead && !parked) workers.push({ idle: quiet && !prompt });
+    if (!lead && !parked) workers.push({ idle: quiet && !working && !prompt });
 
     if (seat) {
       const running = seatModel(seat, live.screens[agent.pane]);
@@ -107,10 +115,14 @@ export function pass(
       once(`unknown:${name}`, `${name}: herdr reports the status "${agent.status}"`);
     }
 
-    if (!quiet || prompt) {
-      delete memory.idleSince[name];
+    if (!quiet || working || prompt) {
       delete memory.idleTold[name];
       delete memory.unsentSince[name];
+      if (working) {
+        // The one event every profile's idle duration counts from.
+        memory.lastWorking[name] = now;
+        delete memory.idleSince[name];
+      }
       continue;
     }
 
@@ -122,12 +134,22 @@ export function pass(
     } else delete memory.unsentSince[name];
 
     if (lead || parked) continue;
-    memory.idleSince[name] ??= now;
-    const since = now - (memory.idleSince[name] as number);
+    // The idle duration counts from the last moment the seat was seen working. A seat never
+    // seen working was already idle when the watch started: it is reported that way, with no
+    // duration from another source.
+    const worked = memory.lastWorking[name];
+    if (worked === undefined) memory.idleSince[name] ??= now;
+    const since = now - (worked ?? (memory.idleSince[name] as number));
     const told = memory.idleTold[name];
     if (since >= team.watch.idleFirst * 1000 && (told === undefined || now - told >= team.watch.idleRepeat * 1000)) {
       memory.idleTold[name] = now;
-      reports.push({ key: `idle:${name}`, text: `${name} has been idle for ${minutes(since)} minutes`, to: 'operator' });
+      reports.push({
+        key: `idle:${name}`,
+        text: worked === undefined
+          ? `${name} has been idle since the watch started`
+          : `${name} has been idle for ${minutes(since)} minutes`,
+        to: 'operator',
+      });
     }
   }
 

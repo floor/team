@@ -5,6 +5,7 @@ import { antigravityScreen } from '../profiles/antigravity-screen.ts';
 
 export type Screen =
   | { kind: 'idle' }                 // the idle prompt, with an empty input box
+  | { kind: 'working' }              // a turn is running: herdr's status would already be stale
   | { kind: 'unsent' }               // text left in the input box
   | { kind: 'permission' }           // a permission dialog: its owner's to answer
   | { kind: 'trust' }                // a workspace trust question: left unanswered
@@ -35,6 +36,9 @@ const CLASSIFIERS: Record<string, Classify> = {
       return { kind: 'permission' };
     }
     if (/Enter to select|↑\/↓ to navigate|Enter to confirm|Esc to cancel/.test(text)) return { kind: 'question' };
+    // A running turn: its spinner line names the work in progress and its elapsed time, and the
+    // input box below it can look empty all the same. A finished turn keeps its "done" stamp.
+    if (/\besc to interrupt\b/.test(text) || /^[^\S\n]*[✢✳✶✻✼✽][^\n]*…\s*\(\s*\d/m.test(text)) return { kind: 'working' };
     // The input line is the last line that starts with the prompt mark.
     let at = -1;
     for (let i = lines.length - 1; i >= 0; i--) {

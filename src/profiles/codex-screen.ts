@@ -3,8 +3,9 @@ import type { Screen } from '../watch/screen.ts';
 /** Visible text captured from Codex 0.157.0. Unknown layouts never permit input. */
 export function codexScreen(lines: string[]): Screen {
   if (lines.some((line) => /\bmodel:\s+loading\b/.test(line))) return { kind: 'unknown' };
-  // Herdr can lag a state transition. An active turn never permits a first message or an exit.
-  if (lines.some((line) => /esc to interrupt/.test(line))) return { kind: 'unknown' };
+  // Herdr can lag a state transition. An active turn never permits a first message or an exit,
+  // and is a working observation even while herdr's status has not caught up.
+  if (lines.some((line) => /esc to interrupt/.test(line))) return { kind: 'working' };
   return codexComposer(lines);
 }
 
