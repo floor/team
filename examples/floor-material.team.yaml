@@ -1,0 +1,159 @@
+# material's agent team, in format 1: an example converted from the project's old
+# team file. It holds no machine's own folders; a seat works in the project root.
+
+format: 1
+project: material
+coordinator: claude-operator  # dispatches work, and receives the watch's reports
+operator: claude-operator
+
+identity:
+  signature:
+    commits:
+      position: trailer       # last-line | trailer | anywhere
+      exempt: [merge]
+    pull_requests:
+      position: last-line
+      template: "**Agent:** {display} · {role}"
+
+rules:                        # added to every seat's rules at launch
+  - Run the tests your change touches, not the whole suite.
+  - Run a script with its interpreter; never chmod, chown, sudo or recursive rm.
+
+workspace:
+  mode: shared                # every seat works in the project root
+
+watch:
+  interval: 120s              # between passes; the other watch settings keep their defaults
+
+seats:
+  - role: main coordinator
+    name: claude-coordinator
+    label: coordinator
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+
+  - role: operator
+    name: claude-operator
+    label: operator
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+
+  - role: implementer
+    name: claude-implementer
+    label: implementer
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+    parked: true
+
+  - role: reviewer
+    name: claude-reviewer
+    label: reviewer
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+
+  - role: reviewer
+    name: claude-reviewer-2
+    label: reviewer-2
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+    parked: true
+
+  - role: test engineer
+    name: claude-test-engineer
+    label: test-engineer
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+    parked: true
+
+  - role: documentarist
+    name: claude-documentarist
+    label: documentarist
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+    parked: true
+
+  # three seats from one entry: deepseek-material, deepseek-material-2 and -3
+  - role: implementer
+    name: deepseek-material
+    label: deepseek
+    cli: claude-code           # DeepSeek's model, run by Claude Code
+    vendor: deepseek
+    model: DeepSeek Flash
+    version: "V4.1"
+    display: DeepSeek V4.1 Flash
+    launch: team-deepseek      # a launcher on the PATH, holding the account's key and endpoint
+    count: 3
+
+  - role: implementer
+    name: codex-material
+    label: codex
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    display: GPT-6 Sol         # the vendor's spelling, for the signature
+    launch: codex -m gpt-6-sol -c model_reasoning_effort=high
+    parked: true
+
+  - role: implementer
+    name: codex-astra-md3
+    label: astra
+    cli: codex
+    vendor: openai
+    model: GPT Astra
+    version: "6"
+    display: GPT-6 Astra
+    launch: codex -m gpt-6-astra -c model_reasoning_effort=high
+
+  - role: implementer
+    name: cursor-material
+    label: cursor
+    cli: cursor
+    vendor: xai
+    model: Grok
+    version: "4.7"
+    launch: cursor-agent       # the model is chosen inside Cursor
+    parked: true
+
+  - role: implementer
+    name: grok-material
+    label: grok
+    cli: grok
+    vendor: xai
+    model: Grok
+    version: "4.7"
+    launch: grok -m grok-4.7 --reasoning-effort high
+    parked: true
+
+  # mechanical work only
+  - role: implementer
+    name: gemini-material
+    label: gemini
+    cli: antigravity
+    vendor: google
+    model: Gemini Pro
+    version: "3.1"
+    display: Gemini 3.1 Pro
+    launch: agy --model gemini-3.1-pro-high --effort high
+    parked: true
