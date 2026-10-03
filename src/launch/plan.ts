@@ -13,7 +13,7 @@ export type Op =
   | { do: 'launch'; seat: string; label: string; command: string; pane?: string }
   | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; pane?: string; workspace?: string }
   | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
-  | { do: 'deliver'; seat: string; label: string; rules: string; pane?: string }
+  | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; seconds: number; pane?: string }
   | { do: 'ready'; seat: string; rules: 'option' | 'message' }
   | { do: 'watch'; label: string; command: string }
   | { do: 'type'; seat: string; pane: string; text: string }
@@ -155,9 +155,9 @@ export function upPlan(input: UpInput): Step[] {
     if (profile.rulesOption === null) {
       steps.push({
         kind: 'run',
-        argv: herdr(session, 'pane', 'run', pane, seat.rules),
-        note: 'the rules, as a first message',
-        do: { do: 'deliver', seat: seat.name, label: seat.label, rules: seat.rules, pane: seat.pane },
+        argv: herdr(session, 'pane', 'send-text', pane, seat.rules),
+        note: 'the rules, only at an empty idle prompt; re-read before Enter, then wait for working with empty input',
+        do: { do: 'deliver', seat: seat.name, label: seat.label, cli: seat.cli, rules: seat.rules, seconds: profile.idleTimeout, pane: seat.pane },
       });
     } else if (seat.stage === 'named') {
       steps.push({

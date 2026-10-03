@@ -9,9 +9,12 @@ import { renderSignature } from '../file/signature.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import {
   agentList,
+  agentStatus,
   agentRename,
   paneRead,
   paneRun,
+  typeText,
+  pressEnter,
   sessionRunning,
   sessionState,
   startServer,
@@ -26,6 +29,7 @@ import type { Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { rulesText } from '../launch/rules.ts';
+import { deliverRules } from '../launch/deliver.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -62,6 +66,9 @@ export type Launch = {
   closeWorkspace(session: string, workspace: string): boolean;
   agentPanes(session: string): string[] | null;
   paneText(session: string, pane: string): string | null;
+  typeText?(session: string, pane: string, text: string): boolean;
+  pressEnter?(session: string, pane: string): boolean;
+  agentStatus?(session: string, pane: string): string | null;
   sleep(ms: number): Promise<void>;
   now(): Date;
 };
@@ -91,6 +98,9 @@ const realLaunch: Launch = {
     return agents === null ? null : agents.map((agent) => agent.pane);
   },
   paneText: (session, pane) => paneRead(pane, 200, aim(session)),
+  typeText: (session, pane, text) => typeText(pane, text, aim(session)),
+  pressEnter: (session, pane) => pressEnter(pane, aim(session)),
+  agentStatus: (session, pane) => agentStatus(pane, aim(session)),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now: () => new Date(),
 };
@@ -323,6 +333,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     createWorkspace: launch.createWorkspace,
     paneRun: launch.paneRun,
     typeLine: () => false,
+    deliverRules: (session, pane, cli, text, seconds) => deliverRules(cli, text, seconds, {
+      screen: () => launch.paneText(session, pane) ?? undefined,
+      status: () => launch.agentStatus?.(session, pane) ?? null,
+      type: (value) => launch.typeText?.(session, pane, value) ?? false,
+      enter: () => launch.pressEnter?.(session, pane) ?? false,
+      now: () => now().getTime(),
+      sleep: sources.sleep ?? launch.sleep,
+    }),
     renameAgent: launch.renameAgent,
     closeWorkspace: launch.closeWorkspace,
     stopSession: () => false,
