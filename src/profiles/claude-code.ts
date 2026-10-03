@@ -18,6 +18,8 @@ export const claudeCode: Profile = {
   tested: { from: '2.1.288', to: '2.1.288' },
   unattended: ['--dangerously-skip-permissions'],
   rulesOption: '--append-system-prompt',
+  loginCheck: ['auth', 'status'],
+  loginHint: 'claude auth login',
   exit: '/exit',
   idleTimeout: 90,
   exitTimeout: 30,

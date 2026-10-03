@@ -14,6 +14,10 @@ export interface Profile {
   unattended: readonly string[];
   /** The option that carries the rules, or null when they go as a first message. */
   rulesOption: string | null;
+  /** Arguments that exit 0 only when the owner is logged in, or null when the CLI has none. */
+  loginCheck: readonly string[] | null;
+  /** The command the owner runs to log in. */
+  loginHint: string;
   /** What is typed into an idle prompt to make the CLI exit. */
   exit: string;
   /** Seconds to wait for the idle prompt after a launch. */

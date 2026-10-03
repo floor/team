@@ -98,3 +98,16 @@ export function typeLine(pane: string, text: string, session?: string): boolean 
     return false;
   }
 }
+
+// The herdr versions this version of `team` was run with.
+export const HERDR_TESTED = { from: '0.7.1', to: '0.7.1' };
+
+// What `herdr --version` prints, without the name, or null when herdr can't be run.
+export function herdrVersion(): string | null {
+  try {
+    const out = execFileSync('herdr', ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
+    return out.trim().replace(/^herdr\s+/, '') || null;
+  } catch {
+    return null;
+  }
+}
