@@ -28,3 +28,19 @@ jobs:
       - run: bun run build
       - name: The built command runs on Node
         run: node dist/cli.js --version
+      - name: Every commit and the pull request body are signed
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            printf '%s' "$BODY" | node dist/cli.js check "origin/$BASE..HEAD" --pr - --file .github/team.yaml
+          else
+            case "$BEFORE" in
+              *[!0]*) node dist/cli.js check "$BEFORE..HEAD" --file .github/team.yaml ;;
+              # A first push has no commit before it.
+              *) node dist/cli.js check HEAD --file .github/team.yaml ;;
+            esac
+          fi
