@@ -15,7 +15,7 @@ the default session had nine agents before and after. Config and auth hashes wer
 - `exit-typed.txt`, `exit.txt`: `/exit` typed at idle, read back, then submitted.
   Herdr subsequently listed zero agents and the foreground process was `zsh`.
 
-Paths, user email, and conversation UUID are replaced with placeholders. Shell launch scrollback
+Paths, user email, plan, and conversation UUID are replaced with placeholders. Shell launch scrollback
 before Antigravity's header banner is removed. All other visible text is retained, including the
 box borders, prompts, and model footer (`Gemini 3.8 Flash · high`). Unknown screens permit no input.
 No vendor configuration in `~/.gemini` was edited.

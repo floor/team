@@ -5,7 +5,7 @@
   ▄▀▀      ▀▀▄
 
   Antigravity CLI 1.2.16
-  user@example.com (Google AI Ultra)
+  user@example.com (<plan>)
   Gemini 3.8 Flash (High)
   ~/project
 

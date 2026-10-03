@@ -2,7 +2,6 @@
 // file's two fields, `model` and `version`, or null when the text doesn't show them: "unread" is
 // never a mismatch.
 import { codexModel } from '../profiles/codex.ts';
-import { antigravityModel } from '../profiles/antigravity.ts';
 
 export type Running = { model: string; version: string };
 
@@ -46,13 +45,8 @@ export function runningModel(cli: string, screen: string): Running | null {
 // The model a seat runs, as far as its screen can say. Claude Code names Claude's families only:
 // for a seat that runs another maker's model through it, the line says nothing to compare, so
 // the seat is unread rather than wrong.
-export function seatModel(seat: { cli: string; model: string; version?: string }, screen: string | undefined): Running | null {
+export function seatModel(seat: { cli: string; model: string }, screen: string | undefined): Running | null {
   if (screen === undefined) return null;
   if (seat.cli === 'claude-code' && !seat.model.startsWith('Claude ')) return null;
-  const running = runningModel(seat.cli, screen);
-  if (!running) return null;
-  if (seat.cli === 'antigravity' && seat.model === 'Gemini' && seat.version === `${running.version} ${running.model.replace(/^Gemini\s*/, '')}`.trim()) {
-    return { model: seat.model, version: seat.version };
-  }
-  return running;
+  return runningModel(seat.cli, screen);
 }

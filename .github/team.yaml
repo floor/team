@@ -71,8 +71,8 @@ seats:
     name: gemini-implementer
     cli: antigravity
     vendor: google
-    model: Gemini
-    version: "3.8 Flash"
+    model: Gemini Flash
+    version: "3.8"
     display: Gemini 3.8 Flash
     launch: agy
 
