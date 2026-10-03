@@ -1,6 +1,6 @@
 import type { Step } from './plan.ts';
 
-export type ScreenKind = 'idle' | 'permission' | 'trust' | 'question' | 'unsent' | 'unknown';
+export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'unsent' | 'unknown';
 
 /** What a live `up` or `down` can do, apart from deciding it. Tests stand in for all of it. */
 export type Host = {

@@ -78,6 +78,12 @@ describe('reading a screen of Claude Code', () => {
     expect(readScreen('claude-code', undefined).kind).toBe('unknown');
     expect(readScreen('codex', idle).kind).toBe('unknown');
   });
+  test('a running turn is working, not an empty idle box; a finished one is idle again', () => {
+    expect(readScreen('claude-code', busy).kind).toBe('working');
+    expect(readScreen('claude-code', `${RULE}\n❯ \n${RULE}\n  main · Opus 5.5 · esc to interrupt\n`).kind).toBe('working');
+    const finished = `✻ Churned for 51s · done 9:51 PM\n\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
+    expect(readScreen('claude-code', finished).kind).toBe('idle');
+  });
 });
 
 describe('the machine\'s figures', () => {
@@ -141,10 +147,11 @@ describe('a pass of the watch', () => {
     const at = (minute: number) => pass(team(), emptySession(), quiet, fine, minute * MIN, memory).reports.map((report) => report.text);
     expect(at(0)).toEqual([]);
     expect(at(9)).toEqual([]);
-    expect(at(10)).toEqual(['deepseek-acme has been idle for 10 minutes']);
+    // Never seen working: the report says so instead of inventing a duration.
+    expect(at(10)).toEqual(['deepseek-acme has been idle since the watch started']);
     expect(at(12)).toEqual([]);
     expect(at(29)).toEqual([]);
-    expect(at(30)).toEqual(['deepseek-acme has been idle for 30 minutes']);
+    expect(at(30)).toEqual(['deepseek-acme has been idle since the watch started']);
   });
 
   test('work resets the idle timer', () => {
@@ -274,6 +281,113 @@ describe('a pass of the watch', () => {
   test('a figure that can\'t be read is never reported', () => {
     const blind: Machine = { loadPerCore: null, memoryFree: null, diskFree: null, swapFree: null, swapUsed: null };
     expect(pass(team(), emptySession(), live(), blind, 0, newMemory()).reports).toEqual([]);
+  });
+});
+
+// The screens each profile's CLI was captured showing, for the idle anchor cases.
+const codexIdle = readFileSync(new URL('./fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
+const codexWorking = readFileSync(new URL('./fixtures/codex/0.157.0/working.txt', import.meta.url), 'utf8');
+const agyIdle = readFileSync(new URL('./fixtures/antigravity/1.2.16/idle.txt', import.meta.url), 'utf8');
+const agyWorking = readFileSync(new URL('./fixtures/antigravity/1.2.16/working.txt', import.meta.url), 'utf8');
+
+// One worker per CLI profile, so the idle clock is pinned the same way for each.
+const anchorExample = `
+format: 1
+project: anchor
+workspace:
+  mode: shared
+coordinator: claude-lead
+operator: claude-lead
+seats:
+  - role: coordinator
+    name: claude-lead
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+  - role: implementer
+    name: claude-worker
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+  - role: implementer
+    name: codex-worker
+    cli: codex
+    vendor: openai
+    model: GPT Terra
+    version: "5.6"
+    launch: codex
+  - role: implementer
+    name: agy-worker
+    cli: antigravity
+    vendor: google
+    model: Gemini Flash
+    version: "3.8"
+    launch: agy
+`;
+
+function anchorTeam(): TeamFile {
+  const result = validateTeamFile(anchorExample);
+  if (!result.ok) throw new Error(JSON.stringify(result.errors));
+  return result.team;
+}
+
+// Every worker working, the lead idle at its prompt, except where a case says otherwise.
+function anchorScene(over: Record<string, { status?: string; screen?: string }> = {}): Live {
+  const workers = ['claude-worker', 'codex-worker', 'agy-worker'];
+  const agents: HerdrAgent[] = [
+    { name: 'claude-lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null },
+    ...workers.map((name, index) => ({
+      name, agent: null, pane: `w${index + 1}:p1`, workspace: `w${index + 1}`, status: 'working', cwd: null,
+    })),
+  ];
+  const screens: Record<string, string> = { 'w0:p1': idle, 'w1:p1': busy, 'w2:p1': codexWorking, 'w3:p1': agyWorking };
+  for (const one of agents) {
+    const change = over[one.name as string];
+    if (!change) continue;
+    if (change.status !== undefined) one.status = change.status;
+    if (change.screen !== undefined) screens[one.pane] = change.screen;
+  }
+  return { running: true, agents, workspaces: agents.map((one) => ({ id: one.workspace, label: one.name ?? '' })), screens };
+}
+
+describe('the idle anchor', () => {
+  // One worker per CLI, with the working and idle screens this repo captured for it.
+  const workers = [
+    ['claude-worker', busy, idle],
+    ['codex-worker', codexWorking, codexIdle],
+    ['agy-worker', agyWorking, agyIdle],
+  ] as const;
+
+  const reportAt = (memory: ReturnType<typeof newMemory>, minute: number, over: Record<string, { status?: string; screen?: string }> = {}) =>
+    pass(anchorTeam(), emptySession(), anchorScene(over), fine, minute * MIN, memory).reports.map((report) => report.text);
+
+  test.each(workers)('%s: the duration counts from the last "working" observation', (name, workingScreen, idleScreen) => {
+    const memory = newMemory();
+    expect(reportAt(memory, 5, { [name]: { status: 'working', screen: workingScreen } })).toEqual([]);
+    // Quiet from minute 5 on: the clock runs from the work, not from the first quiet pass.
+    expect(reportAt(memory, 15, { [name]: { status: 'idle', screen: idleScreen } })).toEqual([`${name} has been idle for 10 minutes`]);
+  });
+
+  test.each(workers)('%s: a working screen is the observation while herdr still says idle', (name, workingScreen, idleScreen) => {
+    const memory = newMemory();
+    // Herdr lags the transition: its status stays idle while the screen shows the turn running.
+    expect(reportAt(memory, 10, { [name]: { status: 'idle', screen: workingScreen } })).toEqual([]);
+    expect(reportAt(memory, 25, { [name]: { status: 'idle', screen: workingScreen } })).toEqual([]);
+    // The turn over, the seat quiet: ten minutes since the last working observation, not twenty-five.
+    expect(reportAt(memory, 35, { [name]: { status: 'idle', screen: idleScreen } })).toEqual([`${name} has been idle for 10 minutes`]);
+  });
+
+  test.each(workers)('%s: never seen working, the report carries no duration', (name, _working, idleScreen) => {
+    const memory = newMemory();
+    const quiet = { [name]: { status: 'idle', screen: idleScreen } };
+    expect(reportAt(memory, 0, quiet)).toEqual([]);
+    expect(reportAt(memory, 9, quiet)).toEqual([]);
+    expect(reportAt(memory, 10, quiet)).toEqual([`${name} has been idle since the watch started`]);
+    expect(reportAt(memory, 30, quiet)).toEqual([`${name} has been idle since the watch started`]);
   });
 });
 

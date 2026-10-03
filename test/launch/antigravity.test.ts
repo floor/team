@@ -28,7 +28,7 @@ describe('Antigravity launch and captured screens', () => {
   test.each([
     ['idle', 'idle'],
     ['unsent', 'unsent'],
-    ['working', 'unknown'],
+    ['working', 'working'],
     ['rules-accepted', 'idle'],
     ['trust', 'trust'],
     ['permission', 'permission'],
@@ -37,6 +37,12 @@ describe('Antigravity launch and captured screens', () => {
   ] as const)('%s capture has %s composer shape', (file, kind) => {
     // A working screen never permits input, even if herdr's status has not caught up.
     expect(readScreen('antigravity', fixture(file)).kind).toBe(kind);
+  });
+  test('a permission dialog with a running turn beside it is still permission, not working', () => {
+    // The turn's "Generating..." line stays visible while the dialog is up: the dialog shape is
+    // read first, as for claude-code.
+    const screen = fixture('permission').replace('Command\n', 'Command\n⣯  Generating...\n');
+    expect(readScreen('antigravity', screen).kind).toBe('permission');
   });
 
   test('unknown, shell and unobserved dialogs never count as idle', () => {
