@@ -19,9 +19,20 @@ const CLASSIFIERS: Record<string, Classify> = {
     }
     if (/Enter to select|↑\/↓ to navigate|Enter to confirm|Esc to cancel/.test(text)) return { kind: 'question' };
     // The input line is the last line that starts with the prompt mark.
-    const input = [...lines].reverse().find((line) => /^\s*[❯›>]/.test(line));
-    if (input === undefined) return { kind: 'unknown' };
-    const typed = input.replace(/^\s*[❯›>]/, '').trim();
+    let at = -1;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (/^\s*[❯›>]/.test(lines[i] as string)) {
+        at = i;
+        break;
+      }
+    }
+    if (at < 0) return { kind: 'unknown' };
+    const typed = (lines[at] as string).replace(/^\s*[❯›>]/, '').trim();
+    // The box runs to the rule below it: text on a later line of the box is unsent text too,
+    // as after a first line left empty.
+    for (let i = at + 1; i < lines.length && !/^\s*[─━]{8,}/.test(lines[i] as string); i++) {
+      if ((lines[i] as string).trim()) return { kind: 'unsent' };
+    }
     // An empty box shows nothing, or a greyed suggestion that starts with Try ".
     return typed === '' || typed.startsWith('Try "') ? { kind: 'idle' } : { kind: 'unsent' };
   },
@@ -29,6 +40,6 @@ const CLASSIFIERS: Record<string, Classify> = {
 
 export function readScreen(cli: string, screen: string | undefined): Screen {
   if (screen === undefined) return { kind: 'unknown' };
-  const lines = screen.split('\n').map((line) => line.trimEnd()).filter(Boolean).slice(-14);
+  const lines = screen.split('\n').map((line) => line.trimEnd()).slice(-20);
   return CLASSIFIERS[cli]?.(lines) ?? { kind: 'unknown' };
 }
