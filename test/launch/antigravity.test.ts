@@ -28,7 +28,7 @@ describe('Antigravity launch and captured screens', () => {
   test.each([
     ['idle', 'idle'],
     ['unsent', 'unsent'],
-    ['working', 'unknown'],
+    ['working', 'working'],
     ['rules-accepted', 'idle'],
     ['trust', 'trust'],
     ['permission', 'permission'],

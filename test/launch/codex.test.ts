@@ -19,7 +19,7 @@ describe('Codex launch and captured screens', () => {
     expect(versionVerdict('codex-cli 0.160.0', codex.tested)).toBe('newer');
   });
   test.each([
-    ['idle', 'idle'], ['unsent', 'unsent'], ['working', 'unknown'],
+    ['idle', 'idle'], ['unsent', 'unsent'], ['working', 'working'],
     ['rules-accepted', 'idle'], ['startup', 'question'], ['startup-loading', 'unknown'], ['trust', 'trust'],
     ['exit-typed', 'unsent'], ['exit', 'unknown'],
   ] as const)('%s capture has %s composer shape', (file, kind) => {
