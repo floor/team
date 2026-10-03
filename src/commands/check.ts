@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { fromTeamFile, type CheckConfig } from '../check/config.ts';
 import { GitError } from '../check/git.ts';
@@ -6,6 +7,7 @@ import { formatReport, runCheck } from '../check/run.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { Problem } from '../file/types.ts';
 import type { Io } from '../io.ts';
+import { readLedger, storePath } from '../store/store.ts';
 
 export type LoadConfig = (
   cwd: string,
@@ -56,10 +58,13 @@ function parse(argv: string[]): Arguments | string {
   return { ref, ...values };
 }
 
-const loadConfig: LoadConfig = (cwd, file) => {
+/** The file's rules, with the ledger of this machine's store when the owner has approved a file here. */
+export function loadConfig(cwd: string, file?: string, home: string = homedir()): ReturnType<LoadConfig> {
   const loaded = loadTeamFile(cwd, { file });
-  return loaded.ok ? { ok: true, config: fromTeamFile(loaded.team), warnings: loaded.warnings } : loaded;
-};
+  if (!loaded.ok) return loaded;
+  const ledger = readLedger(storePath(loaded.team.project, loaded.root, home));
+  return { ok: true, config: fromTeamFile(loaded.team, ledger), warnings: loaded.warnings };
+}
 
 function place(problem: Problem, path?: string): string {
   const where = [path, problem.line > 0 ? `line ${problem.line}` : ''].filter(Boolean).join(', ');
