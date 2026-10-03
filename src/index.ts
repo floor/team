@@ -4,7 +4,7 @@ export { validateTeamFile } from './file/validate.ts';
 export { findRoot, loadTeamFile, TEAM_FILE } from './file/load.ts';
 export { DEFAULT_COMMIT_TEMPLATE, DEFAULT_FORBIDDEN, DEFAULT_PR_TEMPLATE, renderSignature } from './file/signature.ts';
 export type { LoadResult, Mode, Position, Problem, Seat, TeamFile, ValidateResult } from './file/types.ts';
-export { currentCaller, describeCaller, isOwner, mayChangeTeam, placeCaller, readAncestors } from './caller.ts';
+export { callerOf, currentCaller, describeCaller, isOwner, mayChangeTeam, placeCaller, readAncestors } from './caller.ts';
 export type { Caller, CallerSources, Process } from './caller.ts';
 export { CLIS, PROFILES } from './clis.ts';
 export type { Command, Io } from './io.ts';

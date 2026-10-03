@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import type { TeamFile } from './file/types.ts';
 import { agentList, paneRootPid } from './herdr.ts';
 import type { HerdrAgent } from './herdr.ts';
+import type { Io } from './io.ts';
 import { CLI_PROCESSES } from './clis.ts';
 
 // Who runs this command, placed by its parent processes, never by its environment. This guards
@@ -16,8 +17,9 @@ export type Caller =
 export type Process = { pid: number; name: string };
 
 export type CallerSources = {
-  // The command's parent processes, nearest first.
-  ancestors(): Process[];
+  // The command's parent processes, nearest first, up to the first process of the system; null
+  // when the walk stopped before it got there.
+  ancestors(): Process[] | null;
   agents(): HerdrAgent[] | null;
   paneRootPid(pane: string): number | null;
   env: Record<string, string | undefined>;
@@ -26,7 +28,8 @@ export type CallerSources = {
 
 export function placeCaller(sources: CallerSources): Caller {
   const ancestors = sources.ancestors();
-  if (!ancestors.length) return { kind: 'unplaced', reason: 'its parent processes can\'t be read' };
+  // A walk that stopped early may have stopped below a herdr server: it places nobody.
+  if (!ancestors?.length) return { kind: 'unplaced', reason: 'its parent processes can\'t be read to the top' };
   const pids = new Set(ancestors.map((process) => process.pid));
 
   if (ancestors.some((process) => process.name === 'herdr')) {
@@ -67,23 +70,38 @@ export function describeCaller(caller: Caller): string {
   return `unplaced (${caller.reason})`;
 }
 
-// The parent processes of `pid`, nearest first, by name only: arguments can hold credentials.
-export function readAncestors(pid: number = process.ppid): Process[] {
+// One process's parent and name, or null. By name only: arguments can hold credentials.
+export type ReadProcess = (pid: number) => { ppid: number; name: string } | null;
+
+const readWithPs: ReadProcess = (pid) => {
+  try {
+    const line = execFileSync('ps', ['-o', 'ppid=,comm=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const match = /^(\d+)\s+(.+)$/.exec(line);
+    return match ? { ppid: Number(match[1]), name: basename(match[2] as string).replace(/^-/, '') } : null;
+  } catch {
+    return null;
+  }
+};
+
+// The parent processes of `pid`, nearest first, up to the system's first process. Null when a
+// process on the way can't be read, or the chain is longer than any real one: a partial list
+// could hide the herdr server above it.
+export function readAncestors(pid: number = process.ppid, read: ReadProcess = readWithPs): Process[] | null {
   const out: Process[] = [];
   let at = pid;
-  for (let depth = 0; depth < 64 && at > 1; depth++) {
-    let line: string;
-    try {
-      line = execFileSync('ps', ['-o', 'ppid=,comm=', '-p', String(at)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-    } catch {
-      break;
-    }
-    const match = /^(\d+)\s+(.+)$/.exec(line);
-    if (!match) break;
-    out.push({ pid: at, name: basename(match[2] as string).replace(/^-/, '') });
-    at = Number(match[1]);
+  for (let depth = 0; depth < 64; depth++) {
+    if (at <= 1) return out;
+    const found = read(at);
+    if (!found) return null;
+    out.push({ pid: at, name: found.name });
+    at = found.ppid;
   }
-  return out;
+  return null;
+}
+
+// The caller of a command: the one a test handed in, or the one the processes show.
+export function callerOf(io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller'>, session?: string): Caller {
+  return io.caller ?? currentCaller(io, session);
 }
 
 export function currentCaller(io: { env: Record<string, string | undefined>; stdinIsTTY: boolean }, session?: string): Caller {
