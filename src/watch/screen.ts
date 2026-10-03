@@ -1,5 +1,6 @@
 // What a pane's visible text shows, read against the shapes of its CLI. A screen that matches no
 // shape is "unknown": never ready, never idle, and never grounds for typing anything.
+import { codexScreen } from '../profiles/codex-screen.ts';
 
 export type Screen =
   | { kind: 'idle' }                 // the idle prompt, with an empty input box
@@ -22,6 +23,7 @@ function trustDialog(lines: string[]): boolean {
 }
 
 const CLASSIFIERS: Record<string, Classify> = {
+  codex: codexScreen,
   // Claude Code, from the shapes team-watch.sh has matched on the live team.
   'claude-code': (lines) => {
     const text = lines.join('\n');

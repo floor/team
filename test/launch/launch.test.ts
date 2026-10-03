@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { downPlan, formatPlan, herdr, upPlan, type DownSeat, type UpSeat } from '../../src/launch/plan.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
+import { codex } from '../../src/profiles/codex.ts';
 import { claudeCode } from '../../src/profiles/claude-code.ts';
 import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, parseVersion, shellQuote, versionVerdict } from '../../src/profiles/profile.ts';
@@ -17,9 +18,9 @@ const rulesInput: RulesInput = {
 };
 
 describe('profiles', () => {
-  test('only claude-code has one in this version', () => {
+  test('claude-code and codex have launch profiles', () => {
     expect(profileFor('claude-code')).toBe(claudeCode);
-    expect(profileFor('codex')).toBeNull();
+    expect(profileFor('codex')).toBe(codex);
     expect(profileFor('constructor')).toBeNull();
   });
 
@@ -128,7 +129,7 @@ describe('up --dry-run', () => {
       sessionRunning: false,
       seats: [
         seat('claude-coordinator-acme'),
-        seat('codex-acme', { cli: 'codex' }),
+        seat('cursor-acme', { cli: 'cursor' }),
         seat('grok-acme', { stopped: true }),
         seat('claude-docs', { cwd: 'docs', label: 'docs' }),
       ],
@@ -142,7 +143,7 @@ describe('up --dry-run', () => {
         "+ herdr --session acme-web pane run <pane of claude-coordinator-acme> 'AGENT_UNATTENDED=1 claude --model claude-opus-5-5 --dangerously-skip-permissions --append-system-prompt Rules.'",
         '  wait until claude-coordinator-acme shows its idle prompt (90 s at most); anything else is reported, its workspace closed without input, and the seat left out',
         '+ herdr --session acme-web agent rename <pane of claude-coordinator-acme> claude-coordinator-acme',
-        '  skip codex-acme: no launch profile for `codex` in this version; left out',
+        '  skip cursor-acme: no launch profile for `cursor` in this version; left out',
         '  skip grok-acme: stopped in the file; start it with `team add grok-acme`',
         '+ herdr --session acme-web workspace create --cwd /work/acme-web/docs --label docs --no-focus',
         "+ herdr --session acme-web pane run <pane of docs> 'AGENT_UNATTENDED=1 claude --model claude-opus-5-5 --dangerously-skip-permissions --append-system-prompt Rules.'",
@@ -241,14 +242,14 @@ describe('down --dry-run', () => {
   test('a seat of a CLI without a profile is left running', () => {
     const plan = downPlan({
       session: 's',
-      seats: [{ ...seat('codex-acme'), cli: 'codex' }],
+      seats: [{ ...seat('cursor-acme'), cli: 'cursor' }],
       extra: 0,
       watchPid: null,
       keep: [],
     });
     expect(plan[0]).toEqual({
       kind: 'skip',
-      text: 'codex-acme: no launch profile for `codex` in this version; left running',
+      text: 'cursor-acme: no launch profile for `cursor` in this version; left running',
     });
   });
 });

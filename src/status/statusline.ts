@@ -1,12 +1,18 @@
 // Each CLI shows its model in its own words. A normalisation turns a pane's visible text into the
 // file's two fields, `model` and `version`, or null when the text doesn't show them: "unread" is
 // never a mismatch.
+import { codexModel } from '../profiles/codex.ts';
 
 export type Running = { model: string; version: string };
 
 type Normalise = (screen: string) => Running | null;
 
 const NORMALISERS: Record<string, Normalise> = {
+  codex: (screen) => {
+    const footer = screen.split('\n').slice(-6).findLast((line) => /^\s+GPT-\d[\w.-]*\s+[^·]*·/.test(line));
+    const id = footer?.trim().split(/\s/)[0];
+    return id ? codexModel(id) : null;
+  },
   // Claude Code's status line names the family and the version: "… · Opus 5.5 · …".
   'claude-code': (screen) => {
     let found: Running | null = null;
