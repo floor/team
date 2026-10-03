@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { clearStopped, restoreSeat, rewriteCount, seatIsStopped } from '../src/file/lines.ts';
+import { clearStopped, markStopped, restoreSeat, rewriteCount, seatIsStopped, takeOut } from '../src/file/lines.ts';
 
 const counted = `format: 1
 seats:
@@ -44,5 +44,26 @@ describe('the line-level writer', () => {
     expect(restored).toContain('count: 2');
     expect(restored.indexOf('name: deepseek')).toBeLessThan(restored.indexOf('name: lead'));
     expect(restored).toContain('# kept with the entry');
+  });
+
+  test('taking one seat out leaves the next seat and a comment that sits above it', () => {
+    const text = takeOut(counted, 'deepseek');
+    expect(text).not.toContain('name: deepseek\n');
+    expect(text).toContain('name: deepseek-2');
+    expect(text).not.toContain('count:');
+    expect(text).toContain('name: lead');
+    const one = takeOut(rewriteCount(counted, 'deepseek') ?? '', 'deepseek-2');
+    expect(one).toContain('name: deepseek\n');
+    expect(one).not.toContain('name: deepseek-2');
+    expect(one).toContain('# kept with the entry');
+    expect(one).toContain('name: lead');
+  });
+
+  test('stopping one instance of a count leaves the other running', () => {
+    const text = markStopped(counted.replace('    stopped: true\n', ''), 'deepseek-2');
+    expect(text).not.toContain('count:');
+    expect(seatIsStopped(text, 'deepseek')).toBe(false);
+    expect(seatIsStopped(text, 'deepseek-2')).toBe(true);
+    expect(text).toContain('name: lead');
   });
 });

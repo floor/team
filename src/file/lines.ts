@@ -130,6 +130,44 @@ export function clearStopped(text: string, name: string): string {
   return replaceLines(rewritten, block.start, block.end, lines);
 }
 
+function prepared(text: string, name: string): { text: string; block: SeatBlock } | null {
+  const counted = seatBlocks(text).find((block) => block.count > 1 && expanded(block).includes(name));
+  const rewritten = counted?.name ? rewriteCount(text, counted.name) ?? text : text;
+  const block = seatBlocks(rewritten).find((item) => item.name === name);
+  return block ? { text: rewritten, block } : null;
+}
+
+/** Drops trailing comments and blank lines back into the file, ahead of the next entry. */
+function fieldEnd(lines: string[]): number {
+  let end = lines.length;
+  while (end > 0) {
+    const line = lines[end - 1] ?? '';
+    if (line.trim() !== '' && !/^\s*#/.test(line)) break;
+    end--;
+  }
+  return end;
+}
+
+/** Takes `name` out of the file. A counted entry is split first, so the other instances stay. */
+export function takeOut(text: string, name: string): string {
+  const ready = prepared(text, name);
+  if (!ready) return text;
+  const lines = body(ready.text, ready.block);
+  return replaceLines(ready.text, ready.block.start, ready.block.start + fieldEnd(lines), []);
+}
+
+/** Leaves `name` in the file with `stopped: true`. A counted entry is split first. */
+export function markStopped(text: string, name: string): string {
+  const ready = prepared(text, name);
+  if (!ready) return text;
+  const lines = body(ready.text, ready.block);
+  if (lines.some((line) => /^\s*stopped:\s*(true|yes)\b/.test(line))) return ready.text;
+  const named = lines.find((line) => /^\s*name:/.test(line)) ?? lines[0] ?? '';
+  const pad = ' '.repeat(indent(named));
+  lines.splice(fieldEnd(lines), 0, `${pad}stopped: true`);
+  return replaceLines(ready.text, ready.block.start, ready.block.end, lines);
+}
+
 /**
  * Puts `name`'s entry back from `approved` when the current text lacks it.
  * The entry is inserted after whichever approved neighbour is still present.

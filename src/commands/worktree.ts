@@ -93,7 +93,7 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
   const dir = dirname(loaded.path);
   const who = describeCaller(caller);
   if (sub === 'new') return create(io, sources, team, root, dir, session, task, args.values.kind, args.values.seat, who);
-  return remove(io, sources, team, root, dir, session, task, who);
+  return removeWorktree(io, sources, team, root, dir, session, task, who);
 }
 
 function create(
@@ -226,7 +226,7 @@ function create(
   return 0;
 }
 
-function remove(
+export function removeWorktree(
   io: Io, sources: WorktreeSources, team: TeamFile, root: string, dir: string, session: string, task: string, who: string,
 ): number {
   const named = taskProblem(task);
