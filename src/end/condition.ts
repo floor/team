@@ -85,5 +85,11 @@ export function readMerge(root: string, branch: string, base: string, ownBefore:
   const listed = git(root, ['rev-list', '--oneline', branch, '--not', remote]);
   if (listed.code !== 0) return { verdict: 'unproven', ownNow: 0, detail: 'the branch could not be read; nothing is removed' };
   const ownNow = listed.stdout.split('\n').filter((line) => line !== '');
+  // A squash leaves the branch's commits in place while its tree matches the base. That is not a
+  // merge this version can prove, and it is not treated as one. A branch whose tree still differs
+  // is ordinary open work and stays quiet.
+  if (ownNow.length > 0 && git(root, ['diff', '--quiet', remote, branch]).code === 0) {
+    return { verdict: 'open', ownNow: ownNow.length, detail: 'merged? not provable' };
+  }
   return { ...judgeMerge({ fetch: 'ok', branch: 'present', ownNow, ownBefore }), ownNow: ownNow.length };
 }

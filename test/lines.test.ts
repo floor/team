@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { clearStopped, restoreSeat, rewriteCount, seatIsStopped } from '../src/file/lines.ts';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { clearStopped, hasSeat, restoreSeat, rewriteCount, seatBlocks, seatIsStopped } from '../src/file/lines.ts';
+import { validateTeamFile } from '../src/file/validate.ts';
+import { writeTeamFile } from '../src/file/write.ts';
 
 const counted = `format: 1
 seats:
@@ -40,9 +45,104 @@ describe('the line-level writer', () => {
     const current = counted.replace(/ {2}- role: implementer[\s\S]*?cli: claude-code\n/, '');
     expect(current).not.toContain('deepseek');
     const restored = restoreSeat(current, counted, 'deepseek-2');
-    expect(restored).toContain('name: deepseek');
-    expect(restored).toContain('count: 2');
-    expect(restored.indexOf('name: deepseek')).toBeLessThan(restored.indexOf('name: lead'));
+    expect(restored).toContain('name: deepseek-2');
+    expect(restored).not.toContain('count:');
+    expect(restored).not.toContain('name: deepseek\n');
+    expect(restored.indexOf('name: deepseek-2')).toBeLessThan(restored.indexOf('name: lead'));
     expect(restored).toContain('# kept with the entry');
+  });
+
+  test('a name-first seat is found', () => {
+    const text = `format: 1
+seats:
+  - name: helper
+    role: implementer
+    cli: claude-code
+    stopped: true
+  - role: coordinator
+    name: lead
+    cli: claude-code
+`;
+    expect(hasSeat(text, 'helper')).toBe(true);
+    const cleared = clearStopped(text, 'helper');
+    expect(seatIsStopped(cleared, 'helper')).toBe(false);
+    expect(hasSeat(cleared, 'lead')).toBe(true);
+    const gone = without(text, 'helper');
+    expect(hasSeat(gone, 'helper')).toBe(false);
+    const restored = restoreSeat(gone, text, 'helper');
+    expect(hasSeat(restored, 'helper')).toBe(true);
+    expect(restored).toContain('- name: helper');
+  });
+
+  test('restoring one removed instance of a count entry inserts that instance only', () => {
+    const approved = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+workspace:
+  mode: shared
+seats:
+  - role: coordinator
+    name: lead
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude
+  - role: implementer
+    name: ds
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude
+    count: 3
+`;
+    const split = rewriteCount(approved, 'ds');
+    expect(split).not.toBeNull();
+    const removed = without(split ?? '', 'ds-2');
+    const restored = restoreSeat(removed, approved, 'ds-2');
+    const names = seatBlocks(restored).map((block) => block.name);
+    expect(names.filter((name) => name === 'ds')).toHaveLength(1);
+    expect(names.filter((name) => name === 'ds-2')).toHaveLength(1);
+    expect(names.filter((name) => name === 'ds-3')).toHaveLength(1);
+    expect(restored).not.toContain('count:');
+    expect(validateTeamFile(restored).ok).toBe(true);
+  });
+});
+
+function without(text: string, name: string): string {
+  const block = seatBlocks(text).find((item) => item.name === name);
+  if (!block) throw new Error(name);
+  const lines = text.split('\n');
+  lines.splice(block.start, block.end - block.start);
+  return lines.join('\n');
+}
+
+describe('the team file write', () => {
+  test('an edit that would not validate is refused and the file is unchanged', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'team-write-'));
+    const path = join(dir, 'team.yaml');
+    const original = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+workspace:
+  mode: shared
+seats:
+  - role: coordinator
+    name: lead
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude
+`;
+    writeFileSync(path, original);
+    const wrote = writeTeamFile(path, original.replace('format: 1', 'format: 9'));
+    expect(wrote.ok).toBe(false);
+    if (!wrote.ok) expect(wrote.errors[0]?.message).toContain('format');
+    expect(readFileSync(path, 'utf8')).toBe(original);
+    rmSync(dir, { recursive: true, force: true });
   });
 });
