@@ -215,5 +215,10 @@ describe('the status line of Claude Code', () => {
   test('is unread when the screen doesn\'t show it, and for a CLI without a normalisation', () => {
     expect(runningModel('claude-code', 'Do you want to proceed?\n1. Yes\n')).toBeNull();
     expect(runningModel('codex', 'GPT-6-Sol high')).toBeNull();
+    expect(runningModel('antigravity', 'Do you trust the contents of this project?\n> Yes, I trust this folder\n')).toBeNull();
+  });
+  test('is read from an Antigravity screen', () => {
+    const screen = 'Antigravity CLI\n? for shortcuts               Gemini 3.8 Flash · high\n';
+    expect(runningModel('antigravity', screen)).toEqual({ model: 'Gemini Flash', version: '3.8' });
   });
 });

@@ -184,6 +184,57 @@ describe('team up, live', () => {
     }
   });
 
+  test.each(['accepted', 'trust', 'swallowed'] as const)('Antigravity first-message rules: %s', async (outcome) => {
+    const path = join(root, '.agents/team.yaml');
+    const gemini = [
+      '  - role: implementer',
+      '    name: gemini-acme',
+      '    cli: antigravity',
+      '    vendor: google',
+      '    model: Gemini Flash',
+      '    version: "3.8"',
+      '    display: Gemini 3.8 Flash',
+      '    launch: agy',
+      '    parked: true',
+    ].join('\n');
+    writeFileSync(path, EXAMPLE.replace(/  - role: implementer\n    name: codex-acme[\s\S]*?stopped: true\n/, `${gemini}\n`));
+    await approve();
+    const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/antigravity/1.2.16/${name}.txt`), 'utf8');
+    const made = world((_pane, label) => (label === 'gemini-acme'
+      ? capture(outcome === 'trust' ? outcome : 'idle') : IDLE));
+    let geminiPane = '';
+    let status = 'idle';
+    const sent: string[] = [];
+    const read = made.launch.paneText;
+    let pasted = false;
+    made.launch.agentStatus = () => status;
+    made.launch.typeText = (_session, pane, text) => { geminiPane = pane; sent.push(text); pasted = true; return true; };
+    made.launch.pressEnter = () => { sent.push('Enter'); if (outcome === 'accepted') { status = 'working'; pasted = false; } return true; };
+    made.launch.paneText = (session, pane) => (pane === geminiPane
+      ? capture(pasted ? 'unsent' : 'working') : read(session, pane));
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({}, made));
+    const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['gemini-acme'];
+    if (outcome === 'accepted') {
+      expect(code).toBe(0);
+      expect(seat).toMatchObject({ stage: 'ready', rules: 'message' });
+      expect(sent[0]).toContain('Agent: Gemini 3.8 Flash · implementer');
+      expect(sent[1]).toBe('Enter');
+      expect(made.runs.some(({ command }) => command.startsWith('Rules for this session'))).toBe(false);
+    } else if (outcome === 'swallowed') {
+      expect(code).toBe(1);
+      expect(seat?.stage).toBe('named');
+      expect(seat?.rules).toBeUndefined();
+      expect(io.out).toContain('its rules were not delivered; left at named');
+    } else {
+      expect(code).toBe(1);
+      expect(sent).toEqual([]);
+      expect(seat).toBeUndefined();
+      expect(made.closes).toContain('w2');
+      expect(made.renames).not.toContain('gemini-acme');
+    }
+  });
+
   test('launches each claude-code seat, names it, and starts the watch', async () => {
     await approve();
     const made = world();

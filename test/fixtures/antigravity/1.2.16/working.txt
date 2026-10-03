@@ -1,0 +1,16 @@
+      ▄▀▀▄        Antigravity CLI 1.2.16
+     ▀▀▀▀▀▀       user@example.com
+    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (High)
+   ▄▀▀    ▀▀▄     ~/project
+  ▄▀▀      ▀▀▄
+
+──────────────────────────────────────────────────
+> Rules for this session, from the team file:
+  - Do not use tools or edit files.
+  - Do not change trust or configuration.
+  - Reply only RULES_RECEIVED, then wait.
+⣯  Generating...
+─────────────────────────────────────────────────────
+>
+─────────────────────────────────────────────────────
+esc to cancel                 Gemini 3.8 Flash · high
