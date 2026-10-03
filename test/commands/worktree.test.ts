@@ -252,6 +252,30 @@ describe('team worktree remove', () => {
     expect(git(project, 'rev-parse', '--verify', '--quiet', 'refs/remotes/origin/fix/select-width').trim()).not.toBe('');
   });
 
+  test('refuses a commit on a detached HEAD, and one on another branch checked out there', async () => {
+    expect((await run(['new', 'select-width', '--kind', 'fix'])).code).toBe(0);
+    const folder = join(base, 'worktrees', 'acme', 'select-width');
+    git(folder, 'checkout', '-q', '--detach');
+    writeFileSync(join(folder, 'README.md'), 'detached\n');
+    git(folder, 'add', 'README.md');
+    git(folder, 'commit', '-q', '-m', 'only on a detached HEAD');
+    const detached = await run(['remove', 'select-width']);
+    expect(detached.code).toBe(1);
+    expect(detached.err).toContain('only on a detached HEAD');
+    expect(existsSync(folder)).toBe(true);
+
+    git(folder, 'checkout', '-q', 'fix/select-width');
+    git(folder, 'checkout', '-q', '-b', 'fix/side');
+    writeFileSync(join(folder, 'README.md'), 'side\n');
+    git(folder, 'add', 'README.md');
+    git(folder, 'commit', '-q', '-m', 'only on the side branch');
+    const side = await run(['remove', 'select-width']);
+    expect(side.code).toBe(1);
+    expect(side.err).toContain('only on the side branch');
+    expect(existsSync(folder)).toBe(true);
+    expect(git(project, 'rev-parse', '--verify', '--quiet', 'refs/heads/fix/select-width').trim()).not.toBe('');
+  });
+
   test('refuses while a temporary seat is recorded in the task', async () => {
     expect((await run(['new', 'select-width', '--kind', 'fix'])).code).toBe(0);
     const dir = join(project, '.agents');

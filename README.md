@@ -128,7 +128,7 @@ the commands below read.
 | `team status` | prints the file's seats against the running session, each difference with its repair; exit 1 when they differ | anyone; read only |
 | `team up` / `team down` | starts / stops the session and its seats | `up`: the owner; `down`: the owner, the coordinator or the operator seat |
 | `team watch` | watches the session, reports idle seats and nudges the operator; `--no-nudge` and `--no-notify` turn those off | anyone, one per session; it types only its fixed nudge, into an empty idle prompt |
-| `team worktree new <task>` / `team worktree remove <task>` | creates a task worktree from an up-to-date base, or removes its folder; a failed setup is kept and recorded; the branch is never deleted | the owner, the coordinator or the operator |
+| `team worktree new <task>` / `team worktree remove <task>` | creates a task worktree from an up-to-date base, or removes its folder; a failed setup is kept and recorded; the branch is never deleted; ignored files in the worktree are deleted with it | the owner, the coordinator or the operator |
 
 The owner is a terminal outside herdr with no agent process above it: a seat, or a script a seat
 runs, cannot approve a file or start a team. Every command that reads the file also takes

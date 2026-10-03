@@ -28,6 +28,7 @@ type Run = { code: number; stdout: string; stderr: string };
 
 const USAGE = `Usage: team worktree new <task> [--kind <kind>] [--seat <name>] [--session <name>] [--file <path>]
        team worktree remove <task> [--session <name>] [--file <path>]
+Ignored files in the worktree are deleted with it.
 `;
 
 export const worktree: Command = (argv, io) => runWorktree(argv, io, realSources);
@@ -352,11 +353,15 @@ function startPoint(root: string, base: string): { ref: string; note?: string } 
   return { ref: remote };
 }
 
+// The recorded branch and whatever HEAD the worktree has checked out. A detached HEAD, or
+// another branch, is not the recorded branch; removing the folder drops that reflog, so a commit
+// that lives only there is named and the folder stays. With no remote-tracking refs, unpublished
+// means not in the base.
 function commitsOnNoRemote(root: string, worktree: string, branch: string, base: string | null): string[] {
   const remotes = git(root, ['for-each-ref', '--format=%(refname)', 'refs/remotes']);
   const args = remotes.stdout.trim()
-    ? ['rev-list', '--oneline', branch, '--not', '--remotes']
-    : ['rev-list', '--oneline', branch, '--not', base ?? 'HEAD'];
+    ? ['rev-list', '--oneline', 'HEAD', branch, '--not', '--remotes']
+    : ['rev-list', '--oneline', 'HEAD', branch, '--not', base ?? 'HEAD'];
   const listed = git(worktree, args);
   if (listed.code !== 0) return [`couldn't list commits: ${firstLine(listed.stderr)}`];
   return listed.stdout.split('\n').filter((line) => line !== '');
