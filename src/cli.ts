@@ -5,9 +5,13 @@ import type { Command, Io } from './io.ts';
 
 // Each command is loaded only when it is called. A slice adds its line here.
 const commands: Record<string, () => Promise<{ default: Command }>> = {
+  approve: () => import('./commands/approve.ts'),
   check: () => import('./commands/check.ts'),
+  doctor: () => import('./commands/doctor.ts'),
+  down: () => import('./commands/down.ts'),
   init: () => import('./commands/init.ts'),
   status: () => import('./commands/status.ts'),
+  up: () => import('./commands/up.ts'),
 };
 
 const USAGE = `team: set up, change and watch a project's team of AI agents
