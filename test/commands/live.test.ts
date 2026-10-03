@@ -339,6 +339,7 @@ describe('team down, live', () => {
 
   function harness(screen: Screen, status = 'idle') {
     const typed: string[] = [];
+    const entered: string[] = [];
     const closed: string[] = [];
     const killed: number[] = [];
     const stopped: string[] = [];
@@ -352,6 +353,7 @@ describe('team down, live', () => {
         return true;
       },
       pressEnter() {
+        entered.push('enter');
         gone = true;
         return true;
       },
@@ -379,6 +381,7 @@ describe('team down, live', () => {
       agents: () => [seat(current)],
       alive: () => false,
       screen: () => screen,
+      status: () => current,
       now: () => new Date(clock),
       sleep: launch.sleep,
       launch,
@@ -386,6 +389,7 @@ describe('team down, live', () => {
     });
     return {
       typed,
+      entered,
       closed,
       killed,
       stopped,
@@ -406,9 +410,31 @@ describe('team down, live', () => {
     const code = await runDown(FILE, io, run.sourcesOf());
     expect(code).toBe(0);
     expect(run.typed).toEqual(['/exit']);
+    expect(run.entered).toEqual(['enter']);
     expect(run.closed).toEqual(['w3']);
     expect(run.stopped).toEqual(['acme-web']);
     expect(io.out).toContain('deepseek-acme: stopped\n');
+  });
+
+  test('holds Enter when the status turns working after the text', async () => {
+    const run = harness({ kind: 'idle' });
+    let looks = 0;
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(
+      FILE,
+      io,
+      run.sourcesOf({
+        status: () => {
+          looks += 1;
+          return looks === 1 ? 'idle' : 'working';
+        },
+      }),
+    );
+    expect(code).toBe(1);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is\n');
   });
 
   test('does not type into a permission prompt', async () => {

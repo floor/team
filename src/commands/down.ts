@@ -3,6 +3,7 @@ import { callerOf, describeCaller, mayChangeTeam, type Caller } from '../caller.
 import { currentTeam } from '../file/current.ts';
 import {
   agentList,
+  agentStatus,
   paneRead,
   sessionRunning,
   pressEnter,
@@ -26,6 +27,8 @@ export type DownSources = {
   alive(pid: number): boolean;
   /** Herdr's status is not enough: a permission prompt is reported as idle. */
   screen(session: string, pane: string, cli: string): Screen;
+  /** Herdr's own status for the pane. The Enter waits for idle or done. */
+  status(session: string, pane: string): string | null;
   now(): Date;
   sleep?(ms: number): Promise<void>;
   // Present on the shipped command. A dry run never calls it.
@@ -82,6 +85,7 @@ export const realSources: DownSources = {
   screen(session, pane, cli) {
     return readScreen(cli, paneRead(pane, 200, aim(session)) ?? undefined);
   },
+  status: (session, pane) => agentStatus(pane, aim(session)),
   now: () => new Date(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   launch: realLaunch,
@@ -224,13 +228,19 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     paneRun: () => false,
     typeLine(sessionName, pane, text) {
       // Free was decided when the plan was built. Look again, and once more between the text and
-      // the Enter: a prompt that appeared would take the key, as the watch's nudge does.
+      // the Enter: a prompt that appeared would take the key, as the watch's nudge does. Herdr's
+      // status is asked both times; Enter waits until it is idle or done and the screen is idle
+      // or holding unsent text.
       const cli = seats.find((seat) => seat.pane === pane)?.cli ?? '';
       const look = () => sources.screen(sessionName, pane, cli).kind;
-      if (look() !== 'idle') return false;
+      const resting = () => {
+        const status = sources.status(sessionName, pane);
+        return status === 'idle' || status === 'done';
+      };
+      if (!resting() || look() !== 'idle') return false;
       if (!launch.typeText(sessionName, pane, text)) return false;
       const after = look();
-      if (after !== 'idle' && after !== 'unsent') return false;
+      if (!resting() || (after !== 'idle' && after !== 'unsent')) return false;
       return launch.pressEnter(sessionName, pane);
     },
     renameAgent: () => false,

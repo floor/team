@@ -413,6 +413,7 @@ async function down(argv: string[], caller: Caller, overrides: Partial<DownSourc
     agents: () => [agent('claude-coordinator-acme'), agent('deepseek-acme'), agent('deepseek-acme-2', 'working')],
     alive: () => true,
     screen: () => ({ kind: 'idle' }),
+    status: () => 'idle',
     now: () => NOW,
     ...overrides,
   });
