@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Caller } from '../../src/caller.ts';
 import { runApprove } from '../../src/commands/approve.ts';
+import { loadConfig } from '../../src/commands/check.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
 import { runDown, type DownSources } from '../../src/commands/down.ts';
 import { runUp, type UpSources } from '../../src/commands/up.ts';
@@ -154,6 +155,26 @@ describe('team approve', () => {
     expect(invalid.code).toBe(2);
     expect(invalid.err).toStartWith('team approve: line 1: ');
     expect((await approve(['--force'], OWNER)).code).toBe(2);
+  });
+});
+
+describe('team check, after an approval', () => {
+  test('accepts the signature of a seat the team has had and the file no longer holds', async () => {
+    await approve([], OWNER);
+    const before = loadConfig(root, '.agents/team.yaml', home);
+    edit((text) => text.replace('version: "4.7"', 'version: "4.8"').replace('grok-4.7', 'grok-4.8'));
+    const after = loadConfig(root, '.agents/team.yaml', home);
+    if (!before.ok || !after.ok) throw new Error('the file must load');
+    const displays = (config: typeof before.config) => config.ledger.map((seat) => `${seat.display} · ${seat.role}`);
+    expect(displays(before.config)).not.toContain('Grok 4.8 · reviewer');
+    expect(displays(after.config)).toEqual([...displays(before.config), 'Grok 4.8 · reviewer']);
+    expect(displays(after.config)).toContain('Grok 4.7 · reviewer');
+  });
+
+  test('without an approval, accepts the seats of the file', () => {
+    const loaded = loadConfig(root, '.agents/team.yaml', home);
+    if (!loaded.ok) throw new Error('the file must load');
+    expect(loaded.config.ledger).toHaveLength(4);
   });
 });
 

@@ -5,6 +5,7 @@
 
 import { DEFAULT_FORBIDDEN } from '../file/signature.ts';
 import type { Position, TeamFile } from '../file/types.ts';
+import { mergeLedger } from '../store/store.ts';
 
 /** One `display` and `role` the team has had, with the fields a template may use. */
 export interface SeatIdentity {
@@ -36,10 +37,12 @@ export interface CheckConfig {
 }
 
 /**
- * What `check` reads of a validated file. Until `approve` brings the ledger,
- * the accepted signatures are those of the file's seats.
+ * What `check` reads of a validated file. The accepted signatures are those
+ * of the file's seats and of the ledger: every seat the team has had, so the
+ * commits of a removed or temporary seat, or of a seat before a version
+ * change, still pass.
  */
-export function fromTeamFile(team: TeamFile): CheckConfig {
+export function fromTeamFile(team: TeamFile, ledger: readonly SeatIdentity[] = []): CheckConfig {
   const { identity } = team;
   return {
     public: team.visibility === 'public',
@@ -53,7 +56,7 @@ export function fromTeamFile(team: TeamFile): CheckConfig {
     since: identity.since ?? undefined,
     forbidden: identity.forbidden,
     forbiddenPublic: identity.forbiddenPublic,
-    ledger: team.seats.map(({ display, role, model, version }) => ({ display, role, model, version })),
+    ledger: mergeLedger(ledger, team.seats),
   };
 }
 
