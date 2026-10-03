@@ -3,12 +3,27 @@
 Set up, change and watch a project's team of AI agents from one file.
 
 `team` is a small command-line tool with no runtime dependencies. A project declares its team in
-`.agents/team.yaml`: the seats, the tools they work with, how each agent signs its work, the
-folders it may work in. Commands then build the team, compare it with the file, watch it and check
-its commits before a push. Version 0.1 runs teams in [herdr](https://herdr.dev).
+`.agents/team.yaml`: the seats, the model each one runs, how each agent signs its work, the rules it
+works under, the folders it may touch. Commands then check that file against a machine, a session
+and a history, and, slice by slice, build and watch the team itself. Version 0.1 runs teams in
+[herdr](https://herdr.dev).
 
-**Status: alpha, in construction.** This build holds the file's parser and validation, the check of
-who is calling, `team check`, `team init`, `team status` and `team watch`. The others arrive slice by slice.
+**Status: alpha, in construction.** This build parses and validates the file, checks who is
+calling, and holds `approve`, `check`, `doctor`, `init`, `status` and `watch`, plus `up` and `down`
+as dry runs that print their plan and change nothing. The commands that launch arrive slice by slice.
+
+## Install, from git until it is on npm
+
+Node 22 or later runs the built command; Bun builds and tests the sources.
+
+```sh
+git clone https://github.com/floor/team.git
+cd team
+bun install
+bun run build
+npm install -g .          # puts `team` on the PATH
+team --version            # 0.1.0-alpha.0
+```
 
 ## The file is private to each clone
 
@@ -22,8 +37,122 @@ yourself.
 
 A documented subset of YAML, read by the library's own parser: maps, lists, one-line `{ }` and
 `[ ]`, plain and quoted values, comments. Anchors, aliases, tags, block scalars, several documents
-in one file and duplicate keys are refused, with the line number. The file starts with
-`format: 1`.
+in one file and duplicate keys are refused, with the line number. The file starts with `format: 1`.
+By example:
+
+```yaml
+format: 1                     # the only format this version reads
+project: hello
+coordinator: claude-coord     # the seat that dispatches work
+operator: claude-coord        # the seat the watch reports to
+
+identity:
+  signature:
+    commits:
+      position: trailer       # last-line | trailer | anywhere
+      exempt: [merge]         # merge commits need no signature
+
+rules:                        # lines added to every seat's rules at launch
+  - Run the tests your change touches, not the whole suite.
+
+workspace:
+  mode: shared                # shared | worktree: the default for every seat
+
+seats:
+  - role: coordinator
+    name: claude-coord
+    cli: claude-code          # the launch profile
+    vendor: anthropic         # the model's maker
+    model: Claude Opus        # the model's name, without its version
+    version: "5.5"            # the release alone, quoted
+    launch: claude --model claude-opus-5-5   # no approval flags: the profile adds them
+
+  - role: implementer
+    name: codex-hello
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    display: GPT-6 Sol        # the vendor's spelling, for the signature
+    launch: codex -m gpt-6-sol -c model_reasoning_effort=high
+    parked: true              # running, and not reported while idle
+
+  - role: implementer
+    name: deepseek-hello
+    cli: claude-code          # DeepSeek's model, run by Claude Code
+    vendor: deepseek
+    model: DeepSeek Flash
+    version: "V4.1"
+    display: DeepSeek V4.1 Flash
+    launch: team-deepseek     # a launcher on the PATH, holding the account's key and endpoint
+    count: 2                  # deepseek-hello and deepseek-hello-2
+
+  - role: reviewer
+    name: grok-hello
+    cli: grok
+    vendor: xai
+    model: Grok
+    version: "4.7"
+    launch: grok --model grok-4.7
+    stopped: true             # kept in the file; `up` doesn't start it
+```
+
+- `session` names the herdr session and defaults to `project`; `--session` overrides it.
+- `coordinator` and `operator` name seats: the coordinator dispatches work, the operator receives
+  the watch's reports and nudges.
+- `identity.signature` is the rule `check` enforces: a template, where it must stand, and which
+  commits are exempt. Commit signatures read `Agent: {display} · {role}`, pull request bodies
+  `**Agent:** {display} · {role}`. Without `display`, the signature reads "model version"; with it,
+  the vendor's own spelling. `identity.since` skips an older history, `identity.humans` lists commit
+  authors who don't sign, and `identity.forbidden` adds to the defaults — `^Claude-Session:` lines
+  and session links are always refused.
+- `seats[*].cli` picks the launch profile; `claude-code` is the one this build has, and `team
+  doctor` says what the others still need. `vendor`, `model` and `version` spell one seat's model.
+- `launch` is the plain command, without approval flags: the profile adds them. `count: 2` makes the
+  numbered names; `parked` keeps a seat out of idle reports, `stopped` keeps it out of `up`.
+- `workspace.mode` is `shared` (every seat in the project) or `worktree` (each task in its own
+  checkout, with `path`, `base` and `setup`).
+
+More fields exist — `tools`, `trust`, `machine`, `limits`, `watch`, `visibility` — and the comments
+`team init` writes name them; validation refuses what it cannot check, and this build acts on what
+the commands below read.
+
+## Commands
+
+| Command | What it does | Who may run it |
+| --- | --- | --- |
+| `team init` | writes the skeleton `.agents/team.yaml` and adds it and its runtime files to `.git/info/exclude` | the owner |
+| `team approve` | reads the whole file back for a last look, then records it, its ceilings and its seats on this machine; `--show` prints it | the owner (`--show`: anyone) |
+| `team check <ref>` | checks one commit, a `a..b` range, or a PR body (`--pr <file>`, `-` reads stdin) against the signature rule; exit 1 when one is refused | anyone; read only |
+| `team doctor` | checks this machine for what the file needs: herdr, each CLI, login, launcher, model, watch heartbeat | anyone; read only |
+| `team status` | prints the file's seats against the running session, each difference with its repair; exit 1 when they differ | anyone; read only |
+| `team up` / `team down` | starts / stops the session and its seats | `up`: the owner; `down`: the owner, the coordinator or the operator seat |
+| `team watch` | watches the session, reports idle seats and nudges the operator; `--no-nudge` and `--no-notify` turn those off | anyone; read only |
+
+The owner is a terminal outside herdr with no agent process above it: a seat, or a script a seat
+runs, cannot approve a file or start a team, and everything else is open to both. Every command that
+reads the file also takes `--file <path>` for a file other than `.agents/team.yaml`.
+
+In this build `up` and `down` run only with `--dry-run`: they print every command they would run,
+and every refusal, and change nothing. `add`, `remove`, `trust` and `worktree` are specified but not
+built yet.
+
+## Your first team in five minutes
+
+```sh
+mkdir hello && cd hello && git init
+team init                  # the owner: writes .agents/team.yaml, private to this clone
+$EDITOR .agents/team.yaml  # name your seats — the example above is a working file
+team approve               # the owner: read the file it prints, then type the seat count
+team doctor                # what this machine still needs
+team up --dry-run          # every command it would run, and every refusal
+```
+
+`team init` writes a skeleton, one seat and lots of comments; it prints how the file stays private,
+and leaves your first commit as a commented `#   since:` line. `team approve` prints the whole file
+back and asks you to type how many seats it holds, so no file approves itself unnoticed. Then
+`doctor` says what is missing on this machine, and `up --dry-run` shows the plan — this build stops
+there and launches nothing.
 
 ## Development
 
@@ -32,10 +161,12 @@ bun install
 bun run typecheck
 bun test
 bun run build        # dist/, which runs on Node 22 or later
+bun run ci           # what CI runs: typecheck, tests, build, then the built command's --version
 ```
 
 Sources import each other with `.ts` extensions and use erasable syntax only, so Node can run them
-directly; `tsc` writes `dist/` for the published command.
+directly; `tsc` writes `dist/` for the published command. CI also runs `team check` on every pull
+request, against the team file the repository keeps at `.github/team.yaml`.
 
 ## License
 
