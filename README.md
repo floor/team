@@ -7,8 +7,8 @@ Set up, change and watch a project's team of AI agents from one file.
 folders it may work in. Commands then build the team, compare it with the file, watch it and check
 its commits before a push. Version 0.1 runs teams in [herdr](https://herdr.dev).
 
-**Status: alpha, in construction.** This build holds the foundation: the file's parser and
-validation, and the check of who is calling. The commands arrive slice by slice.
+**Status: alpha, in construction.** This build holds the file's parser and validation, the check of
+who is calling, `team init` and `team status`. The other commands arrive slice by slice.
 
 ## The file is private to each clone
 

@@ -185,6 +185,11 @@ function checkKey(key: string, rest: string, n: number): { key: string; rest: st
 
 function parseInline(text: string, n: number): YamlNode {
   const c = text[0];
+  // "a: b: c" and "a: - x" are not values in YAML; a full parser refuses them too.
+  if (c !== '"' && c !== "'" && c !== '{' && c !== '[') {
+    if (/: |:$/.test(text)) throw new YamlError(n, 'a value that contains ": " must be quoted');
+    if (isItem(text)) throw new YamlError(n, 'a list can\'t start on its key\'s line: put each "- item" on a line of its own');
+  }
   if (c === '{' || c === '[') {
     const read = readFlow(text, 0, n);
     if (text.slice(read.end).trim()) throw new YamlError(n, `unexpected text after "${c === '{' ? '}' : ']'}"`);

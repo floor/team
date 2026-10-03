@@ -45,3 +45,43 @@ export function paneRootPid(pane: string, session?: string): number | null {
     return null;
   }
 }
+
+export type HerdrWorkspace = { id: string; label: string };
+
+export function workspaceList(session?: string): HerdrWorkspace[] | null {
+  try {
+    const result = run(['workspace', 'list'], session) as { workspaces?: Record<string, unknown>[] };
+    return (result.workspaces ?? []).map((workspace) => ({
+      id: String(workspace.workspace_id),
+      label: typeof workspace.label === 'string' ? workspace.label : '',
+    }));
+  } catch {
+    return null;
+  }
+}
+
+// Whether a session exists and runs: null when herdr can't be reached. "default" is herdr's own.
+export function sessionRunning(name: string): boolean | null {
+  try {
+    const out = execFileSync('herdr', ['session', 'list', '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
+    const sessions = (JSON.parse(out) as { sessions?: { name?: string; running?: boolean }[] }).sessions ?? [];
+    return sessions.some((session) => session.name === name && session.running === true);
+  } catch {
+    return null;
+  }
+}
+
+// The visible lines of a pane, or null. `session` undefined reaches the caller's own server.
+export function paneRead(pane: string, lines: number, session?: string): string | null {
+  try {
+    const full = [...(session ? ['--session', session] : []), 'pane', 'read', pane, '--source', 'visible', '--lines', String(lines)];
+    return execFileSync('herdr', full, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
+  } catch {
+    return null;
+  }
+}
+
+// The words to type for a herdr command, for a repair line.
+export function herdrCommand(session: string | undefined, ...args: string[]): string {
+  return ['herdr', ...(session && session !== 'default' ? ['--session', session] : []), ...args].join(' ');
+}

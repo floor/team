@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { findRoot, loadTeamFile } from '../src/file/load.ts';
@@ -71,6 +71,30 @@ describe('loading the file', () => {
     mkdirSync(other, { recursive: true });
     copyFileSync(example, join(other, 'team.yaml'));
     expect(loadTeamFile(base, { file: 'other/.agents/team.yaml' })).toMatchObject({ ok: true, root: join(base, 'other') });
+  });
+
+  test('a trust pattern that names the project\'s parent by its own name is refused', () => {
+    // The project is <base>/acme-web: "../../<base's name>/*" is every folder beside it.
+    const parent = base.split('/').pop() as string;
+    const text = readFileSync(example, 'utf8')
+      .replace('  - ../worktrees/acme-web/*', `  - ../../${parent}/*`)
+      .replace('path: ../worktrees/{repo}/{task}', `path: ../../${parent}/{task}`);
+    writeFileSync(join(project, '.agents', 'team.yaml'), text);
+    const result = loadTeamFile(project);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const messages = result.errors.map((problem) => problem.message).join('\n');
+    expect(messages).toMatch(/trust: "\.\.\/\.\.\/[^"]+\/\*" names the project's parent/);
+    expect(messages).toMatch(/workspace\.path: .* puts worktrees in the project's parent/);
+  });
+
+  test('a symlink to the project\'s parent is refused as the parent is', () => {
+    symlinkSync(base, join(base, 'alias'));
+    const text = readFileSync(example, 'utf8').replace('  - ../worktrees/acme-web/*', '  - ../worktrees/acme-web/*\n  - ../alias/*');
+    writeFileSync(join(project, '.agents', 'team.yaml'), text);
+    const result = loadTeamFile(project);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors[0]?.message).toMatch(/names the project's parent/);
   });
 
   test('outside a repository and without --file', () => {

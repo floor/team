@@ -57,7 +57,17 @@ const refused: [string, string, number, RegExp][] = [
   ['a list inside a list item', '- - a', 1, /list directly inside/],
   ['an indented first line', '  a: 1', 1, /first line/],
   ['a value that starts with @', 'a: @x', 1, /quote it/],
+  ['a second key on a key\'s line', 'a: b: c', 1, /must be quoted/],
+  ['a value that ends with a colon', 'a: b:', 1, /must be quoted/],
+  ['a list on its key\'s line', 'a: - x', 1, /can't start on its key's line/],
 ];
+
+describe('what the subset refuses, a full parser refuses or reads otherwise', () => {
+  test('"a: b: c" and "a: - x" are errors for Bun.YAML too', () => {
+    expect(() => Bun.YAML.parse('a: b: c')).toThrow();
+    expect(() => Bun.YAML.parse('a: - x')).toThrow();
+  });
+});
 
 describe('everything outside the subset is refused with its line', () => {
   for (const [name, text, line, message] of refused) {
