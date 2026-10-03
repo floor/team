@@ -86,7 +86,8 @@ export function pass(
     const lead = name === team.coordinator || name === team.operator;
     const screen = readScreen(cli, live.screens[agent.pane]);
     const quiet = agent.status === 'idle' || agent.status === 'done';
-    if (!lead && !parked) workers.push({ idle: quiet && screen.kind !== 'permission' && screen.kind !== 'question' });
+    const prompt = screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question';
+    if (!lead && !parked) workers.push({ idle: quiet && !prompt });
 
     if (seat) {
       const running = seatModel(seat, live.screens[agent.pane]);
@@ -96,7 +97,7 @@ export function pass(
     }
 
     // herdr can report a seat at a permission prompt as idle, so the screen decides first.
-    if (screen.kind === 'permission') {
+    if (screen.kind === 'permission' || screen.kind === 'trust') {
       once(`blocked:${name}`, `${name} waits at a permission prompt: its owner's to answer`, 'owner');
     } else if (screen.kind === 'question') {
       once(`question:${name}`, `${name} asked a question: the operator's to act on`);
@@ -106,7 +107,7 @@ export function pass(
       once(`unknown:${name}`, `${name}: herdr reports the status "${agent.status}"`);
     }
 
-    if (!quiet || screen.kind === 'permission' || screen.kind === 'question') {
+    if (!quiet || prompt) {
       delete memory.idleSince[name];
       delete memory.idleTold[name];
       delete memory.unsentSince[name];

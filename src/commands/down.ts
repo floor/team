@@ -112,7 +112,7 @@ export function paneStillRunning(foreground: readonly string[] | null, processNa
 
 export function stateOf(status: string, screen: Screen): DownSeat['state'] {
   if (screen.kind === 'unsent') return 'unsent';
-  if (screen.kind === 'permission' || screen.kind === 'question') return 'blocked';
+  if (screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question') return 'blocked';
   if (screen.kind === 'unknown') return 'unknown';
   if (status === 'idle' || status === 'done') return 'free';
   if (status === 'working' || status === 'blocked') return status;

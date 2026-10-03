@@ -1,6 +1,6 @@
 import type { Step } from './plan.ts';
 
-export type ScreenKind = 'idle' | 'permission' | 'question' | 'unsent' | 'unknown';
+export type ScreenKind = 'idle' | 'permission' | 'trust' | 'question' | 'unsent' | 'unknown';
 
 /** What a live `up` or `down` can do, apart from deciding it. Tests stand in for all of it. */
 export type Host = {
@@ -164,10 +164,10 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           break;
         }
         const deadline = host.now() + op.seconds * 1000;
-        let outcome: 'idle' | 'permission' | 'question' | 'timeout' = 'timeout';
+        let outcome: 'idle' | 'permission' | 'trust' | 'question' | 'timeout' = 'timeout';
         for (;;) {
           const kind = host.classify(session, here.pane, op.cli);
-          if (kind === 'idle' || kind === 'permission' || kind === 'question') {
+          if (kind === 'idle' || kind === 'permission' || kind === 'trust' || kind === 'question') {
             outcome = kind;
             break;
           }
@@ -178,11 +178,16 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         }
         if (outcome === 'idle') break;
         const workspace = here.workspace ?? places.get(op.label)?.workspace;
-        if (outcome === 'permission' || outcome === 'question') {
+        if (outcome === 'permission' || outcome === 'trust' || outcome === 'question') {
+          // A trust question is closed with no key and no text. The same for a permission or a question.
           if (workspace) host.closeWorkspace(session, workspace);
           host.drop(op.seat);
           dropped.add(op.seat);
-          finish(op.seat, `${outcome}; its workspace was closed without input and the seat left out`);
+          const why =
+            outcome === 'trust'
+              ? 'left out: trust question'
+              : `${outcome}; its workspace was closed without input and the seat left out`;
+          finish(op.seat, why);
           break;
         }
         dropped.add(op.seat);

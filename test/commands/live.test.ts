@@ -184,6 +184,21 @@ describe('team up, live', () => {
     expect(seats['deepseek-acme']?.stage).toBe('ready');
   });
 
+  test('a trust dialog closes that workspace without an answer and leaves the seat out', async () => {
+    await approve();
+    const trust = 'Do you trust this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n';
+    const made = world((_pane, label) => (label === 'claude-coordinator-acme' ? trust : IDLE));
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('claude-coordinator-acme: left out: trust question');
+    expect(made.closes).toEqual(['w1']);
+    expect(made.renames).not.toContain('claude-coordinator-acme');
+    expect(made.runs.some((run) => run.command.includes('Yes'))).toBe(false);
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['claude-coordinator-acme']).toBeUndefined();
+  });
+
   test('a seat that never idles stays launched', async () => {
     await approve();
     const made = world('');
@@ -486,74 +501,104 @@ describe('team down, live', () => {
 });
 
 const SCRATCH = 'team-test-up';
+const TRUSTED = join(homedir(), 'team-test-up-trusted');
+const TRUSTED_SHOWN = '~/team-test-up-trusted';
 
-// A new folder makes Claude show its trust dialog. `up` treats that as a permission
-// prompt and closes the workspace without typing. Mark the scratch folder trusted for
-// this run, and take the mark back afterwards. The rest of the file is left as it was.
-function trustScratch(path: string): () => void {
-  const file = join(homedir(), '.claude.json');
-  const before = readFileSync(file, 'utf8');
-  const key = JSON.stringify(path);
-  if (before.includes(key)) return () => {};
-  const at = before.indexOf('"projects"');
-  const brace = before.indexOf('{', at);
-  if (at < 0 || brace < 0) throw new Error('claude config has no projects map; not starting a session');
-  const insert = `\n    ${key}: {"hasTrustDialogAccepted": true},`;
-  writeFileSync(file, before.slice(0, brace + 1) + insert + before.slice(brace + 1));
-  return () => {
-    const now = readFileSync(file, 'utf8');
-    const at = now.indexOf(key);
-    if (at < 0) return;
-    // Claude rewrites the entry while it runs, so the inserted line is gone and the
-    // object has grown. Drop the whole value and keep the rest of the file byte for byte.
-    const brace = now.indexOf('{', at + key.length);
-    if (brace < 0) return;
-    let depth = 0;
-    let end = brace;
-    for (; end < now.length; end++) {
-      const ch = now[end];
-      if (ch === '{') depth++;
-      else if (ch === '}') {
-        depth--;
-        if (depth === 0) {
-          end++;
-          break;
-        }
-      }
-    }
-    let start = at;
-    while (start > 0 && (now[start - 1] === ' ' || now[start - 1] === '\t')) start--;
-    if (start > 0 && now[start - 1] === '\n') start--;
-    let stop = end;
-    if (now[stop] === ',') stop++;
-    if (now[stop] === '\n') stop++;
-    const next = now.slice(0, start) + now.slice(stop);
-    const parsed = JSON.parse(next) as { projects?: Record<string, unknown> };
-    if (parsed.projects && path in parsed.projects) return;
-    writeFileSync(file, next);
-  };
+// Read only. A test never writes ~/.claude.json; the owner trusts the fixed folder by hand.
+function folderTrusted(): boolean {
+  let text: string;
+  try {
+    text = readFileSync(join(homedir(), '.claude.json'), 'utf8');
+  } catch {
+    return false;
+  }
+  let projects: Record<string, { hasTrustDialogAccepted?: boolean } | undefined>;
+  try {
+    projects = (JSON.parse(text) as { projects?: typeof projects }).projects ?? {};
+  } catch {
+    return false;
+  }
+  const keys = new Set<string>([TRUSTED]);
+  try {
+    keys.add(realpathSync(TRUSTED));
+  } catch {
+    // The folder is not there yet. The stored key is the path the owner opens.
+  }
+  for (const key of keys) {
+    if (projects[key]?.hasTrustDialogAccepted === true) return true;
+  }
+  return false;
+}
+
+async function requireMachine(): Promise<void> {
+  const uptime = execFileSync('uptime', { encoding: 'utf8' });
+  const load = Number(/load averages?: ([\d.]+)/.exec(uptime)?.[1] ?? '99');
+  if (!(load < 60)) throw new Error(`load is ${load}; not starting a session`);
+  const pressure = execFileSync('memory_pressure', { encoding: 'utf8' });
+  const memory = parseMemoryPressure(pressure);
+  if (memory === null || memory < 25) throw new Error(`free memory is ${memory}%; not starting a session`);
+  const readSwap = () => parseSwapUsage(execFileSync('sysctl', ['-n', 'vm.swapusage'], { encoding: 'utf8' }));
+  const first = readSwap();
+  await new Promise((resolve) => setTimeout(resolve, 60_000));
+  const second = readSwap();
+  if (!first || !second) throw new Error('swap could not be read; not starting a session');
+  if (second.used > first.used) {
+    throw new Error(`swap used grew from ${first.used} to ${second.used}; not starting a session`);
+  }
+  console.log(`gate load ${load} memory ${memory}% swap used ${first.used} then ${second.used}`);
+}
+
+function cheapFile(): string {
+  const deepseek = [
+    '  - role: implementer',
+    '    name: deepseek-acme',
+    "    cli: claude-code           # DeepSeek's model, run by Claude Code",
+    '    vendor: deepseek',
+    '    model: DeepSeek Flash',
+    '    version: "V4.1"',
+    '    display: DeepSeek V4.1 Flash',
+    '    launch: team-deepseek',
+    '    count: 2                   # deepseek-acme, deepseek-acme-2',
+    '',
+  ].join('\n');
+  const cheap = EXAMPLE.replace('session: acme-web', `session: ${SCRATCH}`)
+    .replace('model: Claude Opus', 'model: Claude Haiku')
+    .replace('version: "5.5"', 'version: "4.5"')
+    .replace('launch: claude --model claude-opus-5-5', 'launch: claude --model claude-haiku-4-5-20251001')
+    .replace('  load_start: 3.0', '  load_start: 60')
+    .replace(
+      "  disk_min: 10GB               # free on the project's volume; both refuse and report",
+      "  disk_min: 10GB               # free on the project's volume; both refuse and report\n  swap_free_min: 1MB",
+    )
+    .replace(deepseek, '');
+  if (cheap.includes('deepseek-acme') || !cheap.includes('claude-haiku-4-5-20251001')) {
+    throw new Error('the scratch file is not the one cheap claude-code seat');
+  }
+  return cheap;
+}
+
+function stopScratch() {
+  const left = sessionState(SCRATCH);
+  if (left !== 'running' && left !== 'stopped') return;
+  try {
+    execFileSync('herdr', ['session', 'stop', SCRATCH], { stdio: 'ignore' });
+  } catch {
+    // already stopped
+  }
+  try {
+    execFileSync('herdr', ['session', 'delete', SCRATCH], { stdio: 'ignore' });
+  } catch {
+    // the test reports the failure above; the session is named so it can be cleared by hand
+  }
 }
 
 describe('scratch session', () => {
   // Opt-in: CI has no herdr. Never team-test, which is another seat's session.
+  // A fresh folder shows Claude's trust question. up leaves the seat out and types nothing.
   test.skipIf(process.env.TEAM_LIVE_UP !== '1')(
-    'launches one cheap seat and stops it',
+    'a fresh folder leaves the seat out: trust question',
     async () => {
-      const uptime = execFileSync('uptime', { encoding: 'utf8' });
-      const load = Number(/load averages?: ([\d.]+)/.exec(uptime)?.[1] ?? '99');
-      if (!(load < 60)) throw new Error(`load is ${load}; not starting a session`);
-      const pressure = execFileSync('memory_pressure', { encoding: 'utf8' });
-      const memory = parseMemoryPressure(pressure);
-      if (memory === null || memory < 25) throw new Error(`free memory is ${memory}%; not starting a session`);
-      const readSwap = () => parseSwapUsage(execFileSync('sysctl', ['-n', 'vm.swapusage'], { encoding: 'utf8' }));
-      const first = readSwap();
-      await new Promise((resolve) => setTimeout(resolve, 60_000));
-      const second = readSwap();
-      if (!first || !second) throw new Error('swap could not be read; not starting a session');
-      if (second.used > first.used) {
-        throw new Error(`swap used grew from ${first.used} to ${second.used}; not starting a session`);
-      }
-
+      await requireMachine();
       const before = sessionState(SCRATCH);
       if (before !== 'absent') throw new Error(`session ${SCRATCH} is ${before}; not touching it`);
 
@@ -562,66 +607,58 @@ describe('scratch session', () => {
       const scratchHome = join(scratch, 'home');
       mkdirSync(join(project, '.agents'), { recursive: true });
       mkdirSync(scratchHome);
-      let untrust = () => {};
-      untrust = trustScratch(realpathSync(project));
-      // One claude-code seat, on the cheapest model. The example's DeepSeek seats are the
-      // other claude-code seats, so they are left out. Nothing is sent beyond that launch;
-      // down's exit is the teardown. The file's own gate still refuses on free swap, and this
-      // run is allowed when swap has not grown, so the scratch file sets a floor under the
-      // free figure and a load ceiling of 60.
-      const deepseek = [
-        '  - role: implementer',
-        '    name: deepseek-acme',
-        '    cli: claude-code           # DeepSeek\'s model, run by Claude Code',
-        '    vendor: deepseek',
-        '    model: DeepSeek Flash',
-        '    version: "V4.1"',
-        '    display: DeepSeek V4.1 Flash',
-        '    launch: team-deepseek',
-        '    count: 2                   # deepseek-acme, deepseek-acme-2',
-        '',
-      ].join('\n');
-      const cheap = EXAMPLE.replace('session: acme-web', `session: ${SCRATCH}`)
-        .replace('model: Claude Opus', 'model: Claude Haiku')
-        .replace('version: "5.5"', 'version: "4.5"')
-        .replace('launch: claude --model claude-opus-5-5', 'launch: claude --model claude-haiku-4-5-20251001')
-        .replace('  load_start: 3.0', '  load_start: 60')
-        .replace(
-          '  disk_min: 10GB               # free on the project\'s volume; both refuse and report',
-          '  disk_min: 10GB               # free on the project\'s volume; both refuse and report\n  swap_free_min: 1MB',
-        )
-        .replace(deepseek, '');
-      if (cheap.includes('deepseek-acme') || !cheap.includes('claude-haiku-4-5-20251001')) {
-        throw new Error('the scratch file is not the one cheap claude-code seat');
-      }
-      writeFileSync(join(project, '.agents/team.yaml'), cheap);
+      writeFileSync(join(project, '.agents/team.yaml'), cheapFile());
       const file = ['--file', join(project, '.agents/team.yaml')];
       const owner = testIo(project, { kind: 'owner' });
       try {
         expect(await runApprove(file, owner, { ask: async () => '3', now: () => new Date(), home: scratchHome })).toBe(0);
         const doctor = upReal.doctor ? { ...upReal.doctor, home: scratchHome } : undefined;
         const upCode = await runUp(file, owner, { ...upReal, home: scratchHome, doctor });
-        expect(upCode).toBe(0);
-        const downCode = await runDown(file, owner, downReal);
-        if (downCode !== 0) throw new Error(`down left this:\n${owner.out}\n${owner.err}`);
-      } finally {
-        const left = sessionState(SCRATCH);
-        if (left === 'running' || left === 'stopped') {
-          try {
-            execFileSync('herdr', ['session', 'stop', SCRATCH], { stdio: 'ignore' });
-          } catch {
-            // already stopped
-          }
-          try {
-            execFileSync('herdr', ['session', 'delete', SCRATCH], { stdio: 'ignore' });
-          } catch {
-            // the test reports the failure above; the session is named so it can be cleared by hand
-          }
+        expect(upCode).toBe(1);
+        if (!owner.out.includes('left out: trust question')) {
+          throw new Error(owner.out.split('\n').slice(-20).join('\n'));
         }
-        untrust();
+        await runDown(file, owner, downReal);
+      } finally {
+        stopScratch();
         rmSync(scratch, { recursive: true, force: true });
       }
     },
     240_000,
   );
+
+  // The idle path runs only in a folder the owner has already trusted. This test never writes that trust.
+  const live = process.env.TEAM_LIVE_UP === '1';
+  if (live && !folderTrusted()) {
+    test.skip(
+      `trust ${TRUSTED_SHOWN} once by hand: accept the workspace trust dialog in Claude; this test only reads ~/.claude.json`,
+      () => {},
+    );
+  } else {
+    test.skipIf(!live)(
+      'launches one cheap seat in the trusted folder and stops it',
+      async () => {
+        await requireMachine();
+        const before = sessionState(SCRATCH);
+        if (before !== 'absent') throw new Error(`session ${SCRATCH} is ${before}; not touching it`);
+        const scratchHome = mkdtempSync(join(tmpdir(), 'team-trusted-home-'));
+        mkdirSync(join(TRUSTED, '.agents'), { recursive: true });
+        writeFileSync(join(TRUSTED, '.agents/team.yaml'), cheapFile());
+        const file = ['--file', join(TRUSTED, '.agents/team.yaml')];
+        const owner = testIo(TRUSTED, { kind: 'owner' });
+        try {
+          expect(await runApprove(file, owner, { ask: async () => '3', now: () => new Date(), home: scratchHome })).toBe(0);
+          const doctor = upReal.doctor ? { ...upReal.doctor, home: scratchHome } : undefined;
+          const upCode = await runUp(file, owner, { ...upReal, home: scratchHome, doctor });
+          expect(upCode).toBe(0);
+          const downCode = await runDown(file, owner, downReal);
+          if (downCode !== 0) throw new Error(`down left this:\n${owner.out}\n${owner.err}`);
+        } finally {
+          stopScratch();
+          rmSync(scratchHome, { recursive: true, force: true });
+        }
+      },
+      240_000,
+    );
+  }
 });
