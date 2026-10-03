@@ -110,3 +110,16 @@ export function pressEnter(pane: string, session?: string): boolean {
 export function agentStatus(pane: string, session?: string): string | null {
   return agentList(session)?.find((agent) => agent.pane === pane)?.status ?? null;
 }
+
+// The herdr versions this version of `team` was run with.
+export const HERDR_TESTED = { from: '0.7.1', to: '0.7.1' };
+
+// What `herdr --version` prints, without the name, or null when herdr can't be run.
+export function herdrVersion(): string | null {
+  try {
+    const out = execFileSync('herdr', ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
+    return out.trim().replace(/^herdr\s+/, '') || null;
+  } catch {
+    return null;
+  }
+}

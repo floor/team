@@ -102,6 +102,18 @@ describe('an approval', () => {
     expect(() => readApproval(store)).toThrow('unknown format 2');
   });
 
+  test('the approved text is in the record itself: one write, never half an approval', () => {
+    const store = storePath('acme-web', home, home);
+    writeApproval(store, { approval: approval(home), file: 'approved\n' }, [opus]);
+    writeFileSync(join(store, 'approved.yaml'), 'edited by hand\n');
+    expect(readApproval(store)?.file).toBe('approved\n');
+    expect(approvedCopy(home, home)).toBe('approved\n');
+    expect(JSON.parse(readFileSync(join(store, 'approval.json'), 'utf8'))).toMatchObject({
+      format: 1,
+      file: 'approved\n',
+    });
+  });
+
   test('a record without its copy counts as no approval', () => {
     const store = storePath('acme-web', home, home);
     mkdirSync(store, { recursive: true });
@@ -186,6 +198,30 @@ describe('a file against its approval', () => {
       .replace('    parked: true', '    parked: false');
     expect(edited).not.toBe(text);
     expect(approvalDifferences(team(edited), home, home)).toEqual([]);
+  });
+
+  test('taking one instance out of a count entry needs no new approval', () => {
+    approve(home);
+    const fewer = text.replace(/\n    count: 2[^\n]*/, '');
+    expect(team(fewer).seats.map((seat) => seat.name)).not.toContain('deepseek-acme-2');
+    expect(approvalDifferences(team(fewer), home, home)).toEqual([]);
+  });
+
+  test('a count entry rewritten as explicit seats needs no new approval', () => {
+    approve(home);
+    const entry =
+      /  - role: implementer\n    name: deepseek-acme\n[\s\S]*?\n    count: 2[^\n]*\n/.exec(text)?.[0] ?? '';
+    const one = entry.replace(/    count: 2[^\n]*\n/, '');
+    const explicit = text.replace(entry, `${one}\n${one.replace('name: deepseek-acme', 'name: deepseek-acme-2')}`);
+    expect(explicit).not.toBe(text);
+    expect(team(explicit).seats.map((seat) => seat.name)).toEqual(team(text).seats.map((seat) => seat.name));
+    expect(approvalDifferences(team(explicit), home, home)).toEqual([]);
+  });
+
+  test('an explicit seat that differs from the approved instance is named', () => {
+    approve(home);
+    const fewer = text.replace(/\n    count: 2[^\n]*/, '\n    count: 3');
+    expect(approvalDifferences(team(fewer), home, home)).toEqual(['seat deepseek-acme-3 is not in the approved file']);
   });
 
   test('the record holds the ceilings and the root', () => {
