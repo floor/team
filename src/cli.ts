@@ -5,6 +5,7 @@ import type { Command, Io } from './io.ts';
 
 // Each command is loaded only when it is called. A slice adds its line here.
 const commands: Record<string, () => Promise<{ default: Command }>> = {
+  check: () => import('./commands/check.ts'),
   init: () => import('./commands/init.ts'),
   status: () => import('./commands/status.ts'),
 };

@@ -94,6 +94,27 @@ function pause(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+// Removes a lock whose holder is dead. Two commands may see the same dead holder: the lock is
+// moved aside first, which only one of them can do, and put back if it turns out to be a fresh
+// one that another command took in between.
+function takeOver(path: string, holder: number): boolean {
+  const aside = `${path}.${process.pid}.stale`;
+  try {
+    renameSync(path, aside);
+  } catch {
+    return false;
+  }
+  const found = Number(readFileSync(aside, 'utf8').trim());
+  if (found !== holder && Number.isInteger(found) && found > 0 && alive(found)) {
+    try {
+      renameSync(aside, path);
+    } catch {}
+    return false;
+  }
+  unlinkSync(aside);
+  return true;
+}
+
 // One writer at a time. The lock file holds its holder's pid; a lock whose holder is dead is
 // taken over, and `onStale` is told.
 export function withLock<T>(dir: string, work: () => T, options: { waitMs?: number; onStale?: (pid: number) => void } = {}): T {
@@ -124,10 +145,7 @@ export function withLock<T>(dir: string, work: () => T, options: { waitMs?: numb
         pause(20);
         continue;
       }
-      try {
-        unlinkSync(path);
-      } catch {}
-      options.onStale?.(holder);
+      if (takeOver(path, holder)) options.onStale?.(holder);
     }
   }
   try {

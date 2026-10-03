@@ -112,7 +112,7 @@ export const init: Command = async (argv, io) => {
   }
   if (existsSync(path)) {
     exclude(root);
-    io.stderr(`team init: ${TEAM_FILE} exists already; it is left as it is\n`);
+    io.stderr(`team init: ${TEAM_FILE} exists already; it is left as it is. Its lines in .git/info/exclude were checked, and added where missing.\n`);
     return 1;
   }
 
