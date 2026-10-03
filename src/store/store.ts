@@ -111,16 +111,11 @@ export interface ApprovalRecord {
 
 /** The approval for this project, or null when the owner has approved nothing here. */
 export function readApproval(store: string): ApprovalRecord | null {
-  const approval = readJson<Approval>(join(store, APPROVAL));
-  if (approval === null) return null;
-  if (approval.format !== 1) throw new Error(`${join(store, APPROVAL)}: unknown format ${String(approval.format)}`);
-  let file: string;
-  try {
-    file = readFileSync(join(store, APPROVED_FILE), 'utf8');
-  } catch {
-    return null;
-  }
-  return { approval, file };
+  const stored = readJson<Approval & { file?: unknown }>(join(store, APPROVAL));
+  if (stored === null) return null;
+  if (stored.format !== 1) throw new Error(`${join(store, APPROVAL)}: unknown format ${String(stored.format)}`);
+  const { file, ...approval } = stored;
+  return typeof file === 'string' ? { approval, file } : null;
 }
 
 /** The ledger: every `display` and `role` the team has had. */
@@ -143,13 +138,14 @@ export function mergeLedger(ledger: readonly LedgerEntry[], seats: readonly Ledg
 }
 
 /**
- * Records an approval. The record, whose fingerprints are what lets a file
- * run, is written last: a write that stops halfway leaves the earlier
- * approval in force.
+ * Records an approval. The fingerprints that let a file run and the text they
+ * are of go in one file, in one atomic write, so a write that stops halfway
+ * leaves the earlier approval whole. `approved.yaml` is a copy for the owner
+ * to read, and is never read back.
  */
 export function writeApproval(store: string, record: ApprovalRecord, seats: readonly LedgerEntry[]): void {
   mkdirSync(store, { recursive: true, mode: 0o700 });
   writeAtomic(join(store, LEDGER), `${JSON.stringify(mergeLedger(readLedger(store), seats), null, 2)}\n`);
+  writeAtomic(join(store, APPROVAL), `${JSON.stringify({ ...record.approval, file: record.file }, null, 2)}\n`);
   writeAtomic(join(store, APPROVED_FILE), record.file);
-  writeAtomic(join(store, APPROVAL), `${JSON.stringify(record.approval, null, 2)}\n`);
 }
