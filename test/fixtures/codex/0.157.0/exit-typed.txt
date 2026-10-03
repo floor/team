@@ -1,0 +1,23 @@
+╰───────────────────────────────────────────────────╯
+
+  Tip: Use /keymap to configure keyboard shortcuts.
+
+⚠ Heads up, you have less than 25% of your weekly
+  limit left. Run /status for a breakdown.
+
+
+› Rules for this session, from the team file:
+  - Do not use tools or edit files.
+  - Do not change trust or configuration.
+  - Reply only RULES_RECEIVED, then wait.
+
+
+• RULES_RECEIVED
+
+  21:17
+
+› /exit  exit Codex
+
+› /exit
+
+  GPT-5.6-Terra medium · Context 98% left · weekly 1…

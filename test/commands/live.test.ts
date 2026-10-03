@@ -14,7 +14,7 @@ import { parseMemoryPressure, parseSwapUsage } from '../../src/watch/machine.ts'
 import type { Screen } from '../../src/watch/screen.ts';
 import { testIo } from '../helpers.ts';
 
-const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8');
+const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8').replace('parked: true', 'stopped: true');
 const FILE = ['--file', '.agents/team.yaml'];
 const NOW = new Date('2026-10-03T14:02:00Z');
 const IDLE = '❯ \n';
@@ -144,6 +144,46 @@ function sources(extra: Partial<UpSources>, made: World): UpSources {
 }
 
 describe('team up, live', () => {
+  test.each(['accepted', 'trust', 'startup', 'swallowed'] as const)('Codex first-message rules: %s', async (outcome) => {
+    const path = join(root, '.agents/team.yaml');
+    writeFileSync(path, EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+    await approve();
+    const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
+    const made = world((_pane, label) => label === 'codex-acme'
+      ? capture(outcome === 'trust' || outcome === 'startup' ? outcome : 'idle') : IDLE);
+    let codexPane = '';
+    let status = 'idle';
+    const sent: string[] = [];
+    const read = made.launch.paneText;
+    let pasted = false;
+    made.launch.agentStatus = () => status;
+    made.launch.typeText = (_session, pane, text) => { codexPane = pane; sent.push(text); pasted = true; return true; };
+    made.launch.pressEnter = () => { sent.push('Enter'); if (outcome === 'accepted') { status = 'working'; pasted = false; } return true; };
+    made.launch.paneText = (session, pane) => pane === codexPane
+      ? capture(pasted ? 'unsent' : 'working') : read(session, pane);
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({}, made));
+    const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['codex-acme'];
+    if (outcome === 'accepted') {
+      expect(code).toBe(0);
+      expect(seat).toMatchObject({ stage: 'ready', rules: 'message' });
+      expect(sent[0]).toContain('Agent: GPT-6 Sol · implementer');
+      expect(sent[1]).toBe('Enter');
+      expect(made.runs.some(({ command }) => command.startsWith('Rules for this session'))).toBe(false);
+    } else if (outcome === 'swallowed') {
+      expect(code).toBe(1);
+      expect(seat?.stage).toBe('named');
+      expect(seat?.rules).toBeUndefined();
+      expect(io.out).toContain('its rules were not delivered; left at named');
+    } else {
+      expect(code).toBe(1);
+      expect(sent).toEqual([]);
+      expect(seat).toBeUndefined();
+      expect(made.closes).toContain('w2');
+      expect(made.renames).not.toContain('codex-acme');
+    }
+  });
+
   test('launches each claude-code seat, names it, and starts the watch', async () => {
     await approve();
     const made = world();

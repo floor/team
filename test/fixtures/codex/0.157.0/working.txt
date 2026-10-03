@@ -1,0 +1,23 @@
+│ model:       GPT-5.6-Terra medium   /model to ch… │
+│ directory:   ~/project                         │
+│ permissions: YOLO mode                            │
+╰───────────────────────────────────────────────────╯
+
+  Tip: Use /keymap to configure keyboard shortcuts.
+
+⚠ Heads up, you have less than 25% of your weekly
+  limit left. Run /status for a breakdown.
+
+
+› Rules for this session, from the team file:
+  - Do not use tools or edit files.
+  - Do not change trust or configuration.
+  - Reply only RULES_RECEIVED, then wait.
+
+
+• Working (0s • esc to interrupt)
+
+
+› Ask Codex to do anything
+
+  GPT-5.6-Terra medium · …  ⚠ 1 warning · f2 to view
