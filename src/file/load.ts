@@ -49,10 +49,12 @@ export function loadTeamFile(cwd: string, options: { file?: string } = {}): Load
       }],
     };
   }
-  const result = validateTeamFile(readFileSync(path, 'utf8'));
+  // One read. Callers that store the text (approve) use this string, the one that was validated.
+  const text = readFileSync(path, 'utf8');
+  const result = validateTeamFile(text);
   if (!result.ok) return { ...result, path };
   const errors = placedProblems(result.team, root);
-  return errors.length ? { ok: false, errors, path } : { ...result, root, path };
+  return errors.length ? { ok: false, errors, path } : { ...result, root, path, text };
 }
 
 function real(path: string): string {

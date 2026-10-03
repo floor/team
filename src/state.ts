@@ -7,6 +7,8 @@ import { join } from 'node:path';
 export type SeatState = {
   stage: 'launched' | 'named' | 'ready';
   pane?: string;
+  /** The herdr workspace, so a later command can close it without listing agents. */
+  workspace?: string;
   cli_version?: string;
   rules?: 'option' | 'message' | 'undelivered';
   worked?: boolean;

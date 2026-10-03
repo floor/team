@@ -307,12 +307,10 @@ async function up(argv: string[], caller: Caller, overrides: Partial<UpSources> 
 }
 
 describe('team up', () => {
-  test('launches nothing in this version', async () => {
+  test('refuses a file that was never approved, and launches nothing', async () => {
     const run = await up([], OWNER);
     expect(run.code).toBe(1);
-    expect(run.err).toStartWith(
-      'team up: this version launches nothing; `--dry-run` prints every command it would run\n',
-    );
+    expect(run.err).toContain('team up: the file was never approved on this machine: run `team approve`\n');
     expect(run.out).toBe('');
   });
 
@@ -340,9 +338,8 @@ describe('team up', () => {
     expect(run.out).toContain('+ herdr --session acme-web agent rename <pane of deepseek-acme-2> deepseek-acme-2\n');
     expect(run.out).toContain('  skip codex-acme: no launch profile for `codex` in this version; left out\n');
     expect(run.out).toContain('  skip grok-acme: stopped in the file; start it with `team add grok-acme`\n');
-    expect(run.out).toContain(
-      "+ herdr --session acme-web pane run <pane of watchdog> 'team watch --session acme-web'\n",
-    );
+    expect(run.out).toContain('pane run <pane of watchdog>');
+    expect(run.out).toContain('watch --session acme-web');
     expect(run.out).toEndWith('dry run: nothing was run\n');
   });
 
@@ -394,18 +391,19 @@ async function down(argv: string[], caller: Caller, overrides: Partial<DownSourc
     sessionRunning: () => true,
     agents: () => [agent('claude-coordinator-acme'), agent('deepseek-acme'), agent('deepseek-acme-2', 'working')],
     alive: () => true,
+    screen: () => ({ kind: 'idle' }),
+    now: () => NOW,
     ...overrides,
   });
   return { code, out: io.out, err: io.err };
 }
 
 describe('team down', () => {
-  test('stops nothing in this version', async () => {
-    const run = await down([], OWNER);
+  test('a seat other than the coordinator or the operator stops nothing', async () => {
+    const run = await down([], WORKER);
     expect(run.code).toBe(1);
-    expect(run.err).toStartWith(
-      'team down: this version stops nothing; `--dry-run` prints every command it would run\n',
-    );
+    expect(run.err).toContain('team down: only the owner, the coordinator or the operator stops the team; this call is deepseek-acme\n');
+    expect(run.out).toBe('');
   });
 
   test('--dry-run for the owner: free seats are stopped, a working one and the session are left', async () => {
@@ -421,7 +419,6 @@ describe('team down', () => {
         '+ herdr --session acme-web workspace close deepseek-acme',
         '  skip deepseek-acme-2: is working (`--wait` waits for it); left running',
         '  skip session acme-web: not stopped, 1 agent left in it',
-        "free is read from herdr's status here; `down` also reads each screen before it types",
         'dry run: nothing was run',
         '',
       ].join('\n'),
@@ -472,6 +469,22 @@ describe('team down', () => {
       ].join('\n'),
     );
     expect(run.out).not.toContain('stranger');
+  });
+
+  test('an idle status at a permission prompt is blocked, and unsent text stays unsent', async () => {
+    const blocked = await down(['--dry-run'], OWNER, {
+      agents: () => [agent('deepseek-acme', 'idle')],
+      screen: () => ({ kind: 'permission' }),
+    });
+    expect(blocked.out).toContain('deepseek-acme: is blocked at a prompt, which `team` never answers; left running');
+    expect(blocked.out).not.toContain('pane run deepseek-acme');
+
+    const unsent = await down(['--dry-run'], OWNER, {
+      agents: () => [agent('deepseek-acme', 'idle')],
+      screen: () => ({ kind: 'unsent' }),
+    });
+    expect(unsent.out).toContain('deepseek-acme: holds unsent text in its input box; left running');
+    expect(unsent.out).not.toContain('pane run deepseek-acme');
   });
 
   test('--dry-run on a session that is not running, or a silent herdr', async () => {

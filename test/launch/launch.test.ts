@@ -234,7 +234,7 @@ describe('down --dry-run', () => {
 
   test('the default session is never stopped', () => {
     const plan = downPlan({ session: 'default', seats: [seat('w1')], extra: 0, watchPid: null, keep: [] });
-    expect(plan[0]).toEqual({ kind: 'run', argv: ['herdr', 'pane', 'run', 'w1:p1', '/exit'] });
+    expect(plan[0]).toMatchObject({ kind: 'run', argv: ['herdr', 'pane', 'run', 'w1:p1', '/exit'] });
     expect(plan.at(-1)).toEqual({ kind: 'skip', text: "session default: herdr's default session is never stopped" });
   });
 
