@@ -9,6 +9,7 @@ export type Host = {
   createWorkspace(session: string, cwd: string, label: string): { pane: string; workspace: string } | null;
   paneRun(session: string, pane: string, command: string): boolean;
   typeLine(session: string, pane: string, text: string): boolean;
+  deliverRules?(session: string, pane: string, cli: string, text: string, seconds: number): Promise<boolean>;
   renameAgent(session: string, pane: string, name: string): boolean;
   closeWorkspace(session: string, workspace: string): boolean;
   stopSession(session: string): boolean;
@@ -221,7 +222,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
       }
       case 'deliver': {
         const here = place(op.label, op.pane);
-        if (!here || !host.paneRun(session, here.pane, op.rules)) {
+        if (!here || !await host.deliverRules?.(session, here.pane, op.cli, op.rules, op.seconds)) {
           dropped.add(op.seat);
           finish(op.seat, 'its rules were not delivered; left at named');
           break;

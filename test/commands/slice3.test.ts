@@ -180,7 +180,7 @@ describe('team check, after an approval', () => {
 
 function doctorSources(overrides: Partial<DoctorSources> = {}): DoctorSources {
   return {
-    version: (binary) => (binary === 'claude' ? '2.1.288 (Claude Code)' : null),
+    version: (binary) => (binary === 'claude' ? '2.1.288 (Claude Code)' : binary === 'codex' ? 'codex-cli 0.157.0' : null),
     onPath: (binary) => binary === 'team-deepseek',
     loggedIn: () => true,
     herdrVersion: () => '0.7.1',
@@ -217,9 +217,10 @@ describe('team doctor', () => {
         'ok    claude-code: logged in',
         'warn  deepseek-acme: the launch names no model this version knows; the file says DeepSeek Flash V4.1',
         'warn  deepseek-acme-2: the launch names no model this version knows; the file says DeepSeek Flash V4.1',
-        'warn  codex: no launch profile in this version; `up` leaves out codex-acme',
+        'ok    codex codex-cli 0.157.0',
+        'ok    codex: logged in',
         '--    trust: not applied or checked by this version; trust each folder by hand',
-        'team doctor: nothing missing, 3 warnings',
+        'team doctor: nothing missing, 2 warnings',
         '',
       ].join('\n'),
     );
@@ -244,7 +245,7 @@ describe('team doctor', () => {
     expect(out.out).toContain('MISS  log in to claude-code: `claude auth login`\n');
     expect(out.out).toContain('MISS  deepseek-acme: its launcher `team-deepseek` is not on the PATH\n');
     expect(out.out).toContain(
-      'team doctor: 3 missing, 3 warnings: `up` and `add` refuse until the missing ones are done\n',
+      'team doctor: 4 missing, 2 warnings: `up` and `add` refuse until the missing ones are done\n',
     );
     expect(out.code).toBe(1);
   });
@@ -357,7 +358,8 @@ describe('team up', () => {
     expect(run.out).toContain('- Run a script with its interpreter; never chmod, chown, sudo or recursive rm.\n');
     expect(run.out).toContain('AGENT_UNATTENDED=1 team-deepseek --dangerously-skip-permissions --append-system-prompt');
     expect(run.out).toContain('+ herdr --session acme-web agent rename <pane of deepseek-acme-2> deepseek-acme-2\n');
-    expect(run.out).toContain('  skip codex-acme: no launch profile for `codex` in this version; left out\n');
+    expect(run.out).toContain('AGENT_UNATTENDED=1 codex -m gpt-6-sol -c model_reasoning_effort=high -a never -s danger-full-access');
+    expect(run.out).toContain('pane send-text <pane of codex-acme>');
     expect(run.out).toContain('  skip grok-acme: stopped in the file; start it with `team add grok-acme`\n');
     expect(run.out).toContain('pane run <pane of watchdog>');
     expect(run.out).toContain('watch --session acme-web');
@@ -484,7 +486,7 @@ describe('team down', () => {
         '+ herdr --session acme-web pane run deepseek-acme-tmp-1:p1 /exit',
         "  wait until deepseek-acme-tmp-1's pane is back at its shell (30 s at most); on a time-out it is left as it is",
         '+ herdr --session acme-web workspace close deepseek-acme-tmp-1',
-        '  skip codex-acme: no launch profile for `codex` in this version; left running',
+        '  skip codex-acme: is blocked at a prompt, which `team` never answers; left running',
         '+ kill 4242',
         '    (the watch)',
         '  skip session acme-web: not stopped, 3 agents left in it',
