@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runApprove } from '../../src/commands/approve.ts';
 import { realSources as downReal, runDown, type DownLaunch, type DownSources } from '../../src/commands/down.ts';
@@ -487,6 +487,25 @@ describe('team down, live', () => {
 
 const SCRATCH = 'team-test-up';
 
+// A new folder makes Claude show its trust dialog. `up` treats that as a permission
+// prompt and closes the workspace without typing. Mark the scratch folder trusted for
+// this run, and take the mark back afterwards. The rest of the file is left as it was.
+function trustScratch(path: string): () => void {
+  const file = join(homedir(), '.claude.json');
+  const before = readFileSync(file, 'utf8');
+  const key = JSON.stringify(path);
+  if (before.includes(key)) return () => {};
+  const at = before.indexOf('"projects"');
+  const brace = before.indexOf('{', at);
+  if (at < 0 || brace < 0) throw new Error('claude config has no projects map; not starting a session');
+  const insert = `\n    ${key}: {"hasTrustDialogAccepted": true},`;
+  writeFileSync(file, before.slice(0, brace + 1) + insert + before.slice(brace + 1));
+  return () => {
+    const now = readFileSync(file, 'utf8');
+    if (now.includes(insert)) writeFileSync(file, now.replace(insert, ''));
+  };
+}
+
 describe('scratch session', () => {
   // Opt-in: CI has no herdr. Never team-test, which is another seat's session.
   test.skipIf(process.env.TEAM_LIVE_UP !== '1')(
@@ -515,6 +534,8 @@ describe('scratch session', () => {
       const scratchHome = join(scratch, 'home');
       mkdirSync(join(project, '.agents'), { recursive: true });
       mkdirSync(scratchHome);
+      let untrust = () => {};
+      untrust = trustScratch(realpathSync(project));
       // One claude-code seat, on the cheapest model. The example's DeepSeek seats are the
       // other claude-code seats, so they are left out. Nothing is sent beyond that launch;
       // down's exit is the teardown. The file's own gate still refuses on free swap, and this
@@ -569,6 +590,7 @@ describe('scratch session', () => {
             // the test reports the failure above; the session is named so it can be cleared by hand
           }
         }
+        untrust();
         rmSync(scratch, { recursive: true, force: true });
       }
     },
