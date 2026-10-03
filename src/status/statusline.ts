@@ -8,6 +8,20 @@ export type Running = { model: string; version: string };
 type Normalise = (screen: string) => Running | null;
 
 const NORMALISERS: Record<string, Normalise> = {
+  antigravity: (screen) => {
+    let found: Running | null = null;
+    for (const line of screen.split('\n').slice(-6)) {
+      const match = /(?:^|[\s·|])Gemini\s+([0-9]+(?:\.[0-9]+)*)\s+(Flash|Pro)\b/i.exec(line);
+      if (match && match[1] && match[2]) {
+        const family = match[2];
+        found = {
+          model: `Gemini ${family[0]?.toUpperCase()}${family.slice(1).toLowerCase()}`,
+          version: match[1],
+        };
+      }
+    }
+    return found;
+  },
   codex: (screen) => {
     const footer = screen.split('\n').slice(-6).findLast((line) => /^\s+GPT-\d[\w.-]*\s+[^·]*·/.test(line));
     const id = footer?.trim().split(/\s/)[0];
