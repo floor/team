@@ -21,6 +21,13 @@ describe('the watch closing a temporary seat', () => {
     const seen = judgeTemporary({ worked: true, free: true, ownBefore: false, end: still });
     expect(seen.close).toBe(false);
     expect(seen.ownCommits).toBe(true);
+    expect(seen.report).toBeUndefined();
+    const squash = judgeTemporary({
+      worked: true, free: true, ownBefore: true,
+      end: { kind: 'merged', verdict: 'open', detail: 'merged? not provable', ownNow: 1 },
+    });
+    expect(squash.close).toBe(false);
+    expect(squash.report).toBe('merged? not provable');
     expect(judgeTemporary({ worked: true, free: true, ownBefore: true, end: unproven }).report).toContain('fetch failed');
   });
 });
@@ -32,6 +39,11 @@ describe('the watch removing a merged worktree', () => {
     expect(judgeWorktree({ policy: 'on-merge', occupied: false, ownBefore: false, end: merged }).close).toBe(false);
     expect(judgeWorktree({ policy: 'on-merge', occupied: false, ownBefore: true, end: merged }).close).toBe(true);
     expect(judgeWorktree({ policy: 'on-merge', occupied: false, ownBefore: false, end: still }).ownCommits).toBe(true);
+    expect(judgeWorktree({ policy: 'on-merge', occupied: false, ownBefore: false, end: still }).report).toBeUndefined();
+    expect(judgeWorktree({
+      policy: 'on-merge', occupied: false, ownBefore: true,
+      end: { kind: 'merged', verdict: 'open', detail: 'merged? not provable', ownNow: 1 },
+    }).report).toBe('merged? not provable');
     expect(judgeWorktree({ policy: 'on-merge', occupied: false, ownBefore: true, end: unproven }).report).toContain('fetch failed');
     expect(judgeWorktree({ policy: 'on-merge', occupied: false, ownBefore: false, end: open }).close).toBe(false);
     expect(judgeWorktree({ policy: 'on-merge', occupied: false, ownBefore: false, end: open }).report).toBeUndefined();

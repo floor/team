@@ -172,8 +172,8 @@ export function markStopped(text: string, name: string): string {
   if (!ready) return text;
   const lines = body(ready.text, ready.block);
   if (lines.some((line) => /^\s*stopped:\s*(true|yes)\b/.test(line))) return ready.text;
-  const named = lines.find((line) => /^\s*name:/.test(line)) ?? lines[0] ?? '';
-  const pad = ' '.repeat(indent(named));
+  const nested = lines.find((line) => /^\s+[A-Za-z0-9_-]+:/.test(line));
+  const pad = ' '.repeat(nested ? indent(nested) : indent(lines[0] ?? '') + 2);
   lines.splice(fieldEnd(lines), 0, `${pad}stopped: true`);
   return replaceLines(ready.text, ready.block.start, ready.block.end, lines);
 }

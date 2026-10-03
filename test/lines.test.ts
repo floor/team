@@ -93,6 +93,11 @@ seats:
     const restored = restoreSeat(gone, text, 'helper');
     expect(hasSeat(restored, 'helper')).toBe(true);
     expect(restored).toContain('- name: helper');
+    expect(takeOut(text, 'helper')).not.toContain('helper');
+    const stopped = markStopped(text.replace('    stopped: true\n', ''), 'helper');
+    expect(hasSeat(stopped, 'helper')).toBe(true);
+    expect(seatIsStopped(stopped, 'helper')).toBe(true);
+    expect(stopped).toContain('\n    stopped: true\n');
   });
 
   test('restoring one removed instance of a count entry inserts that instance only', () => {
@@ -121,7 +126,7 @@ seats:
 `;
     const split = rewriteCount(approved, 'ds');
     expect(split).not.toBeNull();
-    const removed = without(split ?? '', 'ds-2');
+    const removed = takeOut(split ?? '', 'ds-2');
     const restored = restoreSeat(removed, approved, 'ds-2');
     const names = seatBlocks(restored).map((block) => block.name);
     expect(names.filter((name) => name === 'ds')).toHaveLength(1);

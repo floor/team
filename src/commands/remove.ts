@@ -1,9 +1,10 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { markStopped, takeOut } from '../file/lines.ts';
+import { writeTeamFile } from '../file/write.ts';
 import { paneForeground } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { executePlan } from '../launch/execute.ts';
@@ -122,11 +123,19 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   }
 
   if (!temporary) {
-    withLock(dir, () => {
+    const refused = withLock(dir, () => {
       const text = readFileSync(path, 'utf8');
       const next = args.flags.has('keep') ? markStopped(text, name) : takeOut(text, name);
-      if (next !== text) writeFileSync(path, next);
+      if (next === text) return null;
+      const wrote = writeTeamFile(path, next);
+      return wrote.ok ? null : wrote.errors;
     });
+    if (refused) {
+      for (const problem of refused) {
+        io.stderr(`team remove: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
+      }
+      return 2;
+    }
   }
   if (!agent && recorded) {
     updateState(dir, (file) => {

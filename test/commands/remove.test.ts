@@ -163,7 +163,7 @@ describe('team remove', () => {
     expect(abandon.err).toContain('only the owner abandons');
   });
 
-  test('--abandon closes a blocked seat without typing, and the owner may remove the coordinator', async () => {
+  test('--abandon closes a blocked seat without typing, and taking out the coordinator is refused', async () => {
     const made = world({ kind: 'permission' }, 'idle');
     made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
     expect(await runRemove(['worker', '--abandon', '--file', file], testIo(dir, owner), made.sources)).toBe(0);
@@ -173,8 +173,10 @@ describe('team remove', () => {
     const leadRun = world();
     leadRun.running.push(false);
     leadRun.agents.push({ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null });
-    expect(await runRemove(['lead', '--file', file], testIo(dir, owner), leadRun.sources)).toBe(0);
-    expect(readFileSync(file, 'utf8')).not.toContain('name: lead');
+    const leadIo = testIo(dir, owner);
+    expect(await runRemove(['lead', '--file', file], leadIo, leadRun.sources)).toBe(2);
+    expect(leadIo.err).toContain('names no declared seat');
+    expect(readFileSync(file, 'utf8')).toContain('name: lead');
   });
 
   test('a temporary seat is stopped and not written into the file', async () => {

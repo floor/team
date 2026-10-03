@@ -21,7 +21,7 @@ export function judgeTemporary(input: {
     if (!input.end.exists || !input.worked || !input.free) return { close: false };
     return { close: true };
   }
-  if (input.end.ownNow > 0) return { close: false, ownCommits: true };
+  if (input.end.ownNow > 0) return openBranch(input.end.detail);
   if (input.end.verdict === 'unproven') return { close: false, report: input.end.detail };
   if (!input.ownBefore || !input.worked || !input.free) return { close: false };
   if (input.end.verdict === 'merged') return { close: true };
@@ -36,9 +36,19 @@ export function judgeWorktree(input: {
 }): CloseDecision {
   if (input.policy !== 'on-merge') return { close: false };
   if (input.end.kind !== 'merged') return { close: false };
-  if (input.end.ownNow > 0) return { close: false, ownCommits: true };
+  if (input.end.ownNow > 0) return openBranch(input.end.detail);
   if (input.end.verdict === 'unproven') return { close: false, report: input.end.detail };
   if (!input.ownBefore || input.occupied) return { close: false };
   if (input.end.verdict === 'merged') return { close: true };
   return { close: false };
+}
+
+// A squash leaves commits on the branch while its tree matches the base. That is reported once,
+// the same way a failed fetch is, and nothing is closed.
+function openBranch(detail: string): CloseDecision {
+  return {
+    close: false,
+    ownCommits: true,
+    ...(detail.includes('not provable') ? { report: detail } : {}),
+  };
 }
