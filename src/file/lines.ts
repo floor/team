@@ -196,6 +196,11 @@ export function restoreSeat(current: string, approved: string, name: string): st
   const currentBlocks = seatBlocks(current);
   let insertAt = header + 1;
   let placed = false;
+  const among = siblingSlot(currentBlocks, source, name);
+  if (among !== null) {
+    insertAt = among;
+    placed = true;
+  }
   for (let i = at - 1; i >= 0 && !placed; i--) {
     const neighbour = approvedBlocks[i];
     const found = neighbour ? currentBlocks.find((block) => block.name === neighbour.name) : undefined;
@@ -218,6 +223,39 @@ export function restoreSeat(current: string, approved: string, name: string): st
   }
   lines.splice(insertAt, 0, ...inserting);
   return lines.join('\n');
+}
+
+/** Where a restored instance sits among the copies of the same count entry that are still in the file. */
+function siblingSlot(currentBlocks: SeatBlock[], source: SeatBlock, name: string): number | null {
+  if (source.count <= 1 || !source.name) return null;
+  const mine = instanceNumber(source.name, name);
+  if (mine === null) return null;
+  let lower: SeatBlock | null = null;
+  let lowerN = 0;
+  let higher: SeatBlock | null = null;
+  let higherN = Number.POSITIVE_INFINITY;
+  for (const block of currentBlocks) {
+    if (!block.name || !expanded(source).includes(block.name)) continue;
+    const n = instanceNumber(source.name, block.name);
+    if (n === null) continue;
+    if (n < mine && n > lowerN) {
+      lower = block;
+      lowerN = n;
+    } else if (n > mine && n < higherN) {
+      higher = block;
+      higherN = n;
+    }
+  }
+  if (lower) return lower.end;
+  return higher ? higher.start : null;
+}
+
+function instanceNumber(declared: string, name: string): number | null {
+  if (name === declared) return 1;
+  const prefix = `${declared}-`;
+  if (!name.startsWith(prefix)) return null;
+  const rest = name.slice(prefix.length);
+  return /^\d+$/.test(rest) ? Number(rest) : null;
 }
 
 // A counted approved entry is one block for every instance. Restoring one of them inserts that

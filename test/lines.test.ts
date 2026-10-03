@@ -129,9 +129,7 @@ seats:
     const removed = takeOut(split ?? '', 'ds-2');
     const restored = restoreSeat(removed, approved, 'ds-2');
     const names = seatBlocks(restored).map((block) => block.name);
-    expect(names.filter((name) => name === 'ds')).toHaveLength(1);
-    expect(names.filter((name) => name === 'ds-2')).toHaveLength(1);
-    expect(names.filter((name) => name === 'ds-3')).toHaveLength(1);
+    expect(names).toEqual(['lead', 'ds', 'ds-2', 'ds-3']);
     expect(restored).not.toContain('count:');
     expect(validateTeamFile(restored).ok).toBe(true);
   });
