@@ -22,6 +22,17 @@ export function antigravityComposer(lines: string[]): Screen {
     if (confirmIdx > lastRule) return { kind: 'trust' };
   }
 
+  // A permission dialog requesting command confirmation.
+  const hasPermissionReq = /Requesting permission for:/i.test(text);
+  const hasPermissionChoice = lines.some((line) => /^\s*>\s*[0-9]\.\s+Yes\b/i.test(line));
+  const hasPermissionNav = lines.some((line) => /↑\/↓ Navigate/i.test(line));
+
+  if (hasPermissionReq && hasPermissionChoice && hasPermissionNav) {
+    const lastRule = lines.findLastIndex((line) => /^\s*[─━]{8,}\s*$/.test(line));
+    const navIdx = lines.findLastIndex((line) => /↑\/↓ Navigate/i.test(line));
+    if (navIdx > lastRule) return { kind: 'permission' };
+  }
+
   // The bottom border of the composer box
   let bottomBorder = -1;
   let topBorder = -1;

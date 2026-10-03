@@ -14,6 +14,9 @@ the default session had nine agents before and after. Config and auth hashes wer
   with the composer empty again. The model response was `RULES_RECEIVED`.
 - `exit-typed.txt`, `exit.txt`: `/exit` typed at idle, read back, then submitted.
   Herdr subsequently listed zero agents and the foreground process was `zsh`.
+- `permission.txt`: reconstructed from an operator's quote of a real pane, not a capture
+  (the line widths are approximate). A command permission prompt (`Requesting permission for:`
+  with numbered options, navigation footer, and model statusline).
 
 Paths, user email, plan, and conversation UUID are replaced with placeholders. Shell launch scrollback
 before Antigravity's header banner is removed. All other visible text is retained, including the
