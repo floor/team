@@ -2,14 +2,34 @@ import { join } from 'node:path';
 import { profileFor } from '../profiles/index.ts';
 import { launchCommand, shellQuote } from '../profiles/profile.ts';
 
+/**
+ * What running a step does. The printed command stays in `argv`; this is how the live command
+ * performs that same step, so a dry run and a real run share one plan.
+ */
+export type Op =
+  | { do: 'server'; session: string }
+  | { do: 'wait-session'; session: string; seconds: number }
+  | { do: 'create'; seat?: string; label: string; cwd: string }
+  | { do: 'launch'; seat: string; label: string; command: string; pane?: string }
+  | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; pane?: string; workspace?: string }
+  | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
+  | { do: 'deliver'; seat: string; label: string; rules: string; pane?: string }
+  | { do: 'ready'; seat: string; rules: 'option' | 'message' }
+  | { do: 'watch'; label: string; command: string }
+  | { do: 'type'; seat: string; pane: string; text: string }
+  | { do: 'gone'; seat: string; pane: string; seconds: number }
+  | { do: 'close'; seat: string; workspace: string }
+  | { do: 'kill'; pid: number }
+  | { do: 'stop'; session: string };
+
 /** One thing `up` or `down` does, in order. */
 export type Step =
   /** A command that is run. */
-  | { kind: 'run'; argv: string[]; note?: string }
+  | { kind: 'run'; argv: string[]; note?: string; do?: Op }
   /** A wait, with its time limit. */
-  | { kind: 'wait'; text: string }
+  | { kind: 'wait'; text: string; do?: Op }
   /** A seat that is left out, and why. */
-  | { kind: 'skip'; text: string };
+  | { kind: 'skip'; text: string; do?: Op };
 
 export interface UpSeat {
   name: string;
@@ -21,6 +41,12 @@ export interface UpSeat {
   stopped: boolean;
   /** The seat's rules, as one text. */
   rules: string;
+  /** Set when a running session is being resumed. Omitted: launch from the start. */
+  stage?: 'launched' | 'named' | 'ready';
+  pane?: string;
+  workspace?: string;
+  /** Herdr already lists an agent in the recorded pane. */
+  agentLive?: boolean;
 }
 
 export interface UpInput {
@@ -30,6 +56,10 @@ export interface UpInput {
   /** Whether the herdr session is already running, empty. */
   sessionRunning: boolean;
   seats: readonly UpSeat[];
+  /** The watch's pid is alive, so no second watch is started. */
+  watchAlive?: boolean;
+  /** The command the watchdog pane runs. Defaults to `team watch`. */
+  watchLine?: string;
 }
 
 /** The variables a herdr server starts with: nothing else reaches a seat's pane. */
@@ -55,8 +85,13 @@ export function upPlan(input: UpInput): Step[] {
       kind: 'run',
       argv: ['env', '-i', ...SERVER_ENVIRONMENT.map((name) => `${name}=$${name}`), ...herdr(session, 'server')],
       note: 'detached, in a clean environment; SSH_AUTH_SOCK is passed too when it is set',
+      do: { do: 'server', session },
     });
-    steps.push({ kind: 'wait', text: `until session ${session} is running (30 s at most)` });
+    steps.push({
+      kind: 'wait',
+      text: `until session ${session} is running (30 s at most)`,
+      do: { do: 'wait-session', session, seconds: 30 },
+    });
   }
 
   for (const seat of input.seats) {
@@ -72,49 +107,80 @@ export function upPlan(input: UpInput): Step[] {
       });
       continue;
     }
-    const pane = paneOf(seat.label);
-    steps.push({
-      kind: 'run',
-      argv: herdr(
-        session,
-        'workspace',
-        'create',
-        '--cwd',
-        join(input.root, seat.cwd),
-        '--label',
-        seat.label,
-        '--no-focus',
-      ),
-    });
-    steps.push({
-      kind: 'run',
-      argv: herdr(session, 'pane', 'run', pane, launchCommand(profile, seat.launch, seat.rules)),
-    });
-    steps.push({
-      kind: 'wait',
-      text:
-        `until ${seat.name} shows its idle prompt (${profile.idleTimeout} s at most); ` +
-        'anything else is reported, its workspace closed without input, and the seat left out',
-    });
-    steps.push({ kind: 'run', argv: herdr(session, 'agent', 'rename', pane, seat.name) });
+    if (seat.stage === 'ready') {
+      steps.push({ kind: 'skip', text: `${seat.name}: already ready; left as it is` });
+      continue;
+    }
+    const pane = seat.pane ?? paneOf(seat.label);
+    const cwd = join(input.root, seat.cwd);
+    const fresh = seat.stage === undefined || !seat.pane;
+    if (fresh) {
+      steps.push({
+        kind: 'run',
+        argv: herdr(session, 'workspace', 'create', '--cwd', cwd, '--label', seat.label, '--no-focus'),
+        do: { do: 'create', seat: seat.name, label: seat.label, cwd },
+      });
+    }
+    const command = launchCommand(profile, seat.launch, seat.rules);
+    if (fresh || (seat.stage === 'launched' && !seat.agentLive)) {
+      steps.push({
+        kind: 'run',
+        argv: herdr(session, 'pane', 'run', pane, command),
+        do: { do: 'launch', seat: seat.name, label: seat.label, command, pane: seat.pane },
+      });
+    }
+    const rules = profile.rulesOption === null ? 'message' : 'option';
+    if (seat.stage !== 'named') {
+      steps.push({
+        kind: 'wait',
+        text:
+          `until ${seat.name} shows its idle prompt (${profile.idleTimeout} s at most); ` +
+          'anything else is reported, its workspace closed without input, and the seat left out',
+        do: {
+          do: 'idle',
+          seat: seat.name,
+          label: seat.label,
+          cli: seat.cli,
+          seconds: profile.idleTimeout,
+          pane: seat.pane,
+          workspace: seat.workspace,
+        },
+      });
+      steps.push({
+        kind: 'run',
+        argv: herdr(session, 'agent', 'rename', pane, seat.name),
+        do: { do: 'rename', seat: seat.name, label: seat.label, seconds: profile.idleTimeout, rules, pane: seat.pane },
+      });
+    }
     if (profile.rulesOption === null) {
       steps.push({
         kind: 'run',
         argv: herdr(session, 'pane', 'run', pane, seat.rules),
         note: 'the rules, as a first message',
+        do: { do: 'deliver', seat: seat.name, label: seat.label, rules: seat.rules, pane: seat.pane },
+      });
+    } else if (seat.stage === 'named') {
+      steps.push({
+        kind: 'skip',
+        text: `${seat.name}: named, and its rules went with the launch; marked ready`,
+        do: { do: 'ready', seat: seat.name, rules: 'option' },
       });
     }
   }
 
+  if (input.watchAlive) return steps;
   const watchArguments = session === 'default' ? '' : ` --session ${shellQuote(session)}`;
+  const watchLine = input.watchLine ?? `team watch${watchArguments}`;
   steps.push({
     kind: 'run',
     argv: herdr(session, 'workspace', 'create', '--cwd', input.root, '--label', 'watchdog', '--no-focus'),
+    do: { do: 'create', label: 'watchdog', cwd: input.root },
   });
   steps.push({
     kind: 'run',
-    argv: herdr(session, 'pane', 'run', paneOf('watchdog'), `team watch${watchArguments}`),
+    argv: herdr(session, 'pane', 'run', paneOf('watchdog'), watchLine),
     note: 'a desktop notification follows when the watch exits',
+    do: { do: 'watch', label: 'watchdog', command: watchLine },
   });
   return steps;
 }
@@ -138,6 +204,8 @@ export interface DownInput {
   watchPid: number | null;
   /** The caller's own seat, and the coordinator's and operator's, when a seat calls. */
   keep: readonly string[];
+  /** The owner is closing workspaces that are not free, without typing into them. */
+  abandon?: boolean;
 }
 
 const LEFT: Record<Exclude<DownSeat['state'], 'free'>, string> = {
@@ -164,6 +232,15 @@ export function downPlan(input: DownInput): Step[] {
     }
     const profile = profileFor(seat.cli);
     if (!profile) {
+      if (input.abandon) {
+        steps.push({
+          kind: 'run',
+          argv: herdr(session, 'workspace', 'close', seat.workspace),
+          note: 'abandoned: nothing was typed',
+          do: { do: 'close', seat: seat.name, workspace: seat.workspace },
+        });
+        continue;
+      }
       steps.push({
         kind: 'skip',
         text: `${seat.name}: no launch profile for \`${seat.cli}\` in this version; left running`,
@@ -172,19 +249,46 @@ export function downPlan(input: DownInput): Step[] {
       continue;
     }
     if (seat.state !== 'free') {
+      if (input.abandon) {
+        steps.push({
+          kind: 'run',
+          argv: herdr(session, 'workspace', 'close', seat.workspace),
+          note: 'abandoned: nothing was typed',
+          do: { do: 'close', seat: seat.name, workspace: seat.workspace },
+        });
+        continue;
+      }
       steps.push({ kind: 'skip', text: `${seat.name}: ${LEFT[seat.state]}; left running` });
       left++;
       continue;
     }
-    steps.push({ kind: 'run', argv: herdr(session, 'pane', 'run', seat.pane, profile.exit) });
+    // The printed command is `pane run`. The live step types with `typeText` and `pressEnter`:
+    // `/exit` has to go into the idle prompt, and the screen is read again before the Enter.
+    steps.push({
+      kind: 'run',
+      argv: herdr(session, 'pane', 'run', seat.pane, profile.exit),
+      do: { do: 'type', seat: seat.name, pane: seat.pane, text: profile.exit },
+    });
     steps.push({
       kind: 'wait',
       text: `until ${seat.name}'s pane is back at its shell (${profile.exitTimeout} s at most); on a time-out it is left as it is`,
+      do: { do: 'gone', seat: seat.name, pane: seat.pane, seconds: profile.exitTimeout },
     });
-    steps.push({ kind: 'run', argv: herdr(session, 'workspace', 'close', seat.workspace) });
+    steps.push({
+      kind: 'run',
+      argv: herdr(session, 'workspace', 'close', seat.workspace),
+      do: { do: 'close', seat: seat.name, workspace: seat.workspace },
+    });
   }
 
-  if (input.watchPid !== null) steps.push({ kind: 'run', argv: ['kill', String(input.watchPid)], note: 'the watch' });
+  if (input.watchPid !== null) {
+    steps.push({
+      kind: 'run',
+      argv: ['kill', String(input.watchPid)],
+      note: 'the watch',
+      do: { do: 'kill', pid: input.watchPid },
+    });
+  }
 
   if (session === 'default') {
     steps.push({ kind: 'skip', text: "session default: herdr's default session is never stopped" });
@@ -194,7 +298,7 @@ export function downPlan(input: DownInput): Step[] {
       text: `session ${session}: not stopped, ${left} agent${left === 1 ? '' : 's'} left in it`,
     });
   } else {
-    steps.push({ kind: 'run', argv: ['herdr', 'session', 'stop', session] });
+    steps.push({ kind: 'run', argv: ['herdr', 'session', 'stop', session], do: { do: 'stop', session } });
   }
   return steps;
 }

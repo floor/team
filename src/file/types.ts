@@ -86,5 +86,5 @@ export type ValidateResult =
   | { ok: false; errors: Problem[] };
 
 export type LoadResult =
-  | { ok: true; team: TeamFile; root: string; path: string; warnings: Problem[] }
+  | { ok: true; team: TeamFile; root: string; path: string; warnings: Problem[]; text: string }
   | { ok: false; errors: Problem[]; path?: string };

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fromTeamFile, type CheckConfig } from '../check/config.ts';
 import { GitError } from '../check/git.ts';
 import { formatReport, runCheck } from '../check/run.ts';
@@ -62,8 +62,15 @@ function parse(argv: string[]): Arguments | string {
 export function loadConfig(cwd: string, file?: string, home: string = homedir()): ReturnType<LoadConfig> {
   const loaded = loadTeamFile(cwd, { file });
   if (!loaded.ok) return loaded;
-  const ledger = readLedger(storePath(loaded.team.project, loaded.root, home));
-  return { ok: true, config: fromTeamFile(loaded.team, ledger), warnings: loaded.warnings };
+  const store = storePath(loaded.team.project, loaded.root, home);
+  const ledgerFile = join(store, 'ledger.json');
+  try {
+    const ledger = readLedger(store);
+    return { ok: true, config: fromTeamFile(loaded.team, ledger), warnings: loaded.warnings };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return { ok: false, errors: [{ line: 0, message: `can't read ${ledgerFile}: ${detail}` }] };
+  }
 }
 
 function place(problem: Problem, path?: string): string {

@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -7,8 +7,9 @@ import { formatDiff } from '../approve/diff.ts';
 import { compare, describe, fingerprints } from '../approve/fingerprint.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
-import { loadTeamFile } from '../file/load.ts';
+import { loadTeamFile, placedProblems } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
+import { validateTeamFile } from '../file/validate.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { readApproval, storePath, writeApproval, type Ceilings } from '../store/store.ts';
@@ -80,8 +81,23 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     }
     return 2;
   }
-  const { team, root, path } = loaded;
-  for (const warning of loaded.warnings) io.stderr(`team approve: warning, line ${warning.line}: ${warning.message}\n`);
+  // Validate the text load just read. A second read could store an edit under the first read's fingerprints.
+  const checked = validateTeamFile(loaded.text);
+  if (!checked.ok) {
+    for (const problem of checked.errors) {
+      io.stderr(`team approve: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
+    }
+    return 2;
+  }
+  const placed = placedProblems(checked.team, loaded.root);
+  if (placed.length) {
+    for (const problem of placed) io.stderr(`team approve: ${problem.message}\n`);
+    return 2;
+  }
+  const { team } = checked;
+  const { root, path } = loaded;
+  const text = loaded.text;
+  for (const warning of checked.warnings) io.stderr(`team approve: warning, line ${warning.line}: ${warning.message}\n`);
 
   const store = storePath(team.project, root, sources.home);
   const problem = storeProblem(store, root, team);
@@ -90,7 +106,6 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     return 1;
   }
 
-  const text = readFileSync(path, 'utf8');
   const previous = readApproval(store);
   const ceilings = ceilingsOf(team);
   const seats = team.seats.length;

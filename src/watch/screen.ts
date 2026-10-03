@@ -4,7 +4,8 @@
 export type Screen =
   | { kind: 'idle' }                 // the idle prompt, with an empty input box
   | { kind: 'unsent' }               // text left in the input box
-  | { kind: 'permission' }           // a permission or trust dialog: its owner's to answer
+  | { kind: 'permission' }           // a permission dialog: its owner's to answer
+  | { kind: 'trust' }                // a workspace trust question: left unanswered
   | { kind: 'question' }             // a question the agent asked: the operator's to act on
   | { kind: 'unknown' };
 
@@ -14,7 +15,9 @@ const CLASSIFIERS: Record<string, Classify> = {
   // Claude Code, from the shapes team-watch.sh has matched on the live team.
   'claude-code': (lines) => {
     const text = lines.join('\n');
-    if (/Do you want to (proceed|make this edit|create|allow)|trust this folder|\bEsc to cancel\b.*\bTab to amend\b|^\s*❯?\s*[0-9]\. (Yes|No)\b/m.test(text)) {
+    // Before the permission shapes: "1. Yes" is how a trust question is answered, and it is not answered.
+    if (/trust (this|the) folder/i.test(text)) return { kind: 'trust' };
+    if (/Do you want to (proceed|make this edit|create|allow)|\bEsc to cancel\b.*\bTab to amend\b|^\s*❯?\s*[0-9]\. (Yes|No)\b/m.test(text)) {
       return { kind: 'permission' };
     }
     if (/Enter to select|↑\/↓ to navigate|Enter to confirm|Esc to cancel/.test(text)) return { kind: 'question' };

@@ -61,8 +61,14 @@ export const realSources: DoctorSources = {
 
 const USAGE = 'Usage: team doctor [--session <name>] [--file <path>]\n';
 
-type Level = 'ok' | 'warn' | 'miss' | 'note';
-type Finding = { level: Level; text: string };
+export type Level = 'ok' | 'warn' | 'miss' | 'note';
+export type Finding = { level: Level; text: string };
+
+// A missing or stale watch is not a reason for `up` to refuse: `up` starts the watch itself.
+export function blocksLaunch(finding: Finding): boolean {
+  if (finding.level !== 'miss') return false;
+  return !finding.text.startsWith('no watch has run') && !finding.text.startsWith("the watch's heartbeat");
+}
 
 export const doctor: Command = (argv, io) => runDoctor(argv, io, realSources);
 export default doctor;
@@ -151,22 +157,15 @@ function watchFindings(team: TeamFile, dir: string, session: string, running: bo
   return [{ level: 'ok', text: 'the watch is running' }];
 }
 
-export async function runDoctor(argv: string[], io: Io, sources: DoctorSources): Promise<number> {
-  const args = readArgs(argv, ['session', 'file'], []);
-  if (args.error || args.rest.length) {
-    io.stderr(`team doctor: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
-    return 2;
-  }
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
-  if (!loaded.ok) {
-    for (const problem of loaded.errors) {
-      io.stderr(`team doctor: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
-    }
-    return 2;
-  }
-  const { team, root } = loaded;
-  const session = args.values.session ?? team.session;
-  const findings: Finding[] = loaded.warnings.map((warning) => ({
+export function doctorFindings(
+  team: TeamFile,
+  root: string,
+  dir: string,
+  session: string,
+  sources: DoctorSources,
+  warnings: { line: number; message: string }[],
+): Finding[] {
+  const findings: Finding[] = warnings.map((warning) => ({
     level: 'warn',
     text: `the file, line ${warning.line}: ${warning.message}`,
   }));
@@ -193,10 +192,29 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
     );
   }
 
-  findings.push(...watchFindings(team, dirname(loaded.path), session, running, sources.now()));
+  findings.push(...watchFindings(team, dir, session, running, sources.now()));
   if (team.trust.length) {
     findings.push({ level: 'note', text: 'trust: not applied or checked by this version; trust each folder by hand' });
   }
+  return findings;
+}
+
+export async function runDoctor(argv: string[], io: Io, sources: DoctorSources): Promise<number> {
+  const args = readArgs(argv, ['session', 'file'], []);
+  if (args.error || args.rest.length) {
+    io.stderr(`team doctor: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
+    return 2;
+  }
+  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
+  if (!loaded.ok) {
+    for (const problem of loaded.errors) {
+      io.stderr(`team doctor: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
+    }
+    return 2;
+  }
+  const { team, root } = loaded;
+  const session = args.values.session ?? team.session;
+  const findings = doctorFindings(team, root, dirname(loaded.path), session, sources, loaded.warnings);
 
   const label: Record<Level, string> = { ok: 'ok  ', warn: 'warn', miss: 'MISS', note: '--  ' };
   io.stdout(findings.map((finding) => `${label[finding.level]}  ${finding.text}\n`).join(''));

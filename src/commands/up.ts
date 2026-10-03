@@ -1,31 +1,123 @@
 import { homedir } from 'node:os';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { approvalDifferences } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { renderSignature } from '../file/signature.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
-import { agentList, sessionRunning, type HerdrAgent } from '../herdr.ts';
+import {
+  agentList,
+  agentRename,
+  paneRead,
+  paneRun,
+  sessionRunning,
+  sessionState,
+  startServer,
+  workspaceClose,
+  workspaceCreate,
+  workspaceList,
+  type HerdrAgent,
+  type SessionState,
+} from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
-import { formatPlan, upPlan } from '../launch/plan.ts';
+import type { Host } from '../launch/execute.ts';
+import { executePlan } from '../launch/execute.ts';
+import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { rulesText } from '../launch/rules.ts';
-import { readState } from '../state.ts';
+import { logLine } from '../log.ts';
+import { shellQuote } from '../profiles/profile.ts';
+import { profileFor } from '../profiles/index.ts';
+import { readApproval, storePath, type Ceilings } from '../store/store.ts';
+import { emptySession, readState, updateState, type SeatState } from '../state.ts';
+import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from './doctor.ts';
+import { readMachine, type Machine } from '../watch/machine.ts';
+import { readScreen } from '../watch/screen.ts';
 
 // What `up` reads from outside the file, so tests can stand in for it.
 export type UpSources = {
   sessionRunning(session: string): boolean | null;
+  sessionState?(session: string): SessionState | null;
   agents(session: string): HerdrAgent[] | null;
+  workspaces?(session: string): { id: string }[] | null;
   home: string;
+  doctor?: DoctorSources;
+  machine?(root: string): Machine;
+  now?(): Date;
+  sleep?(ms: number): Promise<void>;
+  alive?(pid: number): boolean;
+  watchCommand?(session: string): string;
+  // Present on the shipped command. A dry run never calls it.
+  launch?: Launch;
+};
+
+export type Launch = {
+  sessionState(session: string): SessionState | null;
+  startServer(session: string): boolean;
+  sessionUp(session: string): boolean | null;
+  createWorkspace(session: string, cwd: string, label: string): { pane: string; workspace: string } | null;
+  paneRun(session: string, pane: string, command: string): boolean;
+  renameAgent(session: string, pane: string, name: string): boolean;
+  closeWorkspace(session: string, workspace: string): boolean;
+  agentPanes(session: string): string[] | null;
+  paneText(session: string, pane: string): string | null;
+  sleep(ms: number): Promise<void>;
+  now(): Date;
+};
+
+function aim(session: string): string | undefined {
+  return session === 'default' ? undefined : session;
+}
+
+/** The watchdog command, from this process and this install: `team` may not be on the PATH. */
+export function watchCommand(session: string): string {
+  const here = fileURLToPath(import.meta.url);
+  const cli = join(dirname(here), '..', here.endsWith('.ts') ? 'cli.ts' : 'cli.js');
+  const suffix = session === 'default' ? '' : ` --session ${shellQuote(session)}`;
+  return `${shellQuote(process.execPath)} ${shellQuote(cli)} watch${suffix}`;
+}
+
+const realLaunch: Launch = {
+  sessionState,
+  startServer,
+  sessionUp: sessionRunning,
+  createWorkspace: (session, cwd, label) => workspaceCreate(cwd, label, aim(session)),
+  paneRun: (session, pane, command) => paneRun(pane, command, aim(session)),
+  renameAgent: (session, pane, name) => agentRename(pane, name, aim(session)),
+  closeWorkspace: (session, workspace) => workspaceClose(workspace, aim(session)),
+  agentPanes(session) {
+    const agents = agentList(aim(session));
+    return agents === null ? null : agents.map((agent) => agent.pane);
+  },
+  paneText: (session, pane) => paneRead(pane, 200, aim(session)),
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now: () => new Date(),
 };
 
 export const realSources: UpSources = {
   sessionRunning,
-  agents: (session) => agentList(session === 'default' ? undefined : session),
+  sessionState,
+  agents: (session) => agentList(aim(session)),
+  workspaces: (session) => workspaceList(aim(session)),
   home: homedir(),
+  doctor: doctorSources,
+  machine: readMachine,
+  now: () => new Date(),
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  alive(pid) {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  watchCommand,
+  launch: realLaunch,
 };
 
-const USAGE = 'Usage: team up --dry-run [--session <name>] [--file <path>]\n';
+const USAGE = 'Usage: team up [--dry-run] [--session <name>] [--file <path>]\n';
 
 export const up: Command = (argv, io) => runUp(argv, io, realSources);
 export default up;
@@ -45,16 +137,88 @@ export function rulesOf(team: TeamFile, seat: Seat): string {
   });
 }
 
+function resolveState(sources: UpSources, session: string): SessionState | null {
+  if (sources.sessionState) return sources.sessionState(session);
+  const running = sources.sessionRunning(session);
+  if (running === null) return null;
+  return running ? 'running' : 'absent';
+}
+
+type Running = { name: string; vendor: string; temporary: boolean };
+
+function pastMachine(machine: Machine, limits: TeamFile['machine']): string | null {
+  if (machine.loadPerCore !== null && machine.loadPerCore > limits.loadStart) {
+    return `the load is ${machine.loadPerCore.toFixed(1)} per core, above ${limits.loadStart}`;
+  }
+  if (machine.memoryFree !== null && machine.memoryFree < limits.memoryStart) {
+    return `free memory is ${Math.round(machine.memoryFree)}%, below ${limits.memoryStart}%`;
+  }
+  if (machine.diskFree !== null && machine.diskFree < limits.diskMin) {
+    return `free disk is ${gb(machine.diskFree)}, below ${gb(limits.diskMin)}`;
+  }
+  if (machine.swapFree !== null && machine.swapFree < limits.swapFreeMin) {
+    return `free swap is ${gb(machine.swapFree)}, below ${gb(limits.swapFreeMin)}`;
+  }
+  return null;
+}
+
+function gb(bytes: number): string {
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+}
+
+function overCeiling(ceilings: Ceilings, running: readonly Running[], seat: Seat): string | null {
+  if (running.some((item) => item.name === seat.name)) return null;
+  const count = running.length + 1;
+  if (count > ceilings.seats) return `the approval allows ${ceilings.seats} seats; ${count} would be running`;
+  const cap = ceilings.vendors[seat.vendor];
+  if (cap !== undefined) {
+    const vendors = running.filter((item) => item.vendor === seat.vendor).length + 1;
+    if (vendors > cap) return `the approval allows ${cap} ${seat.vendor} seats; ${vendors} would be running`;
+  }
+  return null;
+}
+
+function seatPlan(
+  team: TeamFile,
+  seat: Seat,
+  recorded: SeatState | undefined,
+  agents: readonly HerdrAgent[],
+  workspaces: { id: string }[] | null,
+  resume: boolean,
+): UpSeat {
+  const planned: UpSeat = {
+    name: seat.name,
+    cli: seat.cli,
+    launch: seat.launch,
+    cwd: seat.cwd,
+    label: seat.label,
+    stopped: seat.stopped,
+    rules: rulesOf(team, seat),
+  };
+  if (!resume || !recorded || seat.stopped) return planned;
+  const named = agents.find((agent) => agent.name === seat.name);
+  const onPane = recorded.pane ? agents.some((agent) => agent.pane === recorded.pane) : false;
+  if (recorded.stage === 'ready') return named || onPane ? { ...planned, stage: 'ready' } : planned;
+  const workspaceLive =
+    recorded.workspace && workspaces ? workspaces.some((workspace) => workspace.id === recorded.workspace) : null;
+  const live = Boolean(named || onPane || workspaceLive);
+  if (!live) return planned;
+  return {
+    ...planned,
+    stage: recorded.stage,
+    pane: recorded.pane,
+    workspace: recorded.workspace,
+    agentLive: Boolean(named || onPane),
+  };
+}
+
 export async function runUp(argv: string[], io: Io, sources: UpSources): Promise<number> {
   const args = readArgs(argv, ['session', 'file'], ['dry-run']);
   if (args.error || args.rest.length) {
     io.stderr(`team up: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
     return 2;
   }
-  if (!args.flags.has('dry-run')) {
-    io.stderr(`team up: this version launches nothing; \`--dry-run\` prints every command it would run\n${USAGE}`);
-    return 1;
-  }
+  const dry = args.flags.has('dry-run');
   const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
@@ -64,8 +228,10 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   }
   const { team, root } = loaded;
   const session = args.values.session ?? team.session;
+  const dir = dirname(loaded.path);
+  const state = resolveState(sources, session);
 
-  // What would make `up` refuse, read the same way it will read it. A dry run prints the plan anyway.
+  // What would make `up` refuse. A dry run prints the plan anyway; a real run stops first.
   const refusals: string[] = [];
   const caller = callerOf(io);
   if (!isOwner(caller)) {
@@ -73,14 +239,27 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   }
   const differences = approvalDifferences(team, root, sources.home);
   if (differences === null) refusals.push('the file was never approved on this machine: run `team approve`');
-  else if (differences.length)
+  else if (differences.length) {
     refusals.push(`the file is not the approved one (${differences.join('; ')}): run \`team approve\``);
+  }
 
-  const running = sources.sessionRunning(session);
-  if (running === null) refusals.push("herdr doesn't answer");
-  if (running) {
-    const recorded = readState(dirname(loaded.path)).sessions[session]?.seats ?? {};
-    const agents = sources.agents(session);
+  if (sources.doctor) {
+    const findings = doctorFindings(team, root, dir, session, sources.doctor, loaded.warnings);
+    for (const finding of findings) if (blocksLaunch(finding)) refusals.push(finding.text);
+  }
+  const machine = sources.machine?.(root);
+  if (machine) {
+    const problem = pastMachine(machine, team.machine);
+    if (problem) refusals.push(problem);
+  }
+
+  if (state === null) refusals.push("herdr doesn't answer");
+  if (state === 'stopped') {
+    refusals.push(`session ${session} is stopped; clear it with \`herdr session delete ${session}\``);
+  }
+  const agents = state === 'running' ? sources.agents(session) : [];
+  if (state === 'running') {
+    const recorded = readState(dir).sessions[session]?.seats ?? {};
     if (agents === null) refusals.push(`session ${session} runs, and its agents can't be read`);
     else {
       const unknown = agents.filter((agent) => !agent.name || !Object.hasOwn(recorded, agent.name));
@@ -92,24 +271,102 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     }
   }
 
-  for (const refusal of refusals) io.stdout(`! up would refuse: ${refusal}\n`);
-  io.stdout(
-    formatPlan(
-      upPlan({
-        root,
-        session,
-        sessionRunning: running === true,
-        seats: team.seats.map((seat) => ({
-          name: seat.name,
-          cli: seat.cli,
-          launch: seat.launch,
-          cwd: seat.cwd,
-          label: seat.label,
-          stopped: seat.stopped,
-          rules: rulesOf(team, seat),
-        })),
-      }),
-    ),
+  const recorded = readState(dir).sessions[session];
+  const workspaces = sources.workspaces?.(session) ?? null;
+  const seats = team.seats.map((seat) =>
+    seatPlan(team, seat, recorded?.seats[seat.name], agents ?? [], workspaces, state === 'running'),
   );
-  return 0;
+  const watch = recorded?.watch;
+  const plan = upPlan({
+    root,
+    session,
+    // A stopped session is not started. The refusal above names the delete command.
+    sessionRunning: state === 'running' || state === 'stopped',
+    seats,
+    watchAlive: Boolean(watch && sources.alive?.(watch.pid)),
+    watchLine: (sources.watchCommand ?? watchCommand)(session),
+  });
+
+  if (dry) {
+    for (const refusal of refusals) io.stdout(`! up would refuse: ${refusal}\n`);
+    io.stdout(formatPlan(plan));
+    return 0;
+  }
+  if (refusals.length) {
+    for (const refusal of refusals) io.stderr(`team up: ${refusal}\n`);
+    return 1;
+  }
+  const launch = sources.launch;
+  if (!launch) {
+    io.stderr('team up: this call has no way to reach herdr\n');
+    return 1;
+  }
+
+  const ceilings = readApproval(storePath(team.project, root, sources.home))?.approval.ceilings ?? null;
+  const running: Running[] = [];
+  if (agents) {
+    const byName = new Map(team.seats.map((seat) => [seat.name, seat]));
+    for (const agent of agents) {
+      if (!agent.name) continue;
+      const seat = byName.get(agent.name);
+      const known = recorded?.seats[agent.name];
+      if (!seat && !known) continue;
+      const like = known?.temporary?.like;
+      const vendor = seat?.vendor ?? (like ? byName.get(like)?.vendor : undefined) ?? 'unknown';
+      running.push({ name: agent.name, vendor, temporary: Boolean(known?.temporary) });
+    }
+  }
+  const now = () => sources.now?.() ?? launch.now();
+  const host: Host = {
+    startServer: launch.startServer,
+    sessionUp: launch.sessionUp,
+    createWorkspace: launch.createWorkspace,
+    paneRun: launch.paneRun,
+    typeLine: () => false,
+    renameAgent: launch.renameAgent,
+    closeWorkspace: launch.closeWorkspace,
+    stopSession: () => false,
+    kill: () => false,
+    agentPanes: launch.agentPanes,
+    classify: (name, pane, cli) => readScreen(cli, launch.paneText(name, pane) ?? undefined).kind,
+    sleep: sources.sleep ?? launch.sleep,
+    now: () => now().getTime(),
+    allow(name) {
+      if (sources.machine) {
+        const problem = pastMachine(sources.machine(root), team.machine);
+        if (problem) return problem;
+      }
+      const seat = team.seats.find((item) => item.name === name);
+      if (!seat || !ceilings) return null;
+      return overCeiling(ceilings, running, seat);
+    },
+    record(name, patch) {
+      updateState(dir, (file) => {
+        const current = (file.sessions[session] ??= emptySession());
+        const prior = current.seats[name] ?? { stage: patch.stage };
+        current.seats[name] = { ...prior, ...patch };
+      });
+    },
+    running(name) {
+      if (running.some((item) => item.name === name)) return;
+      const seat = team.seats.find((item) => item.name === name);
+      if (seat) running.push({ name, vendor: seat.vendor, temporary: false });
+    },
+    drop(name) {
+      updateState(dir, (file) => {
+        const seats = file.sessions[session]?.seats;
+        if (seats) delete seats[name];
+      });
+    },
+    say: (line) => io.stdout(line),
+    log: (who, what) => logLine(dir, 'up', describeCaller(caller), `${who}: ${what}`, now()),
+  };
+
+  const report = await executePlan(plan, session, host);
+  const afterwards = readState(dir).sessions[session]?.seats ?? {};
+  const pending = team.seats.filter((seat) => {
+    if (seat.stopped || !profileFor(seat.cli)) return false;
+    return afterwards[seat.name]?.stage !== 'ready';
+  });
+  return pending.length || report.serverFailed || report.watchFailed ? 1 : 0;
 }

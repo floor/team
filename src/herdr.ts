@@ -1,6 +1,8 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 
-// The only module that talks to herdr. Everything here reads, except `typeText` and `pressEnter`.
+// The only module that talks to herdr. Reading is the default. The calls that change a session
+// are `startServer`, `workspaceCreate`, `paneRun`, `agentRename`, `workspaceClose`, `sessionStop`,
+// `typeText` and `pressEnter`. `team` never deletes a session.
 
 export type HerdrAgent = {
   name: string | null;
@@ -46,6 +48,21 @@ export function paneRootPid(pane: string, session?: string): number | null {
   }
 }
 
+// argv0 of each foreground process, or null when the pane can't be read. After a CLI exits,
+// herdr keeps the pane and the foreground process is the shell.
+export function paneForeground(pane: string, session?: string): string[] | null {
+  try {
+    const result = run(['pane', 'process-info', '--pane', pane], session) as {
+      process_info?: { foreground_processes?: { argv0?: unknown }[] };
+    };
+    const list = result.process_info?.foreground_processes;
+    if (!Array.isArray(list)) return null;
+    return list.map((proc) => (typeof proc.argv0 === 'string' ? proc.argv0 : ''));
+  } catch {
+    return null;
+  }
+}
+
 export type HerdrWorkspace = { id: string; label: string };
 
 export function workspaceList(session?: string): HerdrWorkspace[] | null {
@@ -60,15 +77,126 @@ export function workspaceList(session?: string): HerdrWorkspace[] | null {
   }
 }
 
-// Whether a session exists and runs: null when herdr can't be reached. "default" is herdr's own.
-export function sessionRunning(name: string): boolean | null {
+export type SessionState = 'running' | 'stopped' | 'absent';
+
+// Whether a session exists and runs. A stopped session stays listed with running false; a deleted
+// one is absent. Null when herdr can't be reached. "default" is herdr's own.
+export function sessionState(name: string): SessionState | null {
   try {
-    const out = execFileSync('herdr', ['session', 'list', '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
+    const out = execFileSync('herdr', ['session', 'list', '--json'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 10_000,
+    });
     const sessions = (JSON.parse(out) as { sessions?: { name?: string; running?: boolean }[] }).sessions ?? [];
-    return sessions.some((session) => session.name === name && session.running === true);
+    const found = sessions.find((session) => session.name === name);
+    if (!found) return 'absent';
+    return found.running === true ? 'running' : 'stopped';
   } catch {
     return null;
   }
+}
+
+// Whether a session exists and runs: null when herdr can't be reached.
+export function sessionRunning(name: string): boolean | null {
+  const state = sessionState(name);
+  return state === null ? null : state === 'running';
+}
+
+// What a herdr command printed, or null when it did not run. Exit status is not the answer: a
+// command aimed at a session that does not exist can print an error and exit 0.
+function capture(args: string[], session?: string): string | null {
+  const full = [...(session ? ['--session', session] : []), ...args];
+  try {
+    return execFileSync('herdr', full, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15_000 });
+  } catch {
+    return null;
+  }
+}
+
+function parsed(out: string): { type?: string; result?: unknown } | null {
+  try {
+    return JSON.parse(out) as { type?: string; result?: unknown };
+  } catch {
+    return null;
+  }
+}
+
+function resultOf(args: string[], session?: string): unknown | null {
+  const out = capture(args, session);
+  if (out === null) return null;
+  const body = parsed(out);
+  if (!body || body.type === 'error') return null;
+  return body.result ?? null;
+}
+
+const SERVER_ENV = ['HOME', 'USER', 'LOGNAME', 'PATH', 'SHELL', 'TERM', 'LANG'] as const;
+
+// Starts a session's server in a clean environment. Refuses unless the session is absent: a
+// second server for a session that already runs has been seen to drop it.
+export function startServer(session: string): boolean {
+  if (sessionState(session) !== 'absent') return false;
+  const env: NodeJS.ProcessEnv = {};
+  for (const name of SERVER_ENV) {
+    const value = process.env[name];
+    if (value !== undefined) env[name] = value;
+  }
+  if (process.env.SSH_AUTH_SOCK) env.SSH_AUTH_SOCK = process.env.SSH_AUTH_SOCK;
+  const args = session === 'default' ? ['server'] : ['--session', session, 'server'];
+  try {
+    const child = spawn('herdr', args, { env, detached: true, stdio: 'ignore' });
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function workspaceCreate(
+  cwd: string,
+  label: string,
+  session?: string,
+): { pane: string; workspace: string } | null {
+  const result = resultOf(['workspace', 'create', '--cwd', cwd, '--label', label, '--no-focus'], session) as {
+    root_pane?: { pane_id?: unknown };
+    workspace?: { workspace_id?: unknown };
+  } | null;
+  const pane = result?.root_pane?.pane_id;
+  const workspace = result?.workspace?.workspace_id;
+  if (typeof pane !== 'string' || typeof workspace !== 'string') return null;
+  return { pane, workspace };
+}
+
+// Types a command into a pane and sends it. For a seat's launch, at a shell. An exit into an
+// agent is `typeText` and then `pressEnter`, and only after the screen was read as idle again.
+export function paneRun(pane: string, command: string, session?: string): boolean {
+  const out = capture(['pane', 'run', pane, command], session);
+  if (out === null) return false;
+  const body = parsed(out);
+  return body === null || body.type !== 'error';
+}
+
+// Not proof an agent is there: herdr answers with agent_info for a pane that has none.
+export function agentRename(pane: string, name: string, session?: string): boolean {
+  const out = capture(['agent', 'rename', pane, name], session);
+  if (out === null) return false;
+  const body = parsed(out);
+  return body === null || body.type !== 'error';
+}
+
+export function workspaceClose(workspace: string, session?: string): boolean {
+  const out = capture(['workspace', 'close', workspace], session);
+  if (out === null) return false;
+  const body = parsed(out);
+  return body !== null && body.type !== 'error';
+}
+
+// Stops a session. Never deletes one: clearing a stopped session is the owner's command to run.
+export function sessionStop(name: string): boolean {
+  const out = capture(['session', 'stop', name]);
+  if (out === null) return false;
+  const body = parsed(out);
+  return body === null || body.type !== 'error';
 }
 
 // The visible lines of a pane, or null. `session` undefined reaches the caller's own server.
