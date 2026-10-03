@@ -67,6 +67,15 @@ seats:
     display: GPT-6 Astra
     launch: codex
 
+  - role: implementer
+    name: gemini-implementer
+    cli: antigravity
+    vendor: google
+    model: Gemini
+    version: "3.8 Flash"
+    display: Gemini 3.8 Flash
+    launch: agy
+
   - role: operator
     name: claude-operator
     cli: claude-code
