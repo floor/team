@@ -347,8 +347,11 @@ describe('team down, live', () => {
     let current = status;
     let onSleep = () => {};
     const launch: DownLaunch = {
-      typeLine(_session, _pane, text) {
+      typeText(_session, _pane, text) {
         typed.push(text);
+        return true;
+      },
+      pressEnter() {
         gone = true;
         return true;
       },
@@ -421,7 +424,8 @@ describe('team down, live', () => {
   test('a seat that does not leave is left as it is', async () => {
     const run = harness({ kind: 'idle' });
     run.launch.agentPanes = () => ['w3:p1'];
-    run.launch.typeLine = () => true;
+    run.launch.typeText = () => true;
+    run.launch.pressEnter = () => true;
     const io = testIo(root, { kind: 'owner' });
     const code = await runDown(FILE, io, run.sourcesOf());
     expect(code).toBe(1);

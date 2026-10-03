@@ -262,8 +262,8 @@ export function downPlan(input: DownInput): Step[] {
       left++;
       continue;
     }
-    // The printed command is `pane run`. The live step types with `typeLine`: `/exit` has to go
-    // into the idle prompt, and only after the screen was read as idle.
+    // The printed command is `pane run`. The live step types with `typeText` and `pressEnter`:
+    // `/exit` has to go into the idle prompt, and the screen is read again before the Enter.
     steps.push({
       kind: 'run',
       argv: herdr(session, 'pane', 'run', seat.pane, profile.exit),

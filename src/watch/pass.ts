@@ -28,10 +28,16 @@ export function newMemory(): Memory {
 // A report says what is, never what to do about it. `to` is who can act on it.
 export type Report = { key: string; text: string; to: 'operator' | 'owner' };
 
+// The one line the watch types into the operator's pane. Fixed, and free of report text: a dialog
+// can open between the screen read and the typing, and a digit in the line would answer it. The
+// reports go to the log and to the desktop notification; the line only says where they are.
+export const NUDGE_TEXT = 'Team watch: reports are waiting in .agents/team.log';
+
 export type PassResult = {
   reports: Report[];
-  // The one line to type into the operator's pane, when the operator is free.
-  nudge: { pane: string; text: string } | null;
+  // The one line to type into the operator's pane, when the operator is free. `pending` holds the
+  // report texts it stands for, so a delivery that fails puts them back rather than losing them.
+  nudge: { pane: string; text: string; pending: string[] } | null;
   // What to notify instead, when a nudge has waited too long.
   fallback: string | null;
 };
@@ -178,7 +184,7 @@ export function pass(
     const free = operator !== undefined && (operator.status === 'idle' || operator.status === 'done')
       && readScreen(cli, live.screens[operator.pane]).kind === 'idle';
     if (operator && free) {
-      nudge = { pane: operator.pane, text: `Team watch: ${memory.pending.join('; ')}.` };
+      nudge = { pane: operator.pane, text: NUDGE_TEXT, pending: memory.pending.slice() };
     } else if (now - memory.pendingSince >= team.watch.nudgeWait * 1000) {
       fallback = `the operator could not be nudged for ${minutes(now - memory.pendingSince)} minutes; ${memory.pending.length} report(s) wait: ${memory.pending.join('; ')}`;
     }

@@ -5,8 +5,9 @@ import {
   agentList,
   paneRead,
   sessionRunning,
+  pressEnter,
   sessionStop,
-  typeLine,
+  typeText,
   workspaceClose,
   type HerdrAgent,
 } from '../herdr.ts';
@@ -32,7 +33,8 @@ export type DownSources = {
 };
 
 export type DownLaunch = {
-  typeLine(session: string, pane: string, text: string): boolean;
+  typeText(session: string, pane: string, text: string): boolean;
+  pressEnter(session: string, pane: string): boolean;
   agentPanes(session: string): string[] | null;
   closeWorkspace(session: string, workspace: string): boolean;
   stopSession(session: string): boolean;
@@ -46,7 +48,8 @@ function aim(session: string): string | undefined {
 }
 
 const realLaunch: DownLaunch = {
-  typeLine: (session, pane, text) => typeLine(pane, text, aim(session)),
+  typeText: (session, pane, text) => typeText(pane, text, aim(session)),
+  pressEnter: (session, pane) => pressEnter(pane, aim(session)),
   agentPanes(session) {
     const agents = agentList(aim(session));
     return agents === null ? null : agents.map((agent) => agent.pane);
@@ -219,7 +222,17 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     sessionUp: () => true,
     createWorkspace: () => null,
     paneRun: () => false,
-    typeLine: launch.typeLine,
+    typeLine(sessionName, pane, text) {
+      // Free was decided when the plan was built. Look again, and once more between the text and
+      // the Enter: a prompt that appeared would take the key, as the watch's nudge does.
+      const cli = seats.find((seat) => seat.pane === pane)?.cli ?? '';
+      const look = () => sources.screen(sessionName, pane, cli).kind;
+      if (look() !== 'idle') return false;
+      if (!launch.typeText(sessionName, pane, text)) return false;
+      const after = look();
+      if (after !== 'idle' && after !== 'unsent') return false;
+      return launch.pressEnter(sessionName, pane);
+    },
     renameAgent: () => false,
     closeWorkspace: launch.closeWorkspace,
     stopSession: launch.stopSession,
