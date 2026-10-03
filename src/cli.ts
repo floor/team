@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import type { Command, Io } from './io.ts';
 
 // Each command is loaded only when it is called. A slice adds its line here.
-const commands: Record<string, () => Promise<{ default: Command } | Record<string, Command>>> = {};
+const commands: Record<string, () => Promise<{ default: Command } | Record<string, Command>>> = {
+  check: () => import('./commands/check.ts'),
+};
 
 const USAGE = `team: set up, change and watch a project's team of AI agents
 

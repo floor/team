@@ -34,3 +34,12 @@ test('an unknown command is an error', async () => {
   expect(await main(['frobnicate'], run)).toBe(2);
   expect(run.err).toContain('unknown command "frobnicate"');
 });
+
+test('check is a command of this build', async () => {
+  const run = io();
+  expect(await main(['check', '--help'], run)).toBe(0);
+  expect(run.out).toStartWith('usage: team check <ref>');
+  const help = io();
+  await main(['--help'], help);
+  expect(help.out).toContain('\n  check\n');
+});
