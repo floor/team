@@ -3,10 +3,14 @@ import type { Screen } from '../watch/screen.ts';
 /** Visible text captured from Codex 0.157.0. Unknown layouts never permit input. */
 export function codexScreen(lines: string[]): Screen {
   if (lines.some((line) => /\bmodel:\s+loading\b/.test(line))) return { kind: 'unknown' };
+  const composer = codexComposer(lines);
+  // A trust or update dialog is read before the working line, as for claude-code: it can stay up
+  // while a turn runs, and it is the operator's to answer, not input to type past.
+  if (composer.kind === 'trust' || composer.kind === 'question') return composer;
   // Herdr can lag a state transition. An active turn never permits a first message or an exit,
   // and is a working observation even while herdr's status has not caught up.
   if (lines.some((line) => /esc to interrupt/.test(line))) return { kind: 'working' };
-  return codexComposer(lines);
+  return composer;
 }
 
 /** Also used to confirm the composer emptied while a submitted rules message is working. */

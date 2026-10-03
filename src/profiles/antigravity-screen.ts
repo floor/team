@@ -2,10 +2,15 @@ import type { Screen } from '../watch/screen.ts';
 
 /** Visible text captured from Antigravity (agy 1.2.16). Unknown layouts never permit input. */
 export function antigravityScreen(lines: string[]): Screen {
+  const composer = antigravityComposer(lines);
+  // A trust or permission dialog is read before the working line, as for claude-code: a
+  // permission dialog arrives mid-turn, with "Generating..." still visible beside it, and it is
+  // its owner's to answer.
+  if (composer.kind === 'trust' || composer.kind === 'permission') return composer;
   // Herdr can lag a state transition. An active turn never permits a first message or an exit,
   // and is a working observation even while herdr's status has not caught up.
   if (lines.some((line) => /\bGenerating\.\.\./.test(line))) return { kind: 'working' };
-  return antigravityComposer(lines);
+  return composer;
 }
 
 /** Also used to confirm the composer emptied while a submitted rules message is working. */
