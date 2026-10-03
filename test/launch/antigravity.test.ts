@@ -5,7 +5,11 @@ import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
 import { readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
 import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
-import { upPlan } from '../../src/launch/plan.ts';
+import { downPlan, upPlan } from '../../src/launch/plan.ts';
+import { pass, newMemory } from '../../src/watch/pass.ts';
+import { emptySession } from '../../src/state.ts';
+import { stateOf } from '../../src/commands/down.ts';
+import { validateTeamFile } from '../../src/file/validate.ts';
 
 const fixture = (name: string) => readFileSync(new URL(`../fixtures/antigravity/1.2.16/${name}.txt`, import.meta.url), 'utf8');
 
@@ -27,6 +31,7 @@ describe('Antigravity launch and captured screens', () => {
     ['working', 'unknown'],
     ['rules-accepted', 'idle'],
     ['trust', 'trust'],
+    ['permission', 'permission'],
     ['exit-typed', 'unsent'],
     ['exit', 'unknown'],
   ] as const)('%s capture has %s composer shape', (file, kind) => {
@@ -47,8 +52,9 @@ describe('Antigravity launch and captured screens', () => {
     expect(readScreen('antigravity', fixture('idle').replace('? for shortcuts               Gemini 3.8 Flash · high', 'new footer')).kind).toBe('unknown');
   });
 
-  test('a quoted trust dialog is not an active dialog, and multiline input is not empty', () => {
+  test('a quoted trust or permission dialog is not an active dialog, and multiline input is not empty', () => {
     expect(readScreen('antigravity', fixture('trust') + fixture('rules-accepted')).kind).toBe('idle');
+    expect(readScreen('antigravity', fixture('permission') + fixture('rules-accepted')).kind).toBe('idle');
     expect(readScreen('antigravity', fixture('idle').replace('─────────────────────────────────────────────────────\n>', '─────────────────────────────────────────────────────\n>\n  unsent second line')).kind).toBe('unsent');
   });
 
@@ -100,7 +106,7 @@ describe('Antigravity rules delivery', () => {
     expect(d.calls).toEqual(['Rules.', 'Enter']);
   });
 
-  test.each(['trust', 'unsent', 'exit', 'working'])('types nothing at %s', async (screen) => {
+  test.each(['trust', 'permission', 'unsent', 'exit', 'working'])('types nothing at %s', async (screen) => {
     const d = delivery(screen);
     expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(false);
     expect(d.calls).toEqual([]);
@@ -143,5 +149,79 @@ describe('Antigravity rules delivery', () => {
     d.io.now = () => clock;
     d.io.sleep = async (ms) => { clock += ms; d.show('unsent'); };
     expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(true);
+  });
+});
+
+describe('Antigravity permission prompt in watch and down', () => {
+  test('the screen classifier reads permission as blocked, never idle or unsent', () => {
+    const screen = readScreen('antigravity', fixture('permission'));
+    expect(screen.kind).toBe('permission');
+    expect(screen.kind).not.toBe('idle');
+    expect(screen.kind).not.toBe('unsent');
+  });
+
+  test('watch reports an Antigravity seat at a permission prompt to the owner', () => {
+    const memory = newMemory();
+    const parsed = validateTeamFile(`
+format: 1
+project: test
+workspace:
+  mode: shared
+coordinator: gemini
+operator: gemini
+seats:
+  - role: implementer
+    name: gemini
+    cli: antigravity
+    vendor: google
+    model: Gemini Flash
+    version: "3.8"
+    launch: agy
+`);
+    if (!parsed.ok) throw new Error('invalid team file');
+    const teamFile = parsed.team;
+    const result = pass(
+      teamFile,
+      emptySession(),
+      {
+        running: true,
+        agents: [{ name: 'gemini', agent: 'agy', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null }],
+        workspaces: [{ id: 'w1', label: 'gemini' }],
+        screens: { 'w1:p1': fixture('permission') },
+      },
+      { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 },
+      0,
+      memory,
+    );
+    expect(result.reports).toEqual([{
+      key: 'blocked:gemini',
+      text: "gemini waits at a permission prompt: its owner's to answer",
+      to: 'owner',
+    }]);
+  });
+
+  test('down treats an Antigravity seat at a permission prompt as blocked and types nothing', () => {
+    const screen = readScreen('antigravity', fixture('permission'));
+    expect(stateOf('idle', screen)).toBe('blocked');
+    expect(stateOf('done', screen)).toBe('blocked');
+
+    const plan = downPlan({
+      session: 'test-session',
+      seats: [{
+        name: 'gemini',
+        cli: 'antigravity',
+        pane: 'w1:p1',
+        workspace: 'w1',
+        state: stateOf('idle', screen),
+      }],
+      keep: [],
+      extra: 0,
+      watchPid: null,
+    });
+    expect(plan.find((step) => step.kind === 'skip' && step.text.includes('gemini'))).toEqual({
+      kind: 'skip',
+      text: 'gemini: is blocked at a prompt, which `team` never answers; left running',
+    });
+    expect(plan.some((step) => step.do?.do === 'type')).toBe(false);
   });
 });
