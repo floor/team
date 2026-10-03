@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
-import type { LoadResult } from './types.ts';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { fixedFolder } from './paths.ts';
+import type { LoadResult, Problem, TeamFile } from './types.ts';
 import { validateTeamFile } from './validate.ts';
 
 export const TEAM_FILE = '.agents/team.yaml';
@@ -49,5 +50,40 @@ export function loadTeamFile(cwd: string, options: { file?: string } = {}): Load
     };
   }
   const result = validateTeamFile(readFileSync(path, 'utf8'));
-  return result.ok ? { ...result, root, path } : { ...result, path };
+  if (!result.ok) return { ...result, path };
+  const errors = placedProblems(result.team, root);
+  return errors.length ? { ok: false, errors, path } : { ...result, root, path };
+}
+
+function real(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+// What only shows once the root is known: a folder named by its own name can still be the
+// project's parent, as "../../Code/*" is for a project at ~/Code/acme. Validation on the text
+// alone can't see that; here every fixed folder is resolved, symlinks included.
+export function placedProblems(team: TeamFile, root: string): Problem[] {
+  const project = real(root);
+  const problems: Problem[] = [];
+  const holdsProject = (folder: string) => {
+    const full = real(resolve(project, folder));
+    return full !== project && project.startsWith(full.endsWith(sep) ? full : full + sep);
+  };
+  for (const pattern of team.trust) {
+    if (holdsProject(fixedFolder(pattern))) {
+      problems.push({ line: 0, message: `trust: "${pattern}" names the project's parent or a folder above it: it would trust every folder beside the project` });
+    }
+  }
+  const path = team.workspace.path;
+  if (path) {
+    const folder = path.split('/').slice(0, -1).join('/').replaceAll('{repo}', team.project) || '.';
+    if (holdsProject(folder)) {
+      problems.push({ line: 0, message: `workspace.path: "${path}" puts worktrees in the project's parent or a folder above it: give them a folder of their own` });
+    }
+  }
+  return problems;
 }

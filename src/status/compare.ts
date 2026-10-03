@@ -1,0 +1,129 @@
+import type { Seat, TeamFile } from '../file/types.ts';
+import type { HerdrAgent, HerdrWorkspace } from '../herdr.ts';
+import { herdrCommand } from '../herdr.ts';
+import type { SessionState } from '../state.ts';
+import { runningModel } from './statusline.ts';
+
+// What herdr shows of a session. `screens` holds a pane's visible text, where it could be read.
+export type Live = {
+  running: boolean;
+  agents: HerdrAgent[];
+  workspaces: HerdrWorkspace[];
+  screens: Record<string, string>;
+};
+
+export type Row = { name: string; state: string; model: string; pane: string };
+export type Difference = { what: string; repair: string };
+export type Comparison = { rows: Row[]; differences: Difference[]; notes: string[] };
+
+export const WATCH_LABEL = 'watchdog';
+
+// Compares the file and the state with the live session. Pure: every input is handed in.
+export function compare(team: TeamFile, session: string, state: SessionState, live: Live, now: Date = new Date()): Comparison {
+  const rows: Row[] = [];
+  const differences: Difference[] = [];
+  const notes: string[] = [];
+  const claimed = new Set<string>();
+  const labels = new Map(live.workspaces.map((workspace) => [workspace.id, workspace.label]));
+  const anyRunning = team.seats.some((seat) => live.agents.some((agent) => agent.name === seat.name));
+
+  for (const seat of team.seats) {
+    const agent = live.agents.find((candidate) => candidate.name === seat.name);
+    const recorded = state.seats[seat.name];
+    if (agent) {
+      claimed.add(agent.pane);
+      const model = modelOf(seat, agent, live, differences, notes);
+      rows.push({ name: seat.name, state: seat.parked ? `${agent.status}, parked` : agent.status, model, pane: agent.pane });
+      if (seat.stopped) {
+        differences.push({
+          what: `${seat.name} is marked stopped in the file and is running`,
+          repair: `team remove ${seat.name} --keep, or take "stopped: true" off the seat`,
+        });
+      }
+      if (recorded && recorded.stage !== 'ready') {
+        differences.push({ what: `${seat.name}: its launch stopped at "${recorded.stage}"`, repair: 'team up (it resumes the launch)' });
+      }
+      if (recorded?.rules === 'undelivered') {
+        differences.push({ what: `${seat.name}: its rules were not delivered`, repair: `team remove ${seat.name} --keep, then team add ${seat.name}` });
+      }
+      continue;
+    }
+    if (seat.stopped) {
+      rows.push({ name: seat.name, state: 'stopped', model: seat.display, pane: '-' });
+      continue;
+    }
+    // An agent sits in the seat's workspace under another name, or under none.
+    const stray = live.agents.find((candidate) => !claimed.has(candidate.pane) && labels.get(candidate.workspace) === seat.label
+      && !team.seats.some((other) => other.name === candidate.name));
+    if (stray) {
+      claimed.add(stray.pane);
+      rows.push({ name: seat.name, state: 'wrong name', model: seat.display, pane: stray.pane });
+      differences.push({
+        what: `${seat.name}: the agent in its workspace "${seat.label}" is ${stray.name ? `named "${stray.name}"` : 'unnamed'}`,
+        repair: herdrCommand(session, 'agent', 'rename', stray.pane, seat.name),
+      });
+      continue;
+    }
+    rows.push({ name: seat.name, state: 'missing', model: seat.display, pane: '-' });
+    differences.push({
+      what: `${seat.name} is in the file and is not running`,
+      repair: anyRunning ? `team add ${seat.name}` : 'team up',
+    });
+  }
+
+  for (const [name, recorded] of Object.entries(state.seats)) {
+    if (!recorded.temporary) continue;
+    const agent = live.agents.find((candidate) => candidate.name === name);
+    if (agent) {
+      claimed.add(agent.pane);
+      rows.push({ name, state: `${agent.status}, temporary`, model: `like ${recorded.temporary.like}`, pane: agent.pane });
+      notes.push(`${name} is temporary, until ${recorded.temporary.until}`);
+    } else {
+      differences.push({ what: `${name}: a temporary seat is recorded and is not running`, repair: `team remove ${name}` });
+    }
+  }
+
+  for (const agent of live.agents) {
+    if (claimed.has(agent.pane) || labels.get(agent.workspace) === WATCH_LABEL) continue;
+    differences.push({
+      what: `${agent.name ?? `an unnamed ${agent.agent ?? 'agent'}`} (${agent.pane}) is running and is not in the file`,
+      repair: 'add the seat to the file and run team approve, or close it',
+    });
+  }
+
+  for (const [task, worktree] of Object.entries(state.worktrees)) {
+    if (worktree.setup === 'failed') {
+      differences.push({ what: `worktree ${task}: its setup failed`, repair: `team worktree remove ${task}` });
+    }
+  }
+
+  if (live.running && anyRunning) {
+    const beat = state.watch ? Date.parse(state.watch.heartbeat) : NaN;
+    if (!state.watch) {
+      differences.push({ what: 'no watch has run for this session', repair: `team watch --session ${session}` });
+    } else if (!(now.getTime() - beat <= 2 * team.watch.interval * 1000)) {
+      const minutes = Number.isFinite(beat) ? Math.round((now.getTime() - beat) / 60_000) : null;
+      differences.push({
+        what: `the watch's last pass was ${minutes === null ? 'never recorded' : `${minutes} minute(s) ago`}`,
+        repair: `team watch --session ${session}`,
+      });
+    }
+  }
+
+  return { rows, differences, notes };
+}
+
+function modelOf(seat: Seat, agent: HerdrAgent, live: Live, differences: Difference[], notes: string[]): string {
+  const screen = live.screens[agent.pane];
+  const running = screen === undefined ? null : runningModel(seat.cli, screen);
+  if (!running) {
+    notes.push(`${seat.name}: version unread (its screen doesn't show the model)`);
+    return `${seat.display} (unread)`;
+  }
+  if (running.model === seat.model && running.version === seat.version) return seat.display;
+  differences.push({
+    what: `${seat.name} runs ${running.model} ${running.version}; the file says ${seat.model} ${seat.version}`,
+    repair: `restart the seat on the file's model (team remove ${seat.name} --keep, then team add ${seat.name}), or correct the file and run team approve`,
+  });
+  return `${running.model} ${running.version} (file: ${seat.display})`;
+}
