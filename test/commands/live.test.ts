@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runApprove } from '../../src/commands/approve.ts';
@@ -642,11 +642,13 @@ describe('scratch session', () => {
         const before = sessionState(SCRATCH);
         if (before !== 'absent') throw new Error(`session ${SCRATCH} is ${before}; not touching it`);
         const scratchHome = mkdtempSync(join(tmpdir(), 'team-trusted-home-'));
-        mkdirSync(join(TRUSTED, '.agents'), { recursive: true });
-        writeFileSync(join(TRUSTED, '.agents/team.yaml'), cheapFile());
-        const file = ['--file', join(TRUSTED, '.agents/team.yaml')];
+        const agentsDir = join(TRUSTED, '.agents');
+        const createdAgents = !existsSync(agentsDir);
         const owner = testIo(TRUSTED, { kind: 'owner' });
         try {
+          mkdirSync(agentsDir, { recursive: true });
+          writeFileSync(join(agentsDir, 'team.yaml'), cheapFile());
+          const file = ['--file', join(agentsDir, 'team.yaml')];
           expect(await runApprove(file, owner, { ask: async () => '3', now: () => new Date(), home: scratchHome })).toBe(0);
           const doctor = upReal.doctor ? { ...upReal.doctor, home: scratchHome } : undefined;
           const upCode = await runUp(file, owner, { ...upReal, home: scratchHome, doctor });
@@ -656,6 +658,7 @@ describe('scratch session', () => {
         } finally {
           stopScratch();
           rmSync(scratchHome, { recursive: true, force: true });
+          if (createdAgents) rmSync(agentsDir, { recursive: true, force: true });
         }
       },
       240_000,
