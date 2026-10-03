@@ -14,7 +14,7 @@ export const codex: Profile = {
   processNames: ['codex'],
   binary: 'codex',
   tested: { from: '0.157.0', to: '0.157.0' },
-  unattended: ['-a', 'never', '-s', 'danger-full-access'],
+  unattended: ['-a', 'never', '-s', 'danger-full-access', '--no-daemon', '--no-alt-screen'],
   rulesOption: null,
   loginCheck: ['login', 'status'],
   loginHint: 'codex login',

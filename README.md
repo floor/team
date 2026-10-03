@@ -114,7 +114,8 @@ seats:
   checkout, with `path`, `base` and `setup`).
 
 The Codex profile is tested with CLI 0.157.0. It adds `-a never -s danger-full-access`
-for unattended execution and checks login with `codex login status`. Rules go as a first message
+for unattended execution, plus `--no-daemon --no-alt-screen` for the captured pane mode,
+and checks login with `codex login status`. Rules go as a first message
 only at an empty idle prompt; delivery is recorded after Codex starts working with the input
 empty again. Nothing writes a vendor config or an `AGENTS.md`. `/exit` is sent only to a free
 seat. Update and workspace-trust screens are reported and closed without input; the owner

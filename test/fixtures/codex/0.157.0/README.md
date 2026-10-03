@@ -26,3 +26,21 @@ question layout that was not observed. Unknown screens permit no input.
 The update-check override was for capture only, not added by the profile. It is documented in
 [OpenAI's configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
 No update, login, trust, or settings dialog was answered, and no vendor configuration was edited.
+
+## Round 2
+
+The profile now adds `--no-daemon --no-alt-screen`, matching these captures. Inline
+mode preserves the readable pane composer and scrollback; a dedicated process avoids
+depending on a shared daemon. This is the smaller fix: keep the observed launch mode
+and fixtures instead of claiming they cover a different mode.
+
+The repeat scratch run used `launchCommand(codex, 'codex -c check_for_update_on_startup=false', rules)`
+directly: only the update-check override was supplied by the seat launch, as above.
+The profile supplied every other flag. One seat verified idle, pasted rules, working,
+acknowledgement and `/exit`, then its workspace and scratch session were removed.
+
+The repeat run also captured `startup-loading.txt`: Codex draws a composer while the
+model is still loading. That screen stays unknown until initialization finishes.
+The final run waited for the startup prompt to settle before delivery; two earlier
+attempts refused delivery during startup and were torn down without submitting a
+message. The default session remained at eight agents, with unchanged config/auth hashes.

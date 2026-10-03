@@ -11,7 +11,7 @@ const fixture = (name: string) => readFileSync(new URL(`../fixtures/codex/0.157.
 
 describe('Codex launch and captured screens', () => {
   test('unattended flags are launch arguments; rules are a first message', () => {
-    expect(launchCommand(codex, 'codex -m gpt-6-sol', 'Rules.')).toBe('AGENT_UNATTENDED=1 codex -m gpt-6-sol -a never -s danger-full-access');
+    expect(launchCommand(codex, 'codex -m gpt-6-sol', 'Rules.')).toBe('AGENT_UNATTENDED=1 codex -m gpt-6-sol -a never -s danger-full-access --no-daemon --no-alt-screen');
     expect(codex.rulesOption).toBeNull();
     expect(codex.loginCheck).toEqual(['login', 'status']);
     expect(codex.exit).toBe('/exit');
@@ -20,7 +20,7 @@ describe('Codex launch and captured screens', () => {
   });
   test.each([
     ['idle', 'idle'], ['unsent', 'unsent'], ['working', 'unknown'],
-    ['rules-accepted', 'idle'], ['startup', 'question'], ['trust', 'trust'],
+    ['rules-accepted', 'idle'], ['startup', 'question'], ['startup-loading', 'unknown'], ['trust', 'trust'],
     ['exit-typed', 'unsent'], ['exit', 'unknown'],
   ] as const)('%s capture has %s composer shape', (file, kind) => {
     // A working screen never permits input, even if herdr's status has not caught up.
