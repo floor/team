@@ -38,6 +38,13 @@ export function trustProblem(pattern: string): string | null {
   return null;
 }
 
+// The folder a pattern keeps fixed: the pattern without its trailing "*".
+export function fixedFolder(pattern: string): string {
+  const segments = normalize(pattern).split('/');
+  if (segments[segments.length - 1] === '*') segments.pop();
+  return segments.join('/') || '.';
+}
+
 // True when `path` is a trusted folder or lies under one.
 export function insideTrust(path: string, patterns: string[]): boolean {
   const target = normalize(path).split('/');

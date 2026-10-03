@@ -4,8 +4,10 @@ import { fileURLToPath } from 'node:url';
 import type { Command, Io } from './io.ts';
 
 // Each command is loaded only when it is called. A slice adds its line here.
-const commands: Record<string, () => Promise<{ default: Command } | Record<string, Command>>> = {
+const commands: Record<string, () => Promise<{ default: Command }>> = {
   check: () => import('./commands/check.ts'),
+  init: () => import('./commands/init.ts'),
+  status: () => import('./commands/status.ts'),
 };
 
 const USAGE = `team: set up, change and watch a project's team of AI agents
@@ -44,10 +46,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
     io.stderr(`team: unknown command "${name}"\n\n${usage}`);
     return 2;
   }
-  const module = await load();
-  const command = ('default' in module ? module.default : module[name]) as Command | undefined;
-  if (!command) throw new Error(`the module of "${name}" exports no command`);
-  return command(rest, io);
+  return (await load()).default(rest, io);
 }
 
 export function processIo(): Io {

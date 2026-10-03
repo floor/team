@@ -66,6 +66,10 @@ describe('the caller is placed by its parent processes', () => {
   test('unreadable parents place nobody', () => {
     expect(placeCaller(sources([])).kind).toBe('unplaced');
   });
+
+  test('a walk that stopped before the top places nobody, even on a terminal', () => {
+    expect(placeCaller(sources(terminal, { ancestors: () => null }))).toMatchObject({ kind: 'unplaced', reason: expect.stringMatching(/to the top/) });
+  });
 });
 
 describe('who may change a running team', () => {
@@ -81,11 +85,31 @@ describe('who may change a running team', () => {
   });
 });
 
-describe('reading the real process table', () => {
-  test('the test runner\'s parents are read by name, nearest first', () => {
+describe('reading the process table', () => {
+  test('the test runner\'s parents are read by name, nearest first, to the top', () => {
     const ancestors = readAncestors(process.pid);
+    if (!ancestors) throw new Error('the walk did not reach the top');
     expect(ancestors[0]?.pid).toBe(process.pid);
     expect(ancestors.length).toBeGreaterThan(1);
     for (const one of ancestors) expect(one.name).not.toContain('/');
+  });
+
+  const table: Record<number, { ppid: number; name: string }> = {
+    210: { ppid: 200, name: 'zsh' },
+    200: { ppid: 10, name: 'claude' },
+    10: { ppid: 1, name: 'herdr' },
+  };
+
+  test('a complete walk ends at the system\'s first process', () => {
+    expect(readAncestors(210, (pid) => table[pid] ?? null)?.map((one) => one.name)).toEqual(['zsh', 'claude', 'herdr']);
+  });
+
+  test('a process that can\'t be read makes the walk incomplete, not shorter', () => {
+    // Cut below the herdr server: a shorter list would look like a plain terminal.
+    expect(readAncestors(210, (pid) => (pid === 10 ? null : table[pid] ?? null))).toBeNull();
+  });
+
+  test('a chain that never ends is incomplete', () => {
+    expect(readAncestors(5, () => ({ ppid: 5, name: 'loop' }))).toBeNull();
   });
 });
