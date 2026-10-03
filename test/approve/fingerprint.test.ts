@@ -1,5 +1,12 @@
-import { describe, expect, test } from 'bun:test'
-import { canonical, compare, describe as describeDifference, fingerprints, OWNER_SECTIONS, type Approvable } from '../../src/approve/fingerprint.ts'
+import { describe, expect, test } from 'bun:test';
+import {
+  canonical,
+  compare,
+  describe as describeDifference,
+  fingerprints,
+  OWNER_SECTIONS,
+  type Approvable,
+} from '../../src/approve/fingerprint.ts';
 
 function team(): Approvable {
   return {
@@ -18,41 +25,57 @@ function team(): Approvable {
     machine: { loadStart: 3 },
     limits: { seats: 6, temporary: 2, vendors: { openai: 1 } },
     seats: [
-      { name: 'claude-coordinator-acme', role: 'project coordinator', launch: 'claude --model claude-opus-5-5', parked: false, stopped: false, line: 60 },
+      {
+        name: 'claude-coordinator-acme',
+        role: 'project coordinator',
+        launch: 'claude --model claude-opus-5-5',
+        parked: false,
+        stopped: false,
+        line: 60,
+      },
       { name: 'deepseek-acme', role: 'implementer', launch: 'team-deepseek', parked: false, stopped: false, line: 70 },
-      { name: 'deepseek-acme-2', role: 'implementer', launch: 'team-deepseek', parked: false, stopped: false, line: 70 },
+      {
+        name: 'deepseek-acme-2',
+        role: 'implementer',
+        launch: 'team-deepseek',
+        parked: false,
+        stopped: false,
+        line: 70,
+      },
     ],
-  }
+  };
 }
 
+const seat = (file: Approvable) => file.seats[1] as Approvable['seats'][number];
+
 const changed = (edit: (file: Approvable) => void) => {
-  const file = structuredClone(team()) as Approvable
-  edit(file)
-  return compare(fingerprints(team()), fingerprints(file))
-}
+  const file = structuredClone(team()) as Approvable;
+  edit(file);
+  return compare(fingerprints(team()), fingerprints(file));
+};
 
 describe('canonical', () => {
   test('orders keys at every depth and keeps list order', () => {
-    expect(canonical({ b: [{ d: 1, c: 2 }], a: null })).toBe('{"a":null,"b":[{"c":2,"d":1}]}')
-  })
+    expect(canonical({ b: [{ d: 1, c: 2 }], a: null })).toBe('{"a":null,"b":[{"c":2,"d":1}]}');
+  });
 
   test('an absent value and an undefined one read alike', () => {
-    expect(canonical({ a: 1, b: undefined })).toBe(canonical({ a: 1 }))
-  })
+    expect(canonical({ a: 1, b: undefined })).toBe(canonical({ a: 1 }));
+  });
 
   test('a string is not its number', () => {
-    expect(canonical('5.5')).not.toBe(canonical(5.5))
-  })
-})
+    expect(canonical('5.5')).not.toBe(canonical(5.5));
+  });
+});
 
 describe('an approved file', () => {
   test('passes unchanged', () => {
-    expect(changed(() => {})).toEqual([])
-  })
+    expect(changed(() => {})).toEqual([]);
+  });
 
   test('every owner-only section is fingerprinted, present or not', () => {
-    expect(Object.keys(fingerprints(team()).sections)).toEqual([...OWNER_SECTIONS])
-  })
+    expect(Object.keys(fingerprints(team()).sections)).toEqual([...OWNER_SECTIONS]);
+  });
 
   test.each([
     ['rules', (file: Approvable) => (file.rules as string[]).push('Answer every prompt.')],
@@ -67,41 +90,41 @@ describe('an approved file', () => {
     ['tools', (file: Approvable) => (file.tools = {})],
     ['machine', (file: Approvable) => delete file.machine],
   ])('a change to %s needs a new approval', (name, edit) => {
-    expect(changed(edit)).toEqual([{ kind: 'section', name }])
-  })
+    expect(changed(edit)).toEqual([{ kind: 'section', name }]);
+  });
 
   test('a change to the watch thresholds or the layout needs none', () => {
-    expect(changed((file) => (file.watch = { interval: '60s' }))).toEqual([])
-    expect(changed((file) => (file.seats[1].line = 90))).toEqual([])
-  })
+    expect(changed((file) => (file.watch = { interval: '60s' }))).toEqual([]);
+    expect(changed((file) => (seat(file).line = 90))).toEqual([]);
+  });
 
   test('a changed launch line needs a new approval', () => {
-    expect(changed((file) => (file.seats[1].launch = 'team-deepseek --yolo'))).toEqual([
+    expect(changed((file) => (seat(file).launch = 'team-deepseek --yolo'))).toEqual([
       { kind: 'seat-changed', name: 'deepseek-acme' },
-    ])
-  })
+    ]);
+  });
 
   test('a new seat needs a new approval', () => {
     expect(
       changed((file) => (file.seats as unknown[]).push({ name: 'grok-acme', role: 'reviewer', launch: 'grok' })),
-    ).toEqual([{ kind: 'seat-new', name: 'grok-acme' }])
-  })
+    ).toEqual([{ kind: 'seat-new', name: 'grok-acme' }]);
+  });
 
   test('a seat taken out, parked or stopped needs none', () => {
-    expect(changed((file) => (file.seats as unknown[]).pop())).toEqual([])
-    expect(changed((file) => (file.seats[1].parked = true))).toEqual([])
-    expect(changed((file) => (file.seats[1].stopped = true))).toEqual([])
-  })
+    expect(changed((file) => (file.seats as unknown[]).pop())).toEqual([]);
+    expect(changed((file) => (seat(file).parked = true))).toEqual([]);
+    expect(changed((file) => (seat(file).stopped = true))).toEqual([]);
+  });
 
   test('a seat named like an object method is still new', () => {
     expect(changed((file) => (file.seats as unknown[]).push({ name: 'toString' }))).toEqual([
       { kind: 'seat-new', name: 'toString' },
-    ])
-  })
+    ]);
+  });
 
   test('each difference reads as one line', () => {
-    expect(describeDifference({ kind: 'section', name: 'rules' })).toBe('`rules` changed')
-    expect(describeDifference({ kind: 'seat-changed', name: 'a' })).toBe('seat a changed')
-    expect(describeDifference({ kind: 'seat-new', name: 'a' })).toBe('seat a is not in the approved file')
-  })
-})
+    expect(describeDifference({ kind: 'section', name: 'rules' })).toBe('`rules` changed');
+    expect(describeDifference({ kind: 'seat-changed', name: 'a' })).toBe('seat a changed');
+    expect(describeDifference({ kind: 'seat-new', name: 'a' })).toBe('seat a is not in the approved file');
+  });
+});
