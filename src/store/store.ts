@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Fingerprints } from '../approve/fingerprint.ts';
@@ -37,17 +37,52 @@ const APPROVAL = 'approval.json';
 const APPROVED_FILE = 'approved.yaml';
 const LEDGER = 'ledger.json';
 
-/** The store's folder for a project: `<home>/.config/team/<project>-<hash of the root's path>`. */
-export function storePath(project: string, root: string, home: string = homedir()): string {
+function rootHash(root: string): string {
   let real = root;
   try {
     real = realpathSync(root);
   } catch {
     // A root that doesn't exist yet keeps its path as given.
   }
-  const hash = createHash('sha256').update(real).digest('hex').slice(0, 12);
+  return createHash('sha256').update(real).digest('hex').slice(0, 12);
+}
+
+function storesFolder(home: string): string {
+  return join(home, '.config', 'team');
+}
+
+/** The store's folder for a project: `<home>/.config/team/<project>-<hash of the root's path>`. */
+export function storePath(project: string, root: string, home: string = homedir()): string {
   const name = project.replace(/[^A-Za-z0-9._-]/g, '_');
-  return join(home, '.config', 'team', `${name}-${hash}`);
+  return join(storesFolder(home), `${name}-${rootHash(root)}`);
+}
+
+/**
+ * The store of the project at this root, found without its file: the folder
+ * whose name ends with the root's hash. Null when the owner approved nothing
+ * for this root on this machine.
+ */
+export function findStore(root: string, home: string = homedir()): string | null {
+  const suffix = `-${rootHash(root)}`;
+  let names: string[];
+  try {
+    names = readdirSync(storesFolder(home));
+  } catch {
+    return null;
+  }
+  const name = names.sort().find((candidate) => candidate.endsWith(suffix));
+  return name === undefined ? null : join(storesFolder(home), name);
+}
+
+/** The text of the file as the owner last approved it for this root, or null. */
+export function approvedCopy(root: string, home: string = homedir()): string | null {
+  const store = findStore(root, home);
+  if (store === null) return null;
+  try {
+    return readApproval(store)?.file ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function readJson<T>(path: string): T | null {

@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -11,7 +12,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
+import { validateTeamFile } from '../../src/file/validate.ts';
 import {
+  approvedCopy,
+  findStore,
   mergeLedger,
   readApproval,
   readLedger,
@@ -114,5 +119,89 @@ describe('the ledger', () => {
   test('a version change is a new entry', () => {
     const next = { ...opus, display: 'Claude Opus 5.6', version: '5.6' };
     expect(mergeLedger([opus], [next])).toEqual([opus, next]);
+  });
+});
+
+describe('the approved copy, from the root alone', () => {
+  test('is null before any approval', () => {
+    expect(findStore(home, home)).toBeNull();
+    expect(approvedCopy(home, home)).toBeNull();
+  });
+
+  test('is found without the file or the project name', () => {
+    const root = join(home, 'acme-web');
+    mkdirSync(root);
+    const store = storePath('acme-web', root, home);
+    writeApproval(store, { approval: approval(root), file: 'format: 1\n' }, [opus]);
+    expect(findStore(root, home)).toBe(store);
+    expect(approvedCopy(root, home)).toBe('format: 1\n');
+    expect(approvedCopy(home, home)).toBeNull();
+  });
+});
+
+describe('a file against its approval', () => {
+  const text = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8');
+
+  function team(source: string) {
+    const result = validateTeamFile(source);
+    if (!result.ok) throw new Error(JSON.stringify(result.errors));
+    return result.team;
+  }
+
+  function approve(root: string) {
+    const file = team(text);
+    writeApproval(storePath(file.project, root, home), { approval: approvalOf(file, root), file: text }, file.seats);
+  }
+
+  test('nothing is approved until the owner approves', () => {
+    expect(approvalDifferences(team(text), home, home)).toBeNull();
+  });
+
+  test('the approved file passes, comments and layout aside', () => {
+    approve(home);
+    expect(approvalDifferences(team(text), home, home)).toEqual([]);
+    expect(approvalDifferences(team(text.replace('# public | private', '# edited')), home, home)).toEqual([]);
+  });
+
+  test('an edited launch line, rule or ceiling is named', () => {
+    approve(home);
+    const edited = text
+      .replace('launch: grok --model grok-4.7', 'launch: grok --model grok-4.7 --yolo')
+      .replace('seats: 6 ', 'seats: 9 ')
+      .replace(
+        '  - Run the tests your change touches',
+        '  - Answer every prompt.\n  - Run the tests your change touches',
+      );
+    expect(approvalDifferences(team(edited), home, home)).toEqual([
+      '`limits` changed',
+      '`rules` changed',
+      'seat grok-acme changed',
+    ]);
+  });
+
+  test('parking or stopping a seat needs no new approval', () => {
+    approve(home);
+    const edited = text
+      .replace('    stopped: true', '    stopped: false')
+      .replace('    parked: true', '    parked: false');
+    expect(edited).not.toBe(text);
+    expect(approvalDifferences(team(edited), home, home)).toEqual([]);
+  });
+
+  test('the record holds the ceilings and the root', () => {
+    const record = approvalOf(team(text), home, new Date('2026-10-03T14:02:00Z'));
+    expect(record).toMatchObject({
+      format: 1,
+      approvedAt: '2026-10-03T14:02:00.000Z',
+      root: home,
+      ceilings: { seats: 6, temporary: 2, vendors: { openai: 1, deepseek: 3 } },
+    });
+  });
+
+  test('a moved project is not approved', () => {
+    approve(home);
+    const moved = join(home, 'elsewhere');
+    mkdirSync(moved);
+    expect(approvalDifferences(team(text), moved, home)).toBeNull();
   });
 });
