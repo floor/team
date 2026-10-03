@@ -35,8 +35,8 @@ describe('Cursor launch and captured screens', () => {
     ['startup', 'idle'],
     ['idle', 'idle'],
     ['unsent', 'unsent'],
-    ['working', 'unknown'],
-    ['thinking', 'unknown'],
+    ['working', 'working'],
+    ['thinking', 'working'],
     ['rules-accepted', 'idle'],
     ['trust', 'trust'],
     ['exit-typed', 'unsent'],
@@ -46,9 +46,22 @@ describe('Cursor launch and captured screens', () => {
     expect(readScreen('cursor', fixture(file)).kind).toBe(kind);
   });
 
+  test('a trust dialog with a running turn beside it is still trust, not working', () => {
+    const screen = fixture('trust').replace(
+      '│  ▶ [a] Trust this workspace',
+      ' ⠀⠞ Working\n\n│  ▶ [a] Trust this workspace',
+    );
+    expect(readScreen('cursor', screen).kind).toBe('trust');
+  });
+
+  test('a finished turn reads idle', () => {
+    expect(readScreen('cursor', fixture('rules-accepted')).kind).toBe('idle');
+    expect(readScreen('cursor', fixture('idle')).kind).toBe('idle');
+  });
+
   test('a working turn still has an empty composer, which is what delivery waits for', () => {
     const lines = fixture('working').split('\n').map((line) => line.trimEnd()).slice(-20);
-    expect(readScreen('cursor', fixture('working')).kind).toBe('unknown');
+    expect(readScreen('cursor', fixture('working')).kind).toBe('working');
     expect(cursorComposer(lines).kind).toBe('idle');
     const thinking = fixture('thinking').split('\n').map((line) => line.trimEnd()).slice(-20);
     expect(cursorComposer(thinking).kind).toBe('idle');

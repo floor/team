@@ -5,11 +5,16 @@ const EMPTY_PROMPT = new Set(['Plan, search, build anything', 'Add a follow-up']
 
 /** Visible text captured from Cursor Agent 2026.10.01. Unknown layouts never permit input. */
 export function cursorScreen(lines: string[]): Screen {
-  // Herdr can lag a state transition. An active turn never permits a first message or an exit.
+  const composer = cursorComposer(lines);
+  // A trust dialog is read before the working line, as for claude-code: it can stay up while a
+  // turn runs, and it is left unanswered, not input to type past.
+  if (composer.kind === 'trust') return composer;
+  // Herdr can lag a state transition. An active turn never permits a first message or an exit,
+  // and is a working observation even while herdr's status has not caught up.
   if (lines.some((line) => /ctrl\+c to stop/.test(line) || /^\s*[\u2800-\u28FF]+\s+(Working|Thinking)\b/.test(line))) {
-    return { kind: 'unknown' };
+    return { kind: 'working' };
   }
-  return cursorComposer(lines);
+  return composer;
 }
 
 /** Also used to confirm the composer emptied while a submitted rules message is working. */
