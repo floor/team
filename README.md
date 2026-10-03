@@ -144,6 +144,7 @@ the commands below read.
 | `team up` / `team down` | starts / stops the session and its seats | `up`: the owner; `down`: the owner, the coordinator or the operator seat |
 | `team watch` | watches the session, reports idle seats and nudges the operator; `--no-nudge` and `--no-notify` turn those off | anyone, one per session; it types only its fixed nudge, into an empty idle prompt |
 | `team add <name>` | starts one declared seat, or puts one back from the approved copy; `--temporary --like <seat> --until <end>` starts a seat the file does not hold | the owner, the coordinator or the operator |
+| `team remove <name>` | stops one seat, then takes it out of the file; `--keep` leaves it stopped; `--abandon` is the owner's, and types nothing | the owner, the coordinator or the operator; only the owner removes the coordinator or the operator |
 | `team worktree new <task>` / `team worktree remove <task>` | creates a task worktree from an up-to-date base, or removes its folder; a failed setup is kept and recorded; the branch is never deleted; ignored files in the worktree are deleted with it | the owner, the coordinator or the operator |
 
 The owner is a terminal outside herdr with no agent process above it: a seat, or a script a seat
@@ -151,8 +152,8 @@ runs, cannot approve a file or start a team. Every command that reads the file a
 `--file <path>` for a file other than `.agents/team.yaml`.
 
 In this build `up` and `down` run only with `--dry-run`: they print every command they would run,
-and every refusal, and change nothing. `team add`, `team worktree new` and `team worktree remove` do run.
-`remove` and `trust` are specified but not built yet.
+and every refusal, and change nothing. `team add`, `team remove`, `team worktree new` and `team worktree remove` do run.
+`trust` is specified but not built yet.
 
 ## Your first team in five minutes
 

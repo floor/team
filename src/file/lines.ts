@@ -140,6 +140,44 @@ export function clearStopped(text: string, name: string): string {
   return replaceLines(rewritten, block.start, block.end, lines);
 }
 
+function prepared(text: string, name: string): { text: string; block: SeatBlock } | null {
+  const counted = seatBlocks(text).find((block) => block.count > 1 && expanded(block).includes(name));
+  const rewritten = counted?.name ? rewriteCount(text, counted.name) ?? text : text;
+  const block = seatBlocks(rewritten).find((item) => item.name === name);
+  return block ? { text: rewritten, block } : null;
+}
+
+/** Drops trailing comments and blank lines back into the file, ahead of the next entry. */
+function fieldEnd(lines: string[]): number {
+  let end = lines.length;
+  while (end > 0) {
+    const line = lines[end - 1] ?? '';
+    if (line.trim() !== '' && !/^\s*#/.test(line)) break;
+    end--;
+  }
+  return end;
+}
+
+/** Takes `name` out of the file. A counted entry is split first, so the other instances stay. */
+export function takeOut(text: string, name: string): string {
+  const ready = prepared(text, name);
+  if (!ready) return text;
+  const lines = body(ready.text, ready.block);
+  return replaceLines(ready.text, ready.block.start, ready.block.start + fieldEnd(lines), []);
+}
+
+/** Leaves `name` in the file with `stopped: true`. A counted entry is split first. */
+export function markStopped(text: string, name: string): string {
+  const ready = prepared(text, name);
+  if (!ready) return text;
+  const lines = body(ready.text, ready.block);
+  if (lines.some((line) => /^\s*stopped:\s*(true|yes)\b/.test(line))) return ready.text;
+  const nested = lines.find((line) => /^\s+[A-Za-z0-9_-]+:/.test(line));
+  const pad = ' '.repeat(nested ? indent(nested) : indent(lines[0] ?? '') + 2);
+  lines.splice(fieldEnd(lines), 0, `${pad}stopped: true`);
+  return replaceLines(ready.text, ready.block.start, ready.block.end, lines);
+}
+
 /**
  * Puts `name`'s entry back from `approved` when the current text lacks it.
  * The entry is inserted after whichever approved neighbour is still present.
@@ -158,6 +196,11 @@ export function restoreSeat(current: string, approved: string, name: string): st
   const currentBlocks = seatBlocks(current);
   let insertAt = header + 1;
   let placed = false;
+  const among = siblingSlot(currentBlocks, source, name);
+  if (among !== null) {
+    insertAt = among;
+    placed = true;
+  }
   for (let i = at - 1; i >= 0 && !placed; i--) {
     const neighbour = approvedBlocks[i];
     const found = neighbour ? currentBlocks.find((block) => block.name === neighbour.name) : undefined;
@@ -180,6 +223,39 @@ export function restoreSeat(current: string, approved: string, name: string): st
   }
   lines.splice(insertAt, 0, ...inserting);
   return lines.join('\n');
+}
+
+/** Where a restored instance sits among the copies of the same count entry that are still in the file. */
+function siblingSlot(currentBlocks: SeatBlock[], source: SeatBlock, name: string): number | null {
+  if (source.count <= 1 || !source.name) return null;
+  const mine = instanceNumber(source.name, name);
+  if (mine === null) return null;
+  let lower: SeatBlock | null = null;
+  let lowerN = 0;
+  let higher: SeatBlock | null = null;
+  let higherN = Number.POSITIVE_INFINITY;
+  for (const block of currentBlocks) {
+    if (!block.name || !expanded(source).includes(block.name)) continue;
+    const n = instanceNumber(source.name, block.name);
+    if (n === null) continue;
+    if (n < mine && n > lowerN) {
+      lower = block;
+      lowerN = n;
+    } else if (n > mine && n < higherN) {
+      higher = block;
+      higherN = n;
+    }
+  }
+  if (lower) return lower.end;
+  return higher ? higher.start : null;
+}
+
+function instanceNumber(declared: string, name: string): number | null {
+  if (name === declared) return 1;
+  const prefix = `${declared}-`;
+  if (!name.startsWith(prefix)) return null;
+  const rest = name.slice(prefix.length);
+  return /^\d+$/.test(rest) ? Number(rest) : null;
 }
 
 // A counted approved entry is one block for every instance. Restoring one of them inserts that

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { clearStopped, hasSeat, restoreSeat, rewriteCount, seatBlocks, seatIsStopped } from '../src/file/lines.ts';
+import { clearStopped, hasSeat, markStopped, restoreSeat, rewriteCount, seatBlocks, seatIsStopped, takeOut } from '../src/file/lines.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import { writeTeamFile } from '../src/file/write.ts';
 
@@ -52,6 +52,27 @@ describe('the line-level writer', () => {
     expect(restored).toContain('# kept with the entry');
   });
 
+  test('taking one seat out leaves the next seat and a comment that sits above it', () => {
+    const text = takeOut(counted, 'deepseek');
+    expect(text).not.toContain('name: deepseek\n');
+    expect(text).toContain('name: deepseek-2');
+    expect(text).not.toContain('count:');
+    expect(text).toContain('name: lead');
+    const one = takeOut(rewriteCount(counted, 'deepseek') ?? '', 'deepseek-2');
+    expect(one).toContain('name: deepseek\n');
+    expect(one).not.toContain('name: deepseek-2');
+    expect(one).toContain('# kept with the entry');
+    expect(one).toContain('name: lead');
+  });
+
+  test('stopping one instance of a count leaves the other running', () => {
+    const text = markStopped(counted.replace('    stopped: true\n', ''), 'deepseek-2');
+    expect(text).not.toContain('count:');
+    expect(seatIsStopped(text, 'deepseek')).toBe(false);
+    expect(seatIsStopped(text, 'deepseek-2')).toBe(true);
+    expect(text).toContain('name: lead');
+  });
+
   test('a name-first seat is found', () => {
     const text = `format: 1
 seats:
@@ -72,6 +93,11 @@ seats:
     const restored = restoreSeat(gone, text, 'helper');
     expect(hasSeat(restored, 'helper')).toBe(true);
     expect(restored).toContain('- name: helper');
+    expect(takeOut(text, 'helper')).not.toContain('helper');
+    const stopped = markStopped(text.replace('    stopped: true\n', ''), 'helper');
+    expect(hasSeat(stopped, 'helper')).toBe(true);
+    expect(seatIsStopped(stopped, 'helper')).toBe(true);
+    expect(stopped).toContain('\n    stopped: true\n');
   });
 
   test('restoring one removed instance of a count entry inserts that instance only', () => {
@@ -100,12 +126,10 @@ seats:
 `;
     const split = rewriteCount(approved, 'ds');
     expect(split).not.toBeNull();
-    const removed = without(split ?? '', 'ds-2');
+    const removed = takeOut(split ?? '', 'ds-2');
     const restored = restoreSeat(removed, approved, 'ds-2');
     const names = seatBlocks(restored).map((block) => block.name);
-    expect(names.filter((name) => name === 'ds')).toHaveLength(1);
-    expect(names.filter((name) => name === 'ds-2')).toHaveLength(1);
-    expect(names.filter((name) => name === 'ds-3')).toHaveLength(1);
+    expect(names).toEqual(['lead', 'ds', 'ds-2', 'ds-3']);
     expect(restored).not.toContain('count:');
     expect(validateTeamFile(restored).ok).toBe(true);
   });
