@@ -1,9 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GitError, selectCommits } from '../../src/check/git.ts';
 import { formatReport, runCheck } from '../../src/check/run.ts';
-import { check } from '../../src/commands/check.ts';
+import { check, loadConfig } from '../../src/commands/check.ts';
+import { storePath } from '../../src/store/store.ts';
+import { loadTeamFile } from '../../src/file/load.ts';
 import { config, PR_SIGNATURE, SIGNATURE } from './fixtures.ts';
 import { createRepository, HUMAN_EMAIL, type Repository } from './repository.ts';
 
@@ -403,6 +406,39 @@ describe('the command', () => {
     expect(refused.code).toBe(2);
     expect(refused.stdout).toBe('');
     expect(refused.stderr).toMatch(/^team check: .*line 1: /);
+  });
+
+  test('a corrupt ledger exits 2 and names the file, with no stack', async () => {
+    const file = [
+      'format: 1',
+      'project: acme-web',
+      'coordinator: lead',
+      'operator: lead',
+      'workspace:',
+      '  mode: shared',
+      'seats:',
+      '  - role: implementer',
+      '    name: lead',
+      '    cli: claude-code',
+      '    vendor: anthropic',
+      '    model: Claude Opus',
+      '    version: "5.5"',
+      '    launch: claude --model claude-opus-5-5',
+      '',
+    ].join('\n');
+    writeFileSync(join(repo.path, '.agents/team.yaml'), file);
+    const loaded = loadTeamFile(repo.path);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    const home = mkdtempSync(join(tmpdir(), 'team-ledger-'));
+    const ledgerFile = join(storePath(loaded.team.project, loaded.root, home), 'ledger.json');
+    mkdirSync(join(ledgerFile, '..'), { recursive: true });
+    writeFileSync(ledgerFile, '{ this is not json');
+    const result = await run(['main'], (cwd, path) => loadConfig(cwd, path, home));
+    expect(result.code).toBe(2);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain(`can't read ${ledgerFile}`);
+    expect(result.stderr).not.toContain('    at ');
   });
 
   test('exits 2 with the line when the team file is refused', async () => {
