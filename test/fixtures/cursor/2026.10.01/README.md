@@ -1,0 +1,30 @@
+# Cursor Agent 2026.10.01 terminal captures
+
+Captured from the installed macOS `cursor-agent` CLI on 2026-10-03 with herdr 0.7.1,
+`pane read --source visible --lines 80`, in the scratch session `team-test-cursor`.
+There was at most one Cursor seat at a time. The session was stopped and deleted;
+the default session had eight agents before and after.
+
+- `startup.txt` and `idle.txt`: `cursor-agent --force --sandbox disabled` in an
+  already-trusted folder. No update, login, or trust dialog appeared. The first
+  settled screen is the idle prompt, so both files are that screen.
+- `trust.txt`: the same command in an untrusted directory. The workspace was
+  closed without answering the trust question. `--trust` was not passed.
+- `unsent.txt`, `working.txt`, `thinking.txt`, `rules-accepted.txt`: the same
+  command in the already-trusted folder. The rules message was pasted, read back,
+  and submitted. `working.txt` and `thinking.txt` coincided with herdr reporting
+  `working`; the composer showed the empty follow-up placeholder and
+  `ctrl+c to stop`. The only model response was `RULES_RECEIVED`. It was
+  instructed to use no tools or files.
+- `exit-typed.txt`, `exit.txt`: `/exit` pasted at idle, read back, then submitted.
+  The suggestion menu also listed `/quit`. Herdr subsequently listed zero agents
+  and the foreground process was the shell.
+
+Paths and the session id are replaced with placeholders. Shell launch scrollback
+before Cursor Agent's header is removed from idle and unsent captures. All other
+visible text is retained, including wrapping and the model footer. The model was
+the owner's CLI default; the profile does not select a model. These fixtures do
+not assert a permission or question layout that was not observed. Unknown screens
+permit no input.
+
+No trust, login, or settings dialog was answered, and no vendor configuration was edited.

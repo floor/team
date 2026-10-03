@@ -2,6 +2,7 @@
 // shape is "unknown": never ready, never idle, and never grounds for typing anything.
 import { codexScreen } from '../profiles/codex-screen.ts';
 import { antigravityScreen } from '../profiles/antigravity-screen.ts';
+import { cursorScreen } from '../profiles/cursor-screen.ts';
 
 export type Screen =
   | { kind: 'idle' }                 // the idle prompt, with an empty input box
@@ -26,6 +27,7 @@ function trustDialog(lines: string[]): boolean {
 const CLASSIFIERS: Record<string, Classify> = {
   codex: codexScreen,
   antigravity: antigravityScreen,
+  cursor: cursorScreen,
   // Claude Code, from the shapes team-watch.sh has matched on the live team.
   'claude-code': (lines) => {
     const text = lines.join('\n');

@@ -1,6 +1,7 @@
 import { readScreen } from '../watch/screen.ts';
 import { codexComposer } from '../profiles/codex-screen.ts';
 import { antigravityComposer } from '../profiles/antigravity-screen.ts';
+import { cursorComposer } from '../profiles/cursor-screen.ts';
 
 export interface Delivery {
   screen(): string | undefined;
@@ -31,10 +32,13 @@ export async function deliverRules(cli: string, text: string, seconds: number, i
   for (;;) {
     const status = io.status();
     const screen = io.screen();
-    const composer = cli === 'codex' && screen !== undefined
-      ? codexComposer(screen.split('\n').map((line) => line.trimEnd()).slice(-20))
-      : cli === 'antigravity' && screen !== undefined
-      ? antigravityComposer(screen.split('\n').map((line) => line.trimEnd()).slice(-20))
+    const lines = screen?.split('\n').map((line) => line.trimEnd()).slice(-20);
+    const composer = cli === 'codex' && lines
+      ? codexComposer(lines)
+      : cli === 'antigravity' && lines
+      ? antigravityComposer(lines)
+      : cli === 'cursor' && lines
+      ? cursorComposer(lines)
       : readScreen(cli, screen);
     if (status === 'working' && composer.kind === 'idle') return true;
     const kind = readScreen(cli, io.screen()).kind;
