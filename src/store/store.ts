@@ -149,3 +149,9 @@ export function writeApproval(store: string, record: ApprovalRecord, seats: read
   writeAtomic(join(store, APPROVAL), `${JSON.stringify({ ...record.approval, file: record.file }, null, 2)}\n`);
   writeAtomic(join(store, APPROVED_FILE), record.file);
 }
+
+/** Adds seats the team has had. The approval itself is left as it is. */
+export function recordLedger(store: string, seats: readonly LedgerEntry[]): void {
+  mkdirSync(store, { recursive: true, mode: 0o700 });
+  writeAtomic(join(store, LEDGER), `${JSON.stringify(mergeLedger(readLedger(store), seats), null, 2)}\n`);
+}

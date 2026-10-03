@@ -1,6 +1,7 @@
 import { readArgs } from '../args.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
+import { homedir } from 'node:os';
 import { agentStatus, paneRead, pressEnter, typeText } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
@@ -11,6 +12,12 @@ import type { Machine } from '../watch/machine.ts';
 import { notify } from '../watch/notify.ts';
 import { newMemory, pass } from '../watch/pass.ts';
 import { readScreen } from '../watch/screen.ts';
+import { judgeTemporary, judgeWorktree } from '../watch/close.ts';
+import { readEnd, type EndView } from '../watch/end.ts';
+import type { DownSeat } from '../launch/plan.ts';
+import { stopRunning, realSources as removeSources } from './remove.ts';
+import { removeWorktree } from './worktree.ts';
+import { stateOf } from './down.ts';
 import { realSources } from './status.ts';
 
 // What the watch reads and does outside its own process, so tests can stand in for it.
@@ -30,6 +37,12 @@ export type WatchSources = {
   wait(seconds: number): Promise<boolean>;
   alive(pid: number): boolean;
   pid: number;
+  /** How an end is read. The real watch uses git and the filesystem. */
+  readEnd?(root: string, until: string, base: string | null, ownBefore: boolean): EndView;
+  /** Stops one free seat. The real watch uses the same steps as `remove`. */
+  stopSeat?(session: string, seat: DownSeat): Promise<boolean>;
+  /** Removes one merged worktree. The real watch calls `worktree remove`. */
+  removeWorktree?(task: string): number;
 };
 
 function waitOrStop(seconds: number): Promise<boolean> {
@@ -106,6 +119,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
   });
 
   const memory = newMemory();
+  const told = new Set<string>();
   let notice: string | undefined;
   let silent = false;
   say(`watching the session "${session}" every ${first.team.watch.interval}s${args.flags.has('no-nudge') ? ', without nudges' : ''}`, false);
@@ -127,6 +141,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         silent = true;
       } else {
         silent = false;
+        noteWorked(dir, session, live);
         const state = readState(dir).sessions[session] ?? emptySession();
         const result = pass(team, state, live, sources.machine(root), sources.now().getTime(), memory, sources.approval(team, root));
         for (const report of result.reports) say(report.text, true);
@@ -135,6 +150,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
           else deliver(result.nudge, team, session, sources, memory, say);
         }
         if (result.fallback) say(result.fallback, true);
+        await closeEnded({ team, root, dir, session, live, sources, say, io, told });
       }
       beat();
       if (!(await sources.wait(team.watch.interval))) break;
@@ -179,3 +195,103 @@ function deliver(
   if (sources.pressEnter(nudge.pane, session)) say(`nudged the operator: ${nudge.text}`, false);
   else keep();
 }
+
+function noteWorked(dir: string, session: string, live: Live): void {
+  const recorded = readState(dir).sessions[session];
+  if (!recorded) return;
+  const due = live.agents.some((agent) => {
+    const seat = agent.name ? recorded.seats[agent.name] : undefined;
+    return seat?.temporary && seat.stage === 'ready' && !seat.worked && agent.status === 'working';
+  });
+  if (!due) return;
+  updateState(dir, (file) => {
+    const seats = (file.sessions[session] ??= emptySession()).seats;
+    for (const agent of live.agents) {
+      const seat = agent.name ? seats[agent.name] : undefined;
+      if (seat?.temporary && seat.stage === 'ready' && agent.status === 'working') seat.worked = true;
+    }
+  });
+}
+
+function sayOnce(told: Set<string>, key: string, text: string | undefined, say: (text: string, desktop: boolean) => void): void {
+  if (!text || told.has(key)) return;
+  told.add(key);
+  say(text, true);
+}
+
+// Closes a temporary seat whose end holds, and removes an on-merge worktree whose branch is merged.
+// Anything that is not free, or not proved, is left as it is.
+async function closeEnded(input: {
+  team: TeamFile;
+  root: string;
+  dir: string;
+  session: string;
+  live: Live;
+  sources: WatchSources;
+  say: (text: string, desktop: boolean) => void;
+  io: Io;
+  told: Set<string>;
+}): Promise<void> {
+  const { team, root, dir, session, live, sources, say, io, told } = input;
+  const endOf = sources.readEnd ?? readEnd;
+  const state = readState(dir).sessions[session] ?? emptySession();
+  for (const [name, recorded] of Object.entries(state.seats)) {
+    const temporary = recorded.temporary;
+    if (!temporary) continue;
+    const task = temporary.task;
+    const work = task ? state.worktrees[task] : undefined;
+    const ownBefore = work ? work.own_commits === true : temporary.own_commits === true;
+    const end = endOf(root, temporary.until, team.workspace.base, ownBefore);
+    const agent = live.agents.find((item) => item.name === name);
+    const cli = team.seats.find((seat) => seat.name === temporary.like)?.cli ?? '';
+    const free = agent
+      ? stateOf(sources.status(agent.pane, session) ?? agent.status, readScreen(cli, sources.screen(agent.pane, session) ?? undefined)) === 'free'
+      : false;
+    const decision = judgeTemporary({ worked: recorded.worked === true, free, ownBefore, end });
+    if (decision.ownCommits) {
+      updateState(dir, (file) => {
+        const current = (file.sessions[session] ??= emptySession());
+        if (work && task) {
+          const tree = current.worktrees[task];
+          if (tree) tree.own_commits = true;
+        } else {
+          const seat = current.seats[name];
+          if (seat?.temporary) seat.temporary.own_commits = true;
+        }
+      });
+    }
+    sayOnce(told, `end:${name}`, decision.report, say);
+    if (!decision.close || !agent) continue;
+    const seat: DownSeat = { name, cli, pane: agent.pane, workspace: agent.workspace, state: 'free' };
+    const stopped = sources.stopSeat
+      ? await sources.stopSeat(session, seat)
+      : await stopRunning({
+        io, dir, session, seat, abandon: false, sources: removeSources, logCommand: 'watch', caller: 'watch',
+      });
+    if (stopped) say(`closed ${name}; its end ${temporary.until} holds`, false);
+  }
+
+  const again = readState(dir);
+  const here = again.sessions[session] ?? emptySession();
+  for (const [task, work] of Object.entries(here.worktrees)) {
+    const occupied = Object.values(again.sessions).some((recorded) =>
+      Object.values(recorded.seats).some((seat) => seat.temporary?.task === task));
+    const end = endOf(root, `merged:${work.branch}`, team.workspace.base, work.own_commits === true);
+    const decision = judgeWorktree({
+      policy: team.workspace.remove, occupied, ownBefore: work.own_commits === true, end,
+    });
+    if (decision.ownCommits) {
+      updateState(dir, (file) => {
+        const tree = file.sessions[session]?.worktrees[task];
+        if (tree) tree.own_commits = true;
+      });
+    }
+    sayOnce(told, `worktree:${task}`, decision.report, say);
+    if (!decision.close) continue;
+    const code = sources.removeWorktree
+      ? sources.removeWorktree(task)
+      : removeWorktree(io, { home: homedir(), now: sources.now }, team, root, dir, session, task, 'watch');
+    if (code !== 0) say(`worktree ${task} was not removed`, true);
+  }
+}
+

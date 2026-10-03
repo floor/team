@@ -19,12 +19,21 @@ describe('Codex launch and captured screens', () => {
     expect(versionVerdict('codex-cli 0.160.0', codex.tested)).toBe('newer');
   });
   test.each([
-    ['idle', 'idle'], ['unsent', 'unsent'], ['working', 'unknown'],
+    ['idle', 'idle'], ['unsent', 'unsent'], ['working', 'working'],
     ['rules-accepted', 'idle'], ['startup', 'question'], ['startup-loading', 'unknown'], ['trust', 'trust'],
     ['exit-typed', 'unsent'], ['exit', 'unknown'],
   ] as const)('%s capture has %s composer shape', (file, kind) => {
     // A working screen never permits input, even if herdr's status has not caught up.
     expect(readScreen('codex', fixture(file)).kind).toBe(kind);
+  });
+  test('a trust dialog with a running turn beside it is still trust, not working', () => {
+    // The turn's own status line stays on the pane while the dialog is up: the dialog shape is
+    // read first, as for claude-code.
+    const screen = fixture('trust').replace(
+      '› 1. Trust and continue',
+      '• Working (0s • esc to interrupt)\n\n› 1. Trust and continue',
+    );
+    expect(readScreen('codex', screen).kind).toBe('trust');
   });
   test('unknown, shell and unobserved dialogs never count as idle', () => {
     for (const screen of [undefined, '❯\n', '›\n', 'Welcome to Codex\nSign in to continue', 'Do you allow this command?\n› 1. Yes\nEnter to confirm']) {
