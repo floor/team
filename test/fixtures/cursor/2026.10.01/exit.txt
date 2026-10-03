@@ -1,0 +1,22 @@
+  Tip: Type ? in the prompt bar to show in-app
+  hints.
+
+
+  Reply with exactly RULES_RECEIVED. Do not
+  use tools. Do not read or write files.
+
+
+  RULES_RECEIVED
+
+
+
+
+  → Add a follow-up
+
+
+   → /exit                     Exit
+     /quit                     Exit
+
+  To resume this session: agent --resume=<session>
+<workspace>                          3m 31s 22:44:44
+❯

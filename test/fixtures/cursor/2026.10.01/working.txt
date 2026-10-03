@@ -1,0 +1,21 @@
+❯ cursor-agent --force --sandbox disabled
+
+
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Type ? in the prompt bar to show in-app
+  hints.
+
+
+  Reply with exactly RULES_RECEIVED. Do not
+  use tools. Do not read or write files.
+
+
+ ⠀⠞ Working
+
+
+  → Add a follow-up                  ctrl+c to stop
+
+
+  Grok 4.7 256K High                 Run Everything
+  <workspace> 

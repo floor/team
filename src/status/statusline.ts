@@ -22,6 +22,14 @@ const NORMALISERS: Record<string, Normalise> = {
     }
     return found;
   },
+  cursor: (screen) => {
+    let found: Running | null = null;
+    for (const line of screen.split('\n').slice(-6)) {
+      const version = /(?:^|\s)Grok\s+(\d+(?:\.\d+)*)\b/.exec(line)?.[1];
+      if (version) found = { model: 'Grok', version };
+    }
+    return found;
+  },
   codex: (screen) => {
     const footer = screen.split('\n').slice(-6).findLast((line) => /^\s+GPT-\d[\w.-]*\s+[^·]*·/.test(line));
     const id = footer?.trim().split(/\s/)[0];
