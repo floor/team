@@ -502,7 +502,35 @@ function trustScratch(path: string): () => void {
   writeFileSync(file, before.slice(0, brace + 1) + insert + before.slice(brace + 1));
   return () => {
     const now = readFileSync(file, 'utf8');
-    if (now.includes(insert)) writeFileSync(file, now.replace(insert, ''));
+    const at = now.indexOf(key);
+    if (at < 0) return;
+    // Claude rewrites the entry while it runs, so the inserted line is gone and the
+    // object has grown. Drop the whole value and keep the rest of the file byte for byte.
+    const brace = now.indexOf('{', at + key.length);
+    if (brace < 0) return;
+    let depth = 0;
+    let end = brace;
+    for (; end < now.length; end++) {
+      const ch = now[end];
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          end++;
+          break;
+        }
+      }
+    }
+    let start = at;
+    while (start > 0 && (now[start - 1] === ' ' || now[start - 1] === '\t')) start--;
+    if (start > 0 && now[start - 1] === '\n') start--;
+    let stop = end;
+    if (now[stop] === ',') stop++;
+    if (now[stop] === '\n') stop++;
+    const next = now.slice(0, start) + now.slice(stop);
+    const parsed = JSON.parse(next) as { projects?: Record<string, unknown> };
+    if (parsed.projects && path in parsed.projects) return;
+    writeFileSync(file, next);
   };
 }
 
@@ -575,7 +603,7 @@ describe('scratch session', () => {
         const upCode = await runUp(file, owner, { ...upReal, home: scratchHome, doctor });
         expect(upCode).toBe(0);
         const downCode = await runDown(file, owner, downReal);
-        expect(downCode).toBe(0);
+        if (downCode !== 0) throw new Error(`down left this:\n${owner.out}\n${owner.err}`);
       } finally {
         const left = sessionState(SCRATCH);
         if (left === 'running' || left === 'stopped') {
