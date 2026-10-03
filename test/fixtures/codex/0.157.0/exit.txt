@@ -1,0 +1,23 @@
+  Tip: Use /keymap to configure keyboard shortcuts.
+
+⚠ Heads up, you have less than 25% of your weekly
+  limit left. Run /status for a breakdown.
+
+
+› Rules for this session, from the team file:
+  - Do not use tools or edit files.
+  - Do not change trust or configuration.
+  - Reply only RULES_RECEIVED, then wait.
+
+
+• RULES_RECEIVED
+
+  21:17
+Token usage: total=8'851 input=8'843 (+ 6'912 cached)
+ output=8
+To continue this session, run:
+  codex resume <session-id>
+Or run codex resume and select Acknowledge session ru
+les.
+~/project                         1m 38s 21:18:30
+❯

@@ -106,12 +106,27 @@ seats:
   the vendor's own spelling. `identity.since` skips an older history, `identity.humans` lists commit
   authors who don't sign, and `identity.forbidden` adds to the defaults — `^Claude-Session:` lines
   and session links are always refused.
-- `seats[*].cli` picks the launch profile; `claude-code` is the one this build has, and `team
+- `seats[*].cli` picks the launch profile; `claude-code`, `codex` and `antigravity` are available, and `team
   doctor` says what the others still need. `vendor`, `model` and `version` spell one seat's model.
 - `launch` is the plain command, without approval flags: the profile adds them. `count: 2` makes the
   numbered names; `parked` keeps a seat out of idle reports, `stopped` keeps it out of `up`.
 - `workspace.mode` is `shared` (every seat in the project) or `worktree` (each task in its own
   checkout, with `path`, `base` and `setup`).
+
+The Codex profile is tested with CLI 0.157.0. It adds `-a never -s danger-full-access`
+for unattended execution, plus `--no-daemon --no-alt-screen` for the captured pane mode,
+and checks login with `codex login status`. Rules go as a first message
+only at an empty idle prompt; delivery is recorded after Codex starts working with the input
+empty again. Nothing writes a vendor config or an `AGENTS.md`. `/exit` is sent only to a free
+seat. Update and workspace-trust screens are reported and closed without input; the owner
+handles them before relaunching. Other unrecognised layouts stay unknown.
+
+The Antigravity profile is tested with CLI 1.2.16 (`agy`). It adds `--dangerously-skip-permissions`
+for unattended execution, and checks authentication with `agy models`. Rules go as a first message
+only at an empty idle prompt; delivery is recorded after the CLI starts working with the composer
+empty again. Nothing writes a vendor config or an `AGENTS.md`. `/exit` is sent only to a free
+seat. Workspace-trust screens are reported and closed without input; the owner trusts the folder
+before relaunching. Other unrecognised layouts stay unknown.
 
 More fields exist — `tools`, `trust`, `machine`, `limits`, `watch`, `visibility` — and the comments
 `team init` writes name them; validation refuses what it cannot check, and this build acts on what
@@ -130,7 +145,7 @@ the commands below read.
 | `team watch` | watches the session, reports idle seats and nudges the operator; `--no-nudge` and `--no-notify` turn those off | anyone, one per session; it types only its fixed nudge, into an empty idle prompt |
 | `team add <name>` | starts one declared seat, or puts one back from the approved copy; `--temporary --like <seat> --until <end>` starts a seat the file does not hold | the owner, the coordinator or the operator |
 | `team remove <name>` | stops one seat, then takes it out of the file; `--keep` leaves it stopped; `--abandon` is the owner's, and types nothing | the owner, the coordinator or the operator; only the owner removes the coordinator or the operator |
-| `team worktree new <task>` / `team worktree remove <task>` | creates a task worktree from an up-to-date base, or removes its folder; a failed setup is kept and recorded; the branch is never deleted | the owner, the coordinator or the operator |
+| `team worktree new <task>` / `team worktree remove <task>` | creates a task worktree from an up-to-date base, or removes its folder; a failed setup is kept and recorded; the branch is never deleted; ignored files in the worktree are deleted with it | the owner, the coordinator or the operator |
 
 The owner is a terminal outside herdr with no agent process above it: a seat, or a script a seat
 runs, cannot approve a file or start a team. Every command that reads the file also takes

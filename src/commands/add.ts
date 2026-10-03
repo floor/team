@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { approvalDifferences } from '../approve/approval.ts';
@@ -11,6 +11,7 @@ import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines
 import { loadTeamFile, placedProblems } from '../file/load.ts';
 import type { Problem, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
+import { writeTeamFile } from '../file/write.ts';
 import {
   agentList, agentRename, paneRead, paneRun, sessionRunning, sessionState, startServer, workspaceClose, workspaceCreate,
   workspaceList, type HerdrAgent,
@@ -177,7 +178,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const prepared = validateTeamFile(built.edited);
   if (!prepared.ok) {
     for (const problem of prepared.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
-    return 1;
+    return 2;
   }
   for (const problem of placedProblems(prepared.team, root)) {
     io.stderr(`team add: ${problem.message}\n`);
@@ -207,14 +208,18 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 1;
   }
   if (built.edited !== original) {
-    const changed = withLock(dir, () => {
-      if (readFileSync(path, 'utf8') !== original) return true;
-      writeFileSync(path, built.edited);
-      return false;
+    const written = withLock(dir, () => {
+      if (readFileSync(path, 'utf8') !== original) return { kind: 'changed' as const };
+      const wrote = writeTeamFile(path, built.edited);
+      return wrote.ok ? { kind: 'ok' as const } : { kind: 'invalid' as const, errors: wrote.errors };
     });
-    if (changed) {
+    if (written.kind === 'changed') {
       io.stderr('team add: the file changed while add was checking; nothing was written\n');
       return 1;
+    }
+    if (written.kind === 'invalid') {
+      for (const problem of written.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
+      return 2;
     }
   }
 

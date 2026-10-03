@@ -80,7 +80,23 @@ describe('read from a repository', () => {
     git(project, 'checkout', '-q', 'main');
     git(project, 'commit', '-q', '--allow-empty', '-m', 'squashed');
     git(project, 'push', '-q', 'origin', 'main');
-    expect(readMerge(project, 'fix/squash', 'main', true)).toMatchObject({ verdict: 'open', ownNow: 1 });
+    expect(readMerge(project, 'fix/squash', 'main', true)).toMatchObject({
+      verdict: 'open',
+      ownNow: 1,
+      detail: 'merged? not provable',
+    });
+  });
+
+  test('a branch whose tree still differs is open, and stays quiet', () => {
+    setup();
+    git(project, 'checkout', '-q', '-b', 'fix/open');
+    writeFileSync(join(project, 'README.md'), 'changed\n');
+    git(project, 'commit', '-q', '-am', 'own');
+    expect(readMerge(project, 'fix/open', 'main', true)).toMatchObject({
+      verdict: 'open',
+      ownNow: 1,
+      detail: 'the branch still has commits of its own',
+    });
   });
 
   test('a deleted branch and a failed fetch are unproven', () => {

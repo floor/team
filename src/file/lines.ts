@@ -14,18 +14,28 @@ function indent(line: string): number {
   return n;
 }
 
+function scalar(raw: string): string {
+  const value = raw.replace(/\s+#.*$/, '').trim();
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
 function field(lines: string[], name: string): string | null {
   for (const line of lines) {
     const match = new RegExp(`^\\s*${name}:\\s*(.*)$`).exec(line);
     if (!match) continue;
-    const raw = match[1] ?? '';
-    const value = raw.replace(/\s+#.*$/, '').trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      return value.slice(1, -1);
-    }
-    return value;
+    return scalar(match[1] ?? '');
   }
   return null;
+}
+
+/** A seat's name, including one written on the entry's first line: `- name: helper`. */
+function seatName(body: string[]): string | null {
+  const inline = /^\s*-\s+name:\s*(.*)$/.exec(body[0] ?? '');
+  if (inline) return scalar(inline[1] ?? '');
+  return field(body, 'name');
 }
 
 /** The seat entries under `seats:`, in order. A file with no seats section has none. */
@@ -40,7 +50,7 @@ export function seatBlocks(text: string): SeatBlock[] {
     if (start < 0) return;
     const body = lines.slice(start, end);
     const count = Number(field(body, 'count') ?? '1');
-    blocks.push({ start, end, name: field(body, 'name'), count: Number.isInteger(count) && count > 0 ? count : 1 });
+    blocks.push({ start, end, name: seatName(body), count: Number.isInteger(count) && count > 0 ? count : 1 });
     start = -1;
   };
   for (let i = header + 1; i < lines.length; i++) {
@@ -82,7 +92,7 @@ function body(text: string, block: SeatBlock): string[] {
 }
 
 function setValue(line: string, value: string): string {
-  const match = /^(\s*[A-Za-z0-9_-]+:\s*)(.*)$/.exec(line);
+  const match = /^(\s*(?:-\s+)?[A-Za-z0-9_-]+:\s*)(.*)$/.exec(line);
   if (!match) return line;
   const rest = match[2] ?? '';
   const comment = /\s+#.*$/.exec(rest)?.[0] ?? '';
@@ -103,7 +113,7 @@ export function rewriteCount(text: string, declared: string): string | null {
     copies.push(...lines.flatMap((line) => {
       if (/^\s*count:/.test(line)) return [];
       if (instance === 1) return [line];
-      if (/^\s*name:/.test(line)) return [setValue(line, `${declared}${suffix}`)];
+      if (/^\s*(?:-\s+)?name:/.test(line)) return [setValue(line, `${declared}${suffix}`)];
       if (label !== null && /^\s*label:/.test(line)) return [setValue(line, `${label}${suffix}`)];
       return [line];
     }));
@@ -178,6 +188,8 @@ export function restoreSeat(current: string, approved: string, name: string): st
   const at = approvedBlocks.findIndex((block) => expanded(block).includes(name));
   const source = approvedBlocks[at];
   if (!source || at < 0) return current;
+  const inserting = instanceLines(approved, source, name);
+  if (!inserting) return current;
   const lines = current.split('\n');
   const header = lines.findIndex((line) => /^seats:\s*(#.*)?$/.test(line));
   if (header < 0) return current;
@@ -204,6 +216,16 @@ export function restoreSeat(current: string, approved: string, name: string): st
     const last = currentBlocks[currentBlocks.length - 1];
     if (last) insertAt = last.end;
   }
-  lines.splice(insertAt, 0, ...body(approved, source));
+  lines.splice(insertAt, 0, ...inserting);
   return lines.join('\n');
+}
+
+// A counted approved entry is one block for every instance. Restoring one of them inserts that
+// instance alone; copying the whole `count` entry would repeat the declared name.
+function instanceLines(approved: string, source: SeatBlock, name: string): string[] | null {
+  if (source.count <= 1 || !source.name) return body(approved, source);
+  const rewritten = rewriteCount(approved, source.name);
+  if (!rewritten) return null;
+  const instance = seatBlocks(rewritten).find((block) => block.name === name);
+  return instance ? body(rewritten, instance) : null;
 }
