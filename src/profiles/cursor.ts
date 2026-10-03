@@ -14,6 +14,14 @@ export function cursorModel(id: string): { model: string; version: string } | nu
  * Cursor Agent 2026.10.01: `--force` and `--sandbox disabled` from `--help`, passed as launch
  * arguments. Screens and `/exit` from a scratch session. `--trust` is not included: it records
  * trust for the folder, and a trust question is left unanswered.
+ *
+ * Launching a Cursor seat, like launching cursor-agent by hand, creates Cursor's own project
+ * record under ~/.cursor/projects for that folder; team writes no trust (.workspace-trusted) and
+ * no Cursor config.
+ *
+ * Cursor's dialogs answer single keys ("[a] Trust this workspace"), so text typed into one by
+ * mistake would answer it; the idle-composer wait and the re-read before Enter are what prevent
+ * that and must not be loosened for Cursor.
  */
 export const cursor: Profile = {
   cli: 'cursor',

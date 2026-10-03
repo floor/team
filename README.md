@@ -106,7 +106,7 @@ seats:
   the vendor's own spelling. `identity.since` skips an older history, `identity.humans` lists commit
   authors who don't sign, and `identity.forbidden` adds to the defaults — `^Claude-Session:` lines
   and session links are always refused.
-- `seats[*].cli` picks the launch profile; `claude-code`, `codex` and `antigravity` are available, and `team
+- `seats[*].cli` picks the launch profile; `claude-code`, `codex`, `cursor` and `antigravity` are available, and `team
   doctor` says what the others still need. `vendor`, `model` and `version` spell one seat's model.
 - `launch` is the plain command, without approval flags: the profile adds them. `count: 2` makes the
   numbered names; `parked` keeps a seat out of idle reports, `stopped` keeps it out of `up`.
@@ -127,6 +127,10 @@ only at an empty idle prompt; delivery is recorded after the CLI starts working 
 empty again. Nothing writes a vendor config or an `AGENTS.md`. `/exit` is sent only to a free
 seat. Workspace-trust screens are reported and closed without input; the owner trusts the folder
 before relaunching. Other unrecognised layouts stay unknown.
+
+Launching a Cursor seat, like launching cursor-agent by hand, creates Cursor's own project record
+under ~/.cursor/projects for that folder; team writes no trust (.workspace-trusted) and no Cursor
+config.
 
 More fields exist — `tools`, `trust`, `machine`, `limits`, `watch`, `visibility` — and the comments
 `team init` writes name them; validation refuses what it cannot check, and this build acts on what
