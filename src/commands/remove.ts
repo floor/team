@@ -4,6 +4,8 @@ import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { markStopped, takeOut } from '../file/lines.ts';
+import type { Problem } from '../file/types.ts';
+import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
 import { paneForeground } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
@@ -40,6 +42,15 @@ const LEFT: Record<Exclude<DownSeat['state'], 'free'>, string> = {
 
 export const remove: Command = (argv, io) => runRemove(argv, io, realSources);
 export default remove;
+
+/** The file edit `remove` would write, or null when that edit is valid or changes nothing. */
+function editProblems(path: string, name: string, keep: boolean): Problem[] | null {
+  const text = readFileSync(path, 'utf8');
+  const next = keep ? markStopped(text, name) : takeOut(text, name);
+  if (next === text) return null;
+  const parsed = validateTeamFile(next);
+  return parsed.ok ? null : parsed.errors;
+}
 
 export async function runRemove(argv: string[], io: Io, sources: RemoveSources = realSources): Promise<number> {
   const args = readArgs(argv, ['session', 'file'], ['keep', 'abandon']);
@@ -114,6 +125,23 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
       io.stderr(`team remove: no launch profile for \`${cli}\`; left as it is\n`);
       return 1;
     }
+  }
+
+  // An edit that will not validate is refused before the seat is stopped. Stopping first would
+  // end the live session and then report that nothing was written.
+  if (!temporary) {
+    const ahead = editProblems(path, name, args.flags.has('keep'));
+    if (ahead) {
+      for (const problem of ahead) {
+        io.stderr(`team remove: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
+      }
+      return 2;
+    }
+  }
+
+  if (agent) {
+    const screen = sources.screen(session, agent.pane, cli);
+    const where = stateOf(agent.status, screen);
     const stopped = await stopRunning({
       io, dir, session, sources, logCommand: 'remove', caller: describeCaller(caller),
       seat: { name, cli, pane: agent.pane, workspace: agent.workspace, state: where === 'free' ? 'free' : where },

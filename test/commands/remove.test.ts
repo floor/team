@@ -171,11 +171,12 @@ describe('team remove', () => {
     expect(made.closed).toEqual(['w1']);
     expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
     const leadRun = world();
-    leadRun.running.push(false);
     leadRun.agents.push({ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null });
     const leadIo = testIo(dir, owner);
     expect(await runRemove(['lead', '--file', file], leadIo, leadRun.sources)).toBe(2);
     expect(leadIo.err).toContain('names no declared seat');
+    expect(leadRun.typed).toEqual([]);
+    expect(leadRun.closed).toEqual([]);
     expect(readFileSync(file, 'utf8')).toContain('name: lead');
   });
 
