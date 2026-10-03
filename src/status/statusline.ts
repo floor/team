@@ -21,3 +21,12 @@ const NORMALISERS: Record<string, Normalise> = {
 export function runningModel(cli: string, screen: string): Running | null {
   return NORMALISERS[cli]?.(screen) ?? null;
 }
+
+// The model a seat runs, as far as its screen can say. Claude Code names Claude's families only:
+// for a seat that runs another maker's model through it, the line says nothing to compare, so
+// the seat is unread rather than wrong.
+export function seatModel(seat: { cli: string; model: string }, screen: string | undefined): Running | null {
+  if (screen === undefined) return null;
+  if (seat.cli === 'claude-code' && !seat.model.startsWith('Claude ')) return null;
+  return runningModel(seat.cli, screen);
+}

@@ -8,6 +8,7 @@ const commands: Record<string, () => Promise<{ default: Command }>> = {
   check: () => import('./commands/check.ts'),
   init: () => import('./commands/init.ts'),
   status: () => import('./commands/status.ts'),
+  watch: () => import('./commands/watch.ts'),
 };
 
 const USAGE = `team: set up, change and watch a project's team of AI agents

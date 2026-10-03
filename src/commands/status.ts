@@ -1,13 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, relative, resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { readArgs } from '../args.ts';
-import { loadTeamFile } from '../file/load.ts';
+import { currentTeam } from '../file/current.ts';
 import type { Problem, TeamFile } from '../file/types.ts';
-import { validateTeamFile } from '../file/validate.ts';
 import { agentList, paneRead, sessionRunning, workspaceList } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
-import { emptySession, readState, updateState } from '../state.ts';
+import { emptySession, readState } from '../state.ts';
 import { compare } from '../status/compare.ts';
 import type { Comparison, Difference, Live } from '../status/compare.ts';
 
@@ -54,28 +52,14 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     return 2;
   }
 
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
-  let team: TeamFile;
-  let root: string;
-  let dir: string;
-  if (loaded.ok) {
-    ({ team, root } = loaded);
-    dir = dirname(loaded.path);
-    for (const warning of loaded.warnings) io.stderr(`team status: warning, line ${warning.line}: ${warning.message}\n`);
-    rememberValid(dir, loaded.path, sources.now());
-  } else {
-    // A broken file is when status is needed most: fall back to the last copy that validated.
-    const fallback = loaded.path && existsSync(loaded.path) ? lastValid(dirname(loaded.path)) : null;
-    if (!fallback || !loaded.path) {
-      printProblems(io, loaded.errors);
-      return 2;
-    }
-    const first = loaded.errors[0];
-    io.stdout(`team.yaml is invalid (${first && first.line ? `line ${first.line}: ` : ''}${first?.message ?? 'unreadable'}); using the copy of ${fallback.readAt}\n`);
-    team = fallback.team;
-    dir = dirname(loaded.path);
-    root = dir.endsWith('.agents') ? dirname(dir) : dir;
+  const current = currentTeam(io.cwd, args.values.file, sources.now());
+  if (!current.ok) {
+    printProblems(io, current.errors);
+    return 2;
   }
+  const { team, root, dir } = current;
+  if (current.notice) io.stdout(`${current.notice}\n`);
+  for (const warning of current.warnings) io.stderr(`team status: warning, line ${warning.line}: ${warning.message}\n`);
 
   const session = args.values.session ?? team.session;
   const live = sources.live(session, team);
@@ -131,29 +115,5 @@ function render(team: TeamFile, session: string, comparison: Comparison): string
 function printProblems(io: Io, problems: Problem[]): void {
   for (const problem of problems) {
     io.stderr(`team status: ${problem.line ? `team.yaml line ${problem.line}: ` : ''}${problem.message}\n`);
-  }
-}
-
-// Saves the file's text in the state when it changed, for the day the file is broken.
-function rememberValid(dir: string, path: string, now: Date): void {
-  const file = readFileSync(path, 'utf8');
-  try {
-    if (readState(dir).last_valid?.file === file) return;
-    updateState(dir, (state) => {
-      state.last_valid = { read_at: now.toISOString(), file };
-    });
-  } catch {
-    // A state that can't be written must not stop a read-only command.
-  }
-}
-
-function lastValid(dir: string): { team: TeamFile; readAt: string } | null {
-  try {
-    const saved = readState(dir).last_valid;
-    if (!saved) return null;
-    const result = validateTeamFile(saved.file);
-    return result.ok ? { team: result.team, readAt: saved.read_at } : null;
-  } catch {
-    return null;
   }
 }

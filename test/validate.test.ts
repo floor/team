@@ -73,7 +73,10 @@ describe('the complete example of the RFC', () => {
 
   test('values with units are read into seconds, percent and bytes', () => {
     expect(team.watch).toMatchObject({ interval: 120, idleFirst: 600, idleRepeat: 1200, unsentAfter: 60, quotaMarks: [50, 75, 90] });
-    expect(team.machine).toEqual({ loadStart: 3, loadMax: 6, memoryStart: 25, memoryMin: 15, diskMin: 10e9 });
+    expect(team.machine).toEqual({
+      loadStart: 3, loadMax: 6, memoryStart: 25, memoryMin: 15, diskMin: 10e9,
+      swapFreeMin: 2e9, swapGrowthMax: 1e9, swapGrowthWindow: 600,
+    });
     expect(team.limits).toEqual({ seats: 6, temporary: 2, vendors: { openai: 1, deepseek: 3 } });
   });
 
@@ -136,6 +139,8 @@ const refusals: [string, string, RegExp][] = [
   ['a duration without its unit', `${minimal}watch:\n  interval: 120\n`, /watch.interval needs a value with its unit \(s, m, h\)/],
   ['a memory figure without its unit', `${minimal}machine:\n  memory_start: 25\n`, /machine.memory_start needs a value with its unit \(%\)/],
   ['a size without its unit', `${minimal}machine:\n  disk_min: 10\n`, /machine.disk_min needs a value with its unit/],
+  ['a swap figure without its unit', `${minimal}machine:\n  swap_free_min: 2\n`, /machine.swap_free_min needs a value with its unit \(MB, GB, TB\)/],
+  ['a swap window without its unit', `${minimal}machine:\n  swap_growth_window: 10\n`, /machine.swap_growth_window needs a value with its unit \(s, m, h\)/],
   ['a load that is not a number', `${minimal}machine:\n  load_start: high\n`, /machine.load_start must be a number/],
   ['quota marks that are not percentages', `${minimal}watch:\n  quota_marks: [50, 150]\n`, /quota_marks must be a list of percentages/],
   ['a limit that is not a whole number', `${minimal}limits:\n  seats: 2.5\n`, /limits.seats must be a whole number/],

@@ -492,13 +492,18 @@ function readWatch(entry: YamlEntry | undefined, check: Check): TeamFile['watch'
 }
 
 function readMachine(entry: YamlEntry | undefined, check: Check): TeamFile['machine'] {
-  const fields = check.fields(entry?.value, 'machine', ['load_start', 'load_max', 'memory_start', 'memory_min', 'disk_min']);
+  const fields = check.fields(entry?.value, 'machine', [
+    'load_start', 'load_max', 'memory_start', 'memory_min', 'disk_min', 'swap_free_min', 'swap_growth_max', 'swap_growth_window',
+  ]);
   return {
     loadStart: check.number(fields.get('load_start'), 'machine.load_start') ?? 3,
     loadMax: check.number(fields.get('load_max'), 'machine.load_max') ?? 6,
     memoryStart: check.measure(fields.get('memory_start'), 'machine.memory_start', PERCENT, '25%') ?? 25,
     memoryMin: check.measure(fields.get('memory_min'), 'machine.memory_min', PERCENT, '15%') ?? 15,
     diskMin: check.measure(fields.get('disk_min'), 'machine.disk_min', SIZE, '10GB') ?? 10e9,
+    swapFreeMin: check.measure(fields.get('swap_free_min'), 'machine.swap_free_min', SIZE, '2GB') ?? 2e9,
+    swapGrowthMax: check.measure(fields.get('swap_growth_max'), 'machine.swap_growth_max', SIZE, '1GB') ?? 1e9,
+    swapGrowthWindow: check.measure(fields.get('swap_growth_window'), 'machine.swap_growth_window', DURATION, '10m') ?? 600,
   };
 }
 
