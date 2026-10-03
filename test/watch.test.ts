@@ -57,6 +57,10 @@ describe('reading a screen of Claude Code', () => {
     expect(readScreen('claude-code', `Do you trust this folder?\n❯ 1. Yes, proceed\n  2. No, exit\n\nEnter to confirm · Esc to cancel`).kind).toBe('permission');
     expect(readScreen('claude-code', question).kind).toBe('question');
   });
+  test('text on a later line of the box, under an empty first line, is unsent text', () => {
+    expect(readScreen('claude-code', `${RULE}\n❯ \n  and a second line\n${RULE}\n${STATUS}\n`).kind).toBe('unsent');
+    expect(readScreen('claude-code', `${RULE}\n❯ \n\n${RULE}\n${STATUS}\n`).kind).toBe('idle');
+  });
   test('anything else is unknown: a screen without a prompt, no screen, another CLI', () => {
     expect(readScreen('claude-code', 'Welcome back!\n\nUpdate available: run claude update\n').kind).toBe('unknown');
     expect(readScreen('claude-code', undefined).kind).toBe('unknown');
@@ -309,6 +313,7 @@ describe('team watch', () => {
   let typed: string[];
   let notified: string[];
   let screenNow: string;
+  let statusNow: string;
   let scene: Live | null;
   let clock: number;
 
@@ -319,7 +324,9 @@ describe('team watch', () => {
       machine: () => fine,
       approval: () => [],
       screen: () => screenNow,
-      type: (pane, text) => { typed.push(`${pane} ${text}`); return true; },
+      status: () => statusNow,
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); return true; },
+      pressEnter: (pane) => { typed.push(`${pane} <enter>`); return true; },
       notify: (text) => { notified.push(text); },
       now: () => new Date(clock),
       wait: async (seconds) => { clock += seconds * 1000; return --left > 0; },
@@ -337,6 +344,7 @@ describe('team watch', () => {
     typed = [];
     notified = [];
     screenNow = idle;
+    statusNow = 'idle';
     clock = Date.parse('2026-10-03T14:00:00Z');
     scene = live({ 'deepseek-acme-2': { status: 'blocked', screen: question } });
   });
@@ -352,7 +360,7 @@ describe('team watch', () => {
     }));
     expect(code).toBe(0);
     expect(beat).toEqual({ pid: 4242, heartbeat: '2026-10-03T14:00:00.000Z' });
-    expect(typed).toEqual(['w0:p1 Team watch: deepseek-acme-2 asked a question: the operator\'s to act on.']);
+    expect(typed).toEqual(['w0:p1 Team watch: deepseek-acme-2 asked a question: the operator\'s to act on.', 'w0:p1 <enter>']);
     expect(notified[0]).toBe('deepseek-acme-2 asked a question: the operator\'s to act on');
     const log = readFileSync(join(dir, '.agents', 'team.log'), 'utf8');
     expect(log).toContain('watch [watch] deepseek-acme-2 asked a question');
@@ -375,7 +383,27 @@ describe('team watch', () => {
   test('a kept nudge is typed on a later pass, once the operator is free again', async () => {
     let calls = 0;
     await runWatch(['--file', file], testIo(dir), sources(2, { screen: () => (calls++ === 0 ? permission : idle) }));
+    expect(typed).toEqual(['w0:p1 Team watch: deepseek-acme-2 asked a question: the operator\'s to act on.', 'w0:p1 <enter>']);
+  });
+
+  test('an operator that started working since the pass is not typed into', async () => {
+    statusNow = 'working';
+    await runWatch(['--file', file], testIo(dir), sources(1));
+    expect(typed).toEqual([]);
+  });
+
+  test('a dialog that opens between the text and the Enter never gets the Enter', async () => {
+    let looks = 0;
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, { screen: () => (looks++ === 0 ? idle : permission) }));
     expect(typed).toEqual(['w0:p1 Team watch: deepseek-acme-2 asked a question: the operator\'s to act on.']);
+    expect(io.out).toContain('a nudge was typed and not sent');
+  });
+
+  test('the text in the box, seen before the Enter, is the nudge\'s own: the Enter is sent', async () => {
+    let looks = 0;
+    await runWatch(['--file', file], testIo(dir), sources(1, { screen: () => (looks++ === 0 ? idle : unsent) }));
+    expect(typed[1]).toBe('w0:p1 <enter>');
   });
 
   test('--no-nudge types nothing and --no-notify notifies nothing; the log still has it', async () => {

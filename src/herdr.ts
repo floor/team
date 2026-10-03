@@ -86,15 +86,27 @@ export function herdrCommand(session: string | undefined, ...args: string[]): st
   return ['herdr', ...(session && session !== 'default' ? ['--session', session] : []), ...args].join(' ');
 }
 
-// Types one line into a pane and sends it. The one function that types: its callers have just
-// seen the pane at an empty idle prompt, and type nothing anywhere else.
-export function typeLine(pane: string, text: string, session?: string): boolean {
-  const prefix = session ? ['--session', session] : [];
+// The two functions that type. Their callers have just seen the pane at an empty idle prompt,
+// look at it again between the text and the Enter, and type nothing anywhere else.
+export function typeText(pane: string, text: string, session?: string): boolean {
   try {
-    execFileSync('herdr', [...prefix, 'pane', 'send-text', pane, text], { stdio: 'ignore', timeout: 10_000 });
-    execFileSync('herdr', [...prefix, 'pane', 'send-keys', pane, 'enter'], { stdio: 'ignore', timeout: 10_000 });
+    execFileSync('herdr', [...(session ? ['--session', session] : []), 'pane', 'send-text', pane, text], { stdio: 'ignore', timeout: 10_000 });
     return true;
   } catch {
     return false;
   }
+}
+
+export function pressEnter(pane: string, session?: string): boolean {
+  try {
+    execFileSync('herdr', [...(session ? ['--session', session] : []), 'pane', 'send-keys', pane, 'enter'], { stdio: 'ignore', timeout: 10_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// The status herdr reports for one pane's agent, or null.
+export function agentStatus(pane: string, session?: string): string | null {
+  return agentList(session)?.find((agent) => agent.pane === pane)?.status ?? null;
 }
