@@ -11,12 +11,22 @@ export type Screen =
 
 type Classify = (lines: string[]) => Screen;
 
+// The workspace dialog Claude 2.1.288 showed on the live run: the question line
+// "Is this a project you created or one you trust?" and a numbered "1. Yes".
+// A transcript that only quotes "trust this folder" has neither shape.
+function trustDialog(lines: string[]): boolean {
+  const question = (line: string) =>
+    /Do you trust (?:this|the) folder\?/i.test(line) || /one you trust\?/i.test(line);
+  const choice = (line: string) => /^\s*[❯›>]?\s*1\.\s+Yes\b/.test(line);
+  return lines.some(question) && lines.some(choice);
+}
+
 const CLASSIFIERS: Record<string, Classify> = {
   // Claude Code, from the shapes team-watch.sh has matched on the live team.
   'claude-code': (lines) => {
     const text = lines.join('\n');
     // Before the permission shapes: "1. Yes" is how a trust question is answered, and it is not answered.
-    if (/trust (this|the) folder/i.test(text)) return { kind: 'trust' };
+    if (trustDialog(lines)) return { kind: 'trust' };
     if (/Do you want to (proceed|make this edit|create|allow)|\bEsc to cancel\b.*\bTab to amend\b|^\s*❯?\s*[0-9]\. (Yes|No)\b/m.test(text)) {
       return { kind: 'permission' };
     }
