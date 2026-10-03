@@ -6,7 +6,7 @@ import type { Caller } from '../../src/caller.ts';
 import { runApprove } from '../../src/commands/approve.ts';
 import { loadConfig } from '../../src/commands/check.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
-import { runDown, type DownSources } from '../../src/commands/down.ts';
+import { paneStillRunning, runDown, type DownSources } from '../../src/commands/down.ts';
 import { runUp, type UpSources } from '../../src/commands/up.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { readApproval, readLedger, storePath } from '../../src/store/store.ts';
@@ -517,5 +517,12 @@ describe('team down', () => {
     });
     expect((await down(['--dry-run'], OWNER, { sessionRunning: () => null })).code).toBe(2);
     expect((await down(['--dry-run'], OWNER, { agents: () => null })).code).toBe(2);
+  });
+
+  test('a pane back at its shell is not the seat any more', () => {
+    expect(paneStillRunning(['claude'], ['claude'])).toBe(true);
+    expect(paneStillRunning(['zsh'], ['claude'])).toBe(false);
+    expect(paneStillRunning([], ['claude'])).toBe(false);
+    expect(paneStillRunning(null, ['claude'])).toBe(true);
   });
 });
