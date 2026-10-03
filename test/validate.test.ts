@@ -1,0 +1,240 @@
+import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { validateTeamFile } from '../src/file/validate.ts';
+import { renderSignature } from '../src/file/signature.ts';
+
+const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url), 'utf8');
+
+const minimal = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+workspace:
+  mode: shared
+seats:
+  - role: coordinator
+    name: lead
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+`;
+
+// Replaces one piece of a valid file, and fails loudly if the piece isn't there.
+function change(text: string, from: string, to: string): string {
+  if (!text.includes(from)) throw new Error(`the fixture has no "${from}"`);
+  return text.replace(from, to);
+}
+
+function errors(text: string): string[] {
+  const result = validateTeamFile(text);
+  if (result.ok) return [];
+  return result.errors.map((problem) => `${problem.line}: ${problem.message}`);
+}
+
+function valid(text: string) {
+  const result = validateTeamFile(text);
+  if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.errors)}`);
+  return result;
+}
+
+describe('the complete example of the RFC', () => {
+  const { team, warnings } = valid(example);
+
+  test('is accepted without warnings', () => {
+    expect(warnings).toEqual([]);
+    expect(team.format).toBe(1);
+    expect(team.visibility).toBe('public');
+  });
+
+  test('count is expanded, names and labels numbered alike', () => {
+    expect(team.seats.map((seat) => seat.name)).toEqual([
+      'claude-coordinator-acme', 'codex-acme', 'deepseek-acme', 'deepseek-acme-2', 'grok-acme',
+    ]);
+    expect(team.seats[3]).toMatchObject({ label: 'deepseek-acme-2', declared: 'deepseek-acme', instance: 2, count: 2 });
+  });
+
+  test('defaults are applied to seats', () => {
+    const [lead, codex, , , grok] = team.seats;
+    expect(lead).toMatchObject({ display: 'Claude Opus 5.5', cwd: '.', mode: 'shared', label: 'claude-coordinator-acme', parked: false });
+    expect(codex).toMatchObject({ display: 'GPT-6 Sol', mode: 'worktree', parked: true });
+    expect(grok).toMatchObject({ stopped: true, cli: 'grok', vendor: 'xai' });
+  });
+
+  test('identity: templates, positions, exemptions, and the defaults before the file\'s patterns', () => {
+    expect(team.identity.signature.commits).toEqual({ template: 'Agent: {display} · {role}', position: 'trailer', exempt: ['merge'] });
+    expect(team.identity.signature.pullRequests).toEqual({ template: '**Agent:** {display} · {role}', position: 'last-line' });
+    expect(team.identity.forbidden).toEqual(['^Claude-Session:', 'https?://claude\\.ai/code/session']);
+    expect(team.identity.forbiddenPublic).toEqual(['\\bWEB-[0-9]+\\b']);
+    expect(team.identity.humans).toEqual(['jane@acme.example']);
+    expect(team.identity.since).toBe('4f2a9c1');
+  });
+
+  test('values with units are read into seconds, percent and bytes', () => {
+    expect(team.watch).toMatchObject({ interval: 120, idleFirst: 600, idleRepeat: 1200, unsentAfter: 60, quotaMarks: [50, 75, 90] });
+    expect(team.machine).toEqual({ loadStart: 3, loadMax: 6, memoryStart: 25, memoryMin: 15, diskMin: 10e9 });
+    expect(team.limits).toEqual({ seats: 6, temporary: 2, vendors: { openai: 1, deepseek: 3 } });
+  });
+
+  test('a signature renders in the vendor\'s spelling', () => {
+    const codex = team.seats[1];
+    if (!codex) throw new Error('no seat');
+    expect(renderSignature(team.identity.signature.commits.template, codex)).toBe('Agent: GPT-6 Sol · implementer');
+  });
+});
+
+describe('a minimal file', () => {
+  const { team } = valid(minimal);
+  test('gets every default', () => {
+    expect(team.session).toBe('acme');
+    expect(team.visibility).toBe('private');
+    expect(team.identity.signature.commits.position).toBe('trailer');
+    expect(team.identity.signature.commits.exempt).toEqual(['merge']);
+    expect(team.identity.since).toBeNull();
+    expect(team.workspace).toMatchObject({ mode: 'shared', branch: '{task}', remove: 'on-merge', protected: ['.'], limit: 8 });
+    expect(team.limits).toEqual({ seats: 3, temporary: 2, vendors: {} });
+    expect(team.watch.nudgeWait).toBe(600);
+  });
+  test('is public when it only sets forbidden_public', () => {
+    const text = `${minimal}identity:\n  forbidden_public: ["\\\\bX-[0-9]+"]\n`;
+    expect(valid(text).team.visibility).toBe('public');
+  });
+});
+
+const refusals: [string, string, RegExp][] = [
+  ['no format', change(minimal, 'format: 1\n', ''), /format is required/],
+  ['another format', change(minimal, 'format: 1', 'format: 2'), /format must be 1/],
+  ['a quoted format', change(minimal, 'format: 1', 'format: "1"'), /format must be 1/],
+  ['an unknown top-level field', `${minimal}colour: blue\n`, /unknown field "colour" in the file/],
+  ['an unknown seat field', change(minimal, '    cli:', '    shell: zsh\n    cli:'), /unknown field "shell" in a seat/],
+  ['a duplicate key', change(minimal, 'operator: lead', 'operator: lead\nproject: other'), /duplicate key "project"/],
+  ['no project', change(minimal, 'project: acme\n', ''), /project is required/],
+  ['no coordinator', change(minimal, 'coordinator: lead\n', ''), /coordinator is required/],
+  ['no operator', change(minimal, 'operator: lead\n', ''), /operator is required/],
+  ['no seats', minimal.slice(0, minimal.indexOf('seats:')), /seats is required/],
+  ['a coordinator that names no seat', change(minimal, 'coordinator: lead', 'coordinator: boss'), /coordinator "boss" names no declared seat/],
+  ['a parked operator', `${minimal}    parked: true\n`, /operator "lead" can't be a parked seat/],
+  ['a stopped coordinator', `${minimal}    stopped: true\n`, /coordinator "lead" can't be a stopped seat/],
+  ['a coordinator with count', `${minimal}    count: 2\n`, /coordinator "lead" can't be a seat with count/],
+  ['the session "default"', change(minimal, 'project: acme', 'project: acme\nsession: default'), /session can't be "default"/],
+  ['a project named default with no session', change(minimal, 'project: acme', 'project: default'), /session can't be "default"/],
+  ['an unquoted version', change(minimal, '"5.5"', '4.10'), /version must be quoted \("4\.10"\)/],
+  ['a missing seat field', change(minimal, '    vendor: anthropic\n', ''), /vendor is required/],
+  ['a missing launch', change(minimal, '    launch: claude --model claude-opus-5-5\n', ''), /launch is required/],
+  ['an unknown cli', change(minimal, 'cli: claude-code', 'cli: emacs'), /cli must be one of: claude-code, codex, cursor, grok, antigravity/],
+  ['a number where text is expected', change(minimal, 'role: coordinator', 'role: 7'), /role must be text/],
+  ['a display without the version token', `${minimal}    display: Claude Opus 15.5\n`, /display must contain the version "5\.5" as a token/],
+  ['an absolute cwd', `${minimal}    cwd: /srv/acme\n`, /cwd must be relative/],
+  ['a home cwd', `${minimal}    cwd: ~/Code/acme\n`, /cwd must be relative/],
+  ['a cwd outside the project and trust', `${minimal}    cwd: ../other\n`, /outside the project and matches no trust path/],
+  ['a parked flag that is not a boolean', `${minimal}    parked: "yes"\n`, /parked must be true or false/],
+  ['a count below 1', `${minimal}    count: 0\n`, /count must be a whole number, 1 or more/],
+  ['an unknown mode', change(minimal, 'mode: shared', 'mode: both'), /workspace.mode must be one of: worktree, shared/],
+  ['worktrees without a base', change(minimal, 'mode: shared', 'mode: worktree\n  path: ../wt/acme/{task}'), /workspace.base is required/],
+  ['worktrees without a path', change(minimal, 'mode: shared', 'mode: worktree\n  base: main'), /workspace.path is required/],
+  ['a duration without its unit', `${minimal}watch:\n  interval: 120\n`, /watch.interval needs a value with its unit \(s, m, h\)/],
+  ['a memory figure without its unit', `${minimal}machine:\n  memory_start: 25\n`, /machine.memory_start needs a value with its unit \(%\)/],
+  ['a size without its unit', `${minimal}machine:\n  disk_min: 10\n`, /machine.disk_min needs a value with its unit/],
+  ['a load that is not a number', `${minimal}machine:\n  load_start: high\n`, /machine.load_start must be a number/],
+  ['quota marks that are not percentages', `${minimal}watch:\n  quota_marks: [50, 150]\n`, /quota_marks must be a list of percentages/],
+  ['a limit that is not a whole number', `${minimal}limits:\n  seats: 2.5\n`, /limits.seats must be a whole number/],
+  ['a template without {role}', `${minimal}identity:\n  signature:\n    template: "Agent: {display}"\n`, /must contain \{role\}/],
+  ['a template without the model', `${minimal}identity:\n  signature:\n    template: "Agent: {version} · {role}"\n`, /must contain \{display\}, or both \{model\} and \{version\}/],
+  ['an unknown placeholder', `${minimal}identity:\n  signature:\n    template: "Agent: {display} · {role} {team}"\n`, /unknown placeholder \{team\}/],
+  ['trailer with a template git can\'t read as one', `${minimal}identity:\n  signature:\n    template: "Signed by: {display} · {role}"\n`, /position "trailer" needs a template git reads as a trailer/],
+  ['an unknown position', `${minimal}identity:\n  signature:\n    commits:\n      position: first-line\n`, /position must be one of: last-line, trailer, anywhere/],
+  ['an exemption other than merge', `${minimal}identity:\n  signature:\n    commits:\n      exempt: [revert]\n`, /exempt takes only "merge"/],
+  ['exempt on pull requests', `${minimal}identity:\n  signature:\n    pull_requests:\n      exempt: [merge]\n`, /pull_requests has no exempt/],
+  ['a forbidden pattern that is no regular expression', `${minimal}identity:\n  forbidden: ["(open"]\n`, /identity.forbidden: not a regular expression/],
+  ['an unknown visibility', `${minimal}visibility: secret\n`, /visibility must be one of: public, private/],
+  ['a tool without a kind', `${minimal}tools:\n  tracker: { workspace: acme }\n`, /tools.tracker needs a kind/],
+  ['a rule read as a map', `${minimal}rules:\n  - Never stop: keep working\n`, /each item of rules must be text: quote a line that contains ": "/],
+  ['a trust pattern over the project\'s siblings', `${minimal}trust:\n  - ../*\n`, /would trust every folder beside the project/],
+  ['a trust pattern over an ancestor', `${minimal}trust:\n  - ../..\n`, /is a parent of the project/],
+  ['a star in the middle of a trust pattern', `${minimal}trust:\n  - ../*/acme\n`, /takes "\*" only as a whole last segment/],
+  ['a partial star', `${minimal}trust:\n  - ../wt/acme-*\n`, /takes "\*" only as a whole last segment/],
+  ['an absolute trust path', `${minimal}trust:\n  - /srv\n`, /must be relative to the project/],
+  ['a key with a known prefix', `${minimal}tools:\n  tracker: { kind: linear, token: lin_api_0123456789abcdefghij }\n`, /shaped like a key or token/],
+  ['a URL with credentials', `${minimal}tools:\n  db: { kind: postgres, url: "postgres://admin:hunter2@db.example/acme" }\n`, /URL with credentials/],
+  ['YAML outside the subset', change(minimal, 'project: acme', 'project: &p acme'), /anchors/],
+];
+
+describe('every refusal of § 2 names its line', () => {
+  for (const [name, text, message] of refusals) {
+    test(name, () => {
+      const found = errors(text);
+      expect(found.join('\n')).toMatch(message);
+      for (const line of found) expect(line).toMatch(/^\d+: /);
+    });
+  }
+});
+
+describe('names and labels after count is expanded', () => {
+  const second = `  - role: implementer
+    name: lead-2
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    launch: codex
+`;
+  const counted = `  - role: implementer
+    name: worker
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    launch: codex
+    count: 2
+`;
+  test('two seats with one name', () => {
+    expect(errors(minimal + change(second, 'lead-2', 'lead')).join('\n')).toMatch(/two seats have the name "lead"/);
+  });
+  test('an expanded name that meets an explicit one', () => {
+    const text = minimal + counted + change(second, 'lead-2', 'worker-2');
+    expect(errors(text).join('\n')).toMatch(/two seats have the name "worker-2" .*after count is expanded/);
+  });
+  test('two seats with one label', () => {
+    expect(errors(`${minimal + second}    label: lead\n`).join('\n')).toMatch(/two seats have the label "lead"/);
+  });
+  test('distinct seats pass, and every instance counts for the default ceiling', () => {
+    expect(valid(minimal + counted + second).team.limits.seats).toBe(6);
+  });
+});
+
+describe('the worktree path', () => {
+  const worktrees = (path: string, trust: string) =>
+    change(minimal, 'mode: shared', `mode: worktree\n  base: main\n  path: ${path}`) + `trust:\n  - .\n  - ${trust}\n`;
+  test('a fixed folder of its own, inside a trust pattern, passes', () => {
+    expect(valid(worktrees('../worktrees/{repo}/{task}', '../worktrees/acme/*')).team.workspace.path).toBe('../worktrees/{repo}/{task}');
+  });
+  test('straight into the project\'s parent is refused', () => {
+    expect(errors(worktrees('../{task}', '../worktrees/acme/*')).join('\n')).toMatch(/needs a fixed folder of its own before \{task\}/);
+  });
+  test('outside every trust pattern is refused', () => {
+    expect(errors(worktrees('../elsewhere/{task}', '../worktrees/acme/*')).join('\n')).toMatch(/workspace.path matches no trust pattern/);
+  });
+  test('{task} must be the last segment', () => {
+    expect(errors(worktrees('../wt/{task}/src', '../wt/*')).join('\n')).toMatch(/must end with the segment \{task\}/);
+  });
+});
+
+describe('secrets', () => {
+  test('a long random-looking value only warns, and names its line', () => {
+    const text = `${minimal}tools:\n  chat: { kind: slack, channel: Zx8Kq2Lm9Pv4Rt7Wy1Bn6Cd3Fg5Hj0QsAeUiOpXc }\n`;
+    const result = valid(text);
+    expect(result.warnings).toEqual([{ line: 16, message: expect.stringMatching(/random-looking/) }]);
+  });
+  test('ordinary ids and slugs don\'t warn', () => {
+    const text = `${minimal}tools:\n  chat: { kind: slack, workspace: acme, channel: C04ABCDEF12 }\n`;
+    expect(valid(text).warnings).toEqual([]);
+  });
+});
+
+test('every problem is reported at once, in line order', () => {
+  const text = change(change(minimal, 'format: 1', 'format: 3'), '"5.5"', '5.5') + 'colour: blue\n';
+  const found = errors(text);
+  expect(found.length).toBe(3);
+  expect(found.map((line) => Number(line.split(':')[0]))).toEqual([1, 13, 15]);
+});
