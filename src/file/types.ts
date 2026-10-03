@@ -65,8 +65,17 @@ export type TeamFile = {
     unsentAfter: number;
     quotaMarks: number[];
   };
-  // Load per core, memory in percent free, disk in bytes.
-  machine: { loadStart: number; loadMax: number; memoryStart: number; memoryMin: number; diskMin: number };
+  // Load per core, memory in percent free, disk and swap in bytes, the window in seconds.
+  machine: {
+    loadStart: number;
+    loadMax: number;
+    memoryStart: number;
+    memoryMin: number;
+    diskMin: number;
+    swapFreeMin: number;
+    swapGrowthMax: number;
+    swapGrowthWindow: number;
+  };
   limits: { seats: number; temporary: number; vendors: Record<string, number> };
   // After `count` is expanded.
   seats: Seat[];

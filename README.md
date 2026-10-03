@@ -8,7 +8,7 @@ folders it may work in. Commands then build the team, compare it with the file, 
 its commits before a push. Version 0.1 runs teams in [herdr](https://herdr.dev).
 
 **Status: alpha, in construction.** This build holds the file's parser and validation, the check of
-who is calling, `team init` and `team status`. The other commands arrive slice by slice.
+who is calling, `team check`, `team init`, `team status` and `team watch`. The others arrive slice by slice.
 
 ## The file is private to each clone
 

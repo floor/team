@@ -2,7 +2,7 @@ import type { Seat, TeamFile } from '../file/types.ts';
 import type { HerdrAgent, HerdrWorkspace } from '../herdr.ts';
 import { herdrCommand } from '../herdr.ts';
 import type { SessionState } from '../state.ts';
-import { runningModel } from './statusline.ts';
+import { seatModel } from './statusline.ts';
 
 // What herdr shows of a session. `screens` holds a pane's visible text, where it could be read.
 export type Live = {
@@ -114,8 +114,7 @@ export function compare(team: TeamFile, session: string, state: SessionState, li
 }
 
 function modelOf(seat: Seat, agent: HerdrAgent, live: Live, differences: Difference[], notes: string[]): string {
-  const screen = live.screens[agent.pane];
-  const running = screen === undefined ? null : runningModel(seat.cli, screen);
+  const running = seatModel(seat, live.screens[agent.pane]);
   if (!running) {
     notes.push(`${seat.name}: version unread (its screen doesn't show the model)`);
     return `${seat.display} (unread)`;

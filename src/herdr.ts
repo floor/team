@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-// The only module that talks to herdr. Everything here reads; nothing types into a pane.
+// The only module that talks to herdr. Everything here reads, except `typeLine`.
 
 export type HerdrAgent = {
   name: string | null;
@@ -84,6 +84,19 @@ export function paneRead(pane: string, lines: number, session?: string): string 
 // The words to type for a herdr command, for a repair line.
 export function herdrCommand(session: string | undefined, ...args: string[]): string {
   return ['herdr', ...(session && session !== 'default' ? ['--session', session] : []), ...args].join(' ');
+}
+
+// Types one line into a pane and sends it. The one function that types: its callers have just
+// seen the pane at an empty idle prompt, and type nothing anywhere else.
+export function typeLine(pane: string, text: string, session?: string): boolean {
+  const prefix = session ? ['--session', session] : [];
+  try {
+    execFileSync('herdr', [...prefix, 'pane', 'send-text', pane, text], { stdio: 'ignore', timeout: 10_000 });
+    execFileSync('herdr', [...prefix, 'pane', 'send-keys', pane, 'enter'], { stdio: 'ignore', timeout: 10_000 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // The herdr versions this version of `team` was run with.
