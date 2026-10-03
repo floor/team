@@ -10,7 +10,7 @@ import type { DoctorSources } from '../../src/commands/doctor.ts';
 import { sessionState, type HerdrAgent } from '../../src/herdr.ts';
 import { storePath } from '../../src/store/store.ts';
 import { readState } from '../../src/state.ts';
-import { parseSwapUsage } from '../../src/watch/machine.ts';
+import { parseMemoryPressure, parseSwapUsage } from '../../src/watch/machine.ts';
 import type { Screen } from '../../src/watch/screen.ts';
 import { testIo } from '../helpers.ts';
 
@@ -495,8 +495,17 @@ describe('scratch session', () => {
       const uptime = execFileSync('uptime', { encoding: 'utf8' });
       const load = Number(/load averages?: ([\d.]+)/.exec(uptime)?.[1] ?? '99');
       if (!(load < 60)) throw new Error(`load is ${load}; not starting a session`);
-      const swap = parseSwapUsage(execFileSync('sysctl', ['-n', 'vm.swapusage'], { encoding: 'utf8' }));
-      if (!swap || swap.free < 2 * 1024 ** 3) throw new Error('swap free is under 2 GB; not starting a session');
+      const pressure = execFileSync('memory_pressure', { encoding: 'utf8' });
+      const memory = parseMemoryPressure(pressure);
+      if (memory === null || memory < 25) throw new Error(`free memory is ${memory}%; not starting a session`);
+      const readSwap = () => parseSwapUsage(execFileSync('sysctl', ['-n', 'vm.swapusage'], { encoding: 'utf8' }));
+      const first = readSwap();
+      await new Promise((resolve) => setTimeout(resolve, 60_000));
+      const second = readSwap();
+      if (!first || !second) throw new Error('swap could not be read; not starting a session');
+      if (second.used > first.used) {
+        throw new Error(`swap used grew from ${first.used} to ${second.used}; not starting a session`);
+      }
 
       const before = sessionState(SCRATCH);
       if (before !== 'absent') throw new Error(`session ${SCRATCH} is ${before}; not touching it`);
@@ -506,16 +515,41 @@ describe('scratch session', () => {
       const scratchHome = join(scratch, 'home');
       mkdirSync(join(project, '.agents'), { recursive: true });
       mkdirSync(scratchHome);
+      // One claude-code seat, on the cheapest model. The example's DeepSeek seats are the
+      // other claude-code seats, so they are left out. Nothing is sent beyond that launch;
+      // down's exit is the teardown. The file's own gate still refuses on free swap, and this
+      // run is allowed when swap has not grown, so the scratch file sets a floor under the
+      // free figure and a load ceiling of 60.
+      const deepseek = [
+        '  - role: implementer',
+        '    name: deepseek-acme',
+        '    cli: claude-code           # DeepSeek\'s model, run by Claude Code',
+        '    vendor: deepseek',
+        '    model: DeepSeek Flash',
+        '    version: "V4.1"',
+        '    display: DeepSeek V4.1 Flash',
+        '    launch: team-deepseek',
+        '    count: 2                   # deepseek-acme, deepseek-acme-2',
+        '',
+      ].join('\n');
       const cheap = EXAMPLE.replace('session: acme-web', `session: ${SCRATCH}`)
         .replace('model: Claude Opus', 'model: Claude Haiku')
         .replace('version: "5.5"', 'version: "4.5"')
-        .replace('launch: claude --model claude-opus-5-5', 'launch: claude --model claude-haiku-4-5')
-        .replace('    launch: team-deepseek\n    count: 2', '    launch: team-deepseek\n    stopped: true\n    count: 2');
+        .replace('launch: claude --model claude-opus-5-5', 'launch: claude --model claude-haiku-4-5-20251001')
+        .replace('  load_start: 3.0', '  load_start: 60')
+        .replace(
+          '  disk_min: 10GB               # free on the project\'s volume; both refuse and report',
+          '  disk_min: 10GB               # free on the project\'s volume; both refuse and report\n  swap_free_min: 1MB',
+        )
+        .replace(deepseek, '');
+      if (cheap.includes('deepseek-acme') || !cheap.includes('claude-haiku-4-5-20251001')) {
+        throw new Error('the scratch file is not the one cheap claude-code seat');
+      }
       writeFileSync(join(project, '.agents/team.yaml'), cheap);
       const file = ['--file', join(project, '.agents/team.yaml')];
       const owner = testIo(project, { kind: 'owner' });
       try {
-        expect(await runApprove(file, owner, { ask: async () => '5', now: () => new Date(), home: scratchHome })).toBe(0);
+        expect(await runApprove(file, owner, { ask: async () => '3', now: () => new Date(), home: scratchHome })).toBe(0);
         const doctor = upReal.doctor ? { ...upReal.doctor, home: scratchHome } : undefined;
         const upCode = await runUp(file, owner, { ...upReal, home: scratchHome, doctor });
         expect(upCode).toBe(0);
@@ -538,6 +572,6 @@ describe('scratch session', () => {
         rmSync(scratch, { recursive: true, force: true });
       }
     },
-    180_000,
+    240_000,
   );
 });
