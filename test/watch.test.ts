@@ -55,6 +55,16 @@ describe('reading a screen of Claude Code', () => {
   test('a permission prompt is told apart from a question', () => {
     expect(readScreen('claude-code', permission).kind).toBe('permission');
     expect(readScreen('claude-code', `Do you trust this folder?\n❯ 1. Yes, proceed\n  2. No, exit\n\nEnter to confirm · Esc to cancel`).kind).toBe('trust');
+    const liveTrust = [
+      'Accessing workspace:',
+      'Quick safety check: Is this a project you created or one you trust?',
+      'Claude Code will be able to read, edit, and execute files here.',
+      '❯ 1. Yes, I trust this folder',
+      '  2. No, exit',
+    ].join('\n');
+    expect(readScreen('claude-code', liveTrust).kind).toBe('trust');
+    const quoted = `The note says to trust this folder before you start.\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
+    expect(readScreen('claude-code', quoted).kind).toBe('idle');
     expect(readScreen('claude-code', question).kind).toBe('question');
   });
   test('text on a later line of the box, under an empty first line, is unsent text', () => {
