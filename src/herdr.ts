@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-// The only module that talks to herdr. Everything here reads, except `typeLine`.
+// The only module that talks to herdr. Everything here reads, except `typeText` and `pressEnter`.
 
 export type HerdrAgent = {
   name: string | null;
