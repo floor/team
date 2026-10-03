@@ -1,7 +1,7 @@
 import { readArgs } from '../args.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
-import { paneRead, typeLine } from '../herdr.ts';
+import { agentStatus, paneRead, pressEnter, typeText } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
@@ -20,7 +20,10 @@ export type WatchSources = {
   approval(team: TeamFile, root: string): string[] | null;
   // The operator's screen, read again just before a nudge is typed.
   screen(pane: string, session: string): string | null;
-  type(pane: string, text: string, session: string): boolean;
+  // The operator's status, asked again with its screen.
+  status(pane: string, session: string): string | null;
+  typeText(pane: string, text: string, session: string): boolean;
+  pressEnter(pane: string, session: string): boolean;
   notify(text: string): void;
   now(): Date;
   // Waits between passes; false ends the watch.
@@ -50,7 +53,9 @@ export const realWatchSources: WatchSources = {
   machine: readMachine,
   approval: realSources.approval,
   screen: (pane, session) => paneRead(pane, 14, session),
-  type: typeLine,
+  status: agentStatus,
+  typeText,
+  pressEnter,
   notify,
   now: () => new Date(),
   wait: waitOrStop,
@@ -147,16 +152,30 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
 // Types the nudge, after reading the operator's screen once more: the pass saw it free, and a
 // prompt may have appeared since. Anything but an empty idle prompt keeps the nudge pending.
 function deliver(
-  nudge: { pane: string; text: string }, team: TeamFile, session: string, sources: WatchSources,
+  nudge: { pane: string; text: string; pending: string[] }, team: TeamFile, session: string, sources: WatchSources,
   memory: ReturnType<typeof newMemory>, say: (text: string, desktop: boolean) => void,
 ): void {
   const cli = team.seats.find((seat) => seat.name === team.operator)?.cli ?? '';
-  const screen = sources.screen(nudge.pane, session);
-  const free = readScreen(cli, screen ?? undefined).kind === 'idle';
-  if (free && sources.type(nudge.pane, nudge.text, session)) {
-    say(`nudged the operator: ${nudge.text}`, false);
+  const look = () => readScreen(cli, sources.screen(nudge.pane, session) ?? undefined).kind;
+  const status = sources.status(nudge.pane, session);
+  const keep = () => {
+    // The nudge's text carries no report, so the reports it was raised for go back to pending:
+    // the fallback notification and the next passes need them.
+    memory.pending.push(...nudge.pending);
+    memory.pendingSince ??= sources.now().getTime();
+  };
+  if ((status !== 'idle' && status !== 'done') || look() !== 'idle' || !sources.typeText(nudge.pane, nudge.text, session)) {
+    keep();
     return;
   }
-  memory.pending.push(nudge.text.replace(/^Team watch: /, '').replace(/\.$/, ''));
-  memory.pendingSince ??= sources.now().getTime();
+  // The text is in the box. A dialog that opened meanwhile must not get the Enter: the text
+  // then stays unsent, which the next passes report, and the nudge is kept.
+  const after = look();
+  if (after !== 'idle' && after !== 'unsent') {
+    say('a nudge was typed and not sent: the operator\'s screen changed before the Enter', true);
+    keep();
+    return;
+  }
+  if (sources.pressEnter(nudge.pane, session)) say(`nudged the operator: ${nudge.text}`, false);
+  else keep();
 }
