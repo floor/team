@@ -86,5 +86,7 @@ the placeholder row is replaced by `› ` and the first line of the typed text, 
 later line is drawn at two columns, the prompt row's own width, matching the continuation
 indent `unsent.txt` shows. A box built this way stands for the typed text as Codex draws
 it, and the same tests paste into the captured `unsent.txt`, whose four rows read back as
-the message the capture submitted. No captured box shows a wrapped line, so none is
-modelled: a box whose rows do not read back as the typed lines is never entered.
+the message the capture submitted. No captured box shows a wrapped line, so no wrap is
+modelled for Codex: a box whose rows read back as runs of the typed text laid out in
+order is the text and is entered, and a box whose rows show anything else — another
+text, an extra row, one character changed — is never entered.

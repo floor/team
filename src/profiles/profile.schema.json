@@ -205,6 +205,16 @@
         "placeholder_style": { "enum": ["dim"] },
         "footers": { "type": "array", "items": { "$ref": "#/$defs/patternString" }, "minItems": 1 },
         "fold": { "$ref": "#/$defs/patternString" },
+        "wrap": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["continuation", "kind"],
+          "description": "How the composer continues a line onto its next row, declared only where a capture showed the wrap. The box's rows are joined back by this rule before it is compared with the typed text.",
+          "properties": {
+            "continuation": { "const": "text-column" },
+            "kind": { "enum": ["word", "hard"] }
+          }
+        },
         "fallback": {
           "type": "array",
           "items": {

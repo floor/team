@@ -37,21 +37,50 @@ function holdsText(text: string, fold: Fold): boolean {
   return fold.rows.every((row, i) => row.trimEnd() === (tail[i] ?? '').trimEnd());
 }
 
-/** Whether the box shows exactly `text`: the first line after the prompt and every later line at
- *  the box's own continuation column — no more rows, no fewer, none changed. A continuation row
- *  that does not start at that column is not the text's own row and the box is not trusted. A
- *  box whose profile shows a wrap the profile's data cannot model (a wrapped line, no join rule)
- *  never equals the text line for line, so it waits and is refused at the deadline, not entered
- *  on trust. */
+/** Whitespace-normalised: every run of whitespace to one space, ends trimmed. A wrap adds or
+ *  drops a space at a row's end, and the typed text's own newlines stand for its rows: joined
+ *  back by the profile's rule, the two read the same only where the wrap is the whole difference. */
+function flatten(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** Whether the box's rows tile `text` in order: the first row opens it, each later row follows
+ *  where the one before ended, and only the whitespace a wrap drops sits between them. The read
+ *  for a profile whose captures show no composer wrap: its rows must be runs of the typed text
+ *  laid out one after another. Anything else — another text, an extra row, one character
+ *  changed — has a row that is not the text's and gets no Enter. */
+function tiles(text: string, first: string, rows: string[]): boolean {
+  if (!text.startsWith(first)) return false;
+  let at = first.length;
+  for (const row of rows) {
+    if (row === '') continue;
+    const found = text.indexOf(row, at);
+    if (found < 0 || text.slice(at, found).trim() !== '') return false;
+    at = found + row.length;
+  }
+  return text.slice(at).trim() === '';
+}
+
+/** Whether the box shows exactly `text`: the first line after the prompt and every continuation
+ *  row at the box's own column — no more rows, no fewer, none changed. A continuation row that
+ *  does not start at that column is not the text's own row and the box is not trusted. A box
+ *  whose profile declares a wrap rule is joined by it — the rows continue each line, a space
+ *  folded at a word boundary or nothing at a hard break — and then compared whitespace-normalised;
+ *  a box whose profile declares none must tile the typed text with its own runs. Either way a box
+ *  that is not the text waits and is refused at the deadline, never entered on trust. */
 function holdsBox(text: string, box: Box): boolean {
-  const [first = '', ...rest] = text.split('\n');
-  if (rest.length !== box.rows.length || first !== box.first) return false;
   const pad = ' '.repeat(box.indent);
-  return box.rows.every((row, i) => {
-    const line = rest[i] ?? '';
-    if (row === '') return line === '';
-    return row.startsWith(pad) && row.slice(pad.length) === line;
-  });
+  const rows: string[] = [];
+  for (const row of box.rows) {
+    if (row === '') { rows.push(''); continue; }
+    if (!row.startsWith(pad)) return false;
+    rows.push(row.slice(pad.length));
+  }
+  if (box.wrap) {
+    const joined = [box.first, ...rows].join(box.wrap.kind === 'hard' ? '' : ' ');
+    return flatten(joined) === flatten(text);
+  }
+  return tiles(text, box.first, rows);
 }
 
 /** What the box holds right now: `ready` to submit, still rendering (`wait`), or a state that is

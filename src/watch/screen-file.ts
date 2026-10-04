@@ -2,7 +2,7 @@
 // next to the profiles describes the same shape; this is what actually refuses a file,
 // because the package does not carry a schema validator.
 import { DialectError, compilePattern } from './dialect.ts';
-import type { Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage } from './screen-data.ts';
+import type { Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage, Wrap } from './screen-data.ts';
 import type { Screen } from './screen.ts';
 import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts';
 
@@ -147,8 +147,12 @@ function composerOf(node: YamlNode): Composer {
   // a composer whose suggestions plain text already names needs none of it.
   const style = optional(entries, 'placeholder_style');
   const placeholderStyle = style ? placeholderStyleOf(style) : undefined;
+  // How the box continues a line onto its next row, declared only where a capture showed the
+  // wrap. A composer without one is read by tiling the typed text's own runs.
+  const wrapEntry = optional(entries, 'wrap');
+  const wrap = wrapEntry ? wrapOf(wrapEntry) : undefined;
   if (name === 'box-to-rule') {
-    only(entries, ['mode', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style']);
+    only(entries, ['mode', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style', 'wrap']);
     // For a scrolled-out box, the non-blank lines under the closing rule must match
     // every pattern, in order, and the counts must be equal.
     const footers = optional(entries, 'footers');
@@ -159,14 +163,15 @@ function composerOf(node: YamlNode): Composer {
       footers: footers ? footersOf(footers, false) : [],
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
       placeholderStyle,
+      wrap,
     };
   }
   if (name === 'status-last') {
-    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style']);
-    return { mode: name, statusLine: regexField(entries, 'status_line', node.line), prompt: regexField(entries, 'prompt', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value), placeholderStyle };
+    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style', 'wrap']);
+    return { mode: name, statusLine: regexField(entries, 'status_line', node.line), prompt: regexField(entries, 'prompt', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value), placeholderStyle, wrap };
   }
   if (name === 'status-then-one') {
-    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style', 'strip_suffix', 'fallback']);
+    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style', 'strip_suffix', 'fallback', 'wrap']);
     const suffix = optional(entries, 'strip_suffix');
     const fallback = required(entries, 'fallback', node.line);
     return {
@@ -177,10 +182,11 @@ function composerOf(node: YamlNode): Composer {
       placeholderStyle,
       stripSuffix: suffix ? composerString(suffix.value, 'strip_suffix', suffix.line) : null,
       fallback: fallbackOf(fallback.value),
+      wrap,
     };
   }
   if (name === 'two-rules-footer-below') {
-    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'fold', 'placeholder_style']);
+    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'fold', 'placeholder_style', 'wrap']);
     const flag = optional(entries, 'ignore_case');
     const ignoreCase = flag ? boolOf(flag.value, 'ignore_case') : false;
     // Any line below the closing rule matches any pattern in the list.
@@ -194,9 +200,25 @@ function composerOf(node: YamlNode): Composer {
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
       fold: fold ? patternOf(stringOf(fold.value) ?? fail(fold.line, '"fold" must be a string'), ignoreCase, fold.line) : null,
       placeholderStyle,
+      wrap,
     };
   }
   fail(mode.line, `"mode" must be box-to-rule, status-last, status-then-one or two-rules-footer-below`);
+}
+
+// The composer's wrap rule: the continuation starts at the text column and the break is at a
+// word boundary or hard. Either alone does not join a wrapped box — where it starts and where
+// it breaks are both needed — so both keys are required and nothing else is read.
+function wrapOf(entry: YamlEntry): Wrap {
+  const entries = mapping(entry.value, 'wrap');
+  only(entries, ['continuation', 'kind']);
+  const continuation = required(entries, 'continuation', entry.line);
+  const where = stringOf(continuation.value);
+  if (where !== 'text-column') fail(continuation.line, '"continuation" must be text-column');
+  const kind = required(entries, 'kind', entry.line);
+  const shape = stringOf(kind.value);
+  if (shape !== 'word' && shape !== 'hard') fail(kind.line, '"kind" must be word or hard');
+  return { continuation: where, kind: shape };
 }
 
 function footersOf(entry: YamlEntry, ignoreCase: boolean): RegExp[] {

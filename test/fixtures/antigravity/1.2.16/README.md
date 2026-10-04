@@ -39,4 +39,7 @@ the bare `>` row is replaced by `> ` and the first line of the typed text, and e
 line is drawn at two columns, the continuation indent `unsent.txt` shows. The fold tests
 edit `folded-rules.txt`: the reviewer's zero-count marker with an unrelated tail, and
 counts of 0 and 99 against the same 24-row text. Those screens are constructed too, and
-each test names what it changes; a fold marker is never submitted unverified.
+each test names what it changes; a fold marker is never submitted unverified. No capture
+shows Antigravity wrapping an ordinary composer line, so no wrap is modelled for it: a
+box whose rows read back as runs of the typed text laid out in order is entered, and one
+whose rows show anything else is never.

@@ -3,9 +3,9 @@
 // pattern, and it cannot move a stage or turn the floor off.
 import { allDimAfter, hasSgr, stripSgr } from '../ansi.ts';
 import type { Screen } from './screen.ts';
-import type { LinePattern, Rule, ScreenData } from './screen-data.ts';
+import type { LinePattern, Rule, ScreenData, Wrap } from './screen-data.ts';
 
-export type { Composer, FallbackRule, LinePattern, Placeholder, PlaceholderStyle, Rule, ScreenData, Stage } from './screen-data.ts';
+export type { Composer, FallbackRule, LinePattern, Placeholder, PlaceholderStyle, Rule, ScreenData, Stage, Wrap } from './screen-data.ts';
 
 const BUDGET_MS = 100;
 
@@ -57,9 +57,10 @@ export function statusRowOf(data: ScreenData, lines: string[]): string | null {
 export type Fold = { count: number; rows: string[]; width: number };
 
 /** The input box a composer draws for its current text: the first line after the prompt, the
- *  continuation rows under it, and the column those rows start at (the prompt's own width plus
- *  the separator the input row draws). */
-export type Box = { first: string; indent: number; rows: string[] };
+ *  continuation rows under it, the column those rows start at (the prompt's own width plus
+ *  the separator the input row draws), and the profile's wrap rule when a capture shows how
+ *  the box continues a line onto its next row. */
+export type Box = { first: string; indent: number; rows: string[]; wrap?: Wrap };
 
 /**
  * The fold-shaped frame a window shows, or null: the marker row and the count it names (any
@@ -201,7 +202,7 @@ export function composerBox(data: ScreenData, lines: string[]): Box | null {
   const indent = found[0].length + rest.length - rest.trimStart().length;
   const rows = hit.rows ?? [];
   while (rows.length > 0 && rows[rows.length - 1] === '') rows.pop();
-  return { first: rest.trimStart(), indent, rows };
+  return { first: rest.trimStart(), indent, rows, wrap: 'wrap' in data.composer ? data.composer.wrap : undefined };
 }
 
 function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => boolean): boolean | 'stop' {

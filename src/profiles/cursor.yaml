@@ -85,6 +85,12 @@ screen:
       - equals: ''
       - equals: Plan, search, build anything
       - equals: Add a follow-up
+    # A line wider than the pane's content column continues on the next row at the text
+    # column, broken at a space: unsent.txt is its sentence word-wrapped this way on a
+    # 51-column pane, and the box is joined back by this rule before any Enter.
+    wrap:
+      continuation: text-column
+      kind: word
     fallback:
       - all:
           - match: '^\s*→\s+\S'

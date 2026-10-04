@@ -19,6 +19,11 @@ export type Stage = { rules: Rule[] };
 
 export type Placeholder = { equals: string } | { prefix: string };
 
+/** How a composer continues a line onto its next row, from a capture that shows it: the
+ *  continuation starts at the text column (the box's own indent), and the break folds the space
+ *  away at a word boundary or falls mid-word (hard). */
+export type Wrap = { continuation: 'text-column'; kind: 'word' | 'hard' };
+
 export type FallbackRule = { all: LinePattern[]; kind: Screen['kind'] };
 
 // The composer's greyed suggestions are told by their styling, when the CLI renders them dim
@@ -36,8 +41,9 @@ type Box = {
   footers: RegExp[];
   placeholders: Placeholder[];
   placeholderStyle?: PlaceholderStyle;
+  wrap?: Wrap;
 };
-type StatusLast = { mode: 'status-last'; statusLine: RegExp; prompt: RegExp; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle };
+type StatusLast = { mode: 'status-last'; statusLine: RegExp; prompt: RegExp; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle; wrap?: Wrap };
 type StatusThenOne = {
   mode: 'status-then-one';
   statusLine: RegExp;
@@ -46,6 +52,7 @@ type StatusThenOne = {
   placeholderStyle?: PlaceholderStyle;
   stripSuffix: RegExp | null;
   fallback: FallbackRule[];
+  wrap?: Wrap;
 };
 type TwoRules = {
   mode: 'two-rules-footer-below';
@@ -57,6 +64,7 @@ type TwoRules = {
   /** A row that stands for hidden rows of a folded paste; capture 1 is the hidden count. */
   fold: RegExp | null;
   placeholderStyle?: PlaceholderStyle;
+  wrap?: Wrap;
 };
 
 export type Composer = Box | StatusLast | StatusThenOne | TwoRules;
