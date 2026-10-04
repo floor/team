@@ -49,7 +49,9 @@ The model is the seat's `display` when the running model matches the file, and
 When the file names an account, or a reading is stored in the state, a `budgets:` table follows
 the seats. One row per account and window: what is left and used, when it resets, which seat the
 figure came from, how long since it changed, and whether it is fresh, unconfirmed, stale, refusing,
-or unknown. A figure inside its reserve says so on that row, including when it is still fresh.
+or unknown. A row's account is the seat's own: its `account:` when the file names one, its `vendor`
+when it doesn't, so one vendor's two accounts are two rows. A figure inside its reserve says so on
+that row, including when it is still fresh.
 A named account with no reading is unknown. The table is left out when there is nothing
 to show. `status` still writes nothing; the watch is what records a reading.
 

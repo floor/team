@@ -188,8 +188,13 @@ function readTeam(root: YamlNode, check: Check): TeamFile | null {
   }
   const trust = trustItems.map((item) => item.value);
 
+  // Both are read before the seats: a seat's `account:` must be a key of the budgets' accounts,
+  // and the check needs the names the file declares.
+  const watched = readWatch(top.get('watch'), check);
+  const budget = readBudgets(top.get('budgets'), check, watched.watch.quotaMarks, watched.legacyMarks);
+
   const broken = new Set<string>();
-  const seats = readSeats(top.get('seats'), check, trust, root.line, broken);
+  const seats = readSeats(top.get('seats'), check, trust, root.line, broken, budget.declared);
   const workspace = readWorkspace(top.get('workspace'), check, project, trust, seats, root.line);
   for (const seat of seats) seat.mode ??= workspace.mode;
 
@@ -197,7 +202,6 @@ function readTeam(root: YamlNode, check: Check): TeamFile | null {
   const operator = readLead(top.get('operator'), 'operator', seats, broken, check);
 
   const limits = readLimits(top.get('limits'), check, seats.length);
-  const watched = readWatch(top.get('watch'), check);
 
   return {
     format: 1,
@@ -212,7 +216,7 @@ function readTeam(root: YamlNode, check: Check): TeamFile | null {
     trust,
     workspace,
     watch: watched.watch,
-    budgets: readBudgets(top.get('budgets'), check, watched.watch.quotaMarks, watched.legacyMarks),
+    budgets: budget.budgets,
     machine: readMachine(top.get('machine'), check),
     limits,
     seats: seats as Seat[],
@@ -306,8 +310,11 @@ function readPatterns(entry: YamlEntry | undefined, name: string, check: Check):
 type DraftSeat = Omit<Seat, 'mode'> & { mode?: Mode };
 
 // `broken` collects the names of seats left out for their own problems, so that a reference to
-// one is not reported a second time.
-function readSeats(entry: YamlEntry | undefined, check: Check, trust: string[], topLine: number, broken: Set<string>): DraftSeat[] {
+// one is not reported a second time. `accounts` is the names the file's budgets declare: a seat
+// that names an `account:` must name one of these, or it would silently spend nothing budgeted.
+function readSeats(
+  entry: YamlEntry | undefined, check: Check, trust: string[], topLine: number, broken: Set<string>, accounts: ReadonlySet<string>,
+): DraftSeat[] {
   if (!entry) {
     check.fail(topLine, 'seats is required: at least the coordinator\'s and the operator\'s seat');
     return [];
@@ -319,7 +326,7 @@ function readSeats(entry: YamlEntry | undefined, check: Check, trust: string[], 
   const seats: DraftSeat[] = [];
   for (const item of entry.value.items) {
     const fields = check.fields(item, 'a seat', [
-      'role', 'name', 'cli', 'vendor', 'model', 'version', 'display', 'launch', 'cwd', 'label', 'mode',
+      'role', 'name', 'cli', 'vendor', 'account', 'model', 'version', 'display', 'launch', 'cwd', 'label', 'mode',
       'parked', 'stopped', 'count',
     ]);
     if (item.kind !== 'map') continue;
@@ -333,6 +340,14 @@ function readSeats(entry: YamlEntry | undefined, check: Check, trust: string[], 
     if (!fields.get('cli')) check.fail(line, `${at}: cli is required`);
     const cli = check.oneOf(fields.get('cli'), `${at}: cli`, CLIS);
     const vendor = check.required(fields.get('vendor'), `${at}: vendor`, line);
+    // The account whose budget the seat spends, when the vendor's name is not it (§ 3b). Optional:
+    // absent, the seat spends its vendor, and the fingerprint of every file written so far is
+    // unchanged. Named, it must be one of the budgets' accounts: a typo would take the seat out of
+    // every budget with no warning at all.
+    const account = check.text(fields.get('account'), `${at}: account`);
+    if (account !== undefined && !accounts.has(account)) {
+      check.fail(fields.get('account')?.line ?? line, `${at}: account "${account}" is not in budgets.accounts`);
+    }
     const model = check.required(fields.get('model'), `${at}: model`, line);
     const version = readVersion(fields.get('version'), at, line, check);
     const launch = check.required(fields.get('launch'), `${at}: launch`, line);
@@ -359,6 +374,7 @@ function readSeats(entry: YamlEntry | undefined, check: Check, trust: string[], 
         declared: name,
         count,
         instance,
+        ...(account ? { account } : {}),
         ...(mode ? { mode } : {}),
       });
     }
@@ -559,19 +575,26 @@ function readBudgets(
   check: Check,
   fallbackMarks: number[],
   legacyMarks: boolean,
-): TeamFile['budgets'] {
+): { budgets: TeamFile['budgets']; declared: Set<string> } {
   const base = { ...defaultBudgets(), marks: fallbackMarks };
-  if (!entry) return base;
+  if (!entry) return { budgets: base, declared: new Set() };
   const fields = check.fields(entry.value, 'budgets', ['stale_after', 'check_every', 'marks', 'accounts']);
+  // Every name the accounts map writes, whether or not the account itself reads cleanly: a seat
+  // naming one of these is not also told it named nothing.
+  const accounts = fields.get('accounts');
+  const declared = new Set(accounts?.value.kind === 'map' ? accounts.value.entries.map((account) => account.key) : []);
   const marks = percentList(fields.get('marks'), 'budgets.marks', check);
   if (marks && legacyMarks) {
     check.warnings.push({ line: fields.get('marks')?.line ?? entry.line, message: 'budgets.marks replaces watch.quota_marks' });
   }
   return {
-    staleAfter: check.measure(fields.get('stale_after'), 'budgets.stale_after', DURATION, '30m') ?? base.staleAfter,
-    checkEvery: check.measure(fields.get('check_every'), 'budgets.check_every', DURATION, '10m') ?? base.checkEvery,
-    marks: marks ?? fallbackMarks,
-    accounts: readAccounts(fields.get('accounts'), check),
+    budgets: {
+      staleAfter: check.measure(fields.get('stale_after'), 'budgets.stale_after', DURATION, '30m') ?? base.staleAfter,
+      checkEvery: check.measure(fields.get('check_every'), 'budgets.check_every', DURATION, '10m') ?? base.checkEvery,
+      marks: marks ?? fallbackMarks,
+      accounts: readAccounts(fields.get('accounts'), check),
+    },
+    declared,
   };
 }
 

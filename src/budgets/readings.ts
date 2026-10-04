@@ -215,6 +215,20 @@ export function saveReadings(dir: string, list: readonly Seen[], now: number = D
   });
 }
 
+/**
+ * One pass's fold, read and written under the state lock (§ 4.4): `fold` is handed the readings
+ * the state holds and returns the list to keep, so a watch folding while another watch writes
+ * folds onto what was written, never over a list it read before it. Whatever the fold returns as
+ * its `value` is handed back.
+ */
+export function updateReadings<T>(dir: string, now: number, fold: (stored: Seen[]) => { readings: Seen[]; value: T }): T {
+  return updateState(dir, (state) => {
+    const folded = fold(recall(state.budgets));
+    state.budgets = remember(folded.readings, now);
+    return folded.value;
+  });
+}
+
 export function loadReadings(dir: string): Seen[] {
   return recall(readState(dir).budgets);
 }
