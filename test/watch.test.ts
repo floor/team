@@ -909,11 +909,11 @@ describe('team watch', () => {
     expect(io.out).not.toContain('nudged the operator');
   });
 
-  test('a blank row between the operator\'s text and a second glyph row gets no nudge', async () => {
-    // The reviewer's first must-fix on the nudge path, in Codex's shape: the operator's box
-    // holds their own text, a blank content row, then a row carrying the prompt at the input
-    // row's own column. The blank row is content (typed-blank-middle.txt), not the box's top,
-    // so the read fails closed — not idle, and nothing is typed.
+  test('the transcript echo above the blank frame is nudged: the box is idle under it', async () => {
+    // The routine post-send layout, in Codex's shape: the operator's sent message echoed at the
+    // prompt column, the captured blank frame, the empty input row. It is the transcript's
+    // echo, not a row of the person's box (a box row is drawn indented), so the box reads
+    // `idle` and the nudge is typed and entered — the seat exists to be nudged.
     const codexIdle = readFileSync(new URL('./fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
     writeFileSync(file, example
       .replace('operator: claude-operator-acme', 'operator: codex-acme')
@@ -931,8 +931,8 @@ describe('team watch', () => {
         return true;
       },
     }));
-    expect(typed).toEqual([]);
-    expect(io.out).not.toContain('nudged the operator');
+    expect(typed).toEqual([`w2:p1 ${NUDGE_TEXT}`, 'w2:p1 <enter>']);
+    expect(io.out).toContain('nudged the operator');
   });
 
   test('an operator\'s box whose top frame scrolled off gets no nudge', async () => {
@@ -960,10 +960,11 @@ describe('team watch', () => {
     expect(io.out).not.toContain('nudged the operator');
   });
 
-  test('a blank row inside a Cursor operator\'s box gets no nudge', async () => {
-    // The Cursor twin on the nudge path: `  → person text`, blank, `  →` — the shape the
-    // reviewer reproduced on both CLIs. The blank row is content, so the box's top is the
-    // prompt row above it and the read fails closed.
+  test('the transcript echo above the blank frame is nudged: the box is idle under it (Cursor)', async () => {
+    // The Cursor twin of the routine post-send layout: `  → person text`, blank frame, `  →`.
+    // typed-blank-middle.txt settles the shape — a person's box draws its third line at the
+    // content column, so a second glyph at the prompt column after a blank is the transcript's
+    // echo. The box reads `idle` and the nudge is typed and entered.
     const cursorIdle = readFileSync(new URL('./fixtures/cursor/2026.10.01/idle.txt', import.meta.url), 'utf8');
     writeFileSync(file, cursorOperator);
     scene = live({
@@ -979,8 +980,8 @@ describe('team watch', () => {
         return true;
       },
     }));
-    expect(typed).toEqual([]);
-    expect(io.out).not.toContain('nudged the operator');
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+    expect(io.out).toContain('nudged the operator');
   });
 
   test.each(['close-short', 'close-long', 'open-short'] as const)(

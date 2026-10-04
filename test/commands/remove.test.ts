@@ -247,14 +247,15 @@ describe('team remove', () => {
 
   test.each([
     ['codex', '  person-owned visible continuation\n›'],
-    ['codex', '› person text\n\n›'],
+    ['codex', '› person text\n›'],
     ['cursor', '    person-owned visible continuation\n  →'],
-    ['cursor', '  → person text\n\n  →'],
+    ['cursor', '  → person text\n  →'],
   ] as const)('a %s box that is not the one the captures draw after the exit text gets no Enter (%j)', async (cli, shape) => {
-    // The reviewer's two must-fixes on the remove path, on both CLIs: a box holding a blank
-    // content row before a second prompt row, and a window starting inside the box with a
-    // visible continuation above the prompt. The pane read is not free, so the seat is left
-    // running and nothing is typed: the exit never reaches the pane.
+    // The refused shapes on the remove path, on both CLIs: a window starting inside the box
+    // with a visible continuation above the prompt, and a second prompt row pressed against
+    // the one above it with no blank row between them. The pane read is not free, so the seat
+    // is left running and nothing is typed: the exit never reaches the pane. The transcript's
+    // echo above the blank frame is not refused — it is `idle`, as main reads it.
     const idle = readFileSync(new URL(`../fixtures/${cli}/${cli === 'codex' ? '0.157.0' : '2026.10.01'}/idle.txt`, import.meta.url), 'utf8');
     const placeholder = cli === 'codex' ? '› Ask Codex to do anything' : '  → Plan, search, build anything';
     writeFileSync(file, FILE.replace(
