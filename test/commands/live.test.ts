@@ -12,7 +12,7 @@ import { storePath } from '../../src/store/store.ts';
 import { readState } from '../../src/state.ts';
 import { parseMemoryPressure, parseSwapUsage, type Machine } from '../../src/watch/machine.ts';
 import { readScreen, type Screen } from '../../src/watch/screen.ts';
-import { claudeBox, testIo } from '../helpers.ts';
+import { agyMismatchedFrame, claudeBox, testIo } from '../helpers.ts';
 
 const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8').replace('parked: true', 'stopped: true');
 const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
@@ -858,6 +858,37 @@ describe('team down, live', () => {
     expect(run.closed).toEqual([]);
     expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is\n');
   });
+
+  test.each(['close-short', 'close-long', 'open-short'] as const)(
+    'an Antigravity box whose two rules differ in width gets no exit Enter (%s)',
+    async (shape) => {
+      // The round-7 reproduction on the exit path: the seat is Antigravity's, and the pane
+      // shows a two-rule frame whose rules disagree in width — a frame that cannot be
+      // established. Without the width check the window read unsent after the typing, the
+      // read-back held, and the Enter was sent with it. The exit is typed, and not sent.
+      writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace(
+        /  - role: implementer\n    name: deepseek-acme[\s\S]*?count: 2[^\n]*\n/,
+        ['  - role: implementer', '    name: gemini-acme', '    cli: antigravity', '    vendor: google',
+          '    model: Gemini Flash', '    version: "3.8"', '    launch: agy'].join('\n') + '\n',
+      ));
+      const run = harness({ kind: 'idle' });
+      let shown: string | undefined;
+      run.launch.typeText = (_session, _pane, text) => {
+        run.typed.push(text);
+        shown = agyMismatchedFrame(shape, text);
+        return true;
+      };
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runDown(FILE, io, run.sourcesOf({
+        screenText: () => shown,
+        agents: () => [agent('gemini-acme', 'w3:p1', 'idle')],
+      }));
+      expect(code).toBe(1);
+      expect(run.typed).toEqual(['/exit']);
+      expect(run.entered).toEqual([]);
+      expect(run.closed).toEqual([]);
+      expect(io.out).toContain('gemini-acme: its exit was not typed; left as it is\n');
+    });
 
   test('does not type into a permission prompt', async () => {
     const run = harness({ kind: 'permission' });
