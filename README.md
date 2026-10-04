@@ -190,6 +190,27 @@ Sources import each other with `.ts` extensions and use erasable syntax only, so
 directly; `tsc` writes `dist/` for the published command. CI also runs `team check` on every pull
 request, against the team file the repository keeps at `.github/team.yaml`.
 
+### The end-to-end run
+
+`bun run e2e` drives the real commands — `status`, `watch` (one pass), `add --temporary --like`,
+`remove` and `down` — against fake seats, in a herdr session of its own (`team-test-e2e`) that it
+creates and always stops and deletes. A fake seat is `scripts/fake-seat.ts`: a pane that draws one
+of the screens the commands classify, logs every byte typed at it, and leaves on `/exit` and Enter.
+No model runs and nothing reaches the network. After each command the run checks its exit code, its
+own output, the log lines it wrote to `.agents/team.log`, and the seat records in
+`.agents/team.state.json`.
+
+It is local only: CI has no herdr, so `bun run ci` does not run it. It refuses to start when herdr
+is not on the PATH, when the machine is over its gate (load under 60, 25 % memory free, swap not
+growing over a minute), or when a session named `team-test-e2e` already exists. It works in a fresh
+folder under the system's temporary directory — the project, the approval store and the fake seats'
+input logs — and prints that path; it never writes the owner's home. It reads the default herdr
+session's agent list before and after, and fails when the count changes.
+
+Every check prints a line; the run ends with `all N checks passed` or `M of N checks failed` and
+exits 2 when it refused to start, 1 when a check failed. A failed step skips the steps after it,
+and the session is stopped and deleted on every path.
+
 ## License
 
 MIT
