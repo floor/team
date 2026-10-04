@@ -104,8 +104,8 @@ function plainLines(lines: string[]): string[] {
 function hitFromReading(reading: ComposerReading): Hit {
   return {
     kind: reading.kind,
-    from: reading.from ?? 0,
-    input: reading.input ?? -1,
+    from: 0,
+    input: -1,
   };
 }
 
@@ -138,9 +138,14 @@ export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClo
       }
     }
   }
-  const composed = data.profile?.composer
-    ? hitFromReading(data.profile.composer(plain))
-    : compose(data, plain, lines, tick);
+  if (data.profile?.composer) {
+    const composed = hitFromReading(data.profile.composer(plain));
+    if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
+    const marked = floorHits(plain, 0, -1, data.chrome, tick);
+    if (marked === 'stop' || marked) return { kind: 'unknown' };
+    return { kind: composed.kind };
+  }
+  const composed = compose(data, plain, lines, tick);
   if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
   if (composed.kind !== 'idle' && composed.kind !== 'unsent') return { kind: composed.kind };
   const marked = floorHits(plain, composed.from, composed.input, data.chrome, tick);
@@ -168,9 +173,14 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
       if (hit) return { kind: 'unknown' };
     }
   }
-  const composed = data.profile?.composer
-    ? hitFromReading(data.profile.composer(plain))
-    : compose(data, plain, lines, tick);
+  if (data.profile?.composer) {
+    const composed = hitFromReading(data.profile.composer(plain));
+    if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
+    const marked = floorHits(plain, 0, -1, data.chrome, tick);
+    if (marked === 'stop' || marked) return { kind: 'unknown' };
+    return { kind: composed.kind };
+  }
+  const composed = compose(data, plain, lines, tick);
   if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
   if (composed.kind !== 'idle' && composed.kind !== 'unsent') return { kind: composed.kind };
   const marked = floorHits(plain, composed.from, composed.input, data.chrome, tick);
