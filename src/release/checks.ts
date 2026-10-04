@@ -1,23 +1,37 @@
-// The four checks of `team release check`, against the public npm and GitHub records of one
-// release. Every check reports pass, missing or unknown: missing is a completed, interpretable
+// The checks of `team release check`, against the public npm and GitHub records of one release —
+// and, when the file configures them, the Linear record (one bounded, read-only GraphQL read
+// behind a Keychain-held key that lives in exactly one request header) and the public activity
+// marker. Every check reports pass, missing or unknown: missing is a completed, interpretable
 // read that disproves the condition; unknown is a failed, incomplete, malformed or unexpected
 // read, and unknown is never pass. A compound check makes every required read its known upstream
 // results can still form — it does not short-circuit after a missing condition — and combines
 // them unknown, then missing, then pass. A read an upstream missing makes unformable is not
 // required and is not requested; one an upstream unknown makes unformable is unknown.
 import { hasPrerelease } from './grammar.ts';
-import type { Attempt, Fetch } from './http.ts';
+import type { Attempt, Fetch, RequestOptions } from './http.ts';
+import type { KeyReader } from './keychain.ts';
 import type { ReleaseDecl } from '../file/sections/releases.ts';
 
 export type Status = 'pass' | 'missing' | 'unknown';
 export type Outcome = { status: Status; detail: string };
-export type ReleaseResult = { npm: Outcome; tag: Outcome; github: Outcome; changelog: Outcome };
+export type ReleaseResult = {
+  npm: Outcome;
+  tag: Outcome;
+  github: Outcome;
+  changelog: Outcome;
+  /** Present exactly when the file configures the pair. */
+  linear?: Outcome;
+  activity?: Outcome;
+};
 
-/** One command's budget: at most eleven endpoint reads and twenty-two HTTP attempts, retries included. */
-export const READ_CAP = 11;
-export const ATTEMPT_CAP = 22;
+/** One command's budget: at most thirteen endpoint reads and twenty-six HTTP attempts, retries included. */
+export const READ_CAP = 13;
+export const ATTEMPT_CAP = 26;
 
 export type Caps = { reads: number; attempts: number };
+
+/** What one run is wired with beyond the network: the Keychain reader, and caps for tests. */
+export type CheckDeps = { keyReader?: KeyReader; caps?: Caps };
 
 const PROVENANCE = 'https://slsa.dev/provenance/v1';
 
@@ -48,21 +62,29 @@ export class Reader {
     this.caps = caps;
   }
 
-  /** One endpoint read: an HTTP response, or a failure after its one allowed retry. */
-  async read(url: string): Promise<Reply> {
+  /** Whether one more read could still be made. The budget is a non-secret prerequisite: a
+   *  check that reads a secret before its one request must test this first, so a cap that
+   *  already prevents the request never causes secret access. */
+  canRead(): boolean {
+    return this.reads < this.caps.reads && this.attempts < this.caps.attempts;
+  }
+
+  /** One endpoint read: an HTTP response, or a failure after its one allowed retry. The Linear
+   *  read passes its POST options; a retry replays them byte for byte (it is a read-only query). */
+  async read(url: string, request?: RequestOptions): Promise<Reply> {
     // A read that would exceed its cap is not made; the check needing it reads unknown.
     if (this.reads >= this.caps.reads) return { kind: 'failed' };
     this.reads++;
-    const first = await this.attempt(url);
+    const first = await this.attempt(url, request);
     if (first === null) return { kind: 'failed' };
     if (!retried(first)) return replyOf(first);
-    return replyOf(await this.attempt(url));
+    return replyOf(await this.attempt(url, request));
   }
 
-  private async attempt(url: string): Promise<Attempt | null> {
+  private async attempt(url: string, request?: RequestOptions): Promise<Attempt | null> {
     if (this.attempts >= this.caps.attempts) return null;
     this.attempts++;
-    return this.fetcher(url);
+    return this.fetcher(url, request);
   }
 }
 
@@ -260,13 +282,32 @@ async function githubCheck(reader: Reader, base: string, version: string): Promi
 }
 
 function validDate(year: number, month: number, day: number): boolean {
-  if (year < 1970 || year > 9999 || month < 1 || month > 12) return false;
-  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] as number;
-  return day >= 1 && day <= days;
+  if (year < 1970 || year > 9999) return false;
+  return day >= 1 && day <= daysInMonth(year, month);
 }
 
-function changelogPart(text: string, version: string): Outcome {
+function daysInMonth(year: number, month: number): number {
+  if (month < 1 || month > 12) return 0;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  return [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] as number;
+}
+
+/** A GitHub contents object as the checks read it: a base64 `file`, decoded as strict UTF-8. */
+function decodeContents(value: Record<string, unknown>): string | null {
+  if (value.type !== 'file' || value.encoding !== 'base64' || typeof value.content !== 'string') return null;
+  const cleaned = value.content.replace(/\s+/g, '');
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(cleaned)) return null;
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(cleaned, 'base64'));
+  } catch {
+    return null;
+  }
+}
+
+/** The changelog's outcome, and the release date's instant at exactly 00:00:00Z when it passed. */
+export type ChangelogRead = { outcome: Outcome; releaseAt: number | null };
+
+function changelogPart(text: string, version: string): ChangelogRead {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const accepted = new RegExp(`^## (?:\\[${escaped}\\]|${escaped}) - ([0-9]{4})-([0-9]{2})-([0-9]{2})[ \t]*$`);
   const forVersion = new RegExp(`^## (?:\\[${escaped}\\]|${escaped}) - `);
@@ -275,45 +316,37 @@ function changelogPart(text: string, version: string): Outcome {
     const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
     const match = accepted.exec(line);
     if (match && validDate(Number(match[1]), Number(match[2]), Number(match[3]))) {
-      return { status: 'pass', detail: 'changelog entry has a valid release date' };
+      const releaseAt = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+      return { outcome: { status: 'pass', detail: 'changelog entry has a valid release date' }, releaseAt };
     }
     if (match || forVersion.test(line)) named = true;
   }
-  return named
-    ? { status: 'missing', detail: `the changelog entry for ${version} has an invalid date` }
-    : { status: 'missing', detail: `CHANGELOG.md has no entry for ${version}` };
+  const outcome = named
+    ? { status: 'missing' as const, detail: `the changelog entry for ${version} has an invalid date` }
+    : { status: 'missing' as const, detail: `CHANGELOG.md has no entry for ${version}` };
+  return { outcome, releaseAt: null };
 }
 
-async function changelogCheck(reader: Reader, base: string, version: string, repo: Repo): Promise<Outcome> {
-  if (repo.kind === 'missing') return { status: 'missing', detail: repo.detail };
-  if (repo.kind === 'unknown') return { status: 'unknown', detail: repo.detail };
+async function changelogCheck(reader: Reader, base: string, version: string, repo: Repo): Promise<ChangelogRead> {
+  const only = (outcome: Outcome): ChangelogRead => ({ outcome, releaseAt: null });
+  if (repo.kind === 'missing') return only({ status: 'missing', detail: repo.detail });
+  if (repo.kind === 'unknown') return only({ status: 'unknown', detail: repo.detail });
   const record = recordOf(await reader.read(`${base}/contents/CHANGELOG.md?ref=${encodeSegment(repo.branch)}`));
-  if (record.kind === 'missing') return { status: 'missing', detail: 'the default branch has no CHANGELOG.md' };
-  if (record.kind === 'unknown') return { status: 'unknown', detail: 'the changelog could not be read' };
-  const value = record.value;
-  if (value.type !== 'file' || value.encoding !== 'base64' || typeof value.content !== 'string') {
-    return { status: 'unknown', detail: 'the changelog could not be read' };
-  }
-  const cleaned = value.content.replace(/\s+/g, '');
-  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(cleaned)) {
-    return { status: 'unknown', detail: 'the changelog could not be read' };
-  }
-  let text: string;
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(cleaned, 'base64'));
-  } catch {
-    return { status: 'unknown', detail: 'the changelog could not be read' };
-  }
+  if (record.kind === 'missing') return only({ status: 'missing', detail: 'the default branch has no CHANGELOG.md' });
+  if (record.kind === 'unknown') return only({ status: 'unknown', detail: 'the changelog could not be read' });
+  const text = decodeContents(record.value);
+  if (text === null) return only({ status: 'unknown', detail: 'the changelog could not be read' });
   return changelogPart(text, version);
 }
 
 /**
- * The four checks of one release, in the output's order. The reads are sequential and
- * deterministic: npm (with its attestation when trusted publishing is declared), the repository
- * the tag and changelog checks share, the tag chain and compare, the release, the changelog.
+ * The checks of one release, in the output's order. The reads are sequential and deterministic:
+ * npm (with its attestation when trusted publishing is declared), the repository the tag,
+ * changelog and activity checks share, the tag chain and compare, the release, the changelog,
+ * then the Linear and activity reads when their pairs are configured.
  */
-export async function runChecks(decl: ReleaseDecl, version: string, fetcher: Fetch, caps?: Caps): Promise<ReleaseResult> {
-  const reader = new Reader(fetcher, caps);
+export async function runChecks(decl: ReleaseDecl, version: string, fetcher: Fetch, deps: CheckDeps = {}): Promise<ReleaseResult> {
+  const reader = new Reader(fetcher, deps.caps);
   const [owner, repoName] = decl.github.split('/') as [string, string];
   const base = `https://api.github.com/repos/${encodeSegment(owner)}/${encodeSegment(repoName)}`;
   const npm = await npmCheck(reader, decl, version);
@@ -321,5 +354,223 @@ export async function runChecks(decl: ReleaseDecl, version: string, fetcher: Fet
   const tag = await tagCheck(reader, base, version, repo);
   const github = await githubCheck(reader, base, version);
   const changelog = await changelogCheck(reader, base, version, repo);
-  return { npm, tag, github, changelog };
+  const result: ReleaseResult = { npm, tag, github, changelog: changelog.outcome };
+  if (decl.linear) result.linear = await linearCheck(reader, decl.linear, version, changelog, deps.keyReader);
+  if (decl.activity) result.activity = await activityCheck(reader, base, decl.activity, repo, decl.package, version);
+  return result;
+}
+
+/* The Linear read: one bounded, read-only GraphQL POST, the key in exactly one header. */
+
+export const LINEAR_URL = 'https://api.linear.app/graphql';
+
+/** The normative GraphQL document: the complete bounded read of one project's first 100
+ *  milestones and first 100 project updates, archived records included. Byte for byte the
+ *  contract's; no operation, variable or selected datum beyond it. */
+export const RELEASE_RECORDS_QUERY = `query ReleaseRecords($projectId: String!, $first: Int!) {
+  project(id: $projectId) {
+    id
+    archivedAt
+    projectMilestones(first: $first, includeArchived: true) {
+      nodes { name status }
+      pageInfo { hasNextPage }
+    }
+    projectUpdates(first: $first, includeArchived: true) {
+      nodes { createdAt archivedAt }
+      pageInfo { hasNextPage }
+    }
+  }
+}`;
+
+const LINEAR_UNREAD: Outcome = { status: 'unknown', detail: 'Linear record could not be read' };
+const LINEAR_INCOMPLETE: Outcome = { status: 'unknown', detail: 'Linear record is incomplete' };
+const KEYCHAIN_UNAVAILABLE: Outcome = { status: 'unknown', detail: 'Keychain access was unavailable' };
+
+// The key may exist only to become the one header: non-empty, ASCII 0x21 through 0x7e (the
+// production reader already guarantees it; a stand-in reader is held to the same rule before
+// anything is built from its answer).
+function legalKey(key: string): boolean {
+  if (key.length === 0) return false;
+  for (let index = 0; index < key.length; index++) {
+    const code = key.charCodeAt(index);
+    if (code < 0x21 || code > 0x7e) return false;
+  }
+  return true;
+}
+
+async function linearCheck(
+  reader: Reader,
+  config: { project: string; keychainService: string },
+  version: string,
+  changelog: ChangelogRead,
+  keyReader: KeyReader | undefined,
+): Promise<Outcome> {
+  // The release date gates everything: without it the request cannot be formed, and no key is
+  // read — a definitively missing date makes the Linear read not required; an unreadable one
+  // makes the check unknown.
+  if (changelog.outcome.status === 'unknown') return { status: 'unknown', detail: 'release date could not be read' };
+  if (changelog.outcome.status === 'missing') return { status: 'missing', detail: 'release date is missing from changelog' };
+  const releaseAt = changelog.releaseAt as number;
+
+  // The non-secret prerequisites come first, in one fixed order: the release date above, then
+  // the budget — a cap that already prevents the request must leave the Keychain untouched, and
+  // the spec's cap-failure detail is the read that isn't made — and only then the key, the last
+  // step before the request itself.
+  if (!reader.canRead()) return LINEAR_UNREAD;
+  if (keyReader === undefined) return KEYCHAIN_UNAVAILABLE;
+  const read = await keyReader(config.keychainService);
+  if (!read.ok || !legalKey(read.key)) return KEYCHAIN_UNAVAILABLE;
+
+  // One bounded read: the contract's document and variables, the key in exactly one header, on
+  // the Linear host and nowhere else. A retry replays this request byte for byte; a redirect is
+  // never followed, so the key can never travel to another host.
+  const body = JSON.stringify({ query: RELEASE_RECORDS_QUERY, variables: { projectId: config.project, first: 100 } });
+  const reply = await reader.read(LINEAR_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: read.key },
+    body,
+  });
+  if (reply.kind !== 'http') return LINEAR_UNREAD;
+  if (reply.status < 200 || reply.status > 299) return LINEAR_UNREAD;
+  const value = jsonObject(reply.body);
+  // The response is a JSON object with a data object and no errors key at all; anything else —
+  // a GraphQL errors answer (an unknown project id included), a missing data, malformed JSON —
+  // is a failed read.
+  if (value === null || 'errors' in value || !isObject(value.data)) return LINEAR_UNREAD;
+  return linearRecord(value.data, config.project, version, releaseAt);
+}
+
+/**
+ * The Linear predicate over one well-formed response. Every condition the data can answer is
+ * evaluated (no short-circuit); the conditions are collected in the contract's table order, the
+ * detail is the first applicable row, and the status follows the usual precedence — unknown,
+ * then missing, then pass.
+ */
+function linearRecord(data: Record<string, unknown>, projectId: string, version: string, releaseAt: number): Outcome {
+  const conditions: Outcome[] = [];
+  const project = data.project;
+  if (!isObject(project) || typeof project.id !== 'string' || project.id !== projectId) {
+    conditions.push(LINEAR_INCOMPLETE);
+  } else {
+    // Two archive states are legal: null, the active project; and a valid timestamp string, the
+    // archived project. Any other shape is malformed selected data — unknown, never missing.
+    const { archivedAt } = project;
+    if (archivedAt === null) {
+      // Not archived: no condition.
+    } else if (typeof archivedAt === 'string' && timestampOf(archivedAt) !== null) {
+      conditions.push({ status: 'missing', detail: 'configured Linear project is archived' });
+    } else {
+      conditions.push(LINEAR_INCOMPLETE);
+    }
+    conditions.push(...milestoneConditions(project.projectMilestones, version));
+    conditions.push(...updateConditions(project.projectUpdates, releaseAt));
+  }
+  if (conditions.length === 0) return { status: 'pass', detail: 'Linear milestone is complete and a qualifying status update exists' };
+  const detail = (conditions[0] as Outcome).detail;
+  for (const condition of conditions) if (condition.status === 'unknown') return { status: 'unknown', detail };
+  return { status: 'missing', detail };
+}
+
+/** A selected relation's complete bounded read: its nodes and the proof there is no next page. */
+function relationNodes(value: unknown): unknown[] | null {
+  if (!isObject(value) || !Array.isArray(value.nodes)) return null;
+  const pageInfo = value.pageInfo;
+  if (!isObject(pageInfo) || pageInfo.hasNextPage !== false) return null;
+  return value.nodes;
+}
+
+// Every returned milestone participates. Zero matches are missing; exactly one `done` match
+// satisfies the condition; one match with another status is missing; two or more are unknown.
+// A node without a string name or status makes the count unanswerable, so the record is
+// incomplete — no counting row applies.
+function milestoneConditions(value: unknown, version: string): Outcome[] {
+  const nodes = relationNodes(value);
+  if (nodes === null) return [LINEAR_INCOMPLETE];
+  let matches = 0;
+  let matchedStatus = '';
+  for (const node of nodes) {
+    if (!isObject(node) || typeof node.name !== 'string' || typeof node.status !== 'string') return [LINEAR_INCOMPLETE];
+    if (node.name === version) {
+      matches++;
+      matchedStatus = node.status;
+    }
+  }
+  if (matches === 0) return [{ status: 'missing', detail: 'no matching Linear milestone found' }];
+  if (matches > 1) return [{ status: 'unknown', detail: 'multiple matching Linear milestones found' }];
+  return matchedStatus === 'done' ? [] : [{ status: 'missing', detail: 'matching Linear milestone is incomplete' }];
+}
+
+// Only updates with archivedAt null participate. A qualifying update's server-supplied
+// createdAt is at or after the release date at 00:00:00Z; future-dated updates qualify. An
+// absent or invalid selected timestamp or archive state makes the record incomplete.
+function updateConditions(value: unknown, releaseAt: number): Outcome[] {
+  const nodes = relationNodes(value);
+  if (nodes === null) return [LINEAR_INCOMPLETE];
+  let qualifying = 0;
+  for (const node of nodes) {
+    if (!isObject(node)) return [LINEAR_INCOMPLETE];
+    const { createdAt, archivedAt } = node;
+    const created = typeof createdAt === 'string' ? timestampOf(createdAt) : null;
+    if (created === null) return [LINEAR_INCOMPLETE];
+    if (archivedAt !== null && (typeof archivedAt !== 'string' || timestampOf(archivedAt) === null)) return [LINEAR_INCOMPLETE];
+    if (archivedAt === null && created >= releaseAt) qualifying++;
+  }
+  return qualifying > 0 ? [] : [{ status: 'missing', detail: 'no qualifying Linear status update found' }];
+}
+
+// RFC 3339 with seconds, a numeric offset or Z, and at most nine fractional digits, compared as
+// an instant. Fail-closed by construction: a leap second and a lowercase t/z read as invalid.
+const RFC3339 = /^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$/;
+
+/** The instant an RFC 3339 timestamp names, in milliseconds, or null when it is not one. */
+export function timestampOf(text: string): number | null {
+  const match = RFC3339.exec(text);
+  if (!match) return null;
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number) as [number, number, number, number, number, number];
+  // RFC 3339's day of month is 01-31: day 00 is not a date, and must not roll back into the month before.
+  if (day < 1 || day > daysInMonth(year, month)) return null;
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  const zone = match[7] as string;
+  let offset = 0;
+  if (zone !== 'Z') {
+    const zh = Number(zone.slice(1, 3));
+    const zm = Number(zone.slice(4, 6));
+    if (zh > 23 || zm > 59) return null;
+    offset = (zh * 60 + zm) * 60_000 * (zone.startsWith('+') ? 1 : -1);
+  }
+  const at = new Date(0);
+  at.setUTCFullYear(year, month - 1, day);
+  at.setUTCHours(hour, minute, second, 0);
+  return at.getTime() - offset;
+}
+
+/* The activity read: the marker line in the configured public file, exactly once. */
+
+async function activityCheck(
+  reader: Reader,
+  base: string,
+  config: { file: string; marker: string },
+  repo: Repo,
+  name: string,
+  version: string,
+): Promise<Outcome> {
+  // The default branch gates the read: a definitively missing repository makes it not required.
+  if (repo.kind === 'missing') return { status: 'missing', detail: 'public activity marker is missing' };
+  if (repo.kind === 'unknown') return { status: 'unknown', detail: 'public activity file could not be read' };
+  const path = config.file.split('/').map(encodeSegment).join('/');
+  const record = recordOf(await reader.read(`${base}/contents/${path}?ref=${encodeSegment(repo.branch)}`));
+  if (record.kind === 'missing') return { status: 'missing', detail: 'public activity marker is missing' };
+  if (record.kind === 'unknown') return { status: 'unknown', detail: 'public activity file could not be read' };
+  const text = decodeContents(record.value);
+  if (text === null) return { status: 'unknown', detail: 'public activity file could not be read' };
+  // The requested literal values into the marker's two slots.
+  const marker = config.marker.split('<package>').join(name).split('<version>').join(version);
+  // Lines split on LF or CRLF only; a final delimiter creates no extra line, every other byte —
+  // trailing spaces and tabs included — is data.
+  const lines = text.split(/\r\n|\n/);
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  const found = lines.filter((line) => line === marker).length;
+  if (found === 0) return { status: 'missing', detail: 'public activity marker is missing' };
+  if (found > 1) return { status: 'unknown', detail: 'multiple public activity markers found' };
+  return { status: 'pass', detail: 'public activity marker found' };
 }

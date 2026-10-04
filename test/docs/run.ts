@@ -166,7 +166,7 @@ async function command(page: Page, line: string, io: Io, answer?: string): Promi
     case 'remove':
       return runRemove(rest, io, world.removeSources());
     case 'release':
-      return runRelease(rest, io, world.releaseFetch());
+      return runRelease(rest, io, world.releaseFetch(), world.releaseKeyReader());
     case 'status':
       return runStatus(rest, io, world.statusSources());
     case 'up':

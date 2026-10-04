@@ -104,6 +104,94 @@ describe('the releases section', () => {
   });
 });
 
+describe('the release records keys', () => {
+  const PROJECT = '01234567-89ab-cdef-0123-456789abcdef';
+
+  test('both pairs validate, and the declaration carries them', () => {
+    const result = validateTeamFile(FILE(`releases:
+  - package: material
+    github: floor/material
+    linear_project: ${PROJECT}
+    linear_keychain_service: team.linear.material
+    activity_file: activity/2026/material.md
+    activity_marker: "release: <package>@<version>"
+`));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.team.releases[0]).toEqual({
+        package: 'material',
+        github: 'floor/material',
+        trustedPublishing: false,
+        linear: { project: PROJECT, keychainService: 'team.linear.material' },
+        activity: { file: 'activity/2026/material.md', marker: 'release: <package>@<version>' },
+      });
+    }
+  });
+
+  test('half a pair is refused, both pairs, both directions', () => {
+    expect(problems(FILE(`releases:\n  - package: material\n    github: floor/material\n    linear_project: ${PROJECT}\n`))).toContain(
+      'a release\'s linear_project and linear_keychain_service come together',
+    );
+    expect(problems(FILE('releases:\n  - package: material\n    github: floor/material\n    linear_keychain_service: team.linear.material\n'))).toContain(
+      'a release\'s linear_project and linear_keychain_service come together',
+    );
+    expect(problems(FILE('releases:\n  - package: material\n    github: floor/material\n    activity_file: activity/2026/material.md\n'))).toContain(
+      'a release\'s activity_file and activity_marker come together',
+    );
+    expect(problems(FILE('releases:\n  - package: material\n    github: floor/material\n    activity_marker: "release: <package>@<version>"\n'))).toContain(
+      'a release\'s activity_file and activity_marker come together',
+    );
+  });
+
+  test('a malformed project id is refused: uppercase, short, non-hex, not a UUID', () => {
+    for (const id of ['01234567-89AB-cdef-0123-456789abcdef', '01234567-89ab-cdef-0123-456789abcde', 'g1234567-89ab-cdef-0123-456789abcdef', 'not-a-uuid']) {
+      expect(problems(FILE(`releases:\n  - package: material\n    github: floor/material\n    linear_project: ${id}\n    linear_keychain_service: team.linear.material\n`))).toContain(
+        `a release's linear_project ${JSON.stringify(id)} is not a lowercase UUID`,
+      );
+    }
+  });
+
+  test('a service over 255 bytes, an empty service or a non-string is refused', () => {
+    const long = 's'.repeat(256);
+    expect(problems(FILE(`releases:\n  - package: material\n    github: floor/material\n    linear_project: ${PROJECT}\n    linear_keychain_service: ${long}\n`))).toContain(
+      'a release\'s linear_keychain_service is over 255 bytes',
+    );
+    expect(problems(FILE(`releases:\n  - package: material\n    github: floor/material\n    linear_project: ${PROJECT}\n    linear_keychain_service: 3\n`))).toContain(
+      'a release\'s linear_keychain_service must be text: quote it',
+    );
+  });
+
+  test('a bad activity file is refused: a dot segment, an empty segment, non-ASCII, too long', () => {
+    for (const file of ['activity/../material.md', 'activity//material.md', '/activity/material.md', 'activity/mâtériel.md']) {
+      expect(problems(FILE(`releases:\n  - package: material\n    github: floor/material\n    activity_file: "${file}"\n    activity_marker: "release: <package>@<version>"\n`)).join('\n')).toContain(
+        'a release\'s activity_file',
+      );
+    }
+    const long = `a${'/b'.repeat(256)}`;
+    expect(problems(FILE(`releases:\n  - package: material\n    github: floor/material\n    activity_file: "${long}"\n    activity_marker: "release: <package>@<version>"\n`))).toContain(
+      'a release\'s activity_file is over 512 bytes',
+    );
+  });
+
+  test('a bad activity marker is refused: a missing or doubled slot, over 200 bytes', () => {
+    for (const marker of ['release: <package>', 'release: <package>@<version> and <package> again', 'release: <version>@<version>']) {
+      expect(problems(FILE(`releases:\n  - package: material\n    github: floor/material\n    activity_file: activity/2026/material.md\n    activity_marker: "${marker}"\n`)).join('\n')).toContain(
+        'a release\'s activity_marker must have exactly one',
+      );
+    }
+    const long = `release: <package>@<version> ${'x'.repeat(200)}`;
+    expect(problems(FILE(`releases:\n  - package: material\n    github: floor/material\n    activity_file: activity/2026/material.md\n    activity_marker: "${long}"\n`))).toContain(
+      'a release\'s activity_marker is over 200 bytes',
+    );
+  });
+
+  test('the section holds no key: an unknown key beside the pairs is still refused', () => {
+    expect(problems(FILE(`releases:\n  - package: material\n    github: floor/material\n    linear_project: ${PROJECT}\n    linear_keychain_service: team.linear.material\n    linear_key: abc\n`))).toContain(
+      'unknown field "linear_key" in a release',
+    );
+  });
+});
+
 // The refusals as the owner sees them: `team doctor` fails the file, with the line and the message.
 describe('team doctor', () => {
   let project: string;
@@ -140,6 +228,34 @@ describe('team doctor', () => {
       expect(io.err).toContain(message);
     });
   }
+
+  test('the new keys are validated by shape only: nothing is read, no source is touched', async () => {
+    // The proof that doctor makes no network request and reads no key for the new keys: the
+    // sources stand in for everything doctor could read from the machine, and every one of them
+    // throws if so much as looked at — the configuration errors are still reported.
+    const sources = new Proxy({} as DoctorSources, {
+      get(_target, property) {
+        throw new Error(`doctor read a source: ${String(property)}`);
+      },
+    });
+    writeFileSync(
+      join(project, 'team.yaml'),
+      FILE('releases:\n  - package: material\n    github: floor/material\n    linear_project: not-a-uuid\n'),
+    );
+    const io = testIo(project);
+    const code = await runDoctor(['--file', 'team.yaml'], io, sources);
+    expect(code).toBe(2);
+    expect(io.err).toContain('a release\'s linear_project and linear_keychain_service come together');
+
+    // And with the whole pair present, the shape itself is refused — still without a read.
+    writeFileSync(
+      join(project, 'team.yaml'),
+      FILE('releases:\n  - package: material\n    github: floor/material\n    linear_project: not-a-uuid\n    linear_keychain_service: team.linear.material\n'),
+    );
+    const second = testIo(project);
+    expect(await runDoctor(['--file', 'team.yaml'], second, sources)).toBe(2);
+    expect(second.err).toContain('a release\'s linear_project "not-a-uuid" is not a lowercase UUID');
+  });
 });
 
 describe('the approval fingerprint', () => {
