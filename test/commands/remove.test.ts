@@ -10,7 +10,7 @@ import { storePath, writeApproval } from '../../src/store/store.ts';
 import type { DownLaunch } from '../../src/commands/down.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { emptySession, readState, updateState } from '../../src/state.ts';
-import type { Screen } from '../../src/watch/screen.ts';
+import { readScreen, type Screen } from '../../src/watch/screen.ts';
 import { testIo } from '../helpers.ts';
 
 const FILE = `format: 1
@@ -119,6 +119,36 @@ describe('team remove', () => {
     expect(made.typed).toEqual([]);
     expect(made.closed).toEqual([]);
     expect(io.out).toContain('no live agent in its pane; its exit was not typed');
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
+  test('a pinned Codex permission after the exit text gets no Enter', async () => {
+    const pinned = readScreen(
+      'codex',
+      readFileSync(new URL('../fixtures/codex/0.157.0/permission-pinned.txt', import.meta.url), 'utf8'),
+    );
+    const made = world();
+    let screen: Screen = { kind: 'idle' };
+    made.sources.screen = () => screen;
+    const entered: string[] = [];
+    const launch = made.sources.launch;
+    if (!launch) throw new Error('fixture');
+    launch.typeText = (_session, _pane, text) => {
+      made.typed.push(text);
+      screen = pinned;
+      return true;
+    };
+    launch.pressEnter = () => {
+      entered.push('enter');
+      return true;
+    };
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    expect(made.typed).toEqual(['/exit']);
+    expect(entered).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(io.out).toContain('worker: its exit was not typed; left as it is');
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
