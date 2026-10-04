@@ -121,15 +121,13 @@ function composerOf(node: YamlNode): Composer {
   const style = optional(entries, 'placeholder_style');
   const placeholderStyle = style ? placeholderStyleOf(style) : undefined;
   if (name === 'box-to-rule') {
-    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style']);
-    const flag = optional(entries, 'ignore_case');
-    const ignoreCase = flag ? boolOf(flag.value, 'ignore_case') : false;
+    only(entries, ['mode', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style']);
     const footers = optional(entries, 'footers');
     return {
       mode: name,
-      prompt: regexField(entries, 'prompt', node.line, ignoreCase),
-      rule: regexField(entries, 'rule', node.line, ignoreCase),
-      footers: footers ? footersOf(footers, ignoreCase) : [],
+      prompt: regexField(entries, 'prompt', node.line),
+      rule: regexField(entries, 'rule', node.line),
+      footers: footers ? footersOf(footers, false) : [],
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
       placeholderStyle,
     };
