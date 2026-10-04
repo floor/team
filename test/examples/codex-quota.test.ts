@@ -102,10 +102,29 @@ function writeRollout(dir: string, name: string, body: string, mtime: Date): voi
 }
 
 function expectLine(result: SpawnSyncReturns<string>, line: string): void {
+  expectLines(result, [line]);
+}
+
+/** § 5: one to three lines, each a window line, and no window twice. */
+function expectContract(stdout: string): void {
+  const lines = stdout.split('\n').filter((line) => line.length > 0);
+  expect(lines.length).toBeGreaterThan(0);
+  expect(lines.length).toBeLessThanOrEqual(3);
+  const seen = new Set<string>();
+  for (const line of lines) {
+    const match = LINE.exec(line);
+    expect(match).not.toBeNull();
+    const window = match?.[1] ?? '';
+    expect(seen.has(window)).toBe(false);
+    seen.add(window);
+  }
+}
+
+function expectLines(result: SpawnSyncReturns<string>, lines: string[]): void {
   expect(result.status).toBe(0);
   expect(result.stderr).toBe('');
-  expect(result.stdout).toBe(`${line}\n`);
-  expect(line).toMatch(LINE);
+  expect(result.stdout).toBe(`${lines.join('\n')}\n`);
+  expectContract(result.stdout);
   expect(result.stdout).not.toContain(SECRET);
   expect(result.stdout).not.toContain('rollout-');
 }
@@ -141,7 +160,10 @@ describe('codex-quota', () => {
       );
       writeRollout(sessions, 'notes.jsonl', event({ used_percent: 99, window_minutes: 10080, resets_at: future(1, 0) }), new Date('2026-10-04T14:00:00Z'));
     });
-    expectLine(result, `weekly 39% used resets 114h4m at ${EVENT_UNIX}`);
+    expectLines(result, [
+      `weekly 39% used resets 114h4m at ${EVENT_UNIX}`,
+      `session 12% used resets 2h at ${EVENT_UNIX}`,
+    ]);
   });
 
   test('a newer session_meta rollout does not hide an older token_count', () => {
@@ -225,7 +247,89 @@ describe('codex-quota', () => {
         new Date('2026-10-04T12:00:00Z'),
       );
     });
+    expectLines(result, [
+      `weekly 39% used resets 114h4m at ${EVENT_UNIX}`,
+      `session 12% used resets 2h at ${EVENT_UNIX}`,
+    ]);
+  });
+
+  test('primary session and secondary weekly are two lines', () => {
+    const result = inCodexHome((dir) => {
+      writeRollout(
+        dir,
+        'rollout-2026-10-04T12-00-00-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.jsonl',
+        event(
+          { used_percent: 20.5, window_minutes: 300, resets_at: future(3, 0) },
+          { secondary: { used_percent: 39.4, window_minutes: 10080, resets_at: future(114, 4) } },
+        ),
+        new Date(),
+      );
+    });
+    expectLines(result, [
+      `session 21% used resets 3h at ${EVENT_UNIX}`,
+      `weekly 39% used resets 114h4m at ${EVENT_UNIX}`,
+    ]);
+  });
+
+  test('a secondary window of the same length is not a second line', () => {
+    const result = inCodexHome((dir) => {
+      writeRollout(
+        dir,
+        'rollout-2026-10-04T12-00-00-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.jsonl',
+        event(
+          { used_percent: 39, window_minutes: 10080, resets_at: future(114, 4) },
+          { secondary: { used_percent: 12, window_minutes: 10080, resets_at: future(2, 0) } },
+        ),
+        new Date(),
+      );
+    });
     expectLine(result, `weekly 39% used resets 114h4m at ${EVENT_UNIX}`);
+  });
+
+  test('an unwritable or unmapped secondary leaves the primary line', () => {
+    const over = inCodexHome((dir) => {
+      writeRollout(
+        dir,
+        'rollout-2026-10-04T12-00-00-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.jsonl',
+        event(
+          { used_percent: 21, window_minutes: 300, resets_at: future(3, 0) },
+          { secondary: { used_percent: 100.2, window_minutes: 10080, resets_at: future(114, 4) } },
+        ),
+        new Date(),
+      );
+    });
+    expectLine(over, `session 21% used resets 3h at ${EVENT_UNIX}`);
+
+    const other = inCodexHome((dir) => {
+      writeRollout(
+        dir,
+        'rollout-2026-10-04T12-00-00-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.jsonl',
+        event(
+          { used_percent: 21, window_minutes: 300, resets_at: future(3, 0) },
+          { secondary: { used_percent: 12, window_minutes: 60, resets_at: future(1, 0) } },
+        ),
+        new Date(),
+      );
+    });
+    expectLine(other, `session 21% used resets 3h at ${EVENT_UNIX}`);
+  });
+
+  test('a past secondary reset is omitted, and both lines use the event time', () => {
+    const result = inCodexHome((dir) => {
+      writeRollout(
+        dir,
+        'rollout-2026-10-04T12-00-00-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.jsonl',
+        event(
+          { used_percent: 21, window_minutes: 300, resets_at: future(3, 0) },
+          { secondary: { used_percent: 39, window_minutes: 10080, resets_at: 1_600_000_000 } },
+        ),
+        new Date(),
+      );
+    });
+    expectLines(result, [
+      `session 21% used resets 3h at ${EVENT_UNIX}`,
+      `weekly 39% used at ${EVENT_UNIX}`,
+    ]);
   });
 
   test('300, 1440 and 10080 map to session, daily and weekly', () => {
@@ -333,7 +437,10 @@ describe('codex-quota', () => {
         new Date(),
       );
       const result = run({ PATH: process.env.PATH ?? '', HOME: home });
-      expectLine(result, `weekly 39% used resets 114h4m at ${EVENT_UNIX}`);
+      expectLines(result, [
+        `weekly 39% used resets 114h4m at ${EVENT_UNIX}`,
+        `session 12% used resets 2h at ${EVENT_UNIX}`,
+      ]);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

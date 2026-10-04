@@ -26,15 +26,18 @@
 // event's timestamp. Nothing else from the file is printed.
 //
 // window_minutes maps to a contract name: 300 session, 1440 daily, 10080 weekly.
-// Any other length prints nothing and exits 0. The line has no name for it, and
-// inventing one would be a false figure.
-// used_percent is rounded to the nearest integer. Below 0 or above 100 prints
-// nothing. A reset in the past, or none, is left off the line.
+// Any other length has no name, and inventing one would be a false figure.
+// used_percent is rounded to the nearest integer. Below 0 or above 100 cannot
+// be written. A reset in the past, or none, is left off the line.
 //
-// primary is the only line. RateLimitSnapshot.secondary is a second window in the
-// same event. A later check can print it as its own line when its window_minutes
-// is one of the three above and is not the same window as primary. Duplicate
-// windows make the whole reading unknown, so this script does not print it.
+// primary is the first line. When it cannot be written, nothing is printed, and
+// an older file is not used in its place.
+// RateLimitSnapshot.secondary (protocol.rs, tag rust-v0.157.0) is a second
+// window in the same event. It is a second line when its window_minutes maps to
+// a different one of the three names. The same window is left off: a repeated
+// window makes the whole reading unknown. A secondary figure that cannot be
+// written is left off, and the primary line still prints. Both lines share the
+// event's timestamp.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -118,7 +121,7 @@ function lineFromRollout(text) {
 /**
  * undefined: not a token_count with a primary window; keep looking.
  * null: the latest primary window cannot be written; stop.
- * string: the contract line.
+ * string: one contract line, or two when secondary is another window.
  * @param {string} raw
  * @returns {string | null | undefined}
  */
@@ -131,21 +134,41 @@ function tokenCount(raw) {
   }
   const payload = row?.payload;
   if (!payload || payload.type !== 'token_count') return undefined;
-  const primary = payload.rate_limits?.primary;
+  const limits = payload.rate_limits;
+  const primary = limits?.primary;
   if (primary == null) return undefined;
   if (typeof primary !== 'object') return null;
-  return formatPrimary(primary, row.timestamp);
+  const line = formatWindow(primary, row.timestamp);
+  if (line === null) return null;
+  const extra = secondaryLine(limits.secondary, row.timestamp, windowName(primary.window_minutes));
+  return extra ? `${line}\n${extra}` : line;
 }
 
-/** @param {Record<string, unknown>} primary @param {unknown} timestamp */
-function formatPrimary(primary, timestamp) {
-  const used = roundedPercent(primary.used_percent);
-  const window = windowName(primary.window_minutes);
+/**
+ * The second line, or '' when secondary is absent, the same window, or cannot
+ * be written. A bad secondary never drops the primary line.
+ * @param {unknown} secondary
+ * @param {unknown} timestamp
+ * @param {string | null} primaryWindow
+ * @returns {string}
+ */
+function secondaryLine(secondary, timestamp, primaryWindow) {
+  if (secondary == null || typeof secondary !== 'object') return '';
+  const record = /** @type {Record<string, unknown>} */ (secondary);
+  const window = windowName(record.window_minutes);
+  if (window === null || window === primaryWindow) return '';
+  return formatWindow(record, timestamp) ?? '';
+}
+
+/** @param {Record<string, unknown>} window @param {unknown} timestamp */
+function formatWindow(window, timestamp) {
+  const used = roundedPercent(window.used_percent);
+  const name = windowName(window.window_minutes);
   const at = unixSeconds(timestamp);
-  if (used === null || window === null || at === null) return null;
-  const resets = resetPhrase(primary.resets_at);
+  if (used === null || name === null || at === null) return null;
+  const resets = resetPhrase(window.resets_at);
   if (resets === null) return null;
-  const line = `${window} ${used}% used${resets} at ${at}`;
+  const line = `${name} ${used}% used${resets} at ${at}`;
   return LINE.test(line) ? line : null;
 }
 
