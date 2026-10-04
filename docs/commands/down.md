@@ -5,6 +5,9 @@ the herdr session. A seat is only asked when it is free — idle, with an empty 
 working, blocked or half-typed seat is left running and named. `--dry-run` prints the plan and runs
 nothing.
 
+A seat the file renamed after `up` launched it is stopped all the same, under the name it was
+launched with and the CLI the state records for it: what runs, not what the file now calls it.
+
 ## Synopsis
 
     team down [--dry-run] [--wait] [--abandon] [--session <name>] [--file <path>]
@@ -12,12 +15,13 @@ nothing.
 ## What it reads and writes
 
 Reads the team file, this machine's approval store, the session's state
-(`.agents/team.state.json`, for the watch's pid and the seats' recorded panes), and herdr: whether
-the session is running, its agents, each pane's screen and status, and each pane's foreground
-processes. Writes `.agents/team.state.json` (the seats it stopped are dropped), `.agents/team.log`,
-and, through herdr: the exit in each pane, the workspaces it closes, the watch's process and the
-session. A team file that no longer validates is replaced by the last copy that did, with a notice
-printed first: `down` must keep working when the file breaks.
+(`.agents/team.state.json`, for the watch's pid and the seats' recorded panes and CLIs), and herdr:
+whether the session is running, its agents, each pane's screen and status, and each pane's
+foreground processes. Writes `.agents/team.state.json` (the seats it stopped are dropped),
+`.agents/team.log`, and, through herdr: the exit in each pane, the workspaces it closes, the watch's
+process, the session it stops and the stopped session it clears — its own, just stopped. A team
+file that no longer validates is replaced by the last copy that did, with a notice printed first:
+`down` must keep working when the file breaks.
 
 ## Who may run it
 
@@ -40,11 +44,16 @@ coordinator's or the operator's seat — only the owner does.
 
     claude-keeper: stopped
     watch: stopped
-    session beacon: stopped
+    session beacon: stopped and cleared
 
 A seat it stops prints `<seat>: stopped`; the watch prints `watch: stopped`; the session prints
-`session <session>: stopped`. A seat it does not stop prints one `  skip` line and is named in the
-last line instead of the session being stopped:
+`session <session>: stopped and cleared` — herdr keeps a stopped session listed, so `down` clears
+the one it has itself just stopped, in the same run, and the next `up` starts from the beginning.
+`up` never deletes a session: one stopped any other way keeps its refusal, with the command to run.
+A clear that does not happen — herdr still reports the session running, or the delete fails —
+prints `session <session>: stopped; it did not clear, run \`herdr session delete <session>\``
+instead, and `down` still exits 0: the stop itself succeeded. A seat it does not stop prints one
+`  skip` line and is named in the last line instead of the session being stopped:
 
     claude-beacon: is working (`--wait` waits for it); left running
     session beacon: not stopped, 1 agent left in it
@@ -55,6 +64,7 @@ last line instead of the session being stopped:
 | `<seat>: is blocked at a prompt, which \`team never answers\`; left running` | a permission dialog, a trust question or a question: only its owner answers it |
 | `<seat>: holds unsent text in its input box; left running` | half-typed text would be lost |
 | `<seat>: shows a screen the profile does not recognise; left running` | nothing is typed into a screen it can't read |
+| `<seat>: the state doesn't say which CLI it runs, so it can't be asked to exit; left running (`team down --abandon` closes it without typing)` | the state predates the CLI record and the file no longer names the seat: nothing links its pane to a profile, so its owner closes it |
 | `<seat>: left running; only the owner stops the coordinator's or the operator's seat` | a seat's own call, and this is the coordinator or the operator |
 | `session default: herdr's default session is never stopped` | the default session is herdr's own |
 
@@ -115,6 +125,9 @@ seats:
 ```fixture
 agents: all
 watch: alive
+state:
+  seats:
+    claude-beacon: {stage: ready, cli: claude-code}
 ```
 
 Two seats idle, a watch running: this is the whole plan.
@@ -130,6 +143,7 @@ $ team down --dry-run ; echo "exit $?"
 + kill 4242
     (the watch)
 + herdr session stop beacon
+    (stopped, then cleared: the session this run stopped, so a later `up` starts from the beginning)
 dry run: nothing was run
 exit 0
 ```
@@ -157,14 +171,64 @@ dry run: nothing was run
 exit 0
 ```
 
-For the owner, running that plan stops everything:
+The file renamed claude-beacon after `up` launched it. The seat still runs under the name it was
+launched with, and the state holds the CLI it was launched with, so the plan is the same as before
+the rename — only the file's copy of the name changed:
+
+```yaml file=.agents/team.yaml
+format: 1
+project: beacon
+coordinator: claude-keeper
+operator: claude-keeper
+
+workspace:
+  mode: shared
+
+seats:
+  - role: coordinator
+    name: claude-keeper
+    label: coordinator
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+
+  - role: implementer
+    name: claude-relay
+    label: implementer
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+```
+
+```console
+$ team down --dry-run ; echo "exit $?"
++ herdr --session beacon pane run w1:p1 /exit
+  wait until claude-keeper's pane is back at its shell (30 s at most); on a time-out it is left as it is
++ herdr --session beacon workspace close w1
++ herdr --session beacon pane run w2:p1 /exit
+  wait until claude-beacon's pane is back at its shell (30 s at most); on a time-out it is left as it is
++ herdr --session beacon workspace close w2
++ kill 4242
+    (the watch)
++ herdr session stop beacon
+    (stopped, then cleared: the session this run stopped, so a later `up` starts from the beginning)
+dry run: nothing was run
+exit 0
+```
+
+For the owner, running that plan stops everything, and clears the session it stopped — the next
+`team up` starts a fresh one, with no step in between:
 
 ```console
 $ team down ; echo "exit $?"
 claude-keeper: stopped
 claude-beacon: stopped
 watch: stopped
-session beacon: stopped
+session beacon: stopped and cleared
 exit 0
 ```
 
