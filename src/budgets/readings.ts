@@ -1,7 +1,12 @@
-// Which screen reading counts for an account and a window. A check reading
-// has its own freshness and is not decided here, screen or spend alike.
+// Which reading counts for an account and a window, from the sources the account names in order
+// (§ 3): a check reading has its own freshness (§ 5) and is not decided by `verdict`, which
+// decides the screen readings.
 import type { QuotaFigure, WindowName } from '../profiles/quota.ts';
+import type { CheckWindow } from './run.ts';
 import { emptySession, readState, updateState } from '../state.ts';
+
+/** Where a reading came from: a pane's own status line, or an approved check command (§ 3). */
+export type ReadingSource = 'status_line' | 'check';
 
 export type Seen = {
   account: string;
@@ -10,7 +15,9 @@ export type Seen = {
   used: number;
   changedAt: number;
   resetsAt: number | null;
-  seat: string;
+  /** The seat whose screen showed it; null for a check reading, which belongs to no seat. */
+  seat: string | null;
+  source: ReadingSource;
   confirmed: boolean;
 };
 
@@ -21,7 +28,9 @@ export type StoredReading = {
   used: number;
   changedAt: string;
   resetsAt: string | null;
-  seat: string;
+  seat: string | null;
+  /** Absent in state files written before sources were recorded: a screen reading then. */
+  source?: ReadingSource;
   confirmed: boolean;
 };
 
@@ -66,11 +75,47 @@ export function observe(list: readonly Seen[], figure: QuotaFigure, seat: string
     changedAt: same && previous ? previous.changedAt : now,
     resetsAt: same && previous && previous.resetsAt !== null ? previous.resetsAt : resetsFrom(figure.resets, now),
     seat,
+    source: 'status_line',
     confirmed: previous === null ? agreed : same ? previous.confirmed || agreed : true,
   };
   if (at < 0) next.push(reading);
   else next[at] = reading;
   return next;
+}
+
+/**
+ * Fold a check command's windows into the readings kept for this pass (§ 5). A check reading is
+ * confirmed at first sight and belongs to no seat; one is kept per account and window, so a new
+ * check replaces the last, and the screen readings of the same window are left alone.
+ */
+export function observeCheck(list: readonly Seen[], account: string, windows: readonly CheckWindow[]): Seen[] {
+  const next = list.slice();
+  for (const window of windows) {
+    const reading: Seen = {
+      account,
+      window: window.window,
+      left: window.left,
+      used: window.used,
+      changedAt: window.at,
+      resetsAt: window.resetsAt,
+      seat: null,
+      source: 'check',
+      confirmed: true,
+    };
+    const at = next.findIndex((item) => item.account === account && item.window === window.window && item.source === 'check');
+    if (at < 0) next.push(reading);
+    else next[at] = reading;
+  }
+  return next;
+}
+
+/** The screen readings in a list, and the check readings: the two slots of the same account. */
+export function screenOf(list: readonly Seen[]): Seen[] {
+  return list.filter((item) => item.source === 'status_line');
+}
+
+export function checkOf(list: readonly Seen[]): Seen[] {
+  return list.filter((item) => item.source === 'check');
 }
 
 /**
@@ -97,12 +142,53 @@ export function verdict(list: readonly Seen[], now: number, staleAfterMs: number
   return { kind: 'stale', reading };
 }
 
+export type CountedReading =
+  | { kind: 'counted'; reading: Seen }
+  | { kind: 'unconfirmed'; reading: Seen }
+  | { kind: 'unknown' };
+
+/**
+ * The reading that counts for one window, from the sources the account names in order (§ 3, § 5):
+ * a lower source is used only when every higher one is failed, unknown or stale. A check reading
+ * counts while it is fresh by § 5's own time and its reset has not passed; a screen reading falls
+ * through when it is unknown or a bare first sight, and a stale one inside its reserve is kept as
+ * the fallback, so § 4.3's rule 4 still refuses when nothing below counts.
+ */
+export function countedFor(
+  sources: readonly ReadingSource[],
+  screen: readonly Seen[],
+  checks: readonly Seen[],
+  now: number,
+  staleAfterMs: number,
+  reserve: number | null,
+): CountedReading {
+  let fallback: Seen | null = null;
+  for (const source of sources) {
+    if (source === 'check') {
+      const reading = checks.find((item) => (item.resetsAt === null || item.resetsAt > now) && now - item.changedAt < staleAfterMs);
+      if (!reading) continue;
+      return { kind: 'counted', reading };
+    }
+    const result = verdict(screen, now, staleAfterMs, reserve);
+    if (result.kind === 'unknown') continue;
+    if (result.kind === 'unconfirmed') return { kind: 'unconfirmed', reading: result.reading };
+    if (result.kind === 'fresh') return { kind: 'counted', reading: result.reading };
+    fallback ??= result.reading;
+  }
+  if (fallback) return { kind: 'counted', reading: fallback };
+  return { kind: 'unknown' };
+}
+
 /** Readings whose reset has passed are left out. One with no reset time is kept. */
 export function remember(list: readonly Seen[], now: number): Record<string, StoredReading> {
   const out: Record<string, StoredReading> = {};
   for (const reading of list) {
     if (reading.resetsAt !== null && reading.resetsAt <= now) continue;
-    out[`${reading.account}/${reading.window}/${reading.seat}`] = store(reading);
+    // A screen reading is kept per seat; a check reading belongs to no seat and is kept alone.
+    const key = reading.source === 'check'
+      ? `${reading.account}/${reading.window}`
+      : `${reading.account}/${reading.window}/${reading.seat}`;
+    out[key] = store(reading);
   }
   return out;
 }
@@ -172,6 +258,7 @@ export function store(reading: Seen): StoredReading {
     changedAt: new Date(reading.changedAt).toISOString(),
     resetsAt: reading.resetsAt === null ? null : new Date(reading.resetsAt).toISOString(),
     seat: reading.seat,
+    source: reading.source,
     confirmed: reading.confirmed,
   };
 }
@@ -185,6 +272,7 @@ export function revive(stored: StoredReading): Seen {
     changedAt: Date.parse(stored.changedAt),
     resetsAt: stored.resetsAt === null ? null : Date.parse(stored.resetsAt),
     seat: stored.seat,
+    source: stored.source ?? 'status_line',
     confirmed: stored.confirmed,
   };
 }

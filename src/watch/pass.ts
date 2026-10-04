@@ -3,7 +3,7 @@
 // nudge. A check never reads herdr, a screen or the file itself — only the observation it is
 // handed (RFC 0002 § 4.2).
 import { WATCH_CHECKS_CHANGED } from '../approve/fingerprint.ts';
-import { observe, recall, type Seen } from '../budgets/readings.ts';
+import { observe, observeCheck, recall, type Seen } from '../budgets/readings.ts';
 import type { CheckOutcome } from '../budgets/run.ts';
 import type { TeamFile } from '../file/types.ts';
 import { quotaFor } from '../profiles/profile.ts';
@@ -246,6 +246,14 @@ export function pass({
         readings = observe(readings, figure, seat.name, now);
       }
     }
+  }
+  // A check reading lands in the same slot (§ 5): what an approved check read outlives the watch,
+  // so `up` and `add` count it after the watch has exited. Only an account whose sources name
+  // `check`, and only when its check actually read this pass.
+  for (const outcome of outcomes) {
+    if (outcome.state !== 'read' || outcome.reading.kind !== 'subscription') continue;
+    if (!budgets.accounts[outcome.account]?.sources.includes('check')) continue;
+    readings = observeCheck(readings, outcome.account, outcome.reading.windows);
   }
 
   const teamObservation: TeamObservation = {

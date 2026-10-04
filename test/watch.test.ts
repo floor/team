@@ -804,6 +804,20 @@ describe('team watch', () => {
       .toEqual([{ account: 'deepseek', amount: 4.2, currency: 'USD', at: Date.parse('2026-10-03T14:00:00Z') }]);
   });
 
+  test('a subscription check reading is kept, so `up` and `add` count the reserve against it', async () => {
+    writeFileSync(file, withAccounts('  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [check, status_line], check: openai-usage }\n'));
+    const code = await runWatch(['--file', file], testIo(dir), sources(1, {
+      readChecks: (_team, _root, at) => [
+        { account: 'openai', state: 'read', reading: { kind: 'subscription', windows: [{ window: 'weekly', left: 5, used: 95, at, resetsAt: null }] } },
+      ],
+    }));
+    expect(code).toBe(0);
+    expect(loadReadings(join(dir, '.agents'), 'acme-web').filter((one) => one.source === 'check')).toEqual([{
+      account: 'openai', window: 'weekly', left: 5, used: 95,
+      changedAt: Date.parse('2026-10-03T14:00:00Z'), resetsAt: null, seat: null, source: 'check', confirmed: true,
+    }]);
+  });
+
   test('a file that never validated, and a bad option', async () => {
     writeFileSync(file, 'format: 9\n');
     expect(await runWatch(['--file', file], testIo(dir), sources(1))).toBe(2);

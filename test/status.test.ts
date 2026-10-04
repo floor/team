@@ -254,6 +254,7 @@ describe('team status', () => {
       changedAt: NOW.getTime() - 2 * 60 * 1000,
       resetsAt: NOW.getTime() + 44 * 60 * 1000,
       seat: 'codex-acme',
+      source: 'status_line',
       confirmed: true,
     }], NOW.getTime());
     const { code, out } = await status();
@@ -264,6 +265,34 @@ describe('team status', () => {
     expect(doc.budgets).toEqual([
       { account: 'deepseek', window: null, left: null, used: null, resetsIn: null, seat: null, age: null, source: null, state: 'unknown', inside: false, reserve: null },
       { account: 'openai', window: 'weekly', left: 39, used: 61, resetsIn: '44m', seat: 'codex-acme', age: '2m', source: 'status_line', state: 'fresh', inside: false, reserve: 10 },
+    ]);
+  });
+
+  test('a stored check reading is a row with its own source, and no seat', async () => {
+    writeFileSync(file, example.replace(
+      '  marks: [50, 75, 90]          # percent used, per account and window\n',
+      `  marks: [50, 75, 90]
+  accounts:
+    openai: { kind: subscription, reserve: 10%, sources: [check, status_line], check: openai-usage }
+`,
+    ));
+    saveReadings(join(dir, '.agents'), 'acme-web', [{
+      account: 'openai',
+      window: 'weekly',
+      left: 5,
+      used: 95,
+      changedAt: NOW.getTime() - 2 * 60 * 1000,
+      resetsAt: null,
+      seat: null,
+      source: 'check',
+      confirmed: true,
+    }], NOW.getTime());
+    const { code, out } = await status();
+    expect(code).toBe(0);
+    expect(out).toContain('openai  weekly  left 5%  used 95%  resets unknown  -  read 2m ago  check  fresh, inside reserve 10%');
+    const doc = JSON.parse((await status('--json')).out);
+    expect(doc.budgets).toEqual([
+      { account: 'openai', window: 'weekly', left: 5, used: 95, resetsIn: null, seat: null, age: '2m', source: 'check', state: 'fresh', inside: true, reserve: 10 },
     ]);
   });
 
