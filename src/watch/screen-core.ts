@@ -238,7 +238,7 @@ function boxToRule(lines: string[], styled: string[], composer: Extract<ScreenDa
   let footer = false;
   for (let j = close + 1; j < lines.length; j++) {
     if (tick()) return { kind: 'stop' };
-    if (statusFooter(lines[j] ?? '')) { footer = true; break; }
+    if (composer.footers.some((pattern) => pattern.test(lines[j] ?? ''))) { footer = true; break; }
   }
   // The opening rule on the line directly above, or the status footer when that
   // rule has scrolled out of the window.
@@ -249,13 +249,6 @@ function boxToRule(lines: string[], styled: string[], composer: Extract<ScreenDa
   }
   const typed = (lines[input] ?? '').replace(composer.prompt, '').trim();
   return { kind: placeholder(typed, composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from, input };
-}
-
-// The composer footer, not a line of shell output under a stray rule. The model
-// row uses a middot; the permissions line is the other footer.
-function statusFooter(line: string): boolean {
-  const text = line.trim();
-  return text.includes('·') || /bypass permissions/i.test(text);
 }
 
 function statusLast(
