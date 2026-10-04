@@ -1066,6 +1066,68 @@ module.exports = { default: def };`,
     }
   });
 
+  test('round 9: disagreeing Proxy hiding default and function-valued export with default accessor refuse hatch composer on shipped profiles in source and built code (b)', async () => {
+    const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-disagreeing-proxy-'));
+
+    // 1. Reviewer's exact Proxy: has trap hides default, ownKeys and descriptor report composer,
+    // get("default") returns object with composer, get("composer") returns undefined
+    writeFileSync(
+      resolve(tempDir, 'disagreeing-proxy-composer.cjs'),
+      `module.exports = new Proxy({}, {
+  has(_target, prop) { return prop === "default" ? false : true; },
+  ownKeys() { return ["composer"]; },
+  getOwnPropertyDescriptor(_target, prop) {
+    if (prop === "default") return { configurable: true, enumerable: true, value: undefined };
+    if (prop === "composer") return { configurable: true, enumerable: true, value: () => ({ kind: "idle" }) };
+  },
+  get(_target, prop) {
+    if (prop === "default") return { composer: () => ({ kind: "idle" }) };
+    if (prop === "composer") return undefined;
+  },
+});`,
+    );
+
+    // 2. Function-valued export carrying an accessor at .default
+    writeFileSync(
+      resolve(tempDir, 'fn-default-accessor-composer.cjs'),
+      `const fn = function () {};
+Object.defineProperty(fn, "default", {
+  configurable: true,
+  enumerable: true,
+  get() { return { composer: () => ({ kind: "idle" }) }; },
+});
+module.exports = fn;`,
+    );
+
+    try {
+      const clis = ['claude-code', 'codex', 'cursor', 'antigravity'];
+      const variants = [
+        { file: 'disagreeing-proxy-composer.cjs', desc: 'disagreeing Proxy hiding default' },
+        { file: 'fn-default-accessor-composer.cjs', desc: 'function-valued export with default accessor' },
+      ];
+      const dist = await getBuiltScreenFile();
+
+      for (const { file } of variants) {
+        for (const cli of clis) {
+          const rawYaml = readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8');
+          const withHatch = `${rawYaml}\nscreen_module: "${file}"\n`;
+
+          // In source:
+          expect(() => loadScreen(withHatch, tempDir, `${cli}.yaml`)).toThrow(
+            new RegExp(`profile "${cli}\\.yaml": profile has a data composer and screen_module exports a composer`),
+          );
+
+          // In built loader:
+          expect(() => dist.loadScreen(withHatch, tempDir, `${cli}.yaml`)).toThrow(
+            new RegExp(`profile "${cli}\\.yaml": profile has a data composer and screen_module exports a composer`),
+          );
+        }
+      }
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test('round 8 addendum: what loadScreen returns is deeply frozen against post-load mutations', () => {
     // 1. Shipped profiles (no hatch)
     for (const cli of ['claude-code', 'codex', 'cursor', 'antigravity']) {

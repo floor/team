@@ -202,7 +202,9 @@ function loadScreenModule(specifier: string, baseDir: string | undefined, line: 
 
   try {
     const defaultExport =
-      mod && typeof mod === 'object' && 'default' in mod ? mod.default : undefined;
+      (typeof mod === 'object' && mod !== null) || typeof mod === 'function'
+        ? mod.default
+        : undefined;
     const candidate =
       defaultExport && (typeof defaultExport === 'object' || typeof defaultExport === 'function')
         ? defaultExport
