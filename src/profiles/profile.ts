@@ -139,13 +139,13 @@ function launchOf(root: YamlNode): Shipped {
   };
 }
 
-// The flag's value is the next token, after "=" or whitespace. The earliest flag in the line wins.
+// The flag's value is the next token, after "=" or any whitespace. The last flag in the line wins.
 function modelOf(models: { option: string[]; ids: ModelRule[] }, launch: string): { model: string; version: string } | null {
-  let bestAt = Infinity;
+  let bestAt = -1;
   let id: string | null = null;
   for (const option of models.option) {
     const found = flagValue(launch, option);
-    if (found && found.at < bestAt) {
+    if (found && found.at > bestAt) {
       bestAt = found.at;
       id = found.id;
     }
@@ -157,9 +157,13 @@ function modelOf(models: { option: string[]; ids: ModelRule[] }, launch: string)
 
 function flagValue(launch: string, option: string): { at: number; id: string } | null {
   const escaped = option.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = new RegExp(`(?:^|\\s)${escaped}(?:=|\\s+)(\\S+)`, 'u').exec(launch);
-  if (!match || match[1] === undefined) return null;
-  return { at: match.index, id: match[1] };
+  const pattern = new RegExp(`(?:^|\\s)${escaped}(?:=|\\s+)(\\S+)`, 'gu');
+  let found: { at: number; id: string } | null = null;
+  for (const match of launch.matchAll(pattern)) {
+    if (match[1] === undefined || match.index === undefined) continue;
+    found = { at: match.index, id: match[1] };
+  }
+  return found;
 }
 
 function apply(rules: ModelRule[], text: string): { model: string; version: string } | 'unreadable' | null {

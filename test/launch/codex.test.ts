@@ -58,6 +58,7 @@ describe('Codex launch and captured screens', () => {
   test('launch model ids and the captured footer map to separate model and version fields', () => {
     expect(codex.modelOf('codex -m gpt-6-sol -c model_reasoning_effort=high')).toEqual({ model: 'GPT Sol', version: '6' });
     expect(codex.modelOf('codex --model=gpt-5.6-terra')).toEqual({ model: 'GPT Terra', version: '5.6' });
+    expect(codex.modelOf('codex -m gpt-6-sol -m gpt-5.6-terra')).toEqual({ model: 'GPT Terra', version: '5.6' });
     expect(codex.modelOf('codex -m unknown')).toBeNull();
     expect(codex.modelOf('launcher')).toBeNull();
     expect(runningModel('codex', fixture('idle'))).toEqual({ model: 'GPT Terra', version: '5.6' });

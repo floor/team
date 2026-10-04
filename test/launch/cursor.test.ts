@@ -97,6 +97,7 @@ describe('Cursor launch and captured screens', () => {
     expect(cursor.modelOf('cursor-agent')).toBeNull();
     expect(cursor.modelOf('cursor-agent --model cursor-grok-4.6-high-fast')).toEqual({ model: 'Grok', version: '4.6' });
     expect(cursor.modelOf('cursor-agent --model grok-4.7')).toEqual({ model: 'Grok', version: '4.7' });
+    expect(cursor.modelOf('cursor-agent --model grok-4.7 --model grok-4.5')).toEqual({ model: 'Grok', version: '4.5' });
     expect(runningModel('cursor', fixture('idle'))).toEqual({ model: 'Grok', version: '4.7' });
     expect(runningModel('cursor', fixture('rules-accepted'))).toEqual({ model: 'Grok', version: '4.7' });
     expect(runningModel('cursor', fixture('trust'))).toBeNull();

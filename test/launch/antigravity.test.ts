@@ -74,6 +74,7 @@ describe('Antigravity launch and captured screens', () => {
     expect(antigravity.modelOf('agy')).toBeNull();
     expect(antigravity.modelOf('agy --model gemini-3.8-flash-medium')).toEqual({ model: 'Gemini Flash', version: '3.8' });
     expect(antigravity.modelOf('agy --model gemini-3.7-flash-high')).toEqual({ model: 'Gemini Flash', version: '3.7' });
+    expect(antigravity.modelOf('agy --model gemini-3.8-flash-high --model gemini-3.1-pro-low')).toEqual({ model: 'Gemini Pro', version: '3.1' });
     expect(runningModel('antigravity', fixture('idle'))).toEqual({ model: 'Gemini Flash', version: '3.8' });
     expect(runningModel('antigravity', fixture('rules-accepted'))).toEqual({ model: 'Gemini Flash', version: '3.8' });
     expect(runningModel('antigravity', fixture('trust'))).toBeNull();

@@ -53,6 +53,7 @@ describe('profiles', () => {
       version: '4.5',
     });
     expect(claudeCode.modelOf('claude --model claude-opus-5')).toEqual({ model: 'Claude Opus', version: '5' });
+    expect(claudeCode.modelOf('claude --model foo --model claude-opus-5-5')).toEqual({ model: 'Claude Opus', version: '5.5' });
   });
 
   test('an unknown model id or a launcher maps to nothing', () => {

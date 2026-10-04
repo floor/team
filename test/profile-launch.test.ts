@@ -112,6 +112,18 @@ const launches: [string, string, (launch: string) => { model: string; version: s
   ['antigravity', 'agy --model gemini-3.7-flash-high', mainAgy],
   ['antigravity', 'agy --model unknown-model', mainAgy],
   ['antigravity', 'agy', mainAgy],
+  ['claude-code', 'claude --model foo --model claude-opus-5-5', mainClaude],
+];
+
+// Main read null, or the first flag. The new reader keeps "=" or any whitespace, and the last flag.
+const differences: [string, string, (launch: string) => { model: string; version: string } | null, { model: string; version: string } | null, { model: string; version: string } | null][] = [
+  ['claude-code', 'claude --model  claude-opus-5-5', mainClaude, null, { model: 'Claude Opus', version: '5.5' }],
+  ['claude-code', 'claude --model\tclaude-opus-5-5', mainClaude, null, { model: 'Claude Opus', version: '5.5' }],
+  ['codex', 'codex -m  gpt-6-sol', mainCodex, null, { model: 'GPT Sol', version: '6' }],
+  ['antigravity', 'agy --model  gemini-3.8-flash', mainAgy, null, { model: 'Gemini Flash', version: '3.8' }],
+  ['codex', 'codex -m gpt-6-sol -m gpt-5.6-terra', mainCodex, { model: 'GPT Sol', version: '6' }, { model: 'GPT Terra', version: '5.6' }],
+  ['cursor', 'cursor-agent --model grok-4.7 --model grok-4.5', mainCursor, { model: 'Grok', version: '4.7' }, { model: 'Grok', version: '4.5' }],
+  ['antigravity', 'agy --model gemini-3.8-flash-high --model gemini-3.1-pro-low', mainAgy, { model: 'Gemini Flash', version: '3.8' }, { model: 'Gemini Pro', version: '3.1' }],
 ];
 
 const commands: [string, string, string, string][] = [
@@ -160,6 +172,14 @@ describe('launch data through the profile files', () => {
     for (const [cli, file] of screens) {
       const text = readFileSync(new URL(`./fixtures/${file}`, import.meta.url), 'utf8');
       same(`${cli} ${file}`, runningModel(cli, text), mainRunning(cli, text));
+    }
+  });
+
+  test('the accepted modelOf differences', () => {
+    for (const [cli, launch, read, before, after] of differences) {
+      const profile = profileFor(cli);
+      same(`${launch} on main`, read(launch), before);
+      same(`${launch} now`, profile?.modelOf(launch) ?? null, after);
     }
   });
 });
