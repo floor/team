@@ -125,13 +125,13 @@ key fe21ef6293de.` The fingerprint is the first twelve hex digits of the key's p
 amendment — `add` starting a stopped seat, `remove --keep` parking one — is a signing too, and
 moves the counter like an approval.
 
-What that is worth, exactly. The signature refuses a record changed by something that does not
-use the key — a hand edit to the store, a record carried over from another project. A process
-that can read the key can re-sign any record at the number it already had, and nothing `team`
-shows will differ; the counter says what `team` wrote, never every signing that ever happened.
-What a *replaced* key does change is the fingerprint: an owner who noted it sees the swap. That
-is evidence, not prevention — `team` computes the fingerprint, and a seat can replace `team`
-itself.
+Approvals guard against mistakes, not against a hostile process running as the owner. The
+signature refuses a record changed by something that does not use the key — a hand edit to the
+store, a record carried over from another project. A process that can read the key can re-sign
+any record at the number it already had, and nothing `team` shows will differ; the counter says
+what `team` wrote, never every signing that ever happened. What a *replaced* key does change is
+the fingerprint: an owner who noted it sees the swap. That is evidence, not prevention — `team`
+computes the fingerprint, and a seat can replace `team` itself.
 
 A record written by an earlier `team`, before records were signed, is not trusted. The commands
 that need an approval in force (`up`, `add`, `worktree`, `init --restore`) refuse with `approved
