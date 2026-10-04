@@ -7,16 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- The watch takes its turned-off checks from the section in force, not from the file. An approved
-  file is unchanged.
-
 ### Added
 
 - A spend account's `floor` refuses a launch: the watch keeps the money each spend check reads in the
   state, and `up` and `add` refuse a seat whose account is at or below its floor. A reading that is
   missing, stale or in another currency than the floor's reads unknown, is said, and never refuses.
+
+### Fixed
+
+- A Codex permission dialog with the status line still pinned below it is read as the dialog, not as
+  unsent text: the safety floor's markers match without regard to case, and a rule's footer may sit
+  above a `status-last` composer's pinned line. The dialog is reported and never answered, and rules
+  delivery and the watch type nothing into it.
 
 ## [0.1.0] - 2026-10-04
 
