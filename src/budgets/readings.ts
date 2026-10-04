@@ -35,14 +35,20 @@ export function observe(list: readonly Seen[], figure: QuotaFigure, seat: string
   const at = next.findIndex((item) => item.account === figure.account && item.window === figure.window && item.seat === seat);
   const previous = at < 0 ? null : next[at] ?? null;
   const same = previous !== null && previous.left === figure.left && previous.used === figure.used;
-  const agreed = next.some((item) => item !== previous && item.account === figure.account && item.window === figure.window && item.left === figure.left && item.used === figure.used);
+  const agreed = next.some((item) =>
+    item !== previous
+    && item.account === figure.account
+    && item.window === figure.window
+    && item.left === figure.left
+    && item.used === figure.used
+    && (item.resetsAt === null || item.resetsAt > now));
   const reading: Seen = {
     account: figure.account,
     window: figure.window,
     left: figure.left,
     used: figure.used,
     changedAt: same && previous ? previous.changedAt : now,
-    resetsAt: same && previous ? previous.resetsAt : resetsFrom(figure.resets, now),
+    resetsAt: same && previous && previous.resetsAt !== null ? previous.resetsAt : resetsFrom(figure.resets, now),
     seat,
     confirmed: previous === null ? agreed : same ? previous.confirmed || agreed : true,
   };
@@ -53,15 +59,18 @@ export function observe(list: readonly Seen[], figure: QuotaFigure, seat: string
 
 /**
  * The reading that counts. A figure from before a known reset is dropped.
- * The newest change wins, and a confirmed reading wins a tie. Staleness is
- * measured from `changedAt`. A stale reading inside the reserve refuses until
- * its reset; with no reset time it is unknown. A first sight is unconfirmed.
+ * Among confirmed live readings, the newest change wins. A first sight counts
+ * only when no confirmed reading is still live. Staleness is measured from
+ * `changedAt`. A stale reading inside the reserve refuses until its reset;
+ * with no reset time it is unknown.
  */
 export function verdict(list: readonly Seen[], now: number, staleAfterMs: number, reserve: number | null): Verdict {
   const live = list.filter((item) => item.resetsAt === null || item.resetsAt > now);
-  if (live.length === 0) return { kind: 'unknown' };
-  const newest = Math.max(...live.map((item) => item.changedAt));
-  const tied = live.filter((item) => item.changedAt === newest);
+  const confirmed = live.filter((item) => item.confirmed);
+  const ranked = confirmed.length > 0 ? confirmed : live;
+  if (ranked.length === 0) return { kind: 'unknown' };
+  const newest = Math.max(...ranked.map((item) => item.changedAt));
+  const tied = ranked.filter((item) => item.changedAt === newest);
   const reading = tied.find((item) => item.confirmed) ?? tied[0];
   if (!reading) return { kind: 'unknown' };
   if (!reading.confirmed) return { kind: 'unconfirmed', reading };
@@ -72,9 +81,13 @@ export function verdict(list: readonly Seen[], now: number, staleAfterMs: number
   return { kind: 'stale', reading };
 }
 
-export function remember(list: readonly Seen[]): Record<string, StoredReading> {
+/** Readings whose reset has passed are left out. One with no reset time is kept. */
+export function remember(list: readonly Seen[], now: number): Record<string, StoredReading> {
   const out: Record<string, StoredReading> = {};
-  for (const reading of list) out[`${reading.account}/${reading.window}/${reading.seat}`] = store(reading);
+  for (const reading of list) {
+    if (reading.resetsAt !== null && reading.resetsAt <= now) continue;
+    out[`${reading.account}/${reading.window}/${reading.seat}`] = store(reading);
+  }
   return out;
 }
 
@@ -84,10 +97,10 @@ export function recall(stored: Record<string, StoredReading> | undefined): Seen[
 }
 
 /** Write the readings that still count. The state file is the per-project cache. */
-export function saveReadings(dir: string, session: string, list: readonly Seen[]): void {
+export function saveReadings(dir: string, session: string, list: readonly Seen[], now: number = Date.now()): void {
   updateState(dir, (state) => {
     const current = state.sessions[session] ?? emptySession();
-    current.budgets = remember(list);
+    current.budgets = remember(list, now);
     state.sessions[session] = current;
   });
 }
