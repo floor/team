@@ -8,6 +8,12 @@ the default session had nine agents before and after. Config and auth hashes wer
 - `trust.txt`: `AGENT_UNATTENDED=1 agy --dangerously-skip-permissions` launched in a fresh,
   untrusted temporary directory. The workspace trust prompt appeared (`Do you trust the contents
   of this project?`). The workspace was closed without answering the question.
+- `trust-54.txt`: `AGENT_UNATTENDED=1 agy` without `--dangerously-skip-permissions`, in a fresh,
+  untrusted throwaway directory, captured 2026-10-04 in a scratch session created for the purpose
+  (closed and deleted afterwards), in a 54-column, 23-row pane. The same trust prompt appeared,
+  with the model footer visible at this width. Escape was the only answer given: it exits the CLI,
+  so no capture exists past this dialog from this run. The directory path is replaced with
+  `<project-dir>`.
 - `idle.txt`, `unsent.txt`, `working.txt`, `rules-accepted.txt`: the same launch command in
   an already-trusted folder. The rules message was pasted, read back, and submitted.
   `working.txt` coincided with the CLI showing `Generating...` and herdr reporting `working`
