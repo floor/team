@@ -34,9 +34,15 @@ The first release: set up, change and watch a project's team of AI agents from o
   #22)
 - Linux: the caller check and the watch's load, memory and swap figures are read from `/proc`, so
   `team` answers there as on macOS. (#29)
+- A stopped seat its owner starts by hand is watched like a parked one: prompts and unsent text are
+  reported, its idle is not, and it is never read as an agent the file doesn't hold; parked and
+  stopped follow RFC 0001. (#25)
 - `team up` and `team down`: start and stop the session and its seats, each with its caller rule;
   staged launches, a wait for an empty idle prompt, trust and update screens read and never
   answered; `--dry-run` prints the plan and changes nothing. (#5, #13, #14)
+- `team up` and `team add`: every `machine:` start limit — load, memory, disk, free swap and swap
+  growth — is checked before each seat, and a breach refuses the launch, naming the figure and its
+  limit; a `--dry-run` prints the refusal too. (#26)
 - Launch profiles for `claude-code`, Codex, Antigravity and Cursor: approval flags added only at
   launch, rules delivered only into an empty idle prompt, screens read from recorded, sanitised
   fixtures; a Codex permission dialog is reported for its owner and never answered. (#16, #17,

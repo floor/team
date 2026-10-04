@@ -34,6 +34,14 @@ function team(): TeamFile {
   return result.team;
 }
 
+// The example with codex-acme stopped instead of parked — a stopped seat whose screens the watch
+// can read (grok-acme, the example's own stopped seat, is a grok CLI, and the watch reads none).
+function stoppedTeam(): TeamFile {
+  const result = validateTeamFile(example.replace('parked: true', 'stopped: true'));
+  if (!result.ok) throw new Error(JSON.stringify(result.errors));
+  return result.team;
+}
+
 // Screens of Claude Code, as the live team shows them.
 const RULE = '─'.repeat(40);
 const STATUS = '  main · …/acme · Opus 5.5 · S: $1.2 · W: 12%\n  ⏵⏵ bypass permissions on (shift+tab to cycle)';
@@ -178,13 +186,72 @@ describe('a pass of the watch', () => {
     expect(pass(team(), emptySession(), quiet, fine, 10 * MIN, memory).reports).toEqual([]);
   });
 
-  test('a parked seat is not reported while idle, and still is when blocked or holding unsent text', () => {
+  test('a parked seat idle for an hour is not reported idle, while its unparked neighbour is', () => {
     const memory = newMemory();
-    const parked = live({ 'codex-acme': { status: 'idle' } });
-    expect(pass(team(), emptySession(), parked, fine, 0, memory).reports).toEqual([]);
-    expect(pass(team(), emptySession(), parked, fine, 60 * MIN, memory).reports).toEqual([]);
-    const blocked = pass(team(), emptySession(), live({ 'codex-acme': { status: 'blocked' } }), fine, 61 * MIN, memory).reports;
-    expect(blocked.map((report) => report.text)).toEqual(['codex-acme is blocked, and its screen is not one the watch recognises']);
+    const quiet = live({ 'codex-acme': { status: 'idle' }, 'deepseek-acme': { status: 'idle', screen: idle } });
+    expect(pass(team(), emptySession(), quiet, fine, 0, memory).reports).toEqual([]);
+    // Ten minutes in, the unparked seat's report lands: the shelf works, the parked seat is off it.
+    expect(pass(team(), emptySession(), quiet, fine, 10 * MIN, memory).reports.map((report) => report.text))
+      .toEqual(['deepseek-acme has been idle since the watch started']);
+    // An hour in, the neighbour reports again on the idle_repeat cadence; the parked seat is
+    // still absent from every report.
+    expect(pass(team(), emptySession(), quiet, fine, 60 * MIN, memory).reports.map((report) => report.text))
+      .toEqual(['deepseek-acme has been idle since the watch started']);
+  });
+
+  test('a parked seat that holds unsent text is reported, after unsent_after', () => {
+    const memory = newMemory();
+    // The captured screen names Terra; the file's codex-acme is GPT Sol 6. Read as the seat's own
+    // id, the screen is here for its unsent composer alone, with no model drift of its own.
+    const screen = readFileSync(new URL('./fixtures/codex/0.157.0/unsent.txt', import.meta.url), 'utf8')
+      .replaceAll('GPT-5.6-Terra', 'GPT-6-Sol');
+    const holding = live({ 'codex-acme': { status: 'idle', screen } });
+    expect(pass(team(), emptySession(), holding, fine, 0, memory).reports).toEqual([]);
+    expect(pass(team(), emptySession(), holding, fine, MIN, memory).reports.map((report) => report.text))
+      .toEqual(['codex-acme holds text in its input box that was never sent']);
+  });
+
+  test('a parked seat runs the wrong model: model drift is reported too', () => {
+    const screen = readFileSync(new URL('./fixtures/codex/0.157.0/working.txt', import.meta.url), 'utf8');
+    const drift = live({ 'codex-acme': { status: 'working', screen } });
+    const texts = pass(team(), emptySession(), drift, fine, 0, newMemory()).reports.map((report) => report.text);
+    expect(texts).toEqual(['codex-acme runs GPT Terra 5.6; the file says GPT Sol 6: it signs with the wrong model']);
+  });
+
+  test('a stopped seat that runs is watched like a parked one: its permission prompt is reported', () => {
+    const screen = readFileSync(new URL('./fixtures/codex/0.157.0/permission.txt', import.meta.url), 'utf8');
+    const stuck = live({ 'codex-acme': { status: 'idle', screen } });
+    expect(pass(stoppedTeam(), emptySession(), stuck, fine, 0, newMemory()).reports).toEqual([
+      { key: 'blocked:codex-acme', text: "codex-acme waits at a permission prompt: its owner's to answer", to: 'owner' },
+    ]);
+  });
+
+  test('a stopped seat that runs and holds unsent text is reported, after unsent_after', () => {
+    const memory = newMemory();
+    // The captured screen names Terra; the file's codex-acme is GPT Sol 6. Read as the seat's own
+    // id, the screen is here for its unsent composer alone, with no model drift of its own.
+    const screen = readFileSync(new URL('./fixtures/codex/0.157.0/unsent.txt', import.meta.url), 'utf8')
+      .replaceAll('GPT-5.6-Terra', 'GPT-6-Sol');
+    const holding = live({ 'codex-acme': { status: 'idle', screen } });
+    expect(pass(stoppedTeam(), emptySession(), holding, fine, 0, memory).reports).toEqual([]);
+    expect(pass(stoppedTeam(), emptySession(), holding, fine, MIN, memory).reports.map((report) => report.text))
+      .toEqual(['codex-acme holds text in its input box that was never sent']);
+  });
+
+  test('a stopped seat that runs but stays idle is not reported idle', () => {
+    const memory = newMemory();
+    const quiet = live({ 'deepseek-acme': { status: 'idle', screen: idle } });
+    quiet.agents.push(agent('grok-acme', 'w5', 'idle', 'grok'));
+    quiet.workspaces.push({ id: 'w5', label: 'grok-acme' });
+    expect(pass(team(), emptySession(), quiet, fine, 0, memory).reports).toEqual([]);
+    // Ten minutes in, the unparked neighbour's report lands: the shelf works, the stopped seat is
+    // off it.
+    expect(pass(team(), emptySession(), quiet, fine, 10 * MIN, memory).reports.map((report) => report.text))
+      .toEqual(['deepseek-acme has been idle since the watch started']);
+    // An hour in, the neighbour reports again on the idle_repeat cadence; the stopped seat is still
+    // absent from every report.
+    expect(pass(team(), emptySession(), quiet, fine, 60 * MIN, memory).reports.map((report) => report.text))
+      .toEqual(['deepseek-acme has been idle since the watch started']);
   });
 
   test('a permission prompt that herdr calls idle is the owner\'s, and is never an idle seat', () => {
