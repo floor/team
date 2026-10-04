@@ -301,6 +301,16 @@ export function downPlan(input: DownInput): Step[] {
         });
         continue;
       }
+      if (seat.cli === 'unknown') {
+        steps.push({
+          kind: 'skip',
+          text:
+            `${seat.name}: the state doesn't say which CLI it runs, so it can't be asked to exit; ` +
+            'left running (`team down --abandon` closes it without typing)',
+        });
+        left++;
+        continue;
+      }
       steps.push({
         kind: 'skip',
         text: `${seat.name}: no launch profile for \`${seat.cli}\` in this version; left running`,
@@ -358,7 +368,12 @@ export function downPlan(input: DownInput): Step[] {
       text: `session ${session}: not stopped, ${left} agent${left === 1 ? '' : 's'} left in it`,
     });
   } else {
-    steps.push({ kind: 'run', argv: ['herdr', 'session', 'stop', session], do: { do: 'stop', session } });
+    steps.push({
+      kind: 'run',
+      argv: ['herdr', 'session', 'stop', session],
+      note: 'stopped, then cleared: the session this run stopped, so a later `up` starts from the beginning',
+      do: { do: 'stop', session },
+    });
   }
   return steps;
 }
