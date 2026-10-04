@@ -38,6 +38,14 @@ before Antigravity's header banner is removed. All other visible text is retaine
 box borders, prompts, and model footer (`Gemini 3.8 Flash · high`). Unknown screens permit no input.
 No vendor configuration in `~/.gemini` was edited.
 
+## Not produced
+
+- `permission` (a real one): not produced, behind the trust dialog — in an untrusted directory the
+  CLI opens on its trust prompt, the capture rule allows no answer that grants anything, and Escape
+  exits the CLI, so no permission screen was reachable. `permission.txt` and `permission-cut.txt`
+  above stay the constructed stand-ins, described as constructed.
+- `question`: not produced, behind the trust dialog, for the same reason.
+
 ## Constructed: delivery-verification boxes
 
 Not captures. `test/launch/antigravity.test.ts` builds the post-paste box from `idle.txt`:
