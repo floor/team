@@ -131,6 +131,13 @@ describe('claude-code reads the input line\'s styling', () => {
     }
   });
 
+  test('a faint "Try" with typed characters after it is unsent', () => {
+    // A line with any styling is decided by the styling alone: the list would have called
+    // this idle by its prefix, and idle is the reading the nudge types into.
+    const text = `${RULE}\n❯ \x1b[2mTry "x"\x1b[0m y\n${RULE}\n${STATUS}\n`;
+    expect(readScreen('claude-code', text).kind).toBe('unsent');
+  });
+
   test('a plain source falls back to the list: "Try" stays idle, the rest stays unsent', () => {
     expect(readScreen('claude-code', styled('idle-suggestion-plain.txt')).kind).toBe('idle');
     expect(readScreen('claude-code', styled('idle-suggestion-other-plain.txt')).kind).toBe('unsent');

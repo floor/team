@@ -37,6 +37,11 @@ export function stripSgr(text: string): string {
   return text.replace(ESCAPES, '');
 }
 
+/** Whether the text carries any SGR styling at all — a colour, faint, bold, anything. */
+export function hasSgr(text: string): boolean {
+  return /\x1b\[[0-9;:]*m/.test(text);
+}
+
 /**
  * Whether every visible character after the first `skip` ones is faint, so the line holds a
  * greyed suggestion rather than text. Whitespace is not read, mirroring the typed text the

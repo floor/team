@@ -1,7 +1,7 @@
 // The screen core. Stage order, dialog primitives, the four composer modes and the
 // safety floor live here, never in a profile. A profile is data: it can add a
 // pattern, and it cannot move a stage or turn the floor off.
-import { allDimAfter, stripSgr } from '../ansi.ts';
+import { allDimAfter, hasSgr, stripSgr } from '../ansi.ts';
 import type { Screen } from './screen.ts';
 import type { LinePattern, Rule, ScreenData } from './screen-data.ts';
 
@@ -309,27 +309,22 @@ function stripTyped(line: string, composer: { prompt: RegExp; stripSuffix?: RegE
   return stripped.trim();
 }
 
-// The input line's dim question, when the composer's suggestions render greyed: `skip` is
-// the prompt's own visible characters, so the reading starts at the typed text. A composer
-// without the style, or a source without styling (an old herdr, a plain read), has none.
-function dimOf(composer: { prompt: RegExp; placeholderStyle?: ScreenData['composer']['placeholderStyle'] }, plainLine: string, styledLine: string | undefined): { line: string; skip: number } | null {
-  if (composer.placeholderStyle !== 'dim' || styledLine === undefined) return null;
-  const hit = composer.prompt.exec(plainLine);
-  const skip = hit === null ? 0 : plainLine.slice(0, hit.index + hit[0].length).replace(/\s/g, '').length;
-  return { line: styledLine, skip };
-}
-
-// A placeholder, not text: the list names it, or — when the composer says its suggestions
-// render dim — every visible character past the prompt is faint. Unstyled characters
-// are plain text, so a source without styling leaves the list to decide alone.
+// A placeholder, not text. When the composer says its suggestions render dim and the input
+// line carries any styling at all, the styling decides alone: all faint past the prompt is a
+// greyed suggestion, anything else is text — the list is not asked, so no suggestion's
+// styling can lend its words to typed characters after it. A line without styling (a plain
+// read, an old herdr) leaves the list to decide, as does a composer without the style.
 function placeholder(
   typed: string,
   composer: { prompt: RegExp; placeholders: ScreenData['composer']['placeholders']; placeholderStyle?: ScreenData['composer']['placeholderStyle'] },
   plainLine: string,
   styledLine: string | undefined,
 ): boolean {
-  const dim = dimOf(composer, plainLine, styledLine);
-  if (dim !== null && allDimAfter(dim.line, dim.skip)) return true;
+  if (composer.placeholderStyle === 'dim' && styledLine !== undefined && hasSgr(styledLine)) {
+    const hit = composer.prompt.exec(plainLine);
+    const skip = hit === null ? 0 : plainLine.slice(0, hit.index + hit[0].length).replace(/\s/g, '').length;
+    return allDimAfter(styledLine, skip);
+  }
   return composer.placeholders.some((entry) => ('equals' in entry ? typed === entry.equals : typed.startsWith(entry.prefix)));
 }
 
