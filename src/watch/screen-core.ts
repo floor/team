@@ -320,7 +320,7 @@ function dimOf(composer: { prompt: RegExp; placeholderStyle?: ScreenData['compos
 }
 
 // A placeholder, not text: the list names it, or — when the composer says its suggestions
-// render dim — every visible character past the prompt is faint or grey. Unstyled characters
+// render dim — every visible character past the prompt is faint. Unstyled characters
 // are plain text, so a source without styling leaves the list to decide alone.
 function placeholder(
   typed: string,

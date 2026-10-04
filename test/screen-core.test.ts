@@ -123,6 +123,14 @@ describe('claude-code reads the input line\'s styling', () => {
     expect(readScreen('claude-code', styled('unsent-faint-first-ansi.txt')).kind).toBe('unsent');
   });
 
+  test('typed text in a colour, however grey it renders, is unsent', () => {
+    // Faint is the only placeholder style (see sgrDim's table); a colour is text.
+    const screen = (style: string) => `${RULE}\n❯ \x1b[${style}mFix the\x1b[0m\n${RULE}\n${STATUS}\n`;
+    for (const style of ['38;2;0;0;0', '38;2;153;153;153', '90']) {
+      expect(readScreen('claude-code', screen(style)).kind).toBe('unsent');
+    }
+  });
+
   test('a plain source falls back to the list: "Try" stays idle, the rest stays unsent', () => {
     expect(readScreen('claude-code', styled('idle-suggestion-plain.txt')).kind).toBe('idle');
     expect(readScreen('claude-code', styled('idle-suggestion-other-plain.txt')).kind).toBe('unsent');
