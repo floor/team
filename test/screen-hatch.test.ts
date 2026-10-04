@@ -1,7 +1,8 @@
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
+import { resolve, relative } from 'node:path';
+import { tmpdir } from 'node:os';
 import { classifyLines, composeLines } from '../src/watch/screen-core.ts';
 import { loadScreen } from '../src/watch/screen-file.ts';
 import { classify, classifyComposer, readScreen, type Screen } from '../src/watch/screen.ts';
@@ -10,59 +11,85 @@ import type { ScreenProfile } from '../src/watch/screen-profile.ts';
 
 const fixtureDir = fileURLToPath(new URL('./fixtures/hatch', import.meta.url));
 
-const EXPECTED_FIXTURES: [path: string, cli: string, r: Screen['kind'], c: Screen['kind'], comp: Screen['kind']][] = [
-  ['test/fixtures/antigravity/1.2.16/exit-typed.txt', 'antigravity', 'unsent', 'unsent', 'unsent'],
-  ['test/fixtures/antigravity/1.2.16/exit.txt', 'antigravity', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/antigravity/1.2.16/idle.txt', 'antigravity', 'idle', 'idle', 'idle'],
-  ['test/fixtures/antigravity/1.2.16/permission-cut.txt', 'antigravity', 'permission', 'permission', 'unknown'],
-  ['test/fixtures/antigravity/1.2.16/permission.txt', 'antigravity', 'permission', 'permission', 'unknown'],
-  ['test/fixtures/antigravity/1.2.16/rules-accepted.txt', 'antigravity', 'idle', 'idle', 'idle'],
-  ['test/fixtures/antigravity/1.2.16/trust.txt', 'antigravity', 'trust', 'trust', 'unknown'],
-  ['test/fixtures/antigravity/1.2.16/unsent.txt', 'antigravity', 'unsent', 'unsent', 'unsent'],
-  ['test/fixtures/antigravity/1.2.16/working.txt', 'antigravity', 'working', 'working', 'idle'],
-  ['test/fixtures/claude-code/2.1.289/bash-mode-ansi.txt', 'claude-code', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/claude-code/2.1.289/idle-suggestion-ansi.txt', 'claude-code', 'idle', 'idle', 'idle'],
-  ['test/fixtures/claude-code/2.1.289/idle-suggestion-other-ansi.txt', 'claude-code', 'idle', 'idle', 'idle'],
-  ['test/fixtures/claude-code/2.1.289/idle-suggestion-other-plain.txt', 'claude-code', 'unsent', 'unsent', 'unsent'],
-  ['test/fixtures/claude-code/2.1.289/idle-suggestion-plain.txt', 'claude-code', 'idle', 'idle', 'idle'],
-  ['test/fixtures/claude-code/2.1.289/trust-ansi.txt', 'claude-code', 'trust', 'trust', 'unknown'],
-  ['test/fixtures/claude-code/2.1.289/unsent-faint-first-ansi.txt', 'claude-code', 'unsent', 'unsent', 'unsent'],
-  ['test/fixtures/claude-code/2.1.289/unsent-paste-ansi.txt', 'claude-code', 'unsent', 'unsent', 'unsent'],
-  ['test/fixtures/claude-code/2.1.289/unsent-slash-ansi.txt', 'claude-code', 'unsent', 'unsent', 'unsent'],
-  ['test/fixtures/claude-code/2.1.289/unsent-typed-ansi.txt', 'claude-code', 'unsent', 'unsent', 'unsent'],
-  ['test/fixtures/claude-code/2.1.289/unsent-typing-while-running-ansi.txt', 'claude-code', 'working', 'working', 'unsent'],
-  ['test/fixtures/claude-code/leftover-box.txt', 'claude-code', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/claude-code/output-under-rule.txt', 'claude-code', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/claude-code/rule-above.txt', 'claude-code', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/claude-code/scrolled-shortcuts.txt', 'claude-code', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/claude-code/shell-git-log.txt', 'claude-code', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/claude-code/shell-prompt.txt', 'claude-code', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/claude-code/shell-right-prompt.txt', 'claude-code', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/claude-code/shell-shortcuts-indented.txt', 'claude-code', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/claude-code/shell-shortcuts.txt', 'claude-code', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/claude-code/trust-unnumbered.txt', 'claude-code', 'trust', 'trust', 'unknown'],
-  ['test/fixtures/codex/0.157.0/exit-typed.txt', 'codex', 'unsent', 'unsent', 'unsent'],
-  ['test/fixtures/codex/0.157.0/exit.txt', 'codex', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/codex/0.157.0/idle.txt', 'codex', 'idle', 'idle', 'idle'],
-  ['test/fixtures/codex/0.157.0/permission-pinned.txt', 'codex', 'permission', 'permission', 'unknown'],
-  ['test/fixtures/codex/0.157.0/permission.txt', 'codex', 'permission', 'permission', 'unknown'],
-  ['test/fixtures/codex/0.157.0/rules-accepted.txt', 'codex', 'idle', 'idle', 'idle'],
-  ['test/fixtures/codex/0.157.0/startup-loading.txt', 'codex', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/codex/0.157.0/startup.txt', 'codex', 'question', 'question', 'unknown'],
-  ['test/fixtures/codex/0.157.0/trust.txt', 'codex', 'trust', 'trust', 'unknown'],
-  ['test/fixtures/codex/0.157.0/unsent.txt', 'codex', 'unsent', 'unsent', 'unsent'],
-  ['test/fixtures/codex/0.157.0/working.txt', 'codex', 'working', 'working', 'idle'],
-  ['test/fixtures/cursor/2026.10.01/exit-typed.txt', 'cursor', 'unsent', 'unsent', 'unsent'],
-  ['test/fixtures/cursor/2026.10.01/exit.txt', 'cursor', 'unknown', 'unknown', 'unknown'],
-  ['test/fixtures/cursor/2026.10.01/idle.txt', 'cursor', 'idle', 'idle', 'idle'],
-  ['test/fixtures/cursor/2026.10.01/rules-accepted.txt', 'cursor', 'idle', 'idle', 'idle'],
-  ['test/fixtures/cursor/2026.10.01/startup.txt', 'cursor', 'idle', 'idle', 'idle'],
-  ['test/fixtures/cursor/2026.10.01/thinking.txt', 'cursor', 'working', 'working', 'idle'],
-  ['test/fixtures/cursor/2026.10.01/trust.txt', 'cursor', 'trust', 'trust', 'unknown'],
-  ['test/fixtures/cursor/2026.10.01/unsent.txt', 'cursor', 'unsent', 'unsent', 'unsent'],
-  ['test/fixtures/cursor/2026.10.01/working-no-spinner.txt', 'cursor', 'working', 'working', 'idle'],
-  ['test/fixtures/cursor/2026.10.01/working.txt', 'cursor', 'working', 'working', 'idle'],
-];
+function enumerateScreenFixtures(): { relPath: string; cli: string; absPath: string }[] {
+  const root = resolve(process.cwd(), 'test/fixtures');
+  const results: { relPath: string; cli: string; absPath: string }[] = [];
+
+  function scan(dir: string): void {
+    for (const name of readdirSync(dir)) {
+      const full = resolve(dir, name);
+      if (statSync(full).isDirectory()) {
+        if (name !== 'hatch' && name !== 'yaml') scan(full);
+      } else if (name.endsWith('.txt')) {
+        const rel = relative(process.cwd(), full);
+        const relUnderFixtures = relative(root, full);
+        const cli = relUnderFixtures.split(/[/\\]/)[0];
+        results.push({ relPath: rel, cli, absPath: full });
+      }
+    }
+  }
+
+  scan(root);
+  return results.sort((a, b) => a.relPath.localeCompare(b.relPath));
+}
+
+const EXPECTED_FIXTURE_KINDS: Record<string, [r: Screen['kind'], c: Screen['kind'], comp: Screen['kind']]> = {
+  'test/fixtures/antigravity/1.2.16/exit-typed.txt': ['unsent', 'unsent', 'unsent'],
+  'test/fixtures/antigravity/1.2.16/exit.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/antigravity/1.2.16/folded-rules.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/antigravity/1.2.16/idle.txt': ['idle', 'idle', 'idle'],
+  'test/fixtures/antigravity/1.2.16/permission-cut.txt': ['permission', 'permission', 'unknown'],
+  'test/fixtures/antigravity/1.2.16/permission.txt': ['permission', 'permission', 'unknown'],
+  'test/fixtures/antigravity/1.2.16/rules-accepted.txt': ['idle', 'idle', 'idle'],
+  'test/fixtures/antigravity/1.2.16/trust.txt': ['trust', 'trust', 'unknown'],
+  'test/fixtures/antigravity/1.2.16/unsent.txt': ['unsent', 'unsent', 'unsent'],
+  'test/fixtures/antigravity/1.2.16/working.txt': ['working', 'working', 'idle'],
+  'test/fixtures/claude-code/2.1.289/bash-mode-ansi.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/claude-code/2.1.289/idle-suggestion-ansi.txt': ['idle', 'idle', 'idle'],
+  'test/fixtures/claude-code/2.1.289/idle-suggestion-other-ansi.txt': ['idle', 'idle', 'idle'],
+  'test/fixtures/claude-code/2.1.289/idle-suggestion-other-plain.txt': ['unsent', 'unsent', 'unsent'],
+  'test/fixtures/claude-code/2.1.289/idle-suggestion-plain.txt': ['idle', 'idle', 'idle'],
+  'test/fixtures/claude-code/2.1.289/trust-ansi.txt': ['trust', 'trust', 'unknown'],
+  'test/fixtures/claude-code/2.1.289/unsent-faint-first-ansi.txt': ['unsent', 'unsent', 'unsent'],
+  'test/fixtures/claude-code/2.1.289/unsent-paste-ansi.txt': ['unsent', 'unsent', 'unsent'],
+  'test/fixtures/claude-code/2.1.289/unsent-slash-ansi.txt': ['unsent', 'unsent', 'unsent'],
+  'test/fixtures/claude-code/2.1.289/unsent-typed-ansi.txt': ['unsent', 'unsent', 'unsent'],
+  'test/fixtures/claude-code/2.1.289/unsent-typing-while-running-ansi.txt': ['working', 'working', 'unsent'],
+  'test/fixtures/claude-code/leftover-box.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/claude-code/output-under-rule.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/claude-code/quoted-dialog.txt': ['idle', 'idle', 'idle'],
+  'test/fixtures/claude-code/rule-above.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/claude-code/scrolled-shortcuts.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/claude-code/shell-bypass-only.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/claude-code/shell-git-log.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/claude-code/shell-prompt.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/claude-code/shell-right-prompt.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/claude-code/shell-shortcuts-indented.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/claude-code/shell-shortcuts.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/claude-code/shell-status-only.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/claude-code/trust-unnumbered.txt': ['trust', 'trust', 'unknown'],
+  'test/fixtures/codex/0.157.0/exit-typed.txt': ['unsent', 'unsent', 'unsent'],
+  'test/fixtures/codex/0.157.0/exit.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/codex/0.157.0/idle.txt': ['idle', 'idle', 'idle'],
+  'test/fixtures/codex/0.157.0/permission-pinned.txt': ['permission', 'permission', 'unknown'],
+  'test/fixtures/codex/0.157.0/permission.txt': ['permission', 'permission', 'unknown'],
+  'test/fixtures/codex/0.157.0/rules-accepted.txt': ['idle', 'idle', 'idle'],
+  'test/fixtures/codex/0.157.0/startup-loading.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/codex/0.157.0/startup.txt': ['question', 'question', 'unknown'],
+  'test/fixtures/codex/0.157.0/trust.txt': ['trust', 'trust', 'unknown'],
+  'test/fixtures/codex/0.157.0/unsent.txt': ['unsent', 'unsent', 'unsent'],
+  'test/fixtures/codex/0.157.0/working.txt': ['working', 'working', 'idle'],
+  'test/fixtures/cursor/2026.10.01/exit-typed.txt': ['unsent', 'unsent', 'unsent'],
+  'test/fixtures/cursor/2026.10.01/exit.txt': ['unknown', 'unknown', 'unknown'],
+  'test/fixtures/cursor/2026.10.01/idle.txt': ['idle', 'idle', 'idle'],
+  'test/fixtures/cursor/2026.10.01/rules-accepted.txt': ['idle', 'idle', 'idle'],
+  'test/fixtures/cursor/2026.10.01/startup.txt': ['idle', 'idle', 'idle'],
+  'test/fixtures/cursor/2026.10.01/thinking.txt': ['working', 'working', 'idle'],
+  'test/fixtures/cursor/2026.10.01/trust.txt': ['trust', 'trust', 'unknown'],
+  'test/fixtures/cursor/2026.10.01/unsent.txt': ['unsent', 'unsent', 'unsent'],
+  'test/fixtures/cursor/2026.10.01/working-no-spinner.txt': ['working', 'working', 'idle'],
+  'test/fixtures/cursor/2026.10.01/working.txt': ['working', 'working', 'idle'],
+};
 
 describe('Slice C: ScreenProfile escape hatch', () => {
   beforeEach(() => {
@@ -300,21 +327,109 @@ describe('Slice C: ScreenProfile escape hatch', () => {
     }
   });
 
-  test('all 51+ fixtures are unchanged', () => {
-    expect(EXPECTED_FIXTURES.length).toBe(51);
+  test('all 55+ fixtures enumerated from folder are unchanged', () => {
+    const fixtures = enumerateScreenFixtures();
+    expect(fixtures.length).toBeGreaterThanOrEqual(55);
 
-    for (const [relPath, cli, expectedR, expectedC, expectedComp] of EXPECTED_FIXTURES) {
-      const content = readFileSync(resolve(process.cwd(), relPath), 'utf8');
+    for (const { relPath, cli, absPath } of fixtures) {
+      const content = readFileSync(absPath, 'utf8');
       const screenLines = content.split('\n');
 
       const r = readScreen(cli, content).kind;
       const c = classify(cli, screenLines).kind;
       const comp = classifyComposer(cli, screenLines).kind;
 
-      expect(r).toBe(expectedR);
-      expect(c).toBe(expectedC);
-      expect(comp).toBe(expectedComp);
+      const expected = EXPECTED_FIXTURE_KINDS[relPath];
+      expect(expected).toBeDefined();
+      expect([r, c, comp]).toEqual(expected!);
     }
+  });
+
+  test('screen_module may only name a file inside the profiles directory (refused forms in source and dist)', async () => {
+    const distModule = await import('../dist/watch/screen-file.js');
+    const loaders = [
+      { name: 'source', load: loadScreen },
+      { name: 'dist', load: distModule.loadScreen },
+    ];
+
+    const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-test-'));
+    const outsideFile = resolve(tempDir, 'outside-evil.cjs');
+    writeFileSync(outsideFile, 'module.exports = { unknown: () => true };');
+    const symlinkPath = resolve(tempDir, 'inside-symlink.cjs');
+    symlinkSync(outsideFile, symlinkPath);
+
+    try {
+      for (const { load } of loaders) {
+        const makeYaml = (specifier: string) => `format: 1
+cli: fake-cli
+screen_module: "${specifier}"
+screen:
+  composer:
+    mode: status-last
+    status_line: "^status$"
+    prompt: "^>"
+    placeholders:
+      - equals: ""
+`;
+
+        // 1. Absolute path
+        expect(() => load(makeYaml('/tmp/evil.cjs'), undefined, 'test.yaml')).toThrow(
+          /profile "test\.yaml":.*"screen_module".*cannot be an absolute path/,
+        );
+
+        // 2. Contains ".." segment
+        expect(() => load(makeYaml('../evil.cjs'), undefined, 'test.yaml')).toThrow(
+          /profile "test\.yaml":.*"screen_module".*cannot contain "\.\." segments/,
+        );
+        expect(() => load(makeYaml('subdir/../evil.cjs'), undefined, 'test.yaml')).toThrow(
+          /profile "test\.yaml":.*"screen_module".*cannot contain "\.\." segments/,
+        );
+
+        // 3. URL or other scheme
+        expect(() => load(makeYaml('http://127.0.0.1/evil.cjs'), undefined, 'test.yaml')).toThrow(
+          /profile "test\.yaml":.*"screen_module".*cannot be a URL or scheme/,
+        );
+        expect(() => load(makeYaml('file:///tmp/evil.cjs'), undefined, 'test.yaml')).toThrow(
+          /profile "test\.yaml":.*"screen_module".*cannot be a URL or scheme/,
+        );
+
+        // 4. ~/ path
+        expect(() => load(makeYaml('~/evil.cjs'), undefined, 'test.yaml')).toThrow(
+          /profile "test\.yaml":.*"screen_module".*cannot be a home directory path/,
+        );
+
+        // 5. Path in project
+        expect(() => load(makeYaml('test/fixtures/hatch/hatch.ts'), undefined, 'test.yaml')).toThrow(
+          /profile "test\.yaml":.*"screen_module".*cannot be a path in the project/,
+        );
+        expect(() => load(makeYaml('src/watch/pass.ts'), undefined, 'test.yaml')).toThrow(
+          /profile "test\.yaml":.*"screen_module".*cannot be a path in the project/,
+        );
+
+        // 6. Symlink leading out of directory
+        expect(() => load(makeYaml('inside-symlink.cjs'), tempDir, 'test.yaml')).toThrow(
+          /profile "test\.yaml":.*"screen_module".*symlink leads outside/,
+        );
+      }
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('profile.schema.json matches loader: composer is optional when screen_module is set and screen_module pattern is constrained', () => {
+    const schema = JSON.parse(readFileSync(resolve(process.cwd(), 'src/profiles/profile.schema.json'), 'utf8'));
+    const screenDef = schema.$defs.screen;
+    expect(screenDef.required).toBeUndefined();
+    expect(screenDef.anyOf || screenDef.oneOf).toBeDefined();
+
+    const modulePattern = screenDef.properties.screen_module.pattern;
+    expect(modulePattern).toBeDefined();
+    const regex = new RegExp(modulePattern);
+    expect(regex.test('hatch.ts')).toBe(true);
+    expect(regex.test('/tmp/evil.cjs')).toBe(false);
+    expect(regex.test('../evil.cjs')).toBe(false);
+    expect(regex.test('http://evil.com/x.js')).toBe(false);
+    expect(regex.test('~/evil.cjs')).toBe(false);
   });
 
   test('rule for main on screens: no screen origin/main reads unknown/working/permission/trust/question may read idle or unsent', () => {
