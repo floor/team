@@ -18,6 +18,7 @@ export const commands: Record<string, () => Promise<{ default: Command; USAGE: s
   worktree: () => import('./commands/worktree.ts'),
   add: () => import('./commands/add.ts'),
   remove: () => import('./commands/remove.ts'),
+  release: () => import('./commands/release.ts'),
 };
 
 const USAGE = `team: set up, change and watch a project's team of AI agents

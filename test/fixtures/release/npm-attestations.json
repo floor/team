@@ -1,0 +1,12 @@
+{
+  "attestations": [
+    {
+      "predicateType": "https://slsa.dev/provenance/v1",
+      "bundle": {
+        "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+        "verificationMaterial": {},
+        "dsseEnvelope": { "payload": "cGF5bG9hZA==", "signatures": [{ "sig": "c2ln" }] }
+      }
+    }
+  ]
+}

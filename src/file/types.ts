@@ -1,5 +1,7 @@
 export type Problem = { line: number; message: string };
 
+import type { ReleaseDecl } from './sections/releases.ts';
+
 export type Position = 'last-line' | 'trailer' | 'anywhere';
 export type Mode = 'worktree' | 'shared';
 
@@ -105,6 +107,8 @@ export type TeamFile = {
     swapGrowthWindow: number;
   };
   limits: { seats: number; temporary: number; vendors: Record<string, number> };
+  /** The packages `team release check` verifies; empty when the file declares none. */
+  releases: ReleaseDecl[];
   // After `count` is expanded.
   seats: Seat[];
 };
