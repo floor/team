@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
-import { approvalDifferences, budgetsInForce, watchInForce } from '../approve/approval.ts';
+import { approvalDifferencesOf, budgetsInForce, watchInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, isOwner, type Caller } from '../caller.ts';
 import { checkCommands, type ApprovedCheck } from '../budgets/checks.ts';
@@ -16,7 +16,7 @@ import { profileFor } from '../profiles/index.ts';
 import { overridesInForce, quotaWith } from '../profiles/overrides.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
 import { readState } from '../state.ts';
-import { readApproval, storePath } from '../store/store.ts';
+import { approvalStanding, LEGACY_LINE } from '../store/store.ts';
 
 // What `doctor` reads from the machine, so tests can stand in for it.
 export type DoctorSources = {
@@ -124,9 +124,9 @@ function changedSinceApproval(check: ApprovedCheck): boolean {
 }
 
 function checkFindings(team: TeamFile, root: string, home: string): Finding[] {
-  const record = readApproval(storePath(team.project, root, home));
-  if (!record) return [];
-  const approved = record.approval.checks;
+  const standing = approvalStanding(root, home);
+  if (standing.kind !== 'verified') return [];
+  const approved = standing.record.approval.checks;
   return checkCommands(budgetsInForce(team, root, home)).flatMap(({ account }) => {
     const known = approved?.[account];
     if (!known) {
@@ -175,12 +175,14 @@ export function budgetCheckFindings(team: TeamFile, root: string, sources: Docto
     if (commands.length) findings.push({ level: 'note', text: 'the budget checks were not run: only the owner runs them' });
     return findings;
   }
-  const record = readApproval(storePath(team.project, root, sources.home));
-  if (!record) return findings;
+  // A check command is the owner's own privilege: it runs only from a record
+  // this machine's key signed, never from bytes the verification refused.
+  const standing = approvalStanding(root, sources.home);
+  if (standing.kind !== 'verified') return findings;
   const run = sources.runCheck ?? runCommand;
   const now = sources.now().getTime();
   for (const { account } of commands) {
-    const known = record.approval.checks?.[account];
+    const known = standing.record.approval.checks?.[account];
     const entry: BudgetAccount | undefined = budgets.accounts[account];
     // Unapproved and changed checks are said above, and never run.
     if (!known || !entry || changedSinceApproval(known)) continue;
@@ -208,12 +210,22 @@ function overrideFindings(team: TeamFile, root: string, home: string): Finding[]
 }
 
 function approvalFindings(team: TeamFile, root: string, home: string): Finding[] {
-  const differences = approvalDifferences(team, root, home);
-  if (differences === null) {
+  const standing = approvalStanding(root, home);
+  if (standing.kind === 'none') {
     return [{ level: 'miss', text: 'run `team approve`: this file was never approved on this machine' }];
   }
+  // A line of its own for each case that is not an approval: the legacy record's
+  // repair, or the case the verification refused — never buried in drift.
+  if (standing.kind === 'legacy') return [{ level: 'miss', text: LEGACY_LINE }];
+  if (standing.kind === 'refused') return [{ level: 'miss', text: standing.why }];
+  const differences = approvalDifferencesOf(standing, team);
   if (differences.length) return [{ level: 'miss', text: `run \`team approve\`: ${differences.join('; ')}` }];
-  return [{ level: 'ok', text: 'the file is the one the owner approved' }];
+  return [
+    {
+      level: 'ok',
+      text: `the file is the one the owner approved (approval #${standing.generation}, ${standing.signedAt.slice(0, 10)})`,
+    },
+  ];
 }
 
 function cliFindings(cli: string, seats: Seat[], sources: DoctorSources): Finding[] {

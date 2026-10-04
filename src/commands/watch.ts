@@ -32,7 +32,9 @@ import { realSources } from './status.ts';
 export type WatchSources = {
   live(session: string, team: TeamFile): Live | null;
   machine(root: string): Machine;
-  approval(team: TeamFile, root: string): string[] | null;
+  // How the file differs from the approved one, and the one-line case when no verified approval
+  // is in force (legacy or refused): the watch says that once and keeps watching either way.
+  approval(team: TeamFile, root: string): { differences: string[] | null; reason: string | null };
   // The watch values in force: the approved ones, or the defaults when nothing is approved.
   watchInForce(team: TeamFile, root: string): TeamFile['watch'];
   // And the budget values in force, for the same reason: the check cadence, the accounts folded
@@ -181,6 +183,14 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         told.add(line);
         say(line, false);
       }
+      // A record that is not an approval in force — legacy, or one the verification refused —
+      // is said once, in its own words. The watch keeps watching either way: it never stops a
+      // seat over this, and the owner-only checks simply read unapproved.
+      const approval = sources.approval(team, root);
+      if (approval.reason !== null && !told.has(`approval:${approval.reason}`)) {
+        told.add(`approval:${approval.reason}`);
+        say(approval.reason, false);
+      }
       const problem = current.ok ? current.notice : `team.yaml can't be read (${current.errors[0]?.message ?? 'unknown'}); watching with the team as it was`;
       if (problem !== notice) {
         notice = problem;
@@ -242,7 +252,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         for (const agent of live.agents) foreground[agent.pane] = sources.foreground(agent.pane, session);
         const run = (stored: readonly Seen[]) => pass({
           team, state, live, machine: sources.machine(root), now, memory,
-          approval: sources.approval(team, root), watch: inForce, outcomes, budgets: budget,
+          approval: approval.differences, approvalReason: approval.reason, watch: inForce, outcomes, budgets: budget,
           quotaFor: (cli) => quotaWith(cli, overrides.profiles),
           readScreen: (cli, pane) => classifyWith(cli, pane, overrides.profiles),
           readings: stored, foreground,

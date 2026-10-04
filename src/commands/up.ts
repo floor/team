@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { approvalDifferences, budgetsInForce } from '../approve/approval.ts';
+import { approvalDifferencesOf, budgetsInForce, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
@@ -35,7 +35,7 @@ import { deliverRules } from '../launch/deliver.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
 import { profileFor } from '../profiles/index.ts';
-import { readApproval, storePath, type Ceilings } from '../store/store.ts';
+import { approvalStanding, type Ceilings } from '../store/store.ts';
 import { emptySession, readState, updateState, type SeatState } from '../state.ts';
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
@@ -240,10 +240,16 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   if (!isOwner(caller)) {
     refusals.push(`only the owner runs \`up\`, from a terminal outside herdr; this call is ${describeCaller(caller)}`);
   }
-  const differences = approvalDifferences(team, root, sources.home);
-  if (differences === null) refusals.push('the file was never approved on this machine: run `team approve`');
-  else if (differences.length) {
-    refusals.push(`the file is not the approved one (${differences.join('; ')}): run \`team approve\``);
+  // One verified snapshot carries the whole command: the refusal when there is
+  // one, and the ceilings the launch holds. A legacy or refused record is not
+  // an approval in force, and says so in its own words.
+  const standing = approvalStanding(root, sources.home);
+  if (standing.kind !== 'verified') refusals.push(notInForce(standing));
+  else {
+    const differences = approvalDifferencesOf(standing, team);
+    if (differences.length) {
+      refusals.push(`the file is not the approved one (${differences.join('; ')}): run \`team approve\``);
+    }
   }
   // The budget readings the gate refuses on are the approved ones: an unapproved lower reserve
   // unblocks nothing, not even the seat a dry run would plan.
@@ -328,12 +334,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   });
 
   if (dry) {
-    for (const refusal of refusals) io.stdout(`! up would refuse: ${refusal}\n`);
+    // The same cause can reach the list twice — the gate and `doctor` both read the
+    // approval — so a refusal is said once.
+    for (const refusal of [...new Set(refusals)]) io.stdout(`! up would refuse: ${refusal}\n`);
     io.stdout(formatPlan(plan));
     return 0;
   }
   if (refusals.length) {
-    for (const refusal of refusals) io.stderr(`team up: ${refusal}\n`);
+    for (const refusal of [...new Set(refusals)]) io.stderr(`team up: ${refusal}\n`);
     return 1;
   }
   const launch = sources.launch;
@@ -342,7 +350,8 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     return 1;
   }
 
-  const ceilings = readApproval(storePath(team.project, root, sources.home))?.approval.ceilings ?? null;
+  // The ceilings the launch holds are the verified record's own, fixed at approval.
+  const ceilings: Ceilings | null = standing.kind === 'verified' ? standing.record.approval.ceilings : null;
   const running: Running[] = [];
   if (agents) {
     const byName = new Map(team.seats.map((seat) => [seat.name, seat]));

@@ -2,7 +2,17 @@ import { homedir } from 'node:os';
 import type { ApprovedCheck } from '../budgets/checks.ts';
 import type { TeamFile } from '../file/types.ts';
 import { defaultBudgets, defaultWatch, validateTeamFile } from '../file/validate.ts';
-import { readApproval, storePath, writeApproval, type Approval, type ApprovalRecord, type Ceilings } from '../store/store.ts';
+import {
+  approvalStanding,
+  LEGACY_LINE,
+  readApproval,
+  storePath,
+  writeApproval,
+  type Approval,
+  type ApprovalRecord,
+  type Ceilings,
+  type Standing,
+} from '../store/store.ts';
 import { compare, describe, fingerprints, legacyLabelDigests, legacySeatDigests, OWNER_SECTIONS, type Fingerprints } from './fingerprint.ts';
 
 /** The ceilings an approval fixes: `up` and `add` read them from the record, never from the file. */
@@ -18,13 +28,27 @@ export function approvalOf(
   checks: Record<string, ApprovedCheck> = {},
 ): Approval {
   return {
-    format: 1,
+    format: 2,
     approvedAt: now.toISOString(),
     root,
     fingerprints: fingerprints(team),
     ceilings: ceilingsOf(team),
     checks,
   };
+}
+
+/** A standing that is not `verified`: no record, a legacy one, or one the verification refused. */
+export type NotVerified = Exclude<Standing, { kind: 'verified' }>;
+
+/**
+ * The one line a command that needs an approval in force refuses on: never
+ * approved, the legacy record's one-line repair, or the case the verification
+ * refused. Each names the owner's single step.
+ */
+export function notInForce(standing: NotVerified): string {
+  if (standing.kind === 'none') return 'the file was never approved on this machine: run `team approve`';
+  if (standing.kind === 'legacy') return LEGACY_LINE;
+  return standing.why;
 }
 
 /**
@@ -77,12 +101,15 @@ function adoptLegacyDigests(stored: Record<string, string>, team: TeamFile): Rec
  * `remove --keep` and `add` write `stopped` and nothing else. The new digest is
  * recorded only when putting `stopped` back to its approved value makes the
  * seat match the approval. A launch line or a `parked` flag edited beside the
- * mark stays drift. A stored copy that can't be read records nothing.
+ * mark stays drift. A stored copy that can't be read records nothing. The
+ * amendment re-signs the whole record, so it moves the generation — every
+ * signing does, and the owner can see that one happen too.
  */
 export function recordSeatDigest(team: TeamFile, root: string, name: string, home: string = homedir()): void {
   const store = storePath(team.project, root, home);
-  const record = readApproval(store);
-  if (record === null) return;
+  const standing = approvalStanding(root, home);
+  if (standing.kind !== 'verified') return;
+  const record = standing.record;
   if (!validateTeamFile(record.file).ok) return;
   const approved = approvedFingerprints(record).seats[name];
   const digest = fingerprints(team).seats[name];
@@ -101,18 +128,26 @@ export function recordSeatDigest(team: TeamFile, root: string, name: string, hom
       },
     },
     file: record.file,
-  }, []);
+  }, [], home);
+}
+
+/** The differences of a file against one verified snapshot: the caller's own standing, read once. */
+export function approvalDifferencesOf(
+  standing: Extract<Standing, { kind: 'verified' }>,
+  team: TeamFile,
+): string[] {
+  return compare(approvedFingerprints(standing.record), fingerprints(team)).map(describe);
 }
 
 /**
  * What in the file the owner has not approved on this machine, one line per
- * difference. Empty when the file is the approved one; null when nothing was
- * ever approved for this root. A file runs only when this is empty.
+ * difference. Empty when the file is the approved one; null when no verified
+ * approval is in force for this root — never approved, or a record that does
+ * not verify. A file runs only when this is empty.
  */
 export function approvalDifferences(team: TeamFile, root: string, home: string = homedir()): string[] | null {
-  const record = readApproval(storePath(team.project, root, home));
-  if (record === null) return null;
-  return compare(approvedFingerprints(record), fingerprints(team)).map(describe);
+  const standing = approvalStanding(root, home);
+  return standing.kind === 'verified' ? approvalDifferencesOf(standing, team) : null;
 }
 
 /**
@@ -126,8 +161,9 @@ export function approvalDifferences(team: TeamFile, root: string, home: string =
  * timings themselves are unchanged and the rest of the section is the file's.
  */
 export function watchInForce(team: TeamFile, root: string, home: string = homedir()): TeamFile['watch'] {
-  const record = readApproval(storePath(team.project, root, home));
-  if (record === null) return defaultWatch();
+  const standing = approvalStanding(root, home);
+  if (standing.kind !== 'verified') return defaultWatch();
+  const record = standing.record;
   const differences = compare(approvedFingerprints(record), fingerprints(team));
   const timingsDiffer = differences.some((difference) => difference.kind === 'section' && difference.name === 'watch');
   const checksDiffer = differences.some((difference) => difference.kind === 'section' && difference.name === 'watch.checks');
@@ -147,8 +183,9 @@ export function watchInForce(team: TeamFile, root: string, home: string = homedi
  * nothing until `approve`.
  */
 export function budgetsInForce(team: TeamFile, root: string, home: string = homedir()): TeamFile['budgets'] {
-  const record = readApproval(storePath(team.project, root, home));
-  if (record === null) return defaultBudgets();
+  const standing = approvalStanding(root, home);
+  if (standing.kind !== 'verified') return defaultBudgets();
+  const record = standing.record;
   if (approvedFingerprints(record).sections['budgets'] === fingerprints(team).sections['budgets']) return team.budgets;
   const copy = validateTeamFile(record.file);
   return copy.ok ? copy.team.budgets : defaultBudgets();

@@ -3,11 +3,19 @@ import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFi
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Fingerprints } from '../approve/fingerprint.ts';
+import { bumpGeneration, keyOf, loadKey, recordedGeneration, signPayload, verifyPayload, type Json } from './keys.ts';
 
 /**
  * The user-level store: what must survive the project folder and stay out of
  * every seat's working folders. One folder per project root, so a project
  * that is moved or renamed is approved again.
+ *
+ * A record is signed (format 2): the approval, the stored copy of the file, the
+ * project root and a per-project generation, in one canonical encoding. Every
+ * reader goes through `approvalStanding`, which verifies the whole record once
+ * and hands back an immutable snapshot; a record that does not verify is not an
+ * approval, and the standing says which case it is. The key and the generations
+ * live outside the store, in a folder of their own (see keys.ts).
  */
 
 export interface Ceilings {
@@ -17,7 +25,7 @@ export interface Ceilings {
 }
 
 export interface Approval {
-  format: 1;
+  format: 1 | 2;
   approvedAt: string;
   /** The project root the approval is for. */
   root: string;
@@ -81,15 +89,106 @@ export function findStore(root: string, home: string = homedir()): string | null
   return name === undefined ? null : join(storesFolder(home), name);
 }
 
-/** The text of the file as the owner last approved it for this root, or null. */
-export function approvedCopy(root: string, home: string = homedir()): string | null {
+/** The repair every refused record names, and the one a legacy record names. */
+export const LEGACY_LINE = 'approved before records were signed: run `team approve` once';
+
+/**
+ * What the approval store says about a root, verified. The one snapshot every
+ * reader uses: `verified` carries a record no caller can change, `legacy` is a
+ * record written before records were signed (not trusted, still displayed), and
+ * `refused` says which case — each with the one-step repair. `none` is an
+ * approval store with nothing in it for this root.
+ */
+export type Standing =
+  | { kind: 'none' }
+  | { kind: 'legacy' }
+  | { kind: 'refused'; why: string }
+  | { kind: 'verified'; record: ApprovalRecord; generation: number; signedAt: string };
+
+function sameRoot(a: string, b: string): boolean {
+  const real = (path: string) => {
+    try {
+      return realpathSync(path);
+    } catch {
+      return path;
+    }
+  };
+  return real(a) === real(b);
+}
+
+/** The bytes a signature covers: the approval, the stored copy, the root inside it, the generation. */
+function payloadOf(approval: Approval, file: string, generation: number): Json {
+  return {
+    format: 2,
+    approval: {
+      approvedAt: approval.approvedAt,
+      root: approval.root,
+      fingerprints: { sections: approval.fingerprints.sections, seats: approval.fingerprints.seats },
+      ceilings: { seats: approval.ceilings.seats, temporary: approval.ceilings.temporary, vendors: approval.ceilings.vendors },
+      checks: approval.checks ?? null,
+      overrides: approval.overrides ?? null,
+    },
+    file,
+    generation,
+  };
+}
+
+/**
+ * The standing of this root's approval, from one verified read. A reader never
+ * parses the store itself: this is the only way in, and it returns the record
+ * only when the whole of it — approval, stored copy, root and generation —
+ * carries a signature of this machine's key.
+ */
+export function approvalStanding(root: string, home: string = homedir()): Standing {
   const store = findStore(root, home);
-  if (store === null) return null;
+  if (store === null) return { kind: 'none' };
+  let record: ApprovalRecord | null;
   try {
-    return readApproval(store)?.file ?? null;
-  } catch {
-    return null;
+    record = readApproval(store);
+  } catch (error) {
+    const detail = error instanceof Error ? ` (${error.message})` : '';
+    return { kind: 'refused', why: `the approval record cannot be read${detail}: run \`team approve\` once` };
   }
+  if (record === null) return { kind: 'none' };
+  if (record.approval.format === 1) return { kind: 'legacy' };
+  const { generation, signature } = record;
+  if (typeof signature !== 'string' || generation === undefined || !Number.isInteger(generation) || generation < 1) {
+    return { kind: 'refused', why: 'the record is not in the signed form this version writes: run `team approve` once' };
+  }
+  const key = loadKey(home);
+  if (key === null) {
+    return { kind: 'refused', why: 'the record is signed, but its key is missing: run `team approve` once to approve again' };
+  }
+  if (!verifyPayload(payloadOf(record.approval, record.file, generation), signature, key)) {
+    return { kind: 'refused', why: 'the record does not carry a valid signature: it was changed after approval, or written without the key: run `team approve` once' };
+  }
+  if (!sameRoot(record.approval.root, root)) {
+    return { kind: 'refused', why: `the record approves another project root (${record.approval.root}): run \`team approve\` once` };
+  }
+  const recorded = recordedGeneration(root, home);
+  if (recorded === null) {
+    return { kind: 'refused', why: 'no generation is recorded for this project: run `team approve` once' };
+  }
+  if (generation !== recorded.generation) {
+    return generation < recorded.generation
+      ? { kind: 'refused', why: `the record is approval #${generation} but #${recorded.generation} is recorded: an approval was interrupted or an older record was replayed: run \`team approve\` once` }
+      : { kind: 'refused', why: `the record is approval #${generation} but only #${recorded.generation} is recorded: the key folder was rolled back: run \`team approve\` once` };
+  }
+  return { kind: 'verified', record: frozen(record), generation, signedAt: recorded.at };
+}
+
+function frozen<T>(value: T): T {
+  if (value !== null && typeof value === 'object') {
+    for (const item of Object.values(value as Record<string, unknown>)) frozen(item);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+/** The text of the file as the owner last approved it for this root, or null: this copy is verified. */
+export function approvedCopy(root: string, home: string = homedir()): string | null {
+  const standing = approvalStanding(root, home);
+  return standing.kind === 'verified' ? standing.record.file : null;
 }
 
 function readJson<T>(path: string): T | null {
@@ -114,15 +213,29 @@ export interface ApprovalRecord {
   approval: Approval;
   /** The text of the file as it was approved. */
   file: string;
+  /** The signing's number for this project. On a signed record only. */
+  generation?: number;
+  /** The signature over the canonical payload. On a signed record only. */
+  signature?: string;
 }
 
-/** The approval for this project, or null when the owner has approved nothing here. */
+/**
+ * The approval for this project as the store holds it, parsed without judging
+ * it: legacy records read here too, so `approve` can diff against what is on
+ * disk. Trusting it is `approvalStanding`'s to decide, never a caller's.
+ */
 export function readApproval(store: string): ApprovalRecord | null {
-  const stored = readJson<Approval & { file?: unknown }>(join(store, APPROVAL));
+  const stored = readJson<Approval & { file?: unknown; generation?: unknown; signature?: unknown }>(join(store, APPROVAL));
   if (stored === null) return null;
-  if (stored.format !== 1) throw new Error(`${join(store, APPROVAL)}: unknown format ${String(stored.format)}`);
-  const { file, ...approval } = stored;
-  return typeof file === 'string' ? { approval, file } : null;
+  if (stored.format !== 1 && stored.format !== 2) throw new Error(`${join(store, APPROVAL)}: unknown format ${String(stored.format)}`);
+  const { file, generation, signature, ...approval } = stored;
+  if (typeof file !== 'string') return null;
+  return {
+    approval,
+    file,
+    ...(typeof generation === 'number' ? { generation } : {}),
+    ...(typeof signature === 'string' ? { signature } : {}),
+  };
 }
 
 /** The ledger: every `display` and `role` the team has had. */
@@ -145,16 +258,30 @@ export function mergeLedger(ledger: readonly LedgerEntry[], seats: readonly Ledg
 }
 
 /**
- * Records an approval. The fingerprints that let a file run and the text they
- * are of go in one file, in one atomic write, so a write that stops halfway
- * leaves the earlier approval whole. `approved.yaml` is a copy for the owner
- * to read, and is never read back.
+ * Records an approval, signed. The generation of this project moves first —
+ * atomically, in the key folder — then the whole record (approval, stored copy,
+ * root and generation) is signed with the owner's key and written in one atomic
+ * write, so a write that stops halfway leaves the earlier approval stale, which
+ * every reader refuses with the repair rather than trusting half a record.
+ * `approved.yaml` stays a copy for the owner to read, never read back. Every
+ * signing moves the generation: an amendment by `add` or `remove --keep` is a
+ * signing too, and shows up as one.
  */
-export function writeApproval(store: string, record: ApprovalRecord, seats: readonly LedgerEntry[]): void {
+export function writeApproval(
+  store: string,
+  record: ApprovalRecord,
+  seats: readonly LedgerEntry[],
+  home: string = homedir(),
+  now: Date = new Date(),
+): number {
+  const key = keyOf(home);
+  const generation = bumpGeneration(record.approval.root, home, now);
+  const signature = signPayload(payloadOf(record.approval, record.file, generation), key);
   mkdirSync(store, { recursive: true, mode: 0o700 });
   writeAtomic(join(store, LEDGER), `${JSON.stringify(mergeLedger(readLedger(store), seats), null, 2)}\n`);
-  writeAtomic(join(store, APPROVAL), `${JSON.stringify({ ...record.approval, file: record.file }, null, 2)}\n`);
+  writeAtomic(join(store, APPROVAL), `${JSON.stringify({ ...record.approval, file: record.file, generation, signature }, null, 2)}\n`);
   writeAtomic(join(store, APPROVED_FILE), record.file);
+  return generation;
 }
 
 /** Adds seats the team has had. The approval itself is left as it is. */

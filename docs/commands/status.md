@@ -92,6 +92,7 @@ CODEX_HOME=/path/to/codex exec /path/to/codex-quota
 | `worktree <task>: its setup failed` | `team worktree remove <task>` |
 | `the protected checkout "." is on "x", not on "main"` | `git -C . switch main` |
 | `the file was never approved on this machine` | the owner runs `team approve` |
+| `approved before records were signed: run `team approve` once`, or the case a refused record names | the owner runs `team approve` |
 | `the file differs from the approved one: <line>` | the owner runs `team approve` |
 
 ## The JSON

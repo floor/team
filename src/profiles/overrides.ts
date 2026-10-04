@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { QuotaPattern } from './quota.ts';
 import { profileFor, quotaFor, quotaList } from './profile.ts';
-import { readApproval, storePath } from '../store/store.ts';
+import { approvalStanding, storePath } from '../store/store.ts';
 import { addedRules } from '../watch/screen-file.ts';
 import type { ScreenData, Stage } from '../watch/screen-data.ts';
 import { classifyData, screenData, type Screen } from '../watch/screen.ts';
@@ -125,11 +125,14 @@ export function overrideFile(project: string, root: string, home: string): { pat
 /**
  * The patterns in force for this project. Keyed on the project root, the same
  * store as the team-file approval: another checkout of the same name has its
- * own. No file, or a stored copy that cannot be read, leaves the shipped profiles.
- * The live file is used only when it is the text `approve` recorded.
+ * own. The approved text is the verified record's own, so a record that does
+ * not verify leaves the shipped profiles. No file, or a stored copy that cannot
+ * be read, leaves the shipped profiles too. The live file is used only when it
+ * is the text `approve` recorded.
  */
 export function overridesInForce(project: string, root: string, home: string): OverrideForce {
-  const record = readApproval(storePath(project, root, home));
+  const standing = approvalStanding(root, home);
+  const record = standing.kind === 'verified' ? standing.record : null;
   const recorded = record !== null && Object.hasOwn(record.approval, 'overrides');
   const stored = recorded ? record?.approval.overrides : undefined;
   const approvedText = typeof stored === 'string' ? stored : null;

@@ -620,7 +620,7 @@ describe('team watch', () => {
     return {
       live: () => scene,
       machine: () => fine,
-      approval: () => [],
+      approval: () => ({ differences: [], reason: null }),
       watchInForce: (team) => team.watch,
       budgetsInForce: (team) => team.budgets,
       readChecks: () => [],
@@ -674,7 +674,7 @@ describe('team watch', () => {
     const io = testIo(dir);
     const waits: number[] = [];
     const code = await runWatch(['--file', file], io, sources(1, {
-      approval: () => ['`watch` changed'],
+      approval: () => ({ differences: ['`watch` changed'], reason: null }),
       watchInForce: () => ({ ...team().watch, interval: 5 }),
       wait: async (seconds) => { waits.push(seconds); return false; },
     }));
@@ -917,7 +917,7 @@ describe('team watch', () => {
     await runStatus(['--file', file], status, {
       live: () => scene,
       branch: () => 'main',
-      approval: () => [],
+      approval: () => ({ differences: [], reason: null }),
       watchInForce: (team) => team.watch,
       budgetsInForce: (team) => team.budgets,
       now: () => new Date(clock),

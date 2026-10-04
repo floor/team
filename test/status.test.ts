@@ -44,7 +44,7 @@ let file: string;
 let live: Live | null;
 let branch: string | null;
 
-let approval: string[] | null;
+let approval: { differences: string[] | null; reason: string | null };
 const sources: StatusSources = {
   live: () => live,
   branch: () => branch,
@@ -61,7 +61,7 @@ beforeEach(() => {
   writeFileSync(file, example);
   live = built();
   branch = 'main';
-  approval = [];
+  approval = { differences: [], reason: null };
   updateState(join(dir, '.agents'), (state) => {
     state.sessions['acme-web'] = { ...emptySession(), watch: { pid: 1, heartbeat: '2026-10-03T14:09:00Z' } };
   });
@@ -214,11 +214,11 @@ describe('team status', () => {
   });
 
   test('a file changed since the owner approved it, and one never approved', async () => {
-    approval = ['`rules` changed', 'seat grok-acme changed'];
+    approval = { differences: ['`rules` changed', 'seat grok-acme changed'], reason: null };
     const changed = await status();
     expect(changed.out).toContain('difference: the file differs from the approved one: `rules` changed\n  repair: the owner runs team approve');
     expect(changed.out).toContain('2 difference(s)');
-    approval = null;
+    approval = { differences: null, reason: null };
     expect((await status()).out).toContain('difference: the file was never approved on this machine');
   });
 

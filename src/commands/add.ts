@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
-import { approvalDifferences, budgetsInForce, recordSeatDigest } from '../approve/approval.ts';
+import { approvalDifferencesOf, budgetsInForce, notInForce, recordSeatDigest } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from '../commands/doctor.ts';
@@ -24,7 +24,7 @@ import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock, type SeatState, type SessionState } from '../state.ts';
-import { approvedCopy, readApproval, recordLedger, storePath, type Ceilings } from '../store/store.ts';
+import { approvalStanding, recordLedger, storePath, type Ceilings } from '../store/store.ts';
 import { launchLimit, readMachine, type Machine, type SwapSample } from '../watch/machine.ts';
 import { readScreen } from '../watch/screen.ts';
 import { seatStart, type SeatStart } from '../worktree/place.ts';
@@ -122,18 +122,21 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     io.stderr('team add: session can\'t be "default", herdr\'s own session\n');
     return 1;
   }
-  const differences = approvalDifferences(team, root, sources.home);
-  if (differences === null) {
-    io.stderr('team add: the file was never approved on this machine: run `team approve`\n');
+  // One verified snapshot for the whole command: a legacy or refused record is not
+  // an approval in force, and the approved copy the seat is built from is the record's own.
+  const standing = approvalStanding(root, sources.home);
+  if (standing.kind !== 'verified') {
+    io.stderr(`team add: ${notInForce(standing)}\n`);
     return 1;
   }
+  const differences = approvalDifferencesOf(standing, team);
   if (differences.length) {
     io.stderr(`team add: the file is not the approved one (${differences.join('; ')}): run \`team approve\`\n`);
     return 1;
   }
-  const approvedText = approvedCopy(root, sources.home);
-  const approved = approvedText ? validateTeamFile(approvedText) : null;
-  if (!approvedText || !approved?.ok) {
+  const approvedText = standing.record.file;
+  const approved = validateTeamFile(approvedText);
+  if (!approved.ok) {
     io.stderr('team add: the approved copy can\'t be read: run `team approve`\n');
     return 1;
   }
@@ -157,11 +160,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   }
 
   const recorded = readState(dir).sessions[session] ?? emptySession();
-  const ceilings = readApproval(storePath(team.project, root, sources.home))?.approval.ceilings;
-  if (!ceilings) {
-    io.stderr('team add: the file was never approved on this machine: run `team approve`\n');
-    return 1;
-  }
+  const ceilings: Ceilings = standing.record.approval.ceilings;
 
   const original = readFileSync(path, 'utf8');
   const built = temporary

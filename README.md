@@ -247,6 +247,26 @@ It never answers prompts and performs no sign-in action.
 run live. `up` and `down` take `--dry-run` to print every command they would run, and every
 refusal, and change nothing. `trust` is specified but not built yet.
 
+## Approvals are signed
+
+`team approve` writes the record signed: the approval, the stored copy of the file, the project
+root and a per-project number, covered by one signature whose key lives outside the store, in
+`~/.config/team-key`. Every command that needs an approval in force verifies the whole record
+through one snapshot; a record changed after approval, signed for another root, or replayed from an
+older number is not an approval, and the command says which case it was. Each approval moves the
+number and prints it — `approval #4 for this project; the last one was on 2026-10-04.` — and
+`team doctor` names the number and its date, so signings the owner never made are visible.
+
+Approvals guard against mistakes, not against a hostile process running as the owner. A seat can
+read the key: this buys evidence — a rewrite without the key is refused — not prevention. The
+number and the record can be rolled back together by a process that has the key, and a seat can
+replace `team` itself.
+
+A record written by an earlier `team`, before records were signed, is refused by `up` and `add`
+with `approved before records were signed: run \`team approve\` once`; the watch keeps watching,
+`status` keeps reporting, `down` and `remove` keep working, and approving once replaces the record
+with a signed one.
+
 ## Your first team in five minutes
 
 ```sh

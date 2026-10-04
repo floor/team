@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { budgetsInForce } from '../approve/approval.ts';
 import type { BudgetAccount, TeamFile } from '../file/types.ts';
 import type { WindowName } from '../profiles/quota.ts';
-import { readApproval, storePath } from '../store/store.ts';
+import { approvalStanding } from '../store/store.ts';
 import { checkCommands, checkReadings, type ApprovedCheck } from './checks.ts';
 import { resetsFrom } from './readings.ts';
 
@@ -146,7 +146,9 @@ export function checkOutcomes(
 
 /**
  * What every checked account reads this pass, with the approval of this machine. The accounts are
- * the ones the budgets in force name, never the file's unapproved edit of them.
+ * the ones the budgets in force name, never the file's unapproved edit of them, and the commands
+ * are the verified record's: a record that does not verify leaves every check unapproved, so it
+ * is not run at all — the watch's owner-only checks refuse, and the watch keeps watching.
  */
 export function runChecks(
   team: TeamFile,
@@ -155,6 +157,7 @@ export function runChecks(
   home: string = homedir(),
   run: CheckRunner = readCheck,
 ): CheckOutcome[] {
-  const approved = readApproval(storePath(team.project, root, home))?.approval.checks;
+  const standing = approvalStanding(root, home);
+  const approved = standing.kind === 'verified' ? standing.record.approval.checks : undefined;
   return checkOutcomes(budgetsInForce(team, root, home), approved, run, now);
 }

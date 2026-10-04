@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalDifferences, budgetsInForce, watchInForce } from '../src/approve/approval.ts';
+import { approvalSource } from '../src/commands/status.ts';
 import { fingerprints } from '../src/approve/fingerprint.ts';
 import { seatBudget } from '../src/budgets/gate.ts';
 import { loadReadings, type Seen } from '../src/budgets/readings.ts';
@@ -298,7 +299,7 @@ describe('a seat the approval lists as changed', () => {
     return {
       live: () => live(screens),
       machine: () => fine,
-      approval: (one, at) => approvalDifferences(one, at, home),
+      approval: approvalSource(home),
       watchInForce: (one, at) => watchInForce(one, at, home),
       budgetsInForce: (one, at) => budgetsInForce(one, at, home),
       readChecks: () => [],

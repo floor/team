@@ -114,7 +114,7 @@ describe('budgets', () => {
       writeApproval(storePath(team.project, dir, home), {
         approval: approvalOf(team, dir, new Date('2026-10-04T00:00:00Z'), first.checks),
         file: 'format: 1\n',
-      }, []);
+      }, [], home);
       expect(approvalDifferences(team, dir, home)).toEqual([]);
       writeFileSync(command, '#!/bin/sh\necho other\n');
       const second = resolveChecks(team, dir, '');

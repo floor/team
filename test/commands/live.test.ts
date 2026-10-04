@@ -8,7 +8,7 @@ import { realSources as downReal, runDown, type DownLaunch, type DownSources } f
 import { realSources as upReal, runUp, type Launch, type UpSources } from '../../src/commands/up.ts';
 import type { DoctorSources } from '../../src/commands/doctor.ts';
 import { sessionState, type HerdrAgent } from '../../src/herdr.ts';
-import { storePath } from '../../src/store/store.ts';
+import { readApproval, storePath, writeApproval } from '../../src/store/store.ts';
 import { readState } from '../../src/state.ts';
 import { parseMemoryPressure, parseSwapUsage, type Machine } from '../../src/watch/machine.ts';
 import { readScreen, type Screen } from '../../src/watch/screen.ts';
@@ -481,10 +481,14 @@ describe('team up, live', () => {
 
   test("the approval's ceilings are enforced, not the file's limits", async () => {
     await approve();
-    const path = join(store(), 'approval.json');
-    const body = JSON.parse(readFileSync(path, 'utf8')) as { ceilings: { seats: number } };
-    body.ceilings.seats = 1;
-    writeFileSync(path, JSON.stringify(body));
+    // The approval fixed fewer seats than the file allows: the record is written again, signed,
+    // with its own ceilings — as the owner's earlier approval of a smaller team reads today.
+    const record = readApproval(store());
+    if (!record) throw new Error('approval');
+    writeApproval(store(), {
+      approval: { ...record.approval, ceilings: { ...record.approval.ceilings, seats: 1 } },
+      file: record.file,
+    }, [], home);
     const made = world();
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));

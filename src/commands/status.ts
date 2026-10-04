@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { relative, resolve } from 'node:path';
-import { approvalDifferences, budgetsInForce, watchInForce } from '../approve/approval.ts';
+import { approvalDifferencesOf, budgetsInForce, notInForce, watchInForce } from '../approve/approval.ts';
 import { overridesInForce, type OverrideForce } from '../profiles/overrides.ts';
 import { readArgs } from '../args.ts';
 import { budgetLine, budgetTable, type BudgetRow } from '../budgets/table.ts';
@@ -11,6 +11,7 @@ import type { Problem, TeamFile } from '../file/types.ts';
 import { agentList, paneRead, sessionRunning, workspaceList } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { emptySession, readState } from '../state.ts';
+import { approvalStanding } from '../store/store.ts';
 import { compare } from '../status/compare.ts';
 import type { Comparison, Difference, Live } from '../status/compare.ts';
 
@@ -18,8 +19,10 @@ import type { Comparison, Difference, Live } from '../status/compare.ts';
 export type StatusSources = {
   live(session: string, team: TeamFile): Live | null;
   branch(path: string): string | null;
-  // How the file differs from the approved one: [] when it doesn't, null when it was never approved.
-  approval(team: TeamFile, root: string): string[] | null;
+  // How the file differs from the approved one: [] when it doesn't, null when no verified
+  // approval is in force. `reason` carries the one-line case when the record is legacy or the
+  // verification refused it — a line of its own in the report, never folded into drift.
+  approval(team: TeamFile, root: string): { differences: string[] | null; reason: string | null };
   // The watch values in force, which the file's own `watch` section only is once approved.
   watchInForce(team: TeamFile, root: string): TeamFile['watch'];
   // And the budget values in force: the file's own `budgets` section only once approved, so an
@@ -29,6 +32,20 @@ export type StatusSources = {
   /** The home whose store holds the override file. Absent in a test that does not set one. */
   home?: string;
 };
+
+/**
+ * The approval source against a home that is not the owner's real one — the
+ * shipped command's own, and what a test or a scratch home stands in for: the
+ * standing, read once, with the case that is not an approval in force.
+ */
+export function approvalSource(home: string): StatusSources['approval'] {
+  return (team, root) => {
+    const standing = approvalStanding(root, home);
+    if (standing.kind === 'verified') return { differences: approvalDifferencesOf(standing, team), reason: null };
+    if (standing.kind === 'none') return { differences: null, reason: null };
+    return { differences: null, reason: notInForce(standing) };
+  };
+}
 
 export const realSources: StatusSources = {
   live(session, team) {
@@ -53,7 +70,7 @@ export const realSources: StatusSources = {
       return null;
     }
   },
-  approval: (team, root) => approvalDifferences(team, root),
+  approval: approvalSource(homedir()),
   watchInForce: (team, root) => watchInForce(team, root),
   budgetsInForce: (team, root) => budgetsInForce(team, root),
   now: () => new Date(),
@@ -157,9 +174,13 @@ function overrideDrift(report: OverrideForce): Difference[] {
 }
 
 // A file that was never approved, or was changed since, runs nothing until the owner approves it.
-export function approvalDrift(differences: string[] | null): Difference[] {
-  if (differences === null) return [{ what: 'the file was never approved on this machine', repair: 'the owner runs team approve' }];
-  return differences.map((line) => ({ what: `the file differs from the approved one: ${line}`, repair: 'the owner runs team approve' }));
+// A legacy or refused record is the whole case and its repair in one line of its own.
+export function approvalDrift(approval: { differences: string[] | null; reason: string | null }): Difference[] {
+  if (approval.reason !== null) return [{ what: approval.reason, repair: 'the owner runs team approve' }];
+  if (approval.differences === null) {
+    return [{ what: 'the file was never approved on this machine', repair: 'the owner runs team approve' }];
+  }
+  return approval.differences.map((line) => ({ what: `the file differs from the approved one: ${line}`, repair: 'the owner runs team approve' }));
 }
 
 function protectedCheckouts(team: TeamFile, root: string, sources: StatusSources): Difference[] {

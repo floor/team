@@ -39,7 +39,7 @@ const sol = { display: 'GPT-6 Sol', role: 'reviewer', model: 'GPT Sol', version:
 
 function approval(root: string): Approval {
   return {
-    format: 1,
+    format: 2,
     approvedAt: '2026-10-03T14:02:00Z',
     root,
     fingerprints: { sections: { rules: 'a' }, seats: { one: 'b' } },
@@ -75,14 +75,16 @@ describe('an approval', () => {
 
   test('is read back with the approved copy, and fills the ledger', () => {
     const store = storePath('acme-web', home, home);
-    writeApproval(store, { approval: approval(home), file: 'format: 1\n' }, [opus, sol]);
-    expect(readApproval(store)).toEqual({ approval: approval(home), file: 'format: 1\n' });
+    writeApproval(store, { approval: approval(home), file: 'format: 1\n' }, [opus, sol], home);
+    // The read-back carries the signing: a generation, and the signature over it.
+    expect(readApproval(store)).toMatchObject({ approval: approval(home), file: 'format: 1\n', generation: 1 });
+    expect(typeof readApproval(store)?.signature).toBe('string');
     expect(readLedger(store)).toEqual([opus, sol]);
   });
 
   test('leaves no temporary file, and is private to the user', () => {
     const store = storePath('acme-web', home, home);
-    writeApproval(store, { approval: approval(home), file: 'format: 1\n' }, [opus]);
+    writeApproval(store, { approval: approval(home), file: 'format: 1\n' }, [opus], home);
     expect(readdirSync(store).sort()).toEqual(['approval.json', 'approved.yaml', 'ledger.json']);
     expect(statSync(store).mode & 0o777).toBe(0o700);
     expect(statSync(join(store, 'approval.json')).mode & 0o777).toBe(0o600);
@@ -90,8 +92,8 @@ describe('an approval', () => {
 
   test('a second approval keeps the seats the team has had', () => {
     const store = storePath('acme-web', home, home);
-    writeApproval(store, { approval: approval(home), file: 'a\n' }, [opus]);
-    writeApproval(store, { approval: approval(home), file: 'b\n' }, [sol]);
+    writeApproval(store, { approval: approval(home), file: 'a\n' }, [opus], home);
+    writeApproval(store, { approval: approval(home), file: 'b\n' }, [sol], home);
     expect(readLedger(store)).toEqual([opus, sol]);
     expect(readApproval(store)?.file).toBe('b\n');
   });
@@ -99,18 +101,18 @@ describe('an approval', () => {
   test('a record of another format is refused', () => {
     const store = storePath('acme-web', home, home);
     mkdirSync(store, { recursive: true });
-    writeFileSync(join(store, 'approval.json'), '{"format":2}');
-    expect(() => readApproval(store)).toThrow('unknown format 2');
+    writeFileSync(join(store, 'approval.json'), '{"format":3}');
+    expect(() => readApproval(store)).toThrow('unknown format 3');
   });
 
   test('the approved text is in the record itself: one write, never half an approval', () => {
     const store = storePath('acme-web', home, home);
-    writeApproval(store, { approval: approval(home), file: 'approved\n' }, [opus]);
+    writeApproval(store, { approval: approval(home), file: 'approved\n' }, [opus], home);
     writeFileSync(join(store, 'approved.yaml'), 'edited by hand\n');
     expect(readApproval(store)?.file).toBe('approved\n');
     expect(approvedCopy(home, home)).toBe('approved\n');
     expect(JSON.parse(readFileSync(join(store, 'approval.json'), 'utf8'))).toMatchObject({
-      format: 1,
+      format: 2,
       file: 'approved\n',
     });
   });
@@ -145,7 +147,7 @@ describe('the approved copy, from the root alone', () => {
     const root = join(home, 'acme-web');
     mkdirSync(root);
     const store = storePath('acme-web', root, home);
-    writeApproval(store, { approval: approval(root), file: 'format: 1\n' }, [opus]);
+    writeApproval(store, { approval: approval(root), file: 'format: 1\n' }, [opus], home);
     expect(findStore(root, home)).toBe(store);
     expect(approvedCopy(root, home)).toBe('format: 1\n');
     expect(approvedCopy(home, home)).toBeNull();
@@ -163,7 +165,7 @@ describe('a file against its approval', () => {
 
   function approve(root: string) {
     const file = team(text);
-    writeApproval(storePath(file.project, root, home), { approval: approvalOf(file, root), file: text }, file.seats);
+    writeApproval(storePath(file.project, root, home), { approval: approvalOf(file, root), file: text }, file.seats, home);
   }
 
   test('nothing is approved until the owner approves', () => {
@@ -211,7 +213,7 @@ describe('a file against its approval', () => {
     const record = readApproval(store);
     if (!record) throw new Error('missing approval');
     record.approval.fingerprints.seats = legacySeatDigests(file);
-    writeApproval(store, record, []);
+    writeApproval(store, record, [], home);
     expect(approvalDifferences(file, home, home)).toEqual([]);
     const parked = text.replace('    parked: true', '    parked: false');
     expect(approvalDifferences(team(parked), home, home)).toEqual(['seat codex-acme changed']);
@@ -247,7 +249,7 @@ describe('a file against its approval', () => {
   test('the record holds the ceilings and the root', () => {
     const record = approvalOf(team(text), home, new Date('2026-10-03T14:02:00Z'));
     expect(record).toMatchObject({
-      format: 1,
+      format: 2,
       approvedAt: '2026-10-03T14:02:00.000Z',
       root: home,
       ceilings: { seats: 6, temporary: 2, vendors: { openai: 1, deepseek: 3 } },

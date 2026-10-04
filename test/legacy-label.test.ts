@@ -81,7 +81,7 @@ function approveAsV012(text: string, seats: Record<string, string>, file: string
   const parsed = team(text);
   const approval = approvalOf(parsed, home);
   approval.fingerprints = { ...approval.fingerprints, seats };
-  writeApproval(storePath(parsed.project, home, home), { approval, file }, parsed.seats);
+  writeApproval(storePath(parsed.project, home, home), { approval, file }, parsed.seats, home);
 }
 
 describe('an approval written by v0.1.2', () => {
@@ -129,7 +129,7 @@ describe('an approval written by v0.1.2', () => {
   test('a digest already in the new shape is left alone', () => {
     const text = read('team.yaml');
     const parsed = team(text);
-    writeApproval(storePath(parsed.project, home, home), { approval: approvalOf(parsed, home), file: text }, parsed.seats);
+    writeApproval(storePath(parsed.project, home, home), { approval: approvalOf(parsed, home), file: text }, parsed.seats, home);
     expect(approvalDifferences(parsed, home, home)).toEqual([]);
     const edited = text.replace('model: GLM', 'model: GLM Next');
     expect(approvalDifferences(team(edited), home, home)).toEqual(['seat glm-implementer changed']);

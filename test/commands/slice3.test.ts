@@ -211,7 +211,7 @@ describe('team doctor', () => {
     expect(run.err).toBe('');
     expect(run.out).toBe(
       [
-        'ok    the file is the one the owner approved',
+        'ok    the file is the one the owner approved (approval #1, 2026-10-03)',
         'ok    herdr 0.7.1',
         '--    session acme-web is not running',
         'ok    claude 2.1.288 (Claude Code)',

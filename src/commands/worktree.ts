@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
-import { approvalDifferences } from '../approve/approval.ts';
+import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
 import { insideTrust } from '../file/paths.ts';
@@ -11,6 +11,7 @@ import type { TeamFile } from '../file/types.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, withLock, writeAtomic, STATE_FILE, type State } from '../state.ts';
+import { approvalStanding } from '../store/store.ts';
 import { fillPattern, publicNameHit, realLanding, taskProblem } from '../worktree/place.ts';
 
 // What the command reads from outside the process, so a test can point the approval store elsewhere.
@@ -81,11 +82,12 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     io.stderr('team worktree: session can\'t be "default", herdr\'s own session\n');
     return 1;
   }
-  const differences = approvalDifferences(team, root, sources.home);
-  if (differences === null) {
-    io.stderr('team worktree: the file was never approved on this machine: run `team approve`\n');
+  const standing = approvalStanding(root, sources.home);
+  if (standing.kind !== 'verified') {
+    io.stderr(`team worktree: ${notInForce(standing)}\n`);
     return 1;
   }
+  const differences = approvalDifferencesOf(standing, team);
   if (differences.length) {
     io.stderr(`team worktree: the file is not the approved one (${differences.join('; ')}): run \`team approve\`\n`);
     return 1;

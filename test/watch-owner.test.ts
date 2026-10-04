@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { approvalDifferences, budgetsInForce, watchInForce } from '../src/approve/approval.ts';
 import { compare, describe as describeDifference, fingerprints, OWNER_SECTIONS } from '../src/approve/fingerprint.ts';
 import { runApprove } from '../src/commands/approve.ts';
-import { runStatus, type StatusSources } from '../src/commands/status.ts';
+import { approvalSource, runStatus, type StatusSources } from '../src/commands/status.ts';
 import type { TeamFile } from '../src/file/types.ts';
 import { defaultWatch, validateTeamFile } from '../src/file/validate.ts';
 import { storePath, writeApproval } from '../src/store/store.ts';
@@ -145,7 +145,7 @@ describe('a threshold edit, and the approval', () => {
     const sources: StatusSources = {
       live: () => live,
       branch: () => 'main',
-      approval: (team, at) => approvalDifferences(team, at, home),
+      approval: approvalSource(home),
       watchInForce: (team, at) => watchInForce(team, at, home),
       budgetsInForce: (team, at) => budgetsInForce(team, at, home),
       now: () => NOW,
@@ -178,14 +178,14 @@ describe('a threshold edit, and the approval', () => {
     delete sections['watch.checks'];
     writeApproval(storePath(current.project, root, home), {
       approval: {
-        format: 1,
+        format: 2,
         approvedAt: '2026-10-01T00:00:00.000Z',
         root,
         fingerprints: { sections, seats: stored.seats },
         ceilings: { seats: current.limits.seats, temporary: current.limits.temporary, vendors: {} },
       },
       file: readFileSync(join(root, '.agents/team.yaml'), 'utf8'),
-    }, []);
+    }, [], home);
     expect(approvalDifferences(current, root, home)).toEqual([]);
     expect(watchInForce(current, root, home).unsentAfter).toBe(60);
     // An edit to the section is a difference again, and the copy's values go on running.

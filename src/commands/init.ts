@@ -8,7 +8,7 @@ import { validateTeamFile } from '../file/validate.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { LOCK_FILE, LOG_FILE, STATE_FILE, writeAtomic } from '../state.ts';
-import { approvedCopy } from '../store/store.ts';
+import { approvalStanding, LEGACY_LINE } from '../store/store.ts';
 import { version } from '../version.ts';
 
 // What git must never pick up: the file and the runtime files beside it.
@@ -123,7 +123,18 @@ export async function runInit(argv: string[], io: Io, home?: string): Promise<nu
 
   let text: string;
   if (args.flags.has('restore')) {
-    const copy = home === undefined ? approvedCopy(root) : approvedCopy(root, home);
+    // Only a verified record carries a copy worth restoring: a legacy or refused
+    // one is said in its own words, never restored from.
+    const standing = home === undefined ? approvalStanding(root) : approvalStanding(root, home);
+    if (standing.kind === 'legacy') {
+      io.stderr(`team init: nothing was restored: the record for this folder was ${LEGACY_LINE}.\n`);
+      return 1;
+    }
+    if (standing.kind === 'refused') {
+      io.stderr(`team init: nothing was restored: ${standing.why}.\n`);
+      return 1;
+    }
+    const copy = standing.kind === 'verified' ? standing.record.file : null;
     if (copy === null) {
       io.stderr('team init: nothing to restore: no team file was approved for this folder on this machine. Run team init for a skeleton.\n');
       return 1;
