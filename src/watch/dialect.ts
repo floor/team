@@ -294,7 +294,9 @@ function refuseSpelling(source: string): void {
 
 // A class is a finite set, except a complement shorthand (`\S`, `\D`, `\W`), whose
 // negation brings it back to a finite set. `[^\S\n]` is the whitespace set without
-// a newline, which is what the working-line pattern relies on.
+// a newline, which is what the working-line pattern relies on. A positive class that
+// mixed one with other members would compile to a class nobody wrote (`[\D0-9]` is
+// everything), so it is refused rather than rewritten.
 function classSource(negated: boolean, parts: ClassPart[]): string {
   const positive = new Set<number>();
   const complements: number[][] = [];
@@ -304,6 +306,9 @@ function classSource(negated: boolean, parts: ClassPart[]): string {
     else complements.push(part.cps);
   }
   if (complements.length === 0) return emitClass(negated, [...positive]);
+  if (!negated && positive.size > 0) {
+    throw new DialectError('a class cannot mix a complement shorthand with other members: negate the class, or write the shorthand alone');
+  }
   let inter = new Set(complements[0]);
   for (const extra of complements.slice(1)) inter = new Set([...inter].filter((cp) => extra.includes(cp)));
   const remaining = [...inter].filter((cp) => !positive.has(cp));
@@ -350,15 +355,22 @@ function classChar(cp: number): string {
   if (cp === 0x0c) return '\\f';
   if (cp === 0x0d) return '\\r';
   if (cp === 0x2d || cp === 0x5d || cp === 0x5e || cp === 0x5c) return `\\${String.fromCodePoint(cp)}`;
-  if (cp < 0x20 || cp > 0x7e) return `\\u${cp.toString(16).padStart(4, '0')}`;
+  if (cp < 0x20 || cp > 0x7e) return codePointEscape(cp);
   return String.fromCodePoint(cp);
 }
 
 function escapeLiteral(cp: number): string {
   const ch = String.fromCodePoint(cp);
   if ('\\.^$|?*+()[]{}'.includes(ch)) return `\\${ch}`;
-  if (cp < 0x20 || cp > 0x7e) return `\\u${cp.toString(16).padStart(4, '0')}`;
+  if (cp < 0x20 || cp > 0x7e) return codePointEscape(cp);
   return ch;
+}
+
+// A code point above U+FFFF needs the "\u{…}" form, which every pattern can carry: the "u"
+// flag is always set (compilePattern). A four-digit escape cannot spell it — the digits
+// would spill into the following character.
+function codePointEscape(cp: number): string {
+  return cp > 0xffff ? `\\u{${cp.toString(16)}}` : `\\u${cp.toString(16).padStart(4, '0')}`;
 }
 
 function seqSource(atoms: Node[]): string {
