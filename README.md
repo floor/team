@@ -155,13 +155,26 @@ openai:
   check: codex-quota
 ```
 
-It reads the newest rollout under `CODEX_HOME`, or `~/.codex` when that is unset, and
-prints one line from the last `token_count` primary window, such as
+`team` runs a check with an empty environment plus `PATH` and `HOME`, so a
+`CODEX_HOME` set in the owner's shell never reaches the script. It reads
+`~/.codex/sessions`. When Codex's home is somewhere else, install a two-line
+wrapper and name the wrapper as the check:
+
+```sh
+#!/bin/sh
+CODEX_HOME=/path/to/codex exec /path/to/codex-quota
+```
+
+The wrapper sets `CODEX_HOME` and execs this script. The script takes rollouts
+newest first. The first that has a `token_count` primary window is the one used, and
+at most ten files are opened. A new session that has not recorded a figure yet
+does not hide the last one. The line's `at` is that event's own time, so an
+older figure stays dated. It prints one line, such as
 `weekly 39% used resets 114h4m at 1791091200`. Five hours (`300` minutes) is
 `session`, a day (`1440`) is `daily`, and a week (`10080`) is `weekly`. Any other
-length, a figure over 100%, or no rollout prints nothing, so the account reads
-unknown. `team approve` then records the script. Bun has to be on `PATH` when the
-check runs.
+length, a figure over 100%, or no such rollout prints nothing, so the account
+reads unknown. `team approve` records the command you named. Bun has to be on
+`PATH` when the check runs.
 
 More fields exist — `tools`, `trust`, `machine`, `limits`, `watch`, `visibility` — and the comments
 `team init` writes name them; validation refuses what it cannot check, and this build acts on what

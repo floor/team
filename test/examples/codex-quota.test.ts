@@ -44,11 +44,45 @@ function decoy(): string {
   });
 }
 
+/** A session_meta line in the rust-v0.157.0 rollout shape. Values are invented. */
+function sessionMeta(timestamp: string): string {
+  return JSON.stringify({
+    timestamp,
+    type: 'session_meta',
+    payload: {
+      meta: {
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        timestamp,
+        cwd: '/tmp/synthetic',
+        originator: 'codex',
+        cli_version: '0.0.0',
+        source: 'cli',
+      },
+      git: null,
+    },
+  });
+}
+
+function rolloutName(hour: number, index: number): string {
+  const hh = String(hour).padStart(2, '0');
+  const mark = index.toString(16).padStart(8, '0');
+  return `rollout-2026-10-04T${hh}-00-00-${mark}-0000-4000-8000-000000000000.jsonl`;
+}
+
+function writeSession(dir: string, hour: number, index: number): void {
+  const hh = String(hour).padStart(2, '0');
+  const when = `2026-10-04T${hh}:00:00.000Z`;
+  writeRollout(dir, rolloutName(hour, index), sessionMeta(when), new Date(when));
+}
+
 function run(env: Record<string, string>): SpawnSyncReturns<string> {
   return spawnSync('bun', [script], { encoding: 'utf8', env });
 }
 
-/** Writes under a temp CODEX_HOME and runs the script with only PATH, HOME, and CODEX_HOME. */
+/**
+ * Writes under a temp Codex home and runs the script directly.
+ * team itself passes only PATH and HOME. These tests set CODEX_HOME because they invoke the script, not team.
+ */
 function inCodexHome(write: (sessions: string, root: string) => void): SpawnSyncReturns<string> {
   const root = mkdtempSync(join(tmpdir(), 'codex-quota-'));
   try {
@@ -108,6 +142,72 @@ describe('codex-quota', () => {
       writeRollout(sessions, 'notes.jsonl', event({ used_percent: 99, window_minutes: 10080, resets_at: future(1, 0) }), new Date('2026-10-04T14:00:00Z'));
     });
     expectLine(result, `weekly 39% used resets 114h4m at ${EVENT_UNIX}`);
+  });
+
+  test('a newer session_meta rollout does not hide an older token_count', () => {
+    const olderAt = '2026-10-03T12:00:00.000Z';
+    const olderUnix = String(Math.floor(Date.parse(olderAt) / 1000));
+    const result = inCodexHome((sessions) => {
+      writeRollout(
+        sessions,
+        'rollout-2026-10-03T12-00-00-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jsonl',
+        event({ used_percent: 39, window_minutes: 10080, resets_at: future(114, 4) }, { timestamp: olderAt, secondary: null }),
+        new Date(olderAt),
+      );
+      writeRollout(
+        sessions,
+        'rollout-2026-10-04T13-00-00-dddddddd-dddd-4ddd-8ddd-dddddddddddd.jsonl',
+        sessionMeta('2026-10-04T13:00:00.000Z'),
+        new Date('2026-10-04T13:00:00Z'),
+      );
+    });
+    expectLine(result, `weekly 39% used resets 114h4m at ${olderUnix}`);
+  });
+
+  test('the tenth newest rollout is still read', () => {
+    const olderAt = '2026-10-03T12:00:00.000Z';
+    const olderUnix = String(Math.floor(Date.parse(olderAt) / 1000));
+    const result = inCodexHome((sessions) => {
+      for (let index = 0; index < 9; index++) writeSession(sessions, 23 - index, index);
+      writeRollout(
+        sessions,
+        'rollout-2026-10-03T12-00-00-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jsonl',
+        event({ used_percent: 39, window_minutes: 10080, resets_at: future(114, 4) }, { timestamp: olderAt, secondary: null }),
+        new Date(olderAt),
+      );
+    });
+    expectLine(result, `weekly 39% used resets 114h4m at ${olderUnix}`);
+  });
+
+  test('an eleventh rollout is not opened', () => {
+    const result = inCodexHome((sessions) => {
+      for (let index = 0; index < 10; index++) writeSession(sessions, 23 - index, index);
+      writeRollout(
+        sessions,
+        'rollout-2026-10-03T12-00-00-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jsonl',
+        event({ used_percent: 39, window_minutes: 10080, resets_at: future(114, 4) }, { secondary: null }),
+        new Date('2026-10-03T12:00:00Z'),
+      );
+    });
+    expectEmpty(result);
+  });
+
+  test('a newer primary that cannot be written does not fall back', () => {
+    const result = inCodexHome((sessions) => {
+      writeRollout(
+        sessions,
+        'rollout-2026-10-03T12-00-00-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jsonl',
+        event({ used_percent: 39, window_minutes: 10080, resets_at: future(114, 4) }, { secondary: null }),
+        new Date('2026-10-03T12:00:00Z'),
+      );
+      writeRollout(
+        sessions,
+        'rollout-2026-10-04T13-00-00-dddddddd-dddd-4ddd-8ddd-dddddddddddd.jsonl',
+        event({ used_percent: 100.2, window_minutes: 10080, resets_at: future(1, 0) }, { secondary: null }),
+        new Date('2026-10-04T13:00:00Z'),
+      );
+    });
+    expectEmpty(result);
   });
 
   test('the last token_count with a primary window wins', () => {

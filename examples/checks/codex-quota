@@ -1,16 +1,29 @@
 #!/usr/bin/env bun
-// Prints one subscription line from Codex's newest session rollout.
+// Prints one subscription line from a Codex session rollout.
 //
 // Bun runs this. The check is one JSONL scan, and the owner already has Bun on
 // PATH to run team. It uses only the built-in file modules, so there is no
 // package to install beside the script.
 //
-// It reads $CODEX_HOME/sessions, or $HOME/.codex/sessions when CODEX_HOME is unset
+// team runs a check with an empty environment plus PATH and HOME. CODEX_HOME
+// from the owner's shell never reaches this process, so sessions are read from
+// $HOME/.codex/sessions. When Codex's home is somewhere else, install a two-line
+// wrapper, name that wrapper as the account's check, and let it set CODEX_HOME
+// before it execs this script:
+//
+//   #!/bin/sh
+//   CODEX_HOME=/path/to/codex exec /path/to/codex-quota
+//
+// When that variable is set, sessions are $CODEX_HOME/sessions
 // (codex-rs/utils/home-dir and rollout's SESSIONS_SUBDIR, tag rust-v0.157.0).
-// From the newest rollout-*.jsonl it keeps the last event_msg whose payload type
-// is token_count and whose payload.rate_limits.primary is present. It uses only
-// that window's used_percent, window_minutes and resets_at, plus the event's
-// timestamp. Nothing else from the file is printed.
+//
+// Files named rollout-*.jsonl are taken newest first. The first that has a
+// token_count event with a primary window is the one used, and at most ten
+// files are opened. A newer session that has only session_meta does not hide
+// the last figure. From that file the last such event is kept. The line's at
+// time is that event's timestamp, so an older figure stays dated. The fields
+// used are that window's used_percent, window_minutes and resets_at, plus the
+// event's timestamp. Nothing else from the file is printed.
 //
 // window_minutes maps to a contract name: 300 session, 1440 daily, 10080 weekly.
 // Any other length prints nothing and exits 0. The line has no name for it, and
@@ -27,15 +40,17 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const WINDOWS = { 300: 'session', 1440: 'daily', 10080: 'weekly' };
+const MAX_ROLLOUTS = 10;
 const LINE =
   /^(session|daily|weekly) (100|[0-9]{1,2})% used( resets (?:[0-9]+h(?:[0-9]+m)?|[0-9]+m))? at [0-9]{10}$/;
 
 function main() {
-  const path = newestRollout(sessionsDir());
-  if (!path) return;
-  const text = readFileSync(path, 'utf8');
-  const line = lineFromRollout(text);
-  if (line) process.stdout.write(`${line}\n`);
+  for (const path of newestRollouts(sessionsDir(), MAX_ROLLOUTS)) {
+    const line = lineFromRollout(readFileSync(path, 'utf8'));
+    if (line === undefined) continue;
+    if (line) process.stdout.write(`${line}\n`);
+    return;
+  }
 }
 
 function sessionsDir() {
@@ -46,14 +61,14 @@ function sessionsDir() {
   return join(home, '.codex', 'sessions');
 }
 
-/** @param {string | null} root */
-function newestRollout(root) {
-  if (!root) return null;
+/** @param {string | null} root @param {number} limit */
+function newestRollouts(root, limit) {
+  if (!root) return [];
   /** @type {{ path: string, mtimeMs: number, name: string }[]} */
   const found = [];
   walk(root, found);
   found.sort((a, b) => b.mtimeMs - a.mtimeMs || (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));
-  return found[0]?.path ?? null;
+  return found.slice(0, limit).map((file) => file.path);
 }
 
 /** @param {string} dir @param {{ path: string, mtimeMs: number, name: string }[]} found */
@@ -80,7 +95,14 @@ function walk(dir, found) {
   }
 }
 
-/** @param {string} text */
+/**
+ * The contract line, null when a primary window is present but cannot be
+ * written, or undefined when this file has no token_count with a primary.
+ * A null result stops the scan: this file already has a primary window, and an
+ * older file must not stand in for it.
+ * @param {string} text
+ * @returns {string | null | undefined}
+ */
 function lineFromRollout(text) {
   const lines = text.split('\n');
   for (let index = lines.length - 1; index >= 0; index--) {
@@ -88,10 +110,9 @@ function lineFromRollout(text) {
     if (!raw) continue;
     const event = tokenCount(raw);
     if (event === undefined) continue;
-    if (event === null) return null;
     return event;
   }
-  return null;
+  return undefined;
 }
 
 /**
