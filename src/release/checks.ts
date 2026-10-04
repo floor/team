@@ -67,9 +67,11 @@ export class Reader {
 }
 
 // A timeout, a transport failure, or a 408, 429 or 5xx is retried exactly once; nothing else is.
+// An oversized body keeps its response's status, so a retryable status counts even then.
 function retried(attempt: Attempt): boolean {
   if (attempt.kind === 'timeout' || attempt.kind === 'transport') return true;
-  return attempt.kind === 'http' && (attempt.status === 408 || attempt.status === 429 || (attempt.status >= 500 && attempt.status <= 599));
+  const status = attempt.kind === 'http' || attempt.kind === 'too-large' ? attempt.status : 0;
+  return status === 408 || status === 429 || (status >= 500 && status <= 599);
 }
 
 type ReadRecord =
@@ -130,14 +132,19 @@ function npmVersionPart(record: ReadRecord, name: string, version: string): Outc
     return { status: 'unknown', detail: 'the npm record is not for this package and version' };
   }
   const dist = value.dist;
-  if (dist === undefined || dist === null) return { status: 'missing', detail: 'the npm record has no dist' };
+  if (dist === undefined) return { status: 'missing', detail: 'the npm record has no dist' };
   if (!isObject(dist)) return { status: 'unknown', detail: "the npm record's dist is not an object" };
+  // Every field is examined before deciding: only an absent or empty checksum is missing, a
+  // present non-string one is unknown, and unknown beats missing across the two fields.
+  const parts: Outcome[] = [];
   for (const key of ['shasum', 'integrity'] as const) {
     const checksum = dist[key];
-    if (checksum === undefined || checksum === null) return { status: 'missing', detail: `the npm record has no dist.${key}` };
-    if (typeof checksum !== 'string') return { status: 'unknown', detail: `dist.${key} is not a string` };
-    if (checksum === '') return { status: 'missing', detail: `the npm record has an empty dist.${key}` };
+    if (checksum === undefined) parts.push({ status: 'missing', detail: `the npm record has no dist.${key}` });
+    else if (typeof checksum !== 'string') parts.push({ status: 'unknown', detail: `dist.${key} is not a string` });
+    else if (checksum === '') parts.push({ status: 'missing', detail: `the npm record has an empty dist.${key}` });
   }
+  for (const part of parts) if (part.status === 'unknown') return part;
+  if (parts.length > 0) return parts[0] as Outcome;
   return pass;
 }
 
@@ -162,6 +169,18 @@ async function npmCheck(reader: Reader, decl: ReleaseDecl, version: string): Pro
   return combine(parts, decl.trustedPublishing ? 'exact version, checksums, and provenance found' : 'exact version and checksums found');
 }
 
+/** A full Git commit SHA: forty lowercase hex characters — what a compare segment is built from. */
+const SHA_PATTERN = /^[0-9a-f]{40}$/;
+
+/** The `sha` and `type` of a ref or tag object, or null when either is missing or malformed. */
+function targetOf(value: Record<string, unknown>): { sha: string; type: string } | null {
+  const object = value.object;
+  if (!isObject(object) || typeof object.type !== 'string' || typeof object.sha !== 'string' || !SHA_PATTERN.test(object.sha)) {
+    return null;
+  }
+  return { sha: object.sha, type: object.type };
+}
+
 async function tagCheck(reader: Reader, base: string, version: string, repo: Repo): Promise<Outcome> {
   const parts: Outcome[] = [];
   let commit: string | null = null;
@@ -171,11 +190,11 @@ async function tagCheck(reader: Reader, base: string, version: string, repo: Rep
   } else if (ref.kind === 'unknown') {
     parts.push({ status: 'unknown', detail: 'the tag could not be read' });
   } else {
-    const object = ref.value.object;
-    if (!isObject(object) || typeof object.sha !== 'string' || typeof object.type !== 'string') {
+    const first = targetOf(ref.value);
+    if (first === null) {
       parts.push({ status: 'unknown', detail: 'the tag could not be read' });
     } else {
-      let target = { sha: object.sha, type: object.type };
+      let target = first;
       let hops = 0;
       let broken: Outcome | null = null;
       // An annotated tag resolves through at most four tag objects; a fifth required hop is unknown.
@@ -189,11 +208,11 @@ async function tagCheck(reader: Reader, base: string, version: string, repo: Rep
         if (hop.kind === 'missing') broken = { status: 'missing', detail: `GitHub has no tag object ${target.sha}` };
         else if (hop.kind === 'unknown') broken = { status: 'unknown', detail: 'a tag object could not be read' };
         else {
-          const next = hop.value.object;
-          if (!isObject(next) || typeof next.sha !== 'string' || typeof next.type !== 'string') {
+          const next = targetOf(hop.value);
+          if (next === null) {
             broken = { status: 'unknown', detail: 'a tag object could not be read' };
           } else {
-            target = { sha: next.sha, type: next.type };
+            target = next;
           }
         }
       }

@@ -65,8 +65,26 @@ describe('the npm check', () => {
     const nonString = await run(withChange(happy(), URLS.npm, (value) => ({ ...value, dist: { ...(value.dist as object), shasum: 42 } })));
     expect(nonString.result.npm).toEqual({ status: 'unknown', detail: 'dist.shasum is not a string' });
 
-    const integrity = await run(withChange(happy(), URLS.npm, (value) => ({ ...value, dist: { ...(value.dist as object), integrity: null } })));
+    const integrity = await run(withChange(happy(), URLS.npm, (value) => ({ ...value, dist: { ...(value.dist as object), integrity: undefined } })));
     expect(integrity.result.npm).toEqual({ status: 'missing', detail: 'the npm record has no dist.integrity' });
+  });
+
+  test('a null dist, or a null checksum, is unknown: present but not the right type', async () => {
+    const nullDist = await run(withChange(happy(), URLS.npm, (value) => ({ ...value, dist: null })));
+    expect(nullDist.result.npm).toEqual({ status: 'unknown', detail: "the npm record's dist is not an object" });
+
+    const nullShasum = await run(withChange(happy(), URLS.npm, (value) => ({ ...value, dist: { ...(value.dist as object), shasum: null } })));
+    expect(nullShasum.result.npm).toEqual({ status: 'unknown', detail: 'dist.shasum is not a string' });
+
+    const nullIntegrity = await run(withChange(happy(), URLS.npm, (value) => ({ ...value, dist: { ...(value.dist as object), integrity: null } })));
+    expect(nullIntegrity.result.npm).toEqual({ status: 'unknown', detail: 'dist.integrity is not a string' });
+  });
+
+  test('every checksum field is examined: unknown beats missing across fields', async () => {
+    // An absent shasum is missing, but the numeric integrity is present and malformed, and
+    // unknown beats missing — deciding on the first field would report the wrong status.
+    const { result } = await run(withChange(happy(), URLS.npm, () => ({ ...fixture('npm-version.json'), dist: { integrity: 42 } })));
+    expect(result.npm).toEqual({ status: 'unknown', detail: 'dist.integrity is not a string' });
   });
 
   test('attestations: an empty array or no provenance entry is missing', async () => {
@@ -135,7 +153,7 @@ describe('the tag check', () => {
   });
 
   test('an annotated tag resolves through four tag objects', async () => {
-    const shas = ['bbbb', 'cccc', 'dddd', 'eeee'].map((letter) => letter.repeat(40));
+    const shas = ['b', 'c', 'd', 'e'].map((letter) => letter.repeat(40));
     const answers = withChange(happy(), URLS.ref, () => fixture('github-tag-ref-annotated.json'));
     const chain = [TAG_OBJECT, ...shas];
     for (let index = 0; index < 4; index++) {
@@ -151,7 +169,7 @@ describe('the tag check', () => {
   });
 
   test('a fifth required hop is unknown, and is not requested', async () => {
-    const shas = ['bbbb', 'cccc', 'dddd', 'eeee', 'ffff'].map((letter) => letter.repeat(40));
+    const shas = ['b', 'c', 'd', 'e', 'f'].map((letter) => letter.repeat(40));
     const answers = withChange(happy(), URLS.ref, () => fixture('github-tag-ref-annotated.json'));
     const chain = [TAG_OBJECT, ...shas];
     for (let index = 0; index < 4; index++) {
@@ -170,6 +188,27 @@ describe('the tag check', () => {
     })));
     expect(result.tag).toEqual({ status: 'missing', detail: 'the tag does not resolve to a commit' });
     expect(requested).not.toContain(URLS.compare);
+  });
+
+  test('an empty, non-hex or wrong-length tag SHA is unknown, and no compare request is formed', async () => {
+    for (const sha of ['', 'xyz123', COMMIT.slice(0, 39), 'A'.repeat(40)]) {
+      const { result, requested } = await run(withChange(happy(), URLS.ref, (value) => ({
+        ...value,
+        object: { ...(value.object as object), sha },
+      })));
+      expect(result.tag).toEqual({ status: 'unknown', detail: 'the tag could not be read' });
+      expect(requested.filter((url) => url.includes('/compare/'))).toEqual([]);
+    }
+  });
+
+  test('an empty or malformed SHA in an annotated tag object is unknown, and no compare is requested', async () => {
+    for (const sha of ['', 'not-a-sha']) {
+      const answers = withChange(happy(), URLS.ref, () => fixture('github-tag-ref-annotated.json'));
+      answers.set(URLS.tagObject, json(tagObject(TAG_OBJECT, sha, 'commit')));
+      const { result, requested } = await run(answers);
+      expect(result.tag).toEqual({ status: 'unknown', detail: 'a tag object could not be read' });
+      expect(requested.filter((url) => url.includes('/compare/'))).toEqual([]);
+    }
   });
 
   test('a 404 on the ref is missing, and no downstream tag read is requested', async () => {
@@ -361,7 +400,7 @@ describe('the network contract', () => {
   });
 
   test('a 400, a redirect and a body over the limit are not retried', async () => {
-    for (const failure of [json({}, 400), json({}, 302), { kind: 'too-large' } as const]) {
+    for (const failure of [json({}, 400), json({}, 302), { kind: 'too-large', status: 200 } as const]) {
       const answers = happy();
       answers.set(URLS.npm, [failure, json(fixture('npm-version.json'))]);
       const { result, requested } = await run(answers);
@@ -370,10 +409,33 @@ describe('the network contract', () => {
     }
   });
 
+  test('a retryable status with an oversized body is still retried: exactly two attempts, then unknown', async () => {
+    for (const status of [408, 429, 503]) {
+      const answers = happy();
+      answers.set(URLS.npm, [{ kind: 'too-large', status }, json(fixture('npm-version.json'))]);
+      const { result, requested } = await run(answers);
+      expect(result.npm.status).toBe('pass');
+      expect(requested.filter((url) => url === URLS.npm).length).toBe(2);
+    }
+    const twice = happy();
+    twice.set(URLS.npm, [{ kind: 'too-large', status: 503 }, { kind: 'too-large', status: 503 }]);
+    const { result, requested } = await run(twice);
+    expect(result.npm.status).toBe('unknown');
+    expect(requested.filter((url) => url === URLS.npm).length).toBe(2);
+  });
+
+  test('an undecodable body is unknown and not retried', async () => {
+    const answers = happy();
+    answers.set(URLS.npm, [{ kind: 'undecodable' }, json(fixture('npm-version.json'))]);
+    const { result, requested } = await run(answers);
+    expect(result.npm.status).toBe('unknown');
+    expect(requested.filter((url) => url === URLS.npm).length).toBe(1);
+  });
+
   test('the maximal run stays inside the caps: eleven reads, twenty-two attempts', async () => {
     // Trusted publishing and a chain of four tag objects: every endpoint read there is, each
     // answered 500 then 200, so every read costs both its attempts.
-    const shas = ['bbbb', 'cccc', 'dddd', 'eeee'].map((letter) => letter.repeat(40));
+    const shas = ['b', 'c', 'd', 'e'].map((letter) => letter.repeat(40));
     const chain = [TAG_OBJECT, ...shas];
     const urls = [
       URLS.npm, URLS.attest, URLS.repo, URLS.ref,

@@ -168,9 +168,15 @@ describe('the production wiring', () => {
     expect(seen?.signal).toBeInstanceOf(AbortSignal);
   });
 
-  test('a body over one megabyte decoded is the size-limit failure', async () => {
+  test('a body over one megabyte decoded is the size-limit failure, with the response status', async () => {
     globalThis.fetch = (() => Promise.resolve(new Response('x'.repeat(BODY_LIMIT + 1), { status: 200 }))) as unknown as typeof fetch;
-    expect(await realFetch('https://registry.npmjs.org/material/3.0.2')).toEqual({ kind: 'too-large' });
+    expect(await realFetch('https://registry.npmjs.org/material/3.0.2')).toEqual({ kind: 'too-large', status: 200 });
+  });
+
+  test('a body that is not valid UTF-8 is the undecodable failure, not repaired', async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(new Response(new Uint8Array([0x7b, 0x22, 0xff, 0x22, 0x7d]), { status: 200 }))) as unknown as typeof fetch;
+    expect(await realFetch('https://registry.npmjs.org/material/3.0.2')).toEqual({ kind: 'undecodable' });
   });
 });
 
@@ -205,6 +211,18 @@ describe('the usage and configuration errors', () => {
     expect(code).toBe(64);
     expect(io.out).toBe('{"error":{"code":"usage","message":"the version \\"v3.0.2\\" is not a Semantic Versioning 2.0.0 version"}}\n');
     expect(io.err).toBe('');
+  });
+
+  test('--json decides the reporting wherever it appears, even after an unknown option', async () => {
+    for (const argv of [
+      ['check', 'material@3.0.2', '--bogus', '--json'],
+      ['--json', 'check', 'material@3.0.2', '--bogus'],
+    ]) {
+      const { code, io } = await run(argv, happy());
+      expect({ argv, code }).toEqual({ argv, code: 64 });
+      expect(io.out).toBe('{"error":{"code":"usage","message":"unknown option --bogus"}}\n');
+      expect(io.err).toBe('');
+    }
   });
 
   test('the precedence: an invalid argument is usage even when the file is invalid', async () => {

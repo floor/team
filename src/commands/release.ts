@@ -24,9 +24,12 @@ const release: Command = (argv, io) => runRelease(argv, io, realFetch);
 export default release;
 
 export async function runRelease(argv: string[], io: Io, fetcher: Fetch): Promise<number> {
+  // All arguments are read before deciding how to report: `--json` decides the shape of even an
+  // argument error, wherever it appears — including after an unknown option, which readArgs
+  // reports before ever reaching the flag.
+  const json = argv.includes('--json');
   const args = readArgs(argv, [], ['json']);
   const sub = args.rest[0];
-  const json = args.flags.has('json');
   const fail = (code: 'usage' | 'configuration', message: string): number => {
     if (json) io.stdout(`${JSON.stringify({ error: { code, message } })}\n`);
     else io.stderr(`team release: ${message}\n`);

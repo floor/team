@@ -5,12 +5,16 @@
 // with the checks (src/release/checks.ts); here is only one attempt, with its timeout and its
 // size limit.
 
-/** One HTTP attempt: the status and the decoded, size-limited body, or why no response was read. */
+/** One HTTP attempt: the status and the decoded, size-limited body, or why no response was read.
+ *  `too-large` keeps the response's status: a 408, 429 or 5xx counts for the retry rule even when
+ *  its body exceeded the limit. `undecodable` is a body that is not valid UTF-8 — it is never
+ *  repaired into a replacement character, and it is not retried. */
 export type Attempt =
   | { kind: 'http'; status: number; body: string }
   | { kind: 'timeout' }
   | { kind: 'transport' }
-  | { kind: 'too-large' };
+  | { kind: 'too-large'; status: number }
+  | { kind: 'undecodable' };
 
 export type Fetch = (url: string) => Promise<Attempt>;
 
@@ -40,7 +44,7 @@ export const realFetch: Fetch = async (url) => {
       size += value.byteLength;
       if (size > BODY_LIMIT) {
         await reader.cancel();
-        return { kind: 'too-large' };
+        return { kind: 'too-large', status: response.status };
       }
       chunks.push(value);
     }
@@ -50,7 +54,14 @@ export const realFetch: Fetch = async (url) => {
       bytes.set(chunk, at);
       at += chunk.byteLength;
     }
-    return { kind: 'http', status: response.status, body: new TextDecoder().decode(bytes) };
+    // Fatal: a response that is not valid UTF-8 is not repaired into U+FFFD and read anyway.
+    let bodyText: string;
+    try {
+      bodyText = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      return { kind: 'undecodable' };
+    }
+    return { kind: 'http', status: response.status, body: bodyText };
   } catch (error) {
     return why(error);
   }

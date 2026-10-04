@@ -18,8 +18,9 @@ splits at the final `@`: `@scope/name@1.2.3`.
 Reads the team file's `releases` section, then public records over HTTPS only: the npm registry's
 version and attestation endpoints, and GitHub's repository, tag, compare, release and contents
 endpoints. Every read is credential-free — no token, no header, no credential helper, no local git
-fetch. It writes nothing: no state, no baseline, no cache, no approval. A failed read is retried
-once; a run makes at most eleven endpoint reads.
+fetch. It writes nothing: no state, no baseline, no cache, no approval. A timeout, a transport
+failure, or a 408, 429 or 5xx response is retried exactly once; other failures are not retried. A
+run makes at most eleven endpoint reads.
 
 ## Who may run it
 
