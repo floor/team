@@ -1,4 +1,5 @@
 import { readArgs } from '../args.ts';
+import { watchInForce } from '../approve/approval.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
 import { homedir } from 'node:os';
@@ -25,6 +26,8 @@ export type WatchSources = {
   live(session: string, team: TeamFile): Live | null;
   machine(root: string): Machine;
   approval(team: TeamFile, root: string): string[] | null;
+  // The watch values in force: the approved ones, or the defaults when nothing is approved.
+  watchInForce(team: TeamFile, root: string): TeamFile['watch'];
   // The operator's screen, read again just before a nudge is typed.
   screen(pane: string, session: string): string | null;
   // The operator's status, asked again with its screen.
@@ -65,6 +68,7 @@ export const realWatchSources: WatchSources = {
   live: realSources.live,
   machine: readMachine,
   approval: realSources.approval,
+  watchInForce: (team, root) => watchInForce(team, root),
   screen: (pane, session) => paneRead(pane, 14, session),
   status: agentStatus,
   typeText,
@@ -122,7 +126,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
   const told = new Set<string>();
   let notice: string | undefined;
   let silent = false;
-  say(`watching the session "${session}" every ${first.team.watch.interval}s${args.flags.has('no-nudge') ? ', without nudges' : ''}`, false);
+  say(`watching the session "${session}" every ${sources.watchInForce(first.team, first.root).interval}s${args.flags.has('no-nudge') ? ', without nudges' : ''}`, false);
   try {
     for (;;) {
       // The file is read again on every pass, so a seat parked or stopped since is seen.
@@ -135,6 +139,9 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         if (problem) say(problem, true);
       }
 
+      // The values in force, read with the file: until the owner approves an edit to `watch`,
+      // the watch keeps running with what was approved, or with the defaults.
+      const inForce = sources.watchInForce(team, root);
       const live = sources.live(session, team);
       if (!live) {
         if (!silent) say('herdr doesn\'t answer; the watch keeps trying', true);
@@ -143,7 +150,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         silent = false;
         noteWorked(dir, session, live);
         const state = readState(dir).sessions[session] ?? emptySession();
-        const result = pass(team, state, live, sources.machine(root), sources.now().getTime(), memory, sources.approval(team, root));
+        const result = pass(team, state, live, sources.machine(root), sources.now().getTime(), memory, sources.approval(team, root), inForce);
         for (const report of result.reports) say(report.text, true);
         if (result.nudge) {
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);
@@ -153,7 +160,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         await closeEnded({ team, root, dir, session, live, sources, say, io, told });
       }
       beat();
-      if (!(await sources.wait(team.watch.interval))) break;
+      if (!(await sources.wait(inForce.interval))) break;
     }
   } finally {
     updateState(dir, (state) => {

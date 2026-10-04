@@ -93,9 +93,19 @@ describe('an approved file', () => {
     expect(changed(edit)).toEqual([{ kind: 'section', name }]);
   });
 
-  test('a change to the watch thresholds or the layout needs none', () => {
-    expect(changed((file) => (file.watch = { interval: '60s' }))).toEqual([]);
+  test('a change to the watch thresholds needs one, and a change to the layout needs none', () => {
+    expect(changed((file) => (file.watch = { interval: '60s' }))).toEqual([{ kind: 'section', name: 'watch' }]);
     expect(changed((file) => (seat(file).line = 90))).toEqual([]);
+  });
+
+  test('turning a watch check off is the finer line inside the section, not a threshold change', () => {
+    expect(changed((file) => ((file.watch as { checks?: string[] }).checks = ['disk']))).toEqual([
+      { kind: 'section', name: 'watch.checks' },
+    ]);
+    expect(changed((file) => (file.watch = { interval: '60s', checks: ['disk'] }))).toEqual([
+      { kind: 'section', name: 'watch' },
+      { kind: 'section', name: 'watch.checks' },
+    ]);
   });
 
   test('a changed launch line needs a new approval', () => {

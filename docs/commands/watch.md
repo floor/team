@@ -251,6 +251,11 @@ $ team watch ; echo "exit $?"
 exit 0
 ```
 
+The watch's own timings are the owner's too: `interval`, `idle_first`, `idle_repeat`, `team_idle`,
+`nudge_wait` and `unsent_after` are approved with the file, and an edit to one of them changes
+nothing until the owner approves it — the passes keep running with the values of the approved copy,
+or with the defaults when nothing was approved, and the difference is reported.
+
 A check the team doesn't want is turned off in `watch.checks` — a section only the owner changes,
 so it is approved like the rest of them. The machine below sits at 8% free memory, and this file
 turns that one report off — but the edit is not approved yet, so nothing is turned off: the report

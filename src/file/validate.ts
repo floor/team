@@ -469,13 +469,31 @@ function worktreePathProblem(path: string, project: string, trust: string[]): st
   return null;
 }
 
+/**
+ * The watch values a file that sets none runs with — and, since the section is the owner's, the
+ * values a file runs with until the owner approves what it sets instead.
+ */
+export function defaultWatch(): TeamFile['watch'] {
+  return {
+    interval: 120,
+    idleFirst: 600,
+    idleRepeat: 1200,
+    teamIdle: 600,
+    nudgeWait: 600,
+    unsentAfter: 60,
+    quotaMarks: [50, 75, 90],
+    checks: [],
+  };
+}
+
 function readWatch(entry: YamlEntry | undefined, check: Check): { watch: TeamFile['watch']; legacyMarks: boolean } {
   const fields = check.fields(entry?.value, 'watch', [
     'interval', 'idle_first', 'idle_repeat', 'team_idle', 'nudge_wait', 'unsent_after', 'quota_marks', 'checks',
   ]);
   const time = (name: string, fallback: number) =>
     check.measure(fields.get(name), `watch.${name}`, DURATION, '120s or 10m') ?? fallback;
-  let quotaMarks = [50, 75, 90];
+  const base = defaultWatch();
+  let quotaMarks = base.quotaMarks;
   const marks = fields.get('quota_marks');
   if (marks) {
     const node = marks.value;
@@ -487,12 +505,12 @@ function readWatch(entry: YamlEntry | undefined, check: Check): { watch: TeamFil
   return {
     legacyMarks: Boolean(marks),
     watch: {
-      interval: time('interval', 120),
-      idleFirst: time('idle_first', 600),
-      idleRepeat: time('idle_repeat', 1200),
-      teamIdle: time('team_idle', 600),
-      nudgeWait: time('nudge_wait', 600),
-      unsentAfter: time('unsent_after', 60),
+      interval: time('interval', base.interval),
+      idleFirst: time('idle_first', base.idleFirst),
+      idleRepeat: time('idle_repeat', base.idleRepeat),
+      teamIdle: time('team_idle', base.teamIdle),
+      nudgeWait: time('nudge_wait', base.nudgeWait),
+      unsentAfter: time('unsent_after', base.unsentAfter),
       quotaMarks,
       checks: readChecks(fields.get('checks'), check),
     },

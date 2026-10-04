@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a reading is stored. Unknown and stale are shown as such. A row inside its reserve says so even
   when the figure is still fresh.
 
+### Changed
+
+- The whole `watch` section is an owner section, its timings included: an edit to `interval`,
+  `idle_first`, `idle_repeat`, `team_idle`, `nudge_wait` or `unsent_after` needs a new approval, and
+  until the owner approves it the watch runs with the values of the approved copy — or with the
+  defaults when nothing was approved. `watch.checks` keeps its own finer line inside the section.
+  An approval recorded before this change stays valid while the section is unchanged; a timing a
+  seat changed without an approval shows its difference at the next pass, for the owner to settle.
+
 ### Fixed
 
 - Claude Code's permission stage is the dialog itself: the question with its "Esc to cancel · Tab to amend"
