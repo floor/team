@@ -6,11 +6,16 @@ import { approvalDifferences, approvalOf } from '../src/approve/approval.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import { storePath, writeApproval } from '../src/store/store.ts';
 
+// The team files as they were at tag v0.1.2, copied into fixtures/legacy/v0.1.2 and never edited:
+// the digests below are pinned to those copies, so nothing here reads a live team file and an edit
+// to the repository's own file — adding a seat is a normal edit — cannot redden this test.
+const read = (file: string) => readFileSync(join(import.meta.dir, 'fixtures/legacy/v0.1.2', file), 'utf8');
+
 // Seat digests `approvalOf` wrote at tag v0.1.2 (89d8b2d). An omitted label resolved to the
 // seat's name there, and to the model and version here. The section digests of these files are
 // the same on both.
 const V012 = {
-  '.github/team.yaml': {
+  'team.yaml': {
     'claude-coordinator': 'de5581c5f281a4d3e622009c9867d8344a685a051c3a7c49ebaacf978eca0d1b',
     'claude-implementer': '6d04f16e4f0f134566aadfd8190683f69d27df327536f26fd59e099c2794efd1',
     'claude-reviewer': '7742475ac054d36ed892cbb547a16bfde5c92de576ec52fba0159b73e544911a',
@@ -21,7 +26,7 @@ const V012 = {
     'gemini-implementer': '0f8689ca5183d46f1058bd543d3fec42f2ecc2edb0ae3c1b586c4c22bbec3620',
     'claude-operator': 'd40e0b34239faf76493211dabbfa6924e69dcca78fd67c9b13eed01ae07b246e',
   },
-  'test/fixtures/example.yaml': {
+  'example.yaml': {
     'claude-coordinator-acme': '0392b805a5e9684f780818d2587a4736d70ae18ebaf2c2172a63745af26023d8',
     'codex-acme': '8814db0b3428bda820ceb5fe53e600c5c508d1001076070ec5ec27e4db3a787d',
     'deepseek-acme': '02fd0b8164a8eda7197dd7a810d247e2116b42e8b11eb676b710748856211f8c',
@@ -29,7 +34,7 @@ const V012 = {
     'grok-acme': 'b534081b5aeb30e57c7fda3a1a1ae0389e924a2b68e9995f17c6fd0c74852c9b',
   },
   // v0.1.1 hashed the same name-title, and left `parked` and `stopped` out of the digest.
-  'v0.1.1:.github/team.yaml': {
+  'v0.1.1:team.yaml': {
     'claude-coordinator': 'a5cbd59ea101b537555a1daa3d25f465a51c30bee840a9a57ac44e198ecd549b',
     'claude-implementer': '67699b1dbb8368a84036f3eb828b2ec26ceedf9a637b96dadbf344a0b1b2cd49',
     'claude-reviewer': '91b5620988519df360972082d6e5a4487f53b670d49b26b86f97528fc5637559',
@@ -40,14 +45,14 @@ const V012 = {
     'gemini-implementer': '52d6765ff70e80bb1a2aba89806e18c0c1597ff5baaa551f1958e403c0449575',
     'claude-operator': '05fd042a4ed49afccc6511eac7d89a285efa214b0800a2c9497fc645128b26b2',
   },
-  'v0.1.1:test/fixtures/example.yaml': {
+  'v0.1.1:example.yaml': {
     'claude-coordinator-acme': 'ed61e47ddccf9d75216fb82777d0d7389e2d6479288e873a535ec9fea6668d4a',
     'codex-acme': '5d525672dbc2b243fe75623ea3151f3eac867a74dfc46d118df033346aae644c',
     'deepseek-acme': '4d2a2a1cfe2c1b5638cd11c1fed57c56beb42ad59d355eb265c867e39afda963',
     'deepseek-acme-2': 'c7f7f236396e45b869f569d23f7af838bc069135d19b3b2b234685779fb39a41',
     'grok-acme': '8113cb068aa08d6a309f016be782ca11dd7aeedf543a8fda3bdc0a2145fcce00',
   },
-  'examples/team.yaml': {
+  'examples-team.yaml': {
     'claude-keeper': '6231a2b2fe006bc7a5f12cea59f7a7e6262cab9d0fabf6a7dae9c158b35aa62c',
     'claude-signal': 'cde177c72e839a1d8493afc3cbb4288f651241964d7a47bae63f05de18844939',
     'codex-beacon': '0c1e1ae08fd04d9a6edfe7c67088f5c2cd872f0dbf2d3c1831f5713b2bfb1a7d',
@@ -81,52 +86,86 @@ function approveAsV012(text: string, seats: Record<string, string>, file: string
 
 describe('an approval written by v0.1.2', () => {
   test('a file that omits label, approved then, still matches', () => {
-    for (const path of ['.github/team.yaml', 'test/fixtures/example.yaml'] as const) {
-      const text = readFileSync(join(import.meta.dir, '..', path), 'utf8');
-      approveAsV012(text, V012[path]);
+    for (const file of ['team.yaml', 'example.yaml'] as const) {
+      const text = read(file);
+      approveAsV012(text, V012[file]);
       expect(approvalDifferences(team(text), home, home)).toEqual([]);
     }
   });
 
   test('editing a seat model after that approval is drift for that seat', () => {
-    const github = readFileSync(join(import.meta.dir, '../.github/team.yaml'), 'utf8');
-    approveAsV012(github, V012['.github/team.yaml']);
-    const edited = github.replace('model: GLM', 'model: GLM Next');
+    const one = read('team.yaml');
+    approveAsV012(one, V012['team.yaml']);
+    const edited = one.replace('model: GLM', 'model: GLM Next');
     expect(approvalDifferences(team(edited), home, home)).toEqual(['seat glm-implementer changed']);
 
-    const example = readFileSync(join(import.meta.dir, 'fixtures/example.yaml'), 'utf8');
-    approveAsV012(example, V012['test/fixtures/example.yaml']);
-    const next = example.replace('model: Grok', 'model: Grok Next');
+    const two = read('example.yaml');
+    approveAsV012(two, V012['example.yaml']);
+    const next = two.replace('model: Grok', 'model: Grok Next');
     expect(approvalDifferences(team(next), home, home)).toEqual(['seat grok-acme changed']);
   });
 
   test('the same file approved by v0.1.1 still matches', () => {
-    for (const path of ['.github/team.yaml', 'test/fixtures/example.yaml'] as const) {
-      const text = readFileSync(join(import.meta.dir, '..', path), 'utf8');
-      approveAsV012(text, V012[`v0.1.1:${path}`]);
+    for (const file of ['team.yaml', 'example.yaml'] as const) {
+      const text = read(file);
+      approveAsV012(text, V012[`v0.1.1:${file}`]);
       expect(approvalDifferences(team(text), home, home)).toEqual([]);
     }
   });
 
   test('a file that already wrote its labels has no drift', () => {
-    const text = readFileSync(join(import.meta.dir, '../examples/team.yaml'), 'utf8');
-    approveAsV012(text, V012['examples/team.yaml']);
+    const text = read('examples-team.yaml');
+    approveAsV012(text, V012['examples-team.yaml']);
     expect(approvalDifferences(team(text), home, home)).toEqual([]);
   });
 
   test('an unreadable stored copy adopts nothing', () => {
-    const text = readFileSync(join(import.meta.dir, '../.github/team.yaml'), 'utf8');
-    approveAsV012(text, V012['.github/team.yaml'], 'not a team file\n');
+    const text = read('team.yaml');
+    approveAsV012(text, V012['team.yaml'], 'not a team file\n');
     const differences = approvalDifferences(team(text), home, home);
-    expect(differences).toEqual(Object.keys(V012['.github/team.yaml']).map((name) => `seat ${name} changed`));
+    expect(differences).toEqual(Object.keys(V012['team.yaml']).map((name) => `seat ${name} changed`));
   });
 
   test('a digest already in the new shape is left alone', () => {
-    const text = readFileSync(join(import.meta.dir, '../.github/team.yaml'), 'utf8');
+    const text = read('team.yaml');
     const parsed = team(text);
     writeApproval(storePath(parsed.project, home, home), { approval: approvalOf(parsed, home), file: text }, parsed.seats);
     expect(approvalDifferences(parsed, home, home)).toEqual([]);
     const edited = text.replace('model: GLM', 'model: GLM Next');
     expect(approvalDifferences(team(edited), home, home)).toEqual(['seat glm-implementer changed']);
+  });
+
+  // The point of the snapshots: the live file may gain a seat — that is a normal edit — and the
+  // legacy approval reports that seat as new and no other seat as drift. The ceiling moves with
+  // it: `limits.seats` defaults to the declared seats plus temporary, so a file that pins no
+  // limits reports the ceiling as changed too. That is the reader's behaviour for any such file,
+  // not something the snapshots change.
+  test('a live file that gained a seat reports that one seat as new and nothing else', () => {
+    const snapshot = read('team.yaml');
+    approveAsV012(snapshot, V012['team.yaml']);
+    const gained = snapshot + [
+      '',
+      '  - role: implementer',
+      '    name: kimi-implementer',
+      '    cli: claude-code',
+      '    vendor: moonshot',
+      '    model: Kimi K3',
+      '    version: "3.1"',
+      '    launch: claude',
+      '',
+    ].join('\n');
+    expect(approvalDifferences(team(gained), home, home)).toEqual([
+      '`limits` changed',
+      'seat kimi-implementer is not in the approved file',
+    ]);
+  });
+
+  // The suite no longer depends on the live files: not one of their paths may appear in this
+  // file's source. Built from parts so the assertion cannot match its own text.
+  test('this file reads no live team file', () => {
+    const source = readFileSync(import.meta.path, 'utf8');
+    for (const path of [['.github', '/', 'team.yaml'].join(''), ['examples', '/', 'team.yaml'].join(''), ['fixtures', '/', 'example.yaml'].join('')]) {
+      expect(source.includes(path)).toBe(false);
+    }
   });
 });

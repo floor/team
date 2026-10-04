@@ -1,0 +1,84 @@
+# beacon's team, in format 1: a fictional example. Every project, seat, model and
+# command in it is invented; nothing of a real roster is here.
+
+format: 1
+project: beacon
+coordinator: claude-keeper    # dispatches work
+operator: claude-signal       # receives the watch's reports and nudges
+
+identity:
+  signature:
+    commits:
+      position: trailer       # last-line | trailer | anywhere
+      exempt: [merge]
+    pull_requests:
+      position: last-line
+      template: "**Agent:** {display} · {role}"
+
+workspace:
+  mode: shared                # every seat works in the project root
+
+machine:                      # checked before each seat is launched, and by the watch
+  load_start: 2.0             # 1-minute load per core above which `up` and `add` refuse
+  load_max: 8.0               # per core, above which the watch reports
+  memory_start: 30%           # free memory below which `up` and `add` refuse
+  memory_min: 10%             # below which the watch reports
+  disk_min: 20GB              # free on the project's volume; both refuse and report
+
+seats:
+  - role: coordinator
+    name: claude-keeper
+    label: coordinator
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Nova
+    version: "2"
+    launch: claude
+
+  - role: operator
+    name: claude-signal
+    label: operator
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Nova
+    version: "2"
+    launch: claude
+
+  - role: implementer
+    name: codex-beacon
+    label: codex
+    cli: codex
+    vendor: openai
+    account: openai-team       # the seat's account, when one vendor has two; absent, its vendor
+    model: GPT Comet
+    version: "3"
+    display: GPT-3 Comet       # the vendor's spelling, for the signature
+    launch: codex -m gpt-comet-3
+    parked: true               # running, and not reported while idle
+
+  - role: implementer
+    name: cursor-beacon
+    label: cursor
+    cli: cursor
+    vendor: meridian
+    model: Meridian
+    version: "1"
+    launch: cursor-agent       # the model is chosen inside Cursor
+
+  # three seats from one entry: nimbus-beacon, nimbus-beacon-2 and -3
+  - role: implementer
+    name: nimbus-beacon
+    label: nimbus
+    cli: claude-code           # the vendor's model, run by Claude Code
+    vendor: nimbus
+    model: Nimbus
+    version: "1"
+    launch: nimbus-claude      # a launcher on the PATH, holding the account's key and endpoint
+    count: 3
+
+budgets:                      # the owner's: what is budgeted, and how long a figure stays fresh
+  accounts:
+    openai-team:              # the account codex-beacon spends
+      kind: subscription
+      reserve: 20%            # refuse a launch on a figure inside it
+      sources: [status_line]  # Codex's status line carries its weekly figure
