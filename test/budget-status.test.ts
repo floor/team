@@ -28,6 +28,7 @@ function reading(over: Partial<Seen> = {}): Seen {
     changedAt: now - minute,
     resetsAt: now + 44 * minute,
     seat: 'one',
+    source: 'status_line',
     confirmed: true,
     ...over,
   };

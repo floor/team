@@ -1,7 +1,7 @@
 // The budgets table `status` prints. One row per account and window.
 import type { TeamFile } from '../file/types.ts';
 import type { WindowName } from '../profiles/quota.ts';
-import { verdict, type Seen } from './readings.ts';
+import { checkOf, countedFor, screenOf, type ReadingSource, type Seen } from './readings.ts';
 
 export type BudgetState = 'fresh' | 'unconfirmed' | 'stale' | 'refusing' | 'unknown';
 
@@ -13,7 +13,7 @@ export type BudgetRow = {
   resetsIn: string | null;
   seat: string | null;
   age: string | null;
-  source: 'status_line' | null;
+  source: ReadingSource | null;
   state: BudgetState;
   /** True when a subscription's left figure is at or inside its reserve. */
   inside: boolean;
@@ -40,7 +40,11 @@ export function budgetTable(budgets: TeamFile['budgets'], list: readonly Seen[],
     const window = group[0]?.window ?? null;
     named.add(account);
     const reserve = reserveOf(budgets, account);
-    rows.push(rowOf(account, window, verdict(group, now, staleAfterMs, reserve), now, reserve));
+    // The window's reading from the sources the account names, in order (§ 3, § 5).
+    const result = countedFor(sourcesOf(budgets, account), screenOf(group), checkOf(group), now, staleAfterMs, reserve);
+    rows.push(result.kind === 'unknown'
+      ? { ...blank(account, reserve), window }
+      : rowOf(result, now, staleAfterMs, reserve));
   }
   for (const account of Object.keys(budgets.accounts)) {
     if (!named.has(account)) rows.push(blank(account, reserveOf(budgets, account)));
@@ -59,31 +63,41 @@ export function budgetLine(row: BudgetRow): string {
     return [row.account, row.window, 'unknown'].filter((part) => part).join('  ');
   }
   const reset = row.resetsIn === null ? 'resets unknown' : `resets in ${row.resetsIn}`;
-  const from = row.source === 'status_line' ? 'status line' : 'unknown source';
+  const from = row.source === 'status_line' ? 'status line' : row.source === 'check' ? 'check' : 'unknown source';
+  const when = row.source === 'check' ? 'read' : 'changed';
   const state = row.inside && row.reserve !== null ? `${row.state}, inside reserve ${row.reserve}%` : row.state;
-  return `${row.account}  ${row.window}  left ${row.left}%  used ${row.used}%  ${reset}  ${row.seat}  changed ${row.age} ago  ${from}  ${state}`;
+  return `${row.account}  ${row.window}  left ${row.left}%  used ${row.used}%  ${reset}  ${row.seat ?? '-'}  ${when} ${row.age} ago  ${from}  ${state}`;
+}
+
+/** The sources the account's figures are read from, in order: a status line when the file is silent. */
+function sourcesOf(budgets: TeamFile['budgets'], account: string): readonly ReadingSource[] {
+  return budgets.accounts[account]?.sources ?? ['status_line'];
 }
 
 function rowOf(
-  account: string,
-  window: WindowName | null,
-  result: ReturnType<typeof verdict>,
+  result: { kind: 'counted' | 'unconfirmed'; reading: Seen },
   now: number,
+  staleAfterMs: number,
   reserve: number | null,
 ): BudgetRow {
-  if (result.kind === 'unknown') return { ...blank(account, reserve), window };
   const reading = result.reading;
+  const inside = reserve !== null && reading.left <= reserve;
+  const state: BudgetState = result.kind === 'unconfirmed'
+    ? 'unconfirmed'
+    : now - reading.changedAt < staleAfterMs
+      ? 'fresh'
+      : inside && reading.resetsAt !== null ? 'refusing' : 'stale';
   return {
-    account,
+    account: reading.account,
     window: reading.window,
     left: reading.left,
     used: reading.used,
     resetsIn: reading.resetsAt === null ? null : span(reading.resetsAt - now),
     seat: reading.seat,
     age: span(now - reading.changedAt),
-    source: 'status_line',
-    state: result.kind,
-    inside: reserve !== null && reading.left <= reserve,
+    source: reading.source,
+    state,
+    inside,
     reserve,
   };
 }

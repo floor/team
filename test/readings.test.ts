@@ -2,8 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { loadReadings, loadSpendReadings, observe, saveReadings, saveSpendReadings, verdict, type Seen } from '../src/budgets/readings.ts';
+import { loadReadings, loadSpendReadings, observe, observeCheck, saveReadings, saveSpendReadings, verdict, type Seen } from '../src/budgets/readings.ts';
 import type { QuotaFigure } from '../src/profiles/quota.ts';
+import { updateState } from '../src/state.ts';
 
 const minute = 60 * 1000;
 const stale = 30 * minute;
@@ -19,6 +20,7 @@ function seen(over: Partial<Seen> & Pick<Seen, 'changedAt' | 'seat' | 'confirmed
     left: 40,
     used: 60,
     resetsAt: null,
+    source: 'status_line',
     ...over,
   };
 }
@@ -158,6 +160,61 @@ describe('spend readings', () => {
       // Nothing read, nothing written.
       saveSpendReadings(dir, 'other', []);
       expect(loadSpendReadings(dir, 'other')).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('a check reading in the same slot', () => {
+  const at = 1_700_000_000_000;
+
+  test('is folded from a check window: confirmed at first sight, with no seat', () => {
+    expect(observeCheck([], 'openai', [{ window: 'weekly', left: 5, used: 95, at, resetsAt: at + 3_600_000 }])).toEqual([
+      { account: 'openai', window: 'weekly', left: 5, used: 95, changedAt: at, resetsAt: at + 3_600_000, seat: null, source: 'check', confirmed: true },
+    ]);
+  });
+
+  test('replaces the last reading of its window and leaves the screen readings alone', () => {
+    const screen = observe([], figure(40), 'one', at);
+    const first = observeCheck(screen, 'openai', [{ window: 'weekly', left: 5, used: 95, at, resetsAt: null }]);
+    const again = observeCheck(first, 'openai', [{ window: 'weekly', left: 8, used: 92, at: at + minute, resetsAt: null }]);
+    expect(again.filter((item) => item.source === 'check')).toEqual([
+      { account: 'openai', window: 'weekly', left: 8, used: 92, changedAt: at + minute, resetsAt: null, seat: null, source: 'check', confirmed: true },
+    ]);
+    expect(again.some((item) => item.source === 'status_line' && item.seat === 'one')).toBe(true);
+  });
+
+  test('survives the state file with its source, and one whose reset has passed does not', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
+    try {
+      saveReadings(dir, 'default', observeCheck([], 'openai', [{ window: 'weekly', left: 5, used: 95, at, resetsAt: at + 3_600_000 }]), at + minute);
+      expect(loadReadings(dir, 'default')).toEqual([
+        { account: 'openai', window: 'weekly', left: 5, used: 95, changedAt: at, resetsAt: at + 3_600_000, seat: null, source: 'check', confirmed: true },
+      ]);
+      saveReadings(dir, 'default', observeCheck([], 'openai', [{ window: 'weekly', left: 5, used: 95, at, resetsAt: at + 2 * minute }]), at + 3 * minute);
+      expect(loadReadings(dir, 'default')).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a stored reading from before sources were recorded is a status-line reading', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
+    try {
+      updateState(dir, (state) => {
+        state.sessions['default'] = {
+          seats: {},
+          worktrees: {},
+          budgets: {
+            'openai/weekly/one': {
+              account: 'openai', window: 'weekly', left: 39, used: 61,
+              changedAt: new Date(at).toISOString(), resetsAt: null, seat: 'one', confirmed: true,
+            },
+          },
+        };
+      });
+      expect(loadReadings(dir, 'default').map((item) => item.source)).toEqual(['status_line']);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
