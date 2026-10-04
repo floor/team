@@ -44,6 +44,11 @@ The model is the seat's `display` when the running model matches the file, and
 `<model> <version> (file: <display>)` when it doesn't. A screen that doesn't show the model is a
 `note` rather than a difference: `unread` is never wrong.
 
+An approval in force is a note of its own, `approval #1 (2026-10-04), key fe21ef6293de`: the
+signing's number, its date and the key's fingerprint — the first twelve hex digits of the key's
+public half. An owner who noted the fingerprint sees a *replaced* key; a process that only reads
+it changes nothing `team` shows, and `team` computes what it shows.
+
 ## Budgets
 
 When the file names an account, or a reading is stored in the state, a `budgets:` table follows

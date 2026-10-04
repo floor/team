@@ -49,8 +49,9 @@ Nothing at all changed is said plainly:
 
 Then the ceilings the approval would fix — `3 seats at most, 2 temporary` — and the
 seat names, and then the question. After the seat names comes the signing's number for this
-project on this machine, with the date of the last one: `approval #4 for this project; the last
-one was on 2026-10-04.` The seat ceiling defaults to the seats the file declares plus the
+project on this machine, with the date of the last one and the key's fingerprint: `approval #4
+for this project; the last one was on 2026-10-04; key fe21ef6293de.` The seat ceiling defaults
+to the seats the file declares plus the
 temporary ones, so adding a seat widens it, and that shows up as `limits` changed too. What needs a
 new approval is a change to an owner section
 (`trust`, `limits`, `machine`, `rules`, `identity`, `workspace`, `coordinator`, `operator`,
@@ -97,16 +98,40 @@ one snapshot; a record that was changed after approval, was signed for another r
 than the counter says is not an approval, and the command that needs one refuses, naming the case
 and the repair.
 
-Each signing moves the project's counter, and the line after the seat names names it: `approval #4
-for this project; the last one was on 2026-10-04.` A signing the owner never made is visible there,
-and `team doctor` names the current number and its date. An amendment — `add` starting a stopped
-seat, `remove --keep` parking one — is a signing too, and moves the counter like an approval.
+The root the record names is the project folder's real path — symlinks resolved by the
+filesystem, a trailing slash gone — and the store's name carries its hash, so two spellings of
+one folder are one project. Nothing is normalised silently: two Unicode spellings the platform's
+own realpath keeps apart are two roots with two stores, and what the platform does with them is
+the platform's doing, not undone here.
 
-Approvals guard against mistakes, not against a hostile process running as the owner. A seat can
-read the key: this is evidence, not prevention — a record rewritten without the key is refused, and
-every signing shows up as a number the owner can check against her own memory. What stays out, by
-decision: the counter and the record can be rolled back together by a process that has the key, and
-a seat can replace `team` itself.
+The record's shape is strict, and checked whole before anything is built from it: a field this
+version does not know is refused naming its path (`"fingerprints.<name>"`,
+`"checks.<account>"`), and so is a missing or wrongly-typed one. A record that is not whole
+JSON, or breaks its shape anywhere, is refused with a line that says what is wrong — never a
+crash. A record that carries a signature or a generation but says `format: 1` is refused as
+contradictory, not read as legacy; the `format` field sits inside the signed bytes, so it cannot
+be flipped outside the signature.
+
+The key is written whole or not at all: a temporary file of mode 600 in the same folder, then
+linked into place — `link` never overwrites, so the first writer wins, and two first approvals
+that race end with the one key both then use. A key file that is torn, empty or not a team key
+is never regenerated over: every command that needs it refuses with the repair — restore it
+from a copy — because a new key would orphan every record already signed.
+
+Each signing moves the project's counter, and the line after the seat names names it, with the
+signing key's short fingerprint: `approval #4 for this project; the last one was on 2026-10-04;
+key fe21ef6293de.` The fingerprint is the first twelve hex digits of the key's public half;
+`team doctor` and `team status` show the same three — the number, its date, the key. An
+amendment — `add` starting a stopped seat, `remove --keep` parking one — is a signing too, and
+moves the counter like an approval.
+
+What that is worth, exactly. The signature refuses a record changed by something that does not
+use the key — a hand edit to the store, a record carried over from another project. A process
+that can read the key can re-sign any record at the number it already had, and nothing `team`
+shows will differ; the counter says what `team` wrote, never every signing that ever happened.
+What a *replaced* key does change is the fingerprint: an owner who noted it sees the swap. That
+is evidence, not prevention — `team` computes the fingerprint, and a seat can replace `team`
+itself.
 
 A record written by an earlier `team`, before records were signed, is not trusted. The commands
 that need an approval in force (`up`, `add`, `worktree`, `init --restore`) refuse with `approved

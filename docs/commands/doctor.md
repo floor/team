@@ -67,6 +67,10 @@ A seat the file stops is left out of the CLI findings. The last line counts them
     team doctor: nothing missing, 1 warning
     team doctor: 2 missing, 0 warnings: `up` and `add` refuse until the missing ones are done
 
+The key's fingerprint is the first twelve hex digits of the signing key's public half. What it
+proves is narrow: an owner who noted it sees a *replaced* key — a process that only reads the
+key changes nothing `team` shows. `team` computes it, and a seat could also replace `team`.
+
 The budget checks run from the approved `budgets` copy, the way the watch runs them: the approved
 command's file, hashed again before it runs, with the watch's timeout. A check that was changed
 after its approval never runs — the warning above says so. One line per account that names a
