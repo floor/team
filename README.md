@@ -5,12 +5,12 @@ Set up, change and watch a project's team of AI agents from one file.
 `team` is a small command-line tool with no runtime dependencies. A project declares its team in
 `.agents/team.yaml`: the seats, the model each one runs, how each agent signs its work, the rules it
 works under, the folders it may touch. Commands then check that file against a machine, a session
-and a history, and, slice by slice, build and watch the team itself. Version 0.1 runs teams in
+and a history, and build and watch the team itself. Version 0.1 runs teams in
 [herdr](https://herdr.dev).
 
 **Status: alpha, in construction.** This build parses and validates the file, checks who is
-calling, and holds `approve`, `check`, `doctor`, `init`, `status` and `watch`, plus `up` and `down`
-as dry runs that print their plan and change nothing. The commands that launch arrive slice by slice.
+calling, and holds `add`, `approve`, `check`, `doctor`, `down`, `init`, `remove`, `status`, `up`,
+`watch` and `worktree`.
 
 ## Install, from git until it is on npm
 
@@ -22,7 +22,7 @@ cd team
 bun install
 bun run build
 npm install -g .          # puts `team` on the PATH
-team --version            # 0.1.0-alpha.0
+team --version            # 0.1.0
 ```
 
 ## The file is private to each clone
@@ -155,9 +155,9 @@ The owner is a terminal outside herdr with no agent process above it: a seat, or
 runs, cannot approve a file or start a team. Every command that reads the file also takes
 `--file <path>` for a file other than `.agents/team.yaml`.
 
-In this build `up` and `down` run only with `--dry-run`: they print every command they would run,
-and every refusal, and change nothing. `team add`, `team remove`, `team worktree new` and `team worktree remove` do run.
-`trust` is specified but not built yet.
+`team up`, `team down`, `team add`, `team remove`, `team worktree new` and `team worktree remove`
+run live. `up` and `down` take `--dry-run` to print every command they would run, and every
+refusal, and change nothing. `trust` is specified but not built yet.
 
 ## Your first team in five minutes
 
@@ -168,13 +168,14 @@ $EDITOR .agents/team.yaml  # name your seats — the example above is a working 
 team approve               # the owner: read the file it prints, then type the seat count
 team doctor                # what this machine still needs
 team up --dry-run          # every command it would run, and every refusal
+team up                    # the owner: starts the session and its seats
 ```
 
 `team init` writes a skeleton, one seat and lots of comments; it prints how the file stays private,
 and leaves your first commit as a commented `#   since:` line. `team approve` prints the whole file
 back and asks you to type how many seats it holds, so no file approves itself unnoticed. Then
-`doctor` says what is missing on this machine, and `up --dry-run` shows the plan — this build stops
-there and launches nothing.
+`doctor` says what is missing on this machine, `up --dry-run` shows every command the launch would
+run — and `up` starts the team, from the owner's terminal outside herdr.
 
 ## Development
 
