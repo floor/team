@@ -55,6 +55,7 @@ terminal outside herdr.
 | `team worktree: only the owner, the coordinator or the operator runs it; this call is <caller>` | 1 |
 | `team worktree: session can't be "default", herdr's own session` | 1 |
 | ``team worktree: the file was never approved on this machine: run `team approve` `` | 1 |
+| ``team worktree: approved before records were signed: run `team approve` once`` — the record was written by an earlier `team`; the same line, with the case, for a record that does not verify | 1 |
 | ``team worktree: the file is not the approved one (<differences>): run `team approve` `` | 1 |
 | `team worktree: a task name is one segment of letters, digits, ".", "_" and "-", and it starts with a letter or a digit` | 1 |
 | `team worktree: --kind: <the same, for the kind>` | 1 |

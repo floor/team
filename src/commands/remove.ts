@@ -1,13 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
-import { recordSeatDigest } from '../approve/approval.ts';
+import { recordSeatDigestOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { markStopped, takeOut } from '../file/lines.ts';
 import type { Problem } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
+import { approvalStanding, type Standing } from '../store/store.ts';
 import { writeTeamFile } from '../file/write.ts';
 import { paneForeground } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
@@ -26,6 +27,9 @@ export type RemoveSources = DownSources & {
   foreground(session: string, pane: string): string[] | null;
   /** Approval store home. The real command uses the owner's home. */
   home?: string;
+  // The approval store's one read (the amending branch alone reads it), overridable so a
+  // test can count it or swap the record after the gate. Absent: the real read.
+  standing?(root: string): Standing;
 };
 
 function aim(session: string): string | undefined {
@@ -176,7 +180,10 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   }
   if (kept !== null) {
     const parsed = validateTeamFile(kept);
-    if (parsed.ok) recordSeatDigest(parsed.team, root, name, sources.home ?? homedir());
+    // The one read of the whole command, done only by the amending branch.
+    const home = sources.home ?? homedir();
+    const standing = sources.standing?.(root) ?? approvalStanding(root, home);
+    if (parsed.ok) recordSeatDigestOf(standing, parsed.team, root, name, home);
   }
   if (!agent && recorded) {
     updateState(dir, (file) => {

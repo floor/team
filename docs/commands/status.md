@@ -44,6 +44,11 @@ The model is the seat's `display` when the running model matches the file, and
 `<model> <version> (file: <display>)` when it doesn't. A screen that doesn't show the model is a
 `note` rather than a difference: `unread` is never wrong.
 
+An approval in force is a note of its own, `approval #1 (2026-10-04), key fe21ef6293de`: the
+signing's number, its date and the key's fingerprint — the first twelve hex digits of the key's
+public half. An owner who noted the fingerprint sees a *replaced* key; a process that only reads
+it changes nothing `team` shows, and `team` computes what it shows.
+
 ## Budgets
 
 When the file names an account, or a reading is stored in the state, a `budgets:` table follows
@@ -92,6 +97,7 @@ CODEX_HOME=/path/to/codex exec /path/to/codex-quota
 | `worktree <task>: its setup failed` | `team worktree remove <task>` |
 | `the protected checkout "." is on "x", not on "main"` | `git -C . switch main` |
 | `the file was never approved on this machine` | the owner runs `team approve` |
+| `approved before records were signed: run `team approve` once`, or the case a refused record names | the owner runs `team approve` |
 | `the file differs from the approved one: <line>` | the owner runs `team approve` |
 
 ## The JSON
@@ -226,6 +232,7 @@ budgets:
   openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh
   openai  daily  left 70%  used 30%  resets unknown  claude-beacon  last seen 40m ago  status line (fallback)  stale
   openai  weekly  left 5%  used 95%  resets in 44m  claude-beacon  changed 2m ago  status line (fallback)  fresh, inside reserve 20%
+note: approval #1 (2026-10-04), key fe21ef6293de
 difference: claude-keeper is in the file and is not running
   repair: team add claude-keeper
 1 difference(s)
@@ -254,7 +261,9 @@ $ team status --json ; echo "exit $?"
       "pane": "w1:p1"
     }
   ],
-  "notes": [],
+  "notes": [
+    "approval #1 (2026-10-04), key fe21ef6293de"
+  ],
   "differences": [
     {
       "what": "claude-keeper is in the file and is not running",
@@ -328,6 +337,7 @@ budgets:
   openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh
   openai  daily  left 70%  used 30%  resets unknown  claude-beacon  last seen 40m ago  status line (fallback)  stale
   openai  weekly  left 5%  used 95%  resets in 44m  claude-beacon  changed 2m ago  status line (fallback)  fresh, inside reserve 20%
+note: approval #1 (2026-10-04), key fe21ef6293de
 0 difference(s)
 exit 0
 ```

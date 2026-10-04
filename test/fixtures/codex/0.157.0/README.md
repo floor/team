@@ -10,6 +10,27 @@ the default session had eight agents before and after. Config and auth hashes we
 - `trust.txt`: the same command with the invocation-only
   `-c check_for_update_on_startup=false`, in an untrusted worktree. The workspace
   was closed without answering the trust question.
+- `trust-folder.txt`: plain `codex --no-daemon` with no other flag, on 2026-10-04,
+  herdr 0.7.1; a 54 by 23 pane. The folder trust question drew before any composer —
+  the folder is not inside a Git project, so the path is drawn wrapped over two rows.
+  Read plain and ansi; Escape quit the question back to the shell. Nothing was
+  answered.
+- `trust-folder-163.txt`: the same folder trust question at 163 by 47, where the
+  whole path fits on one row, on 2026-10-04, herdr 0.7.1. Read plain and ansi;
+  Escape quit the question and Codex exited to the shell. Nothing was answered.
+- `typed-two-lines.txt`: a two-line text typed into the composer and never sent,
+  with the CLI's newline key, Ctrl+J, joining the lines. Every later line at the
+  continuation column, two.
+- `pasted-two-lines.txt`: a two-line text delivered in one write — the same
+  multi-line paste a rules message travels by. The same continuation column.
+- `second-line-glyph.txt`: a two-line text whose second line begins with the prompt
+  glyph `›` — drawn at the continuation column, two, never the prompt column.
+- `second-line-gt.txt`: a two-line text whose second line begins with `>` — drawn
+  at the continuation column, two.
+- `wrapped-line.txt`: one long line that wraps; the wrap's continuation is at
+  column two.
+- `blank-middle.txt`: three lines with an empty middle line; the blank row is empty
+  and the third line sits at column two.
 - `idle.txt`, `unsent.txt`, `working.txt`, `rules-accepted.txt`: the second command
   in an already-trusted folder. The rules message was pasted, read back, and submitted.
   `working.txt` coincided with herdr reporting `working`; the composer was empty.
@@ -62,6 +83,38 @@ row at column 0, continuations at column 2 (`unsent.txt`), and transcript rows
 (`exit-typed.txt` draws its menu row at 0 with a blank between it and the typed
 input row). A later row at the prompt column with no capture to explain it is a
 shape the reader fails closed on rather than guesses about.
+
+## Round 4: the folder trust question, and a person's own multi-line box
+
+These eight captures: Codex 0.157.0, plain `codex --no-daemon` with no other flag, on
+2026-10-04, herdr 0.7.1, read plain and ansi with `pane read --source visible
+--lines 80`. Codex asks its folder trust question before the composer in a folder it
+has not been told to trust; both `trust-folder` captures show that question, before
+any composer, and nothing was answered in either — Escape quit it back to the shell.
+
+`trust-folder.txt` (54 by 23) is the folder variant: the folder is not inside a Git
+project, so the path is drawn wrapped over two rows. `trust-folder-163.txt` (163 by
+47) is the same question with the whole path on one row. In the six box captures (163
+by 47) a person's own text sat in the composer — a two-line text joined with the
+CLI's newline key, Ctrl+J, or delivered in one write, the same multi-line paste a
+rules message travels by — and was never sent; the box was cleared and read empty
+again between shapes, and Codex was left running at its prompt.
+
+Sanitising: the parent path in the two trust captures is replaced by
+`<untrusted-scratch-directory-placeholder-sandbox>` — the same 49 and 55 characters,
+so the two-row and one-row layouts stay put — and the header's directory in the six
+box captures by `<untrusted-scratch-placeholder-folder>/codex`, the same 44
+characters, so the header box stays put; the box captures' live usage figures are
+replaced by `…`, as `idle.txt`'s already are. Nothing else is changed. The ansi reads
+show `Folder access` bold and the path dim in the trust question, and the composer
+band painted `48;2;65;69;76`, the input row's `›` bold and every later row plain, in
+the box captures.
+
+What the six box captures show: every later line of the person's text — typed,
+pasted, wrapped, after a blank line, or beginning with the prompt glyph or `>` — is
+drawn at the continuation column, two; none is drawn at the prompt column. This is
+the typed-newline proof the fix's comment named as still to be taken, and
+`src/watch/screen-core.ts` now names these fixtures where that clause stood.
 
 ## Constructed
 

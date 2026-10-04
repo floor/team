@@ -18,7 +18,7 @@ Node 22 or later runs the built command.
 
 ```sh
 npm install -g team       # or run it without installing: npx team
-team --version            # 0.2.0
+team --version            # 0.2.1
 ```
 
 ## The file is private to each clone
@@ -247,6 +247,29 @@ It never answers prompts and performs no sign-in action.
 run live. `up` and `down` take `--dry-run` to print every command they would run, and every
 refusal, and change nothing. `trust` is specified but not built yet.
 
+## Approvals are signed
+
+`team approve` writes the record signed: the approval, the stored copy of the file, the project
+root and a per-project number, covered by one signature whose key lives outside the store, in
+`~/.config/team-key`. Every command that needs an approval in force verifies the whole record
+through one snapshot; a record changed after approval, signed for another root, or replayed from an
+older number is not an approval, and the command says which case it was. Each approval moves the
+number and prints it with the signing key's short fingerprint — `approval #4 for this project;
+the last one was on 2026-10-04; key fe21ef6293de.` — and `team doctor` and `team status` show
+the same three: the number, its date, the key.
+
+Approvals guard against mistakes, not against a hostile process running as the owner. The
+signature refuses a record changed by something that does not use the key; a process that can
+read the key can re-sign any record at the number it already had, and nothing `team` shows will
+differ. What a replaced key does change is the fingerprint: an owner who noted it sees the swap.
+That is evidence, not prevention — `team` computes the fingerprint, and a seat can replace `team`
+itself.
+
+A record written by an earlier `team`, before records were signed, is refused by `up` and `add`
+with `approved before records were signed: run \`team approve\` once`; the watch keeps watching,
+`status` keeps reporting, `down` and `remove` keep working, and approving once replaces the record
+with a signed one.
+
 ## Your first team in five minutes
 
 ```sh
@@ -275,7 +298,7 @@ cd team
 bun install
 bun run build
 npm install -g .          # puts `team` on the PATH
-team --version            # 0.2.0
+team --version            # 0.2.1
 ```
 
 Bun builds and tests the sources:

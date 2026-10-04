@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-04
+
+A safety patch: on Codex and Cursor the composer's input row is read only under the box's frame, so a
+person's text can no longer be submitted together with `team`'s; and Antigravity's and Cursor's
+dialogs are recognised as the permission or question they are.
+
+### Security
+
+- **In 0.2.0, and in every earlier release, on Codex and Cursor the composer's input row was the
+  lowest row carrying the prompt glyph at the prompt column, wherever it sat.** A box drawing a
+  person's text on one row and the glyph alone under it read idle: the person's text was not read,
+  `team` typed under the glyph, the read-back held the typed text alone, and the Enter submitted the
+  person's text together with the text `team` had typed. The input row is now read only under the
+  box's frame, the blank run every capture draws directly above it: a second prompt row above or
+  below the input, any other non-blank row pressed against the prompt from above, and a window that
+  starts at or inside the box now read `unknown`, with no typing and no Enter, closing the limit
+  the 0.2.0 section stated. What is not refused, and why: a prompt-shaped row across the blank frame
+  is the transcript's echo of a message already sent — the real captures show both CLIs draw a
+  person's later lines at the continuation column — so the empty input row under its frame still
+  reads idle, and a seat between turns can still be dispatched to or nudged.
+
+### Fixed
+
+- Four Antigravity screens — the file-creation prompt, the file-edit prompt, the question screen and
+  the "unsent comments" dialog — and two Cursor screens — the question box and the plan-mode
+  approval — read `unknown`; they are now read as the permission or question they are. `team` typed
+  into none of them before or after: `unknown`, permission and question all refuse typing alike.
+
 ## [0.2.0] - 2026-10-04
 
 A feature release: the budgets table falls back per window and names the source each figure was
@@ -349,6 +377,7 @@ The first release: set up, change and watch a project's team of AI agents from o
   footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
   stays idle.
 
+[0.2.1]: https://github.com/floor/team/releases/tag/v0.2.1
 [0.2.0]: https://github.com/floor/team/releases/tag/v0.2.0
 [0.1.2]: https://github.com/floor/team/releases/tag/v0.1.2
 [0.1.1]: https://github.com/floor/team/releases/tag/v0.1.1

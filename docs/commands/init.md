@@ -47,6 +47,7 @@ is refused.
 | `team init: .agents/team.yaml is tracked by git, and a team file is private. Untrack it, keeping the file:` … | 1 |
 | `team init: .agents/team.yaml exists already; it is left as it is. Its lines in .git/info/exclude were checked, and added where missing.` | 1 |
 | `team init: nothing to restore: no team file was approved for this folder on this machine. Run team init for a skeleton.` | 1 |
+| `team init: nothing was restored: the record for this folder was approved before records were signed: run `team approve` once.` — the record was written by an earlier `team`; the same shape, with the case, for a record that does not verify | 1 |
 | `team init: unknown option --<name>` (with the usage) | 2 |
 
 The tracked-file message names the repair:
