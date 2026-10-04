@@ -510,15 +510,13 @@ describe('the two-rule frame whose rules differ in width (Antigravity)', () => {
   // read-back compares against the typed text cannot be established, and the read fails
   // closed. The closing rule is redrawn one column shorter (52) or longer (54) than the
   // opening, and the opening rule one shorter instead.
-  const SHAPES = ['close-short', 'close-long', 'open-short'] as const;
-
-  test.each(SHAPES)('%s: the screen reads unknown, bare or holding the typed text', (shape) => {
+  test.each(['close-short', 'close-long', 'open-short'] as const)('%s: the screen reads unknown, bare or holding the typed text', (shape) => {
     expect(readScreen('antigravity', agyMismatchedFrame(shape)).kind).toBe('unknown');
     expect(readScreen('antigravity', agyMismatchedFrame(shape, 'Rules.')).kind).toBe('unknown');
     expect(boxHoldsText('antigravity', 'Rules.', agyMismatchedFrame(shape, 'Rules.'))).toBe(false);
   });
 
-  test.each(SHAPES)('%s: a full delivery types nothing and sends nothing', async (shape) => {
+  test.each(['close-short', 'close-long', 'open-short'] as const)('%s: a full delivery types nothing and sends nothing', async (shape) => {
     const d = delivery();
     d.showText(agyMismatchedFrame(shape));
     d.io.type = (text) => { d.calls.push(text); d.showText(agyMismatchedFrame(shape, text)); return true; };
