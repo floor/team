@@ -3,7 +3,10 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
 import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
+import { validateTeamFile } from '../../src/file/validate.ts';
+import { storePath, writeApproval } from '../../src/store/store.ts';
 import type { DownLaunch } from '../../src/commands/down.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { emptySession, readState, updateState } from '../../src/state.ts';
@@ -120,6 +123,62 @@ describe('team remove', () => {
     expect(text).toContain('name: worker');
     expect(text).toContain('stopped: true');
     expect(text).toContain('name: lead');
+  });
+
+  test('remove --keep by the coordinator leaves a hand-edited launch line as drift', async () => {
+    const parsed = validateTeamFile(FILE);
+    if (!parsed.ok) throw new Error('fixture');
+    writeApproval(storePath(parsed.team.project, dir, dir), {
+      approval: approvalOf(parsed.team, dir),
+      file: FILE,
+    }, parsed.team.seats);
+    const edited = FILE.replace('launch: claude --model claude-opus-5-5', 'launch: claude --model claude-opus-5-5 --yolo');
+    writeFileSync(file, edited);
+    const made = world();
+    made.sources.home = dir;
+    expect(await runRemove(['worker', '--keep'], testIo(dir, lead), made.sources)).toBe(0);
+    expect(readFileSync(file, 'utf8')).toContain('stopped: true');
+    expect(readFileSync(file, 'utf8')).toContain('--yolo');
+    const after = validateTeamFile(readFileSync(file, 'utf8'));
+    if (!after.ok) throw new Error('written file');
+    expect(approvalDifferences(after.team, dir, dir)).toEqual(['seat worker changed']);
+  });
+
+  test('remove --keep does not approve a hand-written parked line', async () => {
+    const parsed = validateTeamFile(FILE);
+    if (!parsed.ok) throw new Error('fixture');
+    writeApproval(storePath(parsed.team.project, dir, dir), {
+      approval: approvalOf(parsed.team, dir),
+      file: FILE,
+    }, parsed.team.seats);
+    writeFileSync(file, FILE.replace('    name: worker', '    name: worker\n    parked: true'));
+    const made = world();
+    made.sources.home = dir;
+    expect(await runRemove(['worker', '--keep'], testIo(dir, lead), made.sources)).toBe(0);
+    const after = validateTeamFile(readFileSync(file, 'utf8'));
+    if (!after.ok) throw new Error('written file');
+    expect(after.team.seats.find((seat) => seat.name === 'worker')?.parked).toBe(true);
+    expect(approvalDifferences(after.team, dir, dir)).toEqual(['seat worker changed']);
+  });
+
+  test('--keep by the owner leaves no drift, and a seat-made parked line is drift', async () => {
+    const parsed = validateTeamFile(FILE);
+    if (!parsed.ok) throw new Error('fixture');
+    writeApproval(storePath(parsed.team.project, dir, dir), {
+      approval: approvalOf(parsed.team, dir),
+      file: FILE,
+    }, parsed.team.seats);
+    const parked = FILE.replace('    name: worker', '    name: worker\n    parked: true');
+    const hand = validateTeamFile(parked);
+    if (!hand.ok) throw new Error('parked fixture');
+    expect(approvalDifferences(hand.team, dir, dir)).toEqual(['seat worker changed']);
+
+    const made = world();
+    made.sources.home = dir;
+    expect(await runRemove(['worker', '--keep', '--file', file], testIo(dir, owner), made.sources)).toBe(0);
+    const after = validateTeamFile(readFileSync(file, 'utf8'));
+    if (!after.ok) throw new Error('written file');
+    expect(approvalDifferences(after.team, dir, dir)).toEqual([]);
   });
 
   test('working, blocked, unknown and unsent change nothing', async () => {

@@ -347,7 +347,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     },
     downSources,
     removeSources(): RemoveSources {
-      return { ...downSources(), foreground: () => ['zsh'] };
+      return { ...downSources(), foreground: () => ['zsh'], home };
     },
     addSources(): AddSources {
       return {
