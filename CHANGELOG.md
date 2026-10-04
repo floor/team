@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   defaults when nothing was approved. `watch.checks` keeps its own finer line inside the section.
   An approval recorded before this change stays valid while the section is unchanged; a timing a
   seat changed without an approval shows its difference at the next pass, for the owner to settle.
+  A never-approved team now runs on the defaults whatever its file says.
 
 ### Fixed
 

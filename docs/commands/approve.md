@@ -54,7 +54,8 @@ new approval is a change to an owner section
 whose turn-offs are their own line) or to a seat's own fields; a seat taken out, parked or stopped
 does not, so `remove --keep` and `add` never send the owner back to `approve`. Until an edit is
 approved its section changes nothing: the watch runs with the approved values, or the defaults when
-nothing was approved.
+nothing was approved. A stored copy that no longer validates: the defaults run, and the difference
+is reported until the next approve.
 
 ## Refusals
 

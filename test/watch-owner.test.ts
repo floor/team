@@ -9,9 +9,11 @@ import { join } from 'node:path';
 import { approvalDifferences, watchInForce } from '../src/approve/approval.ts';
 import { compare, describe as describeDifference, fingerprints, OWNER_SECTIONS } from '../src/approve/fingerprint.ts';
 import { runApprove } from '../src/commands/approve.ts';
+import { runStatus, type StatusSources } from '../src/commands/status.ts';
 import type { TeamFile } from '../src/file/types.ts';
 import { defaultWatch, validateTeamFile } from '../src/file/validate.ts';
 import { storePath, writeApproval } from '../src/store/store.ts';
+import type { Live } from '../src/status/compare.ts';
 import { testIo } from './helpers.ts';
 
 const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url), 'utf8')
@@ -119,6 +121,48 @@ describe('a threshold edit, and the approval', () => {
     const file = teamFile({ unsent_after: '30m', interval: '60s' });
     expect(approvalDifferences(file, root, home)).toBeNull();
     expect(watchInForce(file, root, home)).toEqual(defaultWatch());
+  });
+
+  test('an unapproved interval edit leaves the staleness verdict on the approved value', async () => {
+    write(source());
+    expect((await approve()).code).toBe(0);
+    const NOW = new Date('2026-10-04T00:00:00Z');
+    const state = (heartbeat: Date) =>
+      writeFileSync(
+        join(root, '.agents/team.state.json'),
+        JSON.stringify({
+          format: 1,
+          sessions: { 'acme-web': { seats: {}, worktrees: {}, watch: { pid: 1, heartbeat: heartbeat.toISOString() } } },
+        }),
+      );
+    const live: Live = {
+      running: true,
+      agents: [{ name: 'claude-coordinator-acme', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null }],
+      workspaces: [{ id: 'w1', label: 'claude-coordinator-acme' }],
+      screens: {},
+    };
+    const sources: StatusSources = {
+      live: () => live,
+      branch: () => 'main',
+      approval: (team, at) => approvalDifferences(team, at, home),
+      watchInForce: (team, at) => watchInForce(team, at, home),
+      now: () => NOW,
+    };
+    const status = async () => {
+      const io = testIo(root);
+      await runStatus(['--file', '.agents/team.yaml'], io, sources);
+      return io.out;
+    };
+    // A stretch to a thousand hours is unapproved, so the approved two minutes still decide:
+    // the ten-minute-old heartbeat is stale, not hidden by the edit.
+    write(source({ interval: '1000h' }));
+    state(new Date(NOW.getTime() - 10 * 60_000));
+    expect(await status()).toContain("the watch's last pass was 10 minute(s) ago");
+    // And a shrink is no better: three minutes are inside the approved two intervals, whoever
+    // wrote ten seconds in the file.
+    write(source({ interval: '10s' }));
+    state(new Date(NOW.getTime() - 3 * 60_000));
+    expect(await status()).not.toContain("last pass");
   });
 
   test('an approval recorded before the section existed stays valid while the section is unchanged', async () => {

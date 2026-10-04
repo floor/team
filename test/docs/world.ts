@@ -366,6 +366,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         live: () => live(),
         branch: () => 'main',
         approval: (team, at) => approvalDifferences(team, at, home),
+        watchInForce: (team, at) => watchInForce(team, at, home),
         now,
       };
     },

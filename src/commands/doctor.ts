@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { accessSync, constants } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
-import { approvalDifferences } from '../approve/approval.ts';
+import { approvalDifferences, watchInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { checkReadings } from '../budgets/checks.ts';
 import { loadTeamFile } from '../file/load.ts';
@@ -161,16 +161,18 @@ function cliFindings(cli: string, seats: Seat[], sources: DoctorSources): Findin
   return findings;
 }
 
-function watchFindings(team: TeamFile, dir: string, session: string, running: boolean | null, now: Date): Finding[] {
-  const watch = readState(dir).sessions[session]?.watch;
+// `watch` is the watch values in force — the approved ones — so an unapproved interval edit can't
+// move the verdict either way.
+function watchFindings(watch: TeamFile['watch'], dir: string, session: string, running: boolean | null, now: Date): Finding[] {
+  const recorded = readState(dir).sessions[session]?.watch;
   if (!running) return [];
-  if (!watch) return [{ level: 'miss', text: `no watch has run for session ${session}: start \`team watch\`` }];
-  const age = (now.getTime() - Date.parse(watch.heartbeat)) / 1000;
-  if (!(age <= 2 * team.watch.interval)) {
+  if (!recorded) return [{ level: 'miss', text: `no watch has run for session ${session}: start \`team watch\`` }];
+  const age = (now.getTime() - Date.parse(recorded.heartbeat)) / 1000;
+  if (!(age <= 2 * watch.interval)) {
     return [
       {
         level: 'miss',
-        text: `the watch's heartbeat is ${Math.round(age / 60)} min old (two intervals are ${(2 * team.watch.interval) / 60} min): start \`team watch\``,
+        text: `the watch's heartbeat is ${Math.round(age / 60)} min old (two intervals are ${(2 * watch.interval) / 60} min): start \`team watch\``,
       },
     ];
   }
@@ -212,7 +214,7 @@ export function doctorFindings(
     );
   }
 
-  findings.push(...watchFindings(team, dir, session, running, sources.now()));
+  findings.push(...watchFindings(watchInForce(team, root, sources.home), dir, session, running, sources.now()));
   if (team.trust.length) {
     findings.push({ level: 'note', text: 'trust: not applied or checked by this version; trust each folder by hand' });
   }
