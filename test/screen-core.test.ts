@@ -69,7 +69,7 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('unknown');
   });
 
-  test.each(['shell-git-log.txt', 'shell-right-prompt.txt', 'shell-shortcuts.txt'])('%s reads unknown', (name) => {
+  test.each(['shell-git-log.txt', 'shell-right-prompt.txt', 'shell-shortcuts.txt', 'shell-shortcuts-indented.txt'])('%s reads unknown', (name) => {
     const text = readFileSync(new URL(`./fixtures/claude-code/${name}`, import.meta.url), 'utf8');
     expect(readScreen('claude-code', text).kind).toBe('unknown');
   });
@@ -148,9 +148,9 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('idle');
   });
 
-  test('a box whose top rule has scrolled out reads idle with the default shortcuts footer', () => {
+  test('a box whose top rule has scrolled out reads unknown with only the shortcuts row', () => {
     const text = readFileSync(new URL('./fixtures/claude-code/scrolled-shortcuts.txt', import.meta.url), 'utf8');
-    expect(readScreen('claude-code', text).kind).toBe('idle');
+    expect(readScreen('claude-code', text).kind).toBe('unknown');
   });
 
   test('a question dialog with a status line under it and no rule stays a question', () => {
