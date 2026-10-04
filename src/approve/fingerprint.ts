@@ -17,14 +17,24 @@ export const OWNER_SECTIONS = [
   'visibility',
   'tools',
   'budgets',
-  // Turning a watch check off is the owner's, and only theirs: the file's checks are digested
-  // where they stand, under `watch`, so a section of their own.
+  // The watch's own timings, thresholds included: a seat allowed to stretch `unsent_after` or
+  // `idle_first` could silence the watch itself, so the section is the owner's like the rest.
+  'watch',
+  // And turning a check off is the finer line inside it: the digest above leaves the checks out,
+  // so turning one off reads as `watch.checks` alone, never as a threshold change too.
   'watch.checks',
 ] as const;
 
-/** One owner section, read from the file; `watch.checks` sits inside `watch`, not at the top. */
+/** One owner section, read from the file; the two watch sections sit inside `watch`, not at the top. */
 function sectionOf(team: Approvable, name: string): unknown {
   if (name === 'watch.checks') return (team.watch as { checks?: unknown } | undefined)?.checks ?? [];
+  if (name === 'watch') {
+    const watch = team.watch as Record<string, unknown> | null | undefined;
+    if (watch === null || watch === undefined) return undefined;
+    const rest = { ...watch };
+    delete rest.checks;
+    return rest;
+  }
   return team[name];
 }
 
@@ -86,8 +96,9 @@ export type Difference =
 export function compare(approved: Fingerprints, current: Fingerprints): Difference[] {
   const differences: Difference[] = [];
   for (const name of OWNER_SECTIONS) {
-    // An approval recorded before `watch.checks` existed approved a file that turned nothing off:
-    // read it that way, so the section's arrival alone is not a difference.
+    // A record with no fingerprint for a section is read by `approvedFingerprints`, from the copy
+    // it stored. What reaches here without one is a record whose copy is gone: it turned nothing
+    // off, so `watch.checks` reads as the empty list, and a missing `watch` is a difference.
     const before = approved.sections[name] ?? (name === 'watch.checks' ? digest([]) : undefined);
     if (before !== current.sections[name]) differences.push({ kind: 'section', name });
   }

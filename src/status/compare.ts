@@ -19,7 +19,15 @@ export type Comparison = { rows: Row[]; differences: Difference[]; notes: string
 export const WATCH_LABEL = 'watchdog';
 
 // Compares the file and the state with the live session. Pure: every input is handed in.
-export function compare(team: TeamFile, session: string, state: SessionState, live: Live, now: Date = new Date()): Comparison {
+// `watch` is the watch values in force — the approved ones — so an unapproved edit can't move a verdict.
+export function compare(
+  team: TeamFile,
+  session: string,
+  state: SessionState,
+  live: Live,
+  now: Date = new Date(),
+  watch: TeamFile['watch'] = team.watch,
+): Comparison {
   const rows: Row[] = [];
   const differences: Difference[] = [];
   const notes: string[] = [];
@@ -101,7 +109,7 @@ export function compare(team: TeamFile, session: string, state: SessionState, li
     const beat = state.watch ? Date.parse(state.watch.heartbeat) : NaN;
     if (!state.watch) {
       differences.push({ what: 'no watch has run for this session', repair: `team watch --session ${session}` });
-    } else if (!(now.getTime() - beat <= 2 * team.watch.interval * 1000)) {
+    } else if (!(now.getTime() - beat <= 2 * watch.interval * 1000)) {
       const minutes = Number.isFinite(beat) ? Math.round((now.getTime() - beat) / 60_000) : null;
       differences.push({
         what: `the watch's last pass was ${minutes === null ? 'never recorded' : `${minutes} minute(s) ago`}`,

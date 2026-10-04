@@ -9,10 +9,28 @@ import type { CheckOutcome } from '../src/budgets/run.ts';
 import type { TeamFile } from '../src/file/types.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
-import { emptySession } from '../src/state.ts';
+import { emptySession, type SessionState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
 import type { Machine } from '../src/watch/machine.ts';
-import { newMemory, pass, type PassResult } from '../src/watch/pass.ts';
+import { newMemory, pass as corePass, type Memory, type PassResult } from '../src/watch/pass.ts';
+
+/**
+ * A pass over this file's budget world. `pass` takes the watch values in force and the loop's
+ * check readings as its 8th and 9th parameters; these tests vary only the budget inputs, so the
+ * file's own watch values are passed explicitly (no approval is in play here).
+ */
+function pass(
+  team: TeamFile,
+  state: SessionState,
+  live: Live,
+  machine: Machine,
+  now: number,
+  memory: Memory,
+  approval: string[] | null = [],
+  outcomes: readonly CheckOutcome[] = [],
+): PassResult {
+  return corePass(team, state, live, machine, now, memory, approval, team.watch, outcomes);
+}
 
 const NOW = Date.parse('2026-10-04T09:00:00Z');
 const MIN = 60_000;
