@@ -366,6 +366,23 @@ describe('team status', () => {
     expect(doc.notes).toContain('the herdr session "acme-web" is not running');
     expect(doc.differences.length).toBe(4);
   });
+
+  test('a running session drops a leftover stop record; one not running keeps it', async () => {
+    const stop = { at: NOW.toISOString(), by: 'owner' };
+    const seed = () => updateState(join(dir, '.agents'), (state) => {
+      state.sessions['acme-web'] = { ...emptySession(), stopped: stop };
+    });
+    seed();
+    await status();
+    // The session runs again: the record can no longer justify `up` deleting the session.
+    expect(readState(join(dir, '.agents')).sessions['acme-web']?.stopped).toBeUndefined();
+    // `down`'s record on a session that still sits stopped is `up`'s to clear: `status`, which
+    // cannot tell a stopped session from a deleted one, leaves it alone.
+    seed();
+    live = { ...built(), running: false };
+    await status();
+    expect(readState(join(dir, '.agents')).sessions['acme-web']?.stopped).toEqual(stop);
+  });
 });
 
 describe('the status line of Claude Code', () => {
