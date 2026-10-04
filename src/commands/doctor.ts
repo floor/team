@@ -179,6 +179,30 @@ function watchFindings(watch: TeamFile['watch'], dir: string, session: string, r
   return [{ level: 'ok', text: 'the watch is running' }];
 }
 
+// The session already carries the project, so a seat whose name or label repeats either is a
+// warning, never a refusal. One line per seat, naming the field.
+export function seatNameFindings(team: TeamFile, session: string): Finding[] {
+  const needles = [...new Set([team.project, session].filter((value) => value !== ''))];
+  const findings: Finding[] = [];
+  for (const seat of team.seats) {
+    const hits = (['name', 'label'] as const).map((field) => ({
+      field,
+      found: needles.filter((needle) => seat[field].toLowerCase().includes(needle.toLowerCase())),
+    })).filter((hit) => hit.found.length > 0);
+    if (hits.length === 0) continue;
+    const same = hits.length === 2 && hits[0]?.found.join('\0') === hits[1]?.found.join('\0');
+    const which = same
+      ? `its name and its label repeat ${quoted(hits[0]?.found ?? [])}`
+      : hits.map((hit) => `its ${hit.field} repeats ${quoted(hit.found)}`).join(' and ');
+    findings.push({ level: 'warn', text: `${seat.name}: ${which}; the session already carries it` });
+  }
+  return findings;
+}
+
+function quoted(values: string[]): string {
+  return values.map((value) => `"${value}"`).join(' and ');
+}
+
 export function doctorFindings(
   team: TeamFile,
   root: string,
@@ -193,6 +217,7 @@ export function doctorFindings(
     level: 'warn',
     text: `the file, line ${warning.line}: ${warning.message}`,
   }));
+  findings.push(...seatNameFindings(team, session));
 
   findings.push(...approvalFindings(approved, root, sources.home), ...checkFindings(team, root, sources.home));
 

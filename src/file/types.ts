@@ -32,6 +32,7 @@ export type Seat = {
   display: string;
   launch: string;
   cwd: string;
+  /** Herdr workspace title. Omitted in the file, it is `<model> <version>` in lowercase. */
   label: string;
   mode: Mode;
   parked: boolean;

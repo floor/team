@@ -5,6 +5,7 @@ import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
 import { readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
 import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
+import { rulesText, type RulesInput } from '../../src/launch/rules.ts';
 import { downPlan, upPlan } from '../../src/launch/plan.ts';
 import { pass, newMemory } from '../../src/watch/pass.ts';
 import { emptySession } from '../../src/state.ts';
@@ -160,6 +161,71 @@ describe('Antigravity rules delivery', () => {
     d.io.now = () => clock;
     d.io.sleep = async (ms) => { clock += ms; d.show('unsent'); };
     expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(true);
+  });
+});
+
+// The rules a lane seat was given, as `up` renders them: the fixture below is this text folded
+// in agy's composer at 54 columns (see the fixtures README).
+const RULES_INPUT: RulesInput = {
+  coordinator: 'floor-30',
+  rules: [
+    'Work only on the brief in front of you, and skip nothing in it.',
+    'Never push: your `ready` file is the hand-off.',
+    'Never run `gh`, and never touch `CHANGELOG.md`.',
+    'Write the result file beside the brief, then `ready <sha>`.',
+  ],
+  signature: {
+    commit: 'Agent: DeepSeek V4.1 Flash · implementer',
+    pullRequest: 'Agent: DeepSeek V4.1 Flash · implementer',
+    commitPosition: 'last-line',
+  },
+  workspace: { mode: 'worktree', protected: [], branch: 'fix/agy-rules-fold' },
+};
+const RULES = rulesText(RULES_INPUT, 'message');
+
+/** A pane idle before the paste, the given folded pane after it, working after Enter. */
+function foldedPane(edit: (screen: string) => string = (screen) => screen) {
+  const d = delivery();
+  let pasted = false;
+  let entered = false;
+  d.io.screen = () => (entered ? fixture('working') : pasted ? edit(fixture('folded-rules')) : fixture('idle'));
+  d.io.type = (text) => { d.calls.push(text); pasted = true; return true; };
+  d.io.enter = () => { d.calls.push('Enter'); entered = true; d.status('working'); return true; };
+  return d;
+}
+
+describe('Antigravity folded rules paste', () => {
+  test('a folded box that holds the typed rules is delivered', async () => {
+    const d = foldedPane();
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([RULES, 'Enter']);
+  });
+
+  test('the prompt-marked fold reads unsent, and is verified the same way', async () => {
+    const marked = (screen: string) => screen.replace('↑ 21 more lines', '> ↑ 21 more lines');
+    expect(readScreen('antigravity', marked(fixture('folded-rules'))).kind).toBe('unsent');
+    const d = foldedPane(marked);
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([RULES, 'Enter']);
+  });
+
+  test('a prompt-marked fold with a wrong count gets no Enter', async () => {
+    // Before the fold was read, this box only had to read `unsent` to be submitted unverified.
+    const d = foldedPane((screen) => screen.replace('↑ 21 more lines', '> ↑ 22 more lines'));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('a fold whose hidden count does not close the gap gets no Enter', async () => {
+    const d = foldedPane((screen) => screen.replace('↑ 21 more lines', '↑ 22 more lines'));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('a fold whose tail is not the typed text gets no Enter', async () => {
+    const d = foldedPane((screen) => screen.replace('d fix/agy-rules-fold.', 'd fix/some-other-branch.'));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
   });
 });
 
