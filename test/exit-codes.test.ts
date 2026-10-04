@@ -1609,3 +1609,51 @@ test('a followed helper with no return fails the check', () => {
   );
   expect(namesLine(files, 'src/commands/doctor.ts')).toBe(true);
 });
+
+const UNROOTED = "a command file whose default export the contract can't read";
+
+function withTable(line: string, added: readonly (readonly [string, string])[] = []): Map<string, string> {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const next = text.replace(
+    "  remove: () => import('./commands/remove.ts'),\n};",
+    `  remove: () => import('./commands/remove.ts'),\n  ${line}\n};`,
+  );
+  return new Map([['src/cli.ts', next], ...added]);
+}
+
+test('a re-exported command fails the check', () => {
+  const files = withTable(
+    "probe: () => import('./commands/probe.ts'),",
+    [['src/commands/probe.ts', "export { default, USAGE } from './doctor.ts';\n"]],
+  );
+  expect(problems({ files }).some((line) => line.includes('src/commands/probe.ts') && line.includes(UNROOTED))).toBe(true);
+});
+
+test('a command file with no default export fails the check', () => {
+  const files = withTable(
+    "probeEmpty: () => import('./commands/probe-empty.ts'),",
+    [['src/commands/probe-empty.ts', "export const USAGE = 'probe';\n"]],
+  );
+  expect(problems({ files }).some((line) => line.includes('src/commands/probe-empty.ts') && line.includes(UNROOTED))).toBe(true);
+});
+
+test('a table entry outside src/commands fails the check', () => {
+  const files = withTable("probe: () => import('./outside.ts'),");
+  const found = problems({ files });
+  expect(found.some((line) => line.includes('src/cli.ts:') && line.includes("an entry in the commands table whose module the gate didn't walk"))).toBe(true);
+});
+
+test('a default export imported from another file fails the check', () => {
+  const files = withTable(
+    "probeAlias: () => import('./commands/probe-alias.ts'),",
+    [['src/commands/probe-alias.ts', "import run from './doctor.ts';\nexport default run;\n"]],
+  );
+  expect(problems({ files }).some((line) => line.includes('src/commands/probe-alias.ts') && line.includes(UNROOTED))).toBe(true);
+});
+
+test('a walked command file missing from the table fails the check', () => {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const next = text.replace("  add: () => import('./commands/add.ts'),\n", '');
+  const found = problems({ files: new Map([['src/cli.ts', next]]) });
+  expect(found.some((line) => line.includes('src/commands/add.ts') && line.includes('a walked file that is in no table entry'))).toBe(true);
+});

@@ -13,6 +13,12 @@
 // file is not followed. In `src/cli.ts` the only `.default()` that is not itself an exit is
 // `command.default`, where `command` is the awaited load from the `commands` table.
 //
+// A file under `src/commands/` is a command. The gate walks its default export when that
+// export is a function in the file: a default function, a function expression, or a name
+// declared there. A re-export, a default that names an import, and a file with no default
+// are refused. An entry of the `commands` table must load one of those files, and a file
+// the gate walked must be an entry.
+//
 // Every `process.exit` and every write to `process.exitCode` under `src/` is scanned, including
 // module scope. A numeric literal is a site and needs a marker. `process.exit()` with no
 // argument, or a write that is not a literal, is an error. Two publishes are not sites:
@@ -54,15 +60,10 @@ export type ExitSite = {
 
 const ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 const MARKER = /\/\/\s*exit:\s*([a-z0-9]+(?:[.-][a-z0-9]+)*)\s*$/;
+const UNROOTED = "a command file whose default export the contract can't read";
 
-const FILES: { command: string; file: string }[] = [
-  { command: 'team', file: 'src/cli.ts' },
-  { command: 'conformance-adapter', file: 'src/conformance/adapter.ts' },
-  ...readdirSync(join(root, 'src', 'commands'))
-    .filter((name) => name.endsWith('.ts'))
-    .sort()
-    .map((name) => ({ command: name.slice(0, -3), file: `src/commands/${name}` })),
-];
+type CommandFile = { command: string; file: string };
+type TableEntry = { line: number; spec: string };
 
 export type CheckInput = {
   contractText?: string;
@@ -223,8 +224,66 @@ function resolveSpec(from: string, spec: string): string | null {
   return base.endsWith('.ts') ? base : `${base}.ts`;
 }
 
-function commandFor(file: string, inherited: string): string {
-  return FILES.find((item) => item.file === file)?.command ?? inherited;
+function commandFor(list: readonly CommandFile[], file: string, inherited: string): string {
+  return list.find((item) => item.file === file)?.command ?? inherited;
+}
+
+function importSpecOf(expr: ts.Expression): string | null {
+  const arrow = unwrap(expr);
+  if (!ts.isArrowFunction(arrow) || ts.isBlock(arrow.body)) return null;
+  const call = unwrap(arrow.body);
+  if (!ts.isCallExpression(call) || call.expression.kind !== ts.SyntaxKind.ImportKeyword) return null;
+  const spec = call.arguments[0];
+  if (!spec || !ts.isStringLiteral(spec)) return null;
+  return spec.text;
+}
+
+/** The `commands` table in `src/cli.ts`: each entry's import specifier, or empty when it has none. */
+function commandTable(text: string): TableEntry[] {
+  const source = sourceOf('src/cli.ts', text);
+  const out: TableEntry[] = [];
+  for (const stmt of source.statements) {
+    if (!ts.isVariableStatement(stmt)) continue;
+    if (!stmt.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.ExportKeyword)) continue;
+    for (const decl of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name) || decl.name.text !== 'commands' || !decl.initializer) continue;
+      const obj = unwrap(decl.initializer);
+      if (!ts.isObjectLiteralExpression(obj)) continue;
+      for (const prop of obj.properties) {
+        if (!ts.isPropertyAssignment(prop)) continue;
+        out.push({ spec: importSpecOf(prop.initializer) ?? '', line: lineOf(source, prop) });
+      }
+    }
+  }
+  return out;
+}
+
+function commandFiles(extra?: ReadonlyMap<string, string>): CommandFile[] {
+  const names = new Set(
+    readdirSync(join(root, 'src', 'commands')).filter((name) => name.endsWith('.ts')),
+  );
+  for (const entry of commandTable(textOf('src/cli.ts', extra))) {
+    const target = resolveSpec('src/cli.ts', entry.spec);
+    if (!target?.startsWith('src/commands/') || !target.endsWith('.ts')) continue;
+    const name = target.slice('src/commands/'.length);
+    if (name.includes('/')) continue;
+    if (names.has(name) || extra?.has(target)) names.add(name);
+  }
+  return [
+    { command: 'team', file: 'src/cli.ts' },
+    { command: 'conformance-adapter', file: 'src/conformance/adapter.ts' },
+    ...[...names].sort().map((name) => ({ command: name.slice(0, -3), file: `src/commands/${name}` })),
+  ];
+}
+
+function defaultExportAt(source: ts.SourceFile): ts.Node {
+  for (const stmt of source.statements) {
+    if (ts.isFunctionDeclaration(stmt) && stmt.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.DefaultKeyword)) return stmt;
+    if (ts.isExportAssignment(stmt)) return stmt;
+    if (!ts.isExportDeclaration(stmt) || !stmt.exportClause || !ts.isNamedExports(stmt.exportClause)) continue;
+    if (stmt.exportClause.elements.some((el) => el.name.text === 'default')) return stmt;
+  }
+  return source;
 }
 
 function filesUnderSrc(extra?: ReadonlyMap<string, string>): string[] {
@@ -394,7 +453,8 @@ function allMarkers(text: string): { id: string; line: number }[] {
  * A throw with no row of its own is covered by `team.command-threw`.
  */
 export function analyze(files?: ReadonlyMap<string, string>): Analysis {
-  const texts = new Map(FILES.map((item) => [item.file, textOf(item.file, files)]));
+  const list = commandFiles(files);
+  const texts = new Map(list.map((item) => [item.file, textOf(item.file, files)]));
   const thrown = failureCodes(texts);
   const parsed = new Map<string, ts.SourceFile>();
   const named = new Map<string, Map<string, ExitFunc>>();
@@ -554,7 +614,7 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
         reject(file, source, at);
         return;
       }
-      walkReturns(resolved.file, resolved.func, commandFor(resolved.file, command));
+      walkReturns(resolved.file, resolved.func, commandFor(list, resolved.file, command));
       return;
     }
     reject(file, source, at);
@@ -580,7 +640,7 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
   function scanExits(file: string): void {
     const source = load(file);
     if (!source) return;
-    const command = commandFor(file, 'team');
+    const command = commandFor(list, file, 'team');
     const visit = (node: ts.Node): void => {
       if (ts.isCallExpression(node) && isProcess(node.expression, 'exit')) {
         const arg = node.arguments[0];
@@ -625,11 +685,11 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
         if (ids.length === 0) {
           if (!insideCatchingTry(node)) coveredThrows.push({ file, line: lineOf(source, node), id: 'team.command-threw' });
         } else {
-          sites.push({ command: commandFor(file, command), file, line: lineOf(source, node), codes: [...thrown], ids });
+          sites.push({ command: commandFor(list, file, command), file, line: lineOf(source, node), codes: [...thrown], ids });
         }
       } else if (ts.isCallExpression(node) && !insideCatchingTry(node)) {
         const resolved = resolveCall(node, file, source, func);
-        if (resolved) walkThrows(resolved.file, resolved.func, commandFor(resolved.file, command));
+        if (resolved) walkThrows(resolved.file, resolved.func, commandFor(list, resolved.file, command));
         for (const arg of node.arguments) {
           const value = unwrap(arg);
           if (isFunc(value)) walkThrows(file, value, command);
@@ -640,17 +700,44 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
     visit(func);
   }
 
-  for (const item of FILES) {
+  const walked = new Set<string>();
+  for (const item of list) {
     const source = load(item.file);
     if (!source) continue;
-    const roots = item.file === 'src/cli.ts'
-      ? [functionsIn(source).get('main'), functionsIn(source).get('reportFailure')]
-      : [exportedFunction(source, 'default')];
-    for (const func of roots) {
-      if (!func) continue;
-      walkReturns(item.file, func, item.command);
-      walkThrows(item.file, func, item.command);
+    if (item.file === 'src/cli.ts') {
+      for (const func of [functionsIn(source).get('main'), functionsIn(source).get('reportFailure')]) {
+        if (!func) continue;
+        walkReturns(item.file, func, item.command);
+        walkThrows(item.file, func, item.command);
+      }
+      continue;
     }
+    const func = exportedFunction(source, 'default');
+    if (!func) {
+      if (item.file.startsWith('src/commands/')) {
+        unreadable.push(`${item.file}:${lineOf(source, defaultExportAt(source))}: ${UNROOTED}`);
+      }
+      continue;
+    }
+    if (item.file.startsWith('src/commands/')) walked.add(item.file);
+    walkReturns(item.file, func, item.command);
+    walkThrows(item.file, func, item.command);
+  }
+  const discovered = new Set(list.filter((item) => item.file.startsWith('src/commands/')).map((item) => item.file));
+  const tableTargets = new Set<string>();
+  for (const entry of commandTable(textOf('src/cli.ts', files))) {
+    const target = resolveSpec('src/cli.ts', entry.spec);
+    if (target && discovered.has(target)) {
+      tableTargets.add(target);
+      continue;
+    }
+    unreadable.push(`src/cli.ts:${entry.line}: an entry in the commands table whose module the gate didn't walk`);
+  }
+  for (const file of [...walked].sort()) {
+    if (tableTargets.has(file)) continue;
+    const source = load(file);
+    const at = source ? exportedFunction(source, 'default') ?? source : source;
+    unreadable.push(`${file}:${source && at ? lineOf(source, at) : 1}: a walked file that is in no table entry`);
   }
   for (const file of filesUnderSrc(files)) scanExits(file);
 
@@ -776,7 +863,7 @@ export function problems(input: CheckInput = {}): string[] {
   }
   if (render(contract.rows) !== page) out.push('docs/reference/exit-codes.md: differs from the contract');
 
-  const known = new Set(FILES.map((item) => item.command));
+  const known = new Set(commandFiles(input.files).map((item) => item.command));
   for (const row of contract.rows) {
     if (!known.has(row.command)) out.push(`contract/exit-codes.json: ${row.command} is not a command`);
   }
@@ -808,8 +895,9 @@ export function problems(input: CheckInput = {}): string[] {
     }
   }
 
-  const texts = new Map(FILES.map((item) => [item.file, textOf(item.file, input.files)]));
-  for (const item of FILES) {
+  const listed = commandFiles(input.files);
+  const texts = new Map(listed.map((item) => [item.file, textOf(item.file, input.files)]));
+  for (const item of listed) {
     for (const marker of allMarkers(texts.get(item.file) ?? '')) {
       if (!claimed.has(marker.id)) out.push(`${item.file}:${marker.line}: ${marker.id} is not on an exit site`);
     }
