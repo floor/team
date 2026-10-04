@@ -257,6 +257,19 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', 'Do you trust this folder?\n❯ 1. yes\n').kind).not.toBe('trust');
   });
 
+  test('the trust question folds ASCII case only, as its hand-spelled classes did', () => {
+    // The flag replaced the letter classes, not the fold they had: the engine's Unicode
+    // case folding would let `ſ` (U+017F) match the `s` of "trust", which the classes
+    // never did. Every ASCII case still reads as itself.
+    const question = (text: string) => readScreen('claude-code', `${text}\n❯ 1. Yes\n`).kind;
+    for (const ascii of ['Do you trust this folder?', 'DO YOU TRUST THIS FOLDER?', 'Do YoU tRuSt ThE fOlDeR?', 'One you trust?', 'ONE YOU TRUST?']) {
+      expect(question(ascii)).toBe('trust');
+    }
+    for (const longS of ['Do you truſt this folder?', 'Do you truſt the folder?', 'One you truſt?']) {
+      expect(question(longS)).not.toBe('trust');
+    }
+  });
+
   test('permission and question fixtures still read as before', () => {
     const permission = `Bash command\n\n  chmod +x run.sh\n\nDo you want to proceed?\n❯ 1. Yes\n  2. No, and tell Claude what to do differently\n\nEsc to cancel · Tab to amend\n`;
     expect(readScreen('claude-code', permission).kind).toBe('permission');
@@ -850,6 +863,30 @@ ${composer}
           - match: '^done\\.$'
             ignore_case: true
         kind: idle`))).not.toThrow();
+  });
+
+  test('ignore_case folds ASCII letters only, as the hand-spelled classes did', () => {
+    // The flag is the fold the classes had: every ASCII letter matches in either case,
+    // and none of the engine's wider Unicode folding. The fold lives in the pattern's own
+    // text — each letter becomes its two-letter class — so the same source means the same
+    // thing under either engine, and the compiled pattern carries the plain "u" flag.
+    const trust = compilePattern('(?:Do you trust (?:this|the) folder\\?|One you trust\\?)', true);
+    expect(trust.flags).toBe('u');
+    for (const ascii of ['Do you trust this folder?', 'DO YOU TRUST THIS FOLDER?', 'Do YoU tRuSt ThE fOlDeR?', 'One you trust?', 'ONE YOU TRUST?']) {
+      expect(trust.test(ascii)).toBe(true);
+    }
+    for (const longS of ['Do you truſt this folder?', 'Do you truſt the folder?', 'One you truſt?']) {
+      expect(trust.test(longS)).toBe(false);
+    }
+    // K (U+212A, the Kelvin sign) folds to k in Unicode; ı (U+0131) and İ (U+0130) sit
+    // beside i. Each reads as itself, wherever the pattern has its letter.
+    const kick = compilePattern('kick', true);
+    expect(kick.test('KiCk')).toBe(true);
+    expect(kick.test('Kick')).toBe(false);
+    const win = compilePattern('win', true);
+    expect(win.test('WIN')).toBe(true);
+    expect(win.test('wın')).toBe(false);
+    expect(win.test('wİn')).toBe(false);
   });
 });
 
