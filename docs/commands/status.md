@@ -54,6 +54,9 @@ when the file names one, its `vendor` when it doesn't, so one vendor's two accou
 A figure inside its reserve says so on that row, including when it is still fresh.
 When the counted figure did not come from the first source the account names, the row names the
 source it did come from and marks it: `status line (fallback)`.
+An old figure with no known reset reads unknown while it could still matter — inside its reserve,
+or within the reserve again outside it. Further out — more than the reserve again — it is still
+shown, its when column saying `last seen 40m ago`: the room the figure last held.
 A named account with no reading is unknown. The table is left out when there is nothing
 to show. `status` still writes nothing; the watch is what records a reading.
 
@@ -187,6 +190,16 @@ state:
       seat: null
       source: check
       confirmed: true
+    openai/daily/claude-beacon:
+      account: openai
+      window: daily
+      left: 70
+      used: 30
+      changedAt: "2026-10-04T08:20:00Z"
+      resetsAt: null
+      seat: claude-beacon
+      source: status_line
+      confirmed: true
     openai/weekly/claude-beacon:
       account: openai
       window: weekly
@@ -201,8 +214,8 @@ state:
 
 Only the implementer is up, so the coordinator's seat is a difference with its repair. The state
 also holds the watch's last readings for the `openai` account the file names: a check's `session`
-window, and a `weekly` one the check never reported — that one is counted from the status line, so
-the row marks it a fallback:
+window, a `daily` one from the status line last seen 40 minutes ago, and a `weekly` one the check
+never reported — that one too comes from the status line, so its row marks it a fallback:
 
 ```console
 $ team status ; echo "exit $?"
@@ -211,6 +224,7 @@ team beacon, session "beacon"
   claude-beacon  working  Claude Opus 5.5  w1:p1
 budgets:
   openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh
+  openai  daily  left 70%  used 30%  resets unknown  claude-beacon  last seen 40m ago  status line (fallback)  stale
   openai  weekly  left 5%  used 95%  resets in 44m  claude-beacon  changed 2m ago  status line (fallback)  fresh, inside reserve 20%
 difference: claude-keeper is in the file and is not running
   repair: team add claude-keeper
@@ -265,6 +279,20 @@ $ team status --json ; echo "exit $?"
     },
     {
       "account": "openai",
+      "window": "daily",
+      "left": 70,
+      "used": 30,
+      "resetsIn": null,
+      "seat": "claude-beacon",
+      "age": "40m",
+      "source": "status_line",
+      "fallback": true,
+      "state": "stale",
+      "inside": false,
+      "reserve": 20
+    },
+    {
+      "account": "openai",
       "window": "weekly",
       "left": 5,
       "used": 95,
@@ -298,6 +326,7 @@ team beacon, session "beacon"
   claude-beacon  working  Claude Opus 5.5  w1:p1
 budgets:
   openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh
+  openai  daily  left 70%  used 30%  resets unknown  claude-beacon  last seen 40m ago  status line (fallback)  stale
   openai  weekly  left 5%  used 95%  resets in 44m  claude-beacon  changed 2m ago  status line (fallback)  fresh, inside reserve 20%
 0 difference(s)
 exit 0

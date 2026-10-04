@@ -68,7 +68,8 @@ export function budgetLine(row: BudgetRow): string {
   const reset = row.resetsIn === null ? 'resets unknown' : `resets in ${row.resetsIn}`;
   const from = row.source === 'status_line' ? 'status line' : row.source === 'check' ? 'check' : 'unknown source';
   const source = row.fallback ? `${from} (fallback)` : from;
-  const when = row.source === 'check' ? 'read' : 'changed';
+  // A stale row with no known reset is the room last seen, not a reading aged out.
+  const when = row.state === 'stale' && row.resetsIn === null ? 'last seen' : row.source === 'check' ? 'read' : 'changed';
   const state = row.inside && row.reserve !== null ? `${row.state}, inside reserve ${row.reserve}%` : row.state;
   return `${row.account}  ${row.window}  left ${row.left}%  used ${row.used}%  ${reset}  ${row.seat ?? '-'}  ${when} ${row.age} ago  ${source}  ${state}`;
 }

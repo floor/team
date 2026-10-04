@@ -35,7 +35,7 @@ export type StoredReading = {
 };
 
 export type Verdict =
-  | { kind: 'fresh' | 'unconfirmed' | 'stale' | 'refusing'; reading: Seen }
+  | { kind: 'fresh' | 'unconfirmed' | 'stale' | 'refusing' | 'last-seen'; reading: Seen }
   | { kind: 'unknown' };
 
 /** A spend check reading (RFC 0003 § 5): the money the account still holds. */
@@ -123,7 +123,9 @@ export function checkOf(list: readonly Seen[]): Seen[] {
  * Among confirmed live readings, the newest change wins. A first sight counts
  * only when no confirmed reading is still live. Staleness is measured from
  * `changedAt`. A stale reading inside the reserve refuses until its reset;
- * with no reset time it is unknown.
+ * with no reset time it is unknown when it could still matter — inside the
+ * reserve or within the reserve again outside it — and last seen when it sits
+ * further out, room the account may still hold. It never refuses.
  */
 export function verdict(list: readonly Seen[], now: number, staleAfterMs: number, reserve: number | null): Verdict {
   const live = list.filter((item) => item.resetsAt === null || item.resetsAt > now);
@@ -138,7 +140,10 @@ export function verdict(list: readonly Seen[], now: number, staleAfterMs: number
   if (now - reading.changedAt < staleAfterMs) return { kind: 'fresh', reading };
   const inside = reserve !== null && reading.left <= reserve;
   if (inside && reading.resetsAt !== null) return { kind: 'refusing', reading };
-  if (reading.resetsAt === null) return { kind: 'unknown' };
+  if (reading.resetsAt === null) {
+    if (reserve !== null && reading.left > reserve * 2) return { kind: 'last-seen', reading };
+    return { kind: 'unknown' };
+  }
   return { kind: 'stale', reading };
 }
 
@@ -154,6 +159,8 @@ export type CountedReading =
  * through when it is unknown, and a bare first sight falls through too, so a fresh check below it
  * still counts (§ 4.3 rule 5). A stale reading inside its reserve with its reset ahead is kept as
  * the fallback, whichever source it came from, so rule 4 still refuses when nothing below counts.
+ * A stale figure with no known reset counts as the room last seen only when it is well outside
+ * the reserve, and it sits below any inside-reserve figure: a last sight never clears a refusal.
  */
 export function countedFor(
   sources: readonly ReadingSource[],
@@ -164,6 +171,7 @@ export function countedFor(
   reserve: number | null,
 ): CountedReading {
   let fallback: Seen | null = null;
+  let lastSeen: Seen | null = null;
   let unconfirmed: Seen | null = null;
   for (const source of sources) {
     if (source === 'check') {
@@ -173,6 +181,9 @@ export function countedFor(
       // refusing until its known reset, and a fresh source below still wins over this fallback.
       const inside = checks.find((item) => item.resetsAt !== null && item.resetsAt > now && reserve !== null && item.left <= reserve);
       if (inside) fallback ??= inside;
+      // A stale check figure with no reset, past the reserve again, is the room last seen.
+      const sight = checks.find((item) => item.resetsAt === null && reserve !== null && item.left > reserve * 2);
+      if (sight) lastSeen ??= sight;
       continue;
     }
     const result = verdict(screen, now, staleAfterMs, reserve);
@@ -182,9 +193,14 @@ export function countedFor(
       continue;
     }
     if (result.kind === 'fresh') return { kind: 'counted', reading: result.reading };
+    if (result.kind === 'last-seen') {
+      lastSeen ??= result.reading;
+      continue;
+    }
     fallback ??= result.reading;
   }
   if (fallback) return { kind: 'counted', reading: fallback };
+  if (lastSeen) return { kind: 'counted', reading: lastSeen };
   if (unconfirmed) return { kind: 'unconfirmed', reading: unconfirmed };
   return { kind: 'unknown' };
 }
