@@ -61,6 +61,19 @@ const SPEND = BASE.replace(
 const SPEND_TAIL = 'openai spend 4.20 USD, at or below its 5.00 USD floor, read 3m ago; accounts with room: anthropic';
 const SPEND_WHY = `refused: ${SPEND_TAIL}`;
 
+// The same file with the worker's account read by check first, the status line as the fallback (§ 3).
+const CHECK = BASE.replace(
+  'openai: { kind: subscription, reserve: 10%, sources: [status_line] }',
+  'openai: { kind: subscription, reserve: 10%, sources: [check, status_line], check: openai-usage }',
+);
+// And with no status line to fall back to.
+const CHECK_ONLY = BASE.replace(
+  'openai: { kind: subscription, reserve: 10%, sources: [status_line] }',
+  'openai: { kind: subscription, reserve: 10%, sources: [check], check: openai-usage }',
+);
+const CHECK_TAIL = 'openai weekly left 5%, inside its 10% reserve, read 3m ago; accounts with room: anthropic';
+const CHECK_WHY = `refused: ${CHECK_TAIL}`;
+
 let base: string;
 let root: string;
 let home: string;
@@ -74,6 +87,7 @@ function reading(account: string, left: number, over: Partial<Seen> = {}): Seen 
     changedAt: now - 60_000,
     resetsAt: now + 3_600_000,
     seat: account,
+    source: 'status_line',
     confirmed: true,
     ...over,
   };
@@ -81,6 +95,12 @@ function reading(account: string, left: number, over: Partial<Seen> = {}): Seen 
 
 function spend(account: string, amount: number, at: number = now, over: Partial<SpendReading> = {}): SpendReading {
   return { account, amount, currency: 'USD', at, ...over };
+}
+
+// A reading a check command wrote, in the same slot as a screen reading (§ 5): no seat saw it, it
+// is confirmed at first sight, and its own measurement time is what ages it.
+function checkReading(account: string, left: number, over: Partial<Seen> = {}): Seen {
+  return reading(account, left, { seat: null, source: 'check', changedAt: now - 3 * 60_000, ...over });
 }
 
 function store(list: Seen[]): void {
@@ -478,6 +498,97 @@ describe('a spend floor refuses one seat', () => {
     expect(accountsWithRoom(budgets, [anthropic], now, [spend('openai', 5)])).toEqual(['anthropic']);
     expect(accountsWithRoom(budgets, [anthropic], now, [spend('openai', 8, now, { currency: 'EUR' })])).toEqual(['anthropic']);
     expect(accountsWithRoom(budgets, [anthropic], now, [spend('openai', 8, now - 31 * 60_000)])).toEqual(['anthropic']);
+  });
+});
+
+describe('a subscription check reading refuses one seat', () => {
+  beforeEach(() => approve(CHECK));
+
+  test('a fresh one inside the reserve refuses up and add after the watch exited', async () => {
+    // The check is the only real figure: the pane's own screen shows plenty (up's pane width cuts
+    // Codex's line), and no watch runs — the state is all that is left of it.
+    store([reading('anthropic', 80), reading('openai', 80), checkReading('openai', 5)]);
+    const dry = await up(['--dry-run'], world());
+    expect(dry.code).toBe(0);
+    expect(dry.out).toContain(`  skip worker: would refuse: ${CHECK_TAIL}\n`);
+    expect(dry.out).not.toContain('--label worker');
+    expect(dry.labels).toEqual([]);
+
+    const live = await up([], world());
+    expect(live.code).toBe(1);
+    expect(live.out).toContain(`worker: ${CHECK_WHY}\n`);
+    expect(live.out).toContain('lead: ready\n');
+    expect(live.labels).toContain('lead');
+    expect(live.labels).not.toContain('worker');
+
+    const refused = await add(['worker'], world());
+    expect(refused.code).toBe(1);
+    expect(refused.err).toBe(`team add: ${CHECK_WHY}\n`);
+    expect(refused.labels).toEqual([]);
+  });
+
+  test('a fresh one with room clears the account even while the status line shows it inside', async () => {
+    store([reading('anthropic', 80), reading('openai', 4), checkReading('openai', 80)]);
+    const live = await up([], world());
+    expect(live.code).toBe(0);
+    expect(live.labels).toContain('worker');
+    expect(live.out).not.toContain('refused');
+    expect(live.out).not.toContain('is unknown');
+  });
+
+  test('a stale one reads unknown; a status line below it is still read, and rule 4 still refuses', async () => {
+    const old = { changedAt: now - 31 * 60_000 };
+    store([reading('anthropic', 80), checkReading('openai', 5, old)]);
+    const dry = await up(['--dry-run'], world());
+    expect(dry.out).not.toContain('would refuse');
+    expect(dry.out).toContain('openai is unknown; would launch');
+    const live = await up([], world());
+    expect(live.code).toBe(0);
+    expect(live.labels).toContain('worker');
+
+    // § 3: a lower source is used when the higher one is stale — the screen's own figure decides.
+    store([reading('anthropic', 80), checkReading('openai', 5, old), reading('openai', 4)]);
+    const onScreen = await up(['--dry-run'], world());
+    expect(onScreen.out).toContain('openai weekly left 4%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic');
+
+    // And a stale screen below it inside the reserve keeps refusing until its known reset (rule 4).
+    store([reading('anthropic', 80), checkReading('openai', 5, old), reading('openai', 4, old)]);
+    const refused = await up(['--dry-run'], world());
+    expect(refused.out).toContain('openai weekly left 4%, inside its 10% reserve, changed 31m ago; accounts with room: anthropic');
+  });
+
+  test('an account whose sources do not name the check never reads one', async () => {
+    approve(BASE);
+    store([reading('anthropic', 80), checkReading('openai', 5)]);
+    const dry = await up(['--dry-run'], world());
+    expect(dry.out).not.toContain('would refuse');
+    expect(dry.out).toContain('openai is unknown; would launch');
+
+    approve(CHECK_ONLY);
+    store([reading('anthropic', 80), reading('openai', 4)]);
+    const only = await up(['--dry-run'], world());
+    expect(only.out).not.toContain('would refuse');
+    expect(only.out).toContain('openai is unknown; would launch');
+  });
+
+  test('the gate counts a check reading by § 5: its own time, its reset, the in-force reserve', () => {
+    const loaded = loadTeamFile(root);
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+    const worker = loaded.team.seats.find((seat) => seat.name === 'worker');
+    if (!worker) throw new Error('worker');
+    const budgets = loaded.team.budgets;
+    expect(seatBudget(budgets, [checkReading('openai', 5)], worker, now))
+      .toEqual({ kind: 'refuse', why: 'openai weekly left 5%, inside its 10% reserve, read 3m ago; accounts with room: none' });
+    expect(seatBudget(budgets, [checkReading('openai', 50)], worker, now)).toEqual({ kind: 'clear' });
+    expect(seatBudget(budgets, [checkReading('openai', 5, { changedAt: now - 31 * 60_000 })], worker, now))
+      .toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
+    // § 5 measures from the reading's own `at`: a figure measured long ago is stale, however fresh
+    // the run that fetched it. Its reset is ahead, so only freshness can drop it.
+    expect(seatBudget(budgets, [checkReading('openai', 50, { changedAt: now - 40 * 60_000, resetsAt: now + 3_600_000 })], worker, now))
+      .toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
+    // A reset that has passed drops it: it is not a reading at all.
+    expect(seatBudget(budgets, [checkReading('openai', 5, { resetsAt: now - 1 })], worker, now))
+      .toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
   });
 });
 

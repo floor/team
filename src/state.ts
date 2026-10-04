@@ -32,7 +32,7 @@ export type SessionState = {
   worktrees: Record<string, WorktreeState>;
   watch?: { pid: number; heartbeat: string };
   nudge?: { pending_since: string | null };
-  /** The last screen readings for this project, keyed by account, window and seat. */
+  /** The last readings for this project: a screen reading keyed by account, window and seat, a check reading by account and window. */
   budgets?: Record<string, StoredReading>;
   /** The last spend check readings for this project, keyed by account. */
   spend?: Record<string, StoredSpend>;

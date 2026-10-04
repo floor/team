@@ -83,6 +83,8 @@ function countedOf(
     const groups = new Map<WindowName, Seen[]>();
     for (const reading of team.readings) {
       if (reading.account !== name) continue;
+      // The check readings of the same account live in this slot too: this source reads screens.
+      if (reading.source !== 'status_line') continue;
       const group = groups.get(reading.window) ?? [];
       group.push(reading);
       groups.set(reading.window, group);

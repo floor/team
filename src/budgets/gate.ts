@@ -5,7 +5,7 @@
 // reads unknown: said, and never a refusal.
 import type { Seat, TeamFile } from '../file/types.ts';
 import type { WindowName } from '../profiles/quota.ts';
-import { verdict, type Seen, type SpendReading } from './readings.ts';
+import { checkOf, countedFor, screenOf, type Seen, type SpendReading } from './readings.ts';
 
 export type LaunchDecision =
   | { kind: 'clear' }
@@ -54,7 +54,9 @@ export function seatBudget(
   let counted = false;
   let worst: Seen | null = null;
   for (const group of windowsOf(mine)) {
-    const result = verdict(group, now, staleAfterMs, account.reserve);
+    // The window's reading from the sources the account names, in order (§ 3, § 5): a check
+    // reading counts by its own freshness, ahead of a screen reading below it.
+    const result = countedFor(account.sources, screenOf(group), checkOf(group), now, staleAfterMs, account.reserve);
     if (result.kind === 'unknown') {
       unknown = true;
       continue;
@@ -65,8 +67,7 @@ export function seatBudget(
       continue;
     }
     counted = true;
-    const inside = account.reserve !== null && result.reading.left <= account.reserve;
-    if (!inside && result.kind !== 'refusing') continue;
+    if (account.reserve === null || result.reading.left > account.reserve) continue;
     if (
       !worst
       || result.reading.left < worst.left
@@ -77,9 +78,11 @@ export function seatBudget(
   }
   if (worst && account.reserve !== null) {
     const room = accountsWithRoom(budgets, readings, now).filter((accountName) => accountName !== name);
+    // A check reading was measured, not changed on a screen: § 5's word for it.
+    const when = worst.source === 'check' ? 'read' : 'changed';
     return {
       kind: 'refuse',
-      why: `${name} ${worst.window} left ${worst.left}%, inside its ${account.reserve}% reserve, changed ${age(now - worst.changedAt)} ago; accounts with room: ${room.length ? room.join(', ') : 'none'}`,
+      why: `${name} ${worst.window} left ${worst.left}%, inside its ${account.reserve}% reserve, ${when} ${age(now - worst.changedAt)} ago; accounts with room: ${room.length ? room.join(', ') : 'none'}`,
     };
   }
   if (unknown) return { kind: 'unknown', account: name, text: `${name} is unknown` };
@@ -113,10 +116,10 @@ export function accountsWithRoom(
     let counted = 0;
     let inside = false;
     for (const group of groups) {
-      const result = verdict(group, now, staleAfterMs, account.reserve);
+      const result = countedFor(account.sources, screenOf(group), checkOf(group), now, staleAfterMs, account.reserve);
       if (result.kind === 'unknown' || result.kind === 'unconfirmed') continue;
       counted += 1;
-      if (result.kind === 'refusing' || result.reading.left <= account.reserve) inside = true;
+      if (result.reading.left <= account.reserve) inside = true;
     }
     if (counted > 0 && !inside) names.push(name);
   }
