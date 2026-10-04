@@ -1,4 +1,5 @@
 import { CLIS } from '../clis.ts';
+import { ALWAYS_ON, CHECK_NAMES } from '../watch/check.ts';
 import { YamlError, parseYaml } from '../yaml.ts';
 import type { YamlEntry, YamlNode } from '../yaml.ts';
 import { findSecrets } from './secrets.ts';
@@ -470,7 +471,7 @@ function worktreePathProblem(path: string, project: string, trust: string[]): st
 
 function readWatch(entry: YamlEntry | undefined, check: Check): { watch: TeamFile['watch']; legacyMarks: boolean } {
   const fields = check.fields(entry?.value, 'watch', [
-    'interval', 'idle_first', 'idle_repeat', 'team_idle', 'nudge_wait', 'unsent_after', 'quota_marks',
+    'interval', 'idle_first', 'idle_repeat', 'team_idle', 'nudge_wait', 'unsent_after', 'quota_marks', 'checks',
   ]);
   const time = (name: string, fallback: number) =>
     check.measure(fields.get(name), `watch.${name}`, DURATION, '120s or 10m') ?? fallback;
@@ -493,8 +494,37 @@ function readWatch(entry: YamlEntry | undefined, check: Check): { watch: TeamFil
       nudgeWait: time('nudge_wait', 600),
       unsentAfter: time('unsent_after', 60),
       quotaMarks,
+      checks: readChecks(fields.get('checks'), check),
     },
   };
+}
+
+// The checks a file turns off: a map of check name to `off`. A name that doesn't exist is refused
+// with its line, and so is one of the four that always run (RFC 0002 § 4.2) — the schema refuses
+// them, and `team approve` validates before it fingerprints, so neither can approve them either.
+function readChecks(entry: YamlEntry | undefined, check: Check): string[] {
+  const off: string[] = [];
+  if (!entry) return off;
+  const node = entry.value;
+  if (node.kind !== 'map') {
+    if (!(node.kind === 'scalar' && node.value === null)) {
+      check.fail(node.line, 'watch.checks must be a map: a check named, and set off');
+    }
+    return off;
+  }
+  for (const item of node.entries) {
+    if (!(CHECK_NAMES as readonly string[]).includes(item.key)) {
+      check.fail(item.line, `unknown check "${item.key}" in watch.checks: the checks are ${CHECK_NAMES.join(', ')}`);
+      continue;
+    }
+    if (ALWAYS_ON.includes(item.key)) {
+      check.fail(item.line, `watch.checks can't turn off ${item.key}: ${ALWAYS_ON.join(', ')} always run`);
+      continue;
+    }
+    if (item.value.kind === 'scalar' && item.value.value === 'off') off.push(item.key);
+    else check.fail(item.line, `watch.checks.${item.key} must be off: the only setting is off`);
+  }
+  return off;
 }
 
 function readBudgets(

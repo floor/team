@@ -1,36 +1,58 @@
+// One pass of the watch: the core. It builds one observation per seat before any check runs,
+// runs the registered checks in the order it owns, applies the report-once rule, and dials the
+// nudge. A check never reads herdr, a screen or the file itself — only the observation it is
+// handed (RFC 0002 § 4.2).
+import { WATCH_CHECKS_CHANGED } from '../approve/fingerprint.ts';
 import type { TeamFile } from '../file/types.ts';
 import type { SessionState } from '../state.ts';
-import { WATCH_LABEL } from '../status/compare.ts';
 import type { Live } from '../status/compare.ts';
 import { seatModel } from '../status/statusline.ts';
-import { gb, recordSwap, type Machine } from './machine.ts';
-import { readScreen } from './screen.ts';
+import {
+  ALWAYS_ON,
+  type Attention,
+  type CheckContext,
+  type Report,
+  type SeatCheck,
+  type SeatHistory,
+  type SeatObservation,
+  type TeamCheck,
+  type TeamObservation,
+} from './check.ts';
+import { minutes } from './check.ts';
+import { attention } from './checks/attention.ts';
+import { approval } from './checks/approval.ts';
+import { disk } from './checks/disk.ts';
+import { extra } from './checks/extra.ts';
+import { idle } from './checks/idle.ts';
+import { load } from './checks/load.ts';
+import { memory as memoryCheck } from './checks/memory.ts';
+import { missing } from './checks/missing.ts';
+import { modelDrift } from './checks/model-drift.ts';
+import { swapFree } from './checks/swap-free.ts';
+import { swapGrowth } from './checks/swap-growth.ts';
+import { teamIdle } from './checks/team-idle.ts';
+import { unsent } from './checks/unsent.ts';
+import type { Machine } from './machine.ts';
+import { readScreen, type Screen } from './screen.ts';
 
 // What the watch remembers between passes. It lives in the watch's process: a restarted watch
 // starts its timers again, and reports again what is still true.
 export type Memory = {
-  // When the watch first saw a seat quiet: the clock for a seat it has never seen working.
-  idleSince: Record<string, number>;
-  // When each seat was last seen working — herdr said working, or its screen showed a running
-  // turn. The idle duration counts from here, the same for every profile.
-  lastWorking: Record<string, number>;
-  idleTold: Record<string, number>;
-  unsentSince: Record<string, number>;
+  // The seats' shared history, per seat name: the clock the idle check counts from.
+  history: Record<string, SeatHistory>;
+  // Each check's own slot, by kind. The core keeps them; no check reads another's.
+  slots: Record<string, unknown>;
   // Conditions that were reported and have not cleared since.
   active: Set<string>;
-  teamIdleSince: number | null;
-  teamIdleTold: boolean;
-  swap: { at: number; used: number }[];
   pending: string[];
   pendingSince: number | null;
 };
 
 export function newMemory(): Memory {
-  return { idleSince: {}, lastWorking: {}, idleTold: {}, unsentSince: {}, active: new Set(), teamIdleSince: null, teamIdleTold: false, swap: [], pending: [], pendingSince: null };
+  return { history: {}, slots: {}, active: new Set(), pending: [], pendingSince: null };
 }
 
-// A report says what is, never what to do about it. `to` is who can act on it.
-export type Report = { key: string; text: string; to: 'operator' | 'owner' };
+export type { Report } from './check.ts';
 
 // The one line the watch types into the operator's pane. Fixed, and free of report text: a dialog
 // can open between the screen read and the typing, and a digit in the line would answer it. The
@@ -46,7 +68,22 @@ export type PassResult = {
   fallback: string | null;
 };
 
-const minutes = (ms: number) => Math.floor(ms / 60_000);
+// The seat checks, in the order their reports land in the log; the team checks, after them. The
+// order is the core's: a seat's wrong model is reported before its permission prompt, and every
+// seat before the team. Disabling a check in the file's `watch.checks` takes it out of the run,
+// except the four that can't be turned off.
+export const SEAT_CHECKS: SeatCheck[] = [missing, modelDrift, attention, unsent, idle];
+export const TEAM_CHECKS: TeamCheck[] = [extra, teamIdle, approval, load, memoryCheck, disk, swapFree, swapGrowth];
+
+// The one exclusive reading of a seat's screen and herdr status. herdr can report a seat at a
+// permission prompt as idle, so the screen decides first.
+function attentionOf(screen: Screen, status: string, quiet: boolean): Attention {
+  if (screen.kind === 'permission' || screen.kind === 'trust') return 'permission';
+  if (screen.kind === 'question') return 'question';
+  if (status === 'blocked') return 'blocked';
+  if (!quiet && status !== 'working') return 'unknown';
+  return null;
+}
 
 // One pass of the watch. Pure: it reads what it is handed and changes only `memory`.
 // `approval` is how the file differs from the approved one: [] when it doesn't, null when it was
@@ -58,14 +95,14 @@ export function pass(
   const reports: Report[] = [];
   const current = new Set<string>();
   // Reported when it starts, and again only after it has cleared.
-  const once = (key: string, text: string, to: Report['to'] = 'operator') => {
+  const once = (key: string, text: string, to: Report['to'] = 'operator'): Report | null => {
     current.add(key);
-    if (!memory.active.has(key)) reports.push({ key, text, to });
+    return memory.active.has(key) ? null : { key, text, to };
   };
 
-  const labels = new Map(live.workspaces.map((workspace) => [workspace.id, workspace.label]));
   const known = new Set<string>();
   const workers: { idle: boolean }[] = [];
+  const observations: SeatObservation[] = [];
 
   // A stopped seat is kept in the file and not started; should its owner start one by hand, herdr
   // shows it running, and the watch gives it a parked seat's treatment: attention (permission,
@@ -90,16 +127,30 @@ export function pass(
 
   for (const { name, cli, parked, stopped, seat } of seats) {
     const agent = live.agents.find((candidate) => candidate.name === name);
+    const lead = name === team.coordinator || name === team.operator;
     if (!agent) {
-      delete memory.idleSince[name];
-      delete memory.lastWorking[name];
-      delete memory.unsentSince[name];
-      // A stopped seat is not started: absent from herdr is its normal state, not a missing seat.
-      if (live.running && !stopped) once(`missing:${name}`, `${name} is in the file and is not running`);
+      delete memory.history[name];
+      observations.push({
+        name,
+        seat,
+        agent: undefined,
+        herdr: live.running,
+        screen: { kind: 'unknown' },
+        cli,
+        running: false,
+        quiet: false,
+        working: false,
+        prompt: false,
+        lead,
+        parked,
+        stopped,
+        attention: null,
+        model: null,
+        history: { lastWorking: undefined, idleSince: undefined },
+      });
       continue;
     }
     known.add(agent.pane);
-    const lead = name === team.coordinator || name === team.operator;
     const screen = readScreen(cli, live.screens[agent.pane]);
     const quiet = agent.status === 'idle' || agent.status === 'done';
     // Working is herdr's word or the screen's: a seat mid-turn is never idle, whatever its
@@ -108,100 +159,72 @@ export function pass(
     const prompt = screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question';
     if (!lead && !parked) workers.push({ idle: quiet && !working && !prompt });
 
-    if (seat) {
-      const running = seatModel(seat, live.screens[agent.pane]);
-      if (running && (running.model !== seat.model || running.version !== seat.version)) {
-        once(`model:${name}`, `${name} runs ${running.model} ${running.version}; the file says ${seat.model} ${seat.version}: it signs with the wrong model`);
-      }
+    // The history the idle clock counts from. A seat seen working starts it again; a seat quiet
+    // with no work behind it was already idle when the watch started, and counts from then.
+    const history = (memory.history[name] ??= { lastWorking: undefined, idleSince: undefined });
+    if (working) {
+      history.lastWorking = now;
+      delete history.idleSince;
+    } else if (quiet && !prompt && !lead && !parked && history.lastWorking === undefined) {
+      history.idleSince ??= now;
     }
 
-    // herdr can report a seat at a permission prompt as idle, so the screen decides first.
-    if (screen.kind === 'permission' || screen.kind === 'trust') {
-      once(`blocked:${name}`, `${name} waits at a permission prompt: its owner's to answer`, 'owner');
-    } else if (screen.kind === 'question') {
-      once(`question:${name}`, `${name} asked a question: the operator's to act on`);
-    } else if (agent.status === 'blocked') {
-      once(`blocked:${name}`, `${name} is blocked, and its screen is not one the watch recognises`, 'owner');
-    } else if (!quiet && agent.status !== 'working') {
-      once(`unknown:${name}`, `${name}: herdr reports the status "${agent.status}"`);
-    }
-
-    if (!quiet || working || prompt) {
-      delete memory.idleTold[name];
-      delete memory.unsentSince[name];
-      if (working) {
-        // The one event every profile's idle duration counts from.
-        memory.lastWorking[name] = now;
-        delete memory.idleSince[name];
-      }
-      continue;
-    }
-
-    if (screen.kind === 'unsent') {
-      memory.unsentSince[name] ??= now;
-      if (now - (memory.unsentSince[name] as number) >= team.watch.unsentAfter * 1000) {
-        once(`unsent:${name}`, `${name} holds text in its input box that was never sent`);
-      }
-    } else delete memory.unsentSince[name];
-
-    if (lead || parked) continue;
-    // The idle duration counts from the last moment the seat was seen working. A seat never
-    // seen working was already idle when the watch started: it is reported that way, with no
-    // duration from another source.
-    const worked = memory.lastWorking[name];
-    if (worked === undefined) memory.idleSince[name] ??= now;
-    const since = now - (worked ?? (memory.idleSince[name] as number));
-    const told = memory.idleTold[name];
-    if (since >= team.watch.idleFirst * 1000 && (told === undefined || now - told >= team.watch.idleRepeat * 1000)) {
-      memory.idleTold[name] = now;
-      reports.push({
-        key: `idle:${name}`,
-        text: worked === undefined
-          ? `${name} has been idle since the watch started`
-          : `${name} has been idle for ${minutes(since)} minutes`,
-        to: 'operator',
-      });
-    }
+    observations.push({
+      name,
+      seat,
+      agent,
+      herdr: live.running,
+      screen,
+      cli,
+      running: true,
+      quiet,
+      working,
+      prompt,
+      lead,
+      parked,
+      stopped,
+      attention: attentionOf(screen, agent.status, quiet),
+      model: seat ? seatModel(seat, live.screens[agent.pane]) : null,
+      history: { lastWorking: history.lastWorking, idleSince: history.idleSince },
+    });
   }
 
-  for (const agent of live.agents) {
-    if (known.has(agent.pane) || labels.get(agent.workspace) === WATCH_LABEL) continue;
-    once(`extra:${agent.pane}`, `${agent.name ?? `an unnamed ${agent.agent ?? 'agent'}`} (${agent.pane}) is running and is not in the file`);
-  }
+  const teamObservation: TeamObservation = {
+    team,
+    state,
+    live,
+    machine,
+    limits: team.machine,
+    seats: observations,
+    known,
+    workers,
+    approval,
+  };
 
-  if (workers.length && workers.every((worker) => worker.idle)) {
-    memory.teamIdleSince ??= now;
-    if (!memory.teamIdleTold && now - memory.teamIdleSince >= team.watch.teamIdle * 1000) {
-      memory.teamIdleTold = true;
-      reports.push({ key: 'team-idle', text: 'every agent is idle', to: 'operator' });
-    }
-  } else {
-    memory.teamIdleSince = null;
-    memory.teamIdleTold = false;
-  }
+  const ctx: CheckContext = {
+    now,
+    watch: team.watch,
+    once,
+    memory: <T>(kind: string, start: () => T): T => {
+      if (!Object.hasOwn(memory.slots, kind)) memory.slots[kind] = start();
+      return memory.slots[kind] as T;
+    },
+  };
 
-  if (approval === null) once('approval', 'the file was never approved on this machine', 'owner');
-  else if (approval?.length) once('approval', `the file differs from the approved one: ${approval.join('; ')}`, 'owner');
-
-  const limits = team.machine;
-  if (machine.loadPerCore !== null && machine.loadPerCore > limits.loadMax) {
-    once('load', `the load is ${machine.loadPerCore.toFixed(1)} per core, above ${limits.loadMax}`, 'owner');
+  // The four § 4.2 keeps out of `watch.checks` run whatever the file says: the validation refuses
+  // them, and this holds even for a file that reached memory another way.
+  //
+  // And nothing is turned off until the owner approves (RFC 0002 § 4.2): a file whose
+  // `watch.checks` differs from the approved one, a file never approved, and an approval that
+  // wasn't looked at keep every check running and report the difference instead. A difference in
+  // some other section leaves the checks turned off as approved — the owner owns both questions.
+  const approved = Array.isArray(approval) && !approval.includes(WATCH_CHECKS_CHANGED);
+  const off = approved ? new Set(team.watch.checks) : new Set<string>();
+  const enabled = (name: string) => ALWAYS_ON.includes(name) || !off.has(name);
+  for (const seat of observations) {
+    for (const check of SEAT_CHECKS) if (enabled(check.name)) reports.push(...check.run(seat, ctx));
   }
-  if (machine.memoryFree !== null && machine.memoryFree < limits.memoryMin) {
-    once('memory', `free memory is ${Math.round(machine.memoryFree)}%, below ${limits.memoryMin}%`, 'owner');
-  }
-  if (machine.diskFree !== null && machine.diskFree < limits.diskMin) {
-    once('disk', `free disk is ${gb(machine.diskFree)}, below ${gb(limits.diskMin)}`, 'owner');
-  }
-  if (machine.swapFree !== null && machine.swapFree < limits.swapFreeMin) {
-    once('swap-free', `free swap is ${gb(machine.swapFree)}, below ${gb(limits.swapFreeMin)}`, 'owner');
-  }
-  if (machine.swapUsed !== null) {
-    const growth = recordSwap(memory.swap, machine.swapUsed, now, limits.swapGrowthWindow);
-    if (growth > limits.swapGrowthMax) {
-      once('swap-growth', `swap grew by ${gb(growth)} in ${minutes(limits.swapGrowthWindow * 1000)} minutes, above ${gb(limits.swapGrowthMax)}`, 'owner');
-    }
-  }
+  for (const check of TEAM_CHECKS) if (enabled(check.name)) reports.push(...check.run(teamObservation, ctx));
 
   memory.active = current;
 

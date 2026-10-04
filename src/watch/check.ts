@@ -1,0 +1,131 @@
+// One watch check: a small module with a name, run against one seat or against the whole team.
+//
+// The core (pass.ts) builds one observation per seat before any check runs, and the checks only
+// read it: a check that reaches for herdr, a screen or the file itself can be wrong in a way the
+// observation cannot. The core owns the order the checks run in, the report-once rule, and the
+// nudge; a check owns the conditions it knows and the memory slot it keeps them in.
+import type { TeamFile } from '../file/types.ts';
+import type { HerdrAgent } from '../herdr.ts';
+import type { Live } from '../status/compare.ts';
+import type { SessionState } from '../state.ts';
+import type { Machine } from './machine.ts';
+import type { Screen } from './screen.ts';
+
+// A report says what is, never what to do about it. `to` is who can act on it.
+export type Report = { key: string; text: string; to: 'operator' | 'owner' };
+
+// The one exclusive reading of a seat's screen and herdr status: a seat at a permission prompt is
+// never also merely idle. `permission` covers a permission or trust screen; `blocked` a herdr
+// status the screen doesn't explain; `unknown` a herdr status the watch doesn't know.
+export type Attention = 'permission' | 'question' | 'blocked' | 'unknown' | null;
+
+// A seat's history, kept by the core across passes: what the idle clock counts from.
+export type SeatHistory = {
+  // When the seat was last seen working — herdr said working, or its screen showed a running turn.
+  lastWorking: number | undefined;
+  // When the watch first saw the seat quiet with no work behind it.
+  idleSince: number | undefined;
+};
+
+// Everything a seat check may read about the seat it is handed. One is built per seat per pass,
+// before any check runs; a check never reads the live team itself.
+export type SeatObservation = {
+  name: string;
+  // The seat the file declares; undefined for a temporary seat, which signs with no file model.
+  seat: { cli: string; model: string; version: string } | undefined;
+  // The agent herdr lists for the seat; undefined when no agent answers for it.
+  agent: HerdrAgent | undefined;
+  // Whether the session answered at all: false is every seat absent for the same reason.
+  herdr: boolean;
+  screen: Screen;
+  cli: string;
+  // Whether an agent answers for the seat. False: the seat's own checks never run.
+  running: boolean;
+  quiet: boolean;
+  working: boolean;
+  prompt: boolean;
+  // The coordinator and the operator: the leads, which are reported on but not counted idle.
+  lead: boolean;
+  // Parked or stopped: watched for attention, unsent text and model drift; idle is skipped.
+  parked: boolean;
+  stopped: boolean;
+  attention: Attention;
+  // The model the seat's screen shows it running, when it has a file seat and the screen says.
+  model: { model: string; version: string } | null;
+  history: SeatHistory;
+};
+
+// Everything a team check may read about the team it is handed, built after the seat loop.
+export type TeamObservation = {
+  // The file, and the session's state: the budget check (RFC 0003 § 9) reads both.
+  team: TeamFile;
+  state: SessionState;
+  live: Live;
+  // This pass's machine figures, and the file's thresholds to read them against.
+  machine: Machine;
+  limits: TeamFile['machine'];
+  seats: SeatObservation[];
+  // The panes the file's seats answer for: an agent in none of them is extra.
+  known: Set<string>;
+  // The seats that count as the team's workers (not the leads, not parked), and their idle flag.
+  workers: { idle: boolean }[];
+  // How the file differs from the approved one: [] none, null never approved, undefined unlooked.
+  approval: string[] | null | undefined;
+};
+
+// What every check is handed: the pass's clock, the file's watch section, the report-once rule,
+// and the check's own memory.
+export type CheckContext = {
+  now: number;
+  // The file's `watch` section: the thresholds the checks report against.
+  watch: TeamFile['watch'];
+  // The report-once rule. The key goes into this pass's active set; the report comes back the
+  // first time and is null while the condition holds. Cleared conditions clear themselves: a
+  // check that stops calling `once` for a key drops it from the set at the end of the pass.
+  once(key: string, text: string, to?: Report['to']): Report | null;
+  // The check's own slot, under a kind of its own (`idle`, `unsent`, `team-idle`, `swap-growth`).
+  // Created by `start` on first use; kept across passes. Two checks must not share a kind.
+  memory<T>(kind: string, start: () => T): T;
+};
+
+export interface SeatCheck {
+  name: string;
+  run(seat: SeatObservation, ctx: CheckContext): Report[];
+}
+
+export interface TeamCheck {
+  name: string;
+  run(team: TeamObservation, ctx: CheckContext): Report[];
+}
+
+// Every check there is, in the order the core runs them: the seat checks first, then the team
+// checks. The order decides the order of the lines in the log, nothing else.
+export const CHECK_NAMES = [
+  'missing',
+  'model-drift',
+  'attention',
+  'unsent',
+  'idle',
+  'extra',
+  'team-idle',
+  'approval',
+  'load',
+  'memory',
+  'disk',
+  'swap-free',
+  'swap-growth',
+] as const;
+
+// The checks the file cannot turn off (RFC 0002 § 4.2): the four whose condition is the one thing
+// the watch exists for. The schema refuses them in `watch.checks`, and so does `team approve`.
+export const ALWAYS_ON: readonly string[] = ['attention', 'missing', 'model-drift', 'approval'];
+
+/** A duration in whole minutes, as the report texts write it. */
+export function minutes(ms: number): number {
+  return Math.floor(ms / 60_000);
+}
+
+/** The report `ctx.once` may have made, as the list `run` returns. */
+export function reported(report: Report | null): Report[] {
+  return report ? [report] : [];
+}
