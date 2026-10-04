@@ -1,6 +1,6 @@
 import { readArgs } from '../args.ts';
 import { budgetsInForce, watchInForce } from '../approve/approval.ts';
-import { loadReadings, saveReadings, saveSpendReadings, type SpendReading } from '../budgets/readings.ts';
+import { saveSpendReadings, updateReadings, type SpendReading } from '../budgets/readings.ts';
 import { runChecks, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -189,13 +189,15 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
               : `the check for ${outcome.account} is unapproved; that account reads unknown`, false);
           }
         }
-        const result = pass({
-          team, state, live, machine: sources.machine(root), now, memory,
-          approval: sources.approval(team, root), watch: inForce, outcomes, budgets: budget,
-          readings: loadReadings(dir),
+        const result = updateReadings(dir, now, (stored) => {
+          const folded = pass({
+            team, state, live, machine: sources.machine(root), now, memory,
+            approval: sources.approval(team, root), watch: inForce, outcomes, budgets: budget,
+            readings: stored,
+          });
+          return { readings: folded.readings, value: folded };
         });
         for (const report of result.reports) say(report.text, true);
-        saveReadings(dir, result.readings, now);
         if (result.nudge) {
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);
           else deliver(result.nudge, team, session, sources, memory, say);
