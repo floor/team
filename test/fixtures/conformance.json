@@ -97,7 +97,97 @@
       "composer": "idle"
     },
     {
+      "file": "claude-code/2.1.289/permission-create-ansi.txt",
+      "cli": "claude-code",
+      "classify": "permission",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-create-plain.txt",
+      "cli": "claude-code",
+      "classify": "permission",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-create-wide-ansi.txt",
+      "cli": "claude-code",
+      "classify": "permission",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-create-wide-plain.txt",
+      "cli": "claude-code",
+      "classify": "permission",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-plan-wide-ansi.txt",
+      "cli": "claude-code",
+      "classify": "permission",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-plan-wide-plain.txt",
+      "cli": "claude-code",
+      "classify": "permission",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-read-wide-ansi.txt",
+      "cli": "claude-code",
+      "classify": "permission",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-read-wide-plain.txt",
+      "cli": "claude-code",
+      "classify": "permission",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/question-ansi.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/question-plain.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/question-wide-ansi.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/question-wide-plain.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown"
+    },
+    {
       "file": "claude-code/2.1.289/trust-ansi.txt",
+      "cli": "claude-code",
+      "classify": "trust",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/trust-plain.txt",
+      "cli": "claude-code",
+      "classify": "trust",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/trust-wide-ansi.txt",
+      "cli": "claude-code",
+      "classify": "trust",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/2.1.289/trust-wide-plain.txt",
       "cli": "claude-code",
       "classify": "trust",
       "composer": "unknown"
