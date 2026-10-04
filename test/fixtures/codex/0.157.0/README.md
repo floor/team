@@ -39,11 +39,11 @@ directly: only the update-check override was supplied by the seat launch, as abo
 The profile supplied every other flag. One seat verified idle, pasted rules, working,
 acknowledgement and `/exit`, then its workspace and scratch session were removed.
 
-The repeat run also captured `startup-loading.txt`: Codex draws a composer while the
-model is still loading. That screen stays unknown until initialization finishes.
-The final run waited for the startup prompt to settle before delivery; two earlier
-attempts refused delivery during startup and were torn down without submitting a
-message. The default session remained at eight agents, with unchanged config/auth hashes.
+- The repeat run also captured `startup-loading.txt`: Codex draws a composer while the
+  model is still loading. That screen stays unknown until initialization finishes.
+  The final run waited for the startup prompt to settle before delivery; two earlier
+  attempts refused delivery during startup and were torn down without submitting a
+  message. The default session remained at eight agents, with unchanged config/auth hashes.
 
 ## Constructed
 
@@ -54,7 +54,7 @@ recognizes. Without an override pattern the line reads no figure.
 
 ## Permission dialog
 
-`permission.txt` was captured on 2026-10-04 in `team-test-codex-perm`, with one
+- `permission.txt` was captured on 2026-10-04 in `team-test-codex-perm`, with one
 seat in a throwaway folder under an already-trusted project. The command was
 `codex -a on-request -s danger-full-access --no-daemon --no-alt-screen -c check_for_update_on_startup=false`
 with an initial prompt requesting approval for `ls`. No input followed launch;
