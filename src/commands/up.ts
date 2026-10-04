@@ -280,7 +280,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       seats.push(planned);
       continue;
     }
-    const start = seatStart(team, seat);
+    const start = seatStart(team, seat, root);
     if ('problem' in start) {
       if (!start.once || !refused.has(start.problem)) {
         refused.add(start.problem);

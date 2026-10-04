@@ -186,7 +186,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 1;
   }
   // Where the seat waits: its own folder, the lobby, or a refusal — before the file is edited.
-  const start: SeatStart = seatStart(prepared.team, built.seat);
+  const start: SeatStart = seatStart(prepared.team, built.seat, root);
   if ('problem' in start) {
     io.stderr(`team add: ${start.problem}\n`);
     return 1;

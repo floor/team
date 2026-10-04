@@ -2,7 +2,7 @@
 // beside the worktrees and inside trust, and `up` or `add` refuses the folder when it can't.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runAdd, type AddSources } from '../../src/commands/add.ts';
@@ -242,6 +242,27 @@ describe('the lobby', () => {
     expect(run.code).toBe(1);
     expect(run.err).toContain("team up: seat worker would start in live, inside the protected checkout .");
     expect(made.workspaces).toEqual([]);
+  });
+
+  test('a worktrees folder that is a symlink into the project is refused', async () => {
+    mkdirSync(join(base, 'worktrees'), { recursive: true });
+    symlinkSync(join(root, 'live'), join(base, 'worktrees', 'acme'), 'dir');
+    approve();
+    const dry = await up(['--dry-run'], world());
+    expect(dry.out).toContain(
+      "! up would refuse: seat worker would start in the lobby ../worktrees/acme/.lobby, inside the protected checkout .; " +
+        "a seat that isn't `mode: shared` never starts in one\n",
+    );
+    expect(dry.out).not.toContain('--label worker');
+    expect(dry.out).toContain(`--cwd ${root} --label lead`);
+    const made = world();
+    const run = await up([], made);
+    expect(run.code).toBe(1);
+    expect(run.err).toContain(
+      'team up: seat worker would start in the lobby ../worktrees/acme/.lobby, inside the protected checkout .',
+    );
+    expect(made.workspaces).toEqual([]);
+    expect(existsSync(join(root, 'live', '.lobby'))).toBe(false);
   });
 
   test('add waits in the lobby too: a temporary seat with no worktree of its own', async () => {
