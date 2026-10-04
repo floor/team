@@ -15,7 +15,28 @@ const require = createRequire(import.meta.url);
 
 const STAGES = ['unknown', 'trust', 'permission', 'question', 'working'] as const;
 const KINDS = ['idle', 'working', 'unsent', 'permission', 'trust', 'question', 'unknown'] as const;
-const CHOICE_SAMPLES = ['❯ 1. Yes', '› 1. Yes', '> 1. Yes', '❯ 1.', '› 1.', '> 1.'];
+// The lines a dialog draws for its choices, built from their parts: the mark on the choice
+// the cursor is on (claude-code ❯, codex ›, antigravity >) or the indent of the others, the
+// number, and the labels the profiles' rules and fixtures show, run-on forms included — the
+// trust dialog's "Yes, I trust this folder" and "No, exit", the permission dialog's "No, and
+// tell Claude what to do differently" (escape hint and all), codex's "Yes, proceed (y)" and
+// its own long No. The safety floor reads the first two numbered lines (screen-core's
+// choiceLine and twoLine), so chrome must match none of them.
+const CHOICE_MARKS = ['❯ ', '› ', '> ', '  '];
+const CHOICE_TAILS = [
+  '',
+  ' Yes',
+  ' No',
+  ' Yes, I trust this folder',
+  ' No, exit',
+  ' No, and tell Claude what to do differently',
+  ' No, and tell Claude what to do differently (esc)',
+  ' Yes, proceed (y)',
+  ' No, and tell Codex what to do differently (esc)',
+];
+const CHOICE_SAMPLES = CHOICE_MARKS.flatMap((mark) =>
+  ['1', '2'].flatMap((number) => CHOICE_TAILS.map((tail) => `${mark}${number}.${tail}`)),
+);
 
 const DEFAULT_COMPOSER: Composer = {
   mode: 'box-to-rule',

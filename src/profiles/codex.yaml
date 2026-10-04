@@ -44,6 +44,9 @@ status_model:
     model: 'GPT {2:title}'
     version: '{1}'
   # A later footer that is not one of those four names is unread, as the old id map was.
+  # The `{1}` names a group this pattern does not have, on purpose: a template that cannot
+  # fill reads the line as naming no model. There is no plainer spelling — an empty string
+  # is refused and a literal would read as a found model, not as unread.
   - match: '^\s+GPT-[0-9][\w.-]*\s[^·]*·'
     model: '{1}'
     version: '{1}'
