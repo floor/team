@@ -48,8 +48,11 @@ screen:
           - '^\s*→'
           - '^\s+Grok\s+[0-9]'
   working:
+    # The running turn is the braille spinner, or the prompt line ending in
+    # "ctrl+c to stop". Idle and rules-accepted captures do not paint that suffix.
+    # The same words quoted in the transcript are not a turn.
     - any:
-        - 'ctrl\+c to stop'
+        - '^\s*→.*\s{2,}ctrl\+c to stop\s*$'
         - '^\s*[⠀-⣿]+\s+(Working|Thinking)\b'
   composer:
     mode: status-then-one
