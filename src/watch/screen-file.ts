@@ -163,8 +163,14 @@ function composerOf(node: YamlNode): Composer {
   // wrap. A composer without one is read by tiling the typed text's own runs.
   const wrapEntry = optional(entries, 'wrap');
   const wrap = wrapEntry ? wrapOf(wrapEntry) : undefined;
+  // The empty rows a capture shows the pane drawing under the text, inside the box's frame —
+  // the drop before the status line, or the closing rule. Counted from the captures; a
+  // composer whose captures show none declares none, and the box read then keeps every
+  // trailing empty row and refuses one the typed text does not have. Don't guess.
+  const frameEntry = optional(entries, 'frame_rows');
+  const frameRows = frameEntry ? frameRowsOf(frameEntry) : 0;
   if (name === 'box-to-rule') {
-    only(entries, ['mode', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style', 'wrap']);
+    only(entries, ['mode', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style', 'wrap', 'frame_rows']);
     // For a scrolled-out box, the non-blank lines under the closing rule must match
     // every pattern, in order, and the counts must be equal.
     const footers = optional(entries, 'footers');
@@ -176,14 +182,15 @@ function composerOf(node: YamlNode): Composer {
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
       placeholderStyle,
       wrap,
+      frameRows,
     };
   }
   if (name === 'status-last') {
-    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style', 'wrap']);
-    return { mode: name, statusLine: regexField(entries, 'status_line', node.line), prompt: regexField(entries, 'prompt', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value), placeholderStyle, wrap };
+    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style', 'wrap', 'frame_rows']);
+    return { mode: name, statusLine: regexField(entries, 'status_line', node.line), prompt: regexField(entries, 'prompt', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value), placeholderStyle, wrap, frameRows };
   }
   if (name === 'status-then-one') {
-    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style', 'strip_suffix', 'fallback', 'wrap']);
+    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style', 'strip_suffix', 'fallback', 'wrap', 'frame_rows']);
     const suffix = optional(entries, 'strip_suffix');
     const fallback = required(entries, 'fallback', node.line);
     return {
@@ -195,10 +202,11 @@ function composerOf(node: YamlNode): Composer {
       stripSuffix: suffix ? composerString(suffix.value, 'strip_suffix', suffix.line) : null,
       fallback: fallbackOf(fallback.value),
       wrap,
+      frameRows,
     };
   }
   if (name === 'two-rules-footer-below') {
-    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'fold', 'placeholder_style', 'wrap']);
+    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'fold', 'placeholder_style', 'wrap', 'frame_rows']);
     const flag = optional(entries, 'ignore_case');
     const ignoreCase = flag ? boolOf(flag.value, 'ignore_case') : false;
     // Any line below the closing rule matches any pattern in the list.
@@ -213,6 +221,7 @@ function composerOf(node: YamlNode): Composer {
       fold: fold ? patternOf(stringOf(fold.value) ?? fail(fold.line, '"fold" must be a string'), ignoreCase, fold.line) : null,
       placeholderStyle,
       wrap,
+      frameRows,
     };
   }
   fail(mode.line, `"mode" must be box-to-rule, status-last, status-then-one or two-rules-footer-below`);
@@ -231,6 +240,17 @@ function wrapOf(entry: YamlEntry): Wrap {
   const shape = stringOf(kind.value);
   if (shape !== 'word' && shape !== 'hard') fail(kind.line, '"kind" must be word or hard');
   return { continuation: where, kind: shape };
+}
+
+// The pane's own empty rows inside a box's frame, as a capture shows them: a whole number,
+// zero or more. Omitting the key is how a composer whose captures show no such row declares
+// zero — the box read then keeps every trailing empty row.
+function frameRowsOf(entry: YamlEntry): number {
+  const value = entry.value;
+  if (value.kind !== 'scalar' || typeof value.value !== 'number' || !Number.isInteger(value.value) || value.value < 0) {
+    fail(entry.line, '"frame_rows" must be a whole number of rows, zero or more');
+  }
+  return value.value;
 }
 
 function footersOf(entry: YamlEntry, ignoreCase: boolean): RegExp[] {

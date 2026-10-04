@@ -97,4 +97,8 @@ the message the capture submitted. No captured box shows a wrapped line, so no w
 modelled for Codex: a box whose rows read back as runs of the typed text laid out in
 order is the text and is entered, and a box whose rows show anything else — another
 text, an extra row, one character changed, a collapsed space, a blank row the text does
-not have at that place — is never entered.
+not have at that place — is never entered. The pane draws one empty row of its own under
+the text — `unsent.txt` and `exit-typed.txt` show the drop between the text and the status
+line — and that row is the box's frame, not content: the profile counts it
+(`frame_rows: 1`), the box read strips just it, and an empty row beyond it is a row the
+text does not have, so the Enter is refused.

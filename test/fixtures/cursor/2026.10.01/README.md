@@ -54,6 +54,11 @@ capture's test asserts the same Enter as an unwrapped box. Only the whitespace a
 break itself stands for is normalised: the run the break was made at, or a blank line
 the typed text itself has. Inside a row every character must match, runs of spaces
 included, and a blank row the text does not have at that place is never part of it. The
-tests wrap the sentence themselves at 40- and 80-column panes, and refuse a wrapped box
-that holds another text, an extra row, one character changed, a collapsed space, or a
-blank row the text does not have.
+pane also draws two empty rows of its own under the text — `unsent.txt` and
+`follow-up-queue-typed.txt` show the drop between the text and the status line — and those
+rows are the box's frame, not content: the profile counts them (`frame_rows: 2`), the box
+read strips just those, and an empty row beyond them is a row the text does not have, so
+the Enter is refused.
+The tests wrap the sentence themselves at 40- and 80-column panes, and refuse a wrapped box
+that holds another text, an extra row, one character changed, a collapsed space, a
+blank row the text does not have, or a trailing blank row the text does not end with.

@@ -94,6 +94,11 @@ screen:
     wrap:
       continuation: text-column
       kind: word
+    # unsent.txt and follow-up-queue-typed.txt show two empty rows under the text, between
+    # it and the status line: the drop the pane draws of its own, inside the box's frame.
+    # The box read strips up to two trailing empty rows as that frame; a row beyond them is
+    # one the typed text does not have.
+    frame_rows: 2
     fallback:
       - all:
           - match: '^\s*→\s+\S'

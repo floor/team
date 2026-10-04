@@ -201,7 +201,16 @@ export function composerBox(data: ScreenData, lines: string[]): Box | null {
   if (suffix) rest = rest.replace(suffix, '');
   const indent = found[0].length + rest.length - rest.trimStart().length;
   const rows = hit.rows ?? [];
-  while (rows.length > 0 && rows[rows.length - 1] === '') rows.pop();
+  // The pane draws empty rows of its own under the text, inside the box's frame — the drop
+  // before the status line, or before the closing rule. The captures name them per profile
+  // (`frame_rows`), and only those are stripped: they are the box's frame, not its content.
+  // Every row after them stays, so a box that shows an empty row the typed text does not have
+  // is not the typed text, and the caller refuses it.
+  let frame = data.composer.frameRows;
+  while (frame > 0 && rows.length > 0 && rows[rows.length - 1] === '') {
+    rows.pop();
+    frame -= 1;
+  }
   return { first: rest.trimStart(), indent, rows, wrap: 'wrap' in data.composer ? data.composer.wrap : undefined };
 }
 

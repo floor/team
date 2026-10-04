@@ -43,4 +43,9 @@ each test names what it changes; a fold marker is never submitted unverified. No
 shows Antigravity wrapping an ordinary composer line, so no wrap is modelled for it: a
 box whose rows read back as runs of the typed text laid out in order is entered, and one
 whose rows show anything else — another text, an extra row, one character changed, a
-collapsed space, a blank row the text does not have at that place — is never.
+collapsed space, a blank row the text does not have at that place, a trailing blank row
+the text does not end with — is never. No capture shows Antigravity drawing an empty row
+of its own inside the box either — `idle.txt`'s composer is the bare `>` row and
+`unsent.txt`'s rows sit directly between the rules — so the profile counts none
+(`frame_rows` omitted, zero) and every trailing empty row is read as a row the text does
+not have.

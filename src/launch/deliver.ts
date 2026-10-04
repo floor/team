@@ -56,13 +56,16 @@ function continues(text: string, pos: number, row: string, kind: 'word' | 'hard'
 }
 
 /** Where a blank row sits in the typed text: the pane draws an empty row only for a blank line
- *  the text itself has, so the row stands for `\n`, nothing but spaces and tabs, and `\n` again.
- *  A blank row anywhere else is not the text's own and is refused. */
+ *  the text itself has. The line's own content — nothing a box row shows, so only spaces and
+ *  tabs, which a pane need not paint — is consumed; an interior blank line ends at the next
+ *  newline, a blank last line ends with the text. A blank row anywhere else is not the text's
+ *  own and is refused, and a blank line the box does not show a row for is refused after the
+ *  last row (the trailing-newline check in `holdsBox`). */
 function blankLine(text: string, pos: number): number | null {
   if (text[pos] !== '\n') return null;
   let at = pos + 1;
   while (at < text.length && (text[at] === ' ' || text[at] === '\t')) at++;
-  return text[at] === '\n' ? at + 1 : null;
+  return at === text.length || text[at] === '\n' ? at : null;
 }
 
 /** Whether the box shows exactly `text`: the first line after the prompt and every continuation
@@ -100,7 +103,11 @@ function holdsBox(text: string, box: Box): boolean {
     if (next === null) return false;
     at = next;
   }
-  return text.slice(at).trim() === '';
+  // What is left after the box's last row. Trailing spaces and tabs are not observable in a
+  // box — a pane may not paint the end of a row — so they are not required to match. A newline
+  // is observable: it is the box's next row, and every row has been read above; one left over
+  // is a row the box does not show, and the box is not the typed text.
+  return /^[ \t]*$/.test(text.slice(at));
 }
 
 /** What the box holds right now: `ready` to submit, still rendering (`wait`), or a state that is

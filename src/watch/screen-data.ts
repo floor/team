@@ -30,6 +30,11 @@ export type FallbackRule = { all: LinePattern[]; kind: Screen['kind'] };
 // (`placeholder_style: dim` in the profile). A source without styling falls back to the list.
 export type PlaceholderStyle = 'dim';
 
+// Every composer carries `frameRows`: the empty rows a capture shows the pane drawing under
+// the text, inside the box's frame (the drop before the status line or the closing rule). The
+// box read strips up to that many trailing empty rows as the frame; a box with any row beyond
+// them is a box the text does not have, and is refused. Zero where no capture shows the pane
+// drawing such a row: don't guess.
 type Box = {
   mode: 'box-to-rule';
   prompt: RegExp;
@@ -42,8 +47,9 @@ type Box = {
   placeholders: Placeholder[];
   placeholderStyle?: PlaceholderStyle;
   wrap?: Wrap;
+  frameRows: number;
 };
-type StatusLast = { mode: 'status-last'; statusLine: RegExp; prompt: RegExp; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle; wrap?: Wrap };
+type StatusLast = { mode: 'status-last'; statusLine: RegExp; prompt: RegExp; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle; wrap?: Wrap; frameRows: number };
 type StatusThenOne = {
   mode: 'status-then-one';
   statusLine: RegExp;
@@ -53,6 +59,7 @@ type StatusThenOne = {
   stripSuffix: RegExp | null;
   fallback: FallbackRule[];
   wrap?: Wrap;
+  frameRows: number;
 };
 type TwoRules = {
   mode: 'two-rules-footer-below';
@@ -65,6 +72,7 @@ type TwoRules = {
   fold: RegExp | null;
   placeholderStyle?: PlaceholderStyle;
   wrap?: Wrap;
+  frameRows: number;
 };
 
 export type Composer = Box | StatusLast | StatusThenOne | TwoRules;
