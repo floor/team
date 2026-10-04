@@ -11,6 +11,7 @@ import { runDoctor } from '../../src/commands/doctor.ts';
 import { runDown } from '../../src/commands/down.ts';
 import { runInit } from '../../src/commands/init.ts';
 import { runRemove } from '../../src/commands/remove.ts';
+import { runRelease } from '../../src/commands/release.ts';
 import { runStatus } from '../../src/commands/status.ts';
 import { runUp } from '../../src/commands/up.ts';
 import { runWatch } from '../../src/commands/watch.ts';
@@ -159,6 +160,8 @@ async function command(page: Page, line: string, io: Io, answer?: string): Promi
       return runInit(rest, io, fixture.home);
     case 'remove':
       return runRemove(rest, io, world.removeSources());
+    case 'release':
+      return runRelease(rest, io, world.releaseFetch());
     case 'status':
       return runStatus(rest, io, world.statusSources());
     case 'up':

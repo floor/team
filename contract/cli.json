@@ -299,6 +299,65 @@
       "flags": [
         {
           "hidden": false,
+          "name": "--help",
+          "repeatable": false,
+          "takesValue": false
+        },
+        {
+          "hidden": true,
+          "name": "-h",
+          "repeatable": false,
+          "takesValue": false
+        }
+      ],
+      "hidden": false,
+      "name": "release",
+      "positionals": [],
+      "subcommands": [
+        {
+          "flags": [
+            {
+              "hidden": false,
+              "name": "--help",
+              "repeatable": false,
+              "takesValue": false
+            },
+            {
+              "hidden": false,
+              "name": "--json",
+              "repeatable": false,
+              "takesValue": false
+            },
+            {
+              "hidden": true,
+              "name": "-h",
+              "repeatable": false,
+              "takesValue": false
+            }
+          ],
+          "hidden": false,
+          "name": "check",
+          "positionals": [
+            {
+              "name": "package@version",
+              "optional": false,
+              "repeatable": false
+            }
+          ],
+          "subcommands": [],
+          "usage": [
+            "team release check <package@version> [--json]"
+          ]
+        }
+      ],
+      "usage": [
+        "team release check <package@version> [--json]"
+      ]
+    },
+    {
+      "flags": [
+        {
+          "hidden": false,
           "name": "--abandon",
           "repeatable": false,
           "takesValue": false

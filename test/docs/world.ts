@@ -12,6 +12,7 @@ import type { RemoveSources } from '../../src/commands/remove.ts';
 import type { StatusSources } from '../../src/commands/status.ts';
 import type { Launch, UpSources } from '../../src/commands/up.ts';
 import type { WatchSources } from '../../src/commands/watch.ts';
+import type { Attempt, Fetch } from '../../src/release/http.ts';
 import type { Seat, TeamFile } from '../../src/file/types.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import type { Live } from '../../src/status/compare.ts';
@@ -88,6 +89,61 @@ function statusOf(kind: ScreenKind): string {
   return 'idle';
 }
 
+// The public records of material 3.0.2 as the release page shows them: published with provenance,
+// the changelog entry right, but the tag not yet on the default branch — the specification's own
+// example, so the page's transcript is the contract's. An unlisted URL is a failed read; no page
+// reaches a real network.
+const RELEASE_COMMIT = 'a94a8fe5ccb19ba61c4c0873d391e987982fbbd3';
+const RELEASE_CHANGELOG = `# Changelog
+
+All notable changes to material are documented here.
+
+## [3.0.2] - 2026-10-01
+
+- Fix the column the prompt is drawn in.
+`;
+const RELEASE_ANSWERS: Record<string, Attempt> = {
+  'https://registry.npmjs.org/material/3.0.2': {
+    kind: 'http',
+    status: 200,
+    body: JSON.stringify({
+      name: 'material',
+      version: '3.0.2',
+      dist: { shasum: '9f2c1e7a4b3d5e6f8a0b1c2d3e4f5a6b7c8d9e0f', integrity: 'sha512-3d09ab7e52fd19a4ee7a0a78a1c8db93a4cf37b28c19a9f1aef3bb96b9c7b0c5d1e2f3a4b5c6d7e8f9a0b1c2==' },
+    }),
+  },
+  'https://registry.npmjs.org/-/npm/v1/attestations/material%403.0.2': {
+    kind: 'http',
+    status: 200,
+    body: JSON.stringify({ attestations: [{ predicateType: 'https://slsa.dev/provenance/v1' }] }),
+  },
+  'https://api.github.com/repos/floor/material': { kind: 'http', status: 200, body: JSON.stringify({ full_name: 'floor/material', default_branch: 'main' }) },
+  'https://api.github.com/repos/floor/material/git/ref/tags/v3.0.2': {
+    kind: 'http',
+    status: 200,
+    body: JSON.stringify({ ref: 'refs/tags/v3.0.2', object: { sha: RELEASE_COMMIT, type: 'commit' } }),
+  },
+  [`https://api.github.com/repos/floor/material/compare/${RELEASE_COMMIT}...main`]: {
+    kind: 'http',
+    status: 200,
+    body: JSON.stringify({ status: 'behind', ahead_by: 0, behind_by: 2 }),
+  },
+  'https://api.github.com/repos/floor/material/releases/tags/v3.0.2': {
+    kind: 'http',
+    status: 200,
+    body: JSON.stringify({ tag_name: 'v3.0.2', draft: false, prerelease: false }),
+  },
+  'https://api.github.com/repos/floor/material/contents/CHANGELOG.md?ref=main': {
+    kind: 'http',
+    status: 200,
+    body: JSON.stringify({ name: 'CHANGELOG.md', type: 'file', encoding: 'base64', content: `${Buffer.from(RELEASE_CHANGELOG, 'utf8').toString('base64')}\n` }),
+  },
+};
+
+export function releaseAnswers(url: string): Attempt {
+  return RELEASE_ANSWERS[url] ?? { kind: 'transport' };
+}
+
 export type World = {
   /** What `status` and the watch see, or null when herdr doesn't answer. */
   live(session: string): Live | null;
@@ -98,6 +154,8 @@ export type World = {
   statusSources(): StatusSources;
   watchSources(): WatchSources;
   doctorSources(): DoctorSources;
+  /** The recorded npm and GitHub answers the release page's examples replay. */
+  releaseFetch(): Fetch;
   setScreen(seat: string, kind: ScreenKind): void;
   setMachine(kind: Spec['machine']): void;
   /** One CLI's installed-and-logged-in state, on top of the fixture's own. */
@@ -445,5 +503,8 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
       };
     },
     doctorSources,
+    releaseFetch(): Fetch {
+      return (url) => Promise.resolve(releaseAnswers(url));
+    },
   };
 }

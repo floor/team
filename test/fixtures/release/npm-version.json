@@ -1,0 +1,10 @@
+{
+  "name": "material",
+  "version": "3.0.2",
+  "description": "Material Design 3 components",
+  "dist": {
+    "shasum": "9f2c1e7a4b3d5e6f8a0b1c2d3e4f5a6b7c8d9e0f",
+    "integrity": "sha512-3d09ab7e52fd19a4ee7a0a78a1c8db93a4cf37b28c19a9f1aef3bb96b9c7b0c5d1e2f3a4b5c6d7e8f9a0b1c2==",
+    "tarball": "https://registry.npmjs.org/material/-/material-3.0.2.tgz"
+  }
+}

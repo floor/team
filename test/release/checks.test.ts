@@ -1,0 +1,471 @@
+// The four checks of `team release check`, driven from the specification's own cases against
+// recorded answers. No real network request is ever made: the fetch is the answer map.
+import { describe, expect, test } from 'bun:test';
+import { runChecks, encodeSegment, type ReleaseResult } from '../../src/release/checks.ts';
+import type { ReleaseDecl } from '../../src/file/sections/releases.ts';
+import {
+  COMMIT, MATERIAL, TAG_OBJECT, URLS, changelog, fakeFetch, fixture, happy, json, tagObject, withAnswer, withChange,
+  type Answers,
+} from './world.ts';
+
+async function run(
+  answers: Answers,
+  decl: ReleaseDecl = MATERIAL,
+  version = '3.0.2',
+  caps?: { reads: number; attempts: number },
+): Promise<{ result: ReleaseResult; requested: string[] }> {
+  const { fetcher, requested } = fakeFetch(answers);
+  return { result: await runChecks(decl, version, fetcher, caps), requested };
+}
+
+describe('the npm check', () => {
+  test('pass without trusted publishing: exact version and checksums, no attestation read', async () => {
+    const { result, requested } = await run(happy(false), { ...MATERIAL, trustedPublishing: false });
+    expect(result.npm).toEqual({ status: 'pass', detail: 'exact version and checksums found' });
+    expect(requested).not.toContain(URLS.attest);
+  });
+
+  test('pass with trusted publishing: the fixed detail', async () => {
+    const { result } = await run(happy());
+    expect(result.npm).toEqual({ status: 'pass', detail: 'exact version, checksums, and provenance found' });
+  });
+
+  test('a 404 on the version record is missing, and the attestation read is still made', async () => {
+    const { result, requested } = await run(withAnswer(happy(), URLS.npm, json({}, 404)));
+    expect(result.npm.status).toBe('missing');
+    expect(result.npm.detail).toBe('npm has no material@3.0.2');
+    expect(requested).toContain(URLS.npm);
+    expect(requested).toContain(URLS.attest);
+  });
+
+  test('a record for another name or version is unknown', async () => {
+    for (const change of [{ name: 'other' }, { version: '3.0.3' }, { name: 3 }]) {
+      const { result } = await run(withChange(happy(), URLS.npm, (value) => ({ ...value, ...change })));
+      expect(result.npm.status).toBe('unknown');
+    }
+  });
+
+  test('an absent dist is missing; a non-object dist is unknown', async () => {
+    const missing = await run(withChange(happy(), URLS.npm, ({ dist: _dist, ...rest }) => rest));
+    expect(missing.result.npm).toEqual({ status: 'missing', detail: 'the npm record has no dist' });
+    const unknown = await run(withChange(happy(), URLS.npm, (value) => ({ ...value, dist: 'x' })));
+    expect(unknown.result.npm.status).toBe('unknown');
+  });
+
+  test('an absent or empty checksum is missing; a non-string one is unknown', async () => {
+    const absent = await run(withChange(happy(), URLS.npm, (value) => {
+      const dist = value.dist as Record<string, unknown>;
+      return { ...value, dist: { integrity: dist.integrity } };
+    }));
+    expect(absent.result.npm).toEqual({ status: 'missing', detail: 'the npm record has no dist.shasum' });
+
+    const empty = await run(withChange(happy(), URLS.npm, (value) => ({ ...value, dist: { ...(value.dist as object), shasum: '' } })));
+    expect(empty.result.npm).toEqual({ status: 'missing', detail: 'the npm record has an empty dist.shasum' });
+
+    const nonString = await run(withChange(happy(), URLS.npm, (value) => ({ ...value, dist: { ...(value.dist as object), shasum: 42 } })));
+    expect(nonString.result.npm).toEqual({ status: 'unknown', detail: 'dist.shasum is not a string' });
+
+    const integrity = await run(withChange(happy(), URLS.npm, (value) => ({ ...value, dist: { ...(value.dist as object), integrity: null } })));
+    expect(integrity.result.npm).toEqual({ status: 'missing', detail: 'the npm record has no dist.integrity' });
+  });
+
+  test('attestations: an empty array or no provenance entry is missing', async () => {
+    const empty = await run(withChange(happy(), URLS.attest, () => ({ attestations: [] })));
+    expect(empty.result.npm).toEqual({ status: 'missing', detail: 'npm shows no provenance attestation for this version' });
+
+    const other = await run(withChange(happy(), URLS.attest, () => ({ attestations: [{ predicateType: 'https://example.test/other' }] })));
+    expect(other.result.npm.status).toBe('missing');
+
+    const absent = await run(withChange(happy(), URLS.attest, () => ({})));
+    expect(absent.result.npm).toEqual({ status: 'unknown', detail: 'the attestation response has no attestations list' });
+
+    const malformed = await run(withChange(happy(), URLS.attest, () => ({ attestations: 'yes' })));
+    expect(malformed.result.npm.status).toBe('unknown');
+  });
+
+  test('a 404 on the attestation endpoint is missing', async () => {
+    const { result } = await run(withAnswer(happy(), URLS.attest, json({}, 404)));
+    expect(result.npm.status).toBe('missing');
+  });
+
+  test('an entry that is not an object does not count, but one provenance entry is enough', async () => {
+    const { result } = await run(withChange(happy(), URLS.attest, () => ({
+      attestations: ['junk', { predicateType: 'https://slsa.dev/provenance/v1' }],
+    })));
+    expect(result.npm.status).toBe('pass');
+  });
+
+  test('invalid JSON is unknown', async () => {
+    const answers = happy();
+    answers.set(URLS.npm, { kind: 'http', status: 200, body: 'not json' });
+    const { result } = await run(answers);
+    expect(result.npm.status).toBe('unknown');
+  });
+
+  test('an unknown version record wins over a missing attestation', async () => {
+    const answers = withAnswer(happy(), URLS.npm, json({}, 500));
+    answers.set(URLS.npm, [json({}, 500), json({}, 500)]);
+    withAnswer(answers, URLS.attest, json({ attestations: [] }));
+    const { result } = await run(answers);
+    expect(result.npm.status).toBe('unknown');
+  });
+});
+
+describe('the tag check', () => {
+  test('a lightweight tag with compare ahead or identical passes', async () => {
+    for (const status of ['ahead', 'identical']) {
+      const { result } = await run(withChange(happy(), URLS.compare, (value) => ({ ...value, status })));
+      expect(result.tag).toEqual({ status: 'pass', detail: 'tag resolves to a commit on the default branch' });
+    }
+  });
+
+  test('compare behind or diverged is missing, with the fixed detail', async () => {
+    for (const status of ['behind', 'diverged']) {
+      const { result } = await run(withChange(happy(), URLS.compare, (value) => ({ ...value, status })));
+      expect(result.tag).toEqual({ status: 'missing', detail: 'tag commit is not an ancestor of the default branch' });
+    }
+  });
+
+  test('an annotated tag resolves through one tag object', async () => {
+    const answers = withChange(happy(), URLS.ref, () => fixture('github-tag-ref-annotated.json'));
+    answers.set(URLS.tagObject, json(fixture('github-tag-object.json')));
+    const { result, requested } = await run(answers);
+    expect(result.tag.status).toBe('pass');
+    expect(requested).toContain(URLS.tagObject);
+  });
+
+  test('an annotated tag resolves through four tag objects', async () => {
+    const shas = ['bbbb', 'cccc', 'dddd', 'eeee'].map((letter) => letter.repeat(40));
+    const answers = withChange(happy(), URLS.ref, () => fixture('github-tag-ref-annotated.json'));
+    const chain = [TAG_OBJECT, ...shas];
+    for (let index = 0; index < 4; index++) {
+      const at = chain[index] as string;
+      const next = chain[index + 1] as string;
+      answers.set(`https://api.github.com/repos/floor/material/git/tags/${at}`, json(tagObject(at, next, index === 3 ? 'commit' : 'tag')));
+    }
+    answers.delete(URLS.compare);
+    answers.set(`https://api.github.com/repos/floor/material/compare/${shas[3]}...main`, json(fixture('github-compare.json')));
+    const { result, requested } = await run(answers);
+    expect(result.tag.status).toBe('pass');
+    expect(requested.filter((url) => url.includes('/git/tags/')).length).toBe(4);
+  });
+
+  test('a fifth required hop is unknown, and is not requested', async () => {
+    const shas = ['bbbb', 'cccc', 'dddd', 'eeee', 'ffff'].map((letter) => letter.repeat(40));
+    const answers = withChange(happy(), URLS.ref, () => fixture('github-tag-ref-annotated.json'));
+    const chain = [TAG_OBJECT, ...shas];
+    for (let index = 0; index < 4; index++) {
+      const at = chain[index] as string;
+      answers.set(`https://api.github.com/repos/floor/material/git/tags/${at}`, json(tagObject(at, chain[index + 1] as string, 'tag')));
+    }
+    const { result, requested } = await run(answers);
+    expect(result.tag).toEqual({ status: 'unknown', detail: 'the tag chain needs a fifth tag object' });
+    expect(requested).not.toContain(`https://api.github.com/repos/floor/material/git/tags/${shas[3]}`);
+  });
+
+  test('a non-commit target is missing, and the compare is not requested', async () => {
+    const { result, requested } = await run(withChange(happy(), URLS.ref, (value) => ({
+      ...value,
+      object: { ...(value.object as object), type: 'tree' },
+    })));
+    expect(result.tag).toEqual({ status: 'missing', detail: 'the tag does not resolve to a commit' });
+    expect(requested).not.toContain(URLS.compare);
+  });
+
+  test('a 404 on the ref is missing, and no downstream tag read is requested', async () => {
+    const { result, requested } = await run(withAnswer(happy(), URLS.ref, json({}, 404)));
+    expect(result.tag).toEqual({ status: 'missing', detail: 'GitHub has no tag v3.0.2' });
+    expect(requested).toEqual([URLS.npm, URLS.attest, URLS.repo, URLS.ref, URLS.release, URLS.changelog]);
+  });
+
+  test('a tag object 404 is missing', async () => {
+    const answers = withChange(happy(), URLS.ref, () => fixture('github-tag-ref-annotated.json'));
+    answers.set(URLS.tagObject, json({}, 404));
+    const { result } = await run(answers);
+    expect(result.tag.status).toBe('missing');
+  });
+
+  test('a malformed ref or tag object is unknown', async () => {
+    const ref = await run(withChange(happy(), URLS.ref, () => ({ ref: 'refs/tags/v3.0.2' })));
+    expect(ref.result.tag.status).toBe('unknown');
+
+    const answers = withChange(happy(), URLS.ref, () => fixture('github-tag-ref-annotated.json'));
+    answers.set(URLS.tagObject, json({ sha: TAG_OBJECT }));
+    const object = await run(answers);
+    expect(object.result.tag.status).toBe('unknown');
+  });
+
+  test('a compare 404 is missing; an unexpected or non-string status is unknown', async () => {
+    const missing = await run(withAnswer(happy(), URLS.compare, json({}, 404)));
+    expect(missing.result.tag.status).toBe('missing');
+
+    const unexpected = await run(withChange(happy(), URLS.compare, () => ({ status: 'sideways' })));
+    expect(unexpected.result.tag.status).toBe('unknown');
+
+    const nonString = await run(withChange(happy(), URLS.compare, () => ({ status: 3 })));
+    expect(nonString.result.tag.status).toBe('unknown');
+  });
+
+  test('a repository 404 makes tag and changelog missing, and the compare is not requested', async () => {
+    const { result, requested } = await run(withAnswer(happy(), URLS.repo, json({}, 404)));
+    expect(result.tag).toEqual({ status: 'missing', detail: 'GitHub has no repository floor/material' });
+    expect(result.changelog.status).toBe('missing');
+    expect(requested).toEqual([URLS.npm, URLS.attest, URLS.repo, URLS.ref, URLS.release]);
+  });
+
+  test('a repository record without a default branch is unknown for tag and changelog', async () => {
+    const { result } = await run(withChange(happy(), URLS.repo, () => ({ id: 1 })));
+    expect(result.tag.status).toBe('unknown');
+    expect(result.changelog.status).toBe('unknown');
+  });
+
+  test('an unknown repository read wins over a missing ref', async () => {
+    const answers = withAnswer(happy(), URLS.ref, json({}, 404));
+    answers.set(URLS.repo, [json({}, 500), json({}, 500)]);
+    const { result } = await run(answers);
+    expect(result.tag.status).toBe('unknown');
+  });
+});
+
+describe('the github check', () => {
+  test('pass: a published release whose prerelease flag matches the version', async () => {
+    const { result } = await run(happy());
+    expect(result.github).toEqual({ status: 'pass', detail: 'published release matches SemVer channel' });
+  });
+
+  test('pass: a prerelease version with a prerelease release', async () => {
+    const version = '1.0.0-alpha.1';
+    const answers: Answers = new Map([
+      [`https://api.github.com/repos/floor/material/releases/tags/v${version}`, json({ draft: false, prerelease: true })],
+    ]);
+    const { result } = await run(answers, MATERIAL, version);
+    expect(result.github.status).toBe('pass');
+  });
+
+  test('a 404 is missing', async () => {
+    const { result } = await run(withAnswer(happy(), URLS.release, json({}, 404)));
+    expect(result.github).toEqual({ status: 'missing', detail: 'GitHub has no release for v3.0.2' });
+  });
+
+  test('a draft is missing', async () => {
+    const { result } = await run(withChange(happy(), URLS.release, (value) => ({ ...value, draft: true })));
+    expect(result.github).toEqual({ status: 'missing', detail: 'the release is a draft' });
+  });
+
+  test('the prerelease flag must match the version, both ways', async () => {
+    const marked = await run(withChange(happy(), URLS.release, (value) => ({ ...value, prerelease: true })));
+    expect(marked.result.github).toEqual({ status: 'missing', detail: 'the release is marked as a prerelease' });
+
+    const version = '1.0.0-alpha';
+    const answers: Answers = new Map([
+      [`https://api.github.com/repos/floor/material/releases/tags/v${version}`, json({ draft: false, prerelease: false })],
+    ]);
+    const unmarked = await run(answers, MATERIAL, version);
+    expect(unmarked.result.github).toEqual({ status: 'missing', detail: 'the release is not marked as a prerelease' });
+  });
+
+  test('a non-boolean draft or prerelease is unknown', async () => {
+    for (const change of [{ draft: 'no' }, { prerelease: 1 }]) {
+      const { result } = await run(withChange(happy(), URLS.release, (value) => ({ ...value, ...change })));
+      expect(result.github.status).toBe('unknown');
+    }
+  });
+});
+
+describe('the changelog check', () => {
+  test('pass: the bracketed heading, with the fixed detail', async () => {
+    const { result } = await run(happy());
+    expect(result.changelog).toEqual({ status: 'pass', detail: 'changelog entry has a valid release date' });
+  });
+
+  test('pass: the plain heading', async () => {
+    const { result } = await run(withChange(happy(), URLS.changelog, () => changelog('## 3.0.2 - 2026-10-01\n')));
+    expect(result.changelog.status).toBe('pass');
+  });
+
+  test('leap years: 2024 and 2000 pass, 2100 does not', async () => {
+    for (const [date, status] of [['2024-02-29', 'pass'], ['2000-02-29', 'pass'], ['2100-02-29', 'missing']] as const) {
+      const { result } = await run(withChange(happy(), URLS.changelog, () => changelog(`## [3.0.2] - ${date}\n`)));
+      expect(result.changelog.status).toBe(status);
+    }
+  });
+
+  test('an invalid calendar date is missing: 2026-02-30, 1969-12-31, 2100-02-29', async () => {
+    for (const date of ['2026-02-30', '1969-12-31', '2100-02-29']) {
+      const { result } = await run(withChange(happy(), URLS.changelog, () => changelog(`## [3.0.2] - ${date}\n`)));
+      expect(result.changelog).toEqual({ status: 'missing', detail: 'the changelog entry for 3.0.2 has an invalid date' });
+    }
+  });
+
+  test('no entry for the version is missing', async () => {
+    const { result } = await run(withChange(happy(), URLS.changelog, () => changelog('# Changelog\n\n## [3.0.1] - 2026-09-28\n')));
+    expect(result.changelog).toEqual({ status: 'missing', detail: 'CHANGELOG.md has no entry for 3.0.2' });
+  });
+
+  test('near misses do not count: another level, a v-prefix, a longer version, one bracket', async () => {
+    for (const heading of ['### [3.0.2] - 2026-10-01', '## [v3.0.2] - 2026-10-01', '## [3.0.20] - 2026-10-01', '## [3.0.2 - 2026-10-01', '## 3.0.2] - 2026-10-01', '## 3.0.2 2026-10-01']) {
+      const { result } = await run(withChange(happy(), URLS.changelog, () => changelog(`${heading}\n`)));
+      expect(result.changelog.status).toBe('missing');
+    }
+  });
+
+  test('a 404 is missing', async () => {
+    const { result } = await run(withAnswer(happy(), URLS.changelog, json({}, 404)));
+    expect(result.changelog).toEqual({ status: 'missing', detail: 'the default branch has no CHANGELOG.md' });
+  });
+
+  test('a non-file, a non-base64 encoding, bad base64 and bad UTF-8 are unknown', async () => {
+    const dir = await run(withChange(happy(), URLS.changelog, (value) => ({ ...value, type: 'dir' })));
+    expect(dir.result.changelog.status).toBe('unknown');
+
+    const encoding = await run(withChange(happy(), URLS.changelog, (value) => ({ ...value, encoding: 'none' })));
+    expect(encoding.result.changelog.status).toBe('unknown');
+
+    const base64 = await run(withChange(happy(), URLS.changelog, (value) => ({ ...value, content: '!!!' })));
+    expect(base64.result.changelog.status).toBe('unknown');
+
+    const utf8 = await run(withChange(happy(), URLS.changelog, (value) => ({
+      ...value,
+      content: `${Buffer.from([0xff, 0xfe, 0x41]).toString('base64')}\n`,
+    })));
+    expect(utf8.result.changelog.status).toBe('unknown');
+  });
+});
+
+describe('the network contract', () => {
+  test('a 500 is retried exactly once: 500 then 200 passes, 500 twice is unknown', async () => {
+    const answers = happy();
+    answers.set(URLS.npm, [json({}, 500), json(fixture('npm-version.json'))]);
+    const retried = await run(answers);
+    expect(retried.result.npm.status).toBe('pass');
+    expect(retried.requested.filter((url) => url === URLS.npm).length).toBe(2);
+
+    const twice = happy();
+    twice.set(URLS.npm, [json({}, 500), json({}, 500)]);
+    const failed = await run(twice);
+    expect(failed.result.npm.status).toBe('unknown');
+    expect(failed.requested.filter((url) => url === URLS.npm).length).toBe(2);
+  });
+
+  test('429 and 408 are retried once; a timeout and a transport failure are retried once', async () => {
+    for (const failure of [json({}, 429), json({}, 408), { kind: 'timeout' } as const, { kind: 'transport' } as const]) {
+      const answers = happy();
+      answers.set(URLS.npm, [failure, json(fixture('npm-version.json'))]);
+      const { result } = await run(answers);
+      expect(result.npm.status).toBe('pass');
+    }
+    const twice = happy();
+    twice.set(URLS.npm, [{ kind: 'timeout' }, { kind: 'timeout' }]);
+    const { result } = await run(twice);
+    expect(result.npm.status).toBe('unknown');
+  });
+
+  test('a 400, a redirect and a body over the limit are not retried', async () => {
+    for (const failure of [json({}, 400), json({}, 302), { kind: 'too-large' } as const]) {
+      const answers = happy();
+      answers.set(URLS.npm, [failure, json(fixture('npm-version.json'))]);
+      const { result, requested } = await run(answers);
+      expect(result.npm.status).toBe('unknown');
+      expect(requested.filter((url) => url === URLS.npm).length).toBe(1);
+    }
+  });
+
+  test('the maximal run stays inside the caps: eleven reads, twenty-two attempts', async () => {
+    // Trusted publishing and a chain of four tag objects: every endpoint read there is, each
+    // answered 500 then 200, so every read costs both its attempts.
+    const shas = ['bbbb', 'cccc', 'dddd', 'eeee'].map((letter) => letter.repeat(40));
+    const chain = [TAG_OBJECT, ...shas];
+    const urls = [
+      URLS.npm, URLS.attest, URLS.repo, URLS.ref,
+      ...chain.slice(0, 4).map((sha) => `https://api.github.com/repos/floor/material/git/tags/${sha}`),
+      `https://api.github.com/repos/floor/material/compare/${shas[3]}...main`,
+      URLS.release, URLS.changelog,
+    ];
+    const ok = new Map<string, Record<string, unknown>>([
+      [URLS.npm, fixture('npm-version.json')],
+      [URLS.attest, fixture('npm-attestations.json')],
+      [URLS.repo, fixture('github-repo.json')],
+      [URLS.ref, fixture('github-tag-ref-annotated.json')],
+      [URLS.release, fixture('github-release.json')],
+      [URLS.changelog, fixture('github-contents.json')],
+      [`https://api.github.com/repos/floor/material/compare/${shas[3]}...main`, fixture('github-compare.json')],
+    ]);
+    for (let index = 0; index < 4; index++) {
+      const at = chain[index] as string;
+      ok.set(`https://api.github.com/repos/floor/material/git/tags/${at}`, tagObject(at, chain[index + 1] as string, index === 3 ? 'commit' : 'tag'));
+    }
+    const answers: Answers = new Map(urls.map((url) => [url, [json({}, 500), json(ok.get(url) as Record<string, unknown>)]]));
+    const { result, requested } = await run(answers);
+    expect(new Set(requested)).toEqual(new Set(urls));
+    expect(urls.length).toBe(11);
+    expect(requested.length).toBe(22);
+    for (const check of Object.values(result)) expect(check.status).toBe('pass');
+  });
+
+  test('a read that would exceed the read cap is not made, and its checks are unknown', async () => {
+    const { result, requested } = await run(happy(), MATERIAL, '3.0.2', { reads: 2, attempts: 22 });
+    expect(requested).toEqual([URLS.npm, URLS.attest]);
+    expect(result.npm.status).toBe('pass');
+    expect(result.tag.status).toBe('unknown');
+    expect(result.github.status).toBe('unknown');
+    expect(result.changelog.status).toBe('unknown');
+  });
+
+  test('an attempt that would exceed the attempt cap is not made', async () => {
+    const { result, requested } = await run(happy(), MATERIAL, '3.0.2', { reads: 11, attempts: 1 });
+    expect(requested).toEqual([URLS.npm]);
+    expect(result.npm.status).toBe('unknown');
+    expect(result.tag.status).toBe('unknown');
+  });
+});
+
+describe('the encoding', () => {
+  test('a scoped package is one segment, and the attestation path encodes package@version as one', async () => {
+    const decl: ReleaseDecl = { package: '@scope/name', github: 'floor/material', trustedPublishing: true };
+    const { requested } = await run(new Map(), decl, '1.2.3');
+    // Every read fails and is retried here; the assertion is on the URLs themselves.
+    expect(requested).toContain('https://registry.npmjs.org/%40scope%2Fname/1.2.3');
+    expect(requested).toContain('https://registry.npmjs.org/-/npm/v1/attestations/%40scope%2Fname%401.2.3');
+    for (const url of requested) expect(url).not.toContain('@scope');
+  });
+
+  test('a default branch with a slash is one query value and one compare segment', async () => {
+    const answers = withChange(happy(), URLS.repo, (value) => ({ ...value, default_branch: 'release/3' }));
+    answers.delete(URLS.compare);
+    answers.set(`https://api.github.com/repos/floor/material/compare/${COMMIT}...release%2F3`, json(fixture('github-compare.json')));
+    answers.delete(URLS.changelog);
+    answers.set('https://api.github.com/repos/floor/material/contents/CHANGELOG.md?ref=release%2F3', json(fixture('github-contents.json')));
+    const { result, requested } = await run(answers);
+    expect(requested).toContain(`https://api.github.com/repos/floor/material/compare/${COMMIT}...release%2F3`);
+    expect(requested).toContain('https://api.github.com/repos/floor/material/contents/CHANGELOG.md?ref=release%2F3');
+    expect(result.tag.status).toBe('pass');
+    expect(result.changelog.status).toBe('pass');
+  });
+
+  test('encodeSegment leaves the unreserved set and escapes the rest, uppercase', () => {
+    expect(encodeSegment('main')).toBe('main');
+    expect(encodeSegment('a/b c')).toBe('a%2Fb%20c');
+    expect(encodeSegment('~x-y_z.9')).toBe('~x-y_z.9');
+    expect(encodeSegment('é')).toBe('%C3%A9');
+  });
+});
+
+describe('the compound rule', () => {
+  test('no short-circuit after a missing condition: independent reads are still made', async () => {
+    const { result, requested } = await run(withAnswer(happy(), URLS.npm, json({}, 404)));
+    expect(result.npm.status).toBe('missing');
+    expect(requested).toEqual([URLS.npm, URLS.attest, URLS.repo, URLS.ref, URLS.compare, URLS.release, URLS.changelog]);
+    expect(result.tag.status).toBe('pass');
+    expect(result.github.status).toBe('pass');
+    expect(result.changelog.status).toBe('pass');
+  });
+
+  test('an upstream unknown makes the check unknown, and its downstream is not requested', async () => {
+    const answers = happy();
+    answers.set(URLS.ref, [json({}, 500), json({}, 500)]);
+    const { result, requested } = await run(answers);
+    expect(result.tag.status).toBe('unknown');
+    expect(requested).not.toContain(URLS.compare);
+    expect(requested).toEqual([URLS.npm, URLS.attest, URLS.repo, URLS.ref, URLS.ref, URLS.release, URLS.changelog]);
+  });
+});
