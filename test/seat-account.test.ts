@@ -69,6 +69,18 @@ function team(text: string = TEAM): TeamFile {
   return result.team;
 }
 
+function errors(text: string): { line: number; message: string }[] {
+  const result = validateTeamFile(text);
+  if (result.ok) throw new Error('the file validated, and the test wanted it refused');
+  return result.errors;
+}
+
+function lineOf(text: string, needle: string): number {
+  const index = text.split('\n').findIndex((line) => line.includes(needle));
+  if (index < 0) throw new Error(`no line with "${needle}"`);
+  return index + 1;
+}
+
 function seatOf(name: string, text: string = TEAM) {
   const seat = team(text).seats.find((one) => one.name === name);
   if (!seat) throw new Error(`no seat ${name}`);
@@ -153,6 +165,33 @@ describe('an account on a seat (§ 3b)', () => {
     });
     expect(seatBudget(budgets, [reading('openai-work', 80)], lead, NOW))
       .toEqual({ kind: 'unknown', account: 'anthropic', text: 'anthropic is unknown' });
+  });
+});
+
+describe('an account the budgets don\'t hold (§ 3b)', () => {
+  test('a seat\'s account must be a key of budgets.accounts', () => {
+    // A typo used to validate with no warning: the seat silently left every budget, and the gate
+    // read it as a vendor nobody had budgeted. Clear is right for a vendor nobody budgeted; a
+    // seat that names an account the file doesn't hold is a mistake, and is refused where it is.
+    const typo = TEAM.replace('    account: openai-work\n', '    account: opanai\n');
+    expect(errors(typo)).toEqual([
+      { line: lineOf(typo, 'account: opanai'), message: 'seat "codex-work": account "opanai" is not in budgets.accounts' },
+    ]);
+  });
+
+  test('a file with no budgets section and a seat naming an account is the same error', () => {
+    const noBudgets = TEAM.slice(0, TEAM.indexOf('budgets:'));
+    expect(errors(noBudgets)).toEqual([
+      { line: lineOf(noBudgets, 'account: openai-work'), message: 'seat "codex-work": account "openai-work" is not in budgets.accounts' },
+      { line: lineOf(noBudgets, 'account: openai-home'), message: 'seat "codex-home": account "openai-home" is not in budgets.accounts' },
+    ]);
+  });
+
+  test('a vendor nobody budgeted is not an account to name', () => {
+    // The seats that name no account keep their vendor, budgeted or not: only an explicit
+    // `account:` must be one the budgets hold.
+    const noAnthropic = TEAM.replace('    anthropic: { kind: subscription, reserve: 20%, sources: [status_line] }\n', '');
+    expect(validateTeamFile(noAnthropic).ok).toBe(true);
   });
 });
 
