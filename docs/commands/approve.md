@@ -51,8 +51,9 @@ temporary ones, so adding a seat widens it, and that shows up as `limits` change
 new approval is a change to an owner section
 (`trust`, `limits`, `machine`, `rules`, `identity`, `workspace`, `coordinator`, `operator`,
 `session`, `visibility`, `tools`, `budgets`, `watch` — its timings included, down to `watch.checks`,
-whose turn-offs are their own line) or to a seat's own fields; a seat taken out, parked or stopped
-does not, so `remove --keep` and `add` never send the owner back to `approve`. Until an edit is
+whose turn-offs are their own line) or to a seat's own fields. A seat taken out does not.
+Parking or stopping one does, except that `remove --keep` and `add` record the new digest
+themselves, so those commands do not send the owner back to `approve`. Until an edit is
 approved its section changes nothing: the watch, the budget reports, the check cadence, `up`'s and
 `add`'s launch gate and `status`'s table run with the approved values, or with the defaults when
 nothing was approved. A stored copy that no longer validates: `budgets` falls back to no accounts (no
@@ -218,8 +219,9 @@ Seats: 1 (claude-keeper).
 exit 0
 ```
 
-A new seat needs one too — a seat already approved may be parked, stopped or taken out without
-bothering the owner, but a seat the file never had is not:
+A new seat needs one too — a seat already approved may be taken out without bothering the owner.
+Parking or stopping one needs an approval, unless `remove --keep` or `add` wrote the mark and
+recorded the digest. A seat the file never had is not approved:
 
 ```yaml file=.agents/team.yaml
 format: 1
