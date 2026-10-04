@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, statfsSync } from 'node:fs';
 import { cpus, loadavg, platform } from 'node:os';
+import type { TeamFile } from '../file/types.ts';
 
 // The machine's figures, each null when it can't be read here: a figure that isn't read is never
 // reported as fine or as bad.
@@ -77,4 +78,55 @@ export function readMachine(root: string): Machine {
     } catch {}
   }
   return machine;
+}
+
+/** A size as the file writes it: 1 GB is 1e9 bytes, the same spelling the watch uses. */
+export function gb(bytes: number): string {
+  return `${(bytes / 1e9).toFixed(1)} GB`;
+}
+
+export type SwapSample = { at: number; used: number };
+
+/**
+ * Records `used` and returns how far it sits above the smallest sample still inside the window.
+ * The watch and a launch share this, so a figure means the same thing in both places.
+ */
+export function recordSwap(samples: SwapSample[], used: number, now: number, windowSeconds: number): number {
+  samples.push({ at: now, used });
+  const kept = samples.filter((sample) => now - sample.at <= windowSeconds * 1000);
+  samples.splice(0, samples.length, ...kept);
+  return used - Math.min(...kept.map((sample) => sample.used));
+}
+
+/**
+ * The first `machine:` start limit this reading crosses, or null. A figure that was not read
+ * (null) is neither fine nor a refusal. Swap growth uses the samples this command has already
+ * taken; one reading on its own never crosses it.
+ */
+export function launchLimit(
+  machine: Machine,
+  limits: TeamFile['machine'],
+  samples: SwapSample[],
+  now: number,
+): string | null {
+  if (machine.loadPerCore !== null && machine.loadPerCore > limits.loadStart) {
+    return `the load is ${machine.loadPerCore.toFixed(1)} per core, above ${limits.loadStart}`;
+  }
+  if (machine.memoryFree !== null && machine.memoryFree < limits.memoryStart) {
+    return `free memory is ${Math.round(machine.memoryFree)}%, below ${limits.memoryStart}%`;
+  }
+  if (machine.diskFree !== null && machine.diskFree < limits.diskMin) {
+    return `free disk is ${gb(machine.diskFree)}, below ${gb(limits.diskMin)}`;
+  }
+  if (machine.swapFree !== null && machine.swapFree < limits.swapFreeMin) {
+    return `free swap is ${gb(machine.swapFree)}, below ${gb(limits.swapFreeMin)}`;
+  }
+  if (machine.swapUsed !== null) {
+    const growth = recordSwap(samples, machine.swapUsed, now, limits.swapGrowthWindow);
+    const minutes = Math.floor((limits.swapGrowthWindow * 1000) / 60_000);
+    if (growth > limits.swapGrowthMax) {
+      return `swap grew by ${gb(growth)} in ${minutes} minutes, above ${gb(limits.swapGrowthMax)}`;
+    }
+  }
+  return null;
 }

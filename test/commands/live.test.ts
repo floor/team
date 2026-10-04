@@ -10,11 +10,12 @@ import type { DoctorSources } from '../../src/commands/doctor.ts';
 import { sessionState, type HerdrAgent } from '../../src/herdr.ts';
 import { storePath } from '../../src/store/store.ts';
 import { readState } from '../../src/state.ts';
-import { parseMemoryPressure, parseSwapUsage } from '../../src/watch/machine.ts';
+import { parseMemoryPressure, parseSwapUsage, type Machine } from '../../src/watch/machine.ts';
 import type { Screen } from '../../src/watch/screen.ts';
 import { testIo } from '../helpers.ts';
 
 const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8').replace('parked: true', 'stopped: true');
+const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
 const FILE = ['--file', '.agents/team.yaml'];
 const NOW = new Date('2026-10-03T14:02:00Z');
 const IDLE = '❯ \n';
@@ -413,6 +414,50 @@ describe('team up, live', () => {
     expect(code).toBe(1);
     expect(io.err).toContain('the load is 9.0 per core, above 3');
     expect(made.starts).toBe(0);
+  });
+
+  test('each start limit refuses with its figure, and a dry run prints that refusal', async () => {
+    await approve();
+    const cases: { machine: Machine; text: string }[] = [
+      { machine: { ...fine, memoryFree: 10 }, text: 'free memory is 10%, below 25%' },
+      { machine: { ...fine, swapFree: 1.1e9 }, text: 'free swap is 1.1 GB, below 2.0 GB' },
+      { machine: { ...fine, diskFree: 5e9 }, text: 'free disk is 5.0 GB, below 10.0 GB' },
+    ];
+    for (const item of cases) {
+      const dry = testIo(root, { kind: 'owner' });
+      await runUp(['--dry-run', ...FILE], dry, sources({ machine: () => item.machine, sessionRunning: () => false }, world()));
+      expect(dry.out).toContain(`! up would refuse: ${item.text}`);
+      const made = world();
+      const io = testIo(root, { kind: 'owner' });
+      expect(await runUp(FILE, io, sources({ machine: () => item.machine }, made))).toBe(1);
+      expect(io.err).toContain(item.text);
+      expect(made.starts).toBe(0);
+    }
+  });
+
+  test('a reading that crosses mid-up stops before the next seat', async () => {
+    await approve();
+    let reads = 0;
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({
+      machine: () => {
+        reads += 1;
+        return { ...fine, swapUsed: reads >= 4 ? 3e9 : 1e9 };
+      },
+    }, made));
+    expect(code).toBe(1);
+    expect(made.creates).toContain('claude-coordinator-acme');
+    expect(made.creates).not.toContain('deepseek-acme');
+    expect(io.out).toContain('deepseek-acme: swap grew by 2.0 GB in 10 minutes, above 1.0 GB');
+  });
+
+  test('readings inside every limit launch the seats', async () => {
+    await approve();
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runUp(FILE, io, sources({ machine: () => fine }, made))).toBe(0);
+    expect(made.creates).toEqual(['claude-coordinator-acme', 'deepseek-acme', 'deepseek-acme-2', 'watchdog']);
   });
 
   test("a doctor miss refuses, and the watch's missing heartbeat does not", async () => {

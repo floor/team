@@ -12,8 +12,10 @@ import { readLedger, storePath, writeApproval } from '../../src/store/store.ts';
 import { approvalOf } from '../../src/approve/approval.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
 import { testIo } from '../helpers.ts';
+import type { Machine } from '../../src/watch/machine.ts';
 
 const NOW = new Date('2026-10-03T14:02:00Z');
+const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
 const IDLE = '❯ \n';
 
 let base: string;
@@ -195,6 +197,45 @@ describe('team add', () => {
     const gone = testIo(project, owner);
     expect(await runAdd(['--temporary', '--like', 'worker', '--until', 'merged:fix/missing'], gone, sources(world()))).toBe(1);
     expect(gone.err).toContain("doesn't exist");
+  });
+
+  test('each start limit refuses with its figure before the file is edited', async () => {
+    const cases: { machine: Machine; text: string }[] = [
+      { machine: { ...fine, loadPerCore: 9 }, text: 'the load is 9.0 per core, above 3' },
+      { machine: { ...fine, memoryFree: 10 }, text: 'free memory is 10%, below 25%' },
+      { machine: { ...fine, swapFree: 1.1e9 }, text: 'free swap is 1.1 GB, below 2.0 GB' },
+    ];
+    for (const item of cases) {
+      const made = world();
+      const io = testIo(project, owner);
+      expect(await runAdd(['worker'], io, sources(made, { machine: () => item.machine }))).toBe(1);
+      expect(io.err).toContain(item.text);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).toContain('stopped: true');
+    }
+  });
+
+  test('swap that grows before the launch is refused, and the file stays', async () => {
+    let reads = 0;
+    const made = world();
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker'], io, sources(made, {
+      machine: () => {
+        reads += 1;
+        return { ...fine, swapUsed: reads >= 2 ? 3e9 : 1e9 };
+      },
+    }));
+    expect(code).toBe(1);
+    expect(io.err).toContain('swap grew by 2.0 GB in 10 minutes, above 1.0 GB');
+    expect(made.creates).toEqual([]);
+    expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).toContain('stopped: true');
+  });
+
+  test('readings inside every limit still start the seat', async () => {
+    const made = world();
+    const io = testIo(project, owner);
+    expect(await runAdd(['worker'], io, sources(made, { machine: () => fine }))).toBe(0);
+    expect(made.creates).toEqual(['worker']);
   });
 
   test('names an unnamed agent already in the seat\'s workspace instead of launching another', async () => {
