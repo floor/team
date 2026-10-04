@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An unapproved `watch.checks` edit no longer turns a check off while the file differs from the
+  approved one. The watch runs the checks of the section in force, so `checks: { idle: off }` that
+  the owner has not approved still reports an idle seat.
+
 ### Added
 
 - A spend account's `floor` refuses a launch: the watch keeps the money each spend check reads in the

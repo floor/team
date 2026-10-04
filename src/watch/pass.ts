@@ -77,8 +77,8 @@ export type PassResult = {
 
 // The seat checks, in the order their reports land in the log; the team checks, after them. The
 // order is the core's: a seat's wrong model is reported before its permission prompt, and every
-// seat before the team. Disabling a check in the file's `watch.checks` takes it out of the run,
-// except the four that can't be turned off.
+// seat before the team. Disabling a check in the `watch` section in force takes it out of the
+// run, except the four that can't be turned off.
 export const SEAT_CHECKS: SeatCheck[] = [missing, modelDrift, attention, unsent, idle];
 export const TEAM_CHECKS: TeamCheck[] = [extra, teamIdle, approval, load, memoryCheck, disk, swapFree, swapGrowth, budget];
 
@@ -270,9 +270,10 @@ export function pass({
   // And nothing is turned off until the owner approves (RFC 0002 § 4.2): a file whose
   // `watch.checks` differs from the approved one, a file never approved, and an approval that
   // wasn't looked at keep every check running and report the difference instead. A difference in
-  // some other section leaves the checks turned off as approved — the owner owns both questions.
+  // some other section leaves the checks turned off as the section in force has them — that
+  // section is the approved watch, passed in, never the file's own list.
   const approved = Array.isArray(approval) && !approval.includes(WATCH_CHECKS_CHANGED);
-  const off = approved ? new Set(team.watch.checks) : new Set<string>();
+  const off = approved ? new Set(watch.checks) : new Set<string>();
   const enabled = (name: string) => ALWAYS_ON.includes(name) || !off.has(name);
   for (const seat of observations) {
     for (const check of SEAT_CHECKS) if (enabled(check.name)) reports.push(...check.run(seat, ctx));

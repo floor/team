@@ -163,6 +163,22 @@ describe('a pass with checks turned off', () => {
     ]);
   });
 
+  test('an unapproved checks: { idle: off } still reports idle', () => {
+    const file = teamFile('  checks:\n    idle: off\n');
+    // The section in force is the approved watch: idle is still on. The file's edit is not.
+    // Drift in another section is reported; it must not let the file's checks through.
+    const watch = teamFile().watch;
+    const quiet = live({ 'deepseek-acme': { status: 'done', screen: idle } });
+    const memory = newMemory();
+    const at = (minute: number) => texts(pass({
+      team: file, state: emptySession(), live: quiet, machine: fine, now: minute * 60_000, memory,
+      approval: ['`rules` changed'], watch,
+    }));
+    expect(at(0)).toContain('the file differs from the approved one: `rules` changed');
+    expect(at(0)).not.toContain('deepseek-acme has been idle since the watch started');
+    expect(at(10)).toContain('deepseek-acme has been idle since the watch started');
+  });
+
   test('nothing is turned off until the owner approves the edit', () => {
     const off = teamFile('  checks:\n    disk: off\n');
     const reported = (approval: string[] | null) => texts(pass({ team: off, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval }));
