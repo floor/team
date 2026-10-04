@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { classifyLines, composeLines, type ScreenData } from '../src/watch/screen-core.ts';
+import { classifyLines, composerBox, composeLines, type ScreenData } from '../src/watch/screen-core.ts';
 import { loadScreen } from '../src/watch/screen-file.ts';
 import { classify, classifyComposer, readScreen, screenData, type Screen } from '../src/watch/screen.ts';
 import { callOrder, resetCalls } from './fixtures/hatch/hatch.ts';
@@ -784,6 +784,7 @@ screen:
     expect(readScreen(data, cleanLines.join('\n')).kind).toBe('idle');
     expect(composeLines(data, cleanLines).kind).toBe('idle');
     expect(classifyComposer(data, cleanLines).kind).toBe('idle');
+    expect(composerBox(data, cleanLines)).toBeNull();
   });
 
   test('round 6: throwing getters on profile object and throwing Proxy fail safe to unknown on all readers and through watch pass (c)', () => {
@@ -1026,12 +1027,21 @@ module.exports = Object.create(proto);`,
 });`,
     );
 
+    // 4. Module with function-valued default export holding composer
+    writeFileSync(
+      resolve(tempDir, 'fn-default-composer.cjs'),
+      `function def() {}
+def.composer = () => ({ kind: "idle" });
+module.exports = { default: def };`,
+    );
+
     try {
       const clis = ['claude-code', 'codex', 'cursor', 'antigravity'];
       const variants = [
         { file: 'proto-composer.cjs', desc: 'prototype export' },
         { file: 'default-composer.cjs', desc: 'default export' },
         { file: 'proxy-composer.cjs', desc: 'Proxy module' },
+        { file: 'fn-default-composer.cjs', desc: 'function-valued default export' },
       ];
       const dist = await getBuiltScreenFile();
 

@@ -58,7 +58,20 @@ export function loadScreen(text: string, baseDir?: string, profileFile?: string)
   if (!stringOf(cli.value)) fail(cli.line, '"cli" must be a string');
   const topScreenModule = optional(entries, 'screen_module');
   const screen = required(entries, 'screen', root.line);
-  return screenOf(screen.value, topScreenModule, baseDir, profileFile);
+  return deepFreeze(screenOf(screen.value, topScreenModule, baseDir, profileFile));
+}
+
+function deepFreeze<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object' || obj instanceof RegExp) return obj;
+  if (Object.isFrozen(obj)) return obj;
+  Object.freeze(obj);
+  for (const key of Object.getOwnPropertyNames(obj)) {
+    const val = (obj as any)[key];
+    if (val !== null && typeof val === 'object' && !(val instanceof RegExp)) {
+      deepFreeze(val);
+    }
+  }
+  return obj;
 }
 
 function loadScreenModule(specifier: string, baseDir: string | undefined, line: number, profileFile?: string): ScreenProfile {
@@ -191,7 +204,7 @@ function loadScreenModule(specifier: string, baseDir: string | undefined, line: 
     const defaultExport =
       mod && typeof mod === 'object' && 'default' in mod ? mod.default : undefined;
     const candidate =
-      defaultExport && typeof defaultExport === 'object'
+      defaultExport && (typeof defaultExport === 'object' || typeof defaultExport === 'function')
         ? defaultExport
         : mod;
 

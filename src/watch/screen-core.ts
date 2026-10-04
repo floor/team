@@ -351,7 +351,7 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
  * the box to the text it typed; nothing here decides that.
  */
 export function composerBox(data: ScreenData, lines: string[]): Box | null {
-  if (!data.composer) return null;
+  if (!data.composer || data.profile?.composer) return null;
   const plain = plainLines(lines);
   const hit = compose(data, plain, lines, () => false);
   if (hit.kind === 'stop' || hit.kind === 'unknown') return null;
