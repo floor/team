@@ -92,6 +92,13 @@ seats:
     version: "4.7"
     launch: grok --model grok-4.7
     stopped: true             # kept in the file; `up` doesn't start it
+
+budgets:                      # the owner's: reserve or floor per account, marks, freshness
+  accounts:
+    openai-hello:             # the account codex-hello spends
+      kind: subscription
+      reserve: 10%            # refuse a launch on a figure inside it
+      sources: [status_line]  # the figure comes off Codex's status line
 ```
 
 - `session` names the herdr session and defaults to `project`; `--session` overrides it.
