@@ -3,9 +3,9 @@ import { readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync, writeFileS
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { classifyLines, composeLines } from '../src/watch/screen-core.ts';
+import { classifyLines, composeLines, type ScreenData } from '../src/watch/screen-core.ts';
 import { loadScreen } from '../src/watch/screen-file.ts';
-import { classify, classifyComposer, readScreen, type Screen } from '../src/watch/screen.ts';
+import { classify, classifyComposer, readScreen, screenData, type Screen } from '../src/watch/screen.ts';
 import { callOrder, resetCalls } from './fixtures/hatch/hatch.ts';
 import type { ScreenProfile } from '../src/watch/screen-profile.ts';
 import { parseOverrides } from '../src/profiles/overrides.ts';
@@ -455,6 +455,21 @@ screen:
       expect(() => loadScreen(makeYaml('src/watch/pass.ts'), undefined, 'test.yaml')).toThrow(
         /profile "test\.yaml":.*"screen_module".*cannot be a path in the project/,
       );
+      expect(() => loadScreen(makeYaml('./node_modules/x.js'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a path in the project/,
+      );
+      expect(() => loadScreen(makeYaml('././node_modules/x.js'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a path in the project/,
+      );
+      expect(() => loadScreen(makeYaml('./src/x.js'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a path in the project/,
+      );
+      expect(() => loadScreen(makeYaml('././src/x.js'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a path in the project/,
+      );
+      expect(() => loadScreen(makeYaml('./ext'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*must have a script extension/,
+      );
 
       // 10. Symlink leading out of directory
       expect(() => loadScreen(makeYaml('inside-symlink.cjs'), tempDir, 'test.yaml')).toThrow(
@@ -495,6 +510,121 @@ screen:
     expect(regex.test('http://evil.com/x.js')).toBe(false);
     expect(regex.test('~/evil.cjs')).toBe(false);
     expect(regex.test('a/%2e%2e/x.js')).toBe(false);
+    expect(regex.test('./node_modules/x.js')).toBe(false);
+    expect(regex.test('././node_modules/x.js')).toBe(false);
+    expect(regex.test('./src/x.js')).toBe(false);
+    expect(regex.test('././src/x.js')).toBe(false);
+    expect(regex.test('./ext')).toBe(false);
+  });
+
+  test('for every dialog fixture in conformance manifest, a hatch with dialog predicates false and composer idle/unsent still reads manifest kind', () => {
+    const manifestPath = resolve(process.cwd(), 'test/fixtures/conformance.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const dialogScreens = manifest.screens.filter((s: any) =>
+      s.classify === 'trust' || s.classify === 'permission' || s.classify === 'question'
+    );
+    expect(dialogScreens.length).toBeGreaterThan(0);
+
+    for (const entry of dialogScreens) {
+      const screenPath = resolve(process.cwd(), 'test/fixtures', entry.file);
+      const text = readFileSync(screenPath, 'utf8');
+      const lines = text.split('\n');
+      const baseData = screenData(entry.cli);
+      expect(baseData).not.toBeNull();
+
+      for (const composerKind of ['idle', 'unsent'] as const) {
+        const from = composerKind === 'idle' ? 1000 : -4;
+        const hatchData: ScreenData = {
+          ...baseData!,
+          profile: {
+            unknown: () => false,
+            trust: () => false,
+            permission: () => false,
+            question: () => false,
+            working: () => false,
+            composer: () => ({ kind: composerKind, from }),
+          },
+        };
+
+        // All three readers return the manifest kind
+        expect(classifyLines(hatchData, lines.slice(-20)).kind).toBe(entry.classify);
+        expect(readScreen(hatchData, text).kind).toBe(entry.classify);
+        expect(classify(hatchData, lines).kind).toBe(entry.classify);
+
+        // composeLines and classifyComposer return unknown, never idle or unsent
+        expect(composeLines(hatchData, lines.slice(-20)).kind).toBe('unknown');
+        expect(classifyComposer(hatchData, lines).kind).toBe('unknown');
+      }
+    }
+  });
+
+  test('composeLines returns unknown for trust even when hatch trust returns true and composer returns idle', () => {
+    const fixtures = ['cursor/2026.10.01/trust.txt', 'antigravity/1.2.16/trust.txt'];
+    for (const fixture of fixtures) {
+      const cli = fixture.startsWith('cursor') ? 'cursor' : 'antigravity';
+      const baseData = screenData(cli)!;
+      const text = readFileSync(resolve(process.cwd(), 'test/fixtures', fixture), 'utf8');
+      const lines = text.split('\n');
+      const hatchData: ScreenData = {
+        ...baseData,
+        profile: {
+          trust: () => true,
+          composer: () => ({ kind: 'idle', from: 1000 }),
+        },
+      };
+
+      expect(classifyLines(hatchData, lines.slice(-20)).kind).toBe('trust');
+      expect(readScreen(hatchData, text).kind).toBe('trust');
+      expect(composeLines(hatchData, lines.slice(-20)).kind).toBe('unknown');
+      expect(classifyComposer(hatchData, lines).kind).toBe('unknown');
+    }
+  });
+
+  test('a hatch return value whose kind or catch getter throws fails closed to unknown with no crash', () => {
+    const baseData = screenData('codex')!;
+    const lines = ['some line'];
+
+    // Predicate with throwing catch getter
+    const throwingCatchPredicateData: ScreenData = {
+      ...baseData,
+      profile: {
+        permission: () => ({
+          get catch() {
+            throw new Error('catch getter boom');
+          },
+        }) as any,
+      },
+    };
+    expect(classifyLines(throwingCatchPredicateData, lines).kind).toBe('unknown');
+    expect(composeLines(throwingCatchPredicateData, lines).kind).toBe('unknown');
+
+    // Composer with throwing catch getter
+    const throwingCatchComposerData: ScreenData = {
+      ...baseData,
+      profile: {
+        composer: () => ({
+          get catch() {
+            throw new Error('composer catch getter boom');
+          },
+        }) as any,
+      },
+    };
+    expect(classifyLines(throwingCatchComposerData, lines).kind).toBe('unknown');
+    expect(composeLines(throwingCatchComposerData, lines).kind).toBe('unknown');
+
+    // Composer with throwing kind getter
+    const throwingKindComposerData: ScreenData = {
+      ...baseData,
+      profile: {
+        composer: () => ({
+          get kind() {
+            throw new Error('composer kind getter boom');
+          },
+        }) as any,
+      },
+    };
+    expect(classifyLines(throwingKindComposerData, lines).kind).toBe('unknown');
+    expect(composeLines(throwingKindComposerData, lines).kind).toBe('unknown');
   });
 
   test('rule for main on screens: no screen origin/main reads unknown/working/permission/trust/question may read idle or unsent', () => {
