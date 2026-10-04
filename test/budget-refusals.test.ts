@@ -536,9 +536,11 @@ describe('a subscription check reading refuses one seat', () => {
     expect(live.out).not.toContain('is unknown');
   });
 
-  test('a stale one reads unknown; a status line below it is still read, and rule 4 still refuses', async () => {
+  test('a stale one with room reads unknown; a status line below it is still read, and rule 4 still refuses', async () => {
     const old = { changedAt: now - 31 * 60_000 };
-    store([reading('anthropic', 80), checkReading('openai', 5, old)]);
+    // With room on the account, a stale check counts for nothing: § 3 falls through to the next
+    // source, and with nothing below it the account reads unknown.
+    store([reading('anthropic', 80), checkReading('openai', 50, old)]);
     const dry = await up(['--dry-run'], world());
     expect(dry.out).not.toContain('would refuse');
     expect(dry.out).toContain('openai is unknown; would launch');
@@ -547,14 +549,35 @@ describe('a subscription check reading refuses one seat', () => {
     expect(live.labels).toContain('worker');
 
     // § 3: a lower source is used when the higher one is stale — the screen's own figure decides.
-    store([reading('anthropic', 80), checkReading('openai', 5, old), reading('openai', 4)]);
+    store([reading('anthropic', 80), checkReading('openai', 50, old), reading('openai', 4)]);
     const onScreen = await up(['--dry-run'], world());
     expect(onScreen.out).toContain('openai weekly left 4%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic');
 
     // And a stale screen below it inside the reserve keeps refusing until its known reset (rule 4).
-    store([reading('anthropic', 80), checkReading('openai', 5, old), reading('openai', 4, old)]);
+    store([reading('anthropic', 80), checkReading('openai', 50, old), reading('openai', 4, old)]);
     const refused = await up(['--dry-run'], world());
     expect(refused.out).toContain('openai weekly left 4%, inside its 10% reserve, changed 31m ago; accounts with room: anthropic');
+  });
+
+  test('a stale check reading inside its reserve keeps refusing until its reset', async () => {
+    // Rule 4 is about the reserve, not the source: a check figure measured 31 minutes ago, 5%
+    // left inside the 10% reserve and its reset 100 h ahead must keep refusing after the watch
+    // has exited, exactly as the same figure from a status line does.
+    const old = { changedAt: now - 31 * 60_000, resetsAt: now + 100 * 3_600_000 };
+    store([reading('anthropic', 80), checkReading('openai', 5, old)]);
+    const dry = await up(['--dry-run'], world());
+    expect(dry.out).toContain('  skip worker: would refuse: openai weekly left 5%, inside its 10% reserve, read 31m ago; accounts with room: anthropic\n');
+    const live = await up([], world());
+    expect(live.code).toBe(1);
+    expect(live.out).toContain('worker: refused: openai weekly left 5%, inside its 10% reserve, read 31m ago; accounts with room: anthropic\n');
+    expect(live.labels).not.toContain('worker');
+
+    // A fresh lower source still wins: the status line's own figure clears the account.
+    store([reading('anthropic', 80), checkReading('openai', 5, old), reading('openai', 50)]);
+    const cleared = await up([], world());
+    expect(cleared.code).toBe(0);
+    expect(cleared.out).not.toContain('refused');
+    expect(cleared.labels).toContain('worker');
   });
 
   test('an account whose sources do not name the check never reads one', async () => {
@@ -580,10 +603,14 @@ describe('a subscription check reading refuses one seat', () => {
     expect(seatBudget(budgets, [checkReading('openai', 5)], worker, now))
       .toEqual({ kind: 'refuse', why: 'openai weekly left 5%, inside its 10% reserve, read 3m ago; accounts with room: none' });
     expect(seatBudget(budgets, [checkReading('openai', 50)], worker, now)).toEqual({ kind: 'clear' });
+    // Stale, inside its reserve and its reset ahead: rule 4 keeps the refusal.
     expect(seatBudget(budgets, [checkReading('openai', 5, { changedAt: now - 31 * 60_000 })], worker, now))
+      .toEqual({ kind: 'refuse', why: 'openai weekly left 5%, inside its 10% reserve, read 31m ago; accounts with room: none' });
+    // Rule 4 needs a known reset: with none, the stale figure reads unknown.
+    expect(seatBudget(budgets, [checkReading('openai', 5, { changedAt: now - 31 * 60_000, resetsAt: null })], worker, now))
       .toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
     // § 5 measures from the reading's own `at`: a figure measured long ago is stale, however fresh
-    // the run that fetched it. Its reset is ahead, so only freshness can drop it.
+    // the run that fetched it. Outside the reserve its reset ahead drops it to unknown.
     expect(seatBudget(budgets, [checkReading('openai', 50, { changedAt: now - 40 * 60_000, resetsAt: now + 3_600_000 })], worker, now))
       .toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
     // A reset that has passed drops it: it is not a reading at all.

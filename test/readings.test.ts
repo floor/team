@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { loadReadings, loadSpendReadings, observe, observeCheck, recall, saveReadings, saveSpendReadings, verdict, type Seen, type StoredReading } from '../src/budgets/readings.ts';
+import { countedFor, loadReadings, loadSpendReadings, observe, observeCheck, recall, saveReadings, saveSpendReadings, verdict, type Seen, type StoredReading } from '../src/budgets/readings.ts';
 import type { QuotaFigure } from '../src/profiles/quota.ts';
 import { readState, STATE_FILE, updateState } from '../src/state.ts';
 
@@ -221,6 +221,35 @@ describe('a check reading in the same slot', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('the fallback among the sources', () => {
+  const at = 1_700_000_000_000;
+
+  test('a stale check inside its reserve is the fallback, and a fresh lower source wins', () => {
+    const check = seen({ seat: null, source: 'check', confirmed: true, changedAt: at - 31 * minute, left: 5, used: 95, resetsAt: at + 100 * 3_600_000 });
+    // Nothing below it counts: rule 4's refusal holds for the check's figure too.
+    expect(countedFor(['check', 'status_line'], [], [check], at, stale, 10))
+      .toEqual({ kind: 'counted', reading: check });
+    // § 3: a fresh status line below it is read, and its room clears the account.
+    const screen = seen({ seat: 'one', confirmed: true, changedAt: at - minute, left: 50, used: 50 });
+    expect(countedFor(['check', 'status_line'], [screen], [check], at, stale, 10))
+      .toEqual({ kind: 'counted', reading: screen });
+    // A stale check with room counts for nothing: with nothing below it, unknown.
+    const roomy = seen({ ...check, left: 50, used: 50 });
+    expect(countedFor(['check', 'status_line'], [], [roomy], at, stale, 10)).toEqual({ kind: 'unknown' });
+  });
+
+  test('an unconfirmed status line falls through to a fresh check below it', () => {
+    const sight = seen({ seat: 'one', confirmed: false, changedAt: at, left: 20, used: 80 });
+    const check = seen({ seat: null, source: 'check', confirmed: true, changedAt: at - minute, left: 80, used: 20 });
+    // § 4.3 rule 5: a first sight is not the account's answer while a lower source has one.
+    expect(countedFor(['status_line', 'check'], [sight], [check], at, stale, 10))
+      .toEqual({ kind: 'counted', reading: check });
+    // With nothing below it, the first sight is the answer it was.
+    expect(countedFor(['status_line', 'check'], [sight], [], at, stale, 10))
+      .toEqual({ kind: 'unconfirmed', reading: sight });
   });
 });
 

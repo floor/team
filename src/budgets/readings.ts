@@ -151,8 +151,9 @@ export type CountedReading =
  * The reading that counts for one window, from the sources the account names in order (§ 3, § 5):
  * a lower source is used only when every higher one is failed, unknown or stale. A check reading
  * counts while it is fresh by § 5's own time and its reset has not passed; a screen reading falls
- * through when it is unknown or a bare first sight, and a stale one inside its reserve is kept as
- * the fallback, so § 4.3's rule 4 still refuses when nothing below counts.
+ * through when it is unknown, and a bare first sight falls through too, so a fresh check below it
+ * still counts (§ 4.3 rule 5). A stale reading inside its reserve with its reset ahead is kept as
+ * the fallback, whichever source it came from, so rule 4 still refuses when nothing below counts.
  */
 export function countedFor(
   sources: readonly ReadingSource[],
@@ -163,19 +164,28 @@ export function countedFor(
   reserve: number | null,
 ): CountedReading {
   let fallback: Seen | null = null;
+  let unconfirmed: Seen | null = null;
   for (const source of sources) {
     if (source === 'check') {
       const reading = checks.find((item) => (item.resetsAt === null || item.resetsAt > now) && now - item.changedAt < staleAfterMs);
-      if (!reading) continue;
-      return { kind: 'counted', reading };
+      if (reading) return { kind: 'counted', reading };
+      // Rule 4 is about the reserve, not the source: a stale check figure inside it keeps
+      // refusing until its known reset, and a fresh source below still wins over this fallback.
+      const inside = checks.find((item) => item.resetsAt !== null && item.resetsAt > now && reserve !== null && item.left <= reserve);
+      if (inside) fallback ??= inside;
+      continue;
     }
     const result = verdict(screen, now, staleAfterMs, reserve);
     if (result.kind === 'unknown') continue;
-    if (result.kind === 'unconfirmed') return { kind: 'unconfirmed', reading: result.reading };
+    if (result.kind === 'unconfirmed') {
+      unconfirmed ??= result.reading;
+      continue;
+    }
     if (result.kind === 'fresh') return { kind: 'counted', reading: result.reading };
     fallback ??= result.reading;
   }
   if (fallback) return { kind: 'counted', reading: fallback };
+  if (unconfirmed) return { kind: 'unconfirmed', reading: unconfirmed };
   return { kind: 'unknown' };
 }
 
