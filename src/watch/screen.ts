@@ -38,28 +38,28 @@ function windowOf(lines: string[]): string[] {
 }
 
 /** Every stage, in the core's order. The first one that matches wins. */
-export function classify(cli: string, lines: string[]): Screen {
-  const data = DATA[cli];
+export function classify(cli: string | ScreenData, lines: string[]): Screen {
+  const data = typeof cli === 'string' ? DATA[cli] : cli;
   if (!data) return { kind: 'unknown' };
   return classifyLines(data, windowOf(lines));
 }
 
 /** The composer alone. A running turn would otherwise hide an empty input box. */
-export function classifyComposer(cli: string, lines: string[]): Screen {
-  const data = DATA[cli];
+export function classifyComposer(cli: string | ScreenData, lines: string[]): Screen {
+  const data = typeof cli === 'string' ? DATA[cli] : cli;
   if (!data) return { kind: 'unknown' };
   return composeLines(data, windowOf(lines));
 }
 
-export function readScreen(cli: string, screen: string | undefined): Screen {
+export function readScreen(cli: string | ScreenData, screen: string | undefined): Screen {
   if (screen === undefined) return { kind: 'unknown' };
   return classify(cli, screen.split('\n'));
 }
 
 /** The folded form of a paste the pane's composer shows, or null. The shape only; the caller
  *  verifies it holds the text it typed before trusting it. */
-export function readFold(cli: string, screen: string | undefined): Fold | null {
-  const data = DATA[cli];
+export function readFold(cli: string | ScreenData, screen: string | undefined): Fold | null {
+  const data = typeof cli === 'string' ? DATA[cli] : cli;
   if (data === undefined || screen === undefined) return null;
   return foldOf(data, windowOf(screen.split('\n')));
 }
@@ -68,8 +68,8 @@ export function readFold(cli: string, screen: string | undefined): Fold | null {
  * 20 lines, read plain — a figure is never styled. Null for a CLI with no status line, and for
  * a window that shows no status row — a dialog, a question, a trust screen, a shell or an
  * unknown one reads no figures. */
-export function statusRow(cli: string, screen: string | undefined): string | null {
-  const data = DATA[cli];
+export function statusRow(cli: string | ScreenData, screen: string | undefined): string | null {
+  const data = typeof cli === 'string' ? DATA[cli] : cli;
   if (data === undefined || screen === undefined) return null;
   return statusRowOf(data, windowOf(stripSgr(screen).split('\n')));
 }
