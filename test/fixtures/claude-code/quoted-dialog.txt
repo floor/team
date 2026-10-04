@@ -1,0 +1,9 @@
+● The handover note quotes the dialog it saw:
+  Do you want to proceed? 1. Yes
+  I answered it before the tests ran, so this is the box after.
+
+────────────────────────────────────────
+❯
+────────────────────────────────────────
+  main · …/acme · Opus 5.5 · S: $1.2 · W: 12%
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
