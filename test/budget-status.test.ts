@@ -59,10 +59,18 @@ describe('the budgets table', () => {
     expect(budgetTable(team(10).budgets, [], now)[0]?.reserve).toBe(10);
   });
 
-  test('a stale reading inside the reserve is refusing, and one with no reset is unknown', () => {
+  test('a stale reading inside the reserve is refusing, and one with no reset is unknown or last seen', () => {
     const stale = reading({ changedAt: now - 30 * minute, left: 5, used: 95 });
     expect(budgetTable(team(10).budgets, [stale], now)[0]?.state).toBe('refusing');
-    expect(budgetTable(team(10).budgets, [reading({ changedAt: now - 30 * minute, resetsAt: null })], now)[0]?.state).toBe('unknown');
+    // No reset to wait on: inside the reserve, and at twice it, the row is unknown — never a
+    // refusal, and never a clearance.
+    const at = { changedAt: now - 30 * minute, resetsAt: null };
+    expect(budgetTable(team(10).budgets, [reading({ ...at, left: 5, used: 95 })], now)[0]?.state).toBe('unknown');
+    expect(budgetTable(team(10).budgets, [reading({ ...at, left: 20, used: 80 })], now)[0]?.state).toBe('unknown');
+    // Well outside — more than the reserve again — the room last seen is still shown.
+    const lastSeen = budgetTable(team(10).budgets, [reading({ ...at, left: 70, used: 30 })], now)[0];
+    expect(lastSeen?.state).toBe('stale');
+    expect(budgetLine(lastSeen!)).toBe('openai  weekly  left 70%  used 30%  resets unknown  one  last seen 30m ago  status line  stale');
   });
 
   test('a named account with no reading is its own unknown row', () => {

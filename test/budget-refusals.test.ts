@@ -277,6 +277,28 @@ describe('a stored reading refuses one seat', () => {
     expect(missing.out).toContain('--label worker');
   });
 
+  test('a stale figure with no reset only counts well outside the reserve', async () => {
+    const loaded = loadTeamFile(root);
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+    const worker = loaded.team.seats.find((seat) => seat.name === 'worker');
+    if (!worker) throw new Error('worker');
+    const budgets = loaded.team.budgets;
+    const old = { changedAt: now - 31 * 60_000, resetsAt: null };
+    // Past twice the 10% reserve, the room the figure last held clears the launch...
+    store([reading('anthropic', 80), reading('openai', 70, old)]);
+    const far = await up(['--dry-run'], world());
+    expect(far.out).not.toContain('would refuse');
+    expect(far.out).not.toContain('is unknown');
+    expect(far.out).toContain('--label worker');
+    // ...at exactly twice it and inside it, a depleted figure is unknown — never a clearance.
+    expect(seatBudget(budgets, [reading('openai', 20, old)], worker, now))
+      .toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
+    expect(seatBudget(budgets, [reading('openai', 5, old)], worker, now))
+      .toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
+    // And a no-reset figure is never a refusal, wherever it sits.
+    expect(seatBudget(budgets, [reading('openai', 70, old)], worker, now)).toEqual({ kind: 'clear' });
+  });
+
   test('the same reading refuses after a restart, with no seat running', async () => {
     store([reading('anthropic', 80), reading('openai', 5)]);
     const made = world();
