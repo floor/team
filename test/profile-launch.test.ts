@@ -124,6 +124,7 @@ const differences: [string, string, (launch: string) => { model: string; version
   ['codex', 'codex -m gpt-6-sol -m gpt-5.6-terra', mainCodex, { model: 'GPT Sol', version: '6' }, { model: 'GPT Terra', version: '5.6' }],
   ['cursor', 'cursor-agent --model grok-4.7 --model grok-4.5', mainCursor, { model: 'Grok', version: '4.7' }, { model: 'Grok', version: '4.5' }],
   ['antigravity', 'agy --model gemini-3.8-flash-high --model gemini-3.1-pro-low', mainAgy, { model: 'Gemini Flash', version: '3.8' }, { model: 'Gemini Pro', version: '3.1' }],
+  ['claude-code', 'claude --model claude-opus-5-5 --model claude-sonnet-4-6', mainClaude, { model: 'Claude Opus', version: '5.5' }, { model: 'Claude Sonnet', version: '4.6' }],
 ];
 
 const commands: [string, string, string, string][] = [
