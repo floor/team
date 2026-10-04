@@ -1,0 +1,19 @@
+  1. Append one newline character to README.md.
+  2. Verify no other content changed.
+
+  No files were edited.
+
+
+  Switch to plan mode before doing anything
+  else. Do not edit a file and do not run a
+  command.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Switch to Plan mode?
+ Switching before any other action, as requested.
+  → Approve mode switch (y)
+    Reject (n or esc)
+
+ ↑/↓ to navigate • Enter to select • auto-rejects
+ when the bar runs out

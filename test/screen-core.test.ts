@@ -521,6 +521,9 @@ describe('codex, cursor and antigravity through the screen core', () => {
         // queue read idle, which `down` and `remove` typed into. Its own test follows in
         // test/launch/cursor.test.ts.
         if (name === 'follow-up-queue-one.txt') continue;
+        // Captured dialogs main had no rule for, so they fell through to unknown. The profile
+        // now names them. Their own test follows the loop.
+        if (name === 'permission-plan.txt' || name === 'question.txt') continue;
         // Captured 2026-10-04, and the four screens the antigravity profile's round-2 rules are
         // meant to read differently: main had no rule for the file-creation, file-edit, question
         // or unsent-comments dialogs and read each unknown. Their own test follows the loop.
@@ -569,6 +572,17 @@ describe('codex, cursor and antigravity through the screen core', () => {
     expect(mainCodex(windowOf(text))).toBe('unsent');
     expect(readScreen('codex', text).kind).toBe('permission');
     expect(classify('codex', text.split('\n')).kind).toBe('permission');
+  });
+
+  test('a plan-mode approval and a question box are those screens, which main called unknown', () => {
+    const permission = readFileSync(new URL('./fixtures/cursor/2026.10.01/permission-plan.txt', import.meta.url), 'utf8');
+    const question = readFileSync(new URL('./fixtures/cursor/2026.10.01/question.txt', import.meta.url), 'utf8');
+    expect(mainCursor(windowOf(permission))).toBe('unknown');
+    expect(readScreen('cursor', permission).kind).toBe('permission');
+    expect(classify('cursor', permission.split('\n')).kind).toBe('permission');
+    expect(mainCursor(windowOf(question))).toBe('unknown');
+    expect(readScreen('cursor', question).kind).toBe('question');
+    expect(classify('cursor', question.split('\n')).kind).toBe('question');
   });
 
   test('the one difference: cursor reads a resume line before a trust dialog', () => {

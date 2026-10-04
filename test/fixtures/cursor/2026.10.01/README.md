@@ -19,6 +19,26 @@ the default session had eight agents before and after.
   again when asked to offer a choice of file names; Escape each time. The shell
   launch line above the box is omitted. The directory path is replaced by
   `<untrusted-scratch-directory-place>`, the same length, so the box stays put.
+- `question.txt`: `cursor-agent` with no `--force` and no `--trust`, on 2026-10-04,
+  herdr 0.7.1, `pane read --source visible` (plain and ansi) of a pane created in a
+  scratch session. Cursor Agent `2026.10.01-14929f9`. The pane was 54 columns by 23
+  rows. Resize and zoom left it that size, and a wider terminal did not change it,
+  so there is no second width. The folder was already trusted, so no trust dialog
+  appeared. The request was to use the question tool to choose between two file
+  names before doing anything else. The choice box was read, then Escape skipped it.
+  Nothing was selected. The ansi read had the same text and no styling, so it is
+  not stored. The visible frame holds no directory path, name, account, or usage
+  figure, so nothing was replaced.
+- `permission-plan.txt`: the same date, herdr, and pane size, on a later launch of
+  `cursor-agent --sandbox disabled` with no `--force` and no `--trust`, after the
+  first process was closed. The request was to switch to plan mode before doing
+  anything else. The approval dialog was read while its countdown bar was full,
+  then Escape rejected it. The mode switch was not approved, and no file was
+  edited. The ansi read matched the plain text and had no styling, so it is not
+  stored. The visible frame holds no directory path, name, account, or usage
+  figure. Asking the CLI to run `ls`, to create a notes file, and to edit the
+  README produced no allow/deny dialog: each action ran. The created file was
+  removed and the README restored. Those shapes were not captured.
 - `unsent.txt`, `working.txt`, `thinking.txt`, `rules-accepted.txt`: the same
   command in the already-trusted folder. The rules message was pasted, read back,
   and submitted. `working.txt` and `thinking.txt` coincided with herdr reporting
@@ -36,7 +56,7 @@ the owner's CLI default; the profile does not select a model. These fixtures do
 not assert a permission or question layout that was not observed. Unknown screens
 permit no input.
 
-No trust, login, or settings dialog was answered, and no vendor configuration was edited.
+No trust, login, settings, permission, or question dialog was answered, and no vendor configuration was edited.
 
 ## Round 2: the person's own box, typed and never sent
 
@@ -97,13 +117,6 @@ No trust, login, or settings dialog was answered, and no vendor configuration wa
   of the read. `follow-up-queue-typed.txt` puts frame 3's one-message box (frame 1's
   spinner and status rows) over the rules message typed on the prompt row, as
   `unsent.txt` has it.
-
-## Not produced
-
-In an untrusted directory the CLI opens on its trust dialog; the capture rule allows no answer that grants anything; Escape returns to the shell.
-
-- permission: not produced: behind the trust dialog
-- question: not produced: behind the trust dialog
 
 ## Constructed: delivery-verification boxes
 

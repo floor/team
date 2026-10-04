@@ -526,6 +526,20 @@
       "provenance": "capture"
     },
     {
+      "file": "cursor/2026.10.01/permission-plan.txt",
+      "cli": "cursor",
+      "classify": "permission",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/question.txt",
+      "cli": "cursor",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
       "file": "cursor/2026.10.01/rules-accepted.txt",
       "cli": "cursor",
       "classify": "idle",

@@ -144,12 +144,12 @@
         "undocumented": 0
       },
       "permission": {
-        "real": 0,
+        "real": 1,
         "constructed": 0,
         "undocumented": 0
       },
       "question": {
-        "real": 0,
+        "real": 1,
         "constructed": 0,
         "undocumented": 0
       },
@@ -169,10 +169,7 @@
     "antigravity": {},
     "claude-code": {},
     "codex": {},
-    "cursor": {
-      "permission": "behind the trust dialog",
-      "question": "behind the trust dialog"
-    }
+    "cursor": {}
   },
   "fixtures": [
     {
@@ -623,6 +620,18 @@
       "file": "cursor/2026.10.01/pasted-two-line.txt",
       "cli": "cursor",
       "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/permission-plan.txt",
+      "cli": "cursor",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/question.txt",
+      "cli": "cursor",
+      "kind": "question",
       "provenance": "capture"
     },
     {

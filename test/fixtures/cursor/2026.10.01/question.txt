@@ -1,0 +1,20 @@
+  question tool to ask me which of two names
+  to use for a file: alpha.txt or beta.txt.
+  Do not create a file, do not edit a file,
+  and do not run a command.
+
+
+ ┌─────────────────────────────────────────────────┐
+ │ Choose a filename                               │
+ │                                                 │
+ │ Question 1 of 1                                 │
+ │                                                 │
+ │ 1. Which name should be used for the file?      │
+ │                                                 │
+ │   › [ ] alpha.txt                               │
+ │     [ ] beta.txt                                │
+ │     [ ] Other: (type to answer)                 │
+ │                                                 │
+ │ ↑/↓ option · ←/→ question · Space select ·      │
+ │ Enter next/submit · Esc to skip                 │
+ └─────────────────────────────────────────────────┘

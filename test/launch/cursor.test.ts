@@ -57,6 +57,30 @@ describe('Cursor launch and captured screens', () => {
     expect(readScreen('cursor', screen).kind).toBe('trust');
   });
 
+  test('dialog phrases in a transcript or a typed box are not the dialog', () => {
+    const idle = fixture('idle');
+    const unsent = fixture('unsent');
+    const question = fixture('question');
+    const plan = 'Approve mode switch (y)\nReject (n or esc)\n';
+    const choice = 'Space select\nEsc to skip\n';
+    const typed = (screen: string, words: string) => {
+      const [first, ...rest] = words.trimEnd().split('\n');
+      return screen.replace('  → Plan, search, build anything', `  → ${first}\n    ${rest.join('\n    ')}`);
+    };
+    expect(readScreen('cursor', plan + idle).kind).toBe('idle');
+    expect(readScreen('cursor', plan + unsent).kind).toBe('unsent');
+    expect(readScreen('cursor', typed(idle, plan)).kind).toBe('unsent');
+    expect(readScreen('cursor', question.replace(
+      '│ Choose a filename',
+      '│ Approve mode switch (y)\n│ Reject (n or esc)\n│ Choose a filename',
+    )).kind).toBe('question');
+    expect(readScreen('cursor', choice + idle).kind).toBe('idle');
+    expect(readScreen('cursor', choice + unsent).kind).toBe('unsent');
+    expect(readScreen('cursor', typed(idle, choice)).kind).toBe('unsent');
+    expect(readScreen('cursor', fixture('permission-plan')).kind).toBe('permission');
+    expect(readScreen('cursor', question).kind).toBe('question');
+  });
+
   test('a finished turn reads idle', () => {
     expect(readScreen('cursor', fixture('rules-accepted')).kind).toBe('idle');
     expect(readScreen('cursor', fixture('idle')).kind).toBe('idle');
