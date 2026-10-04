@@ -86,7 +86,7 @@ export const realWatchSources: WatchSources = {
 export const watch: Command = (argv, io) => runWatch(argv, io, realWatchSources);
 export default watch;
 
-const USAGE = 'Usage: team watch [--session <name>] [--file <path>] [--no-nudge] [--no-notify]\n';
+export const USAGE = 'Usage: team watch [--session <name>] [--file <path>] [--no-nudge] [--no-notify]\n';
 
 export async function runWatch(argv: string[], io: Io, sources: WatchSources): Promise<number> {
   const args = readArgs(argv, ['session', 'file'], ['no-nudge', 'no-notify']);

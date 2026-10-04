@@ -45,6 +45,7 @@ here too, for the one seat being started.
 | `--worktree <task>` | the worktree the temporary seat is started in, instead of the seat's own `cwd` |
 | `--session <name>` | the herdr session, instead of `team.session` |
 | `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone |
+| `--help`, `-h` | the usage, and exit 0 |
 
 The temporary seat's name is the `--like` seat's, with `-tmp-<n>`: the first `n` that is free.
 

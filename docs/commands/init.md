@@ -34,6 +34,7 @@ is refused.
 | Flag | Meaning |
 | --- | --- |
 | `--restore` | write the copy of the team file this machine last approved, instead of a skeleton |
+| `--help`, `-h` | the usage, and exit 0 |
 
 ## Refusals
 

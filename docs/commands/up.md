@@ -45,6 +45,7 @@ exits 0.
 | `--dry-run` | print the plan, and the refusals the real run would stop on, and exit 0 |
 | `--session <name>` | the herdr session to start, instead of `team.session` |
 | `--file <path>` | the team file, instead of `.agents/team.yaml` |
+| `--help`, `-h` | the usage, and exit 0 |
 
 ## What it prints
 

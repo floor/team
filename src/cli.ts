@@ -3,8 +3,9 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Command, Io } from './io.ts';
 
-// Each command is loaded only when it is called. A slice adds its line here.
-const commands: Record<string, () => Promise<{ default: Command }>> = {
+// Each command is loaded only when it is called. A slice adds its line here. The table is exported
+// so a test can walk it: every command, `--help`, `-h` and a usage line.
+export const commands: Record<string, () => Promise<{ default: Command; USAGE: string }>> = {
   approve: () => import('./commands/approve.ts'),
   check: () => import('./commands/check.ts'),
   doctor: () => import('./commands/doctor.ts'),
@@ -54,7 +55,14 @@ export async function main(argv: string[], io: Io): Promise<number> {
     io.stderr(`team: unknown command "${name}"\n\n${usage}`);
     return 2;
   }
-  return (await load()).default(rest, io);
+  const command = await load();
+  // The one path for every command's `--help`/`-h`: it prints the command's usage and stops,
+  // before any option parsing, file reading, caller check or herdr call in the command itself.
+  if (rest.includes('--help') || rest.includes('-h')) {
+    io.stdout(command.USAGE);
+    return 0;
+  }
+  return command.default(rest, io);
 }
 
 export function processIo(): Io {

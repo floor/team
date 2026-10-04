@@ -71,10 +71,12 @@ export interface StatusJson {
   notice: string | null;
 }
 
+export const USAGE = 'Usage: team status [--session <name>] [--file <path>] [--json]\n';
+
 export async function runStatus(argv: string[], io: Io, sources: StatusSources): Promise<number> {
   const args = readArgs(argv, ['session', 'file'], ['json']);
   if (args.error || args.rest.length) {
-    io.stderr(`team status: ${args.error ?? `unexpected "${args.rest[0]}"`}\nUsage: team status [--session <name>] [--file <path>] [--json]\n`);
+    io.stderr(`team status: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
     return 2;
   }
 

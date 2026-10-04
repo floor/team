@@ -352,16 +352,10 @@ describe('the command', () => {
   });
 
   test('exits 2 on a usage error', async () => {
-    expect((await run([])).stderr).toStartWith('team check: a <ref> is required\n\nusage: team check <ref>');
+    expect((await run([])).stderr).toStartWith('team check: a <ref> is required\n\nUsage: team check <ref>');
     expect((await run(['a', 'b'])).code).toBe(2);
     expect((await run(['main', '--force'])).stderr).toStartWith('team check: unknown option --force');
     expect((await run(['main', '--since'])).stderr).toStartWith('team check: --since needs a value');
-  });
-
-  test('prints the usage for --help', async () => {
-    const result = await run(['--help']);
-    expect(result.code).toBe(0);
-    expect(result.stdout).toStartWith('usage: team check <ref>');
   });
 
   test('reads the team file of the repository, and its since', async () => {

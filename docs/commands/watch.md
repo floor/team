@@ -37,6 +37,7 @@ refuses.
 | `--file <path>` | the team file, instead of `.agents/team.yaml` |
 | `--no-nudge` | never type into the operator's pane; the reports still go to the log and the desktop |
 | `--no-notify` | no desktop notifications; the nudge is still typed and the log still written |
+| `--help`, `-h` | the usage, and exit 0 |
 
 ## What it prints
 

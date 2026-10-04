@@ -67,7 +67,7 @@ export const realSources: DoctorSources = {
   home: homedir(),
 };
 
-const USAGE = 'Usage: team doctor [--session <name>] [--file <path>] [--login]\n';
+export const USAGE = 'Usage: team doctor [--session <name>] [--file <path>] [--login]\n';
 
 export type Level = 'ok' | 'warn' | 'miss' | 'note';
 export type Finding = { level: Level; text: string };

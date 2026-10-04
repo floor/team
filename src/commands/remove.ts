@@ -31,7 +31,7 @@ export const realSources: RemoveSources = {
   foreground: (session, pane) => paneForeground(pane, aim(session)),
 };
 
-const USAGE = 'Usage: team remove <name> [--keep] [--abandon] [--session <name>] [--file <path>]\n';
+export const USAGE = 'Usage: team remove <name> [--keep] [--abandon] [--session <name>] [--file <path>]\n';
 
 const LEFT: Record<Exclude<DownSeat['state'], 'free'>, string> = {
   working: 'is working; left as it is',
