@@ -48,12 +48,31 @@ screen:
           - '^\s*→'
           - '^\s+Grok\s+[0-9]'
   working:
-    # The running turn is the braille spinner, or the prompt line ending in
-    # "ctrl+c to stop". Idle and rules-accepted captures do not paint that suffix.
-    # The same words quoted in the transcript are not a turn.
+    # The running turn is the braille spinner (whatever verb it paints), the
+    # prompt line ending in "ctrl+c to stop", or the follow-up queue: its hint
+    # line under the empty composer, with no prose between the box and the
+    # prompt. A transcript that quotes the box paints its prose lines there, so
+    # the queue rule reads them as content and leaves the screen alone. Idle and
+    # rules-accepted captures paint none of these.
     - any:
         - '^\s*→.*\s{2,}ctrl\+c to stop\s*$'
-        - '^\s*[⠀-⣿]+\s+(Working|Thinking)\b'
+        - '^\s*[⠀-⣿]+\s+\S'
+    - all:
+        - '^\s*│\s*enter (?:steer|interrupt and send) · ↑ select/edit · esc cancel\s*│\s*$'
+        - '^\s*→\s*(?:Add a follow-up|Plan, search, build anything)?\s*$'
+      none_after:
+        anchor: '^\s*│\s*enter (?:steer|interrupt and send) · ↑ select/edit · esc cancel\s*│\s*$'
+        patterns:
+          - match: '^\s*\S'
+            except:
+              - '^\s*[│┌└─┐┘├┤]'
+              - '^\s*[⠀-⣿]'
+              - '^\s*Tip:'
+              - '^\s*→'
+              - '^\s+Grok\s'
+              - '^\s*<workspace>'
+              - '^\s*~/'
+              - '^\s*❯'
   composer:
     mode: status-then-one
     status_line: '^\s+Grok\s+[0-9]'
