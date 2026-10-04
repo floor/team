@@ -35,7 +35,7 @@ function reading(over: Partial<Seen> = {}): Seen {
 
 describe('the budgets table', () => {
   test('a fresh reading names what is left, when it resets, and how old it is', () => {
-    const [row] = budgetTable(team(10), [reading()], now);
+    const [row] = budgetTable(team(10).budgets, [reading()], now);
     expect(row?.state).toBe('fresh');
     expect(row?.inside).toBe(false);
     expect(row?.reserve).toBe(10);
@@ -43,7 +43,7 @@ describe('the budgets table', () => {
   });
 
   test('a fresh reading inside the reserve says so, and stays fresh', () => {
-    const row = budgetTable(team(10), [reading({ left: 5, used: 95 })], now)[0];
+    const row = budgetTable(team(10).budgets, [reading({ left: 5, used: 95 })], now)[0];
     expect(row?.state).toBe('fresh');
     expect(row?.inside).toBe(true);
     expect(budgetLine(row!)).toContain('fresh, inside reserve 10%');
@@ -52,19 +52,19 @@ describe('the budgets table', () => {
   // The row carries the reserve, so the line `status` prints and the `budgets` JSON are the
   // same figure, and a row read against no reserve says so (queue 79).
   test('a row with no reserve carries none, and an unknown row carries its account\'s', () => {
-    expect(budgetTable(team(null), [reading({ left: 5, used: 95 })], now)[0]?.reserve).toBeNull();
-    expect(budgetTable(team(null), [reading({ left: 5, used: 95 })], now)[0]?.inside).toBe(false);
-    expect(budgetLine(budgetTable(team(10), [], now)[0]!)).toBe('openai  unknown');
-    expect(budgetTable(team(10), [], now)[0]?.reserve).toBe(10);
+    expect(budgetTable(team(null).budgets, [reading({ left: 5, used: 95 })], now)[0]?.reserve).toBeNull();
+    expect(budgetTable(team(null).budgets, [reading({ left: 5, used: 95 })], now)[0]?.inside).toBe(false);
+    expect(budgetLine(budgetTable(team(10).budgets, [], now)[0]!)).toBe('openai  unknown');
+    expect(budgetTable(team(10).budgets, [], now)[0]?.reserve).toBe(10);
   });
 
   test('a stale reading inside the reserve is refusing, and one with no reset is unknown', () => {
     const stale = reading({ changedAt: now - 30 * minute, left: 5, used: 95 });
-    expect(budgetTable(team(10), [stale], now)[0]?.state).toBe('refusing');
-    expect(budgetTable(team(10), [reading({ changedAt: now - 30 * minute, resetsAt: null })], now)[0]?.state).toBe('unknown');
+    expect(budgetTable(team(10).budgets, [stale], now)[0]?.state).toBe('refusing');
+    expect(budgetTable(team(10).budgets, [reading({ changedAt: now - 30 * minute, resetsAt: null })], now)[0]?.state).toBe('unknown');
   });
 
   test('a named account with no reading is its own unknown row', () => {
-    expect(budgetLine(budgetTable(team(10), [], now)[0]!)).toBe('openai  unknown');
+    expect(budgetLine(budgetTable(team(10).budgets, [], now)[0]!)).toBe('openai  unknown');
   });
 });

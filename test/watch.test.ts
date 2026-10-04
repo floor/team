@@ -591,6 +591,7 @@ describe('team watch', () => {
       machine: () => fine,
       approval: () => [],
       watchInForce: (team) => team.watch,
+      budgetsInForce: (team) => team.budgets,
       readChecks: () => [],
       screen: () => screenNow,
       status: () => statusNow,

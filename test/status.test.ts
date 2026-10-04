@@ -50,6 +50,7 @@ const sources: StatusSources = {
   branch: () => branch,
   approval: () => approval,
   watchInForce: (team) => team.watch,
+  budgetsInForce: (team) => team.budgets,
   now: () => NOW,
 };
 

@@ -3,6 +3,7 @@
 // A check reads a vendor home; its bytes could carry anything the owner's tools know.
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
+import { budgetsInForce } from '../approve/approval.ts';
 import type { BudgetAccount, TeamFile } from '../file/types.ts';
 import type { WindowName } from '../profiles/quota.ts';
 import { readApproval, storePath } from '../store/store.ts';
@@ -111,20 +112,22 @@ export type CheckRunner = (account: BudgetAccount, path: string, now: number) =>
 
 /**
  * What each checked account reads this pass: its reading, or that it has none
- * and why. An account whose check is changed, missing or unapproved is not run
- * at all (§ 5, #45). The path handed to `run` is the approved one, hashed again
+ * and why. `budgets` is the section in force: an account an unapproved edit
+ * took out is not checked, and one it changed reads under the approved entry.
+ * An account whose check is changed, missing or unapproved is not run at all
+ * (§ 5, #45). The path handed to `run` is the approved one, hashed again
  * against the approval: the file's command is never run directly.
  */
 export function checkOutcomes(
-  team: TeamFile,
+  budgets: TeamFile['budgets'],
   approved: Record<string, ApprovedCheck> | undefined,
   run: CheckRunner,
   now: number,
 ): CheckOutcome[] {
-  const may = new Map(checkReadings(team, approved).map((one) => [one.account, one.state === 'approved']));
+  const may = new Map(checkReadings(budgets, approved).map((one) => [one.account, one.state === 'approved']));
   const outcomes: CheckOutcome[] = [];
-  for (const { account } of checkCommands(team)) {
-    const entry = team.budgets.accounts[account];
+  for (const { account } of checkCommands(budgets)) {
+    const entry = budgets.accounts[account];
     const known = approved?.[account];
     if (entry === undefined || known === undefined || may.get(account) !== true) {
       outcomes.push({ account, state: 'unapproved' });
@@ -136,7 +139,10 @@ export function checkOutcomes(
   return outcomes;
 }
 
-/** What every checked account reads this pass, with the approval of this machine. */
+/**
+ * What every checked account reads this pass, with the approval of this machine. The accounts are
+ * the ones the budgets in force name, never the file's unapproved edit of them.
+ */
 export function runChecks(
   team: TeamFile,
   root: string,
@@ -145,5 +151,5 @@ export function runChecks(
   run: CheckRunner = readCheck,
 ): CheckOutcome[] {
   const approved = readApproval(storePath(team.project, root, home))?.approval.checks;
-  return checkOutcomes(team, approved, run, now);
+  return checkOutcomes(budgetsInForce(team, root, home), approved, run, now);
 }

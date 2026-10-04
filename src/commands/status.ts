@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { relative, resolve } from 'node:path';
-import { approvalDifferences, watchInForce } from '../approve/approval.ts';
+import { approvalDifferences, budgetsInForce, watchInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { budgetLine, budgetTable, type BudgetRow } from '../budgets/table.ts';
 import { recall } from '../budgets/readings.ts';
@@ -20,6 +20,9 @@ export type StatusSources = {
   approval(team: TeamFile, root: string): string[] | null;
   // The watch values in force, which the file's own `watch` section only is once approved.
   watchInForce(team: TeamFile, root: string): TeamFile['watch'];
+  // And the budget values in force: the file's own `budgets` section only once approved, so an
+  // unapproved reserve can't move a row's marks or its `inside reserve` line.
+  budgetsInForce(team: TeamFile, root: string): TeamFile['budgets'];
   now(): Date;
 };
 
@@ -48,6 +51,7 @@ export const realSources: StatusSources = {
   },
   approval: (team, root) => approvalDifferences(team, root),
   watchInForce: (team, root) => watchInForce(team, root),
+  budgetsInForce: (team, root) => budgetsInForce(team, root),
   now: () => new Date(),
 };
 
@@ -103,7 +107,7 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     return 2;
   }
   const state = readState(dir).sessions[session] ?? emptySession();
-  const budgets = budgetTable(team, recall(state.budgets), sources.now().getTime());
+  const budgets = budgetTable(sources.budgetsInForce(team, root), recall(state.budgets), sources.now().getTime());
   const comparison = compare(team, session, state, live, sources.now(), sources.watchInForce(team, root));
   if (!live.running) comparison.notes.unshift(`the herdr session "${session}" is not running`);
   comparison.differences.push(...protectedCheckouts(team, root, sources), ...approvalDrift(sources.approval(team, root)));

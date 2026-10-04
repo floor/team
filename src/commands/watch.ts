@@ -1,5 +1,5 @@
 import { readArgs } from '../args.ts';
-import { watchInForce } from '../approve/approval.ts';
+import { budgetsInForce, watchInForce } from '../approve/approval.ts';
 import { saveReadings } from '../budgets/readings.ts';
 import { runChecks, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
@@ -30,6 +30,9 @@ export type WatchSources = {
   approval(team: TeamFile, root: string): string[] | null;
   // The watch values in force: the approved ones, or the defaults when nothing is approved.
   watchInForce(team: TeamFile, root: string): TeamFile['watch'];
+  // And the budget values in force, for the same reason: the check cadence, the accounts folded
+  // from the seats' status lines, and the marks are the owner's approved ones.
+  budgetsInForce(team: TeamFile, root: string): TeamFile['budgets'];
   // What each checked account reads this pass (RFC 0003 § 5). Runs outside the pass, like the
   // machine figures: a command's raw output never leaves this call, and a failure reads unknown.
   readChecks(team: TeamFile, root: string, now: number): CheckOutcome[];
@@ -74,6 +77,7 @@ export const realWatchSources: WatchSources = {
   machine: readMachine,
   approval: realSources.approval,
   watchInForce: (team, root) => watchInForce(team, root),
+  budgetsInForce: (team, root) => budgetsInForce(team, root),
   readChecks: (team, root, now) => runChecks(team, root, now),
   screen: (pane, session) => paneRead(pane, 14, session),
   status: agentStatus,
@@ -150,6 +154,9 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
       // The values in force, read with the file: until the owner approves an edit to `watch`,
       // the watch keeps running with what was approved, or with the defaults.
       const inForce = sources.watchInForce(team, root);
+      // The budget values in force, read with the file like the watch's: an unapproved edit to the
+      // marks, the accounts or the cadence silences nothing here until the owner approves it.
+      const budget = sources.budgetsInForce(team, root);
       const live = sources.live(session, team);
       if (!live) {
         if (!silent) say('herdr doesn\'t answer; the watch keeps trying', true);
@@ -162,7 +169,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         // The check commands run here, outside the pass, at most every `check_every` (§ 5): the
         // pass reads what they read, and nothing else. Only their state is ever said — a
         // contract failure or a timeout says `unreadable`, never a line of what they printed.
-        if (checksAt === null || now - checksAt >= team.budgets.checkEvery * 1000) {
+        if (checksAt === null || now - checksAt >= budget.checkEvery * 1000) {
           checksAt = now;
           outcomes = sources.readChecks(team, root, now);
           for (const outcome of outcomes) {
@@ -178,7 +185,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
               : `the check for ${outcome.account} is unapproved; that account reads unknown`, false);
           }
         }
-        const result = pass(team, state, live, sources.machine(root), now, memory, sources.approval(team, root), inForce, outcomes);
+        const result = pass(team, state, live, sources.machine(root), now, memory, sources.approval(team, root), inForce, outcomes, budget);
         for (const report of result.reports) say(report.text, true);
         saveReadings(dir, session, result.readings, now);
         if (result.nudge) {

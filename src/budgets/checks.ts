@@ -11,8 +11,9 @@ export type ApprovedCheck = {
   hash: string;
 };
 
-export function checkCommands(team: TeamFile): { account: string; command: string }[] {
-  return Object.entries(team.budgets.accounts)
+/** The accounts `budgets` names a check for. Callers hand in the section in force (RFC 0003 § 5). */
+export function checkCommands(budgets: TeamFile['budgets']): { account: string; command: string }[] {
+  return Object.entries(budgets.accounts)
     .filter((entry): entry is [string, typeof entry[1] & { check: string }] => entry[1].check !== null)
     .map(([account, accountBudget]) => ({ account, command: accountBudget.check }));
 }
@@ -32,7 +33,7 @@ export function resolveChecks(
   pathEnv: string,
 ): { ok: true; checks: Record<string, ApprovedCheck> } | { ok: false; account: string; command: string } {
   const checks: Record<string, ApprovedCheck> = {};
-  for (const { account, command } of checkCommands(team)) {
+  for (const { account, command } of checkCommands(team.budgets)) {
     const found = resolveCheck(command, root, pathEnv);
     if (!found) return { ok: false, account, command };
     checks[account] = { command, path: found.path, hash: found.hash };
@@ -46,8 +47,8 @@ export type CheckReading = { account: string; state: 'approved' | 'unknown' };
  * Whether each account's check may be run. The stored absolute path is hashed
  * again; PATH is not consulted. A missing or changed file reads unknown.
  */
-export function checkReadings(team: TeamFile, approved: Record<string, ApprovedCheck> | undefined): CheckReading[] {
-  return checkCommands(team).map(({ account }) => {
+export function checkReadings(budgets: TeamFile['budgets'], approved: Record<string, ApprovedCheck> | undefined): CheckReading[] {
+  return checkCommands(budgets).map(({ account }) => {
     const known = approved?.[account];
     if (!known || hashOf(known.path) !== known.hash) return { account, state: 'unknown' };
     return { account, state: 'approved' };

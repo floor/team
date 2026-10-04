@@ -3,7 +3,7 @@
 // or the owner's home. Modelled on the fakes of test/commands/live.test.ts, widened to all the
 // commands the reference documents.
 import { join } from 'node:path';
-import { approvalDifferences, watchInForce } from '../../src/approve/approval.ts';
+import { approvalDifferences, budgetsInForce, watchInForce } from '../../src/approve/approval.ts';
 import { emptySession, updateState } from '../../src/state.ts';
 import type { AddSources } from '../../src/commands/add.ts';
 import type { DoctorSources } from '../../src/commands/doctor.ts';
@@ -367,6 +367,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         branch: () => 'main',
         approval: (team, at) => approvalDifferences(team, at, home),
         watchInForce: (team, at) => watchInForce(team, at, home),
+        budgetsInForce: (team, at) => budgetsInForce(team, at, home),
         now,
       };
     },
@@ -376,6 +377,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         machine,
         approval: (team, at) => approvalDifferences(team, at, home),
         watchInForce: (team, at) => watchInForce(team, at, home),
+        budgetsInForce: (team, at) => budgetsInForce(team, at, home),
         // A page's world runs no real check commands: every account reads what the pass saw.
         readChecks: () => [],
         screen: (pane) => action.paneText('', pane),

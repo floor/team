@@ -109,6 +109,12 @@ never a line of what they printed — a failure is `<account>: its check is unre
 and a contract break alike. A check whose file changed since the approval, or that was never
 approved, is not run at all.
 
+The whole section is the owner's, like the watch's own timings: an edit to a reserve, a floor, the
+marks, `stale_after`, `check_every` or the accounts changes nothing until the owner approves it.
+Until then the reports, the check cadence and the accounts are the approved copy's — or the
+defaults', with no account at all, when nothing was approved — and the difference is reported. The
+same values are what `status`'s table and `up`'s and `add`'s launch gate read.
+
 `budget` is a check like the others: `watch.checks` turns it off. It reports, and never refuses a
 seat: the launch gate of `up` and `add` is what refuses. An account whose figure nothing counts —
 a check that stopped reading, a stale status line — is reported while seats on it are running;
