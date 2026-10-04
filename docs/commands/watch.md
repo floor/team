@@ -97,7 +97,9 @@ A report that is the operator's to act on is also what the nudge stands for. The
 ## Budgets
 
 The budget reports read the figures the pass saw on the seats' status lines (RFC 0003 § 4.1), and
-the ones each account's `check` command reads when its `sources` name `check`. A mark crossing is
+the ones each account's `check` command reads when its `sources` name `check`. A figure is read off
+a seat's pane only while the seat's CLI still runs in it: herdr keeps a pane listed after the CLI
+exits, and a shell's last row is a last row by position, not a status row. A mark crossing is
 the operator's to act on; an account inside its reserve or floor is the owner's. Marks come once
 per window and are armed again at the window's known reset — or when the figure drops ten points
 with no reset known, which is a new window's.

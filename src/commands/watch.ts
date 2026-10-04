@@ -5,7 +5,7 @@ import { runChecks, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
 import { homedir } from 'node:os';
-import { agentStatus, paneRead, pressEnter, typeText } from '../herdr.ts';
+import { agentStatus, paneForeground, paneRead, pressEnter, typeText } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
@@ -36,6 +36,10 @@ export type WatchSources = {
   // What each checked account reads this pass (RFC 0003 § 5). Runs outside the pass, like the
   // machine figures: a command's raw output never leaves this call, and a failure reads unknown.
   readChecks(team: TeamFile, root: string, now: number): CheckOutcome[];
+  // The foreground process names in a pane, or null where herdr can't be read. The pass folds a
+  // figure only while the seat's CLI runs in the pane: herdr keeps a pane listed after the CLI
+  // exits, and a shell's last row is a last row by position, not a status row.
+  foreground(pane: string, session: string): string[] | null;
   // The operator's screen, read again just before a nudge is typed.
   screen(pane: string, session: string): string | null;
   // The operator's status, asked again with its screen.
@@ -79,6 +83,7 @@ export const realWatchSources: WatchSources = {
   watchInForce: (team, root) => watchInForce(team, root),
   budgetsInForce: (team, root) => budgetsInForce(team, root),
   readChecks: (team, root, now) => runChecks(team, root, now),
+  foreground: (pane, session) => paneForeground(pane, session),
   screen: (pane, session) => paneRead(pane, 14, session),
   status: agentStatus,
   typeText,
@@ -189,10 +194,14 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
               : `the check for ${outcome.account} is unapproved; that account reads unknown`, false);
           }
         }
+        // Herdr's process list per pane, read with the screen: a figure is only read off a pane
+        // where the seat's CLI still runs. A pane herdr can't list reads null and keeps its figure.
+        const foreground: Record<string, string[] | null> = {};
+        for (const agent of live.agents) foreground[agent.pane] = sources.foreground(agent.pane, session);
         const result = pass({
           team, state, live, machine: sources.machine(root), now, memory,
           approval: sources.approval(team, root), watch: inForce, outcomes, budgets: budget,
-          readings: loadReadings(dir),
+          readings: loadReadings(dir), foreground,
         });
         for (const report of result.reports) say(report.text, true);
         saveReadings(dir, result.readings, now);

@@ -599,6 +599,7 @@ describe('team watch', () => {
       watchInForce: (team) => team.watch,
       budgetsInForce: (team) => team.budgets,
       readChecks: () => [],
+      foreground: () => null,
       screen: () => screenNow,
       status: () => statusNow,
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); return true; },

@@ -380,6 +380,8 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         budgetsInForce: (team, at) => budgetsInForce(team, at, home),
         // A page's world runs no real check commands: every account reads what the pass saw.
         readChecks: () => [],
+        // No process list either: a page's pane keeps its figure, the departure is never invented.
+        foreground: () => null,
         screen: (pane) => action.paneText('', pane),
         status: (_pane) => agentOf(_pane)?.status ?? null,
         typeText: action.typeText,

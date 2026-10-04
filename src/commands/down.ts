@@ -17,7 +17,7 @@ import type { Command, Io } from '../io.ts';
 import type { Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
 import { downPlan, formatPlan, type DownSeat } from '../launch/plan.ts';
-import { profileFor } from '../profiles/index.ts';
+import { cliRuns } from '../profiles/profile.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
 import { readScreen, type Screen } from '../watch/screen.ts';
@@ -106,13 +106,6 @@ export default down;
 
 // Free only when herdr says idle or done and the screen is an empty idle prompt. A permission
 // prompt is idle to herdr, and typing `/exit` there would answer it.
-// Herdr keeps a pane after the CLI exits, so the pane id staying listed is not "still there".
-// The seat has left when no foreground process is its CLI. An unreadable list keeps the wait.
-export function paneStillRunning(foreground: readonly string[] | null, processNames: readonly string[]): boolean {
-  if (!foreground) return true;
-  return foreground.some((name) => processNames.includes(name));
-}
-
 export function stateOf(status: string, screen: Screen): DownSeat['state'] {
   if (screen.kind === 'unsent') return 'unsent';
   if (screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question') return 'blocked';
@@ -268,9 +261,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       // A pane back at its shell is no longer the seat. `gone` then finishes and the workspace closes.
       return listed.filter((pane) => {
         const cli = seats.find((seat) => seat.pane === pane)?.cli;
-        const names = cli ? profileFor(cli)?.processNames : undefined;
-        if (!names) return true;
-        return paneStillRunning(sources.foreground?.(sessionName, pane) ?? paneForeground(pane, aim(sessionName)), names);
+        return cliRuns(cli, sources.foreground?.(sessionName, pane) ?? paneForeground(pane, aim(sessionName)));
       });
     },
     classify: () => 'unknown',

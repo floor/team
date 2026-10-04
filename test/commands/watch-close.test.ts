@@ -74,6 +74,7 @@ function sources(over: Partial<WatchSources> = {}): WatchSources {
     watchInForce: (team) => team.watch,
     budgetsInForce: (team) => team.budgets,
     readChecks: () => [],
+    foreground: () => null,
     screen: () => idle,
     status: () => 'idle',
     typeText: () => true,
