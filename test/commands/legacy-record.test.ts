@@ -8,14 +8,14 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { approvalOf, budgetsInForce, watchInForce } from '../../src/approve/approval.ts';
+import { approvalOf } from '../../src/approve/approval.ts';
 import type { Caller } from '../../src/caller.ts';
 import { runAdd, type AddSources } from '../../src/commands/add.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
 import { runDown } from '../../src/commands/down.ts';
 import { runInit } from '../../src/commands/init.ts';
 import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
-import { approvalSource, runStatus, type StatusSources } from '../../src/commands/status.ts';
+import { standingSource, runStatus, type StatusSources } from '../../src/commands/status.ts';
 import { runUp, type Launch } from '../../src/commands/up.ts';
 import { runWatch, type WatchSources } from '../../src/commands/watch.ts';
 import { runWorktree } from '../../src/commands/worktree.ts';
@@ -180,9 +180,7 @@ describe('a legacy record, with the team\'s seats running', () => {
     const sources: StatusSources = {
       live: () => live(),
       branch: () => 'main',
-      approval: approvalSource(home),
-      watchInForce: (team, at) => watchInForce(team, at, home),
-      budgetsInForce: (team, at) => budgetsInForce(team, at, home),
+      standing: standingSource(home),
       now: () => NOW,
       home,
     };
@@ -212,9 +210,7 @@ describe('a legacy record, with the team\'s seats running', () => {
     const code = await runWatch(FILE, io, {
       live: () => live(),
       machine: () => loaded_machine,
-      approval: approvalSource(home),
-      watchInForce: (team, at) => watchInForce(team, at, home),
-      budgetsInForce: (team, at) => budgetsInForce(team, at, home),
+      standing: standingSource(home),
       readChecks: () => [],
       screen: () => IDLE,
       status: () => 'idle',
@@ -296,9 +292,7 @@ describe('a record the verification refused, through the same commands', () => {
     const sources: StatusSources = {
       live: () => live(),
       branch: () => 'main',
-      approval: approvalSource(home),
-      watchInForce: (team, at) => watchInForce(team, at, home),
-      budgetsInForce: (team, at) => budgetsInForce(team, at, home),
+      standing: standingSource(home),
       now: () => NOW,
       home,
     };
@@ -318,9 +312,7 @@ describe('a record the verification refused, through the same commands', () => {
     const code = await runWatch(FILE, io, {
       live: () => live(),
       machine: () => fine,
-      approval: approvalSource(home),
-      watchInForce: (team, at) => watchInForce(team, at, home),
-      budgetsInForce: (team, at) => budgetsInForce(team, at, home),
+      standing: standingSource(home),
       readChecks: () => [],
       screen: () => IDLE,
       status: () => 'idle',

@@ -4,7 +4,7 @@
 // commands the reference documents.
 import { join } from 'node:path';
 import { budgetsInForce, watchInForce } from '../../src/approve/approval.ts';
-import { approvalSource } from '../../src/commands/status.ts';
+import { standingSource } from '../../src/commands/status.ts';
 import { emptySession, updateState } from '../../src/state.ts';
 import type { AddSources } from '../../src/commands/add.ts';
 import type { DoctorSources } from '../../src/commands/doctor.ts';
@@ -411,9 +411,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
       return {
         live: () => live(),
         branch: () => 'main',
-        approval: approvalSource(home),
-        watchInForce: (team, at) => watchInForce(team, at, home),
-        budgetsInForce: (team, at) => budgetsInForce(team, at, home),
+        standing: standingSource(home),
         now,
         home,
       };
@@ -422,9 +420,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
       return {
         live: () => live(),
         machine,
-        approval: approvalSource(home),
-        watchInForce: (team, at) => watchInForce(team, at, home),
-        budgetsInForce: (team, at) => budgetsInForce(team, at, home),
+        standing: standingSource(home),
         // A page's world runs no real check commands: every account reads what the pass saw.
         readChecks: () => [],
         screen: (pane) => action.paneText('', pane),

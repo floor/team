@@ -3,9 +3,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { saveReadings, saveSpendReadings } from '../src/budgets/readings.ts';
+import { verifiedOf } from '../src/approve/approval.ts';
 import { runStatus } from '../src/commands/status.ts';
 import type { StatusSources } from '../src/commands/status.ts';
+import { validateTeamFile } from '../src/file/validate.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
+import type { Standing } from '../src/store/store.ts';
 import { emptySession, readState, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
 import { runningModel } from '../src/status/statusline.ts';
@@ -44,13 +47,12 @@ let file: string;
 let live: Live | null;
 let branch: string | null;
 
-let approval: { differences: string[] | null; reason: string | null };
+// The standing the report runs on: by default the file as approved, with no drift.
+let standing: Standing;
 const sources: StatusSources = {
   live: () => live,
   branch: () => branch,
-  approval: () => approval,
-  watchInForce: (team) => team.watch,
-  budgetsInForce: (team) => team.budgets,
+  standing: () => standing,
   now: () => NOW,
 };
 
@@ -61,7 +63,9 @@ beforeEach(() => {
   writeFileSync(file, example);
   live = built();
   branch = 'main';
-  approval = { differences: [], reason: null };
+  const checked = validateTeamFile(example);
+  if (!checked.ok) throw new Error('the example fixture does not validate');
+  standing = verifiedOf(checked.team, example, dir, NOW);
   updateState(join(dir, '.agents'), (state) => {
     state.sessions['acme-web'] = { ...emptySession(), watch: { pid: 1, heartbeat: '2026-10-03T14:09:00Z' } };
   });
@@ -74,6 +78,15 @@ async function status(...argv: string[]) {
   const io = testIo(dir);
   const code = await runStatus(['--file', file, ...argv], io, sources);
   return { code, out: io.out, err: io.err };
+}
+
+// Approve whatever the file on disk now holds: the tests below rewrite the file and mean the
+// change to be in force, not a drift against the record beforeEach built.
+function approveOnDisk() {
+  const text = readFileSync(file, 'utf8');
+  const parsed = validateTeamFile(text);
+  if (!parsed.ok) throw new Error(`the rewritten file does not validate: ${JSON.stringify(parsed.errors)}`);
+  standing = verifiedOf(parsed.team, text, dir, NOW);
 }
 
 describe('team status', () => {
@@ -214,11 +227,17 @@ describe('team status', () => {
   });
 
   test('a file changed since the owner approved it, and one never approved', async () => {
-    approval = { differences: ['`rules` changed', 'seat grok-acme changed'], reason: null };
+    // What the owner approved: one rules line and grok's model differ from the file on disk.
+    const approvedText = example
+      .replace('- Run the tests your change touches, not the whole suite.', '- Run the tests your change touches.')
+      .replace('    model: Grok\n', '    model: Grok 5\n');
+    const approvedFile = validateTeamFile(approvedText);
+    if (!approvedFile.ok) throw new Error('the approved variant does not validate');
+    standing = verifiedOf(approvedFile.team, approvedText, dir, NOW);
     const changed = await status();
     expect(changed.out).toContain('difference: the file differs from the approved one: `rules` changed\n  repair: the owner runs team approve');
     expect(changed.out).toContain('2 difference(s)');
-    approval = { differences: null, reason: null };
+    standing = { kind: 'none' };
     expect((await status()).out).toContain('difference: the file was never approved on this machine');
   });
 
@@ -254,6 +273,7 @@ describe('team status', () => {
     deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }
 `,
     ));
+    approveOnDisk();
     saveReadings(join(dir, '.agents'), [{
       account: 'openai',
       window: 'weekly',
@@ -284,6 +304,7 @@ describe('team status', () => {
     deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }
 `,
     ));
+    approveOnDisk();
     saveSpendReadings(join(dir, '.agents'), [
       { account: 'deepseek', amount: 4.996, currency: 'USD', at: NOW.getTime() - 3 * 60 * 1000 },
     ]);
@@ -305,6 +326,7 @@ describe('team status', () => {
     openai: { kind: subscription, reserve: 10%, sources: [check, status_line], check: openai-usage }
 `,
     ));
+    approveOnDisk();
     saveReadings(join(dir, '.agents'), [{
       account: 'openai',
       window: 'weekly',
@@ -333,6 +355,7 @@ describe('team status', () => {
     openai: { kind: subscription, reserve: 10%, sources: [check, status_line], check: openai-usage }
 `,
     ));
+    approveOnDisk();
     saveReadings(join(dir, '.agents'), [{
       account: 'openai',
       window: 'weekly',
@@ -379,6 +402,7 @@ describe('team status', () => {
     expect(doc.notice).toBeNull();
     expect(doc.differences).toEqual([]);
     expect(doc.notes).toEqual([
+      'approval #1 (2026-10-03)',
       'codex-acme: version unread (its screen doesn\'t show the model)',
       'deepseek-acme: version unread (its screen doesn\'t show the model)',
       'deepseek-acme-2: version unread (its screen doesn\'t show the model)',

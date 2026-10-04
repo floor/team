@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
-import { approvalDifferencesOf, budgetsInForce, watchInForce } from '../approve/approval.ts';
+import { approvalDifferencesOf, budgetsInForceOf, watchInForceOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, isOwner, type Caller } from '../caller.ts';
 import { checkCommands, type ApprovedCheck } from '../budgets/checks.ts';
@@ -13,10 +13,11 @@ import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
 import { HERDR_TESTED, herdrVersion, sessionRunning } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { profileFor } from '../profiles/index.ts';
-import { overridesInForce, quotaWith } from '../profiles/overrides.ts';
+import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
 import { readState } from '../state.ts';
-import { approvalStanding, LEGACY_LINE } from '../store/store.ts';
+import { keyFingerprint, keyState } from '../store/keys.ts';
+import { approvalStanding, LEGACY_LINE, type Standing } from '../store/store.ts';
 
 // What `doctor` reads from the machine, so tests can stand in for it.
 export type DoctorSources = {
@@ -33,6 +34,9 @@ export type DoctorSources = {
   // One approved check's raw stdout, or null when it failed or timed out. Absent: the real
   // runner, the same one the watch uses. The raw bytes are parsed and dropped, never returned.
   runCheck?(path: string): string | null;
+  // The approval store's one read, overridable so a test can count it or swap the record
+  // after the gate. Absent: the real read.
+  standing?(root: string): Standing;
 };
 
 export type CommandRunner = (binary: string, args: string[]) => { status: number | null; stdout: string } | null;
@@ -123,11 +127,10 @@ function changedSinceApproval(check: ApprovedCheck): boolean {
   }
 }
 
-function checkFindings(team: TeamFile, root: string, home: string): Finding[] {
-  const standing = approvalStanding(root, home);
+function checkFindings(standing: Standing, team: TeamFile): Finding[] {
   if (standing.kind !== 'verified') return [];
   const approved = standing.record.approval.checks;
-  return checkCommands(budgetsInForce(team, root, home)).flatMap(({ account }) => {
+  return checkCommands(budgetsInForceOf(standing, team)).flatMap(({ account }) => {
     const known = approved?.[account];
     if (!known) {
       return [{ level: 'warn' as const, text: `the check for ${account} is unapproved; that account reads unknown` }];
@@ -158,14 +161,14 @@ function figureOf(reading: CheckReading): string {
  * a check, for the same reason the watch is the owner's: a check reads a vendor home. Any other
  * caller gets the same report without the readings, and the one line that says so.
  */
-export function budgetCheckFindings(team: TeamFile, root: string, sources: DoctorSources, caller: Caller): Finding[] {
-  const budgets = budgetsInForce(team, root, sources.home);
+export function budgetCheckFindings(team: TeamFile, standing: Standing, root: string, sources: DoctorSources, caller: Caller): Finding[] {
+  const budgets = budgetsInForceOf(standing, team);
   const findings: Finding[] = [];
   // An account nothing can read: its sources name the status line but no seat of its CLIs
   // ships a quota pattern for it, or they name a check with no command. A file that names a
   // `check` source without a command is refused on read; the guard is for the type, not the file.
+  const patterns = overridesInForceOf(standing, team.project, root, sources.home).profiles;
   for (const [name, account] of Object.entries(budgets.accounts)) {
-    const patterns = overridesInForce(team.project, root, sources.home).profiles;
     const noPattern = account.sources.includes('status_line') && !clisOf(team, name).some((cli) => quotaWith(cli, patterns).some((one) => one.account === name));
     const noCommand = account.sources.includes('check') && account.check === null;
     if (noPattern || noCommand) findings.push({ level: 'warn', text: `${name}: no pattern can read this account` });
@@ -177,7 +180,6 @@ export function budgetCheckFindings(team: TeamFile, root: string, sources: Docto
   }
   // A check command is the owner's own privilege: it runs only from a record
   // this machine's key signed, never from bytes the verification refused.
-  const standing = approvalStanding(root, sources.home);
   if (standing.kind !== 'verified') return findings;
   const run = sources.runCheck ?? runCommand;
   const now = sources.now().getTime();
@@ -201,16 +203,15 @@ export function budgetCheckFindings(team: TeamFile, root: string, sources: Docto
   return findings;
 }
 
-function overrideFindings(team: TeamFile, root: string, home: string): Finding[] {
-  const report = overridesInForce(team.project, root, home);
+function overrideFindings(standing: Standing, team: TeamFile, root: string, home: string): Finding[] {
+  const report = overridesInForceOf(standing, team.project, root, home);
   return [
     ...report.differences.map((line): Finding => ({ level: 'miss', text: `run \`team approve\`: ${line}` })),
     ...report.problems.map((line): Finding => ({ level: 'miss', text: line })),
   ];
 }
 
-function approvalFindings(team: TeamFile, root: string, home: string): Finding[] {
-  const standing = approvalStanding(root, home);
+function approvalFindings(standing: Standing, team: TeamFile, home: string): Finding[] {
   if (standing.kind === 'none') {
     return [{ level: 'miss', text: 'run `team approve`: this file was never approved on this machine' }];
   }
@@ -220,10 +221,13 @@ function approvalFindings(team: TeamFile, root: string, home: string): Finding[]
   if (standing.kind === 'refused') return [{ level: 'miss', text: standing.why }];
   const differences = approvalDifferencesOf(standing, team);
   if (differences.length) return [{ level: 'miss', text: `run \`team approve\`: ${differences.join('; ')}` }];
+  // The key's fingerprint beside the generation: an owner who notes it sees a replaced key.
+  const key = keyState(home);
+  const ofKey = key.kind === 'key' ? `, key ${keyFingerprint(key.key)}` : '';
   return [
     {
       level: 'ok',
-      text: `the file is the one the owner approved (approval #${standing.generation}, ${standing.signedAt.slice(0, 10)})`,
+      text: `the file is the one the owner approved (approval #${standing.generation}, ${standing.signedAt.slice(0, 10)}${ofKey})`,
     },
   ];
 }
@@ -315,6 +319,8 @@ export function doctorFindings(
   session: string,
   sources: DoctorSources,
   warnings: { line: number; message: string }[],
+  /** The one read of the approval store, done by the caller — `runDoctor`, `up` or `add`. */
+  standing: Standing,
   /** The file as approved. `add` hands the team about to run, whose `stopped` mark is already cleared. */
   approved: TeamFile = team,
   /** The budget-check lines, which only the report runs: `up` and `add` scan, they never run a check. */
@@ -327,9 +333,9 @@ export function doctorFindings(
   findings.push(...seatNameFindings(team, session));
 
   findings.push(
-    ...approvalFindings(approved, root, sources.home),
-    ...overrideFindings(team, root, sources.home),
-    ...checkFindings(team, root, sources.home),
+    ...approvalFindings(standing, approved, sources.home),
+    ...overrideFindings(standing, team, root, sources.home),
+    ...checkFindings(standing, team),
     ...budgetChecks,
   );
 
@@ -353,7 +359,7 @@ export function doctorFindings(
     );
   }
 
-  findings.push(...watchFindings(watchInForce(team, root, sources.home), dir, session, running, sources.now()));
+  findings.push(...watchFindings(watchInForceOf(standing, team), dir, session, running, sources.now()));
   if (team.trust.length) {
     findings.push({ level: 'note', text: 'trust: not applied or checked by this version; trust each folder by hand' });
   }
@@ -399,6 +405,8 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
   }
   const { team, root } = loaded;
   const session = args.values.session ?? team.session;
+  // The one read of the approval store: every finding below derives from it.
+  const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
   const findings = args.flags.has('login')
     ? doctorLoginFindings(team, sources)
     : doctorFindings(
@@ -408,8 +416,9 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
         session,
         sources,
         loaded.warnings,
+        standing,
         undefined,
-        budgetCheckFindings(team, root, sources, callerOf(io)),
+        budgetCheckFindings(team, standing, root, sources, callerOf(io)),
       );
 
   const label: Record<Level, string> = { ok: 'ok  ', warn: 'warn', miss: 'MISS', note: '--  ' };

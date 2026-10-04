@@ -15,7 +15,7 @@ import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { OVERRIDE_CHANGED, overrideFile } from '../profiles/overrides.ts';
 import { approvalStanding, LEGACY_LINE, readApproval, storePath, writeApproval, type Ceilings } from '../store/store.ts';
-import { recordedGeneration } from '../store/keys.ts';
+import { keyFingerprint, keyOf, keyState, recordedGeneration } from '../store/keys.ts';
 
 // What `approve` reads from outside the file, so tests can stand in for it.
 export type ApproveSources = {
@@ -174,15 +174,26 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   }
   io.stdout(`Ceilings this approval fixes: ${ceilingsLine(ceilings)}.\n`);
   io.stdout(`Seats: ${seats} (${team.seats.map((seat) => seat.name).join(', ')}).\n`);
-  // The generation this signing will carry, and when the last one was. A
-  // process that reads or replaces the key can re-sign at the same generation,
-  // so this is evidence of what `team` wrote, never of every signing.
+  // The generation this signing will carry, and when the last one was, with the
+  // fingerprint of the key that will sign it. A process that reads or replaces
+  // the key can re-sign at the same generation, so this is evidence of what
+  // `team` wrote, never of every signing.
   const recorded = recordedGeneration(root, sources.home);
+  const keyRead = keyState(sources.home);
   io.stdout(
-    `approval #${(recorded?.generation ?? 0) + 1} for this project${recorded ? `; the last one was on ${recorded.at.slice(0, 10)}` : ''}.\n`,
+    `approval #${(recorded?.generation ?? 0) + 1} for this project${recorded ? `; the last one was on ${recorded.at.slice(0, 10)}` : ''}${keyRead.kind === 'key' ? `; key ${keyFingerprint(keyRead.key)}` : ''}.\n`,
   );
 
   if (args.flags.has('show')) return 0;
+
+  // A key that cannot be read fails closed here, before the owner answers anything:
+  // a new key would orphan every record already signed, so the owner restores it.
+  try {
+    keyOf(sources.home);
+  } catch (error) {
+    io.stderr(`team approve: ${(error as Error).message}\n`);
+    return 1;
+  }
 
   const caller = callerOf(io);
   if (!isOwner(caller)) {
@@ -215,6 +226,6 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     `approved ${seats} seats; ceilings: ${ceilingsLine(ceilings)}`,
     now,
   );
-  io.stdout(`Approved. The record is in ${store}; check the rest with \`team doctor\`.\n`);
+  io.stdout(`Approved. The record is in ${store}; signed with key ${keyFingerprint(keyOf(sources.home))}; check the rest with \`team doctor\`.\n`);
   return 0;
 }

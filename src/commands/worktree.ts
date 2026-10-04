@@ -11,13 +11,16 @@ import type { TeamFile } from '../file/types.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, withLock, writeAtomic, STATE_FILE, type State } from '../state.ts';
-import { approvalStanding } from '../store/store.ts';
+import { approvalStanding, type Standing } from '../store/store.ts';
 import { fillPattern, publicNameHit, realLanding, taskProblem } from '../worktree/place.ts';
 
 // What the command reads from outside the process, so a test can point the approval store elsewhere.
 export type WorktreeSources = {
   home: string;
   now(): Date;
+  // The approval store's one read, overridable so a test can count it or swap the record
+  // after the gate. Absent: the real read.
+  standing?(root: string): Standing;
 };
 
 export const realSources: WorktreeSources = {
@@ -82,7 +85,7 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     io.stderr('team worktree: session can\'t be "default", herdr\'s own session\n');
     return 1;
   }
-  const standing = approvalStanding(root, sources.home);
+  const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
   if (standing.kind !== 'verified') {
     io.stderr(`team worktree: ${notInForce(standing)}\n`);
     return 1;

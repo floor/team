@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { Caller } from '../src/caller.ts';
 import { runApprove } from '../src/commands/approve.ts';
 import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
-import { runStatus, type StatusSources } from '../src/commands/status.ts';
+import { runStatus, standingSource, type StatusSources } from '../src/commands/status.ts';
 import { runUp, type UpSources } from '../src/commands/up.ts';
 import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import { overridesInForce, overridesPath, quotaWith } from '../src/profiles/overrides.ts';
@@ -75,9 +75,7 @@ function statusSources(): StatusSources {
   return {
     live: () => ({ running: false, agents: [], workspaces: [], screens: {} }),
     branch: () => 'main',
-    approval: () => ({ differences: [], reason: null }),
-    watchInForce: (team) => team.watch,
-    budgetsInForce: (team) => team.budgets,
+    standing: standingSource(home),
     now: () => NOW,
     home,
   };
@@ -178,9 +176,7 @@ describe('an override is the owner\'s, by approval', () => {
     const watchCode = await runWatch(FILE, watch, {
       live: () => null,
       machine: () => { throw new Error('not read'); },
-      approval: () => ({ differences: [], reason: null }),
-      watchInForce: (team) => team.watch,
-      budgetsInForce: (team) => team.budgets,
+      standing: standingSource(home),
       readChecks: () => [],
       screen: () => null,
       status: () => null,

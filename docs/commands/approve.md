@@ -166,7 +166,7 @@ $ team approve --show ; echo "exit $?"
 
 Ceilings this approval fixes: 3 seats at most, 2 temporary.
 Seats: 1 (claude-keeper).
-approval #1 for this project.
+approval #1 for this project; key fe21ef6293de.
 exit 0
 ```
 
@@ -196,10 +196,10 @@ $ team approve
 
 Ceilings this approval fixes: 3 seats at most, 2 temporary.
 Seats: 1 (claude-keeper).
-approval #1 for this project.
+approval #1 for this project; key fe21ef6293de.
 
 Type the number of seats (1) to approve this file, and its commands and rules, to run: 1
-Approved. The record is in ~/.config/team/beacon-<hash>; check the rest with `team doctor`.
+Approved. The record is in ~/.config/team/beacon-<hash>; signed with key fe21ef6293de; check the rest with `team doctor`.
 ```
 
 A seat can read the comparison — even the coordinator's — but a seat is not the owner, and nothing is
@@ -212,7 +212,7 @@ $ team approve ; echo "exit $?"
 Nothing in it needs a new approval.
 Ceilings this approval fixes: 3 seats at most, 2 temporary.
 Seats: 1 (claude-keeper).
-approval #2 for this project; the last one was on 2026-10-04.
+approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 team approve: only the owner approves a team file, from a terminal outside herdr; this call is claude-keeper
 exit 1
 ```
@@ -251,7 +251,7 @@ $ team approve --show ; echo "exit $?"
 Needs a new approval: `trust` changed.
 Ceilings this approval fixes: 3 seats at most, 2 temporary.
 Seats: 1 (claude-keeper).
-approval #2 for this project; the last one was on 2026-10-04.
+approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 exit 0
 ```
 
@@ -308,7 +308,7 @@ Needs a new approval: `trust` changed; `limits` changed; seat claude-beacon is n
 Ceilings approved: 3 seats at most, 2 temporary.
 Ceilings this approval fixes: 4 seats at most, 2 temporary.
 Seats: 2 (claude-keeper, claude-beacon).
-approval #2 for this project; the last one was on 2026-10-04.
+approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 
 Type the number of seats (2) to approve this file, and its commands and rules, to run: 1
 team approve: not approved; nothing was written
@@ -336,10 +336,10 @@ Needs a new approval: `trust` changed; `limits` changed; seat claude-beacon is n
 Ceilings approved: 3 seats at most, 2 temporary.
 Ceilings this approval fixes: 4 seats at most, 2 temporary.
 Seats: 2 (claude-keeper, claude-beacon).
-approval #2 for this project; the last one was on 2026-10-04.
+approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 
 Type the number of seats (2) to approve this file, and its commands and rules, to run: 2
-Approved. The record is in ~/.config/team/beacon-<hash>; check the rest with `team doctor`.
+Approved. The record is in ~/.config/team/beacon-<hash>; signed with key fe21ef6293de; check the rest with `team doctor`.
 ```
 
 The same file again is the same text as the approved copy, and the approval stands:
@@ -351,7 +351,7 @@ $ team approve --show ; echo "exit $?"
 Nothing in it needs a new approval.
 Ceilings this approval fixes: 4 seats at most, 2 temporary.
 Seats: 2 (claude-keeper, claude-beacon).
-approval #3 for this project; the last one was on 2026-10-04.
+approval #3 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 exit 0
 ```
 
@@ -400,6 +400,6 @@ overrides.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 Needs a new approval: `overrides` changed.
 Ceilings this approval fixes: 4 seats at most, 2 temporary.
 Seats: 2 (claude-keeper, claude-beacon).
-approval #3 for this project; the last one was on 2026-10-04.
+approval #3 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 exit 0
 ```

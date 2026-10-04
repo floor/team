@@ -8,7 +8,7 @@ import { validateTeamFile } from '../file/validate.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { LOCK_FILE, LOG_FILE, STATE_FILE, writeAtomic } from '../state.ts';
-import { approvalStanding, LEGACY_LINE } from '../store/store.ts';
+import { approvalStanding, LEGACY_LINE, type Standing } from '../store/store.ts';
 import { version } from '../version.ts';
 
 // What git must never pick up: the file and the runtime files beside it.
@@ -94,7 +94,9 @@ export default init;
 export const USAGE = 'Usage: team init [--restore]\n';
 
 // `home` is where the user-level store is looked for; tests hand in a temporary one.
-export async function runInit(argv: string[], io: Io, home?: string): Promise<number> {
+// `readStanding` stands in for the store's one read, so a test can count it or swap the
+// record after the gate.
+export async function runInit(argv: string[], io: Io, home?: string, readStanding?: (root: string) => Standing): Promise<number> {
   const args = readArgs(argv, [], ['restore']);
   if (args.error || args.rest.length) {
     io.stderr(`team init: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
@@ -125,7 +127,11 @@ export async function runInit(argv: string[], io: Io, home?: string): Promise<nu
   if (args.flags.has('restore')) {
     // Only a verified record carries a copy worth restoring: a legacy or refused
     // one is said in its own words, never restored from.
-    const standing = home === undefined ? approvalStanding(root) : approvalStanding(root, home);
+    const standing = readStanding
+      ? readStanding(root)
+      : home === undefined
+        ? approvalStanding(root)
+        : approvalStanding(root, home);
     if (standing.kind === 'legacy') {
       io.stderr(`team init: nothing was restored: the record for this folder was ${LEGACY_LINE}.\n`);
       return 1;

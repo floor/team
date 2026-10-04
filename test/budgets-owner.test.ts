@@ -11,7 +11,7 @@ import { approvalDifferences, approvalOf, budgetsInForce, watchInForce } from '.
 import { resolveChecks } from '../src/budgets/checks.ts';
 import { saveReadings, type Seen } from '../src/budgets/readings.ts';
 import { runChecks, type CheckOutcome } from '../src/budgets/run.ts';
-import { approvalSource, runStatus, type StatusSources } from '../src/commands/status.ts';
+import { standingSource, runStatus, type StatusSources } from '../src/commands/status.ts';
 import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import { loadTeamFile } from '../src/file/load.ts';
 import type { TeamFile } from '../src/file/types.ts';
@@ -160,9 +160,7 @@ describe('the watch reads them', () => {
     return {
       live: () => live(),
       machine: () => fine,
-      approval: approvalSource(home),
-      watchInForce: (team, at) => watchInForce(team, at, home),
-      budgetsInForce: (team, at) => budgetsInForce(team, at, home),
+      standing: standingSource(home),
       readChecks: (_team, _at, now) => {
         reads.push(now);
         return outcomes;
@@ -239,9 +237,7 @@ describe('status reads them', () => {
     const sources: StatusSources = {
       live: () => live(),
       branch: () => 'main',
-      approval: approvalSource(home),
-      watchInForce: (team, at) => watchInForce(team, at, home),
-      budgetsInForce: (team, at) => budgetsInForce(team, at, home),
+      standing: standingSource(home),
       now: () => NOW,
     };
     const status = async () => {

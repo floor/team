@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { approvalDifferencesOf, budgetsInForce, notInForce } from '../approve/approval.ts';
+import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
@@ -35,7 +35,7 @@ import { deliverRules } from '../launch/deliver.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
 import { profileFor } from '../profiles/index.ts';
-import { approvalStanding, type Ceilings } from '../store/store.ts';
+import { approvalStanding, type Ceilings, type Standing } from '../store/store.ts';
 import { emptySession, readState, updateState, type SeatState } from '../state.ts';
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
@@ -57,6 +57,9 @@ export type UpSources = {
   sleep?(ms: number): Promise<void>;
   alive?(pid: number): boolean;
   watchCommand?(session: string): string;
+  // The approval store's one read, overridable so a test can count it or swap the record
+  // after the gate. Absent: the real read.
+  standing?(root: string): Standing;
   // Present on the shipped command. A dry run never calls it.
   launch?: Launch;
 };
@@ -243,7 +246,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   // One verified snapshot carries the whole command: the refusal when there is
   // one, and the ceilings the launch holds. A legacy or refused record is not
   // an approval in force, and says so in its own words.
-  const standing = approvalStanding(root, sources.home);
+  const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
   if (standing.kind !== 'verified') refusals.push(notInForce(standing));
   else {
     const differences = approvalDifferencesOf(standing, team);
@@ -253,10 +256,10 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   }
   // The budget readings the gate refuses on are the approved ones: an unapproved lower reserve
   // unblocks nothing, not even the seat a dry run would plan.
-  const budgets = budgetsInForce(team, root, sources.home);
+  const budgets = budgetsInForceOf(standing, team);
 
   if (sources.doctor) {
-    const findings = doctorFindings(team, root, dir, session, sources.doctor, loaded.warnings);
+    const findings = doctorFindings(team, root, dir, session, sources.doctor, loaded.warnings, standing);
     for (const finding of findings) if (blocksLaunch(finding)) refusals.push(finding.text);
   }
   const samples: SwapSample[] = [];

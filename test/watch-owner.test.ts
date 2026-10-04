@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { approvalDifferences, budgetsInForce, watchInForce } from '../src/approve/approval.ts';
 import { compare, describe as describeDifference, fingerprints, OWNER_SECTIONS } from '../src/approve/fingerprint.ts';
 import { runApprove } from '../src/commands/approve.ts';
-import { approvalSource, runStatus, type StatusSources } from '../src/commands/status.ts';
+import { standingSource, runStatus, type StatusSources } from '../src/commands/status.ts';
 import type { TeamFile } from '../src/file/types.ts';
 import { defaultWatch, validateTeamFile } from '../src/file/validate.ts';
 import { storePath, writeApproval } from '../src/store/store.ts';
@@ -145,9 +145,7 @@ describe('a threshold edit, and the approval', () => {
     const sources: StatusSources = {
       live: () => live,
       branch: () => 'main',
-      approval: approvalSource(home),
-      watchInForce: (team, at) => watchInForce(team, at, home),
-      budgetsInForce: (team, at) => budgetsInForce(team, at, home),
+      standing: standingSource(home),
       now: () => NOW,
     };
     const status = async () => {

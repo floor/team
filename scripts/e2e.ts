@@ -12,7 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { approvalSource } from '../src/commands/status.ts';
+import { standingSource } from '../src/commands/status.ts';
 import { realSources as addReal, runAdd, type AddSources } from '../src/commands/add.ts';
 import { runApprove } from '../src/commands/approve.ts';
 import { realSources as downReal, runDown } from '../src/commands/down.ts';
@@ -301,7 +301,7 @@ async function stepStatus(ctx: Context): Promise<boolean> {
   const io = ownerIo(ctx.project);
   const code = await runStatus(['--file', ctx.file], io, {
     ...statusReal,
-    approval: approvalSource(ctx.home),
+    standing: standingSource(ctx.home),
   });
   show(io);
   step.check(code === 1, `status exits 1: one difference (it exited ${code})`);
@@ -320,7 +320,7 @@ async function stepWatch(ctx: Context): Promise<boolean> {
   const io = ownerIo(ctx.project);
   const code = await runWatch(['--file', ctx.file], io, {
     ...realWatchSources,
-    approval: approvalSource(ctx.home),
+    standing: standingSource(ctx.home),
     notify: () => {},
     // One pass, then the wait says stop: the watch takes its own state away in its `finally`.
     wait: async () => false,

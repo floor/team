@@ -37,7 +37,7 @@ report without the readings.
 
 One line per finding, the level first, then two spaces:
 
-    ok    the file is the one the owner approved (approval #1, 2026-10-04)
+    ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
     warn  claude-beacon: its name repeats "beacon"; the session already carries it
     warn  claude-beacon: the launch starts Claude Opus 5.5, the file says Claude Sonnet 5.5
     MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
@@ -52,8 +52,8 @@ One line per finding, the level first, then two spaces:
 
 The findings come in order: the file's own warnings, one warning per seat whose name or label
 repeats the project or the session (the session already carries it; the warning never refuses the
-file), the approval — `ok  ` with the signing's number and its date
-(`ok    the file is the one the owner approved (approval #1, 2026-10-04)`) when the record
+file), the approval — `ok  ` with the signing's number, its date and the signing key's
+fingerprint (`ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)`) when the record
 verifies, `MISS` with the one-line repair when it does not: never approved on this machine,
 written before records were signed, or refused with the case — the override file when it is not the approved copy or cannot be parsed (a
 missing line either way: `up` and `add` refuse, and the approved copy stays in force — or the
@@ -151,7 +151,7 @@ Everything here is as it should be:
 ```console
 $ team doctor ; echo "exit $?"
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
-ok    the file is the one the owner approved (approval #1, 2026-10-04)
+ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
 ok    the check for openai reads weekly 40% used
 ok    herdr 0.7.1
 --    session beacon is running
@@ -168,7 +168,7 @@ everything else is as the owner's:
 ```console caller=claude-beacon
 $ team doctor ; echo "exit $?"
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
-ok    the file is the one the owner approved (approval #1, 2026-10-04)
+ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
 --    the budget checks were not run: only the owner runs them
 ok    herdr 0.7.1
 --    session beacon is running
@@ -398,7 +398,7 @@ echo "weekly 99% used"
 ```console
 $ team doctor ; echo "exit $?"
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
-ok    the file is the one the owner approved (approval #1, 2026-10-04)
+ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
 warn  the check for openai changed after approval and was not run; that account reads unknown
 ok    herdr 0.7.1
 --    session beacon is running

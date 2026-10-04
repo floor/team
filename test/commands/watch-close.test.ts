@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { verifiedOf } from '../../src/approve/approval.ts';
 import { runWatch, type WatchSources } from '../../src/commands/watch.ts';
+import { validateTeamFile } from '../../src/file/validate.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { emptySession, readState, updateState } from '../../src/state.ts';
 import type { Live } from '../../src/status/compare.ts';
@@ -68,13 +70,20 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+// The file as approved, with no drift: a synthetic verified standing, so the watch
+// exercises the same derivations a real store's snapshot would drive.
+function approved(): WatchSources['standing'] {
+  return (root) => {
+    const parsed = validateTeamFile(FILE);
+    return parsed.ok ? verifiedOf(parsed.team, FILE, root) : { kind: 'none' };
+  };
+}
+
 function sources(over: Partial<WatchSources> = {}): WatchSources {
   return {
     live: () => scene(),
     machine: () => fine,
-    approval: () => ({ differences: [], reason: null }),
-    watchInForce: (team) => team.watch,
-    budgetsInForce: (team) => team.budgets,
+    standing: approved(),
     readChecks: () => [],
     screen: () => idle,
     status: () => 'idle',
