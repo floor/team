@@ -54,6 +54,42 @@ export function statusRowOf(data: ScreenData, lines: string[]): string | null {
   return at === 'stop' || at < 0 ? null : (lines[at] ?? null);
 }
 
+export type Fold = { count: number; rows: string[]; width: number };
+
+/**
+ * The fold a `two-rules-footer-below` composer's window shows, or null: the marker row whose
+ * capture 1 is the hidden-row count, the tail rows below it, the box's two rules around both,
+ * and a footer under the bottom one. The top rule's width is the width the text wrapped at.
+ * This is the shape alone; whether the fold holds the typed text is the caller's to verify.
+ */
+export function foldOf(data: ScreenData, lines: string[]): Fold | null {
+  const composer = data.composer;
+  if (composer.mode !== 'two-rules-footer-below' || !composer.fold) return null;
+  let marker = -1;
+  let found: RegExpExecArray | null = null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const hit = composer.fold.exec(lines[i] ?? '');
+    if (hit) { marker = i; found = hit; break; }
+  }
+  if (marker < 0 || !found) return null;
+  let bottom = -1;
+  for (let i = marker + 1; i < lines.length; i++) {
+    if (composer.rule.test(lines[i] ?? '')) { bottom = i; break; }
+  }
+  if (bottom < 0) return null;
+  let top = -1;
+  for (let i = marker - 1; i >= 0; i--) {
+    if (composer.rule.test(lines[i] ?? '')) { top = i; break; }
+  }
+  if (top < 0) return null;
+  const rows = lines.slice(marker + 1, bottom).filter((line) => line.trim());
+  if (rows.length === 0) return null;
+  if (!lines.slice(bottom + 1).some((line) => composer.footers.some((pattern) => pattern.test(line)))) return null;
+  const count = Number(found[1]);
+  if (!Number.isInteger(count) || count < 1) return null;
+  return { count, rows, width: (lines[top] ?? '').trim().length };
+}
+
 type Hit = { kind: Screen['kind']; from: number; input: number } | { kind: 'unknown' } | { kind: 'stop' };
 
 /** `lines` is already the window: the last 20 lines, each keeping any ANSI styling. Matching

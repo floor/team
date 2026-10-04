@@ -1,0 +1,13 @@
+      ▄▀▀▄        Antigravity CLI 1.2.16
+     ▀▀▀▀▀▀       user@example.com
+    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (High)
+   ▄▀▀    ▀▀▄     ~/project
+  ▄▀▀      ▀▀▄
+
+──────────────────────────────────────────────────────
+↑ 21 more lines
+d fix/agy-rules-fold.
+These are standing rules, not a task: reply ready and 
+wait for your brief.
+──────────────────────────────────────────────────────
+                               Gemini 3.8 Flash · high

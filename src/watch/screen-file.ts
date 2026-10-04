@@ -8,7 +8,28 @@ import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts'
 
 const STAGES = ['unknown', 'trust', 'permission', 'question', 'working'] as const;
 const KINDS = ['idle', 'working', 'unsent', 'permission', 'trust', 'question', 'unknown'] as const;
-const CHOICE_SAMPLES = ['❯ 1. Yes', '› 1. Yes', '> 1. Yes', '❯ 1.', '› 1.', '> 1.'];
+// The lines a dialog draws for its choices, built from their parts: the mark on the choice
+// the cursor is on (claude-code ❯, codex ›, antigravity >) or the indent of the others, the
+// number, and the labels the profiles' rules and fixtures show, run-on forms included — the
+// trust dialog's "Yes, I trust this folder" and "No, exit", the permission dialog's "No, and
+// tell Claude what to do differently" (escape hint and all), codex's "Yes, proceed (y)" and
+// its own long No. The safety floor reads the first two numbered lines (screen-core's
+// choiceLine and twoLine), so chrome must match none of them.
+const CHOICE_MARKS = ['❯ ', '› ', '> ', '  '];
+const CHOICE_TAILS = [
+  '',
+  ' Yes',
+  ' No',
+  ' Yes, I trust this folder',
+  ' No, exit',
+  ' No, and tell Claude what to do differently',
+  ' No, and tell Claude what to do differently (esc)',
+  ' Yes, proceed (y)',
+  ' No, and tell Codex what to do differently (esc)',
+];
+const CHOICE_SAMPLES = CHOICE_MARKS.flatMap((mark) =>
+  ['1', '2'].flatMap((number) => CHOICE_TAILS.map((tail) => `${mark}${number}.${tail}`)),
+);
 
 export function loadScreen(text: string): ScreenData {
   const root = parseYaml(text);
@@ -151,16 +172,18 @@ function composerOf(node: YamlNode): Composer {
     };
   }
   if (name === 'two-rules-footer-below') {
-    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style']);
+    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'fold', 'placeholder_style']);
     const flag = optional(entries, 'ignore_case');
     const ignoreCase = flag ? boolOf(flag.value, 'ignore_case') : false;
     const footers = required(entries, 'footers', node.line);
+    const fold = optional(entries, 'fold');
     return {
       mode: name,
       prompt: regexField(entries, 'prompt', node.line, ignoreCase),
       rule: regexField(entries, 'rule', node.line, ignoreCase),
       footers: footersOf(footers, ignoreCase),
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
+      fold: fold ? patternOf(stringOf(fold.value) ?? fail(fold.line, '"fold" must be a string'), ignoreCase, fold.line) : null,
       placeholderStyle,
     };
   }
