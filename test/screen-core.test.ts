@@ -414,6 +414,23 @@ describe('the pattern dialect', () => {
     expect(compilePattern('(a|aa)*').test('aaaa')).toBe(true);
   });
 
+  test('an astral code point is the character it says, not five hex digits', () => {
+    // U+1F600 is one code point above U+FFFF. A four-digit "\u" escape cannot spell it:
+    // the digits spill into a following character — the pattern a corruption, and a range
+    // whose ends fall off. The compiled source must use the "\u{…}" form for these.
+    const face = compilePattern('^😀$');
+    expect(face.test('😀')).toBe(true);
+    expect(face.test('ὠ0')).toBe(false);
+    expect(face.test('ὠ')).toBe(false);
+    const range = compilePattern('^[😀-🙏]$');
+    for (const drawn of ['😀', '🙏']) expect(range.test(drawn)).toBe(true);
+    for (const other of ['🦄', 'ὠ', 'a', '😀😀']) expect(range.test(other)).toBe(false);
+    const mixed = compilePattern('^[😀0-9]$');
+    expect(mixed.test('😀')).toBe(true);
+    expect(mixed.test('7')).toBe(true);
+    expect(mixed.test('x')).toBe(false);
+  });
+
   test('a read that passes the time bound is unknown', () => {
     const data = loadScreen(`
 format: 1
