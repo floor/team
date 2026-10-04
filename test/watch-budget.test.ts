@@ -9,28 +9,10 @@ import type { CheckOutcome } from '../src/budgets/run.ts';
 import type { TeamFile } from '../src/file/types.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
-import { emptySession, type SessionState } from '../src/state.ts';
+import { emptySession } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
 import type { Machine } from '../src/watch/machine.ts';
-import { newMemory, pass as corePass, type Memory, type PassResult } from '../src/watch/pass.ts';
-
-/**
- * A pass over this file's budget world. `pass` takes the watch values in force and the loop's
- * check readings as its 8th and 9th parameters; these tests vary only the budget inputs, so the
- * file's own watch values are passed explicitly (no approval is in play here).
- */
-function pass(
-  team: TeamFile,
-  state: SessionState,
-  live: Live,
-  machine: Machine,
-  now: number,
-  memory: Memory,
-  approval: string[] | null = [],
-  outcomes: readonly CheckOutcome[] = [],
-): PassResult {
-  return corePass(team, state, live, machine, now, memory, approval, team.watch, outcomes);
-}
+import { newMemory, pass, type PassResult } from '../src/watch/pass.ts';
 
 const NOW = Date.parse('2026-10-04T09:00:00Z');
 const MIN = 60_000;
@@ -117,7 +99,10 @@ function checkSpend(account: string, now: number, amount: number): CheckOutcome[
 
 describe('the seats\' quota, parsed by the core', () => {
   test('a screen figure becomes a reading for an account whose sources take one', () => {
-    const result = pass(team(SCREEN_READ), emptySession(), live({ 'codex-acme': { screen: quota } }), fine, NOW, newMemory(), []);
+    const result = pass({
+      team: team(SCREEN_READ), state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
+      machine: fine, now: NOW, memory: newMemory(), approval: [],
+    });
     expect(result.readings.map(({ account, window, left, used, seat, confirmed }) => ({ account, window, left, used, seat, confirmed })))
       .toEqual([{ account: 'openai', window: 'weekly', left: 39, used: 61, seat: 'codex-acme', confirmed: false }]);
     // A first sight is not yet counted: the launch gate is what says "first sight only" (§ 4.3).
@@ -125,7 +110,10 @@ describe('the seats\' quota, parsed by the core', () => {
   });
 
   test('an account whose sources name only the check takes no screen reading (floor-86)', () => {
-    const result = pass(team(OPENAI), emptySession(), live({ 'codex-acme': { screen: quota } }), fine, NOW, newMemory(), []);
+    const result = pass({
+      team: team(OPENAI), state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
+      machine: fine, now: NOW, memory: newMemory(), approval: [],
+    });
     expect(result.readings).toEqual([]);
     // Nothing counts for it this pass, and a seat spends it: unknown while running.
     expect(shown(result)).toEqual(['openai is unknown while codex-acme runs on it (operator)']);
@@ -137,7 +125,7 @@ describe('the marks', () => {
     checkWindows('openai', now, [{ window: 'weekly', left: 100 - used, used, resetsAt }]);
 
   function marks(memory: ReturnType<typeof newMemory>, now: number, outcomes: CheckOutcome[]): string[] {
-    const result = pass(team(OPENAI), emptySession(), live(), fine, now, memory, [], outcomes);
+    const result = pass({ team: team(OPENAI), state: emptySession(), live: live(), machine: fine, now, memory, approval: [], outcomes: outcomes });
     return budgetReports(result).filter((report) => report.key.startsWith('budget:mark:')).map((report) => report.text);
   }
 
@@ -167,7 +155,7 @@ describe('the marks', () => {
   });
 
   test('a mark is the operator\'s to act on', () => {
-    const result = pass(team(OPENAI), emptySession(), live(), fine, NOW, newMemory(), [], week(NOW, 92, RESET));
+    const result = pass({ team: team(OPENAI), state: emptySession(), live: live(), machine: fine, now: NOW, memory: newMemory(), approval: [], outcomes: week(NOW, 92, RESET) });
     expect(budgetReports(result).every((report) => report.to === 'operator')).toBe(true);
   });
 });
@@ -176,7 +164,7 @@ describe('the reserve and the floor', () => {
   test('an account inside its reserve is the owner\'s, once, and again when it comes back', () => {
     const memory = newMemory();
     const at = (now: number, outcomes: CheckOutcome[]) =>
-      budgetReports(pass(team(RESERVE), emptySession(), live(), fine, now, memory, [], outcomes))
+      budgetReports(pass({ team: team(RESERVE), state: emptySession(), live: live(), machine: fine, now, memory, approval: [], outcomes: outcomes }))
         .filter((report) => report.key.startsWith('budget:reserve:'))
         .map((report) => `${report.text} (${report.to})`);
     expect(at(NOW, checkWindows('openai', NOW, [{ window: 'weekly', left: 7, used: 93, resetsAt: RESET }])))
@@ -195,7 +183,7 @@ describe('the reserve and the floor', () => {
   test('a spend account at or below its floor is the owner\'s, once, and again when it comes back', () => {
     const memory = newMemory();
     const at = (now: number, amount: number) =>
-      budgetReports(pass(team(DEEPSEEK), emptySession(), live(), fine, now, memory, [], checkSpend('deepseek', now, amount)))
+      budgetReports(pass({ team: team(DEEPSEEK), state: emptySession(), live: live(), machine: fine, now, memory, approval: [], outcomes: checkSpend('deepseek', now, amount) }))
         .filter((report) => report.key.startsWith('budget:floor:'))
         .map((report) => `${report.text} (${report.to})`);
     expect(at(NOW, 4.2)).toEqual(['deepseek 4.2 USD left, at its 5 USD floor (owner)']);
@@ -205,7 +193,10 @@ describe('the reserve and the floor', () => {
   });
 
   test('a spend account crosses no marks', () => {
-    const result = pass(team(DEEPSEEK), emptySession(), live(), fine, NOW, newMemory(), [], checkSpend('deepseek', NOW, 4.2));
+    const result = pass({
+      team: team(DEEPSEEK), state: emptySession(), live: live(), machine: fine, now: NOW, memory: newMemory(),
+      approval: [], outcomes: checkSpend('deepseek', NOW, 4.2),
+    });
     expect(budgetReports(result).filter((report) => report.key.startsWith('budget:mark:'))).toEqual([]);
   });
 });
@@ -216,7 +207,7 @@ describe('an account that reads unknown', () => {
   test('is reported to the operator while seats run on it', () => {
     const memory = newMemory();
     const at = (now: number, outcomes: CheckOutcome[], scene = live()) =>
-      budgetReports(pass(team(RESERVE), emptySession(), scene, fine, now, memory, [], outcomes))
+      budgetReports(pass({ team: team(RESERVE), state: emptySession(), live: scene, machine: fine, now, memory, approval: [], outcomes: outcomes }))
         .filter((report) => report.key === 'budget:unknown:openai')
         .map((report) => `${report.text} (${report.to})`);
     expect(at(NOW, unreadable)).toEqual(['openai is unknown while codex-acme runs on it (operator)']);
@@ -228,12 +219,18 @@ describe('an account that reads unknown', () => {
   });
 
   test('is quiet when no running seat spends it', () => {
-    const result = pass(team(RESERVE), emptySession(), live({}, ['codex-acme']), fine, NOW, newMemory(), [], unreadable);
+    const result = pass({
+      team: team(RESERVE), state: emptySession(), live: live({}, ['codex-acme']), machine: fine, now: NOW, memory: newMemory(),
+      approval: [], outcomes: unreadable,
+    });
     expect(budgetReports(result)).toEqual([]);
   });
 
   test('is not what a first sight is called', () => {
-    const result = pass(team(SCREEN_READ), emptySession(), live({ 'codex-acme': { screen: quota } }), fine, NOW, newMemory(), [], []);
+    const result = pass({
+      team: team(SCREEN_READ), state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
+      machine: fine, now: NOW, memory: newMemory(), approval: [], outcomes: [],
+    });
     expect(budgetReports(result)).toEqual([]);
   });
 });
@@ -242,9 +239,9 @@ describe('watch.checks', () => {
   test('turns the budget check off, once the owner approved the change', () => {
     const crossed = checkWindows('openai', NOW, [{ window: 'weekly', left: 8, used: 92, resetsAt: RESET }]);
     const off = team(OPENAI, '  checks:\n    budget: off\n');
-    expect(budgetReports(pass(off, emptySession(), live(), fine, NOW, newMemory(), [], crossed))).toEqual([]);
+    expect(budgetReports(pass({ team: off, state: emptySession(), live: live(), machine: fine, now: NOW, memory: newMemory(), approval: [], outcomes: crossed }))).toEqual([]);
     // The same file with the change not approved yet: the off is not in effect, and marks run.
-    const waiting = pass(off, emptySession(), live(), fine, NOW, newMemory(), [WATCH_CHECKS_CHANGED], crossed);
+    const waiting = pass({ team: off, state: emptySession(), live: live(), machine: fine, now: NOW, memory: newMemory(), approval: [WATCH_CHECKS_CHANGED], outcomes: crossed });
     expect(budgetReports(waiting).filter((report) => report.key.startsWith('budget:mark:'))).toHaveLength(3);
   });
 });

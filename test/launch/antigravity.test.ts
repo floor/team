@@ -190,19 +190,19 @@ seats:
 `);
     if (!parsed.ok) throw new Error('invalid team file');
     const teamFile = parsed.team;
-    const result = pass(
-      teamFile,
-      emptySession(),
-      {
+    const result = pass({
+      team: teamFile,
+      state: emptySession(),
+      live: {
         running: true,
         agents: [{ name: 'gemini', agent: 'agy', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null }],
         workspaces: [{ id: 'w1', label: 'gemini' }],
         screens: { 'w1:p1': fixture('permission') },
       },
-      { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 },
-      0,
+      machine: { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 },
+      now: 0,
       memory,
-    );
+    });
     expect(result.reports).toEqual([{
       key: 'blocked:gemini',
       text: "gemini waits at a permission prompt: its owner's to answer",
