@@ -163,13 +163,20 @@ describe('Cursor launch and captured screens', () => {
     const boxRow = '  │ ○ First queued message.              │';
     const boxEnd = '  └──────────────────────────────────────┘';
     const hintRow = '  │ enter steer · ↑ select/edit · esc cancel │';
-    const quoted = [...idleLines.slice(0, at), boxTop, boxRow, boxEnd, '  the box lists the messages already sent.', ...idleLines.slice(at)].join('\n');
+    // The lookalike sits in the transcript, above the blank frame rows every capture draws
+    // against the input row (idle.txt's rows 5-8): it is then read as nothing.
+    const quoted = [...idleLines.slice(0, at), boxTop, boxRow, boxEnd, '  the box lists the messages already sent.', '', ...idleLines.slice(at)].join('\n');
     expect(readScreen('cursor', quoted).kind).toBe('idle');
     // Even a paste that reproduces the overlay's own hint line leaves idle when
     // more prose follows it: the box is then not directly above the prompt area.
-    const pasted = [...idleLines.slice(0, at), boxTop, boxRow, hintRow, boxEnd, '  and nothing had been typed.', ...idleLines.slice(at)].join('\n');
+    const pasted = [...idleLines.slice(0, at), boxTop, boxRow, hintRow, boxEnd, '  and nothing had been typed.', '', ...idleLines.slice(at)].join('\n');
     expect(readScreen('cursor', pasted).kind).toBe('idle');
     expect(classifyComposer('cursor', pasted.split('\n')).kind).toBe('idle');
+    // Pressed against the prompt with no frame row between, the same prose is a shape no
+    // capture draws — the transcript's last row sits above the gap, never against the
+    // prompt — so the read fails closed rather than take the prompt for an input row.
+    const against = [...idleLines.slice(0, at), boxTop, boxRow, boxEnd, '  the box lists the messages already sent.', ...idleLines.slice(at)].join('\n');
+    expect(readScreen('cursor', against).kind).toBe('unknown');
   });
 
   test('unknown, shell and unobserved dialogs never count as idle', () => {
@@ -574,6 +581,70 @@ describe('the prompt-glyph continuation row (Cursor)', () => {
     d.io.type = (text) => { d.calls.push(text); d.showText(at(text)); return true; };
     expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(false);
     expect(d.calls).toEqual([]);
+  });
+});
+
+describe('the box\'s top frame (Cursor)', () => {
+  // The Cursor twin of the Codex frame: every capture draws blank rows directly above the
+  // input row — two in unsent.txt and the typed captures (rows 6-7 above the input at 8, or
+  // four in idle.txt, rows 5-8) — and above them the transcript's or the pane's last row
+  // (idle.txt's `  hints.`, rules-accepted.txt's `  RULES_RECEIVED`, the queue fixtures'
+  // spinner). typed-blank-middle.txt draws a blank row inside a person's box, so a blank
+  // above the lowest prompt row is content or frame by what surrounds it, never the box's
+  // top on its own.
+  const shaped = (body: string) => fixture('idle').replace('  → Plan, search, build anything', body);
+
+  test('a blank content row between the person\'s text and the second prompt fails closed', async () => {
+    // The reviewer's first must-fix, Cursor's twin: the lowest prompt row is empty and a
+    // prompt row sits on the far side of the frame, so the pre-type read is `unknown` and
+    // nothing is typed. The post-type screen `… / blank / → Rules.` is the exit-typed
+    // capture's own geometry (a text-holding input row below a prompt row above the frame),
+    // so the pre-type gate, not the read-back, is what keeps the person's row safe.
+    const at = (typed = '') => shaped(`  → person text\n\n  →${typed === '' ? '' : ` ${typed}`}`);
+    expect(readScreen('cursor', at()).kind).toBe('unknown');
+    expect(classify('cursor', at().split('\n')).kind).toBe('unknown');
+    expect(classifyComposer('cursor', at().split('\n')).kind).toBe('unknown');
+    const d = delivery();
+    d.showText(at());
+    d.io.type = (text) => { d.calls.push(text); d.showText(at(text)); return true; };
+    expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+  });
+
+  test('two and three blank content rows fail closed the same way', () => {
+    for (const gap of ['\n\n\n', '\n\n\n\n']) {
+      expect(readScreen('cursor', shaped(`  → person text${gap}  →`)).kind).toBe('unknown');
+    }
+  });
+
+  test('a blank row, a continuation row, then a prompt fails closed', () => {
+    const at = shaped('  → person text\n\n    more of theirs\n  →');
+    expect(readScreen('cursor', at).kind).toBe('unknown');
+    expect(classifyComposer('cursor', at.split('\n')).kind).toBe('unknown');
+    expect(boxHoldsText('cursor', 'Rules.', shaped('  → person text\n\n    more of theirs\n  → Rules.'))).toBe(false);
+  });
+
+  test('a window starting inside the box fails closed', async () => {
+    const at = (typed = '') => shaped(`    person-owned visible continuation\n  →${typed === '' ? '' : ` ${typed}`}`);
+    expect(readScreen('cursor', at()).kind).toBe('unknown');
+    expect(classify('cursor', at().split('\n')).kind).toBe('unknown');
+    expect(classifyComposer('cursor', at().split('\n')).kind).toBe('unknown');
+    expect(boxHoldsText('cursor', 'Rules.', at('Rules.'))).toBe(false);
+    const d = delivery();
+    d.showText(at());
+    d.io.type = (text) => { d.calls.push(text); d.showText(at(text)); return true; };
+    expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+  });
+
+  test('a window whose top frame scrolled off reads unknown', () => {
+    const lines = fixture('idle').split('\n');
+    const at = lines.findIndex((line) => line === '  → Plan, search, build anything');
+    const only = lines.slice(at).join('\n');
+    expect(readScreen('cursor', only).kind).toBe('unknown');
+    const held = only.replace('  → Plan, search, build anything', '  → Rules.');
+    expect(readScreen('cursor', held).kind).toBe('unknown');
+    expect(boxHoldsText('cursor', 'Rules.', held)).toBe(false);
   });
 });
 

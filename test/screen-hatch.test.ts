@@ -986,8 +986,10 @@ module.exports.getReads = () => reads;`,
       // Property on module was not read again
       expect(mod.getReads()).toBe(1);
 
-      // classifyLines evaluates working predicate; when working returns false, composer matches and returns idle
-      const lines = ['> ', 'status'];
+      // classifyLines evaluates working predicate; when working returns false, composer matches
+      // and returns idle. The blank row above the prompt is the frame the composer draws
+      // (status-last reads the input row only under it); without it the read is unknown.
+      const lines = ['', '> ', 'status'];
       const res = classifyLines(data, lines);
       // Working returns false (p1), so result is idle, not working
       expect(res.kind).toBe('idle');

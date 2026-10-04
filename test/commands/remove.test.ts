@@ -245,6 +245,71 @@ describe('team remove', () => {
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
+  test.each([
+    ['codex', '  person-owned visible continuation\n›'],
+    ['codex', '› person text\n\n›'],
+    ['cursor', '    person-owned visible continuation\n  →'],
+    ['cursor', '  → person text\n\n  →'],
+  ] as const)('a %s box that is not the one the captures draw after the exit text gets no Enter (%j)', async (cli, shape) => {
+    // The reviewer's two must-fixes on the remove path, on both CLIs: a box holding a blank
+    // content row before a second prompt row, and a window starting inside the box with a
+    // visible continuation above the prompt. The pane read is not free, so the seat is left
+    // running and nothing is typed: the exit never reaches the pane.
+    const idle = readFileSync(new URL(`../fixtures/${cli}/${cli === 'codex' ? '0.157.0' : '2026.10.01'}/idle.txt`, import.meta.url), 'utf8');
+    const placeholder = cli === 'codex' ? '› Ask Codex to do anything' : '  → Plan, search, build anything';
+    writeFileSync(file, FILE.replace(
+      `  - role: implementer
+    name: worker
+    label: worker
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5`,
+      cli === 'codex'
+        ? `  - role: implementer
+    name: worker
+    label: worker
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    display: GPT-6 Sol
+    launch: codex -m gpt-6-sol -c model_reasoning_effort=high`
+        : `  - role: implementer
+    name: worker
+    label: worker
+    cli: cursor
+    vendor: xai
+    model: Grok
+    version: "4.7"
+    launch: cursor-agent`,
+    ));
+    const pane = idle.replace(placeholder, shape);
+    const made = world();
+    let gone = false;
+    const launch = made.sources.launch;
+    if (!launch) throw new Error('fixture');
+    launch.typeText = (_session, _pane, text) => {
+      made.typed.push(text);
+      return true;
+    };
+    launch.pressEnter = () => {
+      gone = true;
+      return true;
+    };
+    made.sources.screen = () => readScreen(cli, pane);
+    made.sources.screenText = () => pane;
+    made.sources.foreground = () => (gone ? [] : [cli === 'codex' ? 'codex' : 'cursor-agent']);
+    made.agents.push({ name: 'worker', agent: cli, pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(io.err).toContain('team remove: worker shows a screen the profile does not recognise');
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
   test('a seat that is not running is taken out without typing', async () => {
     const made = world();
     const io = testIo(dir, lead);

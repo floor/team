@@ -582,20 +582,33 @@ function statusLast(
   const status = statusIndex(composer, lines, allowOneTrailing, tick);
   if (status === 'stop') return { kind: 'stop' };
   if (status < 0) return { kind: 'unknown' };
-  // The input row is the top of the box, and the only prompt row in it. The box's top
-  // boundary is the blank row above its run — the transcript's last row sits above that,
-  // with its own `› …` echoes. Every capture draws every row of typed text below the input
-  // indented (Codex's continuations at column two, Cursor's at four), so no capture draws a
-  // person's later row at the prompt column: a prompt row after the input, inside the box,
-  // is a shape the captures do not show. Fail closed on it rather than take the lowest
-  // prompt row for the input and leave a person's own text above it unread.
+  // The input row is the box's top, and the box's top frame is the blank run directly above
+  // it: every capture draws one — one to two rows in Codex's (idle.txt's rows 13-14 above the
+  // placeholder, exit-typed.txt's row 20 above `› /exit`), two to four in Cursor's — and no
+  // capture draws a non-blank row against the prompt from above; the transcript's last row
+  // (or Codex's open menu row) sits above the gap. A window that starts inside the box, or a
+  // visible continuation pressed against the prompt, is not the frame the captures draw, and
+  // the rows above it cannot be shown to be outside the box: fail closed rather than take
+  // the lowest prompt row for an input row.
   let low = status - 1;
   while (low >= 0 && !composer.prompt.test(lines[low] ?? '')) low--;
   if (low < 0) return { kind: 'unknown' };
-  let top = low;
-  while (top > 0 && (lines[top - 1] ?? '').trim() !== '') top--;
-  let input = top;
-  while (input < low && !composer.prompt.test(lines[input] ?? '')) input++;
+  if (low === 0 || (lines[low - 1] ?? '').trim() !== '') return { kind: 'unknown' };
+  // The lowest prompt row above the status line is the input row when it holds text: the
+  // exit-typed capture draws its menu row `› /exit  exit Codex` above the gap and `/exit` on
+  // the input row itself. When it holds none, a prompt row on the far side of the frame is
+  // the blank-middle shape — a person's row, a blank, a second prompt — which no capture
+  // draws as one box (continuations are drawn indented), so it fails closed too.
+  if (placeholder(stripTyped(lines[low] ?? '', composer), composer, lines[low] ?? '', styled[low])) {
+    let above = low - 2;
+    while (above >= 0 && (lines[above] ?? '').trim() === '') above--;
+    if (above >= 0 && composer.prompt.test(lines[above] ?? '')) return { kind: 'unknown' };
+  }
+  // Every capture draws every row of typed text below the input row indented (Codex's
+  // continuations at column two, Cursor's at four), so a prompt row after the input, inside
+  // the box, is a shape the captures do not show. Fail closed on it rather than leave a
+  // person's own text above it unread.
+  const input = low;
   for (let i = input + 1; i < status; i++) if (composer.prompt.test(lines[i] ?? '')) return { kind: 'unknown' };
   const rows = lines.slice(input + 1, status);
   for (let i = input + 1; i < status; i++) if ((lines[i] ?? '').trim()) return { kind: 'unsent', from: input, input, rows };

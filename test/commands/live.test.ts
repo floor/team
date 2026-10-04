@@ -886,6 +886,62 @@ describe('team down, live', () => {
     expect(io.out).toContain('codex-acme: its exit was not typed; left as it is\n');
   });
 
+  // The reviewer's two must-fixes on the exit path, on both CLIs: the read-back before the
+  // Enter must fail closed when the box holds a blank content row before a second prompt row,
+  // and when the window starts inside the box with a visible continuation above the prompt.
+  const CURSOR_DS = EXAMPLE.replace(
+    `  - role: implementer
+    name: deepseek-acme
+    cli: claude-code           # DeepSeek's model, run by Claude Code
+    vendor: deepseek
+    model: DeepSeek Flash
+    version: "V4.1"
+    display: DeepSeek V4.1 Flash
+    launch: team-deepseek`,
+    `  - role: implementer
+    name: deepseek-acme
+    cli: cursor
+    vendor: xai
+    model: Grok
+    version: "4.7"
+    launch: cursor-agent`,
+  );
+
+  test.each([
+    ['codex', 'codex-acme', '  person-owned visible continuation\n›'],
+    ['codex', 'codex-acme', '› person text\n\n›'],
+    ['cursor', 'deepseek-acme', '    person-owned visible continuation\n  →'],
+    ['cursor', 'deepseek-acme', '  → person text\n\n  →'],
+  ] as const)('an exit into a %s box that is not the one the captures draw gets no Enter (%j)', async (cli, seat, shape) => {
+    // The seat's CLI is read from the team file by name — Codex's seat is codex-acme's, the
+    // cursor case rewrites deepseek-acme's — so each case reads the shape through its own CLI.
+    // The pane shows the shape the captures do not draw: the read is not idle, the seat is
+    // left running, and nothing is typed or sent.
+    const idle = readFileSync(new URL(`../fixtures/${cli}/${cli === 'codex' ? '0.157.0' : '2026.10.01'}/idle.txt`, import.meta.url), 'utf8');
+    const placeholder = cli === 'codex' ? '› Ask Codex to do anything' : '  → Plan, search, build anything';
+    if (cli === 'cursor') writeFileSync(join(root, '.agents/team.yaml'), CURSOR_DS);
+    const pane = idle.replace(placeholder, shape);
+    const run = harness({ kind: 'idle' });
+    run.launch.typeText = (_session, _pane, text) => {
+      run.typed.push(text);
+      return true;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({
+      screen: () => readScreen(cli, pane),
+      screenText: () => pane,
+      agents: () => [{ ...agent(seat, 'w3:p1', 'idle'), agent: cli }],
+    }));
+    // The seat is reported left running and the run ends the way any unrecognised screen
+    // does — nothing was typed, so nothing failed.
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(io.out).toContain(`${seat}: shows a screen the profile does not recognise; left running\n`);
+  });
+
   test.each(['close-short', 'close-long', 'open-short'] as const)(
     'an Antigravity box whose two rules differ in width gets no exit Enter (%s)',
     async (shape) => {

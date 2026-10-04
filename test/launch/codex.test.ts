@@ -315,3 +315,93 @@ describe('the prompt-glyph continuation row (Codex)', () => {
     expect(d.calls).toEqual([]);
   });
 });
+
+describe('the box\'s top frame (Codex)', () => {
+  // What every capture draws directly above the input row: blank rows of the pane's own — one
+  // in exit-typed.txt (row 20 above `› /exit`), two in idle.txt and unsent.txt (rows 13-14) —
+  // and above that gap the transcript's last row, whatever it is (idle.txt's `  limit left.`
+  // prose, exit-typed.txt's own `/exit` menu row). No capture draws a prompt row against a
+  // non-blank row, so the top frame is the gap itself: the input row is the lowest prompt row
+  // above the status line, and the row above it must be blank. A blank row may sit inside a
+  // box as content — typed-blank-middle.txt proves it for Cursor's twin shape — so a blank
+  // above the lowest prompt row is never taken as the box's top on its own.
+  const shaped = (body: string) => fixture('idle').replace('› Ask Codex to do anything', body);
+
+  test('a blank content row between the person\'s text and the second prompt fails closed', async () => {
+    // The reviewer's first must-fix: `› person text`, blank, `›`. Read from the lowest prompt
+    // row the box was idle, the paste went after the second glyph, the read-back held only
+    // `Rules.`, and the Enter submitted the person's text with it. The lowest prompt row is
+    // empty and a prompt row sits on the far side of the frame, so the pre-type read is
+    // `unknown`: nothing is typed, so the post-type screen the reviewer constructed — the
+    // person's row, a blank, `› Rules.` — is never reached. That post-type screen is the
+    // exit-typed capture's own geometry (a text-holding input row below a prompt row above the
+    // frame), so it is the pre-type gate, not the read-back, that keeps it safe.
+    const at = (typed = '') => shaped(`› person text\n\n›${typed === '' ? '' : ` ${typed}`}`);
+    expect(readScreen('codex', at()).kind).toBe('unknown');
+    expect(classify('codex', at().split('\n')).kind).toBe('unknown');
+    expect(classifyComposer('codex', at().split('\n')).kind).toBe('unknown');
+    const d = delivery();
+    d.showText(at());
+    d.io.type = (text) => { d.calls.push(text); d.showText(at(text)); return true; };
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+  });
+
+  test('two and three blank content rows fail closed the same way', () => {
+    for (const gap of ['\n\n\n', '\n\n\n\n']) {
+      expect(readScreen('codex', shaped(`› person text${gap}›`)).kind).toBe('unknown');
+    }
+  });
+
+  test('a blank row, a continuation row, then a prompt fails closed', () => {
+    // Nothing between the person's first row and the later prompt explains it: the row the
+    // captures draw directly above an input row is blank, and this one carries content.
+    const at = shaped('› person text\n\n  more of theirs\n›');
+    expect(readScreen('codex', at).kind).toBe('unknown');
+    expect(classifyComposer('codex', at.split('\n')).kind).toBe('unknown');
+    expect(boxHoldsText('codex', 'Rules.', shaped('› person text\n\n  more of theirs\n› Rules.'))).toBe(false);
+  });
+
+  test('a window starting inside the box fails closed', async () => {
+    // The reviewer's second must-fix: the input row scrolled out, a visible indented
+    // continuation, then `›`. Read from the lowest prompt row the box was idle; the rows
+    // above it — a continuation the captures only draw inside a box — were discarded. The
+    // row directly above the prompt is not blank here, so it is not an input row.
+    const at = (typed = '') => shaped(`  person-owned visible continuation\n›${typed === '' ? '' : ` ${typed}`}`);
+    expect(readScreen('codex', at()).kind).toBe('unknown');
+    expect(classify('codex', at().split('\n')).kind).toBe('unknown');
+    expect(classifyComposer('codex', at().split('\n')).kind).toBe('unknown');
+    expect(boxHoldsText('codex', 'Rules.', at('Rules.'))).toBe(false);
+    const d = delivery();
+    d.showText(at());
+    d.io.type = (text) => { d.calls.push(text); d.showText(at(text)); return true; };
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+  });
+
+  test('a window whose top frame scrolled off reads unknown', () => {
+    // Only the prompt and the status line visible: the gap every capture draws above the
+    // input row is not in the window, so the row cannot be shown to be the box's top — it
+    // may be a caret line of a box whose first rows scrolled off. No real idle/unsent
+    // capture is this shape: every one keeps the status line last with the box under its
+    // transcript, so the crop never starts at the prompt.
+    const lines = fixture('idle').split('\n');
+    const at = lines.findIndex((line) => line === '› Ask Codex to do anything');
+    const only = lines.slice(at).join('\n');
+    expect(readScreen('codex', only).kind).toBe('unknown');
+    const held = only.replace('› Ask Codex to do anything', '› Rules.');
+    expect(readScreen('codex', held).kind).toBe('unknown');
+    expect(boxHoldsText('codex', 'Rules.', held)).toBe(false);
+  });
+
+  test('the real exit-typed capture keeps its box: its menu row sits above the frame, not in the box', () => {
+    // The guard the two must-fixes must not break: exit-typed.txt draws `› /exit  exit Codex`
+    // (the menu), a blank row, then `› /exit` — the same prompt-blank-prompt shape the
+    // constructed must-fixes use, but the lowest prompt row holds the person's text, so it is
+    // the input row and the menu row above the frame is read as nothing.
+    const screen = fixture('exit-typed');
+    expect(readScreen('codex', screen).kind).toBe('unsent');
+    expect(boxHoldsText('codex', '/exit', screen)).toBe(true);
+    expect(boxHoldsText('codex', 'Rules.', screen)).toBe(false);
+  });
+});
