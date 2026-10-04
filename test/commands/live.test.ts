@@ -308,6 +308,17 @@ describe('team up, live', () => {
     expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain('watch: started');
   });
 
+  test('records the CLI each seat was launched with', async () => {
+    await approve();
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    await runUp(FILE, io, sources({}, made));
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['claude-coordinator-acme']?.cli).toBe('claude-code');
+    expect(seats['deepseek-acme']?.cli).toBe('claude-code');
+    expect(seats['deepseek-acme-2']?.cli).toBe('claude-code');
+  });
+
   test('a permission prompt closes that workspace and leaves the others', async () => {
     await approve();
     const made = world((_pane, label) => (label === 'claude opus 5.5' ? PERMISSION : IDLE));
@@ -430,6 +441,44 @@ describe('team up, live', () => {
     expect(made.creates).toEqual([]);
   });
 
+  // The refusal names the session's own name, whatever `--session` says: the owner copies the line.
+  test("a stopped session's refusal prints the exact herdr command with its name", async () => {
+    await approve();
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(['--session', 'beta-team', ...FILE], io, sources(
+      { sessionState: (session) => (session === 'beta-team' ? 'stopped' : 'absent') },
+      made,
+    ));
+    expect(code).toBe(1);
+    expect(io.err).toBe('team up: session beta-team is stopped; clear it with `herdr session delete beta-team`\n');
+    expect(made.starts).toBe(0);
+  });
+
+  // Whatever sits in a `stopped` field — a shape `down` once wrote, or anything else — changes
+  // nothing: `up` never reads it and never deletes a session.
+  test.each([
+    ['the shape a stop once wrote', { at: NOW.toISOString(), by: 'owner' }],
+    ['a boolean', true],
+    ['a string', 'stopped'],
+  ] as [string, unknown][])('a state file whose stopped field is %s refuses the same', async (_what, stopped) => {
+    await approve();
+    writeFileSync(
+      join(root, '.agents/team.state.json'),
+      JSON.stringify({ format: 1, sessions: { 'acme-web': { seats: {}, worktrees: {}, stopped } } }),
+    );
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({ sessionState: () => 'stopped' }, made));
+    expect(code).toBe(1);
+    expect(io.err).toBe('team up: session acme-web is stopped; clear it with `herdr session delete acme-web`\n');
+    // The field is left exactly as it was, on disk.
+    const filed = JSON.parse(readFileSync(join(root, '.agents/team.state.json'), 'utf8')) as {
+      sessions: Record<string, { stopped?: unknown }>;
+    };
+    expect(filed.sessions['acme-web']?.stopped).toEqual(stopped);
+  });
+
   test("the approval's ceilings are enforced, not the file's limits", async () => {
     await approve();
     const path = join(store(), 'approval.json');
@@ -541,12 +590,14 @@ describe('team down, live', () => {
     const closed: string[] = [];
     const killed: number[] = [];
     const stopped: string[] = [];
+    const deleted: string[] = [];
     let clock = NOW.getTime();
     let gone = false;
     let current = status;
     let onSleep = () => {};
     // What the pane shows after a typing: the box with the typed text, as the CLI renders it.
     let box: string | undefined;
+    let clearFails = false;
     const launch: DownLaunch = {
       typeText(_session, _pane, text) {
         typed.push(text);
@@ -567,6 +618,10 @@ describe('team down, live', () => {
         stopped.push(session);
         return true;
       },
+      deleteSession(session) {
+        deleted.push(session);
+        return !clearFails;
+      },
       kill(pid) {
         killed.push(pid);
         return true;
@@ -577,8 +632,9 @@ describe('team down, live', () => {
       },
       now: () => new Date(clock),
     };
+    // Herdr's answer once the stop has run: a session `down` stopped is no longer running.
     const sourcesOf = (overrides: Partial<DownSources> = {}): DownSources => ({
-      sessionRunning: () => true,
+      sessionRunning: () => stopped.length === 0,
       agents: () => [seat(current)],
       alive: () => false,
       screen: () => screen,
@@ -596,6 +652,7 @@ describe('team down, live', () => {
       closed,
       killed,
       stopped,
+      deleted,
       launch,
       sourcesOf,
       setStatus: (value: string) => {
@@ -603,6 +660,9 @@ describe('team down, live', () => {
       },
       onSleep: (hook: () => void) => {
         onSleep = hook;
+      },
+      failClear: () => {
+        clearFails = true;
       },
     };
   }
@@ -644,6 +704,69 @@ describe('team down, live', () => {
     expect(run.closed).toEqual(['w3']);
     expect(run.stopped).toEqual(['acme-web']);
     expect(io.out).toContain('deepseek-acme: stopped\n');
+  });
+
+  test('clears the session it stopped, in the same run, and says so in one line', async () => {
+    const run = harness({ kind: 'idle' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(0);
+    expect(run.deleted).toEqual(['acme-web']);
+    expect(io.out).toContain('session acme-web: stopped and cleared\n');
+  });
+
+  test('down then up needs no step in between', async () => {
+    await approve();
+    const run = harness({ kind: 'idle' });
+    const owner = testIo(root, { kind: 'owner' });
+    expect(await runDown(FILE, owner, run.sourcesOf())).toBe(0);
+    expect(run.deleted).toEqual(['acme-web']);
+
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({ sessionState: () => 'absent' }, made));
+    expect(code).toBe(0);
+    expect(made.starts).toBe(1);
+    expect(io.out).not.toContain('herdr session delete');
+  });
+
+  test('a session herdr still reports running after the stop is not cleared', async () => {
+    const run = harness({ kind: 'idle' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ sessionRunning: () => true }));
+    expect(code).toBe(0);
+    expect(run.stopped).toEqual(['acme-web']);
+    expect(run.deleted).toEqual([]);
+    expect(io.out).toContain('session acme-web: stopped; it did not clear, run `herdr session delete acme-web`\n');
+  });
+
+  test('a clear that fails names the herdr command and still exits 0', async () => {
+    const run = harness({ kind: 'idle' });
+    run.failClear();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(0);
+    expect(run.deleted).toEqual(['acme-web']);
+    expect(io.out).toContain('session acme-web: stopped; it did not clear, run `herdr session delete acme-web`\n');
+  });
+
+  test('a seat left running clears nothing', async () => {
+    const run = harness({ kind: 'permission' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(0);
+    expect(run.stopped).toEqual([]);
+    expect(run.deleted).toEqual([]);
+    expect(io.out).not.toContain('cleared');
+  });
+
+  test("a seat's call is refused before anything is stopped or cleared", async () => {
+    const run = harness({ kind: 'idle' });
+    const io = testIo(root, { kind: 'seat', name: 'deepseek-acme', pane: 'w3:p1' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(1);
+    expect(run.stopped).toEqual([]);
+    expect(run.deleted).toEqual([]);
   });
 
   test('holds Enter when the status turns working after the text', async () => {
@@ -725,6 +848,8 @@ describe('team down, live', () => {
     const code = await runDown(FILE, io, run.sourcesOf());
     expect(code).toBe(1);
     expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(run.deleted).toEqual([]);
     expect(io.out).toContain('deepseek-acme: timed out leaving its pane; left as it is');
     expect(io.out).toContain('session acme-web: not stopped, something was left in it');
   });
@@ -751,6 +876,87 @@ describe('team down, live', () => {
     expect(waits).toBeGreaterThan(0);
     expect(code).toBe(0);
     expect(run.typed).toEqual(['/exit']);
+  });
+
+  // The file renamed the seat after `up` launched it: the state still records it, under the CLI
+  // it was launched with, and `down` stops it under its old name.
+  function renamedSeat(cli?: string) {
+    writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace('name: deepseek-acme', 'name: relay-acme'));
+    const recorded = cli === undefined ? { stage: 'ready' } : { stage: 'ready', cli };
+    writeFileSync(
+      join(root, '.agents/team.state.json'),
+      JSON.stringify({
+        format: 1,
+        sessions: { 'acme-web': { seats: { 'deepseek-acme': recorded }, worktrees: {} } },
+      }),
+    );
+  }
+
+  test('stops a seat the file renamed, under the CLI the state records', async () => {
+    renamedSeat('claude-code');
+    const run = harness({ kind: 'idle' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(0);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.entered).toEqual(['enter']);
+    expect(run.closed).toEqual(['w3']);
+    expect(run.stopped).toEqual(['acme-web']);
+    expect(io.out).toContain('deepseek-acme: stopped\n');
+  });
+
+  test('a renamed seat with no live agent in its pane is not typed into', async () => {
+    renamedSeat('claude-code');
+    const run = harness({ kind: 'idle' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ foreground: () => ['zsh'] }));
+    expect(code).toBe(1);
+    expect(run.typed).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: no live agent in its pane; its exit was not typed\n');
+  });
+
+  test('a renamed seat at a permission prompt is not typed into', async () => {
+    renamedSeat('claude-code');
+    const run = harness({ kind: 'permission' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: is blocked at a prompt');
+  });
+
+  test('a seat whose state predates the CLI record is left running, with what to run', async () => {
+    renamedSeat();
+    const run = harness({ kind: 'idle' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(io.out).toContain(
+      "deepseek-acme: the state doesn't say which CLI it runs, so it can't be asked to exit; " +
+        'left running (`team down --abandon` closes it without typing)',
+    );
+    expect(io.out).toContain('session acme-web: not stopped, 1 agent left in it');
+  });
+
+  test('an agent neither the file nor the state records is left entirely alone', async () => {
+    const run = harness({ kind: 'idle' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ agents: () => [agent('stranger', 'w9:p1')] }));
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(io.out).toContain('session acme-web: not stopped, 1 agent left in it');
   });
 });
 

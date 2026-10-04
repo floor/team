@@ -401,7 +401,9 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       updateState(dir, (file) => {
         const current = (file.sessions[session] ??= emptySession());
         const prior = current.seats[name] ?? { stage: patch.stage };
-        current.seats[name] = { ...prior, ...patch };
+        // The CLI the seat was launched with: `down` needs it when the file no longer names the seat.
+        const cli = team.seats.find((seat) => seat.name === name)?.cli;
+        current.seats[name] = { ...prior, ...patch, ...(cli ? { cli } : {}) };
       });
     },
     running(name) {

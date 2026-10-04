@@ -102,12 +102,15 @@ export type World = {
   setMachine(kind: Spec['machine']): void;
   /** One CLI's installed-and-logged-in state, on top of the fixture's own. */
   setTools(tools: Record<string, ToolState>): void;
+  /** The session's state in herdr, for one example (`herdr=` on a console fence). */
+  setHerdr(kind: Spec['herdr']): void;
   readonly did: {
     starts: number;
     runs: string[];
     typed: string[];
     closed: string[];
     stopped: number;
+    deleted: string[];
     killed: number[];
     notified: string[];
   };
@@ -125,7 +128,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
   const slots: Slot[] = [];
   // What each pane holds once text was typed into it, so a read-back reads the typed text.
   const typedInto = new Map<string, string>();
-  const did: World['did'] = { starts: 0, runs: [], typed: [], closed: [], stopped: 0, killed: [], notified: [] };
+  const did: World['did'] = { starts: 0, runs: [], typed: [], closed: [], stopped: 0, deleted: [], killed: [], notified: [] };
   const now = () => new Date(clock);
   const sleep = async (ms: number) => {
     clock += ms;
@@ -283,6 +286,13 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     closeWorkspace: action.closeWorkspace,
     stopSession(_session: string) {
       did.stopped++;
+      // A stopped session stays listed in herdr until it is cleared.
+      herdr = 'stopped';
+      return true;
+    },
+    // The one case `team` deletes a session: `down` clearing the one it has itself just stopped.
+    deleteSession(_session: string) {
+      did.deleted.push(_session);
       herdr = 'absent';
       return true;
     },
@@ -355,6 +365,9 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     },
     setTools(tools) {
       toolState = { ...spec.tools, ...tools };
+    },
+    setHerdr(kind) {
+      herdr = kind;
     },
     upSources(): UpSources {
       return {

@@ -10,6 +10,7 @@ import { paneStillRunning, runDown, type DownSources } from '../../src/commands/
 import { runUp, type UpSources } from '../../src/commands/up.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { readApproval, readLedger, storePath } from '../../src/store/store.ts';
+import { readScreen } from '../../src/watch/screen.ts';
 import { testIo } from '../helpers.ts';
 
 const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8');
@@ -538,6 +539,20 @@ describe('team down', () => {
     expect(unsent.out).not.toContain('pane run deepseek-acme');
   });
 
+  test('a Cursor queue screen is working: its pane is not typed into', async () => {
+    const queued = readScreen(
+      'cursor',
+      readFileSync(new URL('../fixtures/cursor/2026.10.01/follow-up-queue-two.txt', import.meta.url), 'utf8'),
+    );
+    expect(queued.kind).toBe('working');
+    const run = await down(['--dry-run'], OWNER, {
+      agents: () => [agent('deepseek-acme', 'idle')],
+      screen: () => queued,
+    });
+    expect(run.out).toContain('deepseek-acme: is working (`--wait` waits for it); left running');
+    expect(run.out).not.toContain('pane run deepseek-acme');
+  });
+
   test('--dry-run on a session that is not running, or a silent herdr', async () => {
     const stopped = await down(['--dry-run'], OWNER, { sessionRunning: () => false });
     expect(stopped).toMatchObject({
@@ -546,6 +561,27 @@ describe('team down', () => {
     });
     expect((await down(['--dry-run'], OWNER, { sessionRunning: () => null })).code).toBe(2);
     expect((await down(['--dry-run'], OWNER, { agents: () => null })).code).toBe(2);
+  });
+
+  test('a session every seat leaves is stopped and cleared in the same run, and the dry run says so', async () => {
+    const free = {
+      agents: () => [agent('claude-coordinator-acme'), agent('deepseek-acme'), agent('deepseek-acme-2')],
+    };
+    const dry = await down(['--dry-run'], OWNER, free);
+    expect(dry.code).toBe(0);
+    expect(dry.out).toEndWith(
+      [
+        '+ herdr session stop acme-web',
+        '    (stopped, then cleared: the session this run stopped, so a later `up` starts from the beginning)',
+        'dry run: nothing was run',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  test('a session herdr reports stopped before down acts is only reported, not stopped or cleared', async () => {
+    const run = await down([], OWNER, { sessionRunning: () => false });
+    expect(run).toMatchObject({ code: 0, out: 'session acme-web is not running: nothing to stop\n' });
   });
 
   test('a pane back at its shell is not the seat any more', () => {

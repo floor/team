@@ -6,6 +6,7 @@ import {
   agentStatus,
   paneForeground,
   paneRead,
+  sessionDelete,
   sessionRunning,
   pressEnter,
   sessionStop,
@@ -49,6 +50,8 @@ export type DownLaunch = {
   agentPanes(session: string): string[] | null;
   closeWorkspace(session: string, workspace: string): boolean;
   stopSession(session: string): boolean;
+  /** Clears the session this run stopped, so a later `up` starts from the beginning. */
+  deleteSession(session: string): boolean;
   kill(pid: number): boolean;
   sleep(ms: number): Promise<void>;
   now(): Date;
@@ -67,6 +70,7 @@ const realLaunch: DownLaunch = {
   },
   closeWorkspace: (session, workspace) => workspaceClose(workspace, aim(session)),
   stopSession: sessionStop,
+  deleteSession: sessionDelete,
   kill(pid) {
     try {
       process.kill(pid, 'SIGTERM');
@@ -175,14 +179,26 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     refusals.push('only the owner abandons a team, from a terminal outside herdr');
   }
 
+  const state = readState(dir).sessions[session];
+  const known = new Set([...team.seats.map((seat) => seat.name), ...Object.keys(state?.seats ?? {})]);
+  const cliOf = new Map(team.seats.map((seat) => [seat.name, seat.cli]));
+  // The CLI a running seat was launched with: the file's for the seats it still names, the
+  // state's for the rest, so a seat the file renamed is still stopped. A temporary seat falls
+  // back to the seat it is like. A state too old to say leaves the seat to its owner, named
+  // in the plan.
+  const cliFor = (name: string): string => {
+    const recorded = state?.seats[name];
+    const like = recorded?.temporary?.like;
+    return cliOf.get(name) ?? recorded?.cli ?? (like ? cliOf.get(like) ?? state?.seats[like]?.cli : undefined) ?? 'unknown';
+  };
+
   if (!dry && args.flags.has('wait') && refusals.length === 0) {
     const deadline = sources.now().getTime() + WAIT_SECONDS * 1000;
     const sleep = sources.sleep ?? sources.launch?.sleep;
     while (sleep && sources.now().getTime() < deadline) {
       const waiting = agents.some((agent) => {
         if (!agent.name) return false;
-        const cli = team.seats.find((seat) => seat.name === agent.name)?.cli ?? 'claude-code';
-        return stateOf(agent.status, sources.screen(session, agent.pane, cli)) === 'working';
+        return stateOf(agent.status, sources.screen(session, agent.pane, cliFor(agent.name))) === 'working';
       });
       if (!waiting) break;
       const before = sources.now().getTime();
@@ -194,9 +210,6 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     }
   }
 
-  const state = readState(dir).sessions[session];
-  const known = new Set([...team.seats.map((seat) => seat.name), ...Object.keys(state?.seats ?? {})]);
-  const cliOf = new Map(team.seats.map((seat) => [seat.name, seat.cli]));
   const seats: DownSeat[] = [];
   let extra = 0;
   for (const agent of agents) {
@@ -204,8 +217,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       extra++;
       continue;
     }
-    const like = state?.seats[agent.name]?.temporary?.like;
-    const cli = cliOf.get(agent.name) ?? (like ? cliOf.get(like) : undefined) ?? 'unknown';
+    const cli = cliFor(agent.name);
     seats.push({
       name: agent.name,
       cli,
@@ -271,6 +283,12 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     renameAgent: () => false,
     closeWorkspace: launch.closeWorkspace,
     stopSession: launch.stopSession,
+    // Only the session this run has itself just stopped, and only once herdr agrees it is no
+    // longer running: anything else — still running, or herdr silent — is left to its owner, with
+    // the command the line in `executePlan` names. `up` never deletes a session at all.
+    deleteSession(name) {
+      return sources.sessionRunning(name) === false && launch.deleteSession(name);
+    },
     kill: launch.kill,
     agentPanes(sessionName) {
       const listed = launch.agentPanes(sessionName);
