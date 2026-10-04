@@ -219,10 +219,15 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
               : `the check for ${outcome.account} is unapproved; that account reads unknown`, false);
           }
         }
+        // Herdr's process list per pane, read with the screen: a figure is only read off a pane
+        // where herdr reports the seat's CLI. A pane it can't read is null, and a null is not a
+        // CLI: no figure.
+        const foreground: Record<string, string[] | null> = {};
+        for (const agent of live.agents) foreground[agent.pane] = sources.foreground(agent.pane, session);
         const run = (stored: readonly Seen[]) => pass({
           team, state, live, machine: sources.machine(root), now, memory,
           approval: sources.approval(team, root), watch: inForce, outcomes, budgets: budget,
-          readings: stored,
+          readings: stored, foreground,
         });
         // The pass folds its figures where the state is held: two watches of the project fold one
         // after the other, not over each other. A watch on a foreign session still folds, for its

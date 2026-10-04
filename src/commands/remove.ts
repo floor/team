@@ -244,6 +244,8 @@ export async function stopRunning(input: {
     agentPanes(sessionName) {
       const listed = launch.agentPanes(sessionName);
       if (!listed) return null;
+      // A pane back at its shell is no longer the seat. The wait keeps an unreadable list
+      // (`paneStillRunning`); the watch's quota read asks the other way (`reportedLiveAgent`).
       const names = profileFor(seat.cli)?.processNames;
       if (!names) return listed;
       return listed.filter((pane) => paneStillRunning(sources.foreground(sessionName, pane), names));
