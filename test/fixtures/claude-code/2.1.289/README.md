@@ -59,6 +59,11 @@ the cost figure; the model name in the status rows reads `Opus 5.5`.
   the screen reads unknown — never idle. Whether `!` belongs in the prompt set is an
   open question for the profile, not this change.
 
+Every captured composer draws its rows directly between the two rules — `unsent-typed-ansi.txt`
+is the typed box as the pane drew it — with no empty row of its own inside the box. The
+profile counts no frame rows (`frame_rows` omitted, zero): the box read keeps every
+trailing empty row, and a box showing one the typed text does not have is refused.
+
 ## Round 3: the permission, question and trust screens
 
 Captured on 2026-10-04 with herdr 0.7.1, `pane read --source visible` in the plain and
