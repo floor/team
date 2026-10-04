@@ -238,7 +238,14 @@ function boxToRule(lines: string[], styled: string[], composer: Extract<ScreenDa
   let footer = false;
   for (let j = close + 1; j < lines.length; j++) {
     if (tick()) return { kind: 'stop' };
-    if (composer.footers.some((pattern) => pattern.test(lines[j] ?? ''))) { footer = true; break; }
+    const line = (lines[j] ?? '').trim();
+    if (!line) continue;
+    if (composer.footers.some((pattern) => pattern.test(line))) {
+      footer = true;
+    } else {
+      footer = false;
+      break;
+    }
   }
   // The opening rule on the line directly above, or the status footer when that
   // rule has scrolled out of the window.
