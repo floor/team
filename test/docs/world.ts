@@ -14,6 +14,7 @@ import type { StatusSources } from '../../src/commands/status.ts';
 import type { Launch, UpSources } from '../../src/commands/up.ts';
 import type { WatchSources } from '../../src/commands/watch.ts';
 import type { Attempt, Fetch } from '../../src/release/http.ts';
+import type { KeyReader } from '../../src/release/keychain.ts';
 import type { Seat, TeamFile } from '../../src/file/types.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import type { Live } from '../../src/status/compare.ts';
@@ -141,8 +142,80 @@ const RELEASE_ANSWERS: Record<string, Attempt> = {
   },
 };
 
+// The records example the page shows beside material: widgets 3.0.2 with both optional pairs
+// configured — the Linear project active with its done milestone and a qualifying status update,
+// the marker exactly once in the public activity file. The key the Linear read carries is a
+// deliberate stand-in string; no example reaches the Keychain or a real network.
+const WIDGETS_COMMIT = 'b6e2e2f0c9f8d3a1b4c5d6e7f8a9b0c1d2e3f4a5';
+const WIDGETS_CHANGELOG = `# Changelog
+
+All notable changes to widgets are documented here.
+
+## [3.0.2] - 2026-10-01
+
+- Round the corner the panel is drawn with.
+`;
+const WIDGETS_ACTIVITY = `# Activity
+
+release: widgets@3.0.2
+`;
+const RECORDS_PROJECT = '01234567-89ab-cdef-0123-456789abcdef';
+const RECORDS_KEY = 'test-key-not-real';
+
+function contentsOf(text: string): Attempt {
+  return {
+    kind: 'http',
+    status: 200,
+    body: JSON.stringify({ type: 'file', encoding: 'base64', content: `${Buffer.from(text, 'utf8').toString('base64')}\n` }),
+  };
+}
+
+const RELEASE_RECORDS_ANSWERS: Record<string, Attempt> = {
+  'https://registry.npmjs.org/widgets/3.0.2': {
+    kind: 'http',
+    status: 200,
+    body: JSON.stringify({
+      name: 'widgets',
+      version: '3.0.2',
+      dist: { shasum: '4c1f9b2a8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b', integrity: 'sha512-7a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9==' },
+    }),
+  },
+  'https://api.github.com/repos/floor/widgets': { kind: 'http', status: 200, body: JSON.stringify({ full_name: 'floor/widgets', default_branch: 'main' }) },
+  'https://api.github.com/repos/floor/widgets/git/ref/tags/v3.0.2': {
+    kind: 'http',
+    status: 200,
+    body: JSON.stringify({ ref: 'refs/tags/v3.0.2', object: { sha: WIDGETS_COMMIT, type: 'commit' } }),
+  },
+  [`https://api.github.com/repos/floor/widgets/compare/${WIDGETS_COMMIT}...main`]: {
+    kind: 'http',
+    status: 200,
+    body: JSON.stringify({ status: 'identical', ahead_by: 0, behind_by: 0 }),
+  },
+  'https://api.github.com/repos/floor/widgets/releases/tags/v3.0.2': {
+    kind: 'http',
+    status: 200,
+    body: JSON.stringify({ tag_name: 'v3.0.2', draft: false, prerelease: false }),
+  },
+  'https://api.github.com/repos/floor/widgets/contents/CHANGELOG.md?ref=main': contentsOf(WIDGETS_CHANGELOG),
+  'https://api.github.com/repos/floor/widgets/contents/activity/2026/widgets.md?ref=main': contentsOf(WIDGETS_ACTIVITY),
+  'https://api.linear.app/graphql': {
+    kind: 'http',
+    status: 200,
+    body: JSON.stringify({
+      data: {
+        project: {
+          id: RECORDS_PROJECT,
+          archivedAt: null,
+          projectMilestones: { nodes: [{ name: '3.0.2', status: 'done' }], pageInfo: { hasNextPage: false } },
+          projectUpdates: { nodes: [{ createdAt: '2026-10-01T12:00:00Z', archivedAt: null }], pageInfo: { hasNextPage: false } },
+        },
+      },
+    }),
+  },
+};
+
 export function releaseAnswers(url: string): Attempt {
-  return RELEASE_ANSWERS[url] ?? { kind: 'transport' };
+  return RELEASE_ANSWERS[url] ?? RELEASE_RECORDS_ANSWERS[url] ?? { kind: 'transport' };
 }
 
 export type World = {
@@ -155,8 +228,10 @@ export type World = {
   statusSources(): StatusSources;
   watchSources(): WatchSources;
   doctorSources(): DoctorSources;
-  /** The recorded npm and GitHub answers the release page's examples replay. */
+  /** The recorded npm, GitHub and Linear answers the release page's examples replay. */
   releaseFetch(): Fetch;
+  /** The release page's stand-in for the Keychain read: a fixed, deliberate non-real key. */
+  releaseKeyReader(): KeyReader;
   setScreen(seat: string, kind: ScreenKind): void;
   setMachine(kind: Spec['machine']): void;
   /** One CLI's installed-and-logged-in state, on top of the fixture's own. */
@@ -502,6 +577,9 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     doctorSources,
     releaseFetch(): Fetch {
       return (url) => Promise.resolve(releaseAnswers(url));
+    },
+    releaseKeyReader(): KeyReader {
+      return () => Promise.resolve({ ok: true, key: RECORDS_KEY });
     },
   };
 }

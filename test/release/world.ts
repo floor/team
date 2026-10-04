@@ -3,7 +3,7 @@
 // transport failure the test can see in `requested`.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Attempt, Fetch } from '../../src/release/http.ts';
+import type { Attempt, Fetch, RequestOptions } from '../../src/release/http.ts';
 import type { ReleaseDecl } from '../../src/file/sections/releases.ts';
 
 export const FIXTURES = join(import.meta.dir, '..', 'fixtures', 'release');
@@ -18,11 +18,16 @@ export function json(value: unknown, status = 200): Attempt {
 
 export type Answers = Map<string, Attempt | Attempt[]>;
 
-export function fakeFetch(answers: Answers): { fetcher: Fetch; requested: string[] } {
+/** One recorded request: the URL and, for the Linear POST, the options it carried. */
+export type Recorded = { url: string; request?: RequestOptions };
+
+export function fakeFetch(answers: Answers): { fetcher: Fetch; requested: string[]; requests: Recorded[] } {
   const requested: string[] = [];
+  const requests: Recorded[] = [];
   const used = new Map<string, number>();
-  const fetcher: Fetch = (url) => {
+  const fetcher: Fetch = (url, request) => {
     requested.push(url);
+    requests.push(request === undefined ? { url } : { url, request });
     const answer = answers.get(url);
     if (answer === undefined) return Promise.resolve({ kind: 'transport' });
     if (Array.isArray(answer)) {
@@ -32,13 +37,27 @@ export function fakeFetch(answers: Answers): { fetcher: Fetch; requested: string
     }
     return Promise.resolve(answer);
   };
-  return { fetcher, requested };
+  return { fetcher, requested, requests };
 }
 
 export const COMMIT = '1111111111111111111111111111111111111111';
 export const TAG_OBJECT = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
 export const MATERIAL: ReleaseDecl = { package: 'material', github: 'floor/material', trustedPublishing: true };
+
+/* The release-records configuration: the Linear project, its Keychain service, the activity
+ * file and marker. The key under test is a deliberate non-real string. */
+export const PROJECT_ID = '01234567-89ab-cdef-0123-456789abcdef';
+export const SERVICE = 'team.linear.material';
+export const KEY = 'test-key-not-real';
+
+export const MATERIAL_RECORDS: ReleaseDecl = {
+  ...MATERIAL,
+  linear: { project: PROJECT_ID, keychainService: SERVICE },
+  activity: { file: 'activity/2026/material.md', marker: 'release: <package>@<version>' },
+};
+
+export const MARKER_LINE = 'release: material@3.0.2';
 
 export const URLS = {
   npm: 'https://registry.npmjs.org/material/3.0.2',
@@ -49,6 +68,8 @@ export const URLS = {
   compare: `https://api.github.com/repos/floor/material/compare/${COMMIT}...main`,
   release: 'https://api.github.com/repos/floor/material/releases/tags/v3.0.2',
   changelog: 'https://api.github.com/repos/floor/material/contents/CHANGELOG.md?ref=main',
+  activity: 'https://api.github.com/repos/floor/material/contents/activity/2026/material.md?ref=main',
+  linear: 'https://api.linear.app/graphql',
 };
 
 /** Every read of one passing run for material@3.0.2, trusted publishing declared. */
@@ -62,6 +83,56 @@ export function happy(trusted = true): Answers {
     [URLS.changelog, json(fixture('github-contents.json'))],
   ]);
   if (trusted) answers.set(URLS.attest, json(fixture('npm-attestations.json')));
+  return answers;
+}
+
+/** A well-formed Linear answer: the active project, one `done` milestone named 3.0.2, one
+ *  qualifying update at noon of the release day — every field overridable per case, including
+ *  to a malformed value (the key's presence, not its truthiness, decides). */
+export function linearAnswer(change: {
+  project?: Record<string, unknown>;
+  milestones?: unknown[];
+  updates?: unknown[];
+  milestonesPageInfo?: unknown;
+  updatesPageInfo?: unknown;
+} = {}): Record<string, unknown> {
+  const pick = (key: 'milestones' | 'updates' | 'milestonesPageInfo' | 'updatesPageInfo', fallback: unknown): unknown =>
+    key in change ? change[key] : fallback;
+  return {
+    data: {
+      project: {
+        id: PROJECT_ID,
+        archivedAt: null,
+        projectMilestones: {
+          nodes: pick('milestones', [{ name: '3.0.2', status: 'done' }]),
+          pageInfo: pick('milestonesPageInfo', { hasNextPage: false }),
+        },
+        projectUpdates: {
+          nodes: pick('updates', [{ createdAt: '2026-10-01T12:00:00Z', archivedAt: null }]),
+          pageInfo: pick('updatesPageInfo', { hasNextPage: false }),
+        },
+        ...(change.project ?? {}),
+      },
+    },
+  };
+}
+
+/** A contents response holding `text` for the activity file. */
+export function activityFile(text: string): Record<string, unknown> {
+  return {
+    name: 'material.md',
+    path: 'activity/2026/material.md',
+    type: 'file',
+    encoding: 'base64',
+    content: `${Buffer.from(text, 'utf8').toString('base64')}\n`,
+  };
+}
+
+/** Every read of one passing records run: the public records, the marker, the Linear answer. */
+export function happyRecords(): Answers {
+  const answers = happy();
+  answers.set(URLS.activity, json(activityFile(`# Activity\n\nSome earlier line.\n${MARKER_LINE}\n`)));
+  answers.set(URLS.linear, json(linearAnswer()));
   return answers;
 }
 

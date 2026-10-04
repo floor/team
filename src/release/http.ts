@@ -1,9 +1,11 @@
 // The one network seam of `team release check`: a URL in, one HTTP attempt out. Every read the
-// command makes is public and credential-free — this wiring sends no header of any kind, follows
-// no redirect (a 3xx is the answer, and the checks read it as unknown), never reads a credential
-// or a credential helper, and never touches git. The retry policy and the read/attempt caps live
-// with the checks (src/release/checks.ts); here is only one attempt, with its timeout and its
-// size limit.
+// command makes but one is public and credential-free — for those this wiring sends no header of
+// any kind. The single exception is the Linear read's POST, whose caller names the headers
+// exactly (its media type and its one credential); the wiring adds nothing of its own in either
+// case. It follows no redirect (a 3xx is the answer, and the checks read it as unknown), never
+// reads a credential or a credential helper, and never touches git. The retry policy and the
+// read/attempt caps live with the checks (src/release/checks.ts); here is only one attempt, with
+// its timeout and its size limit.
 
 /** One HTTP attempt: the status and the decoded, size-limited body, or why no response was read.
  *  Every kind that comes from a response carries its status — `http`, `too-large` (a body over
@@ -17,7 +19,11 @@ export type Attempt =
   | { kind: 'too-large'; status: number }
   | { kind: 'undecodable'; status: number };
 
-export type Fetch = (url: string) => Promise<Attempt>;
+/** The one request shape beyond a bare GET: the Linear read's POST. Its headers are exactly what
+ *  the caller names — the wiring adds nothing, so a credential can never travel anywhere else. */
+export type RequestOptions = { method: 'POST'; headers: Record<string, string>; body: string };
+
+export type Fetch = (url: string, request?: RequestOptions) => Promise<Attempt>;
 
 /** Each attempt times out after this, the body read included. */
 export const TIMEOUT_MS = 5000;
@@ -29,10 +35,14 @@ function why(error: unknown): Attempt {
   return { kind: error instanceof Error && error.name === 'TimeoutError' ? 'timeout' : 'transport' };
 }
 
-/** Node's `fetch` as the command's network: HTTPS, no headers, no redirects followed. */
-export const realFetch: Fetch = async (url) => {
+/** Node's `fetch` as the command's network: HTTPS, no headers of its own, no redirects followed. */
+export const realFetch: Fetch = async (url, request) => {
   try {
-    const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const response = await fetch(url, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      ...(request ? { method: request.method, headers: request.headers, body: request.body } : {}),
+    });
     // The limit is on the decoded body: undici applies the content encoding as the body streams.
     const body = response.body;
     if (body === null) return { kind: 'http', status: response.status, body: '' };
