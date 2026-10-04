@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Codex's profile reads a weekly quota from its status line: `weekly N% left`, for the OpenAI account.
+  A line cut short of the number is not a figure.
+
 ### Fixed
 
 - Claude Code's permission stage is the dialog itself: the question with its "Esc to cancel · Tab to amend"

@@ -112,7 +112,9 @@ seats:
   `trust` and outside every protected checkout — never in the project root; `up` and `add` refuse a
   seat whose folder, lobby included, would be protected or untrusted.
 
-The Codex profile is tested with CLI 0.157.0. It adds `-a never -s danger-full-access`
+The Codex profile is tested with CLI 0.157.0. Its status line is read for a weekly figure
+(`weekly N% left`) when the pane is wide enough to show the number; a cut line is not a figure.
+It adds `-a never -s danger-full-access`
 for unattended execution, plus `--no-daemon --no-alt-screen` for the captured pane mode,
 and checks login with `codex login status`. Rules go as a first message
 only at an empty idle prompt; delivery is recorded after Codex starts working with the input
