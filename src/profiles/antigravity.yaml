@@ -63,6 +63,41 @@ screen:
           - '^\s*>\s*[0-9]\.\s+Yes\b'
           - '↑/↓ Navigate'
         without_rule: true
+      # The file-creation prompt, as permission-write-54.txt draws it: the question line and
+      # its two numbered options below the dialog's own rule, the navigation footer under
+      # them all. The same words in a transcript sit above the box's closing rule, so the
+      # footer below the last rule is the dialog's, never a quote's.
+      - all:
+          - 'Allow creation of this file\?'
+          - '^\s*>\s*1\.\s+Yes, allow creation\b'
+          - '^\s*2\.\s+No, deny creation\b'
+        below_last_rule: '↑/↓ Navigate'
+      # The file-edit prompt, as permission-edit-54.txt draws it, in the same frame.
+      - all:
+          - 'Accept this file edit\?'
+          - '^\s*>\s*1\.\s+Yes, accept this change\b'
+          - '^\s*2\.\s+No, reject this change\b'
+        below_last_rule: '↑/↓ Navigate'
+  question:
+    # The question tool's choice screen, as question-54.txt draws it: the Question 1/1 line
+    # and its option rows (the first marked, Write-in... the last) below the dialog's own
+    # rule, the select footer under them all. A quoted question in a transcript is above
+    # the box's closing rule, so the footer below the last rule is the dialog's.
+    - all:
+        - '\bQuestion [0-9]+/[0-9]+:'
+        - '^\s*>\s*1\.\s'
+        - '\bWrite-in\.\.\.'
+      below_last_rule: '↑/↓ Navigate · enter Select'
+    # The Unsent Comments dialog, as question-unsent-54.txt draws it: no rule in the window.
+    # A bare input row after the anchor makes the words a transcript above the composer.
+    - all:
+        - 'You have unsent comments\. Ready to send\?'
+        - 'y send and exit · n exit without sending'
+      without_rule: true
+      none_after:
+        anchor: 'You have unsent comments\. Ready to send\?'
+        patterns:
+          - '^>\s*$'
   working:
     - any: ['\bGenerating\.\.\.']
   composer:

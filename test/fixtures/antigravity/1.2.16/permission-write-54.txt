@@ -1,0 +1,23 @@
+──────────────────────────────────────────────────
+> Run the command: ls
+
+● Bash(ls) (ctrl+o to expand)
+
+──────────────────────────────────────────────────
+> Create a file named notes.txt with one line of
+  text in it
+
+● Create(<project-dir>/notes.txt) (ctrl+o to expand)
+
+Create file
+─────────────────────────────────────────────────────
+
+<project-dir>
+   1 +  This is a note.
+
+Allow creation of this file?
+> 1. Yes, allow creation
+  2. No, deny creation
+
+  ↑/↓ Navigate · tab Amend · f full diff
+esc to cancel                 Gemini 3.8 Flash · high
