@@ -460,6 +460,53 @@ describe('a spend floor refuses one seat', () => {
     expect(above.out).not.toContain('is unknown');
   });
 
+  test('a reading with more decimals than the cents prints as read, never rounded into a contradiction', async () => {
+    store([reading('anthropic', 80)]);
+    storeSpend([spend('openai', 4.996, now - 3 * 60_000)]);
+    const tail = 'openai spend 4.996 USD, at or below its 5.00 USD floor, read 3m ago; accounts with room: anthropic';
+
+    const dry = await up(['--dry-run'], world());
+    expect(dry.code).toBe(0);
+    expect(dry.out).toContain(`  skip worker: would refuse: ${tail}\n`);
+
+    const live = await up([], world());
+    expect(live.code).toBe(1);
+    expect(live.out).toContain(`worker: refused: ${tail}\n`);
+
+    const added = await add(['worker'], world());
+    expect(added.code).toBe(1);
+    expect(added.err).toBe(`team add: refused: ${tail}\n`);
+
+    const addedDry = await add(['worker', '--dry-run'], world());
+    expect(addedDry.code).toBe(0);
+    expect(addedDry.out).toContain(`worker: would refuse: ${tail}\n`);
+  });
+
+  test('the comparison keeps the real value while the figure prints as read', async () => {
+    store([reading('anthropic', 80)]);
+    storeSpend([spend('openai', 4.9999)]);
+    const just = await up(['--dry-run'], world());
+    expect(just.out).toContain('would refuse: openai spend 4.9999 USD, at or below its 5.00 USD floor');
+
+    storeSpend([spend('openai', 5)]);
+    const at = await up(['--dry-run'], world());
+    expect(at.out).toContain('would refuse: openai spend 5.00 USD, at or below its 5.00 USD floor');
+
+    storeSpend([spend('openai', 5.0001)]);
+    const above = await up([], world());
+    expect(above.code).toBe(0);
+    expect(above.labels).toContain('worker');
+    expect(above.out).not.toContain('refused');
+  });
+
+  test('a floor with more decimals prints as the file wrote it', async () => {
+    approve(SPEND.replace('floor: 5 USD', 'floor: 5.2534 USD'));
+    store([reading('anthropic', 80)]);
+    storeSpend([spend('openai', 4.2)]);
+    const dry = await up(['--dry-run'], world());
+    expect(dry.out).toContain('would refuse: openai spend 4.20 USD, at or below its 5.2534 USD floor');
+  });
+
   test('another currency than the floor\'s reads unknown, and the seat still starts', async () => {
     storeSpend([spend('openai', 4.2, now, { currency: 'EUR' })]);
     const live = await up([], world());
