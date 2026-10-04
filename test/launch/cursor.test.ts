@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { cursor, cursorModel } from '../../src/profiles/cursor.ts';
-import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
 import { profileFor } from '../../src/profiles/index.ts';
+import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
 import { classifyComposer, readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
 import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
@@ -10,6 +9,9 @@ import { upPlan } from '../../src/launch/plan.ts';
 
 const fixture = (name: string) =>
   readFileSync(new URL(`../fixtures/cursor/2026.10.01/${name}.txt`, import.meta.url), 'utf8');
+
+const cursor = profileFor('cursor');
+if (!cursor) throw new Error('cursor has no profile');
 
 describe('Cursor launch and captured screens', () => {
   test('unattended flags are launch arguments; rules are a first message', () => {
@@ -93,8 +95,8 @@ describe('Cursor launch and captured screens', () => {
     expect(cursor.modelOf('cursor-agent --model grok-4.7-high[context=256k]')).toBeNull();
     expect(cursor.modelOf('cursor-agent --model gpt-5')).toBeNull();
     expect(cursor.modelOf('cursor-agent')).toBeNull();
-    expect(cursorModel('cursor-grok-4.6-high-fast')).toEqual({ model: 'Grok', version: '4.6' });
-    expect(cursorModel('grok-4.7')).toEqual({ model: 'Grok', version: '4.7' });
+    expect(cursor.modelOf('cursor-agent --model cursor-grok-4.6-high-fast')).toEqual({ model: 'Grok', version: '4.6' });
+    expect(cursor.modelOf('cursor-agent --model grok-4.7')).toEqual({ model: 'Grok', version: '4.7' });
     expect(runningModel('cursor', fixture('idle'))).toEqual({ model: 'Grok', version: '4.7' });
     expect(runningModel('cursor', fixture('rules-accepted'))).toEqual({ model: 'Grok', version: '4.7' });
     expect(runningModel('cursor', fixture('trust'))).toBeNull();

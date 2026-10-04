@@ -1,3 +1,8 @@
+// A launch profile, read from the CLI's YAML file. The screen is loaded separately.
+import { readFileSync } from 'node:fs';
+import { DialectError, compilePattern } from '../watch/dialect.ts';
+import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts';
+
 /**
  * A launch profile: what `team` knows about one CLI, so a seat can't start
  * blocked. Keyed by the seat's `cli`.
@@ -70,4 +75,231 @@ export function launchCommand(profile: Profile, launch: string, rules: string): 
   const options = [...profile.unattended];
   if (profile.rulesOption !== null) options.push(profile.rulesOption, rules);
   return ['AGENT_UNATTENDED=1', launch.trim(), ...options.map(shellQuote)].join(' ');
+}
+
+type ModelRule = { match: RegExp; model: string; version: string };
+
+type Shipped = { profile: Profile; status: ModelRule[] };
+
+const NAMES = ['claude-code', 'codex', 'cursor', 'antigravity'] as const;
+const LAUNCH_KEYS = ['binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'timeouts', 'models', 'status_model'] as const;
+
+const SHIPPED: Record<string, Shipped> = loadShipped();
+
+/** The profiles this version launches. A `cli` without one is reported and left out. */
+export function profileFor(cli: string): Profile | null {
+  return Object.hasOwn(SHIPPED, cli) ? (SHIPPED[cli]?.profile ?? null) : null;
+}
+
+/** The model a status line names. `unreadable` is a line the rules claim that does not name one. */
+export function statusOnLine(cli: string, line: string): { model: string; version: string } | 'unreadable' | null {
+  const rules = SHIPPED[cli]?.status;
+  if (!rules) return null;
+  return apply(rules, line);
+}
+
+function loadShipped(): Record<string, Shipped> {
+  const out: Record<string, Shipped> = {};
+  for (const name of NAMES) {
+    const text = readFileSync(new URL(`./${name}.yaml`, import.meta.url), 'utf8');
+    const shipped = launchOf(parseYaml(text));
+    if (out[shipped.profile.cli]) fail(1, `two profiles are named "${shipped.profile.cli}"`);
+    out[shipped.profile.cli] = shipped;
+  }
+  return out;
+}
+
+function launchOf(root: YamlNode): Shipped {
+  const entries = mapping(root, 'a profile');
+  const format = required(entries, 'format', root.line);
+  if (format.value.kind !== 'scalar' || format.value.value !== 1) fail(format.line, '"format" must be 1');
+  only(entries, ['format', 'cli', 'screen', ...LAUNCH_KEYS]);
+  const cli = text(required(entries, 'cli', root.line), 'cli');
+  required(entries, 'screen', root.line);
+  for (const key of LAUNCH_KEYS) required(entries, key, root.line);
+  const login = loginOf(required(entries, 'login', root.line).value);
+  const timeouts = required(entries, 'timeouts', root.line).value;
+  const models = modelsOf(required(entries, 'models', root.line).value);
+  return {
+    profile: {
+      cli,
+      binary: text(required(entries, 'binary', root.line), 'binary'),
+      processNames: strings(required(entries, 'process_names', root.line).value, 'process_names'),
+      tested: testedOf(required(entries, 'tested', root.line).value),
+      unattended: strings(required(entries, 'unattended', root.line).value, 'unattended'),
+      rulesOption: rulesOf(required(entries, 'rules', root.line).value),
+      loginCheck: login.check,
+      loginHint: login.hint,
+      exit: text(required(entries, 'exit', root.line), 'exit'),
+      idleTimeout: seconds(timeouts, 'idle'),
+      exitTimeout: seconds(timeouts, 'exit'),
+      modelOf: (launch) => modelOf(models, launch),
+    },
+    status: modelRules(required(entries, 'status_model', root.line).value, 'status_model'),
+  };
+}
+
+// The flag's value is the next token, after "=" or whitespace. The earliest flag in the line wins.
+function modelOf(models: { option: string[]; ids: ModelRule[] }, launch: string): { model: string; version: string } | null {
+  let bestAt = Infinity;
+  let id: string | null = null;
+  for (const option of models.option) {
+    const found = flagValue(launch, option);
+    if (found && found.at < bestAt) {
+      bestAt = found.at;
+      id = found.id;
+    }
+  }
+  if (id === null) return null;
+  const hit = apply(models.ids, id);
+  return hit === 'unreadable' ? null : hit;
+}
+
+function flagValue(launch: string, option: string): { at: number; id: string } | null {
+  const escaped = option.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`(?:^|\\s)${escaped}(?:=|\\s+)(\\S+)`, 'u').exec(launch);
+  if (!match || match[1] === undefined) return null;
+  return { at: match.index, id: match[1] };
+}
+
+function apply(rules: ModelRule[], text: string): { model: string; version: string } | 'unreadable' | null {
+  for (const rule of rules) {
+    const match = rule.match.exec(text);
+    if (!match) continue;
+    const model = fill(rule.model, match);
+    const version = fill(rule.version, match);
+    // A match that cannot fill its template is a line of this shape that names no model.
+    if (model === null || version === null) return 'unreadable';
+    return { model, version };
+  }
+  return null;
+}
+
+function fill(template: string, match: RegExpMatchArray): string | null {
+  let missing = false;
+  const out = template.replace(/\{(\d+)(?::(title))?\}/g, (_whole, number: string, mode: string | undefined) => {
+    const value = match[Number(number)];
+    if (value === undefined) {
+      missing = true;
+      return '';
+    }
+    return mode === 'title' ? `${value.slice(0, 1).toUpperCase()}${value.slice(1).toLowerCase()}` : value;
+  });
+  return missing ? null : out;
+}
+
+function modelsOf(node: YamlNode): { option: string[]; ids: ModelRule[] } {
+  const entries = mapping(node, 'models');
+  only(entries, ['option', 'ids']);
+  return {
+    option: strings(required(entries, 'option', node.line).value, 'option'),
+    ids: modelRules(required(entries, 'ids', node.line).value, 'ids'),
+  };
+}
+
+function modelRules(node: YamlNode, key: string): ModelRule[] {
+  if (node.kind !== 'seq' || node.items.length === 0) fail(node.line, `"${key}" must be a non-empty list`);
+  return node.items.map((item) => {
+    const entries = mapping(item, 'a model rule');
+    only(entries, ['match', 'ignore_case', 'model', 'version']);
+    const flag = optional(entries, 'ignore_case');
+    const ignoreCase = flag ? boolOf(flag.value, 'ignore_case') : false;
+    const match = required(entries, 'match', item.line);
+    const model = text(required(entries, 'model', item.line), 'model');
+    const version = text(required(entries, 'version', item.line), 'version');
+    template(model, match.line);
+    template(version, match.line);
+    return { match: pattern(text(match, 'match'), ignoreCase, match.line), model, version };
+  });
+}
+
+function template(text: string, line: number): void {
+  const rest = text.replace(/\{(\d+)(?::title)?\}/g, '');
+  if (rest.includes('{') || rest.includes('}')) fail(line, 'a template is "{n}" or "{n:title}"');
+}
+
+function rulesOf(node: YamlNode): string | null {
+  if (node.kind === 'scalar' && node.value === 'first-message') return null;
+  const entries = mapping(node, 'rules');
+  only(entries, ['option']);
+  return text(required(entries, 'option', node.line), 'option');
+}
+
+function loginOf(node: YamlNode): { check: string[]; hint: string } {
+  const entries = mapping(node, 'login');
+  only(entries, ['check', 'hint']);
+  return {
+    check: strings(required(entries, 'check', node.line).value, 'check'),
+    hint: text(required(entries, 'hint', node.line), 'hint'),
+  };
+}
+
+function testedOf(node: YamlNode): { from: string; to: string } {
+  const entries = mapping(node, 'tested');
+  only(entries, ['from', 'to']);
+  return { from: text(required(entries, 'from', node.line), 'from'), to: text(required(entries, 'to', node.line), 'to') };
+}
+
+function seconds(node: YamlNode, key: string): number {
+  const entries = mapping(node, 'timeouts');
+  only(entries, ['idle', 'exit']);
+  const value = text(required(entries, key, node.line), key);
+  const match = /^([0-9]+)s$/.exec(value);
+  if (!match || match[1] === undefined) fail(node.line, `"${key}" is a number of seconds, written "90s"`);
+  return Number(match[1]);
+}
+
+function pattern(source: string, ignoreCase: boolean, line: number): RegExp {
+  try {
+    return compilePattern(source, ignoreCase);
+  } catch (error) {
+    if (error instanceof DialectError) fail(line, error.message);
+    throw error;
+  }
+}
+
+function strings(node: YamlNode, key: string): string[] {
+  if (node.kind !== 'seq' || node.items.length === 0) fail(node.line, `"${key}" must be a non-empty list`);
+  return node.items.map((item) => {
+    const value = stringOf(item);
+    if (!value) fail(item.line, `"${key}" entries must be non-empty strings`);
+    return value;
+  });
+}
+
+function text(entry: YamlEntry, key: string): string {
+  const value = stringOf(entry.value);
+  if (!value) fail(entry.line, `"${key}" must be a non-empty string`);
+  return value;
+}
+
+function boolOf(node: YamlNode, key: string): boolean {
+  if (node.kind !== 'scalar' || typeof node.value !== 'boolean') fail(node.line, `"${key}" must be true or false`);
+  return node.value;
+}
+
+function stringOf(node: YamlNode): string | null {
+  if (node.kind !== 'scalar' || typeof node.value !== 'string' || node.value === '') return null;
+  return node.value;
+}
+
+function mapping(node: YamlNode, what: string): YamlEntry[] {
+  if (node.kind !== 'map') fail(node.line, `${what} must be a map`);
+  return node.entries;
+}
+
+function only(entries: YamlEntry[], allowed: readonly string[]): void {
+  for (const entry of entries) if (!allowed.includes(entry.key)) fail(entry.line, `unknown key "${entry.key}"`);
+}
+
+function required(entries: YamlEntry[], key: string, line: number): YamlEntry {
+  return optional(entries, key) ?? fail(line, `missing "${key}"`);
+}
+
+function optional(entries: YamlEntry[], key: string): YamlEntry | undefined {
+  return entries.find((entry) => entry.key === key);
+}
+
+function fail(line: number, message: string): never {
+  throw new YamlError(line, message);
 }

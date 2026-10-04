@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { antigravity, antigravityModel } from '../../src/profiles/antigravity.ts';
+import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
 import { readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
@@ -12,6 +12,9 @@ import { stateOf } from '../../src/commands/down.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
 
 const fixture = (name: string) => readFileSync(new URL(`../fixtures/antigravity/1.2.16/${name}.txt`, import.meta.url), 'utf8');
+
+const antigravity = profileFor('antigravity');
+if (!antigravity) throw new Error('antigravity has no profile');
 
 describe('Antigravity launch and captured screens', () => {
   test('unattended flags are launch arguments; rules are a first message', () => {
@@ -69,8 +72,8 @@ describe('Antigravity launch and captured screens', () => {
     expect(antigravity.modelOf('agy --model=gemini-3.1-pro-low')).toEqual({ model: 'Gemini Pro', version: '3.1' });
     expect(antigravity.modelOf('agy --model unknown-model')).toBeNull();
     expect(antigravity.modelOf('agy')).toBeNull();
-    expect(antigravityModel('gemini-3.8-flash-medium')).toEqual({ model: 'Gemini Flash', version: '3.8' });
-    expect(antigravityModel('gemini-3.7-flash-high')).toEqual({ model: 'Gemini Flash', version: '3.7' });
+    expect(antigravity.modelOf('agy --model gemini-3.8-flash-medium')).toEqual({ model: 'Gemini Flash', version: '3.8' });
+    expect(antigravity.modelOf('agy --model gemini-3.7-flash-high')).toEqual({ model: 'Gemini Flash', version: '3.7' });
     expect(runningModel('antigravity', fixture('idle'))).toEqual({ model: 'Gemini Flash', version: '3.8' });
     expect(runningModel('antigravity', fixture('rules-accepted'))).toEqual({ model: 'Gemini Flash', version: '3.8' });
     expect(runningModel('antigravity', fixture('trust'))).toBeNull();

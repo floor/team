@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { codex } from '../../src/profiles/codex.ts';
+import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
 import { readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
@@ -8,6 +8,9 @@ import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
 import { upPlan } from '../../src/launch/plan.ts';
 
 const fixture = (name: string) => readFileSync(new URL(`../fixtures/codex/0.157.0/${name}.txt`, import.meta.url), 'utf8');
+
+const codex = profileFor('codex');
+if (!codex) throw new Error('codex has no profile');
 
 describe('Codex launch and captured screens', () => {
   test('unattended flags are launch arguments; rules are a first message', () => {
