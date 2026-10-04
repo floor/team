@@ -20,7 +20,7 @@ function grey256(n: number): boolean {
 
 // The dim state one SGR sequence leaves the pen in. `0` and `22` lift faint; `39` and any
 // other foreground colour lift grey.
-function sgrDim(sequence: string, faint: boolean, grey: boolean): { faint: boolean; grey: boolean } {
+export function sgrDim(sequence: string, faint: boolean, grey: boolean): { faint: boolean; grey: boolean } {
   const params = sequence.slice(2, -1).split(';').map((part) => (part === '' ? '0' : part));
   let faintNow = faint;
   let greyNow = grey;
@@ -47,6 +47,13 @@ function sgrDim(sequence: string, faint: boolean, grey: boolean): { faint: boole
         greyNow = r === g && g === b && r <= 170;
         i += 4;
       }
+    }
+    // A background (48) or underline (58) colour carries the same sub-parameters; they say
+    // nothing of the text's own colour, and walking into them would read their `2` as faint.
+    if (n === 48 || n === 58) {
+      const mode = Number(params[i + 1]);
+      if (mode === 5) i += 2;
+      else if (mode === 2) i += 4;
     }
   }
   return { faint: faintNow, grey: greyNow };
