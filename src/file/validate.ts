@@ -537,20 +537,33 @@ function readAccounts(entry: YamlEntry | undefined, check: Check): Record<string
   for (const account of entry.value.entries) {
     const fields = check.fields(account.value, `budgets.accounts.${account.key}`, ['kind', 'shared', 'reserve', 'floor', 'sources', 'check']);
     const kind = check.oneOf(fields.get('kind'), `budgets.accounts.${account.key}.kind`, ['subscription', 'spend']);
-    const sources = sourcesOf(fields.get('sources'), account.key, kind, check, account.line);
+    if (!kind) {
+      check.fail(account.line, `budgets.accounts.${account.key} needs kind`);
+      continue;
+    }
     const command = check.text(fields.get('check'), `budgets.accounts.${account.key}.check`) ?? null;
+    if (command && /\s/.test(command)) {
+      check.fail(fields.get('check')?.line ?? account.line, `budgets.accounts.${account.key}.check names one command, with no arguments; use a wrapper`);
+    }
+    const sources = sourcesOf(fields.get('sources'), account.key, kind, Boolean(command) && !/\s/.test(command ?? ''), check, account.line);
     if (sources.includes('check') && !command) check.fail(account.line, `budgets.accounts.${account.key} needs check`);
-    if (command && !sources.includes('check')) check.fail(fields.get('check')?.line ?? account.line, `budgets.accounts.${account.key}.check needs sources to list check`);
-    const reserve = kind === 'subscription'
-      ? check.measure(fields.get('reserve'), `budgets.accounts.${account.key}.reserve`, PERCENT, '20%') ?? null
-      : null;
+    if (command && !/\s/.test(command) && !sources.includes('check')) {
+      check.fail(fields.get('check')?.line ?? account.line, `budgets.accounts.${account.key}.check needs sources to list check`);
+    }
+    const measured = kind === 'subscription'
+      ? check.measure(fields.get('reserve'), `budgets.accounts.${account.key}.reserve`, PERCENT, '20%')
+      : undefined;
+    const reserve = measured !== undefined && measured > 0 && measured <= 100 ? measured : null;
+    if (kind === 'subscription' && measured !== undefined && (measured <= 0 || measured > 100)) {
+      check.fail(fields.get('reserve')?.line ?? account.line, `budgets.accounts.${account.key}.reserve must be a percentage above 0 and at most 100, such as 20%`);
+    }
     if (kind === 'subscription' && !fields.get('reserve')) check.fail(account.line, `budgets.accounts.${account.key} needs reserve`);
     if (kind === 'spend' && fields.get('reserve')) check.fail(fields.get('reserve')?.line ?? account.line, 'a spend account has a floor, not a reserve');
     const floor = kind === 'spend' ? money(fields.get('floor'), account.key, check) : null;
     if (kind === 'spend' && !fields.get('floor')) check.fail(account.line, `budgets.accounts.${account.key} needs floor`);
     if (kind === 'subscription' && fields.get('floor')) check.fail(fields.get('floor')?.line ?? account.line, 'a subscription has a reserve, not a floor');
     accounts[account.key] = {
-      kind: kind ?? 'subscription',
+      kind,
       shared: check.flag(fields.get('shared'), `budgets.accounts.${account.key}.shared`),
       reserve,
       floor,
@@ -564,15 +577,22 @@ function readAccounts(entry: YamlEntry | undefined, check: Check): Record<string
 function sourcesOf(
   entry: YamlEntry | undefined,
   account: string,
-  kind: 'subscription' | 'spend' | undefined,
+  kind: 'subscription' | 'spend',
+  hasCheck: boolean,
   check: Check,
   line: number,
 ): BudgetSource[] {
   if (!entry) {
-    check.fail(line, `budgets.accounts.${account} needs sources`);
+    if (hasCheck) return ['check'];
+    if (kind === 'subscription') return ['status_line'];
+    check.fail(line, `budgets.accounts.${account} needs check`);
     return [];
   }
   const items = check.list(entry, `budgets.accounts.${account}.sources`);
+  if (items.length === 0) {
+    check.fail(entry.line, `budgets.accounts.${account} needs a source`);
+    return [];
+  }
   const sources: BudgetSource[] = [];
   for (const item of items) {
     if (item.value !== 'check' && item.value !== 'status_line') {

@@ -45,7 +45,9 @@ One line per finding, the level first, then two spaces:
 | `MISS` | a reason to refuse: something has to be installed, logged in or approved first |
 | `--  ` | neither: a note, like whether the session is running |
 
-The findings come in order: the file's own warnings, the approval, herdr, one CLI at a time (its
+The findings come in order: the file's own warnings, the approval, each account whose `check`
+command no longer matches the file hashed at approval (a warning: that account reads unknown, and
+`up` and `add` still run), herdr, one CLI at a time (its
 version, its login, then each of its seats' launchers and models), the watch, and the `trust` note.
 A seat the file stops is left out of the CLI findings. The last line counts them:
 
