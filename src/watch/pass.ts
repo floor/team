@@ -7,8 +7,8 @@ import { observe, observeCheck, type Seen } from '../budgets/readings.ts';
 import type { CheckOutcome } from '../budgets/run.ts';
 import type { TeamFile } from '../file/types.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
-import { profileFor, quotaFor } from '../profiles/profile.ts';
-import { figuresOf, type QuotaFigure } from '../profiles/quota.ts';
+import { profileFor, quotaFor as shippedQuota } from '../profiles/profile.ts';
+import { figuresOf, type QuotaFigure, type QuotaPattern } from '../profiles/quota.ts';
 import type { SessionState } from '../state.ts';
 import type { Live } from '../status/compare.ts';
 import { seatModel } from '../status/statusline.ts';
@@ -100,10 +100,10 @@ function attentionOf(screen: Screen, status: string, quiet: boolean): Attention 
 // position, not a status row, and a pane herdr could not read gives none either — no figure is
 // invented where the CLI was not seen. (`down` and `remove` read that same null the other way at
 // their departure wait; not knowing must not end a wait.)
-function quotaOf(cli: string, screen: Screen, pane: string | undefined, runs: boolean): QuotaFigure[] {
+function quotaOf(cli: string, screen: Screen, pane: string | undefined, runs: boolean, patterns: readonly QuotaPattern[]): QuotaFigure[] {
   if (pane === undefined || !runs) return [];
   if (screen.kind !== 'idle' && screen.kind !== 'unsent' && screen.kind !== 'working') return [];
-  return figuresOf(quotaFor(cli), statusRow(cli, pane));
+  return figuresOf(patterns, statusRow(cli, pane));
 }
 
 // What one pass is handed: the file, the session, the observed world, the clock, the watch's
@@ -131,6 +131,10 @@ export type PassInput = {
   budgets?: TeamFile['budgets'];
   readings?: readonly Seen[];
   foreground?: Readonly<Record<string, readonly string[] | null>>;
+  /** Screen readings with the approved overrides applied. The shipped profiles, when omitted. */
+  readScreen?: (cli: string, screen: string | undefined) => Screen;
+  /** Quota patterns in force, shipped plus the approved override. The shipped list, when omitted. */
+  quotaFor?: (cli: string) => readonly QuotaPattern[];
 };
 
 // One pass of the watch. Pure: it reads what it is handed and changes only `memory`.
@@ -147,6 +151,8 @@ export function pass({
   budgets = team.budgets,
   readings: stored = [],
   foreground,
+  readScreen: read = readScreen,
+  quotaFor: patternsOf = shippedQuota,
 }: PassInput): PassResult {
   const reports: Report[] = [];
   const current = new Set<string>();
@@ -219,7 +225,7 @@ export function pass({
     }
     known.add(agent.pane);
     const pane = live.screens[agent.pane];
-    const screen = readScreen(cli, pane);
+    const screen = read(cli, pane);
     const quiet = agent.status === 'idle' || agent.status === 'done';
     // Working is herdr's word or the screen's: a seat mid-turn is never idle, whatever its
     // status says.
@@ -246,7 +252,7 @@ export function pass({
       cli,
       vendor,
       account,
-      quota: quotaOf(cli, screen, pane, reportedLiveAgent(foreground?.[agent.pane] ?? null, profileFor(cli)?.processNames ?? [])),
+      quota: quotaOf(cli, screen, pane, reportedLiveAgent(foreground?.[agent.pane] ?? null, profileFor(cli)?.processNames ?? []), patternsOf(cli)),
       running: true,
       quiet,
       working,
@@ -349,7 +355,7 @@ export function pass({
     const operator = live.agents.find((agent) => agent.name === team.operator);
     const cli = team.seats.find((seat) => seat.name === team.operator)?.cli ?? '';
     const free = operator !== undefined && (operator.status === 'idle' || operator.status === 'done')
-      && readScreen(cli, live.screens[operator.pane]).kind === 'idle';
+      && read(cli, live.screens[operator.pane]).kind === 'idle';
     if (operator && free) {
       nudge = { pane: operator.pane, text: NUDGE_TEXT, pending: memory.pending.slice() };
     } else if (now - memory.pendingSince >= watch.nudgeWait * 1000) {
