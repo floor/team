@@ -79,6 +79,17 @@ now clears the session it stopped.
 - `bun run conformance` checks an implementation of screen reading and the YAML subset against the
   shared fixtures. `team conformance-adapter` is the TypeScript implementation of that protocol. It
   is not listed in `team --help`.
+- `bun run coverage` prints the capture coverage matrix — for each CLI and screen kind, how many
+  conformance fixtures are real captures, constructed, or with no provenance stated — and
+  `coverage:check` keeps `contract/capture-coverage.json` current in CI, failing on a difference or
+  any provenance problem. Only the fixture folder's README decides: a `capture` claim counts where
+  the README lists the file under a heading that is not Constructed or Not produced.
+- A profile may name a `screen_module` — a code module inside the package's profiles folder — for a
+  CLI whose screens the data rules cannot express. Its predicates are combined with the data rules
+  by OR for `working`, every dialog stage and `unknown`, so a hatch can only add caution, never
+  remove it; a composer comes from data or from the hatch, never both, and a profile that carries
+  both is refused when it loads. No shipped profile uses one. The guarantees cover what a hatch
+  returns and what load accepts; a hatch is trusted package code, not a sandbox.
 
 ### Changed
 
