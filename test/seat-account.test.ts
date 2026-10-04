@@ -213,6 +213,7 @@ describe('the watch reads a seat\'s figures onto its own account', () => {
       now: NOW,
       memory: newMemory(),
       approval: [],
+      foreground: { 'w0:p1': ['codex'], 'w1:p1': ['codex'] },
     });
     expect(result.readings.map(({ account, seat, left }) => ({ account, seat, left }))).toEqual([
       { account: 'openai-work', seat: 'codex-work', left: 39 },
@@ -235,6 +236,7 @@ describe('the watch reads a seat\'s figures onto its own account', () => {
       now: NOW,
       memory: newMemory(),
       approval: [],
+      foreground: { 'w0:p1': ['codex'], 'w1:p1': ['codex'] },
     });
     expect(result.reports.filter((report) => report.key.startsWith('budget:')).map((report) => report.text))
       .toEqual(['openai-home is unknown while codex-home runs on it']);
@@ -252,6 +254,7 @@ describe('the watch reads a seat\'s figures onto its own account', () => {
       now: NOW,
       memory: newMemory(),
       approval: [],
+      foreground: { 'w0:p1': ['codex'], 'w1:p1': ['codex'] },
     });
     expect(result.readings.map(({ account, seat, left }) => ({ account, seat, left }))).toEqual([
       { account: 'openai-work', seat: 'codex-work', left: 39 },

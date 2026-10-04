@@ -291,7 +291,9 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     agentPanes(sessionName) {
       const listed = launch.agentPanes(sessionName);
       if (!listed) return null;
-      // A pane back at its shell is no longer the seat. `gone` then finishes and the workspace closes.
+      // A pane back at its shell is no longer the seat. `gone` then finishes and the workspace
+      // closes. The wait keeps an unreadable list (`paneStillRunning`); the watch's quota read
+      // asks the other way — `reportedLiveAgent`, a figure only where the CLI was seen.
       return listed.filter((pane) => {
         const cli = seats.find((seat) => seat.pane === pane)?.cli;
         const names = cli ? profileFor(cli)?.processNames : undefined;
