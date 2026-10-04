@@ -26,9 +26,20 @@ export type DoctorSources = {
   home: string;
 };
 
-function run(binary: string, args: string[]): { status: number | null; stdout: string } | null {
+export type CommandRunner = (binary: string, args: string[]) => { status: number | null; stdout: string } | null;
+
+export function run(binary: string, args: string[]): { status: number | null; stdout: string } | null {
   const result = spawnSync(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000 });
   return result.error ? null : { status: result.status, stdout: result.stdout };
+}
+
+export const realCommandRunner = run;
+
+export function checkLogin(profile: Profile, runner: CommandRunner = run): boolean | null {
+  if (!profile.loginCheck) return null;
+  // Only the exit code is read: the output names the account.
+  const result = runner(profile.binary, [...profile.loginCheck]);
+  return result ? result.status === 0 : null;
 }
 
 export const realSources: DoctorSources = {
@@ -48,10 +59,7 @@ export const realSources: DoctorSources = {
     });
   },
   loggedIn(profile) {
-    if (!profile.loginCheck) return null;
-    // Only the exit code is read: the output names the account.
-    const result = run(profile.binary, [...profile.loginCheck]);
-    return result ? result.status === 0 : null;
+    return checkLogin(profile, run);
   },
   herdrVersion,
   sessionRunning,
@@ -59,7 +67,7 @@ export const realSources: DoctorSources = {
   home: homedir(),
 };
 
-const USAGE = 'Usage: team doctor [--session <name>] [--file <path>]\n';
+const USAGE = 'Usage: team doctor [--session <name>] [--file <path>] [--login]\n';
 
 export type Level = 'ok' | 'warn' | 'miss' | 'note';
 export type Finding = { level: Level; text: string };
@@ -199,8 +207,32 @@ export function doctorFindings(
   return findings;
 }
 
+export function doctorLoginFindings(team: TeamFile, sources: DoctorSources): Finding[] {
+  const clis: string[] = [];
+  for (const seat of team.seats) {
+    if (!clis.includes(seat.cli)) clis.push(seat.cli);
+  }
+  const findings: Finding[] = [];
+  for (const cli of clis) {
+    const profile = profileFor(cli);
+    if (!profile) {
+      findings.push({ level: 'note', text: `${cli}: no launch profile in this version` });
+      continue;
+    }
+    const loggedIn = sources.loggedIn(profile);
+    if (loggedIn === false) {
+      findings.push({ level: 'miss', text: `log in to ${cli}: \`${profile.loginHint}\`` });
+    } else if (loggedIn === null) {
+      findings.push({ level: 'note', text: `${cli}: the login is not checked in this version` });
+    } else {
+      findings.push({ level: 'ok', text: `${cli}: logged in` });
+    }
+  }
+  return findings;
+}
+
 export async function runDoctor(argv: string[], io: Io, sources: DoctorSources): Promise<number> {
-  const args = readArgs(argv, ['session', 'file'], []);
+  const args = readArgs(argv, ['session', 'file'], ['login']);
   if (args.error || args.rest.length) {
     io.stderr(`team doctor: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
     return 2;
@@ -214,7 +246,9 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
   }
   const { team, root } = loaded;
   const session = args.values.session ?? team.session;
-  const findings = doctorFindings(team, root, dirname(loaded.path), session, sources, loaded.warnings);
+  const findings = args.flags.has('login')
+    ? doctorLoginFindings(team, sources)
+    : doctorFindings(team, root, dirname(loaded.path), session, sources, loaded.warnings);
 
   const label: Record<Level, string> = { ok: 'ok  ', warn: 'warn', miss: 'MISS', note: '--  ' };
   io.stdout(findings.map((finding) => `${label[finding.level]}  ${finding.text}\n`).join(''));
