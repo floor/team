@@ -158,7 +158,7 @@ seats:
     label: researcher
     cli: codex
     vendor: openai
-    model: GPT-5 Codex
+    model: GPT Codex
     version: "5"
     launch: codex --model gpt-5-codex
 ```
@@ -212,7 +212,7 @@ seats:
     label: researcher
     cli: codex
     vendor: openai
-    model: GPT-5 Codex
+    model: GPT Codex
     version: "5"
     launch: codex --model gpt-5-codex
 ```
@@ -267,7 +267,7 @@ seats:
     label: researcher
     cli: codex
     vendor: openai
-    model: GPT-5 Codex
+    model: GPT Codex
     version: "5"
     launch: codex --model gpt-5-codex
 ```
