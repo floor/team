@@ -8,15 +8,16 @@
 // its timeout and its size limit.
 
 /** One HTTP attempt: the status and the decoded, size-limited body, or why no response was read.
- *  `too-large` keeps the response's status: a 408, 429 or 5xx counts for the retry rule even when
- *  its body exceeded the limit. `undecodable` is a body that is not valid UTF-8 — it is never
- *  repaired into a replacement character, and it is not retried. */
+ *  Every kind that comes from a response carries its status — `http`, `too-large` (a body over
+ *  the limit) and `undecodable` (a body that is not valid UTF-8, never repaired into a
+ *  replacement character) — so the retry rule reads the status whatever the body; `timeout` and
+ *  `transport` are the kinds with no response at all. */
 export type Attempt =
   | { kind: 'http'; status: number; body: string }
   | { kind: 'timeout' }
   | { kind: 'transport' }
   | { kind: 'too-large'; status: number }
-  | { kind: 'undecodable' };
+  | { kind: 'undecodable'; status: number };
 
 /** The one request shape beyond a bare GET: the Linear read's POST. Its headers are exactly what
  *  the caller names — the wiring adds nothing, so a credential can never travel anywhere else. */
@@ -69,7 +70,7 @@ export const realFetch: Fetch = async (url, request) => {
     try {
       bodyText = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     } catch {
-      return { kind: 'undecodable' };
+      return { kind: 'undecodable', status: response.status };
     }
     return { kind: 'http', status: response.status, body: bodyText };
   } catch (error) {

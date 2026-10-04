@@ -73,6 +73,8 @@ or a machine that stays full, is said once, not every pass.
 | `<seat> runs <model> <version>; the file says <model> <version>: it signs with the wrong model` | the running model or version is not the file's |
 | `<name> (<pane>) is running and is not in the file` | an agent in the session no seat claims, the watchdog pane aside |
 | `the file was never approved on this machine` | there is no approval record for this project |
+| `approved before records were signed: run \`team approve\` once` | the record was written by an earlier `team`: not trusted, said once, and the watch keeps watching |
+| `<why the record was refused>` | a signed record that does not verify (changed after approval, another root, a replayed or rolled-back generation): said once, and the watch keeps watching |
 | `the file differs from the approved one: <differences>` | the file is not the approved one; the differences read as `team status` prints them |
 | `the load is <n> per core, above <n>` | over `machine.load_max` |
 | `free memory is <n>%, below <n>%` | under `machine.memory_min` |
@@ -381,9 +383,10 @@ $ team approve ; echo "exit $?"
 Needs a new approval: `watch.checks` changed.
 Ceilings this approval fixes: 4 seats at most, 2 temporary.
 Seats: 2 (claude-keeper, claude-beacon).
+approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 
 Type the number of seats (2) to approve this file, and its commands and rules, to run: 2
-Approved. The record is in ~/.config/team/beacon-<hash>; check the rest with `team doctor`.
+Approved. The record is in ~/.config/team/beacon-<hash>; signed with key fe21ef6293de; check the rest with `team doctor`.
 exit 0
 ```
 

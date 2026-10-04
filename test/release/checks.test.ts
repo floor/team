@@ -1,7 +1,9 @@
 // The four checks of `team release check`, driven from the specification's own cases against
 // recorded answers. No real network request is ever made: the fetch is the answer map.
 import { describe, expect, test } from 'bun:test';
-import { runChecks, encodeSegment, type ReleaseResult } from '../../src/release/checks.ts';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { runChecks, encodeSegment, retried, type ReleaseResult } from '../../src/release/checks.ts';
 import type { ReleaseDecl } from '../../src/file/sections/releases.ts';
 import {
   COMMIT, MATERIAL, TAG_OBJECT, URLS, changelog, fakeFetch, fixture, happy, json, tagObject, withAnswer, withChange,
@@ -424,12 +426,50 @@ describe('the network contract', () => {
     expect(requested.filter((url) => url === URLS.npm).length).toBe(2);
   });
 
-  test('an undecodable body is unknown and not retried', async () => {
+  test('an undecodable body is unknown and, with a non-retryable status, not retried', async () => {
     const answers = happy();
-    answers.set(URLS.npm, [{ kind: 'undecodable' }, json(fixture('npm-version.json'))]);
+    answers.set(URLS.npm, [{ kind: 'undecodable', status: 200 }, json(fixture('npm-version.json'))]);
     const { result, requested } = await run(answers);
     expect(result.npm.status).toBe('unknown');
     expect(requested.filter((url) => url === URLS.npm).length).toBe(1);
+  });
+
+  test('a retryable status whose body cannot be decoded is still retried: two attempts, then the answer', async () => {
+    for (const status of [408, 429, 503]) {
+      const answers = happy();
+      answers.set(URLS.npm, [{ kind: 'undecodable', status }, json(fixture('npm-version.json'))]);
+      const { result, requested } = await run(answers);
+      expect(result.npm.status).toBe('pass');
+      expect(requested.filter((url) => url === URLS.npm).length).toBe(2);
+    }
+    const twice = happy();
+    twice.set(URLS.npm, [{ kind: 'undecodable', status: 503 }, { kind: 'undecodable', status: 503 }]);
+    const { result, requested } = await run(twice);
+    expect(result.npm.status).toBe('unknown');
+    expect(requested.filter((url) => url === URLS.npm).length).toBe(2);
+  });
+
+  test('the docs page names exactly the retry set the code retries', () => {
+    // The page can't drift from the code again: the statuses its retry sentence names are the
+    // statuses `retried()` retries, status by status, and the no-response kinds match too.
+    const page = readFileSync(join(import.meta.dir, '..', '..', 'docs', 'commands', 'release.md'), 'utf8');
+    const paragraph = page.split('\n\n').find((text) => text.includes('retried exactly once'));
+    expect(paragraph).toBeDefined();
+    const sentence = (paragraph as string).split(/(?<=\.)\s+/).find((text) => text.includes('retried exactly once')) as string;
+    const named = new Set<number>();
+    for (const token of sentence.matchAll(/([1-5])([0-9]{2}|xx)/g)) {
+      if (token[2] === 'xx') for (let status = Number(token[1]) * 100; status < Number(token[1]) * 100 + 100; status++) named.add(status);
+      else named.add(Number(token[0]));
+    }
+    expect(named.size).toBeGreaterThan(0);
+    for (let status = 100; status <= 599; status++) {
+      expect(retried({ kind: 'http', status, body: '' })).toBe(named.has(status));
+    }
+    expect(sentence).toContain('timeout');
+    expect(sentence).toContain('transport');
+    expect(retried({ kind: 'timeout' })).toBe(true);
+    expect(retried({ kind: 'transport' })).toBe(true);
+    expect(retried({ kind: 'undecodable', status: 200 })).toBe(false);
   });
 
   test('the maximal run stays inside the caps: eleven reads, twenty-two attempts', async () => {

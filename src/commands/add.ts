@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
-import { approvalDifferences, budgetsInForce, recordSeatDigest } from '../approve/approval.ts';
+import { approvalDifferencesOf, budgetsInForceOf, notInForce, recordSeatDigestOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from '../commands/doctor.ts';
@@ -24,7 +24,7 @@ import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock, type SeatState, type SessionState } from '../state.ts';
-import { approvedCopy, readApproval, recordLedger, storePath, type Ceilings } from '../store/store.ts';
+import { approvalStanding, recordLedger, storePath, type Ceilings, type Standing } from '../store/store.ts';
 import { launchLimit, readMachine, type Machine, type SwapSample } from '../watch/machine.ts';
 import { readScreen } from '../watch/screen.ts';
 import { seatStart, type SeatStart } from '../worktree/place.ts';
@@ -38,6 +38,12 @@ export type AddSources = {
   machine?: (root: string) => Machine;
   now(): Date;
   launch: Launch;
+  // The approval store's one read, overridable so a test can count it or swap the record
+  // after the gate. Absent: the real read.
+  standing?(root: string): Standing;
+  // The budget gate, overridable so a test can count its calls. Absent: the real gate.
+  // The standing gate refuses before it is ever consulted.
+  seatBudget?: typeof seatBudget;
 };
 
 const realLaunch: Launch = {
@@ -122,18 +128,21 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     io.stderr('team add: session can\'t be "default", herdr\'s own session\n');
     return 1;
   }
-  const differences = approvalDifferences(team, root, sources.home);
-  if (differences === null) {
-    io.stderr('team add: the file was never approved on this machine: run `team approve`\n');
+  // One verified snapshot for the whole command: a legacy or refused record is not
+  // an approval in force, and the approved copy the seat is built from is the record's own.
+  const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
+  if (standing.kind !== 'verified') {
+    io.stderr(`team add: ${notInForce(standing)}\n`);
     return 1;
   }
+  const differences = approvalDifferencesOf(standing, team);
   if (differences.length) {
     io.stderr(`team add: the file is not the approved one (${differences.join('; ')}): run \`team approve\`\n`);
     return 1;
   }
-  const approvedText = approvedCopy(root, sources.home);
-  const approved = approvedText ? validateTeamFile(approvedText) : null;
-  if (!approvedText || !approved?.ok) {
+  const approvedText = standing.record.file;
+  const approved = validateTeamFile(approvedText);
+  if (!approved.ok) {
     io.stderr('team add: the approved copy can\'t be read: run `team approve`\n');
     return 1;
   }
@@ -157,11 +166,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   }
 
   const recorded = readState(dir).sessions[session] ?? emptySession();
-  const ceilings = readApproval(storePath(team.project, root, sources.home))?.approval.ceilings;
-  if (!ceilings) {
-    io.stderr('team add: the file was never approved on this machine: run `team approve`\n');
-    return 1;
-  }
+  const ceilings: Ceilings = standing.record.approval.ceilings;
 
   const original = readFileSync(path, 'utf8');
   const built = temporary
@@ -201,7 +206,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // `team` is the file on disk, already the approved one. `doctorTeam` is the
   // seat about to run, so a stopped seat's CLI is still checked. The digest is
   // recorded with the write, after a refusal has left the file alone.
-  for (const finding of doctorFindings(doctorTeam, root, dir, session, sources.doctor, prepared.warnings, team)) {
+  for (const finding of doctorFindings(doctorTeam, root, dir, session, sources.doctor, prepared.warnings, standing, team)) {
     if (blocksLaunch(finding)) {
       io.stderr(`team add: ${finding.text}\n`);
       return 1;
@@ -230,8 +235,8 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   }
   // The gate reads the approved budgets, never the edited file's: the seat this `add` inserts
   // changes no section of its own, and no unapproved reserve may unblock a launch (#50).
-  const budgets = budgetsInForce(prepared.team, root, sources.home);
-  const decision = seatBudget(budgets, loadReadings(dir), built.seat, sources.now().getTime(), loadSpendReadings(dir));
+  const budgets = budgetsInForceOf(standing, prepared.team);
+  const decision = (sources.seatBudget ?? seatBudget)(budgets, loadReadings(dir), built.seat, sources.now().getTime(), loadSpendReadings(dir));
   const stray = unnamedIn(recorded.seats[built.name]?.workspace, agents);
   const starting = seatPlan(prepared.team, built.seat, start);
   const planned = stray
@@ -276,7 +281,8 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       return 2;
     }
     const parsed = validateTeamFile(built.edited);
-    if (parsed.ok) recordSeatDigest(parsed.team, root, built.name, sources.home);
+    // The amendment re-signs from the command's own one snapshot, read at its gate.
+    if (parsed.ok) recordSeatDigestOf(standing, parsed.team, root, built.name, sources.home);
   }
 
   const plan = upPlan({ root, session, sessionRunning: live === 'running', seats: [seatForPlan], watchAlive: true });

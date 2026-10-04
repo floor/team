@@ -173,10 +173,10 @@ describe('the production wiring', () => {
     expect(await realFetch('https://registry.npmjs.org/material/3.0.2')).toEqual({ kind: 'too-large', status: 200 });
   });
 
-  test('a body that is not valid UTF-8 is the undecodable failure, not repaired', async () => {
+  test('a body that is not valid UTF-8 is the undecodable failure, with the response status', async () => {
     globalThis.fetch = (() =>
       Promise.resolve(new Response(new Uint8Array([0x7b, 0x22, 0xff, 0x22, 0x7d]), { status: 200 }))) as unknown as typeof fetch;
-    expect(await realFetch('https://registry.npmjs.org/material/3.0.2')).toEqual({ kind: 'undecodable' });
+    expect(await realFetch('https://registry.npmjs.org/material/3.0.2')).toEqual({ kind: 'undecodable', status: 200 });
   });
 });
 

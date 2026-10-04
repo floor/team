@@ -53,7 +53,9 @@ describe('an approval written by main', () => {
   // approved text inside. `writeApproval` takes them apart, so the test puts them back together.
   function record(): ApprovalRecord {
     const { file, ...approval } = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/approval-main.json'), 'utf8'));
-    return { approval, file };
+    // The capture is a real record from before records were signed; its fingerprints are the
+    // point here, and they are read inside a record this version signs.
+    return { approval: { ...approval, format: 2 }, file };
   }
 
   function home(): string {
@@ -63,7 +65,7 @@ describe('an approval written by main', () => {
     if (!checked.ok) throw new Error('the approval fixture\'s copy does not validate; a behaviour change');
     const store = storePath(checked.team.project, root, dir);
     mkdirSync(store, { recursive: true });
-    writeApproval(store, source, []);
+    writeApproval(store, source, [], dir);
     return dir;
   }
 

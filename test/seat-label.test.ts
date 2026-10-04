@@ -108,7 +108,7 @@ seats:
     writeApproval(storePath(parsed.team.project, root, home), {
       approval: approvalOf(parsed.team, root),
       file,
-    }, parsed.team.seats);
+    }, parsed.team.seats, home);
     const sources: DoctorSources = {
       version: () => '2.1.288 (Claude Code)',
       onPath: () => true,

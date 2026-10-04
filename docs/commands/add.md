@@ -70,6 +70,7 @@ without input and the seat left out`, and the rest of the table on the [team up]
 | `team add: only the owner, the coordinator or the operator runs it; this call is <caller>` | 1 |
 | `team add: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | ``team add: the file was never approved on this machine: run `team approve` `` | 1 |
+| ``team add: approved before records were signed: run `team approve` once`` — the record was written by an earlier `team`; the same line, with the case, for a record that does not verify | 1 |
 | ``team add: the file is not the approved one (<differences>): run `team approve` `` | 1 |
 | ``team add: the approved copy can't be read: run `team approve` `` | 1 |
 | `team add: the approved file has no seat "<name>"` | 1 |

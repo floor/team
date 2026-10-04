@@ -24,6 +24,8 @@ describe('Codex launch and captured screens', () => {
   });
   test.each([
     ['idle', 'idle'], ['unsent', 'unsent'], ['working', 'working'],
+    ['typed-two-lines', 'unsent'], ['pasted-two-lines', 'unsent'], ['second-line-glyph', 'unsent'],
+    ['second-line-gt', 'unsent'], ['wrapped-line', 'unsent'], ['blank-middle', 'unsent'],
     ['rules-accepted', 'idle'], ['startup', 'question'], ['startup-loading', 'unknown'], ['trust', 'trust'],
     ['exit-typed', 'unsent'], ['exit', 'unknown'], ['permission', 'permission'],
   ] as const)('%s capture has %s composer shape', (file, kind) => {
@@ -82,6 +84,26 @@ describe('Codex launch and captured screens', () => {
       seats: [{ name: 'coder', cli: 'codex', launch: 'codex', cwd: '.', label: 'coder', stopped: false, rules: 'Rules.' }] });
     expect(plan.find((step) => step.do?.do === 'deliver')?.do).toMatchObject({ do: 'deliver', cli: 'codex', rules: 'Rules.', seconds: 90 });
     expect(plan.some((step) => step.do?.do === 'ready')).toBe(false);
+  });
+});
+
+describe('the typed-newline captures (Codex)', () => {
+  // Real captures (see the fixtures README): 2026-10-04, plain `codex --no-daemon`,
+  // 163 by 47 — a two-line text typed with the CLI's newline key (Ctrl+J), a two-line text
+  // in one write, a second line beginning with the prompt glyph and one with `>`, a long
+  // line that wraps, and three lines with a blank middle. Every later line of the person's
+  // text is drawn at the continuation column, two; none at the prompt column.
+  test.each([
+    ['typed-two-lines', 'first typed line of the sample\nsecond typed line of the sample'],
+    ['pasted-two-lines', 'first pasted line of the sample\nsecond pasted line of the sample'],
+    ['second-line-glyph', 'the reply follows\n› quoted line beginning with the prompt glyph'],
+    ['second-line-gt', 'a plain reply follows\n> line beginning with a greater-than sign'],
+    ['wrapped-line', 'alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu'],
+    ['blank-middle', 'first line above the blank\n\nthird line below the blank'],
+  ] as const)('%s reads unsent and holds exactly its text', (file, text) => {
+    expect(readScreen('codex', fixture(file)).kind).toBe('unsent');
+    expect(boxHoldsText('codex', text, fixture(file))).toBe(true);
+    expect(boxHoldsText('codex', `${text} more`, fixture(file))).toBe(false);
   });
 });
 
@@ -331,11 +353,13 @@ describe('the box\'s top frame (Codex)', () => {
   // wrapped continuations at column two, exit-typed.txt's alike — so no row of a box carries
   // the glyph at the prompt column across the gap. Reading the echo as a live row made every
   // post-send idle seat `unknown`, a seat that could then never be dispatched to or nudged;
-  // the empty input row under the frame reads `idle`, exactly as main reads it. Codex has no
-  // typed-newline capture (the trust dialog blocked it): the rule rests on the captured
-  // continuation column of wrapped text, not on a typed-newline capture, which is still to be
-  // taken. No shipped capture shows the direct echo layout — something always sits between the
-  // echo and the frame — so the constructed screens below stand in for it.
+  // the empty input row under the frame reads `idle`, exactly as main reads it. Codex's
+  // typed-newline captures (typed-two-lines.txt, pasted-two-lines.txt, second-line-glyph.txt,
+  // second-line-gt.txt, wrapped-line.txt, blank-middle.txt — see the fixtures README)
+  // prove the continuation column, two: every later row of the person's box is drawn indented,
+  // even one that begins with the prompt glyph; none is drawn at the prompt column. No shipped
+  // capture shows the direct echo layout — something always sits between the echo and the
+  // frame — so the constructed screens below stand in for it.
   const shaped = (body: string) => fixture('idle').replace('› Ask Codex to do anything', body);
 
   test('the transcript\'s echo over the gap leaves the empty box idle, and the typed text reads back exactly', async () => {

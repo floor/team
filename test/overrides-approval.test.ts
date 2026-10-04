@@ -5,11 +5,11 @@ import { join } from 'node:path';
 import type { Caller } from '../src/caller.ts';
 import { runApprove } from '../src/commands/approve.ts';
 import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
-import { runStatus, type StatusSources } from '../src/commands/status.ts';
+import { runStatus, standingSource, type StatusSources } from '../src/commands/status.ts';
 import { runUp, type UpSources } from '../src/commands/up.ts';
 import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import { overridesInForce, overridesPath, quotaWith } from '../src/profiles/overrides.ts';
-import { readApproval, storePath } from '../src/store/store.ts';
+import { approvalStanding, readApproval, storePath } from '../src/store/store.ts';
 import { testIo } from './helpers.ts';
 
 const EXAMPLE = readFileSync(new URL('./fixtures/example.yaml', import.meta.url), 'utf8');
@@ -75,9 +75,7 @@ function statusSources(): StatusSources {
   return {
     live: () => ({ running: false, agents: [], workspaces: [], screens: {} }),
     branch: () => 'main',
-    approval: () => [],
-    watchInForce: (team) => team.watch,
-    budgetsInForce: (team) => team.budgets,
+    standing: standingSource(home),
     now: () => NOW,
     home,
   };
@@ -136,17 +134,20 @@ describe('an override is the owner\'s, by approval', () => {
     expect(quotaWith('codex', overridesInForce('acme-web', root, home).profiles).some((pattern) => pattern.account === 'anthropic')).toBe(true);
   });
 
-  test('a stored copy that cannot be read leaves the shipped profiles', async () => {
+  test('a stored copy edited after approval leaves the shipped profiles: it is not an approval', async () => {
     expect((await approve()).code).toBe(0);
     writeFileSync(path(), OVERRIDE);
     expect((await approve()).code).toBe(0);
     const record = readApproval(storePath('acme-web', root, home));
     if (!record) throw new Error('approval');
-    writeFileSync(join(storePath('acme-web', root, home), 'approval.json'), JSON.stringify({ ...record.approval, file: record.file, overrides: '[\n' }));
+    // The overrides text is changed inside the stored record, after approval, without the
+    // key: the signature no longer holds, nothing of the record is in force, and the
+    // shipped profiles stay.
+    writeFileSync(join(storePath('acme-web', root, home), 'approval.json'), JSON.stringify({ ...record.approval, file: record.file, overrides: '[\n', generation: record.generation, signature: record.signature }));
     rmSync(path());
     const force = overridesInForce('acme-web', root, home);
     expect(force.profiles).toEqual([]);
-    expect(force.differences).toContain("the approved overrides can't be read");
+    expect(approvalStanding(root, home).kind).toBe('refused');
   });
 
   test('a malformed file is reported by approve, doctor, status, watch and up, and does not throw', async () => {
@@ -175,9 +176,7 @@ describe('an override is the owner\'s, by approval', () => {
     const watchCode = await runWatch(FILE, watch, {
       live: () => null,
       machine: () => { throw new Error('not read'); },
-      approval: () => [],
-      watchInForce: (team) => team.watch,
-      budgetsInForce: (team) => team.budgets,
+      standing: standingSource(home),
       readChecks: () => [],
       screen: () => null,
       status: () => null,

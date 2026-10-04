@@ -3,10 +3,10 @@
 // A check reads a vendor home; its bytes could carry anything the owner's tools know.
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
-import { budgetsInForce } from '../approve/approval.ts';
+import { budgetsInForceOf } from '../approve/approval.ts';
 import type { BudgetAccount, TeamFile } from '../file/types.ts';
 import type { WindowName } from '../profiles/quota.ts';
-import { readApproval, storePath } from '../store/store.ts';
+import { approvalStanding, type Standing } from '../store/store.ts';
 import { checkCommands, checkReadings, type ApprovedCheck } from './checks.ts';
 import { resetsFrom } from './readings.ts';
 
@@ -145,9 +145,19 @@ export function checkOutcomes(
 }
 
 /**
- * What every checked account reads this pass, with the approval of this machine. The accounts are
- * the ones the budgets in force name, never the file's unapproved edit of them.
+ * What every checked account reads this pass, from the one standing the caller
+ * read. The accounts are the ones the budgets in force name, never the file's
+ * unapproved edit of them, and the commands are the verified record's: a
+ * standing that is not verified leaves every check unapproved, so it is not
+ * run at all — the watch's owner-only checks refuse, and the watch keeps
+ * watching.
  */
+export function runChecksOf(standing: Standing, team: TeamFile, now: number, run: CheckRunner = readCheck): CheckOutcome[] {
+  const approved = standing.kind === 'verified' ? standing.record.approval.checks : undefined;
+  return checkOutcomes(budgetsInForceOf(standing, team), approved, run, now);
+}
+
+/** `runChecksOf` as a standalone caller uses it: one read of its own, then the outcomes. */
 export function runChecks(
   team: TeamFile,
   root: string,
@@ -155,6 +165,5 @@ export function runChecks(
   home: string = homedir(),
   run: CheckRunner = readCheck,
 ): CheckOutcome[] {
-  const approved = readApproval(storePath(team.project, root, home))?.approval.checks;
-  return checkOutcomes(budgetsInForce(team, root, home), approved, run, now);
+  return runChecksOf(approvalStanding(root, home), team, now, run);
 }
