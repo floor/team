@@ -24,6 +24,8 @@ export interface Approval {
   fingerprints: Fingerprints;
   /** Fixed here, and never recomputed from the roster. */
   ceilings: Ceilings;
+  /** Each account's check command, resolved and hashed. Absent on an older record. */
+  checks?: Record<string, { command: string; path: string; hash: string }>;
 }
 
 export interface LedgerEntry {

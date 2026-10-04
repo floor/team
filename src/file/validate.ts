@@ -11,7 +11,7 @@ import {
   templateProblem,
 } from './signature.ts';
 import { insideProject, insideTrust, normalize, trustProblem } from './paths.ts';
-import type { Mode, Position, Problem, Seat, TeamFile, ValidateResult } from './types.ts';
+import type { BudgetAccount, BudgetSource, Mode, Position, Problem, Seat, TeamFile, ValidateResult } from './types.ts';
 
 type MapNode = Extract<YamlNode, { kind: 'map' }>;
 type Fields = Map<string, YamlEntry>;
@@ -157,7 +157,7 @@ function readTeam(root: YamlNode, check: Check): TeamFile | null {
   }
   const top = check.fields(root, 'the file', [
     'format', 'project', 'visibility', 'session', 'coordinator', 'operator', 'tools', 'identity', 'rules',
-    'trust', 'workspace', 'watch', 'machine', 'limits', 'seats',
+    'trust', 'workspace', 'watch', 'machine', 'limits', 'seats', 'budgets',
   ]);
 
   const format = top.get('format');
@@ -196,6 +196,7 @@ function readTeam(root: YamlNode, check: Check): TeamFile | null {
   const operator = readLead(top.get('operator'), 'operator', seats, broken, check);
 
   const limits = readLimits(top.get('limits'), check, seats.length);
+  const watched = readWatch(top.get('watch'), check);
 
   return {
     format: 1,
@@ -209,7 +210,8 @@ function readTeam(root: YamlNode, check: Check): TeamFile | null {
     rules: check.list(top.get('rules'), 'rules').map((item) => item.value),
     trust,
     workspace,
-    watch: readWatch(top.get('watch'), check),
+    watch: watched.watch,
+    budgets: readBudgets(top.get('budgets'), check, watched.watch.quotaMarks, watched.legacyMarks),
     machine: readMachine(top.get('machine'), check),
     limits,
     seats: seats as Seat[],
@@ -466,7 +468,7 @@ function worktreePathProblem(path: string, project: string, trust: string[]): st
   return null;
 }
 
-function readWatch(entry: YamlEntry | undefined, check: Check): TeamFile['watch'] {
+function readWatch(entry: YamlEntry | undefined, check: Check): { watch: TeamFile['watch']; legacyMarks: boolean } {
   const fields = check.fields(entry?.value, 'watch', [
     'interval', 'idle_first', 'idle_repeat', 'team_idle', 'nudge_wait', 'unsent_after', 'quota_marks',
   ]);
@@ -479,16 +481,123 @@ function readWatch(entry: YamlEntry | undefined, check: Check): TeamFile['watch'
     const numbers = node.kind === 'seq' ? node.items.map((item) => (item.kind === 'scalar' ? item.value : null)) : null;
     if (numbers && numbers.every((n): n is number => typeof n === 'number' && n > 0 && n <= 100)) quotaMarks = numbers;
     else check.fail(node.line, 'watch.quota_marks must be a list of percentages, such as [50, 75, 90]');
+    check.warnings.push({ line: node.line, message: 'watch.quota_marks is now budgets.marks, and is still read' });
   }
   return {
-    interval: time('interval', 120),
-    idleFirst: time('idle_first', 600),
-    idleRepeat: time('idle_repeat', 1200),
-    teamIdle: time('team_idle', 600),
-    nudgeWait: time('nudge_wait', 600),
-    unsentAfter: time('unsent_after', 60),
-    quotaMarks,
+    legacyMarks: Boolean(marks),
+    watch: {
+      interval: time('interval', 120),
+      idleFirst: time('idle_first', 600),
+      idleRepeat: time('idle_repeat', 1200),
+      teamIdle: time('team_idle', 600),
+      nudgeWait: time('nudge_wait', 600),
+      unsentAfter: time('unsent_after', 60),
+      quotaMarks,
+    },
   };
+}
+
+function readBudgets(
+  entry: YamlEntry | undefined,
+  check: Check,
+  fallbackMarks: number[],
+  legacyMarks: boolean,
+): TeamFile['budgets'] {
+  const base = { staleAfter: 30 * 60, checkEvery: 10 * 60, marks: fallbackMarks, accounts: {} };
+  if (!entry) return base;
+  const fields = check.fields(entry.value, 'budgets', ['stale_after', 'check_every', 'marks', 'accounts']);
+  const marks = percentList(fields.get('marks'), 'budgets.marks', check);
+  if (marks && legacyMarks) {
+    check.warnings.push({ line: fields.get('marks')?.line ?? entry.line, message: 'budgets.marks replaces watch.quota_marks' });
+  }
+  return {
+    staleAfter: check.measure(fields.get('stale_after'), 'budgets.stale_after', DURATION, '30m') ?? base.staleAfter,
+    checkEvery: check.measure(fields.get('check_every'), 'budgets.check_every', DURATION, '10m') ?? base.checkEvery,
+    marks: marks ?? fallbackMarks,
+    accounts: readAccounts(fields.get('accounts'), check),
+  };
+}
+
+function percentList(entry: YamlEntry | undefined, name: string, check: Check): number[] | null {
+  if (!entry) return null;
+  const node = entry.value;
+  const numbers = node.kind === 'seq' ? node.items.map((item) => (item.kind === 'scalar' ? item.value : null)) : null;
+  if (numbers && numbers.length > 0 && numbers.every((n): n is number => typeof n === 'number' && n > 0 && n <= 100)) return numbers;
+  check.fail(node.line, `${name} must be a list of percentages, such as [50, 75, 90]`);
+  return null;
+}
+
+function readAccounts(entry: YamlEntry | undefined, check: Check): Record<string, BudgetAccount> {
+  const accounts: Record<string, BudgetAccount> = {};
+  if (!entry) return accounts;
+  if (entry.value.kind !== 'map') {
+    check.fail(entry.value.line, 'budgets.accounts must be a map');
+    return accounts;
+  }
+  for (const account of entry.value.entries) {
+    const fields = check.fields(account.value, `budgets.accounts.${account.key}`, ['kind', 'shared', 'reserve', 'floor', 'sources', 'check']);
+    const kind = check.oneOf(fields.get('kind'), `budgets.accounts.${account.key}.kind`, ['subscription', 'spend']);
+    const sources = sourcesOf(fields.get('sources'), account.key, kind, check, account.line);
+    const command = check.text(fields.get('check'), `budgets.accounts.${account.key}.check`) ?? null;
+    if (sources.includes('check') && !command) check.fail(account.line, `budgets.accounts.${account.key} needs check`);
+    if (command && !sources.includes('check')) check.fail(fields.get('check')?.line ?? account.line, `budgets.accounts.${account.key}.check needs sources to list check`);
+    const reserve = kind === 'subscription'
+      ? check.measure(fields.get('reserve'), `budgets.accounts.${account.key}.reserve`, PERCENT, '20%') ?? null
+      : null;
+    if (kind === 'subscription' && !fields.get('reserve')) check.fail(account.line, `budgets.accounts.${account.key} needs reserve`);
+    if (kind === 'spend' && fields.get('reserve')) check.fail(fields.get('reserve')?.line ?? account.line, 'a spend account has a floor, not a reserve');
+    const floor = kind === 'spend' ? money(fields.get('floor'), account.key, check) : null;
+    if (kind === 'spend' && !fields.get('floor')) check.fail(account.line, `budgets.accounts.${account.key} needs floor`);
+    if (kind === 'subscription' && fields.get('floor')) check.fail(fields.get('floor')?.line ?? account.line, 'a subscription has a reserve, not a floor');
+    accounts[account.key] = {
+      kind: kind ?? 'subscription',
+      shared: check.flag(fields.get('shared'), `budgets.accounts.${account.key}.shared`),
+      reserve,
+      floor,
+      sources,
+      check: command,
+    };
+  }
+  return accounts;
+}
+
+function sourcesOf(
+  entry: YamlEntry | undefined,
+  account: string,
+  kind: 'subscription' | 'spend' | undefined,
+  check: Check,
+  line: number,
+): BudgetSource[] {
+  if (!entry) {
+    check.fail(line, `budgets.accounts.${account} needs sources`);
+    return [];
+  }
+  const items = check.list(entry, `budgets.accounts.${account}.sources`);
+  const sources: BudgetSource[] = [];
+  for (const item of items) {
+    if (item.value !== 'check' && item.value !== 'status_line') {
+      check.fail(item.line, `budgets.accounts.${account}.sources must be check or status_line`);
+      continue;
+    }
+    if (kind === 'spend' && item.value === 'status_line') {
+      check.fail(item.line, 'a spend account never reads a screen');
+      continue;
+    }
+    if (sources.includes(item.value)) check.fail(item.line, `budgets.accounts.${account}.sources lists ${item.value} twice`);
+    else sources.push(item.value);
+  }
+  return sources;
+}
+
+function money(entry: YamlEntry | undefined, account: string, check: Check): { amount: number; currency: string } | null {
+  if (!entry) return null;
+  const raw = entry.value.kind === 'scalar' ? entry.value.raw : '';
+  const match = /^([0-9]+(?:\.[0-9]{1,4})?) ([A-Z]{3})$/.exec(raw);
+  if (!match || match[1] === undefined || match[2] === undefined) {
+    check.fail(entry.line, `budgets.accounts.${account}.floor is an amount and a currency, such as 5 USD`);
+    return null;
+  }
+  return { amount: Number(match[1]), currency: match[2] };
 }
 
 function readMachine(entry: YamlEntry | undefined, check: Check): TeamFile['machine'] {

@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { approvalOf, ceilingsOf } from '../approve/approval.ts';
+import { checkDrift, resolveChecks } from '../budgets/checks.ts';
 import { formatDiff } from '../approve/diff.ts';
 import { compare, describe, fingerprints } from '../approve/fingerprint.ts';
 import { readArgs } from '../args.ts';
@@ -106,6 +107,11 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     return 1;
   }
 
+  const resolved = resolveChecks(team, root, process.env.PATH ?? '');
+  if (!resolved.ok) {
+    io.stderr(`team approve: the check for ${resolved.account} cannot be resolved\n`);
+    return 1;
+  }
   const previous = readApproval(store);
   const ceilings = ceilingsOf(team);
   const seats = team.seats.length;
@@ -120,7 +126,10 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
         .join('\n')}\n\n`,
     );
   } else {
-    const changes = compare(previous.approval.fingerprints, fingerprints(team)).map(describe);
+    const changes = [
+      ...compare(previous.approval.fingerprints, fingerprints(team)).map(describe),
+      ...checkDrift(previous.approval.checks, resolved.checks),
+    ];
     const lines = formatDiff(previous.file, text);
     if (lines.length === 0)
       io.stdout(`${path}: the same text as the copy approved on ${previous.approval.approvedAt}.\n\n`);
@@ -157,7 +166,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   }
 
   const now = sources.now();
-  writeApproval(store, { approval: approvalOf(team, root, now), file: text }, team.seats);
+  writeApproval(store, { approval: approvalOf(team, root, now, resolved.checks), file: text }, team.seats);
   logLine(
     dirname(path),
     'approve',

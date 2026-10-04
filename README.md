@@ -133,6 +133,12 @@ Launching a Cursor seat, like launching cursor-agent by hand, creates Cursor's o
 under ~/.cursor/projects for that folder; team writes no trust (.workspace-trusted) and no Cursor
 config.
 
+`budgets` is the owner's: marks (percent used), how long a figure stays fresh, and each
+account's reserve or floor. A `check` command is resolved to a file and hashed when the
+owner approves; a change to that file needs a new approval, and the command is not run
+until then. `watch.quota_marks` is still read, with a warning, until you move it to
+`budgets.marks`.
+
 More fields exist — `tools`, `trust`, `machine`, `limits`, `watch`, `visibility` — and the comments
 `team init` writes name them; validation refuses what it cannot check, and this build acts on what
 the commands below read.
