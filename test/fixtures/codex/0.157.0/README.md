@@ -85,3 +85,20 @@ drawn while that pinned status line stays below it — a screen the classifier r
 as `unsent`, so `deliverRules` reported the rules delivered and the watch typed a
 nudge and Enter onto the dialog. Nothing else is added or changed. Its tests are
 in `test/launch/codex.test.ts` and `test/screen-core.test.ts`.
+
+## Constructed: delivery-verification boxes
+
+Not captures. `test/launch/codex.test.ts` builds the post-paste box from `idle.txt`:
+the placeholder row is replaced by `› ` and the first line of the typed text, and each
+later line is drawn at two columns, the prompt row's own width, matching the continuation
+indent `unsent.txt` shows. A box built this way stands for the typed text as Codex draws
+it, and the same tests paste into the captured `unsent.txt`, whose four rows read back as
+the message the capture submitted. No captured box shows a wrapped line, so no wrap is
+modelled for Codex: a box whose rows read back as runs of the typed text laid out in
+order is the text and is entered, and a box whose rows show anything else — another
+text, an extra row, one character changed, a collapsed space, a blank row the text does
+not have at that place — is never entered. The pane draws one empty row of its own under
+the text — `unsent.txt` and `exit-typed.txt` show the drop between the text and the status
+line — and that row is the box's frame, not content: the profile counts it
+(`frame_rows: 1`), the box read strips just it, and an empty row beyond it is a row the
+text does not have, so the Enter is refused.

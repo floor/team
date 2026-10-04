@@ -58,3 +58,8 @@ the cost figure; the model name in the status rows reads `Opus 5.5`.
   prompt glyph (styled `38;2;253;93;177`), so the composer finds no input line and
   the screen reads unknown — never idle. Whether `!` belongs in the prompt set is an
   open question for the profile, not this change.
+
+Every captured composer draws its rows directly between the two rules — `unsent-typed-ansi.txt`
+is the typed box as the pane drew it — with no empty row of its own inside the box. The
+profile counts no frame rows (`frame_rows` omitted, zero): the box read keeps every
+trailing empty row, and a box showing one the typed text does not have is refused.
