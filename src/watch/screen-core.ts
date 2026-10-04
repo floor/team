@@ -465,6 +465,10 @@ function twoRules(lines: string[], styled: string[], composer: Extract<ScreenDat
     }
   }
   if (top < 0 || bottom < 0) return { kind: 'unknown' };
+  // The two rules of one box are drawn at one width (53 columns in unsent.txt, 54 in
+  // folded-rules.txt). A window whose rules differ is not that frame — the box the caller
+  // compares against typed text cannot be established — and the read fails closed.
+  if (ruleRun(composer, lines[bottom] ?? '') !== ruleRun(composer, lines[top] ?? '')) return { kind: 'unknown' };
   // The input row is the box's first row under its opening frame, and it carries the prompt at
   // the capture's own column. A row there that does not — a folded box's marker row
   // (folded-rules.txt) — is not this box's input, and the read fails closed rather than take
