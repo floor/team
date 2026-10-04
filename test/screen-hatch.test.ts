@@ -156,6 +156,57 @@ describe('Slice C: ScreenProfile escape hatch', () => {
     expect(composed.kind).toBe('unknown');
   });
 
+  test('the safety floor sees the whole window: hatch composer cannot shrink it with from past dialogs', () => {
+    const yaml = readFileSync(resolve(fixtureDir, 'fake-cli.yaml'), 'utf8');
+    const baseData = loadScreen(yaml, fixtureDir);
+
+    const dialogFixtures: { name: string; path: string; kind: Screen['kind']; match: string }[] = [
+      { name: 'numbered-choice', path: 'test/fixtures/hatch/numbered-choice.txt', kind: 'permission', match: '1. Proceed' },
+      { name: 'trust', path: 'test/fixtures/codex/0.157.0/trust.txt', kind: 'trust', match: 'Trust this folder?' },
+      { name: 'permission', path: 'test/fixtures/codex/0.157.0/permission.txt', kind: 'permission', match: '1. Yes, proceed' },
+      { name: 'question', path: 'test/fixtures/codex/0.157.0/startup.txt', kind: 'question', match: 'Update available' },
+    ];
+
+    for (const { path: relPath, kind, match } of dialogFixtures) {
+      const lines = readFileSync(resolve(process.cwd(), relPath), 'utf8').split('\n');
+
+      for (const composerKind of ['idle', 'unsent'] as const) {
+        // 1. With predicates matching the dialog, classifyLines returns the dialog's kind
+        // even when composer returns idle or unsent with from: 1000
+        const dataWithPredicate = {
+          ...baseData,
+          profile: {
+            ...baseData.profile,
+            [kind]: (l: string[]) => l.some((line) => line.includes(match)),
+            composer: () => ({ kind: composerKind, from: 1000 }),
+          },
+        };
+        const classified = classifyLines(dataWithPredicate, lines);
+        expect(classified.kind).toBe(kind);
+
+        // 2. With predicates forced false, the safety floor runs over the full window
+        // and rejects idle/unsent, returning unknown
+        const dataPredicatesFalse = {
+          ...baseData,
+          profile: {
+            unknown: () => false,
+            trust: () => false,
+            permission: () => false,
+            question: () => false,
+            working: () => false,
+            composer: () => ({ kind: composerKind, from: 1000 }),
+          },
+        };
+        const floorClassified = classifyLines(dataPredicatesFalse, lines);
+        expect(floorClassified.kind).toBe('unknown');
+
+        // 3. composeLines also runs the safety floor over the full window, returning unknown
+        const composed = composeLines(dataPredicatesFalse, lines);
+        expect(composed.kind).toBe('unknown');
+      }
+    }
+  });
+
   test('no shipped profile uses the hatch', () => {
     const profilesDir = fileURLToPath(new URL('../src/profiles', import.meta.url));
     const yamlFiles = readdirSync(profilesDir).filter((file) => file.endsWith('.yaml'));
