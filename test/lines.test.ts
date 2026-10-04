@@ -33,6 +33,20 @@ describe('the line-level writer', () => {
     expect(text?.match(/cli: claude-code/g)).toHaveLength(3);
   });
 
+  test('a counted seat with no label writes the model title on the later instances', () => {
+    const split = rewriteCount(`format: 1
+seats:
+  - role: implementer
+    name: deepseek
+    model: DeepSeek Flash
+    version: "V4.1"
+    count: 2
+    cli: claude-code
+`, 'deepseek');
+    expect(split).toContain('name: deepseek\n    model:');
+    expect(split).toContain('name: deepseek-2\n    label: deepseek flash v4.1-2\n');
+  });
+
   test('clearing one stopped instance leaves the other stopped', () => {
     const text = clearStopped(counted, 'deepseek-2');
     expect(seatIsStopped(text, 'deepseek')).toBe(true);
@@ -110,6 +124,7 @@ workspace:
 seats:
   - role: coordinator
     name: lead
+    label: lead
     cli: claude-code
     vendor: anthropic
     model: Claude Opus
@@ -117,6 +132,7 @@ seats:
     launch: claude
   - role: implementer
     name: ds
+    label: ds
     cli: claude-code
     vendor: anthropic
     model: Claude Opus

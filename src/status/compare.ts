@@ -60,14 +60,17 @@ export function compare(
       rows.push({ name: seat.name, state: 'stopped', model: seat.display, pane: '-' });
       continue;
     }
-    // An agent sits in the seat's workspace under another name, or under none.
-    const stray = live.agents.find((candidate) => !claimed.has(candidate.pane) && labels.get(candidate.workspace) === seat.label
-      && !team.seats.some((other) => other.name === candidate.name));
+    // An agent sits in the workspace recorded for this name, under another name or under none.
+    // The display label is not a key: two seats may share it.
+    const stray = recorded?.workspace
+      ? live.agents.find((candidate) => !claimed.has(candidate.pane) && candidate.workspace === recorded.workspace
+        && !team.seats.some((other) => other.name === candidate.name))
+      : undefined;
     if (stray) {
       claimed.add(stray.pane);
       rows.push({ name: seat.name, state: 'wrong name', model: seat.display, pane: stray.pane });
       differences.push({
-        what: `${seat.name}: the agent in its workspace "${seat.label}" is ${stray.name ? `named "${stray.name}"` : 'unnamed'}`,
+        what: `${seat.name}: the agent in ${stray.pane} is ${stray.name ? `named "${stray.name}"` : 'unnamed'}`,
         repair: herdrCommand(session, 'agent', 'rename', stray.pane, seat.name),
       });
       continue;
