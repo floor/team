@@ -1,9 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { downPlan, formatPlan, herdr, upPlan, type DownSeat, type UpSeat } from '../../src/launch/plan.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
-import { codex } from '../../src/profiles/codex.ts';
-import { cursor } from '../../src/profiles/cursor.ts';
-import { claudeCode } from '../../src/profiles/claude-code.ts';
 import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, parseVersion, shellQuote, versionVerdict } from '../../src/profiles/profile.ts';
 
@@ -18,11 +15,14 @@ const rulesInput: RulesInput = {
   workspace: { mode: 'worktree', protected: ['.'], branch: '{kind}/{task}' },
 };
 
+const claudeCode = profileFor('claude-code');
+if (!claudeCode) throw new Error('claude-code has no profile');
+
 describe('profiles', () => {
   test('claude-code, codex and cursor have launch profiles', () => {
     expect(profileFor('claude-code')).toBe(claudeCode);
-    expect(profileFor('codex')).toBe(codex);
-    expect(profileFor('cursor')).toBe(cursor);
+    expect(profileFor('codex')?.cli).toBe('codex');
+    expect(profileFor('cursor')?.cli).toBe('cursor');
     expect(profileFor('constructor')).toBeNull();
   });
 
@@ -53,6 +53,7 @@ describe('profiles', () => {
       version: '4.5',
     });
     expect(claudeCode.modelOf('claude --model claude-opus-5')).toEqual({ model: 'Claude Opus', version: '5' });
+    expect(claudeCode.modelOf('claude --model foo --model claude-opus-5-5')).toEqual({ model: 'Claude Opus', version: '5.5' });
   });
 
   test('an unknown model id or a launcher maps to nothing', () => {

@@ -1,53 +1,19 @@
-// Each CLI shows its model in its own words. A normalisation turns a pane's visible text into the
-// file's two fields, `model` and `version`, or null when the text doesn't show them: "unread" is
-// never a mismatch.
-import { codexModel } from '../profiles/codex.ts';
+// Each CLI shows its model in its own words. The profile's status_model rules turn a pane's
+// visible text into the file's two fields, `model` and `version`, or null when the text doesn't
+// show them: "unread" is never a mismatch. The last six lines are the window. A line the rules
+// claim but cannot name clears an earlier match; that is how an unknown Codex footer stays unread.
+import { statusOnLine } from '../profiles/profile.ts';
 
 export type Running = { model: string; version: string };
 
-type Normalise = (screen: string) => Running | null;
-
-const NORMALISERS: Record<string, Normalise> = {
-  antigravity: (screen) => {
-    let found: Running | null = null;
-    for (const line of screen.split('\n').slice(-6)) {
-      const match = /(?:^|[\s·|])Gemini\s+([0-9]+(?:\.[0-9]+)*)\s+(Flash|Pro)\b/i.exec(line);
-      if (match && match[1] && match[2]) {
-        const family = match[2];
-        found = {
-          model: `Gemini ${family[0]?.toUpperCase()}${family.slice(1).toLowerCase()}`,
-          version: match[1],
-        };
-      }
-    }
-    return found;
-  },
-  cursor: (screen) => {
-    let found: Running | null = null;
-    for (const line of screen.split('\n').slice(-6)) {
-      const version = /(?:^|\s)Grok\s+(\d+(?:\.\d+)*)\b/.exec(line)?.[1];
-      if (version) found = { model: 'Grok', version };
-    }
-    return found;
-  },
-  codex: (screen) => {
-    const footer = screen.split('\n').slice(-6).findLast((line) => /^\s+GPT-\d[\w.-]*\s+[^·]*·/.test(line));
-    const id = footer?.trim().split(/\s/)[0];
-    return id ? codexModel(id) : null;
-  },
-  // Claude Code's status line names the family and the version: "… · Opus 5.5 · …".
-  'claude-code': (screen) => {
-    let found: Running | null = null;
-    for (const line of screen.split('\n').slice(-6)) {
-      const match = /(?:^|[\s·|])(Opus|Sonnet|Haiku|Fable)\s+([0-9]+(?:\.[0-9]+)*)(?=$|[\s·|])/.exec(line);
-      if (match) found = { model: `Claude ${match[1]}`, version: match[2] as string };
-    }
-    return found;
-  },
-};
-
 export function runningModel(cli: string, screen: string): Running | null {
-  return NORMALISERS[cli]?.(screen) ?? null;
+  let found: Running | null = null;
+  for (const line of screen.split('\n').slice(-6)) {
+    const hit = statusOnLine(cli, line);
+    if (hit === 'unreadable') found = null;
+    else if (hit) found = hit;
+  }
+  return found;
 }
 
 // The model a seat runs, as far as its screen can say. Claude Code names Claude's families only:
