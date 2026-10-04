@@ -19,6 +19,7 @@ import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock } from '../state.ts';
 import { paneStillRunning, realSources as downSources, stateOf, type DownSources } from './down.ts';
+import { boxHoldsText } from '../launch/deliver.ts';
 
 export type RemoveSources = DownSources & {
   /** Foreground process names in the pane, or null when the pane can't be read. */
@@ -233,8 +234,8 @@ export async function stopRunning(input: {
       if (!resting() || look() !== 'idle') return false;
       if (!launch.typeText(sessionName, pane, text)) return false;
       if (!live()) return 'no-agent';
-      const after = look();
-      if (!resting() || (after !== 'idle' && after !== 'unsent')) return false;
+      // As in `down`: only a box that reads back as exactly the typed text gets the Enter.
+      if (!resting() || !boxHoldsText(seat.cli, text, sources.screenText(sessionName, pane, seat.cli))) return false;
       return launch.pressEnter(sessionName, pane);
     },
     renameAgent: () => false,

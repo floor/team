@@ -4,8 +4,9 @@ import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
 import { classify, classifyComposer, readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
-import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
+import { boxHoldsText, deliverRules, type Delivery } from '../../src/launch/deliver.ts';
 import { upPlan } from '../../src/launch/plan.ts';
+import { wordWrap } from '../helpers.ts';
 
 const fixture = (name: string) => readFileSync(new URL(`../fixtures/codex/0.157.0/${name}.txt`, import.meta.url), 'utf8');
 
@@ -84,19 +85,38 @@ describe('Codex launch and captured screens', () => {
   });
 });
 
+/** The captured idle frame once `text` sits in the box: the placeholder row replaced, the text's
+ *  first line after the prompt, every later line at the column the captures draw continuation
+ *  rows in — two columns, the prompt's own width (see the fixtures README). */
+function boxed(text: string): string {
+  const [first = '', ...rest] = text.split('\n');
+  const body = [`› ${first}`, ...rest.map((line) => `  ${line}`)].join('\n');
+  return fixture('idle').replace('› Ask Codex to do anything', body);
+}
+
+// The rules message the real capture holds, as team composed it: its lines sat at column zero,
+// and Codex drew each later line through its own prompt column (see the fixtures README).
+const CAPTURED_MESSAGE = [
+  'Rules for this session, from the team file:',
+  '- Do not use tools or edit files.',
+  '- Do not change trust or configuration.',
+  '- Reply only RULES_RECEIVED, then wait.',
+].join('\n');
+
 function delivery(initial = 'idle') {
-  let shown = initial;
+  let raw = fixture(initial);
   let status = initial === 'working' ? 'working' : 'idle';
   let clock = 0;
   const calls: string[] = [];
   const io: Delivery = {
-    screen: () => fixture(shown), status: () => status,
-    type(text) { calls.push(text); shown = 'unsent'; return true; },
-    enter() { calls.push('Enter'); shown = 'working'; status = 'working'; return true; },
+    screen: () => raw, status: () => status,
+    // The paste renders as the box the CLI draws for its text.
+    type(text) { calls.push(text); raw = boxed(text); return true; },
+    enter() { calls.push('Enter'); raw = fixture('working'); status = 'working'; return true; },
     foreground: () => ['codex'],
     now: () => clock, sleep: async (ms) => { clock += ms; },
   };
-  return { io, calls, show: (name: string) => { shown = name; }, status: (value: string) => { status = value; } };
+  return { io, calls, show: (name: string) => { raw = fixture(name); }, showText: (screen: string) => { raw = screen; }, status: (value: string) => { status = value; } };
 }
 
 describe('Codex rules delivery', () => {
@@ -104,6 +124,91 @@ describe('Codex rules delivery', () => {
     const d = delivery();
     expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(true);
     expect(d.calls).toEqual(['Rules.', 'Enter']);
+  });
+  test('the captured box reads back as the typed message and is entered', async () => {
+    // The real capture, with the message as team composed it: the box's own rows are the typed
+    // lines, so the Enter is the delivery's to send.
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.show('unsent'); return true; };
+    expect(await deliverRules('codex', CAPTURED_MESSAGE, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([CAPTURED_MESSAGE, 'Enter']);
+  });
+  test('a box holding a person\'s own text gets no Enter', async () => {
+    // The captured rules box against a different first message: the box is not the typed text.
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.show('unsent'); return true; };
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
+  });
+  test('the typed text with one character changed gets no Enter', async () => {
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed('Rules!')); return true; };
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
+  });
+  test('the typed text with more below it gets no Enter', async () => {
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed('Rules.\nand a line of their own')); return true; };
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
+  });
+  test('a box whose rows are the typed line word-wrapped on the pane is entered', async () => {
+    // No Codex capture shows its composer wrapping a line, so no wrap is modelled for it: the
+    // box rows must read back as the typed line laid out in order — the words that fit, the rest
+    // continued at the prompt row's two columns — and then the Enter is the paste's.
+    const line = 'End every commit message and every pull request body with your signature, given below.';
+    const rows = wordWrap(line, 53 - 2);
+    expect(rows.length).toBeGreaterThan(1);
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed(rows.join('\n'))); return true; };
+    expect(await deliverRules('codex', line, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([line, 'Enter']);
+  });
+  test('a word-wrapped box with one character changed gets no Enter', async () => {
+    const line = 'End every commit message and every pull request body with your signature, given below.';
+    const changed = line.replace('signature', 'signatvre');
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed(wordWrap(changed, 53 - 2).join('\n'))); return true; };
+    expect(await deliverRules('codex', line, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([line]);
+  });
+  test('a word-wrapped box with a blank row between its rows gets no Enter', async () => {
+    // An empty continuation row is not part of the wrapped line: the pane draws one only where
+    // the text itself has a blank line, and this line has none.
+    const line = 'End every commit message and every pull request body with your signature, given below.';
+    const rows = wordWrap(line, 53 - 2);
+    const [firstRow = '', ...rest] = rows;
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed([firstRow, '', ...rest].join('\n'))); return true; };
+    expect(await deliverRules('codex', line, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([line]);
+  });
+  test('a blank line the typed text itself has is entered', async () => {
+    const typed = 'Rules.\n\nMore rules.';
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed(typed)); return true; };
+    expect(await deliverRules('codex', typed, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([typed, 'Enter']);
+  });
+  test('a trailing blank row after the word-wrapped line gets no Enter', async () => {
+    // One empty row of the pane's own sits under the text — idle.txt and unsent.txt show it
+    // between the text and the status line, and it is the box's frame, not content. A second
+    // empty row is a row the text does not have: someone pressed a newline after it.
+    const line = 'End every commit message and every pull request body with your signature, given below.';
+    const rows = wordWrap(line, 53 - 2);
+    const [firstRow = '', ...rest] = rows;
+    const body = [`› ${firstRow}`, ...rest.map((row) => `  ${row}`), ''].join('\n');
+    const screen = fixture('idle').replace('› Ask Codex to do anything', body);
+    expect(boxHoldsText('codex', line, screen)).toBe(false);
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(screen); return true; };
+    expect(await deliverRules('codex', line, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([line]);
+  });
+  test('two spaces typed, one shown, gets no Enter', async () => {
+    // The shared read refuses a box that shows a single space where the typed text has two: the
+    // wrap did not add or drop it. Every profile without a captured wrap reads the same way.
+    expect(boxHoldsText('codex', 'alpha  beta', boxed('alpha beta'))).toBe(false);
   });
   test.each(['permission', 'trust', 'startup', 'unsent', 'exit', 'working'])('types nothing at %s', async (screen) => {
     const d = delivery(screen);
@@ -152,7 +257,7 @@ describe('Codex rules delivery', () => {
     const d = delivery(); let clock = 0;
     d.io.type = () => true;
     d.io.now = () => clock;
-    d.io.sleep = async (ms) => { clock += ms; d.show('unsent'); };
+    d.io.sleep = async (ms) => { clock += ms; d.showText(boxed('Rules.')); };
     expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(true);
   });
 });
