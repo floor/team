@@ -12,6 +12,7 @@ import { profileFor, quotaFor, quotaList } from './profile.ts';
 import { readApproval, storePath } from '../store/store.ts';
 import { addedRules } from '../watch/screen-file.ts';
 import type { ScreenData, Stage } from '../watch/screen-data.ts';
+import { classifyData, screenData, type Screen } from '../watch/screen.ts';
 import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts';
 
 export const DIALOG_STAGES = ['unknown', 'trust', 'permission', 'question'] as const;
@@ -58,6 +59,33 @@ export function mergeScreen(base: ScreenData, added: ProfileOverride): ScreenDat
     next[name] = { rules: [...(existing?.rules ?? []), ...extra.rules] };
   }
   return next;
+}
+
+const KEPT = new Set<Screen['kind']>(['permission', 'trust', 'question']);
+const DIALOG = new Set<Screen['kind']>(['unknown', 'trust', 'permission', 'question']);
+
+/**
+ * An added pattern may move a reading toward a dialog. It may not make a screen
+ * idle or unsent when the shipped profile does not, and it may not stop a
+ * shipped permission, trust or question pattern from matching.
+ */
+export function guardReading(shipped: Screen, merged: Screen): Screen {
+  if (KEPT.has(shipped.kind)) return shipped;
+  if ((merged.kind === 'idle' || merged.kind === 'unsent') && merged.kind !== shipped.kind) return shipped;
+  if (!DIALOG.has(merged.kind)) return shipped;
+  return merged;
+}
+
+/** The shipped reading, then the same window with this profile's added patterns, guarded. */
+export function classifyWith(cli: string, screen: string | undefined, profiles: readonly ProfileOverride[]): Screen {
+  if (screen === undefined) return { kind: 'unknown' };
+  const base = screenData(cli);
+  if (!base) return { kind: 'unknown' };
+  const lines = screen.split('\n');
+  const shipped = classifyData(base, lines);
+  const added = profiles.find((profile) => profile.cli === cli);
+  if (!added || DIALOG_STAGES.every((stage) => added.screen[stage] === undefined)) return shipped;
+  return guardReading(shipped, classifyData(mergeScreen(base, added), lines));
 }
 
 /** Shipped quota patterns, then the override's. The shipped ones are never dropped. */

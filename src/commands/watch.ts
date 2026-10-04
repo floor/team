@@ -24,7 +24,7 @@ import { stopRunning, realSources as removeSources } from './remove.ts';
 import { removeWorktree } from './worktree.ts';
 import { stateOf } from './down.ts';
 import { profileFor } from '../profiles/index.ts';
-import { overridesInForce, quotaWith, type OverrideForce } from '../profiles/overrides.ts';
+import { classifyWith, overridesInForce, quotaWith, type OverrideForce } from '../profiles/overrides.ts';
 import { realSources } from './status.ts';
 
 // What the watch reads and does outside its own process, so tests can stand in for it.
@@ -243,6 +243,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
           team, state, live, machine: sources.machine(root), now, memory,
           approval: sources.approval(team, root), watch: inForce, outcomes, budgets: budget,
           quotaFor: (cli) => quotaWith(cli, overrides.profiles),
+          readScreen: (cli, pane) => classifyWith(cli, pane, overrides.profiles),
           readings: stored, foreground,
         });
         // The pass folds its figures where the state is held: two watches of the project fold one

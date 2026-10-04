@@ -42,6 +42,11 @@ function windowOf(lines: string[]): string[] {
   return lines.map((line) => line.trimEnd()).slice(-20);
 }
 
+/** The same classification `classify` runs, against a screen that may carry added patterns. */
+export function classifyData(data: ScreenData, lines: string[]): Screen {
+  return classifyLines(data, windowOf(lines));
+}
+
 /** Every stage, in the core's order. The first one that matches wins. */
 export function classify(cli: string, lines: string[]): Screen {
   const data = DATA[cli];
