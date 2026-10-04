@@ -96,4 +96,5 @@ it, and the same tests paste into the captured `unsent.txt`, whose four rows rea
 the message the capture submitted. No captured box shows a wrapped line, so no wrap is
 modelled for Codex: a box whose rows read back as runs of the typed text laid out in
 order is the text and is entered, and a box whose rows show anything else — another
-text, an extra row, one character changed — is never entered.
+text, an extra row, one character changed, a collapsed space, a blank row the text does
+not have at that place — is never entered.

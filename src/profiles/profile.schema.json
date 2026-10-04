@@ -209,7 +209,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["continuation", "kind"],
-          "description": "How the composer continues a line onto its next row, declared only where a capture showed the wrap. The box's rows are joined back by this rule before it is compared with the typed text.",
+          "description": "How the composer continues a line onto its next row, declared only where a capture showed the wrap. The box is compared with the typed text under this rule: only the whitespace the row break itself stands for is normalised, the rest of every row must match character for character.",
           "properties": {
             "continuation": { "const": "text-column" },
             "kind": { "enum": ["word", "hard"] }

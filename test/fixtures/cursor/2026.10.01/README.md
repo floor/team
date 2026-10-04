@@ -49,7 +49,11 @@ the placeholder row is replaced by `  → ` and the first line of the typed text
 later line is drawn at four columns, the continuation indent `unsent.txt` shows (the
 prompt row's own width). The captured `unsent.txt` is used as it is: Cursor wrapped its
 sentence at that pane's 51 columns, and the composer's `wrap` rule — continuation at
-the text column, broken at a space — joins the two rows back into the sentence, so the
-capture's test asserts the same Enter as an unwrapped box. The tests also wrap the
-sentence themselves at 40- and 80-column panes, and refuse a wrapped box that holds
-another text, an extra row, or one character changed.
+the text column, broken at a space — reads the two rows as that sentence, so the
+capture's test asserts the same Enter as an unwrapped box. Only the whitespace a row
+break itself stands for is normalised: the run the break was made at, or a blank line
+the typed text itself has. Inside a row every character must match, runs of spaces
+included, and a blank row the text does not have at that place is never part of it. The
+tests wrap the sentence themselves at 40- and 80-column panes, and refuse a wrapped box
+that holds another text, an extra row, one character changed, a collapsed space, or a
+blank row the text does not have.

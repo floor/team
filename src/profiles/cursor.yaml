@@ -87,7 +87,10 @@ screen:
       - equals: Add a follow-up
     # A line wider than the pane's content column continues on the next row at the text
     # column, broken at a space: unsent.txt is its sentence word-wrapped this way on a
-    # 51-column pane, and the box is joined back by this rule before any Enter.
+    # 51-column pane, and the box is compared with the typed text before any Enter. Only
+    # the whitespace the row break itself stands for is normalised — the run the break was
+    # made at, or a blank line the text itself has; inside a row, every character must
+    # match, runs of spaces included.
     wrap:
       continuation: text-column
       kind: word

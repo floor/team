@@ -37,37 +37,41 @@ function holdsText(text: string, fold: Fold): boolean {
   return fold.rows.every((row, i) => row.trimEnd() === (tail[i] ?? '').trimEnd());
 }
 
-/** Whitespace-normalised: every run of whitespace to one space, ends trimmed. A wrap adds or
- *  drops a space at a row's end, and the typed text's own newlines stand for its rows: joined
- *  back by the profile's rule, the two read the same only where the wrap is the whole difference. */
-function flatten(text: string): string {
-  return text.replace(/\s+/g, ' ').trim();
+/** The whitespace a row break may stand for: the pane replaces it by the break, or adds the
+ *  continuation row's indentation where the text has none. */
+const BREAK = /[ \t\n\r]/;
+
+/** Where the text's next row starts after `pos`, or null when `row` is not the text's row there.
+ *  A row that is the text's at that very position is always read as such — that normalises
+ *  nothing. A `word` boundary additionally skips the whitespace run the pane broke at before the
+ *  row; a `hard` one reads the text's next characters as the row carries them; a composer with no
+ *  rule (`null`) reads either way, since no capture showed how that one wraps. Every character
+ *  inside a row must match the text as it is: only the row break may stand for whitespace. */
+function continues(text: string, pos: number, row: string, kind: 'word' | 'hard' | null): number | null {
+  if (text.startsWith(row, pos)) return pos + row.length;
+  if (kind === 'hard') return null;
+  let at = pos;
+  while (at < text.length && BREAK.test(text[at] ?? '')) at++;
+  return at > pos && text.startsWith(row, at) ? at + row.length : null;
 }
 
-/** Whether the box's rows tile `text` in order: the first row opens it, each later row follows
- *  where the one before ended, and only the whitespace a wrap drops sits between them. The read
- *  for a profile whose captures show no composer wrap: its rows must be runs of the typed text
- *  laid out one after another. Anything else — another text, an extra row, one character
- *  changed — has a row that is not the text's and gets no Enter. */
-function tiles(text: string, first: string, rows: string[]): boolean {
-  if (!text.startsWith(first)) return false;
-  let at = first.length;
-  for (const row of rows) {
-    if (row === '') continue;
-    const found = text.indexOf(row, at);
-    if (found < 0 || text.slice(at, found).trim() !== '') return false;
-    at = found + row.length;
-  }
-  return text.slice(at).trim() === '';
+/** Where a blank row sits in the typed text: the pane draws an empty row only for a blank line
+ *  the text itself has, so the row stands for `\n`, nothing but spaces and tabs, and `\n` again.
+ *  A blank row anywhere else is not the text's own and is refused. */
+function blankLine(text: string, pos: number): number | null {
+  if (text[pos] !== '\n') return null;
+  let at = pos + 1;
+  while (at < text.length && (text[at] === ' ' || text[at] === '\t')) at++;
+  return text[at] === '\n' ? at + 1 : null;
 }
 
 /** Whether the box shows exactly `text`: the first line after the prompt and every continuation
  *  row at the box's own column — no more rows, no fewer, none changed. A continuation row that
- *  does not start at that column is not the text's own row and the box is not trusted. A box
- *  whose profile declares a wrap rule is joined by it — the rows continue each line, a space
- *  folded at a word boundary or nothing at a hard break — and then compared whitespace-normalised;
- *  a box whose profile declares none must tile the typed text with its own runs. Either way a box
- *  that is not the text waits and is refused at the deadline, never entered on trust. */
+ *  does not start at that column is not the text's own row and the box is not trusted. Only the
+ *  whitespace a row break itself may stand for is normalised — the run a word break was made at,
+ *  or a blank line the text itself has — and inside a row every character must match, runs of
+ *  spaces included. A box that is not the text waits and is refused at the deadline, never
+ *  entered on trust. */
 function holdsBox(text: string, box: Box): boolean {
   const pad = ' '.repeat(box.indent);
   const rows: string[] = [];
@@ -76,11 +80,27 @@ function holdsBox(text: string, box: Box): boolean {
     if (!row.startsWith(pad)) return false;
     rows.push(row.slice(pad.length));
   }
-  if (box.wrap) {
-    const joined = [box.first, ...rows].join(box.wrap.kind === 'hard' ? '' : ' ');
-    return flatten(joined) === flatten(text);
+  const kind = box.wrap?.kind ?? null;
+  const visual = [box.first, ...rows];
+  let at = 0;
+  for (let i = 0; i < visual.length; i++) {
+    const row = visual[i] ?? '';
+    if (i === 0) {
+      if (!text.startsWith(row)) return false;
+      at = row.length;
+      continue;
+    }
+    if (row === '') {
+      const next = blankLine(text, at);
+      if (next === null) return false;
+      at = next;
+      continue;
+    }
+    const next = continues(text, at, row, kind);
+    if (next === null) return false;
+    at = next;
   }
-  return tiles(text, box.first, rows);
+  return text.slice(at).trim() === '';
 }
 
 /** What the box holds right now: `ready` to submit, still rendering (`wait`), or a state that is

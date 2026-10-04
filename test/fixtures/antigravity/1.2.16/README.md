@@ -42,4 +42,5 @@ counts of 0 and 99 against the same 24-row text. Those screens are constructed t
 each test names what it changes; a fold marker is never submitted unverified. No capture
 shows Antigravity wrapping an ordinary composer line, so no wrap is modelled for it: a
 box whose rows read back as runs of the typed text laid out in order is entered, and one
-whose rows show anything else is never.
+whose rows show anything else — another text, an extra row, one character changed, a
+collapsed space, a blank row the text does not have at that place — is never.
