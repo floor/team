@@ -135,6 +135,11 @@ describe('claude-code through the screen core', () => {
     expect(classify('claude-code', busy.split('\n')).kind).toBe('working');
     expect(classifyComposer('claude-code', busy.split('\n')).kind).toBe('idle');
   });
+
+  test('an unnumbered trust dialog reads trust', () => {
+    const text = readFileSync(new URL('./fixtures/claude-code/trust-unnumbered.txt', import.meta.url), 'utf8');
+    expect(readScreen('claude-code', text).kind).toBe('trust');
+  });
 });
 
 // Claude Code's screens as herdr reads them styled (`--format ansi`): a greyed suggestion is
