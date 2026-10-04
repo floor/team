@@ -1,0 +1,13 @@
+format: 1
+coordinator: keeper
+operator: keeper
+workspace:
+  mode: shared
+seats:
+  - role: coordinator
+    name: keeper
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude
