@@ -13,7 +13,8 @@ const CHOICE_SAMPLES = ['❯ 1. Yes', '› 1. Yes', '> 1. Yes', '❯ 1.', '› 1
 export function loadScreen(text: string): ScreenData {
   const root = parseYaml(text);
   const entries = mapping(root, 'a profile');
-  only(entries, ['format', 'cli', 'screen']);
+  // Launch keys are read by profile.ts. A screen-only snippet, as in the tests, omits them.
+  only(entries, ['format', 'cli', 'screen', 'quota', 'binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'timeouts', 'models', 'status_model']);
   const format = required(entries, 'format', root.line);
   if (format.value.kind !== 'scalar' || format.value.value !== 1) fail(format.line, '"format" must be 1');
   const cli = required(entries, 'cli', root.line);

@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Codex's profile reads a weekly quota from its status line: `weekly N% left`, for the OpenAI account.
+  A line cut short of the number is not a figure.
+- `budgets` is an owner section: marks, freshness, and each account's reserve or floor. A `check`
+  command is resolved and hashed at `team approve`. `watch.quota_marks` is still read, with a warning.
+  After upgrading, the owner runs `team approve` once. A changed check file leaves that account
+  unknown; it does not refuse the rest of the file.
+
+### Fixed
+
+- Claude Code's permission stage is the dialog itself: the question with its "Esc to cancel · Tab to amend"
+  footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
+  stays idle.
+
 ## [0.1.0] - 2026-10-04
 
 The first release: set up, change and watch a project's team of AI agents from one file,

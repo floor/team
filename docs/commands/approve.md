@@ -50,7 +50,7 @@ seat names, and then the question. The seat ceiling defaults to the seats the fi
 temporary ones, so adding a seat widens it, and that shows up as `limits` changed too. What needs a
 new approval is a change to an owner section
 (`trust`, `limits`, `machine`, `rules`, `identity`, `workspace`, `coordinator`, `operator`,
-`session`, `visibility`, `tools`) or to a seat's own fields; a seat taken out, parked or stopped
+`session`, `visibility`, `tools`, `budgets`) or to a seat's own fields; a seat taken out, parked or stopped
 does not, so `remove --keep` and `add` never send the owner back to `approve`.
 
 ## Refusals

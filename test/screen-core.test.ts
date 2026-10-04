@@ -43,6 +43,7 @@ const fixtures: [string, string][] = [
   ['trust', `Do you trust this folder?\n❯ 1. Yes, proceed\n  2. No, exit\n\nEnter to confirm · Esc to cancel`],
   ['live trust', ['Accessing workspace:', 'Quick safety check: Is this a project you created or one you trust?', 'Claude Code will be able to read, edit, and execute files here.', '❯ 1. Yes, I trust this folder', '  2. No, exit'].join('\n')],
   ['quoted trust', `The note says to trust this folder before you start.\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`],
+  ['quoted permission', `The last answer asks: Do you want to proceed?\n1. Yes, if the tests pass\n2. No\n\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`],
   ['question', `Which branch should this start from?\n\n❯ 1. main\n  2. next\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n`],
   ['second line', `${RULE}\n❯ \n  and a second line\n${RULE}\n${STATUS}\n`],
   ['empty box', `${RULE}\n❯ \n\n${RULE}\n${STATUS}\n`],
@@ -58,11 +59,19 @@ const fixtures: [string, string][] = [
 describe('claude-code through the screen core', () => {
   test('every fixture matches the classifier main had', () => {
     for (const [name, text] of fixtures) {
+      if (name === 'quoted permission') continue;
       const lines = text.split('\n').map((line) => line.trimEnd()).slice(-20);
       const before = mainClaude(lines);
       const after = readScreen('claude-code', text).kind;
       expect(`${name}: ${after}`).toBe(`${name}: ${before}`);
     }
+  });
+
+  test('a quoted permission question above an empty box is the one difference', () => {
+    const text = fixtures.find(([name]) => name === 'quoted permission')?.[1] ?? '';
+    const lines = text.split('\n').map((line) => line.trimEnd()).slice(-20);
+    expect(mainClaude(lines)).toBe('permission');
+    expect(readScreen('claude-code', text).kind).toBe('idle');
   });
 
   test('an empty box stays idle for the composer while a turn is still on screen', () => {

@@ -112,7 +112,9 @@ seats:
   `trust` and outside every protected checkout — never in the project root; `up` and `add` refuse a
   seat whose folder, lobby included, would be protected or untrusted.
 
-The Codex profile is tested with CLI 0.157.0. It adds `-a never -s danger-full-access`
+The Codex profile is tested with CLI 0.157.0. Its status line is read for a weekly figure
+(`weekly N% left`) when the pane is wide enough to show the number; a cut line is not a figure.
+It adds `-a never -s danger-full-access`
 for unattended execution, plus `--no-daemon --no-alt-screen` for the captured pane mode,
 and checks login with `codex login status`. Rules go as a first message
 only at an empty idle prompt; delivery is recorded after Codex starts working with the input
@@ -130,6 +132,13 @@ before relaunching. Other unrecognised layouts stay unknown.
 Launching a Cursor seat, like launching cursor-agent by hand, creates Cursor's own project record
 under ~/.cursor/projects for that folder; team writes no trust (.workspace-trusted) and no Cursor
 config.
+
+`budgets` is the owner's: marks (percent used), how long a figure stays fresh, and each
+account's reserve or floor. A `check` command is resolved to a file and hashed when the
+owner approves. A change to that file leaves that account's check unapproved: it is
+not run, and the account reads unknown, until the owner approves again. The rest of
+the file still runs. `watch.quota_marks` is still read, with a warning, until you move it to
+`budgets.marks`.
 
 More fields exist — `tools`, `trust`, `machine`, `limits`, `watch`, `visibility` — and the comments
 `team init` writes name them; validation refuses what it cannot check, and this build acts on what

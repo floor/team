@@ -51,7 +51,9 @@ watch:
   team_idle: 10m               # a fully idle team, before the nudge
   nudge_wait: 10m              # a nudge that can't be delivered becomes a notification
   unsent_after: 1m             # text left in an input box before it is reported
-  quota_marks: [50, 75, 90]    # percent of a weekly quota read from a status line
+
+budgets:                       # owner-only; a change needs a new approval
+  marks: [50, 75, 90]          # percent used, per account and window
 
 machine:                       # checked before each seat is launched, and by the watch
   load_start: 3.0              # 1-minute load per core above which `up` and `add` refuse

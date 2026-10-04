@@ -2,6 +2,51 @@
 # grey suggestion is the other placeholder.
 format: 1
 cli: codex
+binary: codex
+process_names:
+  - codex
+tested:
+  from: '0.157.0'
+  to: '0.157.0'
+unattended:
+  - -a
+  - never
+  - -s
+  - danger-full-access
+  - --no-daemon
+  - --no-alt-screen
+rules: first-message
+login:
+  check:
+    - login
+    - status
+  hint: codex login
+exit: /exit
+timeouts:
+  idle: 90s
+  exit: 30s
+models:
+  option:
+    - -m
+    - --model
+  ids:
+    - match: '^gpt-([0-9]+(?:\.[0-9]+)?)-(astra|sol|luna|terra)$'
+      ignore_case: true
+      model: 'GPT {2:title}'
+      version: '{1}'
+quota:
+  - account: openai
+    match: '\bweekly ([0-9]+)% left\b'
+    left: '{1}%'
+    window: weekly
+status_model:
+  - match: '^\s+GPT-([0-9]+(?:\.[0-9]+)?)-([Aa][Ss][Tt][Rr][Aa]|[Ss][Oo][Ll]|[Ll][Uu][Nn][Aa]|[Tt][Ee][Rr][Rr][Aa])\s[^·]*·'
+    model: 'GPT {2:title}'
+    version: '{1}'
+  # A later footer that is not one of those four names is unread, as the old id map was.
+  - match: '^\s+GPT-[0-9][\w.-]*\s[^·]*·'
+    model: '{1}'
+    version: '{1}'
 screen:
   unknown:
     - any: ['\bmodel:\s+loading\b']
