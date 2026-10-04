@@ -74,9 +74,11 @@ ran in two throwaway directories under /private/tmp (`git init` and one file eac
 launched through a symlink to the seat's launcher script so the pane's own command
 line stays neutral. This machine's user settings open sessions in bypass-permissions
 mode, so each scratch launch passed `--permission-mode manual` (or `plan`) to make the
-prompts appear at all. No answer that grants anything was ever picked: every dialog
-below was dismissed with Escape. The first throwaway directory's workspace-trust
-dialog was answered once before these captures, so the narrow permission and question
+prompts appear at all. Every dialog below was dismissed with Escape, with one
+exception: the first throwaway directory's workspace-trust dialog was answered once,
+early on, before the no-grant rule reached this work. That answer trusted only a
+throwaway directory under /private/tmp — no command or other permission was granted —
+and the directory was removed afterwards. So the narrow permission and question
 captures sit in an already-trusted scratch directory; the second directory's trust
 dialog was never answered and its captures are of the dialog itself. Everything was
 closed afterwards: each claude exited, the helper client was killed, the session was
