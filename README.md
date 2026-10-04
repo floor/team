@@ -235,6 +235,21 @@ Every check prints a line; the run ends with `all N checks passed` or `M of N ch
 exits 2 when it refused to start, 1 when a check failed. A failed step skips the steps after it,
 and the session is stopped and deleted on every path.
 
+## Releasing
+
+The owner cuts a release by pushing a version tag: `git tag v0.2.0 && git push origin v0.2.0`. The
+Release workflow (`.github/workflows/release.yml`) refuses a tag that isn't `package.json`'s
+version, runs `bun run ci`, then publishes with npm trusted publishing — the workflow's own
+identity, no token stored — and provenance. A version with a hyphen (`0.2.0-next.1`) goes under the
+`next` dist-tag, any other under `latest`. Once npm has the version, the same run creates the
+GitHub release from the `CHANGELOG.md` section for it, marked a pre-release when the version is
+one.
+
+Trusted publishing must be bound once, by the package owner, on npmjs.com: the package `team` →
+Publishing → trusted publishers → GitHub Actions, naming `floor/team` and the workflow file
+`release.yml`; until then the workflow cannot publish. The 0.1.0 release itself is a manual
+`npm publish` from a clean `main`; the workflow covers the releases after it.
+
 ## License
 
 MIT
