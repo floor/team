@@ -10,6 +10,7 @@ import { paneStillRunning, runDown, type DownSources } from '../../src/commands/
 import { runUp, type UpSources } from '../../src/commands/up.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { readApproval, readLedger, storePath } from '../../src/store/store.ts';
+import { readScreen } from '../../src/watch/screen.ts';
 import { testIo } from '../helpers.ts';
 
 const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8');
@@ -535,6 +536,20 @@ describe('team down', () => {
     });
     expect(unsent.out).toContain('deepseek-acme: holds unsent text in its input box; left running');
     expect(unsent.out).not.toContain('pane run deepseek-acme');
+  });
+
+  test('a Cursor queue screen is working: its pane is not typed into', async () => {
+    const queued = readScreen(
+      'cursor',
+      readFileSync(new URL('../fixtures/cursor/2026.10.01/follow-up-queue-two.txt', import.meta.url), 'utf8'),
+    );
+    expect(queued.kind).toBe('working');
+    const run = await down(['--dry-run'], OWNER, {
+      agents: () => [agent('deepseek-acme', 'idle')],
+      screen: () => queued,
+    });
+    expect(run.out).toContain('deepseek-acme: is working (`--wait` waits for it); left running');
+    expect(run.out).not.toContain('pane run deepseek-acme');
   });
 
   test('--dry-run on a session that is not running, or a silent herdr', async () => {

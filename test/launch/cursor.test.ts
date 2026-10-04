@@ -132,6 +132,21 @@ describe('Cursor launch and captured screens', () => {
     expect(classifyComposer('cursor', quiet.split('\n')).kind).toBe('idle');
   });
 
+  test('a typed row below a queue box is unsent, not a running turn', () => {
+    // No spinner and no `ctrl+c to stop`, an empty composer row and the
+    // placeholder row, then a typed row below both: only the box's row above the
+    // composer is what says a queue frame, so a typed row under the box must
+    // defeat the rule. The earlier rule took the rows in either order and
+    // dropped every `→` row from the after-check, so this read working.
+    const frame = fixture('follow-up-queue-one')
+      .split('\n')
+      .filter((line) => !/^\s*[⠀-⣿]/.test(line))
+      .map((line) => line.replace(/^(\s*)→\s*Add a follow-up\s*$/, '$1→\n$1→ Add a follow-up\n$1→ Reply with exactly RULES_RECEIVED. Do not use'))
+      .join('\n');
+    expect(readScreen('cursor', frame).kind).toBe('unsent');
+    expect(classifyComposer('cursor', frame.split('\n')).kind).toBe('unsent');
+  });
+
   test('prose that looks like the queue box leaves an idle prompt idle', () => {
     const idleLines = fixture('idle').split('\n');
     const at = idleLines.findIndex((line) => /^\s*→/.test(line));
