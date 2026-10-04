@@ -41,6 +41,9 @@ screen:
     - all:
         - '(?:[Dd][Oo] [Yy][Oo][Uu] [Tt][Rr][Uu][Ss][Tt] (?:[Tt][Hh][Ii][Ss]|[Tt][Hh][Ee]) [Ff][Oo][Ll][Dd][Ee][Rr]\?|[Oo][Nn][Ee] [Yy][Oo][Uu] [Tt][Rr][Uu][Ss][Tt]\?)'
         - '^\s*[❯›>]?\s*1\.\s+Yes\b'
+    - all:
+        - '^\s*[❯›>]?\s*Yes, I trust this folder\b'
+      footer: 'Enter to confirm · Esc to cancel'
   # A quoted question above the composer's rule is not a dialog. The footer is the
   # captured last line and needs the question. A Yes/No choice below the last rule
   # is the other shape; the mark is optional, as on an unmarked "2. No".
@@ -90,6 +93,9 @@ screen:
     mode: box-to-rule
     prompt: '^\s*[❯›>]'
     rule: '^\s*[─━]{8,}'
+    footers:
+      - '^\s{2,}.*·.*(?:Opus|Sonnet|Haiku|Fable)\s+[0-9]+.*$'
+      - '^\s{2,}(?:⏵⏵\s+)?bypass permissions\b.*$'
     # Claude Code greys every suggestion it shows — "Try …", "Resume briefly.", any other —
     # with faint styling, while typed text carries none. The list below stays the fallback
     # for a source without styling.
