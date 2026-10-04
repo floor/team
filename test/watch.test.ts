@@ -881,6 +881,16 @@ describe('team watch', () => {
     expect(loadReadings(join(dir, '.agents'))).toEqual([]);
   });
 
+  test('a reading is not saved from a pane herdr could not read', async () => {
+    writeFileSync(file, withAccounts('  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [status_line] }\n'));
+    // The same status-line figure, and a pane whose process list herdr could not read: a null is
+    // not a CLI, and the reading is not invented to fill it.
+    scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n` } });
+    const code = await runWatch(['--file', file], testIo(dir), sources(1, { foreground: () => null }));
+    expect(code).toBe(0);
+    expect(loadReadings(join(dir, '.agents'))).toEqual([]);
+  });
+
   test('a spend check reading is kept, so `up` and `add` count the floor against it', async () => {
     writeFileSync(file, withAccounts('  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n'));
     const code = await runWatch(['--file', file], testIo(dir), sources(1, {

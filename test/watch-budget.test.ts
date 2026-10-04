@@ -102,7 +102,7 @@ describe('the seats\' quota, parsed by the core', () => {
   test('a screen figure becomes a reading for an account whose sources take one', () => {
     const result = pass({
       team: team(SCREEN_READ), watch: team(SCREEN_READ).watch, state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
-      machine: fine, now: NOW, memory: newMemory(), approval: [],
+      machine: fine, now: NOW, memory: newMemory(), approval: [], foreground: { 'w1:p1': ['codex'] },
     });
     expect(result.readings.map(({ account, window, left, used, seat, confirmed }) => ({ account, window, left, used, seat, confirmed })))
       .toEqual([{ account: 'openai', window: 'weekly', left: 39, used: 61, seat: 'codex-acme', confirmed: false }]);
@@ -117,7 +117,7 @@ describe('the seats\' quota, parsed by the core', () => {
     expect(readScreen('codex', spoofed).kind).toBe('unknown');
     const result = pass({
       team: team(SCREEN_READ), watch: team(SCREEN_READ).watch, state: emptySession(), live: live({ 'codex-acme': { screen: spoofed } }),
-      machine: fine, now: NOW, memory: newMemory(), approval: [],
+      machine: fine, now: NOW, memory: newMemory(), approval: [], foreground: { 'w1:p1': ['codex'] },
     });
     expect(result.readings).toEqual([]);
   });
@@ -141,17 +141,19 @@ describe('the seats\' quota, parsed by the core', () => {
     const running = { ...input, memory: newMemory(), foreground: { 'w1:p1': ['codex'] } };
     expect(pass(running).readings.map(({ account, window, left }) => ({ account, window, left })))
       .toEqual([{ account: 'openai', window: 'weekly', left: 90 }]);
-    // A foreground list that could not be read keeps the figure: herdr reporting nothing is not
-    // herdr reporting no CLI, and the departure is never invented.
+    // A figure is read only where herdr reports the seat's CLI: an unreadable list (null) is not
+    // a CLI, and a pane the map doesn't hold was not read either. Both give no figure — a shell's
+    // row is never trusted, and not knowing is not a reading.
     const unread = { ...input, memory: newMemory(), foreground: { 'w1:p1': null } };
-    expect(pass(unread).readings.map(({ account, window, left }) => ({ account, window, left })))
-      .toEqual([{ account: 'openai', window: 'weekly', left: 90 }]);
+    expect(pass(unread).readings).toEqual([]);
+    const unheld = { ...input, memory: newMemory(), foreground: {} };
+    expect(pass(unheld).readings).toEqual([]);
   });
 
   test('an account whose sources name only the check takes no screen reading (floor-86)', () => {
     const result = pass({
       team: team(OPENAI), watch: team(OPENAI).watch, state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
-      machine: fine, now: NOW, memory: newMemory(), approval: [],
+      machine: fine, now: NOW, memory: newMemory(), approval: [], foreground: { 'w1:p1': ['codex'] },
     });
     expect(result.readings).toEqual([]);
     // Nothing counts for it this pass, and a seat spends it: unknown while running.
@@ -268,7 +270,7 @@ describe('an account that reads unknown', () => {
   test('is not what a first sight is called', () => {
     const result = pass({
       team: team(SCREEN_READ), watch: team(SCREEN_READ).watch, state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
-      machine: fine, now: NOW, memory: newMemory(), approval: [], outcomes: [],
+      machine: fine, now: NOW, memory: newMemory(), approval: [], outcomes: [], foreground: { 'w1:p1': ['codex'] },
     });
     expect(budgetReports(result)).toEqual([]);
   });
