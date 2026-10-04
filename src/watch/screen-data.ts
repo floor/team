@@ -20,12 +20,22 @@ export type Stage = { rules: Rule[] };
 
 export type Placeholder = { equals: string } | { prefix: string };
 
+/** How a composer continues a line onto its next row, from a capture that shows it: the
+ *  continuation starts at the text column (the box's own indent), and the break folds the space
+ *  away at a word boundary or falls mid-word (hard). */
+export type Wrap = { continuation: 'text-column'; kind: 'word' | 'hard' };
+
 export type FallbackRule = { all: LinePattern[]; kind: Screen['kind'] };
 
 // The composer's greyed suggestions are told by their styling, when the CLI renders them dim
 // (`placeholder_style: dim` in the profile). A source without styling falls back to the list.
 export type PlaceholderStyle = 'dim';
 
+// Every composer carries `frameRows`: the empty rows a capture shows the pane drawing under
+// the text, inside the box's frame (the drop before the status line or the closing rule). The
+// box read strips up to that many trailing empty rows as the frame; a box with any row beyond
+// them is a box the text does not have, and is refused. Zero where no capture shows the pane
+// drawing such a row: don't guess.
 type Box = {
   mode: 'box-to-rule';
   prompt: RegExp;
@@ -37,8 +47,10 @@ type Box = {
   footers: RegExp[];
   placeholders: Placeholder[];
   placeholderStyle?: PlaceholderStyle;
+  wrap?: Wrap;
+  frameRows: number;
 };
-type StatusLast = { mode: 'status-last'; statusLine: RegExp; prompt: RegExp; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle };
+type StatusLast = { mode: 'status-last'; statusLine: RegExp; prompt: RegExp; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle; wrap?: Wrap; frameRows: number };
 type StatusThenOne = {
   mode: 'status-then-one';
   statusLine: RegExp;
@@ -47,6 +59,8 @@ type StatusThenOne = {
   placeholderStyle?: PlaceholderStyle;
   stripSuffix: RegExp | null;
   fallback: FallbackRule[];
+  wrap?: Wrap;
+  frameRows: number;
 };
 type TwoRules = {
   mode: 'two-rules-footer-below';
@@ -58,6 +72,8 @@ type TwoRules = {
   /** A row that stands for hidden rows of a folded paste; capture 1 is the hidden count. */
   fold: RegExp | null;
   placeholderStyle?: PlaceholderStyle;
+  wrap?: Wrap;
+  frameRows: number;
 };
 
 export type Composer = Box | StatusLast | StatusThenOne | TwoRules;

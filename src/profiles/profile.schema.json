@@ -224,6 +224,21 @@
         "placeholder_style": { "enum": ["dim"] },
         "footers": { "type": "array", "items": { "$ref": "#/$defs/patternString" }, "minItems": 1 },
         "fold": { "$ref": "#/$defs/patternString" },
+        "wrap": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["continuation", "kind"],
+          "description": "How the composer continues a line onto its next row, declared only where a capture showed the wrap. The box is compared with the typed text under this rule: only the whitespace the row break itself stands for is normalised, the rest of every row must match character for character.",
+          "properties": {
+            "continuation": { "const": "text-column" },
+            "kind": { "enum": ["word", "hard"] }
+          }
+        },
+        "frame_rows": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The empty rows a capture shows the pane drawing under the text, inside the box's frame (the drop before the status line or the closing rule). The box read strips up to this many trailing empty rows as the frame; a row beyond them is one the typed text does not have, and the box is refused. Zero where no capture shows such a row: don't guess."
+        },
         "fallback": {
           "type": "array",
           "items": {

@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DialectError, compilePattern } from './dialect.ts';
-import type { Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage } from './screen-data.ts';
+import type { Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage, Wrap } from './screen-data.ts';
 import type { ScreenProfile } from './screen-profile.ts';
 import type { Screen } from './screen.ts';
 import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts';
@@ -340,8 +340,18 @@ function composerOf(node: YamlNode): Composer {
   // a composer whose suggestions plain text already names needs none of it.
   const style = optional(entries, 'placeholder_style');
   const placeholderStyle = style ? placeholderStyleOf(style) : undefined;
+  // How the box continues a line onto its next row, declared only where a capture showed the
+  // wrap. A composer without one is read by tiling the typed text's own runs.
+  const wrapEntry = optional(entries, 'wrap');
+  const wrap = wrapEntry ? wrapOf(wrapEntry) : undefined;
+  // The empty rows a capture shows the pane drawing under the text, inside the box's frame —
+  // the drop before the status line, or the closing rule. Counted from the captures; a
+  // composer whose captures show none declares none, and the box read then keeps every
+  // trailing empty row and refuses one the typed text does not have. Don't guess.
+  const frameEntry = optional(entries, 'frame_rows');
+  const frameRows = frameEntry ? frameRowsOf(frameEntry) : 0;
   if (name === 'box-to-rule') {
-    only(entries, ['mode', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style']);
+    only(entries, ['mode', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style', 'wrap', 'frame_rows']);
     // For a scrolled-out box, the non-blank lines under the closing rule must match
     // every pattern, in order, and the counts must be equal.
     const footers = optional(entries, 'footers');
@@ -352,14 +362,16 @@ function composerOf(node: YamlNode): Composer {
       footers: footers ? footersOf(footers, false) : [],
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
       placeholderStyle,
+      wrap,
+      frameRows,
     };
   }
   if (name === 'status-last') {
-    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style']);
-    return { mode: name, statusLine: regexField(entries, 'status_line', node.line), prompt: regexField(entries, 'prompt', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value), placeholderStyle };
+    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style', 'wrap', 'frame_rows']);
+    return { mode: name, statusLine: regexField(entries, 'status_line', node.line), prompt: regexField(entries, 'prompt', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value), placeholderStyle, wrap, frameRows };
   }
   if (name === 'status-then-one') {
-    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style', 'strip_suffix', 'fallback']);
+    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style', 'strip_suffix', 'fallback', 'wrap', 'frame_rows']);
     const suffix = optional(entries, 'strip_suffix');
     const fallback = required(entries, 'fallback', node.line);
     return {
@@ -370,10 +382,12 @@ function composerOf(node: YamlNode): Composer {
       placeholderStyle,
       stripSuffix: suffix ? composerString(suffix.value, 'strip_suffix', suffix.line) : null,
       fallback: fallbackOf(fallback.value),
+      wrap,
+      frameRows,
     };
   }
   if (name === 'two-rules-footer-below') {
-    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'fold', 'placeholder_style']);
+    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'fold', 'placeholder_style', 'wrap', 'frame_rows']);
     const flag = optional(entries, 'ignore_case');
     const ignoreCase = flag ? boolOf(flag.value, 'ignore_case') : false;
     // Any line below the closing rule matches any pattern in the list.
@@ -387,9 +401,37 @@ function composerOf(node: YamlNode): Composer {
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
       fold: fold ? patternOf(stringOf(fold.value) ?? fail(fold.line, '"fold" must be a string'), ignoreCase, fold.line) : null,
       placeholderStyle,
+      wrap,
+      frameRows,
     };
   }
   fail(mode.line, `"mode" must be box-to-rule, status-last, status-then-one or two-rules-footer-below`);
+}
+
+// The composer's wrap rule: the continuation starts at the text column and the break is at a
+// word boundary or hard. Either alone does not join a wrapped box — where it starts and where
+// it breaks are both needed — so both keys are required and nothing else is read.
+function wrapOf(entry: YamlEntry): Wrap {
+  const entries = mapping(entry.value, 'wrap');
+  only(entries, ['continuation', 'kind']);
+  const continuation = required(entries, 'continuation', entry.line);
+  const where = stringOf(continuation.value);
+  if (where !== 'text-column') fail(continuation.line, '"continuation" must be text-column');
+  const kind = required(entries, 'kind', entry.line);
+  const shape = stringOf(kind.value);
+  if (shape !== 'word' && shape !== 'hard') fail(kind.line, '"kind" must be word or hard');
+  return { continuation: where, kind: shape };
+}
+
+// The pane's own empty rows inside a box's frame, as a capture shows them: a whole number,
+// zero or more. Omitting the key is how a composer whose captures show no such row declares
+// zero — the box read then keeps every trailing empty row.
+function frameRowsOf(entry: YamlEntry): number {
+  const value = entry.value;
+  if (value.kind !== 'scalar' || typeof value.value !== 'number' || !Number.isInteger(value.value) || value.value < 0) {
+    fail(entry.line, '"frame_rows" must be a whole number of rows, zero or more');
+  }
+  return value.value;
 }
 
 function footersOf(entry: YamlEntry, ignoreCase: boolean): RegExp[] {

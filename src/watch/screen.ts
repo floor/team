@@ -4,11 +4,11 @@
 // runs on the plain form, and the styling tells a greyed suggestion from typed text.
 import { readFileSync } from 'node:fs';
 import { stripSgr } from '../ansi.ts';
-import { classifyLines, composeLines, foldOf, statusRowOf, type Fold } from './screen-core.ts';
+import { classifyLines, composerBox, composeLines, foldMarked, foldOf, statusRowOf, type Box, type Fold } from './screen-core.ts';
 import type { ScreenData } from './screen-data.ts';
 import { loadScreen } from './screen-file.ts';
 
-export type { Fold };
+export type { Box, Fold };
 
 export type Screen =
   | { kind: 'idle' }                 // the idle prompt, with an empty input box
@@ -72,6 +72,24 @@ export function readFold(cli: string | ScreenData, screen: string | undefined): 
   const data = typeof cli === 'string' ? DATA[cli] : cli;
   if (data === undefined || screen === undefined) return null;
   return foldOf(data, windowOf(screen.split('\n')));
+}
+
+/** Whether the pane shows a fold marker at all, whatever count it names. The case `readFold`
+ *  cannot report — a marker claiming zero hidden rows — must still keep an Enter from taking the
+ *  box for an ordinary unsent one. */
+export function readFoldMark(cli: string, screen: string | undefined): boolean {
+  const data = DATA[cli];
+  if (data === undefined || screen === undefined) return false;
+  return foldMarked(data, windowOf(screen.split('\n')));
+}
+
+/** The input box the composer draws for its current text, or null when it does not read `unsent`.
+ *  The box's rows are the rows the pane drew for the text; the caller compares them to the text
+ *  it typed before any Enter. */
+export function readBox(cli: string, screen: string | undefined): Box | null {
+  const data = DATA[cli];
+  if (data === undefined || screen === undefined) return null;
+  return composerBox(data, windowOf(screen.split('\n')));
 }
 
 /** The one line a quota figure may come from: the composer's own status row, in the pane's last

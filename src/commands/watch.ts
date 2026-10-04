@@ -19,6 +19,7 @@ import { readScreen } from '../watch/screen.ts';
 import { judgeTemporary, judgeWorktree } from '../watch/close.ts';
 import { readEnd, type EndView } from '../watch/end.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
+import { boxHoldsText } from '../launch/deliver.ts';
 import type { DownSeat } from '../launch/plan.ts';
 import { stopRunning, realSources as removeSources } from './remove.ts';
 import { removeWorktree } from './worktree.ts';
@@ -327,9 +328,10 @@ function deliver(
     keep();
     return;
   }
-  const after = look();
-  if (after !== 'idle' && after !== 'unsent') {
-    tell('a nudge was typed and not sent: the operator\'s screen changed before the Enter', true);
+  // The box is read back before the Enter: it must hold exactly the nudge's own text. An idle
+  // or changed screen here is the text not rendered, and unsent text alone is not this nudge.
+  if (!boxHoldsText(cli, nudge.text, sources.screen(nudge.pane, session) ?? undefined)) {
+    tell('a nudge was typed and not sent: the operator\'s box does not hold it', true);
     keep();
     return;
   }

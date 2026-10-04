@@ -16,7 +16,7 @@ import { compare } from '../src/status/compare.ts';
 import { storePath, writeApproval } from '../src/store/store.ts';
 import { newMemory, pass } from '../src/watch/pass.ts';
 import type { Machine } from '../src/watch/machine.ts';
-import { testIo } from './helpers.ts';
+import { claudeBox, testIo } from './helpers.ts';
 
 const SHARED = `format: 1
 project: acme
@@ -193,6 +193,7 @@ describe('down and remove with one label on two seats', () => {
     writeFileSync(file, SHARED);
     const typed: string[] = [];
     const panes: string[] = [];
+    let box: string | undefined;
     const agents: HerdrAgent[] = [
       { name: 'coordinator', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null },
       { name: 'implementer', agent: 'claude', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null },
@@ -203,10 +204,11 @@ describe('down and remove with one label on two seats', () => {
       alive: () => false,
       now: () => new Date(0),
       screen: () => ({ kind: 'idle' }),
+      screenText: () => box,
       status: () => 'idle',
       foreground: () => ['claude'],
       launch: {
-        typeText: (_session, pane, text) => { typed.push(text); panes.push(pane); return true; },
+        typeText: (_session, pane, text) => { typed.push(text); panes.push(pane); box = claudeBox(text); return true; },
         pressEnter: () => true,
         agentPanes: () => [],
         closeWorkspace: () => true,
@@ -231,6 +233,7 @@ describe('down and remove with one label on two seats', () => {
     const file = join(root, '.agents', 'team.yaml');
     writeFileSync(file, SHARED);
     const panes: string[] = [];
+    let box: string | undefined;
     const sources: RemoveSources = {
       sessionRunning: () => true,
       agents: () => [
@@ -239,12 +242,13 @@ describe('down and remove with one label on two seats', () => {
       ],
       alive: () => false,
       screen: () => ({ kind: 'idle' }),
+      screenText: () => box,
       status: () => 'idle',
       now: () => new Date(0),
       sleep: async () => {},
       foreground: () => ['claude'],
       launch: {
-        typeText: (_session, pane, text) => { panes.push(`${pane}:${text}`); return true; },
+        typeText: (_session, pane, text) => { panes.push(`${pane}:${text}`); box = claudeBox(text); return true; },
         pressEnter: () => true,
         agentPanes: () => [],
         closeWorkspace: () => true,
