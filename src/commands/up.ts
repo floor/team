@@ -48,6 +48,8 @@ import { seatStart } from '../worktree/place.ts';
 export type UpSources = {
   sessionRunning(session: string): boolean | null;
   sessionState?(session: string): SessionState | null;
+  /** Deletes a stopped session: `up` clears one its own `down` stopped. */
+  deleteSession?(session: string): boolean;
   agents(session: string): HerdrAgent[] | null;
   workspaces?(session: string): { id: string }[] | null;
   home: string;

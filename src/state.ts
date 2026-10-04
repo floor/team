@@ -31,6 +31,8 @@ export type WorktreeState = {
 
 export type SessionState = {
   started?: { at: string; by: string };
+  /** When this team's own `down` stopped the session: a later `up` clears the session itself. */
+  stopped?: { at: string; by: string };
   seats: Record<string, SeatState>;
   worktrees: Record<string, WorktreeState>;
   watch?: { pid: number; heartbeat: string };

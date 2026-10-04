@@ -418,12 +418,108 @@ describe('team up, live', () => {
   test('a stopped session is refused and no server is started', async () => {
     await approve();
     const made = world();
+    const deleted: string[] = [];
     const io = testIo(root, { kind: 'owner' });
-    const code = await runUp(FILE, io, sources({ sessionState: () => 'stopped' }, made));
+    const code = await runUp(
+      FILE,
+      io,
+      sources(
+        {
+          sessionState: () => 'stopped',
+          deleteSession: (session) => {
+            deleted.push(session);
+            return true;
+          },
+        },
+        made,
+      ),
+    );
     expect(code).toBe(1);
     expect(io.err).toContain('herdr session delete acme-web');
     expect(made.starts).toBe(0);
     expect(made.creates).toEqual([]);
+    expect(deleted).toEqual([]);
+  });
+
+  test('clears a session its own `down` stopped, saying so in one line', async () => {
+    await approve();
+    writeFileSync(
+      join(root, '.agents/team.state.json'),
+      JSON.stringify({
+        format: 1,
+        sessions: {
+          'acme-web': { seats: {}, worktrees: {}, stopped: { at: NOW.toISOString(), by: 'owner' } },
+        },
+      }),
+    );
+    const made = world();
+    const deleted: string[] = [];
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(
+      FILE,
+      io,
+      sources(
+        {
+          sessionState: () => 'stopped',
+          deleteSession(session) {
+            deleted.push(session);
+            return true;
+          },
+        },
+        made,
+      ),
+    );
+    expect(code).toBe(0);
+    expect(deleted).toEqual(['acme-web']);
+    expect(io.out).toContain('session acme-web: stopped by `team down`; cleared\n');
+    expect(io.out).not.toContain('herdr session delete');
+    expect(made.starts).toBe(1);
+    expect(readState(join(root, '.agents')).sessions['acme-web']?.stopped).toBeUndefined();
+  });
+
+  test('a stale stop record is dropped when the session runs again', async () => {
+    await approve();
+    writeFileSync(
+      join(root, '.agents/team.state.json'),
+      JSON.stringify({
+        format: 1,
+        sessions: {
+          'acme-web': {
+            seats: {
+              'claude-coordinator-acme': { stage: 'ready', pane: 'w8:p1', workspace: 'w8' },
+              'deepseek-acme': { stage: 'launched', pane: 'w7:p1', workspace: 'w7' },
+            },
+            worktrees: {},
+            stopped: { at: NOW.toISOString(), by: 'owner' },
+          },
+        },
+      }),
+    );
+    const made = world();
+    made.session = 'running';
+    made.seed('w7:p1', IDLE, true);
+    const deleted: string[] = [];
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(
+      FILE,
+      io,
+      sources(
+        {
+          sessionState: () => 'running',
+          agents: () => [agent('claude-coordinator-acme', 'w8:p1'), agent('deepseek-acme', 'w7:p1')],
+          workspaces: () => [{ id: 'w8' }, { id: 'w7' }],
+          deleteSession(session) {
+            deleted.push(session);
+            return true;
+          },
+        },
+        made,
+      ),
+    );
+    expect(code).toBe(0);
+    expect(deleted).toEqual([]);
+    expect(io.out).not.toContain('stopped by `team down`');
+    expect(readState(join(root, '.agents')).sessions['acme-web']?.stopped).toBeUndefined();
   });
 
   test("the approval's ceilings are enforced, not the file's limits", async () => {
@@ -636,6 +732,17 @@ describe('team down, live', () => {
     expect(run.closed).toEqual(['w3']);
     expect(run.stopped).toEqual(['acme-web']);
     expect(io.out).toContain('deepseek-acme: stopped\n');
+  });
+
+  test('records that it stopped the session, for the next `up`', async () => {
+    const run = harness({ kind: 'idle' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(0);
+    expect(readState(join(root, '.agents')).sessions['acme-web']?.stopped).toEqual({
+      at: NOW.toISOString(),
+      by: 'owner',
+    });
   });
 
   test('holds Enter when the status turns working after the text', async () => {
