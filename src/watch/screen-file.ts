@@ -128,8 +128,16 @@ function composerOf(node: YamlNode): Composer {
   const style = optional(entries, 'placeholder_style');
   const placeholderStyle = style ? placeholderStyleOf(style) : undefined;
   if (name === 'box-to-rule') {
-    only(entries, ['mode', 'prompt', 'rule', 'placeholders', 'placeholder_style']);
-    return { mode: name, prompt: regexField(entries, 'prompt', node.line), rule: regexField(entries, 'rule', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value), placeholderStyle };
+    only(entries, ['mode', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style']);
+    const footers = optional(entries, 'footers');
+    return {
+      mode: name,
+      prompt: regexField(entries, 'prompt', node.line),
+      rule: regexField(entries, 'rule', node.line),
+      footers: footers ? footersOf(footers, false) : [],
+      placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
+      placeholderStyle,
+    };
   }
   if (name === 'status-last') {
     only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style']);
@@ -154,21 +162,25 @@ function composerOf(node: YamlNode): Composer {
     const flag = optional(entries, 'ignore_case');
     const ignoreCase = flag ? boolOf(flag.value, 'ignore_case') : false;
     const footers = required(entries, 'footers', node.line);
-    if (footers.value.kind !== 'seq' || footers.value.items.length === 0) fail(footers.line, '"footers" must be a non-empty list');
     return {
       mode: name,
       prompt: regexField(entries, 'prompt', node.line, ignoreCase),
       rule: regexField(entries, 'rule', node.line, ignoreCase),
-      footers: footers.value.items.map((item) => {
-        const text = stringOf(item);
-        if (text === null) fail(item.line, '"footers" entries must be strings');
-        return patternOf(text, ignoreCase, item.line);
-      }),
+      footers: footersOf(footers, ignoreCase),
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
       placeholderStyle,
     };
   }
   fail(mode.line, `"mode" must be box-to-rule, status-last, status-then-one or two-rules-footer-below`);
+}
+
+function footersOf(entry: YamlEntry, ignoreCase: boolean): RegExp[] {
+  if (entry.value.kind !== 'seq' || entry.value.items.length === 0) fail(entry.line, '"footers" must be a non-empty list');
+  return entry.value.items.map((item) => {
+    const text = stringOf(item);
+    if (text === null) fail(item.line, '"footers" entries must be strings');
+    return patternOf(text, ignoreCase, item.line);
+  });
 }
 
 function placeholderStyleOf(entry: YamlEntry): 'dim' {

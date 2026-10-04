@@ -59,13 +59,67 @@ describe('the budgets table', () => {
     expect(budgetTable(team(10).budgets, [], now)[0]?.reserve).toBe(10);
   });
 
-  test('a stale reading inside the reserve is refusing, and one with no reset is unknown', () => {
+  test('a stale reading inside the reserve is refusing, and one with no reset is unknown or last seen', () => {
     const stale = reading({ changedAt: now - 30 * minute, left: 5, used: 95 });
     expect(budgetTable(team(10).budgets, [stale], now)[0]?.state).toBe('refusing');
-    expect(budgetTable(team(10).budgets, [reading({ changedAt: now - 30 * minute, resetsAt: null })], now)[0]?.state).toBe('unknown');
+    // No reset to wait on: inside the reserve, and at twice it, the row is unknown — never a
+    // refusal, and never a clearance.
+    const at = { changedAt: now - 30 * minute, resetsAt: null };
+    expect(budgetTable(team(10).budgets, [reading({ ...at, left: 5, used: 95 })], now)[0]?.state).toBe('unknown');
+    expect(budgetTable(team(10).budgets, [reading({ ...at, left: 20, used: 80 })], now)[0]?.state).toBe('unknown');
+    // Well outside — more than the reserve again — the room last seen is still shown.
+    const lastSeen = budgetTable(team(10).budgets, [reading({ ...at, left: 70, used: 30 })], now)[0];
+    expect(lastSeen?.state).toBe('stale');
+    expect(budgetLine(lastSeen!)).toBe('openai  weekly  left 70%  used 30%  resets unknown  one  last seen 30m ago  status line  stale');
   });
 
   test('a named account with no reading is its own unknown row', () => {
     expect(budgetLine(budgetTable(team(10).budgets, [], now)[0]!)).toBe('openai  unknown');
+  });
+
+  // The fallback is per window, not per account: a check that filled one window does not hide
+  // the status line's figure for the window it never reported.
+  const checkFirst = {
+    staleAfter: 30 * 60,
+    checkEvery: 600,
+    marks: [50, 75, 90],
+    accounts: {
+      openai: { kind: 'subscription', shared: false, reserve: 20, floor: null, sources: ['check', 'status_line'], check: 'openai-usage' },
+    },
+  } as unknown as TeamFile['budgets'];
+
+  test('the status line fills the window the check did not report', () => {
+    const rows = budgetTable(checkFirst, [
+      reading({ window: 'session', seat: null, source: 'check' }),
+      reading({ window: 'weekly', left: 5, used: 95 }),
+    ], now);
+    expect(rows.map((row) => budgetLine(row))).toEqual([
+      'openai  session  left 40%  used 60%  resets in 44m  -  read 1m ago  check  fresh',
+      'openai  weekly  left 5%  used 95%  resets in 44m  one  changed 1m ago  status line (fallback)  fresh, inside reserve 20%',
+    ]);
+  });
+
+  // § 3: the counted figure is a fallback when it did not come from the source the account
+  // names first. The row says so beside the source it did come from, and the JSON carries it.
+  test('a figure from below the first source is marked a fallback', () => {
+    const rows = budgetTable(checkFirst, [
+      reading({ window: 'session', seat: null, source: 'check' }),
+      reading({ window: 'weekly', left: 5, used: 95 }),
+    ], now);
+    expect(rows.map((row) => ({ source: row.source, fallback: row.fallback }))).toEqual([
+      { source: 'check', fallback: false },
+      { source: 'status_line', fallback: true },
+    ]);
+  });
+
+  test('the mark follows the account\'s own order, not the kind of source', () => {
+    const statusLineFirst = {
+      ...checkFirst,
+      accounts: { openai: { ...checkFirst.accounts.openai, sources: ['status_line', 'check'] } },
+    } as TeamFile['budgets'];
+    const fromCheck = budgetTable(statusLineFirst, [reading({ window: 'session', seat: null, source: 'check' })], now)[0];
+    expect(fromCheck?.source).toBe('check');
+    expect(fromCheck?.fallback).toBe(true);
+    expect(budgetTable(statusLineFirst, [reading()], now)[0]?.fallback).toBe(false);
   });
 });

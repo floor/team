@@ -69,6 +69,53 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('unknown');
   });
 
+  test.each(['shell-git-log.txt', 'shell-right-prompt.txt', 'shell-shortcuts.txt', 'shell-shortcuts-indented.txt'])('%s reads unknown', (name) => {
+    const text = readFileSync(new URL(`./fixtures/claude-code/${name}`, import.meta.url), 'utf8');
+    expect(readScreen('claude-code', text).kind).toBe('unknown');
+  });
+
+  test('the three constructed shell prompt fixtures still read unknown with a footer pattern added under them', () => {
+    for (const name of ['shell-prompt.txt', 'rule-above.txt', 'output-under-rule.txt']) {
+      const text = readFileSync(new URL(`./fixtures/claude-code/${name}`, import.meta.url), 'utf8');
+      for (const footer of ['? for shortcuts', '  main · Opus 5.5', '  bypass permissions']) {
+        const screen = `${text.trimEnd()}\n${footer}\n`;
+        expect(readScreen('claude-code', screen).kind).toBe('unknown');
+      }
+    }
+  });
+
+  test('shell output embedding a shortcuts footer or in uppercase reads unknown', () => {
+    const prompt = '~/acme % ls\nREADME.md\nsrc\n❯ \n';
+    const vim = `${prompt}${RULE}\npress ? for shortcuts in vim\n`;
+    expect(readScreen('claude-code', vim).kind).toBe('unknown');
+
+    const upper = `${prompt}${RULE}\n? FOR SHORTCUTS\n`;
+    expect(readScreen('claude-code', upper).kind).toBe('unknown');
+  });
+
+  test('failure directions: person typing shortcuts, real box followed by nothing, two-row footer', () => {
+    const prompt = '~/acme % ls\nREADME.md\nsrc\n❯ \n';
+    // A person typing ? for shortcuts on its own line has no leading indentation and reads unknown
+    const unindented = `${prompt}${RULE}\n? for shortcuts\n`;
+    expect(readScreen('claude-code', unindented).kind).toBe('unknown');
+
+    // A real box followed by nothing reads idle
+    const realBoxFollowedByNothing = `${RULE}\n❯ \n${RULE}\n`;
+    expect(readScreen('claude-code', realBoxFollowedByNothing).kind).toBe('idle');
+
+    // A real box whose footer has two rows reads idle
+    const twoRowFooter = `${RULE}\n❯ \n${RULE}\n  main · Opus 5.5\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n`;
+    expect(readScreen('claude-code', twoRowFooter).kind).toBe('idle');
+
+    // A scrolled-out box with a two-row footer reads idle
+    const scrolledTwoRow = `❯ \n${RULE}\n  main · Opus 5.5\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n`;
+    expect(readScreen('claude-code', scrolledTwoRow).kind).toBe('idle');
+
+    // A scrolled-out box with one valid footer row and one foreign line reads unknown
+    const scrolledOneValidOneForeign = `❯ \n${RULE}\n  main · Opus 5.5\nshell output\n`;
+    expect(readScreen('claude-code', scrolledOneValidOneForeign).kind).toBe('unknown');
+  });
+
   test('every fixture matches the classifier main had', () => {
     for (const [name, text] of fixtures) {
       if (name === 'quoted permission') continue;
@@ -112,6 +159,11 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('idle');
   });
 
+  test('a box whose top rule has scrolled out reads unknown with only the shortcuts row', () => {
+    const text = readFileSync(new URL('./fixtures/claude-code/scrolled-shortcuts.txt', import.meta.url), 'utf8');
+    expect(readScreen('claude-code', text).kind).toBe('unknown');
+  });
+
   test('a question dialog with a status line under it and no rule stays a question', () => {
     const text = `Which branch should this start from?\n\n❯ 1. main\n  2. next\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n  main · Opus 5.5\n`;
     const lines = text.split('\n').map((line) => line.trimEnd()).slice(-20);
@@ -130,6 +182,38 @@ describe('claude-code through the screen core', () => {
     const busy = `✶ Transfiguring… (9m 34s · ↓ 64.5k tokens)\n\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
     expect(classify('claude-code', busy.split('\n')).kind).toBe('working');
     expect(classifyComposer('claude-code', busy.split('\n')).kind).toBe('idle');
+  });
+
+  test('an unnumbered trust dialog reads trust', () => {
+    const text = readFileSync(new URL('./fixtures/claude-code/trust-unnumbered.txt', import.meta.url), 'utf8');
+    expect(readScreen('claude-code', text).kind).toBe('trust');
+  });
+
+  test('prose saying "Yes, I trust this folder" above an idle box is idle', () => {
+    const text = `Yes, I trust this folder\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
+    expect(readScreen('claude-code', text).kind).toBe('idle');
+    const prose = `The assistant wrote: Yes, I trust this folder\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
+    expect(readScreen('claude-code', prose).kind).toBe('idle');
+  });
+
+  test('a numbered trust dialog still reads trust', () => {
+    const text = `Do you trust this folder?\n❯ 1. Yes, proceed\n  2. No, exit\n\nEnter to confirm · Esc to cancel\n`;
+    expect(readScreen('claude-code', text).kind).toBe('trust');
+    const live = [
+      'Accessing workspace:',
+      'Quick safety check: Is this a project you created or one you trust?',
+      'Claude Code will be able to read, edit, and execute files here.',
+      '❯ 1. Yes, I trust this folder',
+      '  2. No, exit',
+    ].join('\n');
+    expect(readScreen('claude-code', live).kind).toBe('trust');
+  });
+
+  test('permission and question fixtures still read as before', () => {
+    const permission = `Bash command\n\n  chmod +x run.sh\n\nDo you want to proceed?\n❯ 1. Yes\n  2. No, and tell Claude what to do differently\n\nEsc to cancel · Tab to amend\n`;
+    expect(readScreen('claude-code', permission).kind).toBe('permission');
+    const question = `Which branch should this start from?\n\n❯ 1. main\n  2. next\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n`;
+    expect(readScreen('claude-code', question).kind).toBe('question');
   });
 });
 
@@ -207,11 +291,10 @@ describe('claude-code reads the input line\'s styling', () => {
     expect(kind).toBe('unknown');
   });
 
-  test('the styled trust dialog is attention, never idle or unsent', () => {
+  test('the styled trust dialog reads trust', () => {
     // 2.1.289 draws this dialog's choices without numbers (`❯ No, exit` / `Yes, I trust this
-    // folder`), so the trust stage's `1. Yes` does not match and the dialog reads question —
-    // the same on the plain capture. A question is attention either way; the floor holds.
-    expect(readScreen('claude-code', styled('trust-ansi.txt')).kind).toBe('question');
+    // folder`), matching the unnumbered trust pattern together with its footer.
+    expect(readScreen('claude-code', styled('trust-ansi.txt')).kind).toBe('trust');
   });
 });
 
@@ -552,6 +635,24 @@ screen:
 `;
     expect(loadScreen(text).composer.placeholderStyle).toBe('dim');
     expect(() => loadScreen(text.replace('placeholder_style: dim', 'placeholder_style: bold'))).toThrow(YamlError);
+  });
+
+  test('a box-to-rule composer recognizes footers declared in the profile', () => {
+    const data = loadScreen(`
+format: 1
+cli: sample
+screen:
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    footers:
+      - 'status'
+    placeholders:
+      - equals: ''
+`);
+    const lines = ['> ', '--------', 'status'];
+    expect(classifyLines(data, lines).kind).toBe('idle');
   });
 });
 
