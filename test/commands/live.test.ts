@@ -815,6 +815,28 @@ describe('team down, live', () => {
     expect(io.out).toContain('codex-acme: its exit was not typed; left as it is\n');
   });
 
+  test('a rule-looking row after the exit text gets no Enter', async () => {
+    // The pane draws `/exit` and then one more indented row of forty ─ inside the box, before
+    // its closing rule. The pane draws content rows at the text's own column, and the closing
+    // rule is the window's last rule row, an unbroken run of ─ from the pane's first column
+    // (unsent-typed-ansi.txt): the extra row is content the exit text does not have, so the
+    // box does not hold it. The exit is typed, and not sent.
+    const run = harness({ kind: 'idle' });
+    let shown: string | undefined;
+    run.launch.typeText = (_session, _pane, text) => {
+      run.typed.push(text);
+      shown = claudeBox([text, '─'.repeat(40)].join('\n'));
+      return true;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ screenText: () => shown }));
+    expect(code).toBe(1);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is\n');
+  });
+
   test('does not type into a permission prompt', async () => {
     const run = harness({ kind: 'permission' });
     const io = testIo(root, { kind: 'owner' });

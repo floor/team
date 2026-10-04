@@ -784,6 +784,37 @@ describe('team watch', () => {
     expect(io.out).toContain('a nudge was typed and not sent');
   });
 
+  test('a rule-looking row after the wrapped nudge never gets the Enter', async () => {
+    // The same shape on the nudge path: the wrapped nudge's rows, then one more indented row
+    // of forty ─ inside the box, above its closing rule. The pane draws content rows at the
+    // text's own column, and the closing rule is the window's last rule row, an unbroken run
+    // of ─ from the pane's first column (unsent-typed-ansi.txt) — the extra row is neither.
+    // The nudge is typed, and not sent.
+    const rows = wordWrap(NUDGE_TEXT, 24);
+    const [firstRow = '', ...rest] = rows;
+    const wrapped = claudeBox([firstRow, ...rest, '─'.repeat(40)].join('\n'));
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = wrapped; return true; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was typed and not sent');
+  });
+
+  test('a rule-looking row between two nudge rows never gets the Enter', async () => {
+    // The rule-looking row between the nudge's rows is content the nudge does not have, and
+    // neither is the box that shows it. The nudge is typed, and not sent.
+    const rows = wordWrap(NUDGE_TEXT, 24);
+    const [firstRow = '', ...rest] = rows;
+    const wrapped = claudeBox([firstRow, '─'.repeat(40), ...rest].join('\n'));
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = wrapped; return true; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was typed and not sent');
+  });
+
   test('a box that holds someone else\'s text gets no Enter', async () => {
     let looks = 0;
     const io = testIo(dir);
