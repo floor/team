@@ -350,15 +350,22 @@ function classChar(cp: number): string {
   if (cp === 0x0c) return '\\f';
   if (cp === 0x0d) return '\\r';
   if (cp === 0x2d || cp === 0x5d || cp === 0x5e || cp === 0x5c) return `\\${String.fromCodePoint(cp)}`;
-  if (cp < 0x20 || cp > 0x7e) return `\\u${cp.toString(16).padStart(4, '0')}`;
+  if (cp < 0x20 || cp > 0x7e) return codePointEscape(cp);
   return String.fromCodePoint(cp);
 }
 
 function escapeLiteral(cp: number): string {
   const ch = String.fromCodePoint(cp);
   if ('\\.^$|?*+()[]{}'.includes(ch)) return `\\${ch}`;
-  if (cp < 0x20 || cp > 0x7e) return `\\u${cp.toString(16).padStart(4, '0')}`;
+  if (cp < 0x20 || cp > 0x7e) return codePointEscape(cp);
   return ch;
+}
+
+// A code point above U+FFFF needs the "\u{…}" form, which every pattern can carry: the "u"
+// flag is always set (compilePattern). A four-digit escape cannot spell it — the digits
+// would spill into the following character.
+function codePointEscape(cp: number): string {
+  return cp > 0xffff ? `\\u{${cp.toString(16)}}` : `\\u${cp.toString(16).padStart(4, '0')}`;
 }
 
 function seqSource(atoms: Node[]): string {
