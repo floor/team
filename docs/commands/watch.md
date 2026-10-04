@@ -100,7 +100,7 @@ A report that is the operator's to act on is also what the nudge stands for. The
 | `a nudge was typed and not sent: the operator's screen changed before the Enter` | a dialog opened between the typing and the Enter; the reports wait for the next pass |
 | `the operator could not be nudged for <n> minutes; <k> report(s) wait: <reports>` | the operator was busy for `watch.nudge_wait`; this one is a desktop notification too |
 | `herdr doesn't answer; the watch keeps trying` | the pass is skipped and the watch goes on |
-| `<account>: its check is unreadable` | the check command failed, timed out, or broke RFC 0003 § 5's output contract; its output is never logged |
+| `<account>: its check is unreadable` | the check command failed, timed out, or printed something other than one to three lines for a subscription or one line for a spend account; its output is never logged |
 | `the check for <account> is unapproved; that account reads unknown` | the check's file changed since the approval, or was never approved: it is not run |
 | `the session "<session>" is not this file's "<session>": its readings are not saved` | `--session` names a session other than the file's own; said once, on the first pass that sees it |
 | `team.yaml can't be read (<problem>); watching with the team as it was` | the file broke and no copy of it validated |
@@ -110,8 +110,9 @@ A report that is the operator's to act on is also what the nudge stands for. The
 
 ## Budgets
 
-The budget reports read the figures the pass saw on the seats' status lines (RFC 0003 § 4.1), and
-the ones each account's `check` command reads when its `sources` name `check`. A mark crossing is
+The budget reports read the figures the pass saw on the seats' status lines — Codex prints
+`weekly N% left` when the pane is wide enough to show the number — and the ones each account's
+`check` command reads when its `sources` name `check`. A mark crossing is
 the operator's to act on; an account inside its reserve or floor is the owner's. Marks come once
 per window and are armed again at the window's known reset — or when the figure drops ten points
 with no reset known, which is a new window's.
