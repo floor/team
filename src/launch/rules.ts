@@ -48,7 +48,15 @@ export function seatRules(input: RulesInput): string[] {
   return [...own, ...input.rules, ...signing, ...working];
 }
 
-/** The rules as the one text a launch option or a first message carries. */
+/**
+ * The line every rules message ends with. The message says what the rules are and never that they
+ * are not a task, so some models start complying by investigating instead of waiting for a brief.
+ */
+const CLOSING = 'These are standing rules, not a task: reply ready and wait for your brief.';
+
+/** The rules as the one text a launch option or a first message carries, the closing line last. */
 export function rulesText(input: RulesInput): string {
-  return ['Rules for this session, from the team file:', ...seatRules(input).map((rule) => `- ${rule}`)].join('\n');
+  // A file whose own rules already carry the exact sentence gets it once: as the closing line.
+  const rules = seatRules(input).filter((rule) => rule !== CLOSING);
+  return ['Rules for this session, from the team file:', ...rules.map((rule) => `- ${rule}`), CLOSING].join('\n');
 }

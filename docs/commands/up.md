@@ -88,7 +88,8 @@ in the commands. The words after `would refuse:` are the same as the words after
 already running keeps its setup, with that reading in a note. A seat whose account is unknown
 carries `(<account> is unknown; would launch)` under its first command. A first sight carries
 `(<account>: first sight only, not yet counted; would launch)`. A launch carries the seat's rules,
-so its line is long.
+so its line is long; the message ends with `These are standing rules, not a task: reply ready and
+wait for your brief.`
 
 ## Refusals
 

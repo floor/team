@@ -103,7 +103,7 @@ describe('the rules of a seat', () => {
 
   test('are one text, a rule per line', () => {
     const text = rulesText(rulesInput);
-    expect(text.split('\n')).toHaveLength(10);
+    expect(text.split('\n')).toHaveLength(11);
     expect(text).toStartWith('Rules for this session, from the team file:\n- End every commit');
   });
 
