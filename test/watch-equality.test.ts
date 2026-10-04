@@ -232,7 +232,7 @@ function both(name: string, team: TeamFile, steps: Step[]): void {
     const state = step.state ?? emptySession();
     const machine = step.machine ?? fine;
     const was = oldPass(file, state, step.live, machine, step.at, before, step.approval);
-    const now = pass({ team: file, state, live: step.live, machine, now: step.at, memory: after, approval: step.approval });
+    const now = pass({ team: file, watch: file.watch, state, live: step.live, machine, now: step.at, memory: after, approval: step.approval });
     // `readings` is the one field the old pass had no idea of (#46, #50); every fixture here
     // names no budget account, so it stays empty and the rest must be equal as before.
     expect({ name, at: step.at, reports: now.reports, nudge: now.nudge, fallback: now.fallback })

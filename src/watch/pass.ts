@@ -2,7 +2,6 @@
 // runs the registered checks in the order it owns, applies the report-once rule, and dials the
 // nudge. A check never reads herdr, a screen or the file itself — only the observation it is
 // handed (RFC 0002 § 4.2).
-import { WATCH_CHECKS_CHANGED } from '../approve/fingerprint.ts';
 import { observe, observeCheck, type Seen } from '../budgets/readings.ts';
 import type { CheckOutcome } from '../budgets/run.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -77,8 +76,8 @@ export type PassResult = {
 
 // The seat checks, in the order their reports land in the log; the team checks, after them. The
 // order is the core's: a seat's wrong model is reported before its permission prompt, and every
-// seat before the team. Disabling a check in the file's `watch.checks` takes it out of the run,
-// except the four that can't be turned off.
+// seat before the team. Disabling a check in the `watch` section in force takes it out of the
+// run, except the four that can't be turned off.
 export const SEAT_CHECKS: SeatCheck[] = [missing, modelDrift, attention, unsent, idle];
 export const TEAM_CHECKS: TeamCheck[] = [extra, teamIdle, approval, load, memoryCheck, disk, swapFree, swapGrowth, budget];
 
@@ -121,7 +120,7 @@ export type PassInput = {
   now: number;
   memory: Memory;
   approval?: string[] | null;
-  watch?: TeamFile['watch'];
+  watch: TeamFile['watch'];
   outcomes?: readonly CheckOutcome[];
   budgets?: TeamFile['budgets'];
   readings?: readonly Seen[];
@@ -137,7 +136,7 @@ export function pass({
   now,
   memory,
   approval,
-  watch = team.watch,
+  watch,
   outcomes = [],
   budgets = team.budgets,
   readings: stored = [],
@@ -290,15 +289,14 @@ export function pass({
     },
   };
 
-  // The four § 4.2 keeps out of `watch.checks` run whatever the file says: the validation refuses
+  // The four § 4.2 keeps out of `watch.checks` run whatever the list says: the validation refuses
   // them, and this holds even for a file that reached memory another way.
   //
-  // And nothing is turned off until the owner approves (RFC 0002 § 4.2): a file whose
-  // `watch.checks` differs from the approved one, a file never approved, and an approval that
-  // wasn't looked at keep every check running and report the difference instead. A difference in
-  // some other section leaves the checks turned off as approved — the owner owns both questions.
-  const approved = Array.isArray(approval) && !approval.includes(WATCH_CHECKS_CHANGED);
-  const off = approved ? new Set(team.watch.checks) : new Set<string>();
+  // The off list is the section in force, which the caller passes as `watch`. A file that was
+  // approved — `approval` is a list, empty or not — runs that list. An unapproved `watch.checks`
+  // edit does not turn anything new off, and a check the approved list turned off stays off.
+  // A file never approved, or whose approval was not looked at, turns nothing off.
+  const off = Array.isArray(approval) ? new Set(watch.checks) : new Set<string>();
   const enabled = (name: string) => ALWAYS_ON.includes(name) || !off.has(name);
   for (const seat of observations) {
     for (const check of SEAT_CHECKS) if (enabled(check.name)) reports.push(...check.run(seat, ctx));
