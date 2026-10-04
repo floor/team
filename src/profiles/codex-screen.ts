@@ -4,9 +4,9 @@ import type { Screen } from '../watch/screen.ts';
 export function codexScreen(lines: string[]): Screen {
   if (lines.some((line) => /\bmodel:\s+loading\b/.test(line))) return { kind: 'unknown' };
   const composer = codexComposer(lines);
-  // A trust or update dialog is read before the working line, as for claude-code: it can stay up
-  // while a turn runs, and it is the operator's to answer, not input to type past.
-  if (composer.kind === 'trust' || composer.kind === 'question') return composer;
+  // A permission, trust or update dialog is read before the working line: it can stay up
+  // while a turn runs, and requires human attention, not input to type past.
+  if (composer.kind === 'permission' || composer.kind === 'trust' || composer.kind === 'question') return composer;
   // Herdr can lag a state transition. An active turn never permits a first message or an exit,
   // and is a working observation even while herdr's status has not caught up.
   if (lines.some((line) => /esc to interrupt/.test(line))) return { kind: 'working' };
@@ -18,6 +18,10 @@ export function codexComposer(lines: string[]): Screen {
   const text = lines.join('\n');
   const last = lines.filter((line) => line.trim()).at(-1)?.trim() ?? '';
   // Match the active choice footer too: quoted dialogs in an earlier turn are not prompts.
+  if (last === 'Press enter to confirm or esc to cancel'
+    && /^\s*Would you like to run the following command\?\s*$/m.test(text)
+    && /^\s*›?\s*1\. Yes, proceed \(y\)\s*$/m.test(text)
+    && /^\s*›?\s*2\. No, and tell Codex what to do differently \(esc\)\s*$/m.test(text)) return { kind: 'permission' };
   if (last === 'enter continue · esc quit' && /Trust this folder\?/.test(text)
     && /^\s*›?\s*1\. Trust and continue\s*$/m.test(text)) return { kind: 'trust' };
   if (last === 'enter continue · esc skip' && /Update available ·/.test(text)

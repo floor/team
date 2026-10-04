@@ -44,3 +44,25 @@ model is still loading. That screen stays unknown until initialization finishes.
 The final run waited for the startup prompt to settle before delivery; two earlier
 attempts refused delivery during startup and were torn down without submitting a
 message. The default session remained at eight agents, with unchanged config/auth hashes.
+
+## Permission dialog
+
+`permission.txt` was captured on 2026-10-04 in `team-test-codex-perm`, with one
+seat in a throwaway folder under an already-trusted project. The command was
+`codex -a on-request -s danger-full-access --no-daemon --no-alt-screen -c check_for_update_on_startup=false`
+with an initial prompt requesting approval for `ls`. No input followed launch;
+the permission dialog was read, then the workspace closed without answering it.
+
+Full-access sandboxing allowed the first attempt's `ls` without a dialog. The
+successful capture used a temporary project-local `.codex/config.toml` and
+`.codex/rules/capture.rules` with `prefix_rule` entries for `ls` and `/bin/ls`,
+`decision="prompt"`, and justification `Permission dialog capture`, as described
+in [OpenAI's rules documentation](https://learn.chatgpt.com/docs/agent-configuration/rules).
+Those files and the throwaway folder were removed. These are capture-only settings;
+the launch profile is unchanged. Visible text is retained, including the quota notice.
+
+Both attempts were torn down. The scratch session was stopped and deleted, with
+zero agents after workspace closure; the default session had 14 agents before and
+after. No owner configuration was written by the harness. The auth hash stayed
+unchanged; the config hash changed during the capture window, so this run does
+not assert that the owner's configuration remained unchanged.
