@@ -20,6 +20,32 @@ the default session had nine agents before and after. Config and auth hashes wer
   with the composer empty again. The model response was `RULES_RECEIVED`.
 - `exit-typed.txt`, `exit.txt`: `/exit` typed at idle, read back, then submitted.
   Herdr subsequently listed zero agents and the foreground process was `zsh`.
+- `permission-command-54.txt`: `AGENT_UNATTENDED=1 agy` without `--dangerously-skip-permissions`,
+  captured 2026-10-04 in a throwaway folder the owner had trusted for the purpose, in a scratch
+  session created for the purpose (closed and deleted afterwards), in a 54-column, 23-row pane.
+  Asked to run `ls`, the CLI showed its command permission prompt (`Requesting permission for:`
+  with four numbered options). Escape dismissed it; nothing was approved.
+- `permission-write-54.txt`: the same session and launch. Asked to create `notes.txt`, the CLI
+  showed its file-creation prompt (`Allow creation of this file?` with the new file's lines and
+  two numbered options). Escape dismissed it; the file was never created.
+- `permission-edit-54.txt`: the same session and launch. Asked to change the folder README's
+  title, the CLI showed its edit prompt (`Accept this file edit?` with the diff and two numbered
+  options). Escape dismissed it; the README was never edited.
+- `question-unsent-54.txt`: the same session. While the edit prompt's diff review view was open,
+  keys typed into it became a draft comment, and leaving the view raised the CLI's
+  `Unsent Comments` dialog (`You have unsent comments. Ready to send?` — `y` send and exit,
+  `n` exit without sending, `esc` cancel). Nothing was sent; the CLI was closed from this dialog.
+- `question-54.txt`: the same folder and launch command, after the CLI was started afresh.
+  Asked to use its question tool to offer a choice of two file names before doing anything,
+  the CLI showed `Question 1/1:` with the two options and `Write-in...`. Escape dismissed it;
+  no option was chosen.
+
+For the five 2026-10-04 captures: the prompt's truncated absolute path row and the elided paths
+in the tool lines (`Create(...)`, `Read(...)`, `Edit(...)`) are replaced with `<project-dir>`,
+as is the banner's project line. Today's reader classifies
+`permission-command-54.txt` as `permission`; it reads the other four as `unknown` (safe — an
+unknown screen permits no input — but short of what the screens are, a follow-up for the
+profile).
 
 Paths, user email, plan, and conversation UUID are replaced with placeholders. Shell launch scrollback
 before Antigravity's header banner is removed. All other visible text is retained, including the
@@ -40,14 +66,6 @@ No vendor configuration in `~/.gemini` was edited.
   names, hard-wrapped at 54 columns (a line longer than the width split into width-sized chunks,
   no word wrapping): 24 rows, 21 hidden. The tail is the worktree line's last row and the closing
   line, which the rules text gained in 0.1.2. The header block is copied from `unsent.txt`.
-
-## Not produced
-
-- `permission` (a real one): not produced, behind the trust dialog — in an untrusted directory the
-  CLI opens on its trust prompt, the capture rule allows no answer that grants anything, and Escape
-  exits the CLI, so no permission screen was reachable. `permission.txt` and `permission-cut.txt`
-  above stay the constructed stand-ins, described as constructed.
-- `question`: not produced, behind the trust dialog, for the same reason.
 
 ## Constructed: delivery-verification boxes
 
