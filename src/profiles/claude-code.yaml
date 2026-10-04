@@ -16,7 +16,7 @@ screen:
         - 'Do you want to (proceed|make this edit|create|allow)'
       footer: 'Esc to cancel · Tab to amend'
       below_last_rule: 'Esc to cancel · Tab to amend'
-    - below_last_rule: '^\s*[❯›>]?\s*[0-9]\. (Yes|No)\b'
+    - below_last_rule: '^\s*❯?\s*[0-9]\. (Yes|No)\b'
   question:
     - any:
         - 'Enter to select'
