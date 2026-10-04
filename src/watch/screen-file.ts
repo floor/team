@@ -1,37 +1,99 @@
 // A profile file, in team's YAML subset, checked as it is loaded. The JSON Schema
 // next to the profiles describes the same shape; this is what actually refuses a file,
 // because the package does not carry a schema validator.
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { isAbsolute, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DialectError, compilePattern } from './dialect.ts';
 import type { Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage } from './screen-data.ts';
+import type { ScreenProfile } from './screen-profile.ts';
 import type { Screen } from './screen.ts';
 import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts';
+
+const require = createRequire(import.meta.url);
 
 const STAGES = ['unknown', 'trust', 'permission', 'question', 'working'] as const;
 const KINDS = ['idle', 'working', 'unsent', 'permission', 'trust', 'question', 'unknown'] as const;
 const CHOICE_SAMPLES = ['❯ 1. Yes', '› 1. Yes', '> 1. Yes', '❯ 1.', '› 1.', '> 1.'];
 
-export function loadScreen(text: string): ScreenData {
+const DEFAULT_COMPOSER: Composer = {
+  mode: 'box-to-rule',
+  prompt: /(?!)/,
+  rule: /(?!)/,
+  footers: [],
+  placeholders: [],
+};
+
+export function loadScreen(text: string, baseDir?: string): ScreenData {
   const root = parseYaml(text);
   const entries = mapping(root, 'a profile');
   // Launch keys are read by profile.ts. A screen-only snippet, as in the tests, omits them.
-  only(entries, ['format', 'cli', 'screen', 'quota', 'binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'timeouts', 'models', 'status_model']);
+  only(entries, ['format', 'cli', 'screen', 'screen_module', 'quota', 'binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'timeouts', 'models', 'status_model']);
   const format = required(entries, 'format', root.line);
   if (format.value.kind !== 'scalar' || format.value.value !== 1) fail(format.line, '"format" must be 1');
   const cli = required(entries, 'cli', root.line);
   if (!stringOf(cli.value)) fail(cli.line, '"cli" must be a string');
+  const topScreenModule = optional(entries, 'screen_module');
   const screen = required(entries, 'screen', root.line);
-  return screenOf(screen.value);
+  return screenOf(screen.value, topScreenModule, baseDir);
 }
 
-function screenOf(node: YamlNode): ScreenData {
+function loadScreenModule(specifier: string, baseDir: string | undefined, line: number): ScreenProfile {
+  const defaultDir = fileURLToPath(new URL('../profiles', import.meta.url));
+  const dir = baseDir ? resolve(baseDir) : defaultDir;
+  let target = isAbsolute(specifier) ? specifier : resolve(dir, specifier);
+
+  if (!existsSync(target)) {
+    if (target.endsWith('.ts') && existsSync(target.slice(0, -3) + '.js')) {
+      target = target.slice(0, -3) + '.js';
+    } else if (target.endsWith('.js') && existsSync(target.slice(0, -3) + '.ts')) {
+      target = target.slice(0, -3) + '.ts';
+    } else if (existsSync(target + '.ts')) {
+      target = target + '.ts';
+    } else if (existsSync(target + '.js')) {
+      target = target + '.js';
+    }
+  }
+
+  let mod: any;
+  try {
+    mod = require(target);
+  } catch (error) {
+    fail(line, `cannot load "screen_module": ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const candidate =
+    mod && typeof mod === 'object' && 'default' in mod && mod.default && typeof mod.default === 'object'
+      ? mod.default
+      : mod;
+  return {
+    unknown: typeof candidate?.unknown === 'function' ? candidate.unknown : (typeof mod?.unknown === 'function' ? mod.unknown : undefined),
+    trust: typeof candidate?.trust === 'function' ? candidate.trust : (typeof mod?.trust === 'function' ? mod.trust : undefined),
+    permission: typeof candidate?.permission === 'function' ? candidate.permission : (typeof mod?.permission === 'function' ? mod.permission : undefined),
+    question: typeof candidate?.question === 'function' ? candidate.question : (typeof mod?.question === 'function' ? mod.question : undefined),
+    working: typeof candidate?.working === 'function' ? candidate.working : (typeof mod?.working === 'function' ? mod.working : undefined),
+    composer: typeof candidate?.composer === 'function' ? candidate.composer : (typeof mod?.composer === 'function' ? mod.composer : undefined),
+  };
+}
+
+function screenOf(node: YamlNode, topScreenModule?: YamlEntry, baseDir?: string): ScreenData {
   const entries = mapping(node, 'screen');
-  only(entries, ['chrome', 'composer', ...STAGES]);
+  only(entries, ['chrome', 'composer', 'screen_module', ...STAGES]);
   const chrome = optional(entries, 'chrome');
-  const composer = required(entries, 'composer', node.line);
+  const screenScreenModule = optional(entries, 'screen_module');
+  const moduleEntry = screenScreenModule ?? topScreenModule;
+  const composer = optional(entries, 'composer');
+  if (!composer && !moduleEntry) fail(node.line, 'missing "composer"');
   const data: ScreenData = {
     chrome: chrome ? chromeOf(chrome.value) : [],
-    composer: composerOf(composer.value),
+    composer: composer ? composerOf(composer.value) : DEFAULT_COMPOSER,
   };
+  if (moduleEntry) {
+    const specifier = stringOf(moduleEntry.value);
+    if (specifier === null) fail(moduleEntry.line, '"screen_module" must be a string');
+    data.profile = loadScreenModule(specifier, baseDir, moduleEntry.line);
+  }
   for (const name of STAGES) {
     const entry = optional(entries, name);
     if (entry) data[name] = stageOf(entry.value);

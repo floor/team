@@ -53,7 +53,8 @@
     "models": { "$ref": "#/$defs/models" },
     "status_model": { "type": "array", "items": { "$ref": "#/$defs/modelRule" }, "minItems": 1 },
     "quota": { "type": "array", "items": { "$ref": "#/$defs/quota" }, "minItems": 1 },
-    "screen": { "$ref": "#/$defs/screen" }
+    "screen": { "$ref": "#/$defs/screen" },
+    "screen_module": { "type": "string", "minLength": 1 }
   },
   "$defs": {
     "quota": {
@@ -81,7 +82,8 @@
         "permission": { "$ref": "#/$defs/stage" },
         "question": { "$ref": "#/$defs/stage" },
         "working": { "$ref": "#/$defs/stage" },
-        "composer": { "$ref": "#/$defs/composer" }
+        "composer": { "$ref": "#/$defs/composer" },
+        "screen_module": { "type": "string", "minLength": 1 }
       }
     },
     "stage": {

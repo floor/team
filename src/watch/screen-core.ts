@@ -6,6 +6,8 @@ import type { Screen } from './screen.ts';
 import type { LinePattern, Rule, ScreenData } from './screen-data.ts';
 
 export type { Composer, FallbackRule, LinePattern, Placeholder, PlaceholderStyle, Rule, ScreenData, Stage } from './screen-data.ts';
+export type { ScreenProfile, ComposerReading } from './screen-profile.ts';
+import type { ComposerReading } from './screen-profile.ts';
 
 const BUDGET_MS = 100;
 
@@ -63,6 +65,16 @@ function plainLines(lines: string[]): string[] {
   return lines.map((line) => stripSgr(line).trimEnd());
 }
 
+function hitFromReading(reading: ComposerReading): Hit {
+  return {
+    kind: reading.kind,
+    from: reading.from ?? 0,
+    input: reading.input ?? -1,
+  };
+}
+
+type StageName = 'unknown' | 'trust' | 'permission' | 'question' | 'working';
+
 /** `lines` is already the window: the last 20 lines, each trimmed at the end. */
 export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClock): Screen {
   const now = clock?.now ?? Date.now;
@@ -70,7 +82,7 @@ export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClo
   const start = now();
   const tick = () => now() - start > budget;
   const plain = plainLines(lines);
-  const order: [Screen['kind'], ScreenData['trust']][] = [
+  const order: [StageName, ScreenData['trust']][] = [
     ['unknown', data.unknown],
     ['trust', data.trust],
     ['permission', data.permission],
@@ -78,14 +90,21 @@ export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClo
     ['working', data.working],
   ];
   for (const [kind, stage] of order) {
-    if (!stage) continue;
-    for (const rule of stage.rules) {
-      const hit = ruleMatches(data, plain, rule, tick);
-      if (hit === 'stop') return { kind: 'unknown' };
-      if (hit) return { kind };
+    if (tick()) return { kind: 'unknown' };
+    const predicate = data.profile?.[kind];
+    if (predicate) {
+      if (predicate(plain)) return { kind };
+    } else if (stage) {
+      for (const rule of stage.rules) {
+        const hit = ruleMatches(data, plain, rule, tick);
+        if (hit === 'stop') return { kind: 'unknown' };
+        if (hit) return { kind };
+      }
     }
   }
-  const composed = compose(data, plain, lines, tick);
+  const composed = data.profile?.composer
+    ? hitFromReading(data.profile.composer(plain))
+    : compose(data, plain, lines, tick);
   if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
   if (composed.kind !== 'idle' && composed.kind !== 'unsent') return { kind: composed.kind };
   const marked = floorHits(plain, composed.from, composed.input, data.chrome, tick);
@@ -103,14 +122,19 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
   const start = now();
   const tick = () => now() - start > budget;
   const plain = plainLines(lines);
-  if (data.unknown) {
+  if (data.profile?.unknown) {
+    if (tick()) return { kind: 'unknown' };
+    if (data.profile.unknown(plain)) return { kind: 'unknown' };
+  } else if (data.unknown) {
     for (const rule of data.unknown.rules) {
       const hit = ruleMatches(data, plain, rule, tick);
       if (hit === 'stop') return { kind: 'unknown' };
       if (hit) return { kind: 'unknown' };
     }
   }
-  const composed = compose(data, plain, lines, tick);
+  const composed = data.profile?.composer
+    ? hitFromReading(data.profile.composer(plain))
+    : compose(data, plain, lines, tick);
   if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
   if (composed.kind !== 'idle' && composed.kind !== 'unsent') return { kind: composed.kind };
   const marked = floorHits(plain, composed.from, composed.input, data.chrome, tick);
