@@ -54,12 +54,13 @@ function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
 } {
   const typed: string[] = [];
   const closed: string[] = [];
+  let sent = false;
   const agents: HerdrAgent[] = [];
   const running: boolean[] = [];
   clock = 0;
   const launch: DownLaunch = {
     typeText: (_session, _pane, text) => { typed.push(text); return true; },
-    pressEnter: () => true,
+    pressEnter: () => { sent = true; return true; },
     agentPanes: () => agents.map((agent) => agent.pane),
     closeWorkspace: (_session, workspace) => { closed.push(workspace); return true; },
     stopSession: () => false,
@@ -76,7 +77,7 @@ function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
     now: () => new Date(clock),
     sleep: async (ms) => { clock += ms; },
     launch,
-    foreground: () => (running[0] === false ? [] : ['claude']),
+    foreground: () => (running[0] === true ? ['claude'] : sent || running[0] === false ? [] : ['claude']),
   };
   return { sources, typed, closed, agents, running };
 }
@@ -96,7 +97,6 @@ afterEach(() => {
 describe('team remove', () => {
   test('a free seat is exited, then taken out, and the comment above the next seat stays', async () => {
     const made = world();
-    made.running.push(false);
     made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
     const io = testIo(dir, owner);
     expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(0);
@@ -106,6 +106,18 @@ describe('team remove', () => {
     expect(text).not.toContain('name: worker');
     expect(text).toContain('# stays above lead');
     expect(text).toContain('name: lead');
+  });
+
+  test('a pane with no live agent is not typed into', async () => {
+    const made = world();
+    made.running.push(false);
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(io.out).toContain('no live agent in its pane; its exit was not typed');
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
   test('a seat that is not running is taken out without typing', async () => {
@@ -245,7 +257,6 @@ describe('team remove', () => {
       session.seats['worker-tmp-1'] = { stage: 'ready', temporary: { like: 'worker', until: 'result:done.md' } };
     });
     const made = world();
-    made.running.push(false);
     made.agents.push({ name: 'worker-tmp-1', agent: 'claude', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null });
     expect(await runRemove(['worker-tmp-1', '--file', file], testIo(dir, owner), made.sources)).toBe(0);
     expect(readFileSync(file, 'utf8')).not.toContain('tmp');

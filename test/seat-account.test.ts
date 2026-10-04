@@ -299,6 +299,7 @@ describe('a seat the approval lists as changed', () => {
       budgetsInForce: (one, at) => budgetsInForce(one, at, home),
       readChecks: () => [],
       screen: () => '',
+      foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
       status: () => 'idle',
       typeText: () => false,
       pressEnter: () => false,

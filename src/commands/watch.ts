@@ -6,7 +6,7 @@ import { runChecks, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
 import { homedir } from 'node:os';
-import { agentStatus, paneRead, pressEnter, typeText } from '../herdr.ts';
+import { agentStatus, paneForeground, paneRead, pressEnter, typeText } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
@@ -18,10 +18,12 @@ import { newMemory, pass } from '../watch/pass.ts';
 import { readScreen } from '../watch/screen.ts';
 import { judgeTemporary, judgeWorktree } from '../watch/close.ts';
 import { readEnd, type EndView } from '../watch/end.ts';
+import { reportedLiveAgent } from '../launch/agent.ts';
 import type { DownSeat } from '../launch/plan.ts';
 import { stopRunning, realSources as removeSources } from './remove.ts';
 import { removeWorktree } from './worktree.ts';
 import { stateOf } from './down.ts';
+import { profileFor } from '../profiles/index.ts';
 import { realSources } from './status.ts';
 
 // What the watch reads and does outside its own process, so tests can stand in for it.
@@ -41,6 +43,8 @@ export type WatchSources = {
   screen(pane: string, session: string): string | null;
   // The operator's status, asked again with its screen.
   status(pane: string, session: string): string | null;
+  /** Foreground argv0 names, or null when the pane can't be read. */
+  foreground(pane: string, session: string): string[] | null;
   typeText(pane: string, text: string, session: string): boolean;
   pressEnter(pane: string, session: string): boolean;
   notify(text: string): void;
@@ -82,6 +86,7 @@ export const realWatchSources: WatchSources = {
   readChecks: (team, root, now) => runChecks(team, root, now),
   screen: (pane, session) => paneRead(pane, 14, session),
   status: agentStatus,
+  foreground: (pane, session) => paneForeground(pane, session),
   typeText,
   pressEnter,
   notify,
@@ -231,7 +236,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         for (const report of result.reports) tell(report.text, report.to === 'owner' || !args.flags.has('no-notify'));
         if (result.nudge) {
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);
-          else deliver(result.nudge, team, session, sources, memory, say, tell);
+          else deliver(result.nudge, team, session, sources, memory, say, tell, told);
         }
         if (result.fallback) tell(result.fallback, true);
         await closeEnded({ team, root, dir, session, live, sources, say, io, told });
@@ -269,7 +274,7 @@ function spendOf(outcomes: readonly CheckOutcome[]): SpendReading[] {
 function deliver(
   nudge: { pane: string; text: string; pending: string[] }, team: TeamFile, session: string, sources: WatchSources,
   memory: ReturnType<typeof newMemory>, say: (text: string, desktop: boolean) => void,
-  tell: (text: string, notify: boolean) => void,
+  tell: (text: string, notify: boolean) => void, told: Set<string>,
 ): void {
   const cli = team.seats.find((seat) => seat.name === team.operator)?.cli ?? '';
   const look = () => readScreen(cli, sources.screen(nudge.pane, session) ?? undefined).kind;
@@ -280,12 +285,26 @@ function deliver(
     memory.pending.push(...nudge.pending);
     memory.pendingSince ??= sources.now().getTime();
   };
+  const names = profileFor(cli)?.processNames ?? [];
+  const live = () => reportedLiveAgent(sources.foreground(nudge.pane, session), names);
+  const noAgent = 'nudge:no-agent';
+  if (!live()) {
+    tellOnce(told, noAgent, 'a nudge was not typed: no live agent in the operator\'s pane', tell);
+    keep();
+    return;
+  }
+  told.delete(noAgent);
   if ((status !== 'idle' && status !== 'done') || look() !== 'idle' || !sources.typeText(nudge.pane, nudge.text, session)) {
     keep();
     return;
   }
-  // The text is in the box. A dialog that opened meanwhile must not get the Enter: the text
-  // then stays unsent, which the next passes report, and the nudge is kept.
+  // The text is in the box. The agent is read again before Enter: it may have exited
+  // since the text was typed, and an unframed line is not a box to send.
+  if (!live()) {
+    tellOnce(told, noAgent, 'a nudge was not typed: no live agent in the operator\'s pane', tell);
+    keep();
+    return;
+  }
   const after = look();
   if (after !== 'idle' && after !== 'unsent') {
     tell('a nudge was typed and not sent: the operator\'s screen changed before the Enter', true);
@@ -294,6 +313,12 @@ function deliver(
   }
   if (sources.pressEnter(nudge.pane, session)) say(`nudged the operator: ${nudge.text}`, false);
   else keep();
+}
+
+function tellOnce(told: Set<string>, key: string, text: string, tell: (text: string, notify: boolean) => void): void {
+  if (told.has(key)) return;
+  told.add(key);
+  tell(text, true);
 }
 
 function noteWorked(dir: string, session: string, live: Live): void {

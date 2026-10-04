@@ -57,6 +57,18 @@ const fixtures: [string, string][] = [
 ];
 
 describe('claude-code through the screen core', () => {
+  test('a shell prompt after Claude has exited is unknown', () => {
+    const text = readFileSync(new URL('./fixtures/claude-code/shell-prompt.txt', import.meta.url), 'utf8');
+    const lines = text.split('\n').map((line) => line.trimEnd()).slice(-20);
+    expect(mainClaude(lines)).toBe('idle');
+    expect(readScreen('claude-code', text).kind).toBe('unknown');
+  });
+
+  test.each(['rule-above.txt', 'leftover-box.txt', 'output-under-rule.txt'])('%s is not a box', (name) => {
+    const text = readFileSync(new URL(`./fixtures/claude-code/${name}`, import.meta.url), 'utf8');
+    expect(readScreen('claude-code', text).kind).toBe('unknown');
+  });
+
   test('every fixture matches the classifier main had', () => {
     for (const [name, text] of fixtures) {
       if (name === 'quoted permission') continue;
@@ -74,8 +86,18 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('idle');
   });
 
-  test('a transcript of 1. Yes / 2. No above an empty box is idle', () => {
+  test('a transcript of 1. Yes / 2. No above a bare prompt is unknown', () => {
+    // No rule above the prompt and no status footer under it, so it is not Claude's box.
     const text = `1. Yes\n2. No\n❯ \n`;
+    expect(readScreen('claude-code', text).kind).toBe('unknown');
+  });
+
+  test('typed text with no closing rule is unknown', () => {
+    expect(readScreen('claude-code', '❯ ship the fix\n').kind).toBe('unknown');
+  });
+
+  test('a box whose rule above has scrolled out stays idle when the status footer remains', () => {
+    const text = `❯ \n${RULE}\n${STATUS}\n`;
     expect(readScreen('claude-code', text).kind).toBe('idle');
   });
 
@@ -423,5 +445,18 @@ screen:
 `;
     expect(loadScreen(text).composer.placeholderStyle).toBe('dim');
     expect(() => loadScreen(text.replace('placeholder_style: dim', 'placeholder_style: bold'))).toThrow(YamlError);
+  });
+});
+
+describe('a shell prompt against the other composers', () => {
+  const shell = (mark: string) => `~/acme % ls\nREADME.md\nsrc\n${mark} \n`;
+
+  test('codex, cursor and antigravity do not read a bare shell prompt as idle', () => {
+    for (const cli of ['codex', 'cursor', 'antigravity'] as const) {
+      expect(readScreen(cli, shell('❯')).kind).toBe('unknown');
+      expect(readScreen(cli, shell('›')).kind).toBe('unknown');
+      expect(readScreen(cli, shell('→')).kind).toBe('unknown');
+      expect(readScreen(cli, shell('>')).kind).toBe('unknown');
+    }
   });
 });
