@@ -586,8 +586,8 @@ describe('the prompt-glyph continuation row (Cursor)', () => {
 
 describe('the box\'s top frame (Cursor)', () => {
   // The Cursor twin of the Codex frame: every capture draws blank rows directly above the
-  // input row — two in unsent.txt and the typed captures (rows 6-7 above the input at 8, or
-  // four in idle.txt, rows 5-8) — and above them the transcript's or the pane's last row
+  // input row — four in idle.txt (rows 5-8 above the input at 9), unsent.txt and the typed
+  // captures alike — and above them the transcript's or the pane's last row
   // (idle.txt's `  hints.`, rules-accepted.txt's `  RULES_RECEIVED`, the queue fixtures'
   // spinner). typed-blank-middle.txt draws a blank row inside a person's box, so a blank
   // above the lowest prompt row is content or frame by what surrounds it, never the box's
