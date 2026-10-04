@@ -620,6 +620,46 @@ screen:
     expect(loadScreen(snippet('^\\s*↑/↓ Navigate.*$')).chrome).toHaveLength(1);
   });
 
+  test('the chrome guard covers the long label a choice line runs on with', () => {
+    // A choice's label runs past its Yes or No: the trust dialog draws "Yes, I trust this
+    // folder" and "No, exit", the permission dialog "No, and tell Claude what to do
+    // differently" (the escape hint included on some CLIs), codex names its own two lines.
+    // A chrome pattern for any of them hides a real choice from the floor, so it is refused
+    // at load like the short labels are.
+    const snippet = (line: string) => `
+format: 1
+cli: sample
+screen:
+  chrome: ['${line}']
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    placeholders:
+      - equals: ''
+`;
+    const tails = [
+      ' Yes, I trust this folder',
+      ' No, exit',
+      ' No, and tell Claude what to do differently',
+      ' No, and tell Claude what to do differently (esc)',
+      ' Yes, proceed (y)',
+      ' No, and tell Codex what to do differently (esc)',
+    ];
+    const drawn: string[] = [];
+    for (const mark of ['❯ ', '› ', '> ', '  ']) {
+      for (const number of [1, 2]) {
+        for (const tail of tails) drawn.push(`${mark}${number}.${tail}`);
+      }
+    }
+    for (const line of drawn) {
+      const escaped = line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      expect(() => loadScreen(snippet(`^${escaped}$`))).toThrow(YamlError);
+    }
+    // The long second choice the screen tests draw, as the pattern that missed the guard.
+    expect(() => loadScreen(snippet('^  2\\. No, and tell Claude what to do differently$'))).toThrow(YamlError);
+  });
+
   test('a composer may name its suggestions\' style, and only dim', () => {
     const text = `
 format: 1
