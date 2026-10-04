@@ -7,7 +7,9 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runRelease } from '../../src/commands/release.ts';
+import { check, loadConfig, USAGE as CHECK_USAGE } from '../../src/commands/check.ts';
+import { runRelease, USAGE as RELEASE_USAGE } from '../../src/commands/release.ts';
+import { main } from '../../src/cli.ts';
 import { realFetch, BODY_LIMIT } from '../../src/release/http.ts';
 import type { KeyReader } from '../../src/release/keychain.ts';
 import { testIo, type TestIo } from '../helpers.ts';
@@ -83,9 +85,9 @@ beforeEach(() => {
 
 afterEach(() => rmSync(project, { recursive: true, force: true }));
 
-async function run(argv: string[], answers: Answers, keyReader?: KeyReader): Promise<{ code: number; io: TestIo; requested: string[]; requests: Recorded[] }> {
+async function run(argv: string[], answers: Answers, keyReader?: KeyReader, cwd: string = project): Promise<{ code: number; io: TestIo; requested: string[]; requests: Recorded[] }> {
   const { fetcher, requested, requests } = fakeFetch(answers);
-  const io = testIo(project);
+  const io = testIo(cwd);
   return { code: await runRelease(argv, io, fetcher, keyReader), io, requested, requests };
 }
 
@@ -477,5 +479,291 @@ describe('the usage and configuration errors', () => {
     const parsed = JSON.parse(io.out) as { error: { code: string; message: string } };
     expect(parsed.error.code).toBe('configuration');
     expect(parsed.error.message).toContain('releases names "material" twice');
+  });
+});
+
+describe('the --file option', () => {
+  test('reads the named file: the value resolves against the working directory, in every form', async () => {
+    for (const argv of [
+      ['check', 'material@3.0.2', '--file', '.agents/team.yaml'],
+      ['check', 'material@3.0.2', '--file=.agents/team.yaml'],
+      ['check', '--file', '.agents/team.yaml', 'material@3.0.2'],
+    ]) {
+      const { code, io, requested } = await run(argv, happy());
+      expect({ argv, code }).toEqual({ argv, code: 0 });
+      expect(io.err).toBe('');
+      expect(requested.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('an absent named file is configuration: one line on stderr, or the error object with --json', async () => {
+    const plain = await run(['check', 'material@3.0.2', '--file', 'missing.yaml'], happy());
+    expect(plain.code).toBe(64);
+    expect(plain.io.out).toBe('');
+    expect(plain.io.err).toBe(`team release: ${join(project, 'missing.yaml')}: no team file at missing.yaml\n`);
+    expect(plain.requested).toEqual([]);
+
+    const json = await run(['check', 'material@3.0.2', '--file', 'missing.yaml', '--json'], happy());
+    expect(json.code).toBe(64);
+    expect(json.io.err).toBe('');
+    expect(JSON.parse(json.io.out)).toEqual({
+      error: { code: 'configuration', message: `${join(project, 'missing.yaml')}: no team file at missing.yaml` },
+    });
+    expect(json.requested).toEqual([]);
+  });
+
+  test('a named file that fails validation is configuration, in both shapes', async () => {
+    writeFileSync(join(project, 'invalid.yaml'), 'format: 2\n');
+    const plain = await run(['check', 'material@3.0.2', '--file', 'invalid.yaml'], happy());
+    expect(plain.code).toBe(64);
+    expect(plain.io.out).toBe('');
+    expect(plain.io.err.split('\n').filter((line) => line !== '')).toHaveLength(1);
+    expect(plain.io.err).toContain('team release: ');
+    expect(plain.io.err).toContain('invalid.yaml');
+    expect(plain.requested).toEqual([]);
+
+    const json = await run(['check', 'material@3.0.2', '--file', 'invalid.yaml', '--json'], happy());
+    expect(json.code).toBe(64);
+    expect(json.io.err).toBe('');
+    const parsed = JSON.parse(json.io.out) as { error: { code: string; message: string } };
+    expect(parsed.error.code).toBe('configuration');
+    expect(parsed.error.message).toContain('invalid.yaml');
+    expect(json.requested).toEqual([]);
+  });
+
+  test('a missing value is usage; the last value wins when the option is given twice', async () => {
+    for (const argv of [
+      ['check', 'material@3.0.2', '--file'],
+      ['check', 'material@3.0.2', '--file', ''],
+      ['check', 'material@3.0.2', '--file='],
+    ]) {
+      const plain = await run(argv, happy());
+      expect({ argv, code: plain.code }).toEqual({ argv, code: 64 });
+      expect(plain.io.out).toBe('');
+      expect(plain.io.err).toBe('team release: --file needs a value\n');
+      expect(plain.requested).toEqual([]);
+    }
+    const withJson = await run(['check', 'material@3.0.2', '--json', '--file'], happy());
+    expect(withJson.code).toBe(64);
+    expect(withJson.io.out).toBe('{"error":{"code":"usage","message":"--file needs a value"}}\n');
+    expect(withJson.io.err).toBe('');
+    expect(withJson.requested).toEqual([]);
+
+    // `team check --file` also reads one value per option, last one wins; the parsers are
+    // separate and the table test below holds them to the same classification, so the last
+    // occurrence is the file. Both orders pin which one is used.
+    const last = await run(['check', 'material@3.0.2', '--file', 'missing.yaml', '--file', '.agents/team.yaml'], happy());
+    expect(last.code).toBe(0);
+    const first = await run(['check', 'material@3.0.2', '--file', '.agents/team.yaml', '--file', 'missing.yaml'], happy());
+    expect(first.code).toBe(64);
+    expect(first.io.err).toContain('no team file at missing.yaml');
+    expect(first.requested).toEqual([]);
+  });
+
+  test('--json as the value of --file is a path: only a --json that is not a value selects JSON', async () => {
+    const consumed = await run(['check', 'material@3.0.2', '--file', '--json'], happy());
+    expect(consumed.code).toBe(64);
+    expect(consumed.io.out).toBe('');
+    expect(consumed.io.err).toBe(`team release: ${join(project, '--json')}: no team file at --json\n`);
+    expect(consumed.requested).toEqual([]);
+
+    const marked = { error: { code: 'configuration', message: `${join(project, '--json')}: no team file at --json` } };
+    for (const argv of [
+      ['check', 'material@3.0.2', '--json', '--file', '--json'],
+      ['check', 'material@3.0.2', '--file', '--json', '--json'],
+    ]) {
+      const { code, io, requested } = await run(argv, happy());
+      expect({ argv, code }).toEqual({ argv, code: 64 });
+      expect(io.err).toBe('');
+      expect(JSON.parse(io.out)).toEqual(marked);
+      expect(requested).toEqual([]);
+    }
+  });
+
+  test('in a linked worktree, the default is the main checkout\'s file and --file reads the named one', async () => {
+    execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'Start'], { cwd: project, stdio: ['ignore', 'ignore', 'ignore'] });
+    const worktree = join(project, 'wt');
+    execFileSync('git', ['worktree', 'add', '--quiet', '-b', 'side', worktree], { cwd: project, stdio: ['ignore', 'ignore', 'ignore'] });
+    mkdirSync(join(worktree, '.agents'), { recursive: true });
+    writeFileSync(join(worktree, '.agents', 'team.yaml'), TEAM.replace(/^releases:\n(?:  .*\n)+/m, 'releases:\n  - package: gadgets\n    github: floor/material\n'));
+
+    // No --file: the main checkout's file, found through the common directory — material is declared.
+    const byDefault = await run(['check', 'material@3.0.2'], happy(), undefined, worktree);
+    expect(byDefault.code).toBe(0);
+
+    // The named file is the one read: the worktree's declares no material.
+    const named = await run(['check', 'material@3.0.2', '--file', '.agents/team.yaml', '--json'], happy(), undefined, worktree);
+    expect(named.code).toBe(64);
+    expect(named.io.err).toBe('');
+    expect(JSON.parse(named.io.out)).toEqual({ error: { code: 'usage', message: 'material is not declared in the team file\'s releases' } });
+    expect(named.requested).toEqual([]);
+
+    // The same option can name the main checkout's file from the worktree.
+    const mainFile = await run(['check', 'material@3.0.2', '--file', join(project, '.agents', 'team.yaml')], happy(), undefined, worktree);
+    expect(mainFile.code).toBe(0);
+  });
+
+  test('the precedence holds with --file: an invalid argument is usage even when the file is invalid', async () => {
+    writeFileSync(join(project, 'invalid.yaml'), 'format: 2\n');
+    const both = await run(['check', 'material@v3.0.2', '--file', 'invalid.yaml', '--json'], happy());
+    expect(both.code).toBe(64);
+    expect(JSON.parse(both.io.out)).toEqual({ error: { code: 'usage', message: 'the version "v3.0.2" is not a Semantic Versioning 2.0.0 version' } });
+    expect(both.requested).toEqual([]);
+
+    const undeclared = await run(['check', 'other@3.0.2', '--file', 'missing.yaml', '--json'], happy());
+    expect(undeclared.code).toBe(64);
+    const parsed = JSON.parse(undeclared.io.out) as { error: { code: string; message: string } };
+    expect(parsed.error.code).toBe('configuration');
+    expect(parsed.error.message).toContain('no team file at missing.yaml');
+    expect(undeclared.requested).toEqual([]);
+  });
+
+  test('no misuse reads a key or opens a transport: both seams throw if called', async () => {
+    writeFileSync(join(project, 'invalid.yaml'), 'format: 2\n');
+    writeFileSync(join(project, 'empty.yaml'), '');
+    const cases: string[][] = [
+      ['check', 'material@3.0.2', '--file'],
+      ['check', 'material@3.0.2', '--json', '--file'],
+      ['check', 'material@3.0.2', '--file='],
+      ['check', 'material@3.0.2', '--file', ''],
+      ['check', 'material@3.0.2', '--file', 'missing.yaml'],
+      ['check', 'material@3.0.2', '--file', 'invalid.yaml'],
+      ['check', 'material@3.0.2', '--file', 'empty.yaml'],
+      ['check', 'material@3.0.2', '--file', '--json'],
+      ['check', 'other@3.0.2', '--file', '.agents/team.yaml'],
+      ['check', 'other@3.0.2', '--file', 'missing.yaml'],
+      ['check', 'material@v3.0.2', '--file', 'invalid.yaml'],
+      ['check', 'material@3.0.2', 'extra', '--file', '.agents/team.yaml'],
+    ];
+    for (const argv of cases) {
+      const io = testIo(project);
+      const transport = (): never => {
+        throw new Error('the transport was called');
+      };
+      const reader = (): never => {
+        throw new Error('the key was read');
+      };
+      const code = await runRelease(argv, io, transport, reader);
+      expect({ argv, code }).toEqual({ argv, code: 64 });
+    }
+  });
+
+  test('--help anywhere wins over the value rule: --file --help is the usage, exit 0', async () => {
+    // The page says `--help`/`-h` are answered before the arguments are parsed; the value rule
+    // governs `--json` only. The dispatcher checks the raw arguments, so both commands agree.
+    const releaseIo = testIo(project);
+    expect(await main(['release', 'check', 'material@3.0.2', '--file', '--help'], releaseIo)).toBe(0);
+    expect(releaseIo.out).toBe(RELEASE_USAGE);
+    expect(releaseIo.err).toBe('');
+
+    const checkIo = testIo(project);
+    expect(await main(['check', 'HEAD', '--file', '--help'], checkIo)).toBe(0);
+    expect(checkIo.out).toBe(CHECK_USAGE);
+    expect(checkIo.err).toBe('');
+  });
+
+  test('the --json scan and the parse agree: --, an unknown option, and the forms without a package', async () => {
+    /** The page's rule, written out independently: a `--json` that is the value of `--file` is a
+     *  path; any other `--json` selects the JSON output. */
+    function jsonByTheRule(argv: string[]): boolean {
+      for (let index = 0; index < argv.length; index += 1) {
+        if (argv[index] === '--file') index += 1;
+        else if (argv[index] === '--json') return true;
+      }
+      return false;
+    }
+
+    const rows: { label: string; argv: string[]; json: boolean; code: 'configuration' | 'usage'; message: string }[] = [
+      // The `--` beside --file stays a value when it is the option's turn, and is refused when it
+      // is not; a free `--json` selects JSON, a consumed one cannot.
+      { label: '--file -- --json', argv: ['check', 'material@3.0.2', '--file', '--', '--json'], json: true, code: 'configuration', message: `${join(project, '--')}: no team file at --` },
+      { label: '--file --json --', argv: ['check', 'material@3.0.2', '--file', '--json', '--'], json: false, code: 'usage', message: 'unknown option --' },
+      { label: '--bogus --file --json', argv: ['check', 'material@3.0.2', '--bogus', '--file', '--json'], json: false, code: 'usage', message: 'unknown option --bogus' },
+      { label: 'no package: --file --json', argv: ['check', '--file', '--json'], json: false, code: 'usage', message: 'a <package@version> is required' },
+      { label: 'no package: --file -- --json', argv: ['check', '--file', '--', '--json'], json: true, code: 'usage', message: 'a <package@version> is required' },
+      { label: 'no package: --bogus --file --json', argv: ['check', '--bogus', '--file', '--json'], json: false, code: 'usage', message: 'unknown option --bogus' },
+    ];
+    for (const row of rows) {
+      const { code, io, requested } = await run(row.argv, happy());
+      expect({ label: row.label, code }).toEqual({ label: row.label, code: 64 });
+      expect(requested).toEqual([]);
+      if (row.json) {
+        expect({ label: row.label, out: JSON.parse(io.out) }).toEqual({ label: row.label, out: { error: { code: row.code, message: row.message } } });
+        expect(io.err).toBe('');
+      } else {
+        expect({ label: row.label, err: io.err }).toEqual({ label: row.label, err: `team release: ${row.message}\n` });
+        expect(io.out).toBe('');
+      }
+      // The shape above is what the parse did; this is what the scan says. They must match.
+      expect({ label: row.label, json: jsonByTheRule(row.argv) }).toEqual({ label: row.label, json: row.json });
+    }
+  });
+});
+
+describe('the --file option is classified the same through both commands', () => {
+  // `team check` parses its arguments with its own parser (src/commands/check.ts), release parses
+  // with the generic readArgs (src/args.ts) — the parsers are not shared, and this pins the two so
+  // they cannot drift apart on `--file`: for every invocation the commands must take the same
+  // value, or refuse with the same misuse and the same message shape. What they do share is the
+  // load — loadTeamFile and the path resolution from src/file/load.ts — so the refusal's path is
+  // spelled identically. Only the first refusal line is compared: check prints every problem of an
+  // invalid file, release the first.
+  /** One run's --file classification: the shared misuse, or the value it took, named by the
+   *  refusal's own spelling; a run the file did not refuse is `past-the-loader`. */
+  function classify(err: string, prefix: string): string {
+    const message = (err.startsWith(prefix) ? err.slice(prefix.length) : err).split('\n')[0] ?? '';
+    if (message === '--file needs a value') return 'needs-value';
+    const unknown = message.match(/^unknown option (\S+)$/);
+    if (unknown) return `unknown:${unknown[1]}`;
+    const missing = message.match(/^(.+): no team file at (.+)$/);
+    if (missing) return `no-file:${missing[1]}:${missing[2]}`;
+    const invalid = message.match(/^(.+), line (\d+): (.+)$/);
+    if (invalid) return `invalid:${invalid[1]}:${invalid[2]}:${invalid[3]}`;
+    return 'past-the-loader';
+  }
+
+  test('the ten cases take the same value, or refuse with the same message', async () => {
+    mkdirSync(join(project, 'sub'));
+    writeFileSync(join(project, 'sub', 'bad.yaml'), 'format: 2\n');
+    writeFileSync(join(project, 'bad.yaml'), 'format: 2\n');
+    writeFileSync(join(project, 'ok.yaml'), TEAM);
+    const home = mkdtempSync(join(tmpdir(), 'team-check-home-'));
+    try {
+      const rows: { label: string; tail: string[]; expected: string }[] = [
+        { label: 'a missing value', tail: ['--file'], expected: 'needs-value' },
+        { label: 'a value that looks like an option', tail: ['--file', '--json'], expected: `no-file:${join(project, '--json')}:--json` },
+        { label: '--file=<path>', tail: ['--file=sub/bad.yaml'], expected: `invalid:${join(project, 'sub', 'bad.yaml')}:1:format must be 1: this version of team reads no other` },
+        { label: '--file= (empty)', tail: ['--file='], expected: 'needs-value' },
+        { label: 'the option twice', tail: ['--file', 'nope-one.yaml', '--file', 'nope-two.yaml'], expected: `no-file:${join(project, 'nope-two.yaml')}:nope-two.yaml` },
+        { label: 'a relative path', tail: ['--file', 'sub/nope.yaml'], expected: `no-file:${join(project, 'sub', 'nope.yaml')}:sub/nope.yaml` },
+        { label: 'an absolute path', tail: ['--file', join(project, 'nope.yaml')], expected: `no-file:${join(project, 'nope.yaml')}:${join(project, 'nope.yaml')}` },
+        { label: 'a missing file', tail: ['--file', 'nope.yaml'], expected: `no-file:${join(project, 'nope.yaml')}:nope.yaml` },
+        { label: 'an invalid file', tail: ['--file', 'bad.yaml'], expected: `invalid:${join(project, 'bad.yaml')}:1:format must be 1: this version of team reads no other` },
+        { label: 'a file that loads', tail: ['--file', 'ok.yaml'], expected: 'past-the-loader' },
+      ];
+      const released: Record<string, string> = {};
+      const throughCheck: Record<string, string> = {};
+      for (const row of rows) {
+        const releaseIo = testIo(project);
+        // Only the loading row may reach the transport (as a recorded failure); every refusal
+        // before it keeps the seam throwing, so an accidental request fails the test.
+        const transport = row.label === 'a file that loads'
+          ? () => Promise.resolve({ kind: 'transport' } as const)
+          : (): never => {
+              throw new Error('the transport was called');
+            };
+        await runRelease(['check', 'material@3.0.2', ...row.tail], releaseIo, transport);
+        released[row.label] = classify(releaseIo.err, 'team release: ');
+
+        const checkIo = testIo(project);
+        await check(['HEAD', ...row.tail], checkIo, (cwd, file) => loadConfig(cwd, file, home));
+        throughCheck[row.label] = classify(checkIo.err, 'team check: ');
+      }
+      const expected = Object.fromEntries(rows.map((row) => [row.label, row.expected]));
+      expect(throughCheck).toEqual(expected);
+      expect(released).toEqual(expected);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

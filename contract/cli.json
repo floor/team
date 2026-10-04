@@ -318,6 +318,12 @@
           "flags": [
             {
               "hidden": false,
+              "name": "--file",
+              "repeatable": false,
+              "takesValue": true
+            },
+            {
+              "hidden": false,
               "name": "--help",
               "repeatable": false,
               "takesValue": false
@@ -346,12 +352,12 @@
           ],
           "subcommands": [],
           "usage": [
-            "team release check <package@version> [--json]"
+            "team release check <package@version> [--json] [--file <path>]"
           ]
         }
       ],
       "usage": [
-        "team release check <package@version> [--json]"
+        "team release check <package@version> [--json] [--file <path>]"
       ]
     },
     {
