@@ -520,6 +520,11 @@ describe('codex, cursor and antigravity through the screen core', () => {
         // queue read idle, which `down` and `remove` typed into. Its own test follows in
         // test/launch/cursor.test.ts.
         if (name === 'follow-up-queue-one.txt') continue;
+        // Captured 2026-10-04, and the four screens the antigravity profile's round-2 rules are
+        // meant to read differently: main had no rule for the file-creation, file-edit, question
+        // or unsent-comments dialogs and read each unknown. Their own test follows the loop.
+        if (name === 'permission-write-54.txt' || name === 'permission-edit-54.txt'
+          || name === 'question-54.txt' || name === 'question-unsent-54.txt') continue;
         const text = readFileSync(new URL(`./fixtures/${cli}/${version}/${name}`, import.meta.url), 'utf8');
         const before = read(windowOf(text));
         const after = readScreen(cli, text).kind;
@@ -537,6 +542,25 @@ describe('codex, cursor and antigravity through the screen core', () => {
     expect(classify('antigravity', text.split('\n')).kind).toBe('permission');
   });
 
+  test('the four captured dialogs main read unknown: file-creation, file-edit, question, unsent comments', () => {
+    // origin/main's shipped reader calls each of these unknown (verified with a detached build
+    // of it over every fixture; the sweep is in the round-2 result). The frozen mainAntigravity
+    // is not the oracle here: it has no safety floor, and it reads permission-write-54.txt's
+    // numbered options as an unsent box — the shipped main applies the floor and says unknown.
+    const kinds: [string, Screen['kind']][] = [
+      ['permission-write-54.txt', 'permission'],
+      ['permission-edit-54.txt', 'permission'],
+      ['question-54.txt', 'question'],
+      ['question-unsent-54.txt', 'question'],
+    ];
+    for (const [name, kind] of kinds) {
+      const text = readFileSync(new URL(`./fixtures/antigravity/1.2.16/${name}`, import.meta.url), 'utf8');
+      expect(readScreen('antigravity', text).kind).toBe(kind);
+      expect(classify('antigravity', text.split('\n')).kind).toBe(kind);
+      expect(classifyComposer('antigravity', text.split('\n')).kind).toBe('unknown');
+    }
+  });
+
   test('the constructed fixture differs on purpose: a permission dialog above the pinned status line', () => {
     const text = readFileSync(new URL('./fixtures/codex/0.157.0/permission-pinned.txt', import.meta.url), 'utf8');
     // Main missed the dialog twice over: its lower-case footer phrase, and the choice line read
@@ -551,6 +575,84 @@ describe('codex, cursor and antigravity through the screen core', () => {
     const both = `${trust}\nTo resume this session:\n`;
     expect(mainCursor(windowOf(both))).toBe('trust');
     expect(readScreen('cursor', both).kind).toBe('unknown');
+  });
+});
+
+describe('antigravity dialog words outside the dialog', () => {
+  // The round-2 profile rules anchor each dialog to its own structure as the captures draw it
+  // (the question line and its option rows below the dialog's rule, or the unsent-comments
+  // wording with no rule and no bare input row after it). The same words elsewhere are never
+  // the dialog: quoted in a transcript above the box, or typed into the box by a person. Every
+  // screen here reads the same on origin/main, verified against a detached build of it.
+  const agyIdle = readFileSync(new URL('./fixtures/antigravity/1.2.16/idle.txt', import.meta.url), 'utf8').replace(/\n$/, '');
+  const AGY_RULE = '─'.repeat(53);
+  const AGY_FOOTER = '                              Gemini 3.8 Flash · high';
+  // agy's composer as unsent.txt draws it: the first typed row at the prompt, continuation
+  // rows at the content column, the closing rule, the model footer.
+  const agyBoxWith = (rows: string[]): string =>
+    [AGY_RULE, `> ${rows[0]}`, ...rows.slice(1).map((row) => `  ${row}`), AGY_RULE, AGY_FOOTER].join('\n');
+  const kinds = (text: string): string => {
+    const lines = text.split('\n');
+    return `${classify('antigravity', lines).kind}/${classifyComposer('antigravity', lines).kind}`;
+  };
+
+  test('a quoted permission or question dialog above an idle box stays idle', () => {
+    const quoted = [
+      'Allow creation of this file?\n> 1. Yes, allow creation\n  2. No, deny creation\n  ↑/↓ Navigate · tab Amend · f full diff',
+      'Accept this file edit?\n> 1. Yes, accept this change\n  2. No, reject this change\n  ↑/↓ Navigate · tab Amend · f full diff',
+      'Question 1/1: Which file name would you like to use?\n> 1. notes.txt\n  2. memo.txt\n  3. Write-in...\n  ↑/↓ Navigate · enter Select · esc Skip',
+      'You have unsent comments. Ready to send?\n  y send and exit · n exit without sending · esc cancel',
+    ];
+    for (const words of quoted) {
+      const text = `${words}\n${agyIdle}`;
+      expect(kinds(text)).toBe('idle/idle');
+      expect(readScreen('antigravity', text).kind).toBe('idle');
+    }
+  });
+
+  test('a dialog phrase alone, quoted above an idle box, stays idle', () => {
+    for (const words of [
+      'The CLI asked: Allow creation of this file?',
+      'It showed: Accept this file edit?',
+      'It showed Question 1/1: which name to pick',
+      'It said: You have unsent comments. Ready to send?',
+    ]) {
+      expect(kinds(`${words}\n${agyIdle}`)).toBe('idle/idle');
+    }
+  });
+
+  test('the unsent-comments words with no rule but a bare input row after are not the dialog', () => {
+    // The none_after guard is load-bearing: without it this scrolled transcript would match.
+    const text = 'You have unsent comments. Ready to send?\n  y send and exit · n exit without sending · esc cancel\n>\n';
+    expect(kinds(text)).toBe('unknown/unknown');
+    expect(readScreen('antigravity', text).kind).not.toBe('question');
+  });
+
+  test('a dialog question line typed into the box is unsent, never the dialog', () => {
+    for (const typed of [
+      'Allow creation of this file?',
+      'Accept this file edit?',
+      'Question 1/1: notes.txt or memo.txt?',
+      'You have unsent comments. Ready to send?',
+    ]) {
+      expect(kinds(agyBoxWith([typed]))).toBe('unsent/unsent');
+    }
+  });
+
+  test('a whole dialog typed into the box is never the dialog', () => {
+    // The core's choice-line floor reads the typed option rows as a numbered choice, so these
+    // read unknown rather than unsent — origin/main reads them the same; the profile rules
+    // never fire, which is what this test pins.
+    const dialogs = [
+      ['Allow creation of this file?', '> 1. Yes, allow creation', '2. No, deny creation', '↑/↓ Navigate · tab Amend · f full diff'],
+      ['Question 1/1: notes or memo?', '> 1. notes.txt', '2. memo.txt', '3. Write-in...', '↑/↓ Navigate · enter Select · esc Skip'],
+    ];
+    for (const rows of dialogs) {
+      const text = agyBoxWith(rows);
+      expect(classify('antigravity', text.split('\n')).kind).toBe('unknown');
+      expect(classify('antigravity', text.split('\n')).kind).not.toBe('permission');
+      expect(classify('antigravity', text.split('\n')).kind).not.toBe('question');
+    }
   });
 });
 
