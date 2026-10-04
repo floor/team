@@ -78,3 +78,8 @@ screen:
     placeholders:
       - equals: ''
       - equals: Ask Codex to do anything
+    # unsent.txt and exit-typed.txt show one empty row under the text, between it and the
+    # status line: the drop the pane draws of its own, inside the box's frame. The box read
+    # strips up to one trailing empty row as that frame; a row beyond it is one the typed
+    # text does not have.
+    frame_rows: 1

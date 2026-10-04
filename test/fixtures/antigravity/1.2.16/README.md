@@ -31,3 +31,21 @@ Paths, user email, plan, and conversation UUID are replaced with placeholders. S
 before Antigravity's header banner is removed. All other visible text is retained, including the
 box borders, prompts, and model footer (`Gemini 3.8 Flash · high`). Unknown screens permit no input.
 No vendor configuration in `~/.gemini` was edited.
+
+## Constructed: delivery-verification boxes
+
+Not captures. `test/launch/antigravity.test.ts` builds the post-paste box from `idle.txt`:
+the bare `>` row is replaced by `> ` and the first line of the typed text, and each later
+line is drawn at two columns, the continuation indent `unsent.txt` shows. The fold tests
+edit `folded-rules.txt`: the reviewer's zero-count marker with an unrelated tail, and
+counts of 0 and 99 against the same 24-row text. Those screens are constructed too, and
+each test names what it changes; a fold marker is never submitted unverified. No capture
+shows Antigravity wrapping an ordinary composer line, so no wrap is modelled for it: a
+box whose rows read back as runs of the typed text laid out in order is entered, and one
+whose rows show anything else — another text, an extra row, one character changed, a
+collapsed space, a blank row the text does not have at that place, a trailing blank row
+the text does not end with — is never. No capture shows Antigravity drawing an empty row
+of its own inside the box either — `idle.txt`'s composer is the bare `>` row and
+`unsent.txt`'s rows sit directly between the rules — so the profile counts none
+(`frame_rows` omitted, zero) and every trailing empty row is read as a row the text does
+not have.
