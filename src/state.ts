@@ -31,8 +31,6 @@ export type WorktreeState = {
 
 export type SessionState = {
   started?: { at: string; by: string };
-  /** When this team's own `down` stopped the session: a later `up` clears the session itself. */
-  stopped?: { at: string; by: string };
   seats: Record<string, SeatState>;
   worktrees: Record<string, WorktreeState>;
   watch?: { pid: number; heartbeat: string };
@@ -58,26 +56,6 @@ export const LOG_FILE = 'team.log';
 
 export function emptySession(): SessionState {
   return { seats: {}, worktrees: {} };
-}
-
-// The stop record is `down`'s word that this team's own stop succeeded: a string `at` that parses
-// as a time, and a string `by`. A state file is text on disk, so anything else in the field — a
-// boolean, a bare string, an object missing a part — is not proof and is ignored (and reported).
-export function stoppedByTeam(stopped: unknown): { at: string; by: string } | null {
-  if (typeof stopped !== 'object' || stopped === null) return null;
-  const { at, by } = stopped as { at?: unknown; by?: unknown };
-  if (typeof at !== 'string' || typeof by !== 'string' || Number.isNaN(Date.parse(at))) return null;
-  return { at, by };
-}
-
-// A session seen again — running, or gone from herdr — voids its stop record: the record spoke
-// for a stop that is over and must never justify deleting the session later. No state file is
-// written for a session that never had a record.
-export function clearStopped(dir: string, session: string): void {
-  if (readState(dir).sessions[session]?.stopped === undefined) return;
-  updateState(dir, (file) => {
-    delete file.sessions[session]?.stopped;
-  });
 }
 
 // The state in `dir` (the folder of the team file). A missing file is an empty state; a file

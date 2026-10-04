@@ -9,7 +9,7 @@ import { homedir } from 'node:os';
 import { agentStatus, paneForeground, paneRead, pressEnter, typeText } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
-import { clearStopped, emptySession, readState, updateState } from '../state.ts';
+import { emptySession, readState, updateState } from '../state.ts';
 import type { Live } from '../status/compare.ts';
 import { readMachine } from '../watch/machine.ts';
 import type { Machine } from '../watch/machine.ts';
@@ -193,10 +193,6 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         silent = true;
       } else {
         silent = false;
-        // The same rule as `status`: a running session voids any stop record `down` wrote, so it
-        // can never justify `up` deleting a session someone else stopped. A pass that finds the
-        // session not running clears nothing — it cannot tell stopped from deleted.
-        if (live.running) clearStopped(dir, session);
         noteWorked(dir, session, live);
         const state = readState(dir).sessions[session] ?? emptySession();
         const now = sources.now().getTime();

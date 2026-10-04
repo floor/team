@@ -5,11 +5,9 @@ declares and this machine can run, and the watchdog pane that runs `team watch`.
 are left as they are; a seat stopped in the file is left out until `team add` starts it. `--dry-run`
 prints the plan and runs nothing.
 
-A session this team's own `down` stopped is cleared by `up` itself, in one line, and the team starts
-again; a session stopped any other way is still refused until its owner clears it. The stop record
-lives only while the session sits stopped, unseen: the first command to see the session again — `up`
-on any of its paths, refusing ones included, `status`, the watch — drops it, so a stop someone else
-made can never be mistaken for the team's own.
+A session stopped in herdr is refused until its owner clears it — `up` never deletes a session. A
+session `team down` stopped needs no such step: `down` clears the one it stopped in the same run, so
+the next `up` starts from the beginning.
 
 A seat that isn't `mode: shared` and works in worktrees (`workspace.mode: worktree` is the default)
 starts in the lobby, never in the project root, which holds the owner's uncommitted work. The lobby
@@ -32,14 +30,12 @@ as they trusted the worktrees. Then it starts.
 ## What it reads and writes
 
 Reads the team file (or the one `--file` names), this machine's approval store, the session's state
-(`.agents/team.state.json`, for each seat's stage and for whether this team's own `down` stopped the
-session), herdr (whether the session is up, its agents and workspaces), the doctor's findings, and
-the machine's load, free memory, free disk and free swap. Writes `.agents/team.state.json` (each
-seat's stage, pane, workspace and the CLI it was launched with; the watch's pid and heartbeat; the
-stop record is dropped — acted on, or voided by the session being seen again), `.agents/team.log`,
-the lobby folder a seat that works in
-worktrees waits in, and, through herdr: the stopped session it clears when its own `down` stopped
-it, the server, one workspace per seat and one for the watchdog, each seat's launch, and the watch.
+(`.agents/team.state.json`, for each seat's stage), herdr (whether the session is up, its agents and
+workspaces), the doctor's findings, and the machine's load, free memory, free disk and free swap.
+Writes `.agents/team.state.json` (each seat's stage, pane, workspace and the CLI it was launched
+with; the watch's pid and heartbeat), `.agents/team.log`, the lobby folder a seat that works in
+worktrees waits in, and, through herdr: the server, one workspace per seat and one for the watchdog,
+each seat's launch, and the watch.
 
 ## Who may run it
 
@@ -64,8 +60,7 @@ exits 0.
 
 A seat that reaches its idle prompt with its rules delivered prints `<seat>: ready`. A seat already
 ready, stopped in the file, or on a CLI with no launch profile prints one `  skip` line and is left
-as it is. The watch prints `watch: started`. A session this team's own `down` stopped prints
-``session <session>: stopped by `team down`; cleared`` first, and the team starts again.
+as it is. The watch prints `watch: started`.
 
 A seat that doesn't get there is printed once with what stopped it, and `up` exits 1:
 
@@ -121,19 +116,6 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 
 A watch that has not run, or whose heartbeat is old, is not a reason to refuse: `up` starts the
 watch itself.
-
-A session this team's own `down` stopped is not refused either: the state records the stop, `up`
-deletes the stopped session itself — the one case `team` deletes one — and says
-``session beacon: stopped by `team down`; cleared`` in one line before starting the team. A session
-stopped any other way keeps the refusal above.
-
-The record is `down`'s word for one stop, and it ages fast. The moment a command sees the session
-again — running, or gone from herdr — the record is dropped: by `up` on every path, refusing runs
-included, and by `status` and the watch as well. A record a running session has contradicted can
-never justify the delete. Only the exact shape `down` writes counts (`at` and `by`, a parseable
-time); anything else in the field is ignored with one line on stderr and the refusal above stands.
-The dry run's ``session beacon: stopped by `team down`; this run would clear it`` is printed only
-when nothing refuses first — a seat's dry run, which refuses, no longer says it.
 
 ## Exit codes
 
@@ -225,38 +207,12 @@ team up: only the owner runs `up`, from a terminal outside herdr; this call is c
 exit 1
 ```
 
-After `team down`, the session sits stopped in herdr's list, and the seats and the watch are gone
-from the state. This stop the team's own `down` made, so `up` clears the session itself and starts
-the team again:
+A session stopped in herdr is never started over — `up` deletes nothing, and its refusal says the
+command to run by hand. A session `team down` stopped never gets here: `down` clears the one it
+stopped in the same run, so the next `up` finds no session and starts it from the beginning:
 
-```console herdr=stopped-by-down
+```console herdr=stopped
 $ team up ; echo "exit $?"
-session beacon: stopped by `team down`; cleared
-claude-keeper: ready
-claude-beacon: ready
-  skip claude-qa: stopped in the file; start it with `team add claude-qa`
-watch: started
-exit 0
-```
-
-The record does not outlive the session it recorded. Here the session `down` stopped has been
-started again since, and the leftover record is still in the state: `up` drops it on sight, deletes
-nothing, and treats what it finds as the running team it is:
-
-```console herdr=running-after-down
-$ team up ; echo "exit $?"
-  skip claude-keeper: already ready; left as it is
-  skip claude-beacon: already ready; left as it is
-  skip claude-qa: stopped in the file; start it with `team add claude-qa`
-exit 0
-```
-
-And a stop record that is not the shape `down` writes — this state file holds `stopped: true` — is
-no proof of anything: it is ignored, said on stderr, and the stopped session keeps its refusal:
-
-```console herdr=stopped-broken-record
-$ team up ; echo "exit $?"
-team up: the stop record for beacon is not the shape `down` writes; ignored
 team up: session beacon is stopped; clear it with `herdr session delete beacon`
 exit 1
 ```

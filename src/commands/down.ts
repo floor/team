@@ -6,6 +6,7 @@ import {
   agentStatus,
   paneForeground,
   paneRead,
+  sessionDelete,
   sessionRunning,
   pressEnter,
   sessionStop,
@@ -46,6 +47,8 @@ export type DownLaunch = {
   agentPanes(session: string): string[] | null;
   closeWorkspace(session: string, workspace: string): boolean;
   stopSession(session: string): boolean;
+  /** Clears the session this run stopped, so a later `up` starts from the beginning. */
+  deleteSession(session: string): boolean;
   kill(pid: number): boolean;
   sleep(ms: number): Promise<void>;
   now(): Date;
@@ -64,6 +67,7 @@ const realLaunch: DownLaunch = {
   },
   closeWorkspace: (session, workspace) => workspaceClose(workspace, aim(session)),
   stopSession: sessionStop,
+  deleteSession: sessionDelete,
   kill(pid) {
     try {
       process.kill(pid, 'SIGTERM');
@@ -273,19 +277,12 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     },
     renameAgent: () => false,
     closeWorkspace: launch.closeWorkspace,
-    stopSession(name) {
-      const stopped = launch.stopSession(name);
-      // A record that this team's own `down` stopped the session: the next `up` clears the
-      // session itself instead of refusing on the stopped remnant herdr keeps listed.
-      if (stopped) {
-        updateState(dir, (file) => {
-          (file.sessions[session] ??= emptySession()).stopped = {
-            at: now().toISOString(),
-            by: describeCaller(caller),
-          };
-        });
-      }
-      return stopped;
+    stopSession: launch.stopSession,
+    // Only the session this run has itself just stopped, and only once herdr agrees it is no
+    // longer running: anything else — still running, or herdr silent — is left to its owner, with
+    // the command the line in `executePlan` names. `up` never deletes a session at all.
+    deleteSession(name) {
+      return sources.sessionRunning(name) === false && launch.deleteSession(name);
     },
     kill: launch.kill,
     agentPanes(sessionName) {

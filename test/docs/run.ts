@@ -182,17 +182,9 @@ function diff(expected: string, produced: string): string {
 
 /**
  * `screens="claude-beacon=question"`, `machine="tight"`, `tools="codex=logged-out"` and
- * `herdr=stopped-by-down` on a `console` fence: the world that block's commands run in. Each lasts
- * for the block alone — the fixture's own world is back for the next one. `stopped-by-down` is a
- * stopped session the team's own `down` stopped, and the state is left as a real `down` leaves it:
- * the stop recorded, the seats it stopped gone, the watch's pid dead. `running-after-down` seeds
- * only the stop record on a running session — the leftover a command failed to clear — and
- * `stopped-broken-record` a stop field that is not the shape `down` writes.
+ * `herdr=stopped` on a `console` fence: the world that block's commands run in. Each lasts for
+ * the block alone — the fixture's own world is back for the next one.
  */
-// The `herdr=` values that seed a stop record in the state. The block's world lasts for the block
-// alone, so `restoreWorld` drops the record again.
-const HERDR_WITH_RECORD = new Set(['stopped-by-down', 'running-after-down', 'stopped-broken-record']);
-
 function blockWorld(page: Page, block: Block): void {
   const world = page.world as World;
   const screens = block.attrs.screens;
@@ -220,26 +212,10 @@ function blockWorld(page: Page, block: Block): void {
   }
   const herdr = block.attrs.herdr;
   if (herdr) {
-    if (HERDR_WITH_RECORD.has(herdr)) {
-      world.setHerdr(herdr === 'running-after-down' ? 'running' : 'stopped');
-      updateState(join(page.fixture.root, '.agents'), (state) => {
-        const record = (state.sessions[page.session] ??= emptySession());
-        // The broken-record value is deliberately not the typed shape: the page shows `up`
-        // refusing to trust a field `down` never wrote.
-        (record as { stopped?: unknown }).stopped = herdr === 'stopped-broken-record'
-          ? true
-          : { at: page.spec.now, by: 'the owner' };
-        if (herdr === 'stopped-by-down') {
-          record.seats = {};
-          delete record.watch;
-        }
-      });
-    } else {
-      if (herdr !== 'running' && herdr !== 'absent' && herdr !== 'stopped' && herdr !== 'none') {
-        throw new Error(`herdr="${herdr}": it is running, absent, stopped, none, stopped-by-down, running-after-down or stopped-broken-record`);
-      }
-      world.setHerdr(herdr);
+    if (herdr !== 'running' && herdr !== 'absent' && herdr !== 'stopped' && herdr !== 'none') {
+      throw new Error(`herdr="${herdr}": it is running, absent, stopped or none`);
     }
+    world.setHerdr(herdr);
   }
 }
 
@@ -251,14 +227,7 @@ function restoreWorld(page: Page, block: Block): void {
   }
   if (block.attrs.machine) world.setMachine(page.spec.machine);
   if (block.attrs.tools) world.setTools(page.spec.tools);
-  if (block.attrs.herdr) {
-    world.setHerdr(page.spec.herdr);
-    if (HERDR_WITH_RECORD.has(block.attrs.herdr)) {
-      updateState(join(page.fixture.root, '.agents'), (state) => {
-        delete state.sessions[page.session]?.stopped;
-      });
-    }
-  }
+  if (block.attrs.herdr) world.setHerdr(page.spec.herdr);
 }
 
 async function consoleBlock(page: Page, block: Block, failures: Failure[]): Promise<void> {

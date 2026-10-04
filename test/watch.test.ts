@@ -952,21 +952,4 @@ describe('team watch', () => {
     expect(await runWatch(['--file', file], testIo(dir), sources(1))).toBe(2);
     expect(await runWatch(['--loud'], testIo(dir), sources(1))).toBe(2);
   });
-
-  test('a pass of a running session drops a leftover stop record; a stopped one keeps it', async () => {
-    const stop = { at: new Date(clock).toISOString(), by: 'owner' };
-    const seed = () => updateState(join(dir, '.agents'), (state) => {
-      state.sessions['acme-web'] = { ...emptySession(), stopped: stop };
-    });
-    seed();
-    expect(await runWatch(['--file', file], testIo(dir), sources(1))).toBe(0);
-    // The session runs again: the record can no longer justify `up` deleting the session.
-    expect(readState(join(dir, '.agents')).sessions['acme-web']?.stopped).toBeUndefined();
-    // A session that still sits stopped keeps `down`'s record: the watch, like `status`,
-    // cannot tell a stopped session from a deleted one.
-    seed();
-    scene = { ...live(), running: false };
-    expect(await runWatch(['--file', file], testIo(dir), sources(1))).toBe(0);
-    expect(readState(join(dir, '.agents')).sessions['acme-web']?.stopped).toEqual(stop);
-  });
 });

@@ -39,7 +39,7 @@ A `console` fence may carry:
 | `screens="<seat>=<screen>[,…]"` | what those seats' panes show for this block: `idle`, `working`, `permission`, `trust`, `question`, `unsent`, `unknown` |
 | `machine=<calm\|tight>` | the machine's load, free memory, free disk and swap, for this block |
 | `tools="<cli>=<state>[,…]"` | one CLI's install and login state for this block: `fine`, `missing`, `old`, `logged-out`, `unread` |
-| `herdr=<running\|absent\|stopped\|stopped-by-down\|none>` | the session's state in herdr for this block; `stopped-by-down` also leaves the session's record as a real `down` leaves it — the stop recorded, the seats gone, the watch's pid dead |
+| `herdr=<running\|absent\|stopped\|none>` | the session's state in herdr for this block |
 
 The `screens`, `machine`, `tools` and `herdr` overrides last for their block alone: the fixture's own world is
 back for the next one. The `fixture` block's keys are documented in `test/docs/spec.ts`; the common ones are

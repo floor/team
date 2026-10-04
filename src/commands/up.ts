@@ -17,7 +17,6 @@ import {
   paneRun,
   typeText,
   pressEnter,
-  sessionDelete,
   sessionRunning,
   sessionState,
   startServer,
@@ -37,7 +36,7 @@ import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
 import { profileFor } from '../profiles/index.ts';
 import { readApproval, storePath, type Ceilings } from '../store/store.ts';
-import { clearStopped, emptySession, readState, stoppedByTeam, updateState, type SeatState } from '../state.ts';
+import { emptySession, readState, updateState, type SeatState } from '../state.ts';
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from './doctor.ts';
@@ -49,8 +48,6 @@ import { seatStart } from '../worktree/place.ts';
 export type UpSources = {
   sessionRunning(session: string): boolean | null;
   sessionState?(session: string): SessionState | null;
-  /** Deletes a stopped session: `up` clears one its own `down` stopped. */
-  deleteSession?(session: string): boolean;
   agents(session: string): HerdrAgent[] | null;
   workspaces?(session: string): { id: string }[] | null;
   home: string;
@@ -119,7 +116,6 @@ const realLaunch: Launch = {
 export const realSources: UpSources = {
   sessionRunning,
   sessionState,
-  deleteSession: sessionDelete,
   agents: (session) => agentList(aim(session)),
   workspaces: (session) => workspaceList(aim(session)),
   home: homedir(),
@@ -266,28 +262,16 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     if (problem) refusals.push(problem);
   }
 
-  const recorded = readState(dir).sessions[session];
-  // The session has been seen again — running, or gone from herdr: any stop record spoke for a
-  // stop that is over, and can never again justify deleting the session. This holds on every
-  // path from here, refusing ones included, so the record goes before anything else.
-  if (state === 'running' || state === 'absent') clearStopped(dir, session);
-  // A session this team's own `down` stopped is cleared here; any other stopped session is the
-  // owner's to clear, and the refusal says the command. The record is only `down`'s in the
-  // exact shape `down` writes; anything else in the field is ignored, and said.
-  const stoppedByDown = state === 'stopped' && stoppedByTeam(recorded?.stopped) !== null;
-  if (state === 'stopped' && recorded?.stopped !== undefined && !stoppedByDown) {
-    io.stderr(`team up: the stop record for ${session} is not the shape \`down\` writes; ignored\n`);
-  }
   if (state === null) refusals.push("herdr doesn't answer");
-  if (state === 'stopped' && !stoppedByDown) {
+  if (state === 'stopped') {
     refusals.push(`session ${session} is stopped; clear it with \`herdr session delete ${session}\``);
   }
   const agents = state === 'running' ? sources.agents(session) : [];
   if (state === 'running') {
-    const seatsOf = recorded?.seats ?? {};
+    const recorded = readState(dir).sessions[session]?.seats ?? {};
     if (agents === null) refusals.push(`session ${session} runs, and its agents can't be read`);
     else {
-      const unknown = agents.filter((agent) => !agent.name || !Object.hasOwn(seatsOf, agent.name));
+      const unknown = agents.filter((agent) => !agent.name || !Object.hasOwn(recorded, agent.name));
       if (unknown.length) {
         refusals.push(
           `session ${session} has ${unknown.length} agent${unknown.length === 1 ? '' : 's'} this file's state doesn't record: \`up\` never touches a running team`,
@@ -296,6 +280,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     }
   }
 
+  const recorded = readState(dir).sessions[session];
   const workspaces = sources.workspaces?.(session) ?? null;
   const readings = loadReadings(dir);
   const spend = loadSpendReadings(dir);
@@ -335,9 +320,8 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const plan = upPlan({
     root,
     session,
-    // A stopped session `team` did not stop is not started; the refusal names the delete command.
-    // One its own `down` stopped is cleared below, so the plan starts it from the beginning.
-    sessionRunning: state === 'running' || (state === 'stopped' && !stoppedByDown),
+    // A stopped session is not started. The refusal above names the delete command.
+    sessionRunning: state === 'running' || state === 'stopped',
     seats,
     watchAlive: Boolean(watch && sources.alive?.(watch.pid)),
     watchLine: (sources.watchCommand ?? watchCommand)(session),
@@ -345,10 +329,6 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
 
   if (dry) {
     for (const refusal of refusals) io.stdout(`! up would refuse: ${refusal}\n`);
-    // Said only when this run would reach the delete: a dry run that refuses first never would.
-    if (stoppedByDown && refusals.length === 0) {
-      io.stdout(`session ${session}: stopped by \`team down\`; this run would clear it\n`);
-    }
     io.stdout(formatPlan(plan));
     return 0;
   }
@@ -360,17 +340,6 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   if (!launch) {
     io.stderr('team up: this call has no way to reach herdr\n');
     return 1;
-  }
-
-  if (stoppedByDown) {
-    if (!(sources.deleteSession?.(session) ?? false)) {
-      io.stderr(`team up: session ${session} is stopped and did not clear; run \`herdr session delete ${session}\`\n`);
-      return 1;
-    }
-    io.stdout(`session ${session}: stopped by \`team down\`; cleared\n`);
-    // The record has said what it had to: the marker is only meaningful while the session sits
-    // stopped, and this run has just cleared that session.
-    clearStopped(dir, session);
   }
 
   const ceilings = readApproval(storePath(team.project, root, sources.home))?.approval.ceilings ?? null;

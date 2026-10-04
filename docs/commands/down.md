@@ -17,10 +17,9 @@ launched with and the CLI the state records for it: what runs, not what the file
 Reads the team file, this machine's approval store, the session's state
 (`.agents/team.state.json`, for the watch's pid and the seats' recorded panes and CLIs), and herdr:
 whether the session is running, its agents, each pane's screen and status, and each pane's
-foreground processes. Writes `.agents/team.state.json` (the seats it stopped are dropped, the
-session it stopped is recorded so a later `up` clears it itself — a record that lives only until a
-command sees the session again), `.agents/team.log`, and, through
-herdr: the exit in each pane, the workspaces it closes, the watch's process and the session. A team
+foreground processes. Writes `.agents/team.state.json` (the seats it stopped are dropped),
+`.agents/team.log`, and, through herdr: the exit in each pane, the workspaces it closes, the watch's
+process, the session it stops and the stopped session it clears — its own, just stopped. A team
 file that no longer validates is replaced by the last copy that did, with a notice printed first:
 `down` must keep working when the file breaks.
 
@@ -45,11 +44,16 @@ coordinator's or the operator's seat — only the owner does.
 
     claude-keeper: stopped
     watch: stopped
-    session beacon: stopped
+    session beacon: stopped and cleared
 
 A seat it stops prints `<seat>: stopped`; the watch prints `watch: stopped`; the session prints
-`session <session>: stopped`. A seat it does not stop prints one `  skip` line and is named in the
-last line instead of the session being stopped:
+`session <session>: stopped and cleared` — herdr keeps a stopped session listed, so `down` clears
+the one it has itself just stopped, in the same run, and the next `up` starts from the beginning.
+`up` never deletes a session: one stopped any other way keeps its refusal, with the command to run.
+A clear that does not happen — herdr still reports the session running, or the delete fails —
+prints `session <session>: stopped; it did not clear, run \`herdr session delete <session>\``
+instead, and `down` still exits 0: the stop itself succeeded. A seat it does not stop prints one
+`  skip` line and is named in the last line instead of the session being stopped:
 
     claude-beacon: is working (`--wait` waits for it); left running
     session beacon: not stopped, 1 agent left in it
@@ -139,6 +143,7 @@ $ team down --dry-run ; echo "exit $?"
 + kill 4242
     (the watch)
 + herdr session stop beacon
+    (stopped, then cleared: the session this run stopped, so a later `up` starts from the beginning)
 dry run: nothing was run
 exit 0
 ```
@@ -210,18 +215,20 @@ $ team down --dry-run ; echo "exit $?"
 + kill 4242
     (the watch)
 + herdr session stop beacon
+    (stopped, then cleared: the session this run stopped, so a later `up` starts from the beginning)
 dry run: nothing was run
 exit 0
 ```
 
-For the owner, running that plan stops everything:
+For the owner, running that plan stops everything, and clears the session it stopped — the next
+`team up` starts a fresh one, with no step in between:
 
 ```console
 $ team down ; echo "exit $?"
 claude-keeper: stopped
 claude-beacon: stopped
 watch: stopped
-session beacon: stopped
+session beacon: stopped and cleared
 exit 0
 ```
 

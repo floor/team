@@ -181,12 +181,6 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
       return true;
     },
     sessionUp: () => herdr === 'running',
-    // The one case `team` deletes a session: `up` clearing one its own `down` stopped.
-    deleteSession(_session: string) {
-      did.deleted.push(_session);
-      herdr = 'absent';
-      return true;
-    },
     createWorkspace(_session: string, cwd: string, label: string) {
       const seat = team?.seats.find((candidate) => candidate.label === label);
       made++;
@@ -279,6 +273,13 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     closeWorkspace: action.closeWorkspace,
     stopSession(_session: string) {
       did.stopped++;
+      // A stopped session stays listed in herdr until it is cleared.
+      herdr = 'stopped';
+      return true;
+    },
+    // The one case `team` deletes a session: `down` clearing the one it has itself just stopped.
+    deleteSession(_session: string) {
+      did.deleted.push(_session);
       herdr = 'absent';
       return true;
     },
@@ -358,7 +359,6 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
       return {
         sessionRunning: () => (herdr === 'none' ? null : herdr === 'running'),
         sessionState: action.sessionState,
-        deleteSession: action.deleteSession,
         agents: () => (herdr === 'running' ? agents() : []),
         workspaces: () => (herdr === 'running' ? workspaces() : []),
         home,

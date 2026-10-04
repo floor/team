@@ -368,7 +368,12 @@ export function downPlan(input: DownInput): Step[] {
       text: `session ${session}: not stopped, ${left} agent${left === 1 ? '' : 's'} left in it`,
     });
   } else {
-    steps.push({ kind: 'run', argv: ['herdr', 'session', 'stop', session], do: { do: 'stop', session } });
+    steps.push({
+      kind: 'run',
+      argv: ['herdr', 'session', 'stop', session],
+      note: 'stopped, then cleared: the session this run stopped, so a later `up` starts from the beginning',
+      do: { do: 'stop', session },
+    });
   }
   return steps;
 }

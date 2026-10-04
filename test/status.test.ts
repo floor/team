@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { saveReadings } from '../src/budgets/readings.ts';
+import { saveReadings, saveSpendReadings } from '../src/budgets/readings.ts';
 import { runStatus } from '../src/commands/status.ts';
 import type { StatusSources } from '../src/commands/status.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
@@ -276,6 +276,27 @@ describe('team status', () => {
     ]);
   });
 
+  test('a stored spend reading prints no figure: its row is unknown in the table and the JSON', async () => {
+    writeFileSync(file, example.replace(
+      '  marks: [50, 75, 90]          # percent used, per account and window\n',
+      `  marks: [50, 75, 90]
+  accounts:
+    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }
+`,
+    ));
+    saveSpendReadings(join(dir, '.agents'), [
+      { account: 'deepseek', amount: 4.996, currency: 'USD', at: NOW.getTime() - 3 * 60 * 1000 },
+    ]);
+    const { code, out } = await status();
+    expect(code).toBe(0);
+    expect(out).toContain('deepseek  unknown');
+    expect(out).not.toContain('4.996');
+    const doc = JSON.parse((await status('--json')).out);
+    expect(doc.budgets).toEqual([
+      { account: 'deepseek', window: null, left: null, used: null, resetsIn: null, seat: null, age: null, source: null, fallback: false, state: 'unknown', inside: false, reserve: null },
+    ]);
+  });
+
   test('a stored check reading is a row with its own source, and no seat', async () => {
     writeFileSync(file, example.replace(
       '  marks: [50, 75, 90]          # percent used, per account and window\n',
@@ -401,23 +422,6 @@ describe('team status', () => {
     expect(doc.format).toBe(1);
     expect(doc.notes).toContain('the herdr session "acme-web" is not running');
     expect(doc.differences.length).toBe(4);
-  });
-
-  test('a running session drops a leftover stop record; one not running keeps it', async () => {
-    const stop = { at: NOW.toISOString(), by: 'owner' };
-    const seed = () => updateState(join(dir, '.agents'), (state) => {
-      state.sessions['acme-web'] = { ...emptySession(), stopped: stop };
-    });
-    seed();
-    await status();
-    // The session runs again: the record can no longer justify `up` deleting the session.
-    expect(readState(join(dir, '.agents')).sessions['acme-web']?.stopped).toBeUndefined();
-    // `down`'s record on a session that still sits stopped is `up`'s to clear: `status`, which
-    // cannot tell a stopped session from a deleted one, leaves it alone.
-    seed();
-    live = { ...built(), running: false };
-    await status();
-    expect(readState(join(dir, '.agents')).sessions['acme-web']?.stopped).toEqual(stop);
   });
 });
 

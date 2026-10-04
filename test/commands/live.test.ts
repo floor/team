@@ -418,247 +418,50 @@ describe('team up, live', () => {
   test('a stopped session is refused and no server is started', async () => {
     await approve();
     const made = world();
-    const deleted: string[] = [];
     const io = testIo(root, { kind: 'owner' });
-    const code = await runUp(
-      FILE,
-      io,
-      sources(
-        {
-          sessionState: () => 'stopped',
-          deleteSession: (session) => {
-            deleted.push(session);
-            return true;
-          },
-        },
-        made,
-      ),
-    );
+    const code = await runUp(FILE, io, sources({ sessionState: () => 'stopped' }, made));
     expect(code).toBe(1);
     expect(io.err).toContain('herdr session delete acme-web');
     expect(made.starts).toBe(0);
     expect(made.creates).toEqual([]);
-    expect(deleted).toEqual([]);
   });
 
-  test('clears a session its own `down` stopped, saying so in one line', async () => {
+  // The refusal names the session's own name, whatever `--session` says: the owner copies the line.
+  test("a stopped session's refusal prints the exact herdr command with its name", async () => {
     await approve();
-    writeFileSync(
-      join(root, '.agents/team.state.json'),
-      JSON.stringify({
-        format: 1,
-        sessions: {
-          'acme-web': { seats: {}, worktrees: {}, stopped: { at: NOW.toISOString(), by: 'owner' } },
-        },
-      }),
-    );
     const made = world();
-    const deleted: string[] = [];
     const io = testIo(root, { kind: 'owner' });
-    const code = await runUp(
-      FILE,
-      io,
-      sources(
-        {
-          sessionState: () => 'stopped',
-          deleteSession(session) {
-            deleted.push(session);
-            return true;
-          },
-        },
-        made,
-      ),
-    );
-    expect(code).toBe(0);
-    expect(deleted).toEqual(['acme-web']);
-    expect(io.out).toContain('session acme-web: stopped by `team down`; cleared\n');
-    expect(io.out).not.toContain('herdr session delete');
-    expect(made.starts).toBe(1);
-    expect(readState(join(root, '.agents')).sessions['acme-web']?.stopped).toBeUndefined();
+    const code = await runUp(['--session', 'beta-team', ...FILE], io, sources(
+      { sessionState: (session) => (session === 'beta-team' ? 'stopped' : 'absent') },
+      made,
+    ));
+    expect(code).toBe(1);
+    expect(io.err).toBe('team up: session beta-team is stopped; clear it with `herdr session delete beta-team`\n');
+    expect(made.starts).toBe(0);
   });
 
-  test('a stale stop record is dropped when the session runs again', async () => {
+  // Whatever sits in a `stopped` field — a shape `down` once wrote, or anything else — changes
+  // nothing: `up` never reads it and never deletes a session.
+  test.each([
+    ['the shape a stop once wrote', { at: NOW.toISOString(), by: 'owner' }],
+    ['a boolean', true],
+    ['a string', 'stopped'],
+  ] as [string, unknown][])('a state file whose stopped field is %s refuses the same', async (_what, stopped) => {
     await approve();
-    writeFileSync(
-      join(root, '.agents/team.state.json'),
-      JSON.stringify({
-        format: 1,
-        sessions: {
-          'acme-web': {
-            seats: {
-              'claude-coordinator-acme': { stage: 'ready', pane: 'w8:p1', workspace: 'w8' },
-              'deepseek-acme': { stage: 'launched', pane: 'w7:p1', workspace: 'w7' },
-            },
-            worktrees: {},
-            stopped: { at: NOW.toISOString(), by: 'owner' },
-          },
-        },
-      }),
-    );
-    const made = world();
-    made.session = 'running';
-    made.seed('w7:p1', IDLE, true);
-    const deleted: string[] = [];
-    const io = testIo(root, { kind: 'owner' });
-    const code = await runUp(
-      FILE,
-      io,
-      sources(
-        {
-          sessionState: () => 'running',
-          agents: () => [agent('claude-coordinator-acme', 'w8:p1'), agent('deepseek-acme', 'w7:p1')],
-          workspaces: () => [{ id: 'w8' }, { id: 'w7' }],
-          deleteSession(session) {
-            deleted.push(session);
-            return true;
-          },
-        },
-        made,
-      ),
-    );
-    expect(code).toBe(0);
-    expect(deleted).toEqual([]);
-    expect(io.out).not.toContain('stopped by `team down`');
-    expect(readState(join(root, '.agents')).sessions['acme-web']?.stopped).toBeUndefined();
-  });
-
-  // A state file the session has moved on from: the record must not outlive what it recorded.
-  function stoppedState(stopped: unknown) {
     writeFileSync(
       join(root, '.agents/team.state.json'),
       JSON.stringify({ format: 1, sessions: { 'acme-web': { seats: {}, worktrees: {}, stopped } } }),
     );
-  }
-
-  test('a refused up of a running session drops the stop record, so a later stop is not deleted on', async () => {
-    await approve();
-    const stop = { at: NOW.toISOString(), by: 'owner' };
-    stoppedState(stop);
     const made = world();
-    const deleted: string[] = [];
-    const deleting = {
-      deleteSession(session: string) {
-        deleted.push(session);
-        return true;
-      },
-    };
-    const record = () => readState(join(root, '.agents')).sessions['acme-web']?.stopped;
-
-    const seat = testIo(root, { kind: 'seat', name: 'deepseek-acme', pane: 'w3:p1' });
-    const refused = await runUp(FILE, seat, sources({ sessionState: () => 'running', ...deleting }, made));
-    expect(refused).toBe(1);
-    expect(seat.err).toContain('only the owner runs `up`');
-    expect(deleted).toEqual([]);
-    // The session was seen running: the record is gone, whatever this run then did.
-    expect(record()).toBeUndefined();
-
-    // Someone else stops it later: the owner is told the herdr command, not a silent delete.
-    const owner = testIo(root, { kind: 'owner' });
-    const stopped = await runUp(FILE, owner, sources({ sessionState: () => 'stopped', ...deleting }, made));
-    expect(stopped).toBe(1);
-    expect(owner.err).toContain('herdr session delete acme-web');
-    expect(deleted).toEqual([]);
-  });
-
-  test('a refused up of an absent session drops the stop record too', async () => {
-    await approve();
-    stoppedState({ at: NOW.toISOString(), by: 'owner' });
-    const made = world();
-    const deleted: string[] = [];
     const io = testIo(root, { kind: 'owner' });
-    const code = await runUp(FILE, io, sources(
-      {
-        sessionState: () => 'absent',
-        machine: () => ({ loadPerCore: 9, memoryFree: 80, diskFree: 1e12, swapFree: 1e12, swapUsed: 0 }),
-        deleteSession(session) {
-          deleted.push(session);
-          return true;
-        },
-      },
-      made,
-    ));
+    const code = await runUp(FILE, io, sources({ sessionState: () => 'stopped' }, made));
     expect(code).toBe(1);
-    expect(io.err).toContain('the load is 9.0 per core, above 3');
-    expect(deleted).toEqual([]);
-    expect(readState(join(root, '.agents')).sessions['acme-web']?.stopped).toBeUndefined();
-  });
-
-  test.each([
-    ['a boolean', true],
-    ['a string', 'stopped'],
-    ['a time that is not one', { at: 'yesterday, roughly', by: 'owner' }],
-    ['a missing by', { at: NOW.toISOString() }],
-    ['a missing at', { by: 'owner' }],
-  ] as [string, unknown][])('a stop record that is %s is ignored, reported, and never deleted on', async (_what, stopped) => {
-    await approve();
-    stoppedState(stopped);
-    const made = world();
-    const deleted: string[] = [];
-    const io = testIo(root, { kind: 'owner' });
-    const code = await runUp(FILE, io, sources(
-      {
-        sessionState: () => 'stopped',
-        deleteSession(session) {
-          deleted.push(session);
-          return true;
-        },
-      },
-      made,
-    ));
-    expect(code).toBe(1);
-    expect(deleted).toEqual([]);
-    expect(io.err).toContain('herdr session delete acme-web');
-    expect(io.err).toContain('is not the shape `down` writes; ignored');
-    // An ignored record is left exactly as it was, on disk.
+    expect(io.err).toBe('team up: session acme-web is stopped; clear it with `herdr session delete acme-web`\n');
+    // The field is left exactly as it was, on disk.
     const filed = JSON.parse(readFileSync(join(root, '.agents/team.state.json'), 'utf8')) as {
       sessions: Record<string, { stopped?: unknown }>;
     };
     expect(filed.sessions['acme-web']?.stopped).toEqual(stopped);
-  });
-
-  test('a dry run that would refuse does not say it would clear the stop record', async () => {
-    await approve();
-    const stop = { at: NOW.toISOString(), by: 'owner' };
-    stoppedState(stop);
-    const deleted: string[] = [];
-    const seat = testIo(root, { kind: 'seat', name: 'deepseek-acme', pane: 'w3:p1' });
-    const code = await runUp(['--dry-run', ...FILE], seat, sources(
-      {
-        sessionState: () => 'stopped',
-        deleteSession(session) {
-          deleted.push(session);
-          return true;
-        },
-      },
-      world(),
-    ));
-    expect(code).toBe(0);
-    expect(seat.out).toContain('! up would refuse: only the owner runs `up`');
-    expect(seat.out).not.toContain('this run would clear it');
-    expect(deleted).toEqual([]);
-    expect(readState(join(root, '.agents')).sessions['acme-web']?.stopped).toEqual(stop);
-  });
-
-  test('a dry run that would reach the delete still says so', async () => {
-    await approve();
-    const stop = { at: NOW.toISOString(), by: 'owner' };
-    stoppedState(stop);
-    const deleted: string[] = [];
-    const io = testIo(root, { kind: 'owner' });
-    const code = await runUp(['--dry-run', ...FILE], io, sources(
-      {
-        sessionState: () => 'stopped',
-        deleteSession(session) {
-          deleted.push(session);
-          return true;
-        },
-      },
-      world(),
-    ));
-    expect(code).toBe(0);
-    expect(io.out).toContain('stopped by `team down`; this run would clear it');
-    expect(deleted).toEqual([]);
-    expect(readState(join(root, '.agents')).sessions['acme-web']?.stopped).toEqual(stop);
   });
 
   test("the approval's ceilings are enforced, not the file's limits", async () => {
@@ -772,10 +575,12 @@ describe('team down, live', () => {
     const closed: string[] = [];
     const killed: number[] = [];
     const stopped: string[] = [];
+    const deleted: string[] = [];
     let clock = NOW.getTime();
     let gone = false;
     let current = status;
     let onSleep = () => {};
+    let clearFails = false;
     const launch: DownLaunch = {
       typeText(_session, _pane, text) {
         typed.push(text);
@@ -795,6 +600,10 @@ describe('team down, live', () => {
         stopped.push(session);
         return true;
       },
+      deleteSession(session) {
+        deleted.push(session);
+        return !clearFails;
+      },
       kill(pid) {
         killed.push(pid);
         return true;
@@ -805,8 +614,9 @@ describe('team down, live', () => {
       },
       now: () => new Date(clock),
     };
+    // Herdr's answer once the stop has run: a session `down` stopped is no longer running.
     const sourcesOf = (overrides: Partial<DownSources> = {}): DownSources => ({
-      sessionRunning: () => true,
+      sessionRunning: () => stopped.length === 0,
       agents: () => [seat(current)],
       alive: () => false,
       screen: () => screen,
@@ -823,6 +633,7 @@ describe('team down, live', () => {
       closed,
       killed,
       stopped,
+      deleted,
       launch,
       sourcesOf,
       setStatus: (value: string) => {
@@ -830,6 +641,9 @@ describe('team down, live', () => {
       },
       onSleep: (hook: () => void) => {
         onSleep = hook;
+      },
+      failClear: () => {
+        clearFails = true;
       },
     };
   }
@@ -873,15 +687,67 @@ describe('team down, live', () => {
     expect(io.out).toContain('deepseek-acme: stopped\n');
   });
 
-  test('records that it stopped the session, for the next `up`', async () => {
+  test('clears the session it stopped, in the same run, and says so in one line', async () => {
     const run = harness({ kind: 'idle' });
     const io = testIo(root, { kind: 'owner' });
     const code = await runDown(FILE, io, run.sourcesOf());
     expect(code).toBe(0);
-    expect(readState(join(root, '.agents')).sessions['acme-web']?.stopped).toEqual({
-      at: NOW.toISOString(),
-      by: 'owner',
-    });
+    expect(run.deleted).toEqual(['acme-web']);
+    expect(io.out).toContain('session acme-web: stopped and cleared\n');
+  });
+
+  test('down then up needs no step in between', async () => {
+    await approve();
+    const run = harness({ kind: 'idle' });
+    const owner = testIo(root, { kind: 'owner' });
+    expect(await runDown(FILE, owner, run.sourcesOf())).toBe(0);
+    expect(run.deleted).toEqual(['acme-web']);
+
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({ sessionState: () => 'absent' }, made));
+    expect(code).toBe(0);
+    expect(made.starts).toBe(1);
+    expect(io.out).not.toContain('herdr session delete');
+  });
+
+  test('a session herdr still reports running after the stop is not cleared', async () => {
+    const run = harness({ kind: 'idle' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ sessionRunning: () => true }));
+    expect(code).toBe(0);
+    expect(run.stopped).toEqual(['acme-web']);
+    expect(run.deleted).toEqual([]);
+    expect(io.out).toContain('session acme-web: stopped; it did not clear, run `herdr session delete acme-web`\n');
+  });
+
+  test('a clear that fails names the herdr command and still exits 0', async () => {
+    const run = harness({ kind: 'idle' });
+    run.failClear();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(0);
+    expect(run.deleted).toEqual(['acme-web']);
+    expect(io.out).toContain('session acme-web: stopped; it did not clear, run `herdr session delete acme-web`\n');
+  });
+
+  test('a seat left running clears nothing', async () => {
+    const run = harness({ kind: 'permission' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(0);
+    expect(run.stopped).toEqual([]);
+    expect(run.deleted).toEqual([]);
+    expect(io.out).not.toContain('cleared');
+  });
+
+  test("a seat's call is refused before anything is stopped or cleared", async () => {
+    const run = harness({ kind: 'idle' });
+    const io = testIo(root, { kind: 'seat', name: 'deepseek-acme', pane: 'w3:p1' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(1);
+    expect(run.stopped).toEqual([]);
+    expect(run.deleted).toEqual([]);
   });
 
   test('holds Enter when the status turns working after the text', async () => {
