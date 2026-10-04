@@ -1,7 +1,17 @@
 {
   "name": "team",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0",
   "description": "Set up, change and watch a project's team of AI agents from one file",
+  "keywords": [
+    "ai-agents",
+    "agents",
+    "multi-agent",
+    "orchestration",
+    "herdr",
+    "cli"
+  ],
+  "homepage": "https://github.com/floor/team#readme",
+  "bugs": { "url": "https://github.com/floor/team/issues" },
   "license": "MIT",
   "type": "module",
   "bin": { "team": "dist/cli.js" },
