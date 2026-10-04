@@ -29,6 +29,8 @@ import type { Live } from '../src/status/compare.ts';
 import { approvalStanding, storePath, writeApproval, type Standing } from '../src/store/store.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { analyze, loadContract, problems, render, type ExitRow } from '../scripts/exit-codes.ts';
+import { runRelease } from '../src/commands/release.ts';
+import { fakeFetch, fixture, happy, json, URLS, type Answers } from './release/world.ts';
 import { claudeBox, testIo } from './helpers.ts';
 
 const NOW = new Date('2026-10-04T09:00:00Z');
@@ -1061,6 +1063,55 @@ scene('remove.temporary', async (place) => {
   });
   return show(await removed(place, ['worker'], owner, downSources({ home: place.home })), 'removed temporary worker');
 });
+
+const RELEASE_TEAM = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+workspace:
+  mode: shared
+releases:
+  - package: material
+    github: floor/material
+    trusted_publishing: true
+seats:
+  - role: coordinator
+    name: lead
+    label: lead
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+`;
+
+async function released(place: Place, argv: string[], answers: Answers): Promise<Ran> {
+  const io = testIo(place.root, owner);
+  const { fetcher } = fakeFetch(answers);
+  return { code: await runRelease(argv, io, fetcher), out: io.out, err: io.err };
+}
+
+scene('release.passed', async (place) => {
+  write(place, RELEASE_TEAM);
+  return show(await released(place, ['check', 'material@3.0.2'], happy()), 'pass');
+});
+scene('release.missing', async (place) => {
+  write(place, RELEASE_TEAM);
+  const answers = happy();
+  answers.set(URLS.compare, json({ ...fixture('github-compare.json'), status: 'behind' }));
+  return show(await released(place, ['check', 'material@3.0.2'], answers), 'missing');
+});
+scene('release.unknown', async (place) => {
+  write(place, RELEASE_TEAM);
+  const answers = happy();
+  answers.set(URLS.npm, [json({}, 500), json({}, 500)]);
+  return show(await released(place, ['check', 'material@3.0.2'], answers), 'unknown');
+});
+scene('release.configuration', async (place) => {
+  write(place, 'format: [\n');
+  return show(await released(place, ['check', 'material@3.0.2'], new Map()), 'line');
+});
+scene('release.usage', async (place) => show(await released(place, [], new Map()), 'a subcommand is required'));
 
 async function status(place: Place, argv: string[], sources: StatusSources): Promise<Ran> {
   const io = testIo(place.root, owner);

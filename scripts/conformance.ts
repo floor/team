@@ -83,6 +83,7 @@ const EXEMPT = new Map<string, string>([
   ['hatch', "a fake CLI used only by the hatch tests, not a shipped CLI's screen"],
   ['herdr', 'JSON shapes herdr itself prints, read by the herdr tests'],
   ['linux', 'a fake /proc tree for the load and memory readers'],
+  ['release', 'recorded npm and GitHub responses the release-check tests replay'],
 ]);
 
 type Problem = { file: string; detail: string };

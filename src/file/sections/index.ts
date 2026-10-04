@@ -15,6 +15,7 @@ import { budgets } from './budgets.ts';
 import { watch } from './watch.ts';
 import { watchChecks } from './watch-checks.ts';
 import { seats } from './seats.ts';
+import { releases } from './releases.ts';
 import type { Section } from './section.ts';
 
 /**
@@ -42,4 +43,5 @@ export const SECTIONS: readonly Section[] = [
   watch,
   watchChecks,
   seats,
+  releases,
 ];

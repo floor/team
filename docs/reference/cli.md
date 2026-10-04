@@ -195,6 +195,47 @@ Usage:
 
 None.
 
+## `release`
+
+Hidden: no
+
+Usage:
+
+    team release check <package@version> [--json]
+
+### Flags
+
+| Flag | Takes a value | Repeatable | Hidden |
+| --- | --- | --- | --- |
+| `--help` | no | no | no |
+| `-h` | no | no | yes |
+
+### Positionals
+
+None.
+
+### `check`
+
+Hidden: no
+
+Usage:
+
+    team release check <package@version> [--json]
+
+#### Flags
+
+| Flag | Takes a value | Repeatable | Hidden |
+| --- | --- | --- | --- |
+| `--help` | no | no | no |
+| `--json` | no | no | no |
+| `-h` | no | no | yes |
+
+#### Positionals
+
+| Name | Optional | Repeatable |
+| --- | --- | --- |
+| `package@version` | no | no |
+
 ## `remove`
 
 Hidden: no

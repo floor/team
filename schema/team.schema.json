@@ -493,6 +493,33 @@
         ],
         "$comment": "account must name a key of budgets.accounts; label defaults to the model and version; a seat with count is neither lead"
       }
+    },
+    "releases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "package": {
+            "type": "string",
+            "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$",
+            "maxLength": 214
+          },
+          "github": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+          },
+          "trusted_publishing": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "package",
+          "github"
+        ]
+      },
+      "$comment": "the packages `team release check` verifies; the validator also refuses a package named twice and a non-boolean trusted_publishing"
     }
   }
 }

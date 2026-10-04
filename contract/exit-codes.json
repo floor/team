@@ -745,6 +745,41 @@
     },
     {
       "code": 0,
+      "command": "release",
+      "id": "release.passed",
+      "meaning": "every check passed",
+      "trigger": "team release check material@3.0.2"
+    },
+    {
+      "code": 1,
+      "command": "release",
+      "id": "release.missing",
+      "meaning": "a check is missing",
+      "trigger": "team release check material@3.0.2"
+    },
+    {
+      "code": 2,
+      "command": "release",
+      "id": "release.unknown",
+      "meaning": "a check is unknown",
+      "trigger": "team release check material@3.0.2"
+    },
+    {
+      "code": 64,
+      "command": "release",
+      "id": "release.configuration",
+      "meaning": "the team file can't be read",
+      "trigger": "team release check material@3.0.2"
+    },
+    {
+      "code": 64,
+      "command": "release",
+      "id": "release.usage",
+      "meaning": "the invocation can't be read",
+      "trigger": "team release"
+    },
+    {
+      "code": 0,
       "command": "remove",
       "id": "remove.kept",
       "meaning": "a stopped seat was kept",

@@ -112,6 +112,11 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `init.tracked` | `init` | 1 | the team file is tracked | `team init` |
 | `init.invocation` | `init` | 2 | the invocation can't be read | `team init extra` |
 | `init.not-a-repo` | `init` | 2 | not inside a git repository | `team init` |
+| `release.passed` | `release` | 0 | every check passed | `team release check material@3.0.2` |
+| `release.missing` | `release` | 1 | a check is missing | `team release check material@3.0.2` |
+| `release.unknown` | `release` | 2 | a check is unknown | `team release check material@3.0.2` |
+| `release.configuration` | `release` | 64 | the team file can't be read | `team release check material@3.0.2` |
+| `release.usage` | `release` | 64 | the invocation can't be read | `team release` |
 | `remove.kept` | `remove` | 0 | a stopped seat was kept | `team remove worker --keep` |
 | `remove.removed` | `remove` | 0 | the seat was removed | `team remove worker` |
 | `remove.temporary` | `remove` | 0 | a temporary seat was removed | `team remove worker` |
