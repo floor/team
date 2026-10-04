@@ -14,9 +14,7 @@ import { runApprove } from '../src/commands/approve.ts';
 import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import type { TeamFile } from '../src/file/types.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
-import type { HerdrAgent } from '../src/herdr.ts';
-import { emptySession } from '../src/state.ts';
-import type { SessionState } from '../src/state.ts';
+import { emptySession, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, pass } from '../src/watch/pass.ts';
@@ -341,5 +339,36 @@ describe('a seat the approval lists as changed', () => {
         { account: 'openai-home', seat: 'codex-home', left: 20 },
         { account: 'openai-home', seat: 'codex-work', left: 39 },
       ]);
+  });
+
+  test('a temporary seat like a changed seat folds no figures until the owner approves', async () => {
+    write(TEAM);
+    expect(await approve()).toBe(0);
+
+    updateState(join(root, '.agents'), (state) => {
+      const session = (state.sessions['acme'] ??= emptySession());
+      session.seats['codex-temp'] = {
+        stage: 'ready',
+        temporary: { like: 'codex-work', until: 'result:briefs/x.result.md' },
+      };
+    });
+
+    const edited = TEAM.replace('    account: openai-work\n', '    account: openai-home\n');
+    write(edited);
+    expect(approvalDifferences(team(edited), root, home)).toEqual(['seat codex-work changed']);
+
+    const scene = { 'codex-temp': CODEX(12) };
+    const io = testIo(root);
+    expect(await runWatch(['--file', '.agents/team.yaml'], io, watchSources(scene))).toBe(0);
+
+    // codex-temp's figure is not stored under either openai-work or openai-home
+    expect(loadReadings(join(root, '.agents'))).toEqual([]);
+
+    // Approved, the temporary seat's figure folds into the approved account
+    expect(await approve()).toBe(0);
+    const after = testIo(root);
+    expect(await runWatch(['--file', '.agents/team.yaml'], after, watchSources(scene))).toBe(0);
+    expect(loadReadings(join(root, '.agents')).map(({ account, seat, left }) => ({ account, seat, left })))
+      .toEqual([{ account: 'openai-home', seat: 'codex-temp', left: 12 }]);
   });
 });
