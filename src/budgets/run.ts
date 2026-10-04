@@ -36,10 +36,15 @@ const SPEND = /^([0-9]+(?:\.[0-9]{1,4})?) ([A-Z]{3})$/;
 // printed reset is a duration; the printed measurement time is unix seconds.
 const LINE = /^(session|daily|weekly) (100|[0-9]{1,2})% (used|left)(?: resets ([0-9]+h(?:[0-9]+m)?|[0-9]+m))?(?: at ([0-9]{10}))?$/;
 
-/** An output's lines: one trailing newline allowed, and nothing else. */
+/**
+ * An output's lines: one trailing newline allowed, and nothing else. A "\r\n" ending reads
+ * as its line — the CR goes with the newline — and a CR anywhere else stays a character of
+ * the line, off the contract.
+ */
 function linesOf(text: string): string[] | null {
   const body = text.endsWith('\n') ? text.slice(0, -1) : text;
-  return body === '' ? null : body.split('\n');
+  if (body === '') return null;
+  return body.split('\n').map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line));
 }
 
 /**
