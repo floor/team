@@ -73,7 +73,7 @@
     "screenModule": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?!(?:node_modules|test|src|dist|scripts|examples|worktrees|\\.github)(?:[/\\\\]|$))(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))(?!.*%2[eE]%2[eE])[^/~\\\\:][^:]*\\.(?:ts|js|cjs|mjs)$"
+      "pattern": "^(?!(?:\\.[\\/\\\\])*(?:node_modules|test|src|dist|scripts|examples|worktrees|\\.github)(?:[\\/\\\\]|$))(?!.*(?:^|[\\/\\\\])\\.\\.(?:[\\/\\\\]|$))(?!.*%2[eE]%2[eE])[^/~\\\\:][^:]*\\.(?:ts|js|cjs|mjs)$"
     },
     "quota": {
       "type": "object",

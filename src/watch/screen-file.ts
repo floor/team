@@ -99,7 +99,8 @@ function loadScreenModule(specifier: string, baseDir: string | undefined, line: 
 
   // 7. Refuse paths in the project outside profiles
   const projectSegments = ['test', 'src', 'dist', 'scripts', 'examples', 'node_modules', 'worktrees', '.github'];
-  const firstSegment = specifier.replace(/^\.[/\\]/, '').split(/[/\\]/)[0] ?? '';
+  const stripped = specifier.replace(/^(?:\.[/\\])+/, '');
+  const firstSegment = stripped.split(/[/\\]/)[0] ?? '';
   if (
     projectSegments.includes(firstSegment) ||
     (existsSync(resolve(process.cwd(), specifier)) && !resolve(process.cwd(), specifier).startsWith(resolvedDir + sep))
@@ -127,15 +128,12 @@ function loadScreenModule(specifier: string, baseDir: string | undefined, line: 
     fail(line, `${label}: "screen_module" cannot be a directory: "${specifier}"`);
   }
 
-  // 9. Refuse bare names (no slash, no script extension)
-  if (
-    !specifier.startsWith('./') &&
-    !specifier.startsWith('.\\') &&
-    !specifier.includes('/') &&
-    !specifier.includes('\\') &&
-    !/\.(ts|js|cjs|mjs)$/i.test(specifier)
-  ) {
-    fail(line, `${label}: "screen_module" cannot be a bare name: "${specifier}"`);
+  // 9. Refuse bare names or paths without a script extension (.ts, .js, .cjs, .mjs)
+  if (!/\.(ts|js|cjs|mjs)$/i.test(specifier)) {
+    if (!specifier.includes('/') && !specifier.includes('\\')) {
+      fail(line, `${label}: "screen_module" cannot be a bare name: "${specifier}"`);
+    }
+    fail(line, `${label}: "screen_module" must have a script extension (.ts, .js, .cjs, .mjs): "${specifier}"`);
   }
 
   let fileTarget = target;
@@ -144,14 +142,6 @@ function loadScreenModule(specifier: string, baseDir: string | undefined, line: 
       fileTarget = fileTarget.slice(0, -3) + '.js';
     } else if (fileTarget.endsWith('.js') && existsSync(fileTarget.slice(0, -3) + '.ts')) {
       fileTarget = fileTarget.slice(0, -3) + '.ts';
-    } else if (existsSync(fileTarget + '.ts')) {
-      fileTarget = fileTarget + '.ts';
-    } else if (existsSync(fileTarget + '.js')) {
-      fileTarget = fileTarget + '.js';
-    } else if (existsSync(fileTarget + '.cjs')) {
-      fileTarget = fileTarget + '.cjs';
-    } else if (existsSync(fileTarget + '.mjs')) {
-      fileTarget = fileTarget + '.mjs';
     }
   }
 
