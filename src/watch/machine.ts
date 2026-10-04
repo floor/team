@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, statfsSync } from 'node:fs';
-import { cpus, loadavg, platform } from 'node:os';
+import { cpus, loadavg } from 'node:os';
 import type { TeamFile } from '../file/types.ts';
 
 // The machine's figures, each null when it can't be read here: a figure that isn't read is never
@@ -40,6 +40,22 @@ export function parseMemoryPressure(text: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+// "0.52 0.58 0.59 1/1234 5678", as /proc/loadavg holds it: the one-minute average first.
+export function parseLoadavg(text: string): number | null {
+  const match = /^\s*([0-9]+(?:\.[0-9]+)?)\s/.exec(text);
+  return match ? Number(match[1]) : null;
+}
+
+// One file of a /proc tree, or null when this machine doesn't have it. `proc` is the tree's root,
+// a parameter so a test can read a captured one.
+function procFile(proc: string, name: string): string | null {
+  try {
+    return readFileSync(`${proc}/${name}`, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
 export function parseMeminfo(text: string): { memoryFree: number | null; swapFree: number | null; swapUsed: number | null } {
   const kb = (name: string) => {
     const match = new RegExp(`^${name}:\\s+([0-9]+) kB`, 'm').exec(text);
@@ -56,15 +72,17 @@ export function parseMeminfo(text: string): { memoryFree: number | null; swapFre
   };
 }
 
-export function readMachine(root: string): Machine {
+// This platform's figures: macOS's commands on darwin, Linux's /proc everywhere Linux runs.
+// `platform` and `proc` are parameters for the tests; the command passes neither.
+export function readMachine(root: string, platform: string = process.platform, proc = '/proc'): Machine {
   const machine: Machine = { loadPerCore: null, memoryFree: null, diskFree: null, swapFree: null, swapUsed: null };
   const cores = cpus().length;
-  if (cores) machine.loadPerCore = (loadavg()[0] as number) / cores;
   try {
     const volume = statfsSync(root);
     machine.diskFree = volume.bavail * volume.bsize;
   } catch {}
-  if (platform() === 'darwin') {
+  if (platform === 'darwin') {
+    if (cores) machine.loadPerCore = (loadavg()[0] as number) / cores;
     const pressure = command('memory_pressure', []);
     if (pressure) machine.memoryFree = parseMemoryPressure(pressure);
     const swap = parseSwapUsage(command('sysctl', ['-n', 'vm.swapusage']) ?? '');
@@ -72,10 +90,15 @@ export function readMachine(root: string): Machine {
       machine.swapFree = swap.free;
       machine.swapUsed = swap.used;
     }
-  } else {
-    try {
-      Object.assign(machine, parseMeminfo(readFileSync('/proc/meminfo', 'utf8')));
-    } catch {}
+  } else if (platform === 'linux') {
+    // /proc is always there, and reading it is what the platform's own tools do.
+    const load = procFile(proc, 'loadavg');
+    const one = load === null ? null : parseLoadavg(load);
+    if (cores && one !== null) machine.loadPerCore = one / cores;
+    const info = procFile(proc, 'meminfo');
+    if (info !== null) Object.assign(machine, parseMeminfo(info));
+  } else if (cores) {
+    machine.loadPerCore = (loadavg()[0] as number) / cores;
   }
   return machine;
 }
