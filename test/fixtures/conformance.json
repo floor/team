@@ -43,6 +43,12 @@
       "composer": "idle"
     },
     {
+      "file": "antigravity/1.2.16/trust-54.txt",
+      "cli": "antigravity",
+      "classify": "trust",
+      "composer": "unknown"
+    },
+    {
       "file": "antigravity/1.2.16/trust.txt",
       "cli": "antigravity",
       "classify": "trust",
