@@ -830,6 +830,8 @@ describe('team down, live', () => {
     const code = await runDown(FILE, io, run.sourcesOf());
     expect(code).toBe(1);
     expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(run.deleted).toEqual([]);
     expect(io.out).toContain('deepseek-acme: timed out leaving its pane; left as it is');
     expect(io.out).toContain('session acme-web: not stopped, something was left in it');
   });
