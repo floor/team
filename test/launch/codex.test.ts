@@ -293,4 +293,25 @@ describe('the prompt-glyph continuation row (Codex)', () => {
     expect(readScreen('codex', boxed(`person text\n${GLYPH}\n${GLYPH}`)).kind).toBe('unsent');
     expect(boxHoldsText('codex', 'Rules.', boxed(`person text\n${GLYPH}\n${GLYPH} Rules.`))).toBe(false);
   });
+
+  test('a second glyph row at the prompt column fails closed: never idle, never entered', async () => {
+    // The 0.2.1 boundary: the person's text on the input row and a second row carrying the
+    // prompt at that same column (column 0, where unsent.txt draws the input and exit-typed.txt
+    // keeps its menu row). The input row is the first prompt row after the frame boundary above
+    // the box; continuations are drawn indented — two columns — and the transcript's `› …` rows
+    // keep a blank row above the input, so a prompt row after the input is a shape no capture
+    // explains, and the read is `unknown`: nothing is typed into it and no Enter is sent. Read
+    // by its lowest row the box was idle; the paste went after the second glyph, the read-back
+    // held only the typed text, and the Enter submitted both.
+    const at = (typed = '') => fixture('idle')
+      .replace('› Ask Codex to do anything', `› person text\n›${typed === '' ? '' : ` ${typed}`}`);
+    expect(readScreen('codex', at()).kind).toBe('unknown');
+    expect(classify('codex', at().split('\n')).kind).toBe('unknown');
+    expect(classifyComposer('codex', at().split('\n')).kind).toBe('unknown');
+    expect(boxHoldsText('codex', 'Rules.', at('Rules.'))).toBe(false);
+    const d = delivery();
+    d.showText(at());
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+  });
 });

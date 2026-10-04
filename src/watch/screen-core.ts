@@ -582,9 +582,21 @@ function statusLast(
   const status = statusIndex(composer, lines, allowOneTrailing, tick);
   if (status === 'stop') return { kind: 'stop' };
   if (status < 0) return { kind: 'unknown' };
-  let input = status - 1;
-  while (input >= 0 && !composer.prompt.test(lines[input] ?? '')) input--;
-  if (input < 0) return { kind: 'unknown' };
+  // The input row is the top of the box, and the only prompt row in it. The box's top
+  // boundary is the blank row above its run — the transcript's last row sits above that,
+  // with its own `› …` echoes. Every capture draws every row of typed text below the input
+  // indented (Codex's continuations at column two, Cursor's at four), so no capture draws a
+  // person's later row at the prompt column: a prompt row after the input, inside the box,
+  // is a shape the captures do not show. Fail closed on it rather than take the lowest
+  // prompt row for the input and leave a person's own text above it unread.
+  let low = status - 1;
+  while (low >= 0 && !composer.prompt.test(lines[low] ?? '')) low--;
+  if (low < 0) return { kind: 'unknown' };
+  let top = low;
+  while (top > 0 && (lines[top - 1] ?? '').trim() !== '') top--;
+  let input = top;
+  while (input < low && !composer.prompt.test(lines[input] ?? '')) input++;
+  for (let i = input + 1; i < status; i++) if (composer.prompt.test(lines[i] ?? '')) return { kind: 'unknown' };
   const rows = lines.slice(input + 1, status);
   for (let i = input + 1; i < status; i++) if ((lines[i] ?? '').trim()) return { kind: 'unsent', from: input, input, rows };
   return { kind: placeholder(stripTyped(lines[input] ?? '', composer), composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from: input, input, rows };

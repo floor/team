@@ -859,6 +859,33 @@ describe('team down, live', () => {
     expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is\n');
   });
 
+  test('a second glyph row at the prompt column after the exit text gets no Enter', async () => {
+    // The 0.2.1 boundary on the exit path, in Codex's shape: the pane holds the person's own
+    // text and then a row carrying the prompt at the input row's own column, and the read-back
+    // before 0.2.1 took that lowest row for the input — the exit text read back, the Enter went
+    // in, and the person's text was submitted with it. No capture draws a person's continuation
+    // at the prompt column (Codex's are indented two columns), so the shape fails closed: the
+    // exit is typed, and not sent.
+    const codexIdle = readFileSync(new URL('../fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
+    const run = harness({ kind: 'idle' });
+    let shown: string | undefined;
+    run.launch.typeText = (_session, _pane, text) => {
+      run.typed.push(text);
+      shown = codexIdle.replace('› Ask Codex to do anything', `› person text\n› ${text}`);
+      return true;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({
+      screenText: () => shown,
+      agents: () => [{ ...agent('codex-acme', 'w3:p1', 'idle'), agent: 'codex' }],
+    }));
+    expect(code).toBe(1);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('codex-acme: its exit was not typed; left as it is\n');
+  });
+
   test.each(['close-short', 'close-long', 'open-short'] as const)(
     'an Antigravity box whose two rules differ in width gets no exit Enter (%s)',
     async (shape) => {

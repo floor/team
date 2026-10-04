@@ -1,0 +1,13 @@
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Use /run-everything to skip all approvals.
+
+
+
+
+  → gamma pasted first
+    delta pasted second
+
+
+  Grok 4.7 256K High                 Run Everything
+  <workspace>

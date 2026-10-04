@@ -193,6 +193,58 @@ describe('team remove', () => {
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
+  test('a second glyph row at the prompt column after the exit text gets no Enter', async () => {
+    // The 0.2.1 boundary on the remove path, in Codex's shape (the worker seat below is
+    // Codex's): the pane holds the person's own text and then a row carrying the prompt at the
+    // input row's own column, and the read-back before 0.2.1 took that lowest row for the
+    // input — the exit text read back, the Enter went in, and the person's text was submitted
+    // with it. No capture draws a person's continuation at the prompt column (Codex's are
+    // indented two columns), so the shape fails closed: the exit is typed, and not sent.
+    const codexIdle = readFileSync(new URL('../fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
+    writeFileSync(file, FILE.replace(
+      `  - role: implementer
+    name: worker
+    label: worker
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5`,
+      `  - role: implementer
+    name: worker
+    label: worker
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    display: GPT-6 Sol
+    launch: codex -m gpt-6-sol -c model_reasoning_effort=high`,
+    ));
+    const made = world();
+    let shown: string | undefined;
+    let gone = false;
+    const launch = made.sources.launch;
+    if (!launch) throw new Error('fixture');
+    launch.typeText = (_session, _pane, text) => {
+      made.typed.push(text);
+      shown = codexIdle.replace('› Ask Codex to do anything', `› person text\n› ${text}`);
+      return true;
+    };
+    launch.pressEnter = () => {
+      gone = true;
+      return true;
+    };
+    made.sources.screenText = () => shown;
+    made.sources.foreground = () => (gone ? [] : ['codex']);
+    made.agents.push({ name: 'worker', agent: 'codex', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    expect(made.typed).toEqual(['/exit']);
+    expect(made.closed).toEqual([]);
+    expect(io.out).toContain('worker: its exit was not typed; left as it is');
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
   test('a seat that is not running is taken out without typing', async () => {
     const made = world();
     const io = testIo(dir, lead);

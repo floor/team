@@ -859,6 +859,35 @@ describe('team watch', () => {
     expect(io.out).not.toContain('nudged the operator');
   });
 
+  test('a second glyph row at the operator\'s prompt column is never typed into and never gets the Enter', async () => {
+    // The 0.2.1 boundary on the nudge path, in Codex's shape: the operator's box holds their
+    // own text and then a row carrying the prompt at the input row's own column. No capture
+    // draws a person's continuation there — continuations are indented two columns — so the
+    // read is `unknown`: not idle, and nothing is typed. Read by its lowest row the box was
+    // idle, the nudge was appended after the second glyph, the read-back held only the nudge,
+    // and the Enter submitted the operator's own text with it.
+    const codexIdle = readFileSync(new URL('./fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
+    // The example's codex-acme is parked, and a parked seat can't be the operator.
+    writeFileSync(file, example
+      .replace('operator: claude-operator-acme', 'operator: codex-acme')
+      .replace('    parked: true\n', ''));
+    scene = live({
+      'codex-acme': { status: 'idle', screen: codexIdle },
+      'deepseek-acme-2': { status: 'blocked', screen: question },
+    });
+    screenNow = codexIdle.replace('› Ask Codex to do anything', '› person text\n›');
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => {
+        typed.push(`${pane} ${text}`);
+        screenNow = codexIdle.replace('› Ask Codex to do anything', `› person text\n› ${text}`);
+        return true;
+      },
+    }));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain('nudged the operator');
+  });
+
   test.each(['close-short', 'close-long', 'open-short'] as const)(
     'a nudge is not typed or sent into an Antigravity operator\'s mismatched-rules box (%s)',
     async (shape) => {

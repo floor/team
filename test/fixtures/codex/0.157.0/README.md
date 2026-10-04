@@ -45,6 +45,24 @@ acknowledgement and `/exit`, then its workspace and scratch session were removed
   attempts refused delivery during startup and were torn down without submitting a
   message. The default session remained at eight agents, with unchanged config/auth hashes.
 
+## Round 3: the person's own box — the trust question before the composer
+
+A repeat scratch run on 2026-10-04 (`team-test-pc-codex`, the profile's own
+`codex -a never -s danger-full-access --no-daemon --no-alt-screen`) opened on the
+workspace trust question before any composer was drawn: `capture-sandbox/codex` is
+not trusted, the question shows `1. Trust and continue`, and the capture rule allows
+no answer that grants anything. The dialog was read plain and ansi, Escape returned
+to the shell, and the session was stopped and deleted. No box was typed into,
+nothing was sent, and no question was answered.
+
+So there is still no capture of a person's own multi-line box for Codex. The
+continuation shapes this folder asserts are the ones its captures show — the input
+row at column 0, continuations at column 2 (`unsent.txt`), and transcript rows
+`› …` also at column 0 but separated from the input row by a blank row
+(`exit-typed.txt` draws its menu row at 0 with a blank between it and the typed
+input row). A later row at the prompt column with no capture to explain it is a
+shape the reader fails closed on rather than guesses about.
+
 ## Constructed
 
 `owner-status.txt` is constructed, not a capture. Nothing in it was read from a live pane.
