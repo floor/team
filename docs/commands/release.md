@@ -9,7 +9,7 @@ it by hand, or let CI run it after it creates a tag.
 
 ## Synopsis
 
-    team release check <package@version> [--json]
+    team release check <package@version> [--json] [--file <path>]
 
 `<package@version>` is the package as the team file's `releases` declares it and its Semantic
 Versioning 2.0.0 version, joined by `@` — no leading `v`; the tag carries that. A scoped package
@@ -17,16 +17,19 @@ splits at the final `@`: `@scope/name@1.2.3`.
 
 ## What it reads and writes
 
-Reads the team file's `releases` section, then the public records over HTTPS only: the npm
-registry's version and attestation endpoints, and GitHub's repository, tag, compare, release and
-contents endpoints — plus, when the file configures them, one read-only GraphQL read of the Linear
-project and one contents read of the activity file. Every read is credential-free except that one
-Linear request, whose key is read from the macOS Keychain (below); no read uses a token, a
-credential helper or a local git fetch. It writes nothing: no state, no baseline, no cache, no
-approval — nothing to npm, GitHub, Linear or a file. A timeout, a transport failure, or a 408, 429
-or 5xx response is retried exactly once; other failures are not retried. A run makes at most eleven
-endpoint reads and twenty-two attempts, or thirteen and twenty-six with both optional pairs
-configured.
+Reads the team file — by default `.agents/team.yaml` of the repository's main checkout, found
+through git's common directory, so a run inside a linked worktree reads the main checkout's file,
+not the worktree's; `--file <path>` names another file instead, a relative path resolved against
+the working directory — then the file's `releases` section, then the public records over HTTPS
+only: the npm registry's version and attestation endpoints, and GitHub's repository, tag, compare,
+release and contents endpoints — plus, when the file configures them, one read-only GraphQL read
+of the Linear project and one contents read of the activity file. Every read is credential-free
+except that one Linear request, whose key is read from the macOS Keychain (below); no read uses a
+token, a credential helper or a local git fetch. It writes nothing: no state, no baseline, no
+cache, no approval — nothing to npm, GitHub, Linear or a file. A timeout, a transport failure, or a
+408, 429 or 5xx response is retried exactly once; other failures are not retried. A run makes at
+most eleven endpoint reads and twenty-two attempts, or thirteen and twenty-six with both optional
+pairs configured.
 
 ## Who may run it
 
@@ -103,7 +106,13 @@ The Linear read is read-only: the command never writes to Linear.
 | Flag | Meaning |
 | --- | --- |
 | `--json` | print the result as one JSON object on standard output, and nothing else |
+| `--file <path>` | the team file, instead of the main checkout's `.agents/team.yaml` |
 | `--help`, `-h` | the usage, and exit 0 |
+
+`--file` takes its value even when the value looks like another option: `--file --json` names a
+file called `--json`, and only a `--json` that is not some option's value selects the JSON output.
+`--help` and `-h` are not part of that rule: they are answered before the arguments are parsed,
+wherever they appear, so `--file --help` prints the usage and exits 0.
 
 ## What it finds
 
@@ -139,10 +148,12 @@ a pass):
 | `team release: a <package@version> is required` | 64 |
 | `team release: unexpected "<argument>"` | 64 |
 | `team release: unknown option --<name>` | 64 |
+| `team release: --file needs a value` | 64 |
 | `team release: "<argument>" is not <package>@<version>` | 64 |
 | `team release: the package "<name>" is not a package name` | 64 |
 | `team release: the version "<version>" is not a Semantic Versioning 2.0.0 version` | 64 |
 | `team release: <package> is not declared in the team file's releases` | 64 |
+| `team release: <path>: no team file at <path>` | 64 |
 | `team release: <path>, line <n>: <message>` | 64 |
 
 ## Examples
@@ -214,5 +225,14 @@ An undeclared package is a usage error, in the same JSON shape when `--json` is 
 ```console
 $ team release check other@3.0.2 --json ; echo "exit $?"
 {"error":{"code":"usage","message":"other is not declared in the team file's releases"}}
+exit 64
+```
+
+`--file` names the team file to read — here a relative path against the working directory — and a
+file that isn't there is the configuration refusal, before any record is read:
+
+```console
+$ team release check material@3.0.2 --file policy/team.yaml ; echo "exit $?"
+team release: ./policy/team.yaml: no team file at policy/team.yaml
 exit 64
 ```

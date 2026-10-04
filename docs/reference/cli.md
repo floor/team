@@ -201,7 +201,7 @@ Hidden: no
 
 Usage:
 
-    team release check <package@version> [--json]
+    team release check <package@version> [--json] [--file <path>]
 
 ### Flags
 
@@ -220,12 +220,13 @@ Hidden: no
 
 Usage:
 
-    team release check <package@version> [--json]
+    team release check <package@version> [--json] [--file <path>]
 
 #### Flags
 
 | Flag | Takes a value | Repeatable | Hidden |
 | --- | --- | --- | --- |
+| `--file` | yes | no | no |
 | `--help` | no | no | no |
 | `--json` | no | no | no |
 | `-h` | no | no | yes |
