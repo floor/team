@@ -41,6 +41,9 @@ screen:
     - all:
         - '(?:[Dd][Oo] [Yy][Oo][Uu] [Tt][Rr][Uu][Ss][Tt] (?:[Tt][Hh][Ii][Ss]|[Tt][Hh][Ee]) [Ff][Oo][Ll][Dd][Ee][Rr]\?|[Oo][Nn][Ee] [Yy][Oo][Uu] [Tt][Rr][Uu][Ss][Tt]\?)'
         - '^\s*[❯›>]?\s*1\.\s+Yes\b'
+    - all:
+        - '^\s*[❯›>]?\s*Yes, I trust this folder\b'
+      footer: 'Enter to confirm · Esc to cancel'
   # A quoted question above the composer's rule is not a dialog. The footer is the
   # captured last line and needs the question. A Yes/No choice below the last rule
   # is the other shape; the mark is optional, as on an unmarked "2. No".

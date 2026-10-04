@@ -216,11 +216,10 @@ describe('claude-code reads the input line\'s styling', () => {
     expect(kind).toBe('unknown');
   });
 
-  test('the styled trust dialog is attention, never idle or unsent', () => {
+  test('the styled trust dialog reads trust', () => {
     // 2.1.289 draws this dialog's choices without numbers (`❯ No, exit` / `Yes, I trust this
-    // folder`), so the trust stage's `1. Yes` does not match and the dialog reads question —
-    // the same on the plain capture. A question is attention either way; the floor holds.
-    expect(readScreen('claude-code', styled('trust-ansi.txt')).kind).toBe('question');
+    // folder`), matching the unnumbered trust pattern together with its footer.
+    expect(readScreen('claude-code', styled('trust-ansi.txt')).kind).toBe('trust');
   });
 });
 
