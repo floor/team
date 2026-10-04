@@ -1,0 +1,21 @@
+❯ cursor-agent --force --sandbox disabled
+
+
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Type ? in the prompt bar to show in-app
+  hints.
+
+
+ │ ○ Second queued message.                                                                          │
+ │ enter interrupt and send · ↑ select/edit · esc cancel                                             │
+ └───────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+ ⠘⠤ Thinking  59.89k tokens
+
+
+  → Add a follow-up
+
+
+  Grok 4.7 256K High · 93.8% · 15 files edited
+  <workspace> 

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
-import { classifyComposer, readScreen } from '../../src/watch/screen.ts';
+import { classify, classifyComposer, readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
 import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
 import { upPlan } from '../../src/launch/plan.ts';
@@ -90,6 +90,63 @@ describe('Cursor launch and captured screens', () => {
     expect(classifyComposer('cursor', lines).kind).toBe('idle');
     const thinking = fixture('thinking').split('\n').map((line) => line.trimEnd()).slice(-20);
     expect(classifyComposer('cursor', thinking).kind).toBe('idle');
+  });
+
+  test.each([
+    ['follow-up-queue-two', 'working'],
+    ['follow-up-queue-hint', 'working'],
+    ['follow-up-queue-one', 'working'],
+  ] as const)('%s: a follow-up queue under a running turn reads %s', (file, kind) => {
+    // Nobody typed: the queue's rows are not input text, and the composer's own
+    // row is the placeholder — an empty box — so the turn's reading stands.
+    expect(readScreen('cursor', fixture(file)).kind).toBe(kind);
+    const lines = fixture(file).split('\n');
+    expect(classify('cursor', lines).kind).toBe(kind);
+    expect(classifyComposer('cursor', lines).kind).toBe('idle');
+  });
+
+  test('typed text still reads unsent, with and without a queue box above it', () => {
+    expect(readScreen('cursor', fixture('unsent')).kind).toBe('unsent');
+    // With a queue box above it the text is still the composer's own, not the
+    // queue's: the composer read says unsent, and the painted spinner — the
+    // running turn — is what makes the whole screen working.
+    const withQueue = fixture('follow-up-queue-typed').split('\n');
+    expect(classifyComposer('cursor', withQueue).kind).toBe('unsent');
+    expect(readScreen('cursor', fixture('follow-up-queue-typed')).kind).toBe('working');
+    // Take the turn's paint away and the text decides, exactly as without the box.
+    const quiet = withQueue.filter((line) => !/^\s*[⠀-⣿]/.test(line)).join('\n');
+    expect(readScreen('cursor', quiet).kind).toBe('unsent');
+    expect(classifyComposer('cursor', quiet.split('\n')).kind).toBe('unsent');
+  });
+
+  test('a queue box with no running turn under it is working, never idle', () => {
+    // No spinner row and no `ctrl+c to stop`: the box is what is left of the
+    // turn, and its messages are still waiting on one. Working means nothing is
+    // typed into it and `down --wait` waits; idle would end the seat.
+    const quiet = fixture('follow-up-queue-two')
+      .split('\n')
+      .map((line) => line.replace(/\s{2,}ctrl\+c to stop\s*$/, ''))
+      .filter((line) => !/^\s*[⠀-⣿]/.test(line))
+      .join('\n');
+    expect(readScreen('cursor', quiet).kind).toBe('working');
+    expect(classifyComposer('cursor', quiet.split('\n')).kind).toBe('idle');
+  });
+
+  test('prose that looks like the queue box leaves an idle prompt idle', () => {
+    const idleLines = fixture('idle').split('\n');
+    const at = idleLines.findIndex((line) => /^\s*→/.test(line));
+    expect(at).toBeGreaterThan(0);
+    const boxTop = '  ┌─ follow-ups ────────────────────────┐';
+    const boxRow = '  │ ○ First queued message.              │';
+    const boxEnd = '  └──────────────────────────────────────┘';
+    const hintRow = '  │ enter steer · ↑ select/edit · esc cancel │';
+    const quoted = [...idleLines.slice(0, at), boxTop, boxRow, boxEnd, '  the box lists the messages already sent.', ...idleLines.slice(at)].join('\n');
+    expect(readScreen('cursor', quoted).kind).toBe('idle');
+    // Even a paste that reproduces the overlay's own hint line leaves idle when
+    // more prose follows it: the box is then not directly above the prompt area.
+    const pasted = [...idleLines.slice(0, at), boxTop, boxRow, hintRow, boxEnd, '  and nothing had been typed.', ...idleLines.slice(at)].join('\n');
+    expect(readScreen('cursor', pasted).kind).toBe('idle');
+    expect(classifyComposer('cursor', pasted.split('\n')).kind).toBe('idle');
   });
 
   test('unknown, shell and unobserved dialogs never count as idle', () => {
