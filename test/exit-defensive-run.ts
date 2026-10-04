@@ -101,6 +101,8 @@ writeApproval(
   storePath(loaded.team.project, loaded.root, home),
   { approval: approvalOf(loaded.team, loaded.root, NOW), file: TWO },
   loaded.team.seats,
+  home,
+  NOW,
 );
 
 // Counts are the command's own checks. Setup above is not part of the run.
