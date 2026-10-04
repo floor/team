@@ -2,7 +2,8 @@ import { execFileSync, spawn } from 'node:child_process';
 
 // The only module that talks to herdr. Reading is the default. The calls that change a session
 // are `startServer`, `workspaceCreate`, `paneRun`, `agentRename`, `workspaceClose`, `sessionStop`,
-// `typeText` and `pressEnter`. `team` never deletes a session.
+// `sessionDelete`, `typeText` and `pressEnter`. `team` deletes a session in one case only:
+// `down` clears the session it has itself just stopped, in the same run; `up` never deletes one.
 
 export type HerdrAgent = {
   name: string | null;
@@ -194,12 +195,22 @@ export function workspaceClose(workspace: string, session?: string): boolean {
   return body !== null && body.type !== 'error';
 }
 
-// Stops a session. Never deletes one: clearing a stopped session is the owner's command to run.
+// Stops a session, which herdr keeps listed as stopped.
 export function sessionStop(name: string): boolean {
   const out = capture(['session', 'stop', name]);
   if (out === null) return false;
   const body = parsed(out);
   return body === null || body.type !== 'error';
+}
+
+// Clears a stopped session — the one case `team` deletes: `down`, on the session it has itself
+// just stopped in the same run, so the next `up` starts from the beginning. `up` never deletes:
+// its refusal names this command and leaves it to the owner.
+export function sessionDelete(name: string): boolean {
+  const out = capture(['session', 'delete', name]);
+  if (out === null) return false;
+  const body = parsed(out);
+  return body !== null && body.type !== 'error';
 }
 
 // The process call behind paneRead, injectable for tests: it returns the call's stdout and

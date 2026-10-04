@@ -25,16 +25,20 @@ export class DialectError extends Error {
   }
 }
 
-/** Compile one pattern. `ignoreCase` is the stage's flag, never an inline `(?i)`. */
+/** Compile one pattern. `ignoreCase` is the stage's flag, never an inline `(?i)`. The
+ *  flag is an ASCII fold: each ASCII letter of the pattern becomes its two-letter class,
+ *  `[Aa]`, exactly what the hand-spelled patterns wrote out. Folding that lives in the
+ *  pattern's own text travels with it — the shared dialect's other engine compiles the
+ *  same source — and the engine's wider Unicode folding (a long s for s, the Kelvin
+ *  sign for k) never applies. */
 export function compilePattern(source: string, ignoreCase = false): RegExp {
   if (source.length === 0) throw new DialectError('a pattern is empty');
   if (source.length > MAX_PATTERN) throw new DialectError(`a pattern is longer than ${MAX_PATTERN} characters`);
   refuseSpelling(source);
-  const parser = new Parser(source);
+  const parser = new Parser(source, ignoreCase);
   const body = parser.parseAlt();
   if (!parser.done()) throw new DialectError('a pattern has an extra ")"');
-  const flags = ignoreCase ? 'iu' : 'u';
-  return new RegExp(body.source, flags);
+  return new RegExp(body.source, 'u');
 }
 
 type Node = {
@@ -50,9 +54,11 @@ type Node = {
 class Parser {
   private at = 0;
   private readonly source: string;
+  private readonly ignoreCase: boolean;
 
-  constructor(source: string) {
+  constructor(source: string, ignoreCase: boolean) {
     this.source = source;
+    this.ignoreCase = ignoreCase;
   }
 
   done(): boolean {
@@ -124,7 +130,15 @@ class Parser {
     if (ch === '\\') return this.parseEscape();
     if (ch === ')') throw new DialectError('a pattern has an extra ")"');
     const cp = this.readCodePoint();
-    return this.leaf(escapeLiteral(cp), true);
+    return this.leaf(this.fold(cp), true);
+  }
+
+  // A literal under ignore_case: an ASCII letter becomes its two-letter class, `[Aa]`,
+  // as the hand-spelled patterns wrote it; everything else stands as itself.
+  private fold(cp: number): string {
+    const other = asciiCaseSwapped(cp);
+    if (!this.ignoreCase || other === null) return escapeLiteral(cp);
+    return emitClass(false, [cp, other]);
   }
 
   private parseGroup(): Node {
@@ -201,7 +215,7 @@ class Parser {
       else parts.push({ kind: 'char', cp: this.readCodePoint() });
     }
     this.expect(']');
-    return classSource(negated, foldRanges(parts));
+    return classSource(negated, foldRanges(parts, this.ignoreCase));
   }
 
   private parseClassEscape(): ClassPart {
@@ -315,7 +329,7 @@ function classSource(negated: boolean, parts: ClassPart[]): string {
   return emitClass(!negated, remaining);
 }
 
-function foldRanges(parts: ClassPart[]): ClassPart[] {
+function foldRanges(parts: ClassPart[], ignoreCase = false): ClassPart[] {
   const out: ClassPart[] = [];
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i] as ClassPart;
@@ -330,7 +344,35 @@ function foldRanges(parts: ClassPart[]): ClassPart[] {
       i += 2;
     } else out.push(part);
   }
-  return out;
+  if (!ignoreCase) return out;
+  // Under ignore_case every ASCII letter of the class carries its other case too, as the
+  // letter classes of the hand-spelled patterns did. A complement shorthand (`\S` and
+  // the like) is written as its own set: its members are not the pattern's letters.
+  return out.map((part) => {
+    if (part.kind === 'char') {
+      const other = asciiCaseSwapped(part.cp);
+      return other === null ? part : { kind: 'chars', cps: [part.cp, other] };
+    }
+    if (part.kind === 'chars') {
+      const cps = [...part.cps];
+      for (const cp of part.cps) {
+        const other = asciiCaseSwapped(cp);
+        if (other !== null) cps.push(other);
+      }
+      return { kind: 'chars', cps };
+    }
+    return part;
+  });
+}
+
+// The other case of an ASCII letter, or null for every other character: the whole of a
+// pattern's ignore_case fold. The engine's Unicode folding — a long s (U+017F) for s,
+// the Kelvin sign (U+212A) for k — is deliberately not applied; the hand-spelled
+// classes this flag replaced never applied it.
+function asciiCaseSwapped(cp: number): number | null {
+  if (cp >= 0x41 && cp <= 0x5a) return cp + 0x20;
+  if (cp >= 0x61 && cp <= 0x7a) return cp - 0x20;
+  return null;
 }
 
 function emitClass(negated: boolean, cps: number[]): string {

@@ -15,6 +15,8 @@ export type Host = {
   renameAgent(session: string, pane: string, name: string): boolean;
   closeWorkspace(session: string, workspace: string): boolean;
   stopSession(session: string): boolean;
+  /** Clears the session this run has just stopped. Present on `down` only: `up` never deletes. */
+  deleteSession?(session: string): boolean;
   kill(pid: number): boolean;
   /** Pane ids herdr lists an agent in, or null when the list can't be read. */
   agentPanes(session: string): string[] | null;
@@ -321,8 +323,17 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           host.say(`session ${op.session}: not stopped, something was left in it\n`);
           break;
         }
-        if (!host.stopSession(op.session)) host.say(`session ${op.session}: it did not stop\n`);
-        else host.say(`session ${op.session}: stopped\n`);
+        if (!host.stopSession(op.session)) {
+          host.say(`session ${op.session}: it did not stop\n`);
+          break;
+        }
+        // Without a `deleteSession` the stop is the whole step. `down` goes one further and clears
+        // the session it has itself just stopped; a clear that does not happen names the command.
+        if (host.deleteSession === undefined) host.say(`session ${op.session}: stopped\n`);
+        else if (host.deleteSession(op.session)) host.say(`session ${op.session}: stopped and cleared\n`);
+        else {
+          host.say(`session ${op.session}: stopped; it did not clear, run \`herdr session delete ${op.session}\`\n`);
+        }
         break;
       }
       default:
