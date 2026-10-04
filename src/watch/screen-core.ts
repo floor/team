@@ -46,12 +46,22 @@ export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClo
   return { kind: composed.kind };
 }
 
-/** The composer alone, for a turn that is still running. The floor still applies. */
+/**
+ * The composer alone, for a turn that is still running. The unknown stage is
+ * read first, as in the full classification, and the floor still applies.
+ */
 export function composeLines(data: ScreenData, lines: string[], clock?: ReadClock): Screen {
   const now = clock?.now ?? Date.now;
   const budget = clock?.budgetMs ?? BUDGET_MS;
   const start = now();
   const tick = () => now() - start > budget;
+  if (data.unknown) {
+    for (const rule of data.unknown.rules) {
+      const hit = ruleMatches(lines, rule, tick);
+      if (hit === 'stop') return { kind: 'unknown' };
+      if (hit) return { kind: 'unknown' };
+    }
+  }
   const composed = compose(data, lines, tick);
   if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
   if (composed.kind !== 'idle' && composed.kind !== 'unsent') return { kind: composed.kind };
@@ -192,7 +202,12 @@ function statusThenOne(lines: string[], composer: Extract<ScreenData['composer']
       if (hit === 'stop') return { kind: 'stop' };
       if (!hit) { ok = false; break; }
     }
-    if (ok) return { kind: rule.kind, from: 0, input: -1 };
+    if (ok) {
+      // The floor's region starts at the prompt, the composer's top boundary.
+      // A phrase in the transcript above it is not the floor's to read.
+      const input = lines.findIndex((line) => composer.prompt.test(line));
+      return { kind: rule.kind, from: input < 0 ? 0 : input, input };
+    }
   }
   return { kind: 'unknown' };
 }

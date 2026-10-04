@@ -60,6 +60,30 @@ describe('Cursor launch and captured screens', () => {
     expect(readScreen('cursor', fixture('idle')).kind).toBe('idle');
   });
 
+  test('the composer alone reads a resume line as unknown', async () => {
+    const lines = fixture('exit').split('\n');
+    expect(readScreen('cursor', fixture('exit')).kind).toBe('unknown');
+    expect(classifyComposer('cursor', lines).kind).toBe('unknown');
+    const exit = delivery('exit');
+    expect(await deliverRules('cursor', 'Rules.', 1, exit.io)).toBe(false);
+    expect(exit.calls).toEqual([]);
+    expect(readScreen('cursor', fixture('trust')).kind).toBe('trust');
+    const trust = delivery('trust');
+    expect(await deliverRules('cursor', 'Rules.', 1, trust.io)).toBe(false);
+    expect(trust.calls).toEqual([]);
+  });
+
+  test('a floor phrase above the composer leaves a typed exit unsent', () => {
+    const lines = fixture('exit-typed').split('\n');
+    const prompt = lines.findIndex((line) => /^\s*→\s+\S/.test(line));
+    const above = [...lines.slice(0, prompt), 'Do you want to proceed?', ...lines.slice(prompt)].join('\n');
+    const inside = [...lines.slice(0, prompt + 1), 'Do you want to proceed?', ...lines.slice(prompt + 1)].join('\n');
+    expect(readScreen('cursor', fixture('exit-typed')).kind).toBe('unsent');
+    expect(readScreen('cursor', above).kind).toBe('unsent');
+    expect(classifyComposer('cursor', above.split('\n')).kind).toBe('unsent');
+    expect(readScreen('cursor', inside).kind).toBe('unknown');
+  });
+
   test('a working turn still has an empty composer, which is what delivery waits for', () => {
     const lines = fixture('working').split('\n').map((line) => line.trimEnd()).slice(-20);
     expect(readScreen('cursor', fixture('working')).kind).toBe('working');

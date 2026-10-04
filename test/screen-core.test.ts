@@ -63,7 +63,9 @@ describe('claude-code through the screen core', () => {
       const lines = text.split('\n').map((line) => line.trimEnd()).slice(-20);
       const before = mainClaude(lines);
       const after = readScreen('claude-code', text).kind;
+      const named = classify('claude-code', text.split('\n')).kind;
       expect(`${name}: ${after}`).toBe(`${name}: ${before}`);
+      expect(`${name}: ${named}`).toBe(`${name}: ${before}`);
     }
   });
 
@@ -212,7 +214,9 @@ describe('codex, cursor and antigravity through the screen core', () => {
         const text = readFileSync(new URL(`./fixtures/${cli}/${version}/${name}`, import.meta.url), 'utf8');
         const before = read(windowOf(text));
         const after = readScreen(cli, text).kind;
+        const named = classify(cli, text.split('\n')).kind;
         expect(`${cli} ${name}: ${after}`).toBe(`${cli} ${name}: ${before}`);
+        expect(`${cli} ${name}: ${named}`).toBe(`${cli} ${name}: ${before}`);
       }
     }
   });
