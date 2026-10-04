@@ -43,6 +43,12 @@
       "composer": "idle"
     },
     {
+      "file": "antigravity/1.2.16/trust-54.txt",
+      "cli": "antigravity",
+      "classify": "trust",
+      "composer": "unknown"
+    },
+    {
       "file": "antigravity/1.2.16/trust.txt",
       "cli": "antigravity",
       "classify": "trust",
@@ -425,6 +431,12 @@
       "cli": "cursor",
       "classify": "working",
       "composer": "idle"
+    },
+    {
+      "file": "cursor/2026.10.01/trust-54.txt",
+      "cli": "cursor",
+      "classify": "trust",
+      "composer": "unknown"
     },
     {
       "file": "cursor/2026.10.01/trust.txt",
