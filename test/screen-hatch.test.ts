@@ -207,6 +207,86 @@ describe('Slice C: ScreenProfile escape hatch', () => {
     }
   });
 
+  test('a hatch cannot crash the watch: throwing predicates and composer or invalid returns are guarded', () => {
+    const yaml = readFileSync(resolve(fixtureDir, 'fake-cli.yaml'), 'utf8');
+    const baseData = loadScreen(yaml, fixtureDir);
+    const lines = ['some regular terminal line'];
+
+    // 1. Predicates throwing are treated as misses (do not crash)
+    for (const stage of ['unknown', 'trust', 'permission', 'question', 'working'] as const) {
+      const throwingData = {
+        ...baseData,
+        profile: {
+          ...baseData.profile,
+          [stage]: () => {
+            throw new Error(`${stage} boom`);
+          },
+        },
+      };
+      // classifyLines carries on and does not throw
+      expect(() => classifyLines(throwingData, lines)).not.toThrow();
+      // If unknown throws in composeLines, it also carries on without throwing
+      if (stage === 'unknown') {
+        expect(() => composeLines(throwingData, lines)).not.toThrow();
+      }
+    }
+
+    // 2. Predicates returning non-boolean (truthy strings, numbers, objects) are misses
+    for (const badValue of ['yes', 1, {}, [], () => {}]) {
+      const badPredicateData = {
+        ...baseData,
+        profile: {
+          unknown: () => badValue as any,
+          trust: () => badValue as any,
+          permission: () => badValue as any,
+          question: () => badValue as any,
+          working: () => badValue as any,
+          composer: () => ({ kind: 'idle' as const }),
+        },
+      };
+      const res = classifyLines(badPredicateData, lines);
+      // None of the stages match because they did not return strictly true
+      // So it falls through to composer (which returns idle)
+      expect(res.kind).toBe('idle');
+    }
+
+    // 3. Composer throwing returns unknown, does not crash
+    const throwingComposerData = {
+      ...baseData,
+      profile: {
+        ...baseData.profile,
+        composer: () => {
+          throw new Error('composer boom');
+        },
+      },
+    };
+    expect(classifyLines(throwingComposerData, lines).kind).toBe('unknown');
+    expect(composeLines(throwingComposerData, lines).kind).toBe('unknown');
+
+    // 4. Composer returning null, undefined, wrong types, or invalid kinds reads unknown
+    const badComposerReturns: any[] = [
+      null,
+      undefined,
+      'idle',
+      { kind: 1 },
+      { kind: 'invalid_kind' },
+      { kind: 'not-a-screen-kind' },
+      {},
+      { kind: null },
+    ];
+    for (const badReturn of badComposerReturns) {
+      const badData = {
+        ...baseData,
+        profile: {
+          ...baseData.profile,
+          composer: () => badReturn,
+        },
+      };
+      expect(classifyLines(badData, lines).kind).toBe('unknown');
+      expect(composeLines(badData, lines).kind).toBe('unknown');
+    }
+  });
+
   test('no shipped profile uses the hatch', () => {
     const profilesDir = fileURLToPath(new URL('../src/profiles', import.meta.url));
     const yamlFiles = readdirSync(profilesDir).filter((file) => file.endsWith('.yaml'));
