@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/floor/team/blob/main/src/profiles/profile.schema.json",
+  "title": "A CLI profile's screen",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "cli", "screen"],
+  "properties": {
+    "format": { "const": 1 },
+    "cli": { "type": "string", "minLength": 1 },
+    "screen": { "$ref": "#/$defs/screen" }
+  },
+  "$defs": {
+    "screen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["composer"],
+      "properties": {
+        "chrome": { "type": "array", "items": { "type": "string", "maxLength": 200 } },
+        "unknown": { "$ref": "#/$defs/stage" },
+        "trust": { "$ref": "#/$defs/stage" },
+        "permission": { "$ref": "#/$defs/stage" },
+        "question": { "$ref": "#/$defs/stage" },
+        "working": { "$ref": "#/$defs/stage" },
+        "composer": { "$ref": "#/$defs/composer" }
+      }
+    },
+    "stage": {
+      "oneOf": [
+        { "type": "array", "items": { "$ref": "#/$defs/rule" }, "minItems": 1 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rules"],
+          "properties": {
+            "ignore_case": { "type": "boolean" },
+            "rules": { "type": "array", "items": { "$ref": "#/$defs/rule" }, "minItems": 1 }
+          }
+        }
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["any"] },
+        { "required": ["all"] },
+        { "required": ["footer"] },
+        { "required": ["below_last_rule"] },
+        { "required": ["none_after"] }
+      ],
+      "properties": {
+        "any": { "$ref": "#/$defs/patterns" },
+        "all": { "$ref": "#/$defs/patterns" },
+        "footer": { "type": "string" },
+        "below_last_rule": { "type": "string", "maxLength": 200 },
+        "none_after": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["anchor", "patterns"],
+          "properties": {
+            "anchor": { "$ref": "#/$defs/pattern" },
+            "patterns": { "$ref": "#/$defs/patterns" }
+          }
+        }
+      }
+    },
+    "patterns": { "type": "array", "items": { "$ref": "#/$defs/pattern" }, "minItems": 1 },
+    "pattern": {
+      "oneOf": [
+        { "type": "string", "minLength": 1, "maxLength": 200 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["match"],
+          "properties": {
+            "match": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "except": { "type": "array", "items": { "type": "string", "maxLength": 200 }, "minItems": 1 }
+          }
+        }
+      ]
+    },
+    "placeholders": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "oneOf": [
+          { "required": ["equals"], "not": { "required": ["prefix"] } },
+          { "required": ["prefix"], "not": { "required": ["equals"] } }
+        ],
+        "properties": {
+          "equals": { "type": "string" },
+          "prefix": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "patternString": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "composer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "prompt", "placeholders"],
+      "properties": {
+        "mode": { "enum": ["box-to-rule", "status-last", "status-then-one", "two-rules-footer-below"] },
+        "prompt": { "$ref": "#/$defs/patternString" },
+        "rule": { "$ref": "#/$defs/patternString" },
+        "status_line": { "$ref": "#/$defs/patternString" },
+        "strip_suffix": { "$ref": "#/$defs/patternString" },
+        "ignore_case": { "type": "boolean" },
+        "placeholders": { "$ref": "#/$defs/placeholders" },
+        "footers": { "type": "array", "items": { "$ref": "#/$defs/patternString" }, "minItems": 1 },
+        "fallback": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["all", "kind"],
+            "properties": {
+              "all": { "$ref": "#/$defs/patterns" },
+              "kind": { "enum": ["idle", "working", "unsent", "permission", "trust", "question", "unknown"] }
+            }
+          }
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "mode": { "const": "box-to-rule" } }, "required": ["mode"] }, "then": { "required": ["rule"] } },
+        { "if": { "properties": { "mode": { "const": "status-last" } }, "required": ["mode"] }, "then": { "required": ["status_line"] } },
+        { "if": { "properties": { "mode": { "const": "status-then-one" } }, "required": ["mode"] }, "then": { "required": ["status_line", "fallback"] } },
+        { "if": { "properties": { "mode": { "const": "two-rules-footer-below" } }, "required": ["mode"] }, "then": { "required": ["rule", "footers"] } }
+      ]
+    }
+  }
+}
