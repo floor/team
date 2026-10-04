@@ -60,6 +60,15 @@ function screenOf(node: YamlNode): ScreenData {
   return data;
 }
 
+/**
+ * Rules an override adds to one dialog stage. The stage is a list of patterns:
+ * a map would be a case flag or a renamed stage, and neither is an added pattern.
+ */
+export function addedRules(node: YamlNode): Rule[] {
+  if (node.kind !== 'seq' || node.items.length === 0) fail(node.line, 'an override adds a non-empty list of patterns');
+  return node.items.map((item) => ruleOf(item, false));
+}
+
 function stageOf(node: YamlNode): Stage {
   if (node.kind === 'seq') return { rules: node.items.map((item) => ruleOf(item, false)) };
   const entries = mapping(node, 'a stage');

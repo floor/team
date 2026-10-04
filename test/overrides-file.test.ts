@@ -62,17 +62,17 @@ describe('the override file', () => {
   });
 
   test.each([
-    ['a composer', '    composer:\n      mode: status-last\n', 'unknown key "composer"'],
-    ['chrome', '    chrome: ["^x$"]\n', 'unknown key "chrome"'],
-    ['a working stage', '    working:\n      - any: ["x"]\n', 'unknown key "working"'],
-    ['a fold', '    fold: "hidden"\n', 'unknown key "fold"'],
-    ['footers', '    footers: ["^x$"]\n', 'unknown key "footers"'],
-    ['a code module', '    code: "screens.ts"\n', 'unknown key "code"'],
-    ['a launch line', '  binary: claude\n', 'unknown key "binary"'],
+    ['a composer', '      composer:\n        mode: status-last\n', 'unknown key "composer"'],
+    ['chrome', '      chrome: ["^x$"]\n', 'unknown key "chrome"'],
+    ['a working stage', '      working:\n        - any: ["x"]\n', 'unknown key "working"'],
+    ['a fold', '      fold: "hidden"\n', 'unknown key "fold"'],
+    ['footers', '      footers: ["^x$"]\n', 'unknown key "footers"'],
+    ['a code module', '      code: "screens.ts"\n', 'unknown key "code"'],
+    ['a launch line', '    binary: claude\n', 'unknown key "binary"'],
   ])('refuses %s, with the line', (_name, body, message) => {
-    const text = body.startsWith('  binary')
+    const text = body.startsWith('    binary')
       ? `format: 1\nprofiles:\n  claude-code:\n${body}`
-      : `format: 1\nprofiles:\n  claude-code:\n  screen:\n${body}    permission:\n      - any: ['x']\n`;
+      : `format: 1\nprofiles:\n  claude-code:\n    screen:\n${body}      permission:\n        - any: ['x']\n`;
     const parsed = parseOverrides(text);
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
@@ -98,8 +98,9 @@ profiles:
   claude-code:
     screen:
       permission:
-        - match: 'x'
-          ignore_case: true
+        - any:
+            - match: 'x'
+              ignore_case: true
 `);
     expect(pattern.ok).toBe(false);
     if (!pattern.ok) expect(pattern.errors[0]?.message).toBe('unknown key "ignore_case"');

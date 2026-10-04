@@ -31,6 +31,11 @@ const DATA: Record<string, ScreenData> = {
   antigravity: load('antigravity'),
 };
 
+/** The shipped screen for a CLI, or null when this version has none. */
+export function screenData(cli: string): ScreenData | null {
+  return DATA[cli] ?? null;
+}
+
 // The window every pattern sees: the pane's last 20 lines. Styled lines are trimmed only past
 // their last escape; the core trims each line's plain form for matching.
 function windowOf(lines: string[]): string[] {
