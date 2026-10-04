@@ -96,7 +96,6 @@ screen:
     footers:
       - '^\s{2,}.*·.*(?:Opus|Sonnet|Haiku|Fable)\s+[0-9]+.*$'
       - '^\s{2,}(?:⏵⏵\s+)?bypass permissions\b.*$'
-      - '^\s{2,}\? for shortcuts\s*$'
     # Claude Code greys every suggestion it shows — "Try …", "Resume briefly.", any other —
     # with faint styling, while typed text carries none. The list below stays the fallback
     # for a source without styling.
