@@ -16,6 +16,12 @@ the default session had eight agents before and after. Config and auth hashes we
   directory the untrusted sandbox folder `capture-sandbox/codex`, which is not
   inside a Git project. The workspace trust question came before any composer;
   Escape returned to the shell and the workspace was closed without answering it.
+- `trust-folder-163.txt`: the same folder question in the operator's prepared pane
+  of the default session (workspace `capture-codex-scratch`), 163 columns by 47 rows,
+  on 2026-10-04, herdr 0.7.1; plain `codex --no-daemon` was already running. The
+  update notice was skipped with Escape and the question drew before any composer.
+  Read plain and ansi; Escape quit the question and Codex exited to the shell.
+  Nothing was answered.
 - `idle.txt`, `unsent.txt`, `working.txt`, `rules-accepted.txt`: the second command
   in an already-trusted folder. The rules message was pasted, read back, and submitted.
   `working.txt` coincided with herdr reporting `working`; the composer was empty.
@@ -96,6 +102,29 @@ second line, a second line beginning with `›` or `>`, a wrapped line, and a bl
 middle line — were not produced, because the trust question stands in front of the
 composer in this folder. The fix's comment about Codex therefore still says its
 continuation column is not yet proven by a typed-newline capture.
+
+## Round 5: the default session's prepared pane — the question at 163 columns
+
+The operator prepared a pane in the default session (workspace `capture-codex-scratch`,
+pane `w29:p1`, 163 columns by 47 rows, working directory the sandbox folder) expecting
+Codex to show no trust question there, since the scratch server starts with a clean
+environment. It showed the question again. The pane ran plain `codex --no-daemon`, no
+other flag, already started by the operator; Escape skipped the update notice, and the
+workspace trust question drew before any composer. It is the folder variant, as in
+`trust-folder.txt`, with the whole path on one row because the pane is wide; the prose
+wraps at 158 columns.
+
+The folder path is replaced by `<untrusted-scratch-directory-placeholder-sandbox>/codex`,
+the same 55 characters, so the one-row layout stays put; nothing else is changed. The
+ansi read shows the dialog painted on its own full-width dark background, `Folder access`
+bold, the path dim, the selected option bold in dark-on-light blue, and the footer's
+`enter` and `esc` bold.
+
+The dialog was read plain and ansi, Escape quit it, and Codex exited to the shell; the
+pane was left for the operator to close. No box existed to type into and no question was
+answered. So the typed-newline shapes are still uncaptured — a scratch server's folder
+and the default session's own prepared pane both drew the question before any composer —
+and the fix's comment in `src/watch/screen-core.ts` is unchanged.
 
 ## Constructed
 

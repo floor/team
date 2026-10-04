@@ -117,7 +117,7 @@
         "undocumented": 0
       },
       "trust": {
-        "real": 2,
+        "real": 3,
         "constructed": 0,
         "undocumented": 0
       },
@@ -557,6 +557,12 @@
       "file": "codex/0.157.0/startup.txt",
       "cli": "codex",
       "kind": "question",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/trust-folder-163.txt",
+      "cli": "codex",
+      "kind": "trust",
       "provenance": "capture"
     },
     {
