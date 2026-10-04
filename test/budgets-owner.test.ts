@@ -165,9 +165,9 @@ describe('the watch reads them', () => {
         reads.push(now);
         return outcomes;
       },
-      foreground: () => ['claude', 'codex'],
       screen: () => idle,
       status: () => 'idle',
+      foreground: () => ['claude', 'codex'],
       typeText: () => true,
       pressEnter: () => true,
       notify: () => {},

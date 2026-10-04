@@ -84,9 +84,9 @@ export const realWatchSources: WatchSources = {
   watchInForce: (team, root) => watchInForce(team, root),
   budgetsInForce: (team, root) => budgetsInForce(team, root),
   readChecks: (team, root, now) => runChecks(team, root, now),
-  foreground: (pane, session) => paneForeground(pane, session),
   screen: (pane, session) => paneRead(pane, 14, session),
   status: agentStatus,
+  foreground: (pane, session) => paneForeground(pane, session),
   typeText,
   pressEnter,
   notify,
@@ -220,7 +220,8 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
           }
         }
         // Herdr's process list per pane, read with the screen: a figure is only read off a pane
-        // where the seat's CLI still runs. A pane herdr can't list reads null and keeps its figure.
+        // where herdr reports the seat's CLI. A pane it can't read is null, and a null is not a
+        // CLI: no figure.
         const foreground: Record<string, string[] | null> = {};
         for (const agent of live.agents) foreground[agent.pane] = sources.foreground(agent.pane, session);
         const run = (stored: readonly Seen[]) => pass({

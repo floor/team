@@ -17,9 +17,8 @@ import type { Host } from '../launch/execute.ts';
 import { downPlan, type DownSeat } from '../launch/plan.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
-import { cliRuns } from '../profiles/profile.ts';
 import { emptySession, readState, updateState, withLock } from '../state.ts';
-import { realSources as downSources, stateOf, type DownSources } from './down.ts';
+import { paneStillRunning, realSources as downSources, stateOf, type DownSources } from './down.ts';
 
 export type RemoveSources = DownSources & {
   /** Foreground process names in the pane, or null when the pane can't be read. */
@@ -245,8 +244,11 @@ export async function stopRunning(input: {
     agentPanes(sessionName) {
       const listed = launch.agentPanes(sessionName);
       if (!listed) return null;
-      // A pane back at its shell is no longer the seat.
-      return listed.filter((pane) => cliRuns(seat.cli, sources.foreground(sessionName, pane)));
+      // A pane back at its shell is no longer the seat. The wait keeps an unreadable list
+      // (`paneStillRunning`); the watch's quota read asks the other way (`reportedLiveAgent`).
+      const names = profileFor(seat.cli)?.processNames;
+      if (!names) return listed;
+      return listed.filter((pane) => paneStillRunning(sources.foreground(sessionName, pane), names));
     },
     classify: () => 'unknown',
     sleep: sources.sleep ?? launch.sleep,

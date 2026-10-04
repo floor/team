@@ -6,7 +6,8 @@ import { seatNamed } from '../approve/fingerprint.ts';
 import { observe, observeCheck, type Seen } from '../budgets/readings.ts';
 import type { CheckOutcome } from '../budgets/run.ts';
 import type { TeamFile } from '../file/types.ts';
-import { cliRuns, quotaFor } from '../profiles/profile.ts';
+import { reportedLiveAgent } from '../launch/agent.ts';
+import { profileFor, quotaFor } from '../profiles/profile.ts';
 import { figuresOf, type QuotaFigure } from '../profiles/quota.ts';
 import type { SessionState } from '../state.ts';
 import type { Live } from '../status/compare.ts';
@@ -95,8 +96,10 @@ function attentionOf(screen: Screen, status: string, quiet: boolean): Attention 
 // The figures off a seat's own pane: only a composer screen — idle, unsent or working — shows a
 // status row at all, and only that row's line is read. A dialog, a question, a trust screen or an
 // unknown one gives no figures, and neither does a line the seat printed or typed. And only a
-// pane where the seat's CLI still runs: herdr keeps a pane listed after the CLI exits, and a
-// shell's last row is a last row by position, not a status row.
+// pane where herdr reports the seat's CLI still running: a shell's last row is a last row by
+// position, not a status row, and a pane herdr could not read gives none either — no figure is
+// invented where the CLI was not seen. (`down` and `remove` read that same null the other way at
+// their departure wait; not knowing must not end a wait.)
 function quotaOf(cli: string, screen: Screen, pane: string | undefined, runs: boolean): QuotaFigure[] {
   if (pane === undefined || !runs) return [];
   if (screen.kind !== 'idle' && screen.kind !== 'unsent' && screen.kind !== 'working') return [];
@@ -112,7 +115,9 @@ function quotaOf(cli: string, screen: Screen, pane: string | undefined, runs: bo
 // them. `readings` is the project's stored cache, recalled by the caller; this pass folds its
 // figures into it, whatever session they were seen in (§ 4.4). `foreground` is herdr's
 // process-info per pane: the pane's foreground process names, or null where herdr could not be
-// read. A pane the map doesn't hold was not read either, and keeps its figure.
+// read. Only a pane it reports the seat's CLI in gives a figure — a null, or a pane the map
+// doesn't hold, gives none; the departure wait (`paneStillRunning`) reads that same null the
+// other way, keeping its wait.
 export type PassInput = {
   team: TeamFile;
   state: SessionState;
@@ -241,7 +246,7 @@ export function pass({
       cli,
       vendor,
       account,
-      quota: quotaOf(cli, screen, pane, cliRuns(cli, foreground?.[agent.pane] ?? null)),
+      quota: quotaOf(cli, screen, pane, reportedLiveAgent(foreground?.[agent.pane] ?? null, profileFor(cli)?.processNames ?? [])),
       running: true,
       quiet,
       working,

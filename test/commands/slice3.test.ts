@@ -6,10 +6,9 @@ import type { Caller } from '../../src/caller.ts';
 import { runApprove } from '../../src/commands/approve.ts';
 import { loadConfig } from '../../src/commands/check.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
-import { runDown, type DownSources } from '../../src/commands/down.ts';
+import { paneStillRunning, runDown, type DownSources } from '../../src/commands/down.ts';
 import { runUp, type UpSources } from '../../src/commands/up.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
-import { paneStillRunning } from '../../src/profiles/profile.ts';
 import { readApproval, readLedger, storePath } from '../../src/store/store.ts';
 import { testIo } from '../helpers.ts';
 

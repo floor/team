@@ -92,25 +92,6 @@ export function profileFor(cli: string): Profile | null {
   return Object.hasOwn(SHIPPED, cli) ? (SHIPPED[cli]?.profile ?? null) : null;
 }
 
-// Herdr keeps a pane after its CLI exits, so the pane id staying listed is not "still there":
-// the CLI is in the pane only while one of its foreground processes is its own. An unreadable
-// list (null) keeps the pane — herdr reporting nothing is not herdr reporting no CLI, and the
-// departure is never invented.
-export function paneStillRunning(foreground: readonly string[] | null, processNames: readonly string[]): boolean {
-  if (!foreground) return true;
-  return foreground.some((name) => processNames.includes(name));
-}
-
-/**
- * Whether a CLI still runs in a pane, from the foreground process names herdr lists — the
- * question `down`, `remove` and the watch all ask before acting on a pane. A `cli` without a
- * profile, or a list that could not be read, reads as running.
- */
-export function cliRuns(cli: string | undefined, foreground: readonly string[] | null): boolean {
-  const names = cli ? profileFor(cli)?.processNames : undefined;
-  return !names || paneStillRunning(foreground, names);
-}
-
 /** The quota patterns shipped with a CLI. An unknown CLI, or one with none, has an empty list. */
 export function quotaFor(cli: string): readonly QuotaPattern[] {
   return SHIPPED[cli]?.quota ?? [];
