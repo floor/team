@@ -25,7 +25,7 @@ export type FallbackRule = { all: LinePattern[]; kind: Screen['kind'] };
 // (`placeholder_style: dim` in the profile). A source without styling falls back to the list.
 export type PlaceholderStyle = 'dim';
 
-type Box = { mode: 'box-to-rule'; prompt: RegExp; rule: RegExp; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle };
+type Box = { mode: 'box-to-rule'; prompt: RegExp; rule: RegExp; footers: RegExp[]; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle };
 type StatusLast = { mode: 'status-last'; statusLine: RegExp; prompt: RegExp; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle };
 type StatusThenOne = {
   mode: 'status-then-one';
