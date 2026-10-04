@@ -102,6 +102,11 @@ export function quotaPatterns(text: string): QuotaPattern[] {
   return quotaOf(parseYaml(text));
 }
 
+/** Quota patterns from a list already parsed. A bad pattern throws. */
+export function quotaList(node: YamlNode): QuotaPattern[] {
+  return quotaOf(node);
+}
+
 /** The model a status line names. `unreadable` is a line the rules claim that does not name one. */
 export function statusOnLine(cli: string, line: string): { model: string; version: string } | 'unreadable' | null {
   const rules = SHIPPED[cli]?.status;

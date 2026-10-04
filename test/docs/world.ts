@@ -414,6 +414,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         watchInForce: (team, at) => watchInForce(team, at, home),
         budgetsInForce: (team, at) => budgetsInForce(team, at, home),
         now,
+        home,
       };
     },
     watchSources(): WatchSources {
@@ -440,6 +441,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         wait: async () => false,
         alive: (pid) => watchPid !== null && pid === watchPid,
         pid: RUN_WATCH_PID,
+        home,
       };
     },
     doctorSources,

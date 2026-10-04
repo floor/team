@@ -13,7 +13,8 @@ import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
 import { HERDR_TESTED, herdrVersion, sessionRunning } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { profileFor } from '../profiles/index.ts';
-import { quotaFor, versionVerdict, type Profile } from '../profiles/profile.ts';
+import { overridesInForce, quotaWith } from '../profiles/overrides.ts';
+import { versionVerdict, type Profile } from '../profiles/profile.ts';
 import { readState } from '../state.ts';
 import { readApproval, storePath } from '../store/store.ts';
 
@@ -164,7 +165,8 @@ export function budgetCheckFindings(team: TeamFile, root: string, sources: Docto
   // ships a quota pattern for it, or they name a check with no command. A file that names a
   // `check` source without a command is refused on read; the guard is for the type, not the file.
   for (const [name, account] of Object.entries(budgets.accounts)) {
-    const noPattern = account.sources.includes('status_line') && !clisOf(team, name).some((cli) => quotaFor(cli).some((one) => one.account === name));
+    const patterns = overridesInForce(team.project, root, sources.home).profiles;
+    const noPattern = account.sources.includes('status_line') && !clisOf(team, name).some((cli) => quotaWith(cli, patterns).some((one) => one.account === name));
     const noCommand = account.sources.includes('check') && account.check === null;
     if (noPattern || noCommand) findings.push({ level: 'warn', text: `${name}: no pattern can read this account` });
   }
@@ -195,6 +197,14 @@ export function budgetCheckFindings(team: TeamFile, root: string, sources: Docto
     );
   }
   return findings;
+}
+
+function overrideFindings(team: TeamFile, root: string, home: string): Finding[] {
+  const report = overridesInForce(team.project, root, home);
+  return [
+    ...report.differences.map((line): Finding => ({ level: 'miss', text: `run \`team approve\`: ${line}` })),
+    ...report.problems.map((line): Finding => ({ level: 'miss', text: line })),
+  ];
 }
 
 function approvalFindings(team: TeamFile, root: string, home: string): Finding[] {
@@ -304,7 +314,12 @@ export function doctorFindings(
   }));
   findings.push(...seatNameFindings(team, session));
 
-  findings.push(...approvalFindings(approved, root, sources.home), ...checkFindings(team, root, sources.home), ...budgetChecks);
+  findings.push(
+    ...approvalFindings(approved, root, sources.home),
+    ...overrideFindings(team, root, sources.home),
+    ...checkFindings(team, root, sources.home),
+    ...budgetChecks,
+  );
 
   const herdr = sources.herdrVersion();
   const running = herdr === null ? null : sources.sessionRunning(session);

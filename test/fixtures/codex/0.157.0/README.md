@@ -45,6 +45,13 @@ The final run waited for the startup prompt to settle before delivery; two earli
 attempts refused delivery during startup and were torn down without submitting a
 message. The default session remained at eight agents, with unchanged config/auth hashes.
 
+## Constructed
+
+`owner-status.txt` is constructed, not a capture. Nothing in it was read from a live pane.
+It is `idle.txt` with the status row replaced by an owner's configured status line: session
+and weekly use, and the time until each resets. The row is one the shipped composer already
+recognizes. Without an override pattern the line reads no figure.
+
 ## Permission dialog
 
 `permission.txt` was captured on 2026-10-04 in `team-test-codex-perm`, with one
