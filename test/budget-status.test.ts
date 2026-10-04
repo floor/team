@@ -71,22 +71,47 @@ describe('the budgets table', () => {
 
   // The fallback is per window, not per account: a check that filled one window does not hide
   // the status line's figure for the window it never reported.
+  const checkFirst = {
+    staleAfter: 30 * 60,
+    checkEvery: 600,
+    marks: [50, 75, 90],
+    accounts: {
+      openai: { kind: 'subscription', shared: false, reserve: 20, floor: null, sources: ['check', 'status_line'], check: 'openai-usage' },
+    },
+  } as unknown as TeamFile['budgets'];
+
   test('the status line fills the window the check did not report', () => {
-    const budgets = {
-      staleAfter: 30 * 60,
-      checkEvery: 600,
-      marks: [50, 75, 90],
-      accounts: {
-        openai: { kind: 'subscription', shared: false, reserve: 20, floor: null, sources: ['check', 'status_line'], check: 'openai-usage' },
-      },
-    } as unknown as TeamFile['budgets'];
-    const rows = budgetTable(budgets, [
+    const rows = budgetTable(checkFirst, [
       reading({ window: 'session', seat: null, source: 'check' }),
       reading({ window: 'weekly', left: 5, used: 95 }),
     ], now);
     expect(rows.map((row) => budgetLine(row))).toEqual([
       'openai  session  left 40%  used 60%  resets in 44m  -  read 1m ago  check  fresh',
-      'openai  weekly  left 5%  used 95%  resets in 44m  one  changed 1m ago  status line  fresh, inside reserve 20%',
+      'openai  weekly  left 5%  used 95%  resets in 44m  one  changed 1m ago  status line (fallback)  fresh, inside reserve 20%',
     ]);
+  });
+
+  // § 3: the counted figure is a fallback when it did not come from the source the account
+  // names first. The row says so beside the source it did come from, and the JSON carries it.
+  test('a figure from below the first source is marked a fallback', () => {
+    const rows = budgetTable(checkFirst, [
+      reading({ window: 'session', seat: null, source: 'check' }),
+      reading({ window: 'weekly', left: 5, used: 95 }),
+    ], now);
+    expect(rows.map((row) => ({ source: row.source, fallback: row.fallback }))).toEqual([
+      { source: 'check', fallback: false },
+      { source: 'status_line', fallback: true },
+    ]);
+  });
+
+  test('the mark follows the account\'s own order, not the kind of source', () => {
+    const statusLineFirst = {
+      ...checkFirst,
+      accounts: { openai: { ...checkFirst.accounts.openai, sources: ['status_line', 'check'] } },
+    } as TeamFile['budgets'];
+    const fromCheck = budgetTable(statusLineFirst, [reading({ window: 'session', seat: null, source: 'check' })], now)[0];
+    expect(fromCheck?.source).toBe('check');
+    expect(fromCheck?.fallback).toBe(true);
+    expect(budgetTable(statusLineFirst, [reading()], now)[0]?.fallback).toBe(false);
   });
 });
