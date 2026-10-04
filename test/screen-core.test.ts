@@ -148,6 +148,32 @@ describe('claude-code reads the input line\'s styling', () => {
     expect(readScreen('claude-code', crlf).kind).toBe('idle');
   });
 
+  test('a slash command being typed is unsent', () => {
+    expect(readScreen('claude-code', styled('unsent-slash-ansi.txt')).kind).toBe('unsent');
+  });
+
+  test('a paste placeholder chip is unsent', () => {
+    // The chip — [Pasted text #2 +7 lines] — renders unstyled, real content rather than a
+    // greyed suggestion, so the styling gate passes it to the list, which names no such entry.
+    expect(readScreen('claude-code', styled('unsent-paste-ansi.txt')).kind).toBe('unsent');
+  });
+
+  test('text typed while a turn runs is never idle: the screen works, the composer unsent', () => {
+    // The running screen styles the prompt itself (38;2;153;153;153) — grey, but only faint
+    // is a placeholder, and the typed text past the reset carries nothing.
+    const lines = styled('unsent-typing-while-running-ansi.txt').split('\n');
+    expect(classify('claude-code', lines).kind).toBe('working');
+    expect(classifyComposer('claude-code', lines).kind).toBe('unsent');
+  });
+
+  test('bash mode reads unknown: its prompt is "!", not the composer\'s', () => {
+    // `!` swaps the prompt glyph, so the composer finds no input line at all. Unknown is
+    // never idle and never typed into; whether "!" belongs in the prompt set stays open.
+    const kind = readScreen('claude-code', styled('bash-mode-ansi.txt')).kind;
+    expect(kind).not.toBe('idle');
+    expect(kind).toBe('unknown');
+  });
+
   test('the styled trust dialog is attention, never idle or unsent', () => {
     // 2.1.289 draws this dialog's choices without numbers (`❯ No, exit` / `Yes, I trust this
     // folder`), so the trust stage's `1. Yes` does not match and the dialog reads question —

@@ -38,3 +38,23 @@ Built from the captures above by replacing text, never bytes of styling:
 No `Resume briefly.` suggestion could be produced in a scratch session — the sessions
 showed their start-up suggestion and, after turns, an empty box — so the non-`Try`
 fixtures are the constructed ones above.
+
+## Round 2: the unsafe direction
+
+Captured the same day, the same way, in the scratch session `glm-scratch-r2`. A paste
+chip needed the bytes a terminal sends a paste — `ESC[200~`, the lines, `ESC[201~` —
+delivered with `pane send-text`; herdr has no paste command of its own, and unwrapped
+newlines only open continuation lines. Everything personal is swapped as above, plus
+the cost figure; the model name in the status rows reads `Opus 5.5`.
+
+- `unsent-slash-ansi.txt`: `/effort` typed, the slash menu open above the box. The
+  command text carries a truecolour style (`38;2;177;185;249`): a colour, so unsent.
+- `unsent-paste-ansi.txt`: `[Pasted text #2 +7 lines]` in the box after the wrapped
+  paste. The chip renders with no styling at all — real content, unsent by the list.
+- `unsent-typing-while-running-ansi.txt`: `hurry please` typed while a turn runs. The
+  spinner line works; the prompt itself is styled `38;2;153;153;153` — grey, and only
+  faint is a placeholder — with the typed text plain after the reset.
+- `bash-mode-ansi.txt`: `!` bash mode, `ls -la /tmp` typed. The `!` replaces the
+  prompt glyph (styled `38;2;253;93;177`), so the composer finds no input line and
+  the screen reads unknown — never idle. Whether `!` belongs in the prompt set is an
+  open question for the profile, not this change.
