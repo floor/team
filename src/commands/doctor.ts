@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { approvalDifferences } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
+import { checkReadings } from '../budgets/checks.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { HERDR_TESTED, herdrVersion, sessionRunning } from '../herdr.ts';
@@ -11,6 +12,7 @@ import type { Command, Io } from '../io.ts';
 import { profileFor } from '../profiles/index.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
 import { readState } from '../state.ts';
+import { readApproval, storePath } from '../store/store.ts';
 
 // What `doctor` reads from the machine, so tests can stand in for it.
 export type DoctorSources = {
@@ -102,6 +104,16 @@ function launchBinary(launch: string): string | null {
   );
 }
 
+function checkFindings(team: TeamFile, root: string, home: string): Finding[] {
+  const record = readApproval(storePath(team.project, root, home));
+  if (!record) return [];
+  return checkReadings(team, record.approval.checks).flatMap((reading) =>
+    reading.state === 'unknown'
+      ? [{ level: 'warn' as const, text: `the check for ${reading.account} is unapproved; that account reads unknown` }]
+      : [],
+  );
+}
+
 function approvalFindings(team: TeamFile, root: string, home: string): Finding[] {
   const differences = approvalDifferences(team, root, home);
   if (differences === null) {
@@ -178,7 +190,7 @@ export function doctorFindings(
     text: `the file, line ${warning.line}: ${warning.message}`,
   }));
 
-  findings.push(...approvalFindings(team, root, sources.home));
+  findings.push(...approvalFindings(team, root, sources.home), ...checkFindings(team, root, sources.home));
 
   const herdr = sources.herdrVersion();
   const running = herdr === null ? null : sources.sessionRunning(session);

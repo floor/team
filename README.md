@@ -135,8 +135,9 @@ config.
 
 `budgets` is the owner's: marks (percent used), how long a figure stays fresh, and each
 account's reserve or floor. A `check` command is resolved to a file and hashed when the
-owner approves; a change to that file needs a new approval, and the command is not run
-until then. `watch.quota_marks` is still read, with a warning, until you move it to
+owner approves. A change to that file leaves that account's check unapproved: it is
+not run, and the account reads unknown, until the owner approves again. The rest of
+the file still runs. `watch.quota_marks` is still read, with a warning, until you move it to
 `budgets.marks`. A figure first seen on one seat does not count until it changes or a
 second seat shows the same number. It goes stale from the moment it last changed, and
 the last readings are kept in the state file beside the team file.

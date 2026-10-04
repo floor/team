@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A line cut short of the number is not a figure.
 - `budgets` is an owner section: marks, freshness, and each account's reserve or floor. A `check`
   command is resolved and hashed at `team approve`. `watch.quota_marks` is still read, with a warning.
+  After upgrading, the owner runs `team approve` once. A changed check file leaves that account
+  unknown; it does not refuse the rest of the file.
 - A quota figure is kept per seat in the state file. The newest change counts, a first sight does
   not, and a reading from before its reset is dropped.
 
