@@ -60,6 +60,6 @@ The first release: set up, change and watch a project's team of AI agents from o
   `workspace.path` with `.lobby` beside the worktrees, inside `trust` and outside every protected
   checkout — never the project root, which holds the owner's uncommitted work; `up` and `add` make
   it once, refuse a lobby outside `trust` or inside a protected checkout, and refuse a seat the file
-  aims at one. (#?)
+  aims at one. (#35)
 
 [0.1.0]: https://github.com/floor/team/releases/tag/v0.1.0
