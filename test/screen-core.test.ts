@@ -431,6 +431,33 @@ describe('the pattern dialect', () => {
     expect(mixed.test('x')).toBe(false);
   });
 
+  test('a positive class mixing a complement shorthand with members is refused', () => {
+    // `[\D0-9]` is everything, but its rewrite reads as `[\s\S]` — a match-all nobody wrote.
+    // The positive class refuses the mix; the negated forms stay: `[^\S\n]` is the
+    // whitespace set without a newline, and a shorthand alone is its own negated class.
+    expect(() => compilePattern('[\\D0-9]')).toThrow('a class cannot mix a complement shorthand with other members');
+    expect(() => compilePattern('[\\W0-9]')).toThrow(DialectError);
+    const alone = compilePattern('^[\\D]$');
+    expect(alone.test('a')).toBe(true);
+    expect(alone.test('4')).toBe(false);
+    expect(compilePattern('^[^\\S\\n]$').test('\t')).toBe(true);
+    // A profile that writes the mix is refused when it loads, with the reason.
+    const text = `
+format: 1
+cli: sample
+screen:
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    placeholders:
+      - equals: ''
+  working:
+    - any: ['^[\\D0-9]+$']
+`;
+    expect(() => loadScreen(text)).toThrow(YamlError);
+  });
+
   test('a read that passes the time bound is unknown', () => {
     const data = loadScreen(`
 format: 1
