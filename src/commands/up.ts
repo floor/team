@@ -60,6 +60,9 @@ export type UpSources = {
   // The approval store's one read, overridable so a test can count it or swap the record
   // after the gate. Absent: the real read.
   standing?(root: string): Standing;
+  // The budget gate, overridable so a test can count its calls. Absent: the real gate.
+  // A standing that is not verified refuses below before this is consulted at all.
+  seatBudget?: typeof seatBudget;
   // Present on the shipped command. A dry run never calls it.
   launch?: Launch;
 };
@@ -293,6 +296,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const workspaces = sources.workspaces?.(session) ?? null;
   const readings = loadReadings(dir);
   const spend = loadSpendReadings(dir);
+  // What makes a standing that is not verified safe is not the defaults' own values —
+  // `defaultBudgets` names no account, and `seatBudget` reads it `clear`: permissive as a
+  // value. It is the ordering: the refusal above is carried into every exit below, and this
+  // guard keeps the planning pass from consulting a budget at all, so an unapproved file
+  // buys nothing from the budget, not even a mark in a dry run's plan.
+  const budgetGate = sources.seatBudget ?? seatBudget;
+  const budgetOf = (seat: (typeof team.seats)[number]) =>
+    standing.kind === 'verified' ? budgetGate(budgets, readings, seat, readAt(), spend) : { kind: 'clear' as const };
   const seats: UpSeat[] = [];
   const refused = new Set<string>();
   for (const seat of team.seats) {
@@ -305,7 +316,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     }
     const placed = planned.stage === undefined || !planned.pane;
     if (!placed) {
-      const budget = seatBudget(budgets, readings, seat, readAt(), spend);
+      const budget = budgetOf(seat);
       seats.push({ ...planned, ...(budget.kind === 'clear' ? {} : { budget }) });
       continue;
     }
@@ -317,7 +328,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       }
       continue;
     }
-    const budget = seatBudget(budgets, readings, seat, readAt(), spend);
+    const budget = budgetOf(seat);
     seats.push({
       ...planned,
       cwd: start.cwd,

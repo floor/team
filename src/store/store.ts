@@ -3,7 +3,7 @@ import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFi
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Fingerprints } from '../approve/fingerprint.ts';
-import { bumpGeneration, keyOf, keyState, recordedGeneration, signPayload, verifyPayload, type Json } from './keys.ts';
+import { bumpGeneration, keyOf, keyState, recordedGeneration, SAFE_GENERATION, signPayload, verifyPayload, type Json } from './keys.ts';
 
 /**
  * The user-level store: what must survive the project folder and stay out of
@@ -168,7 +168,17 @@ export function approvalStanding(root: string, home: string = homedir()): Standi
   if (key.kind === 'unreadable') {
     return { kind: 'refused', why: `${key.why} — no record verifies until it is back` };
   }
-  if (!verifyPayload(payloadOf(record.approval, record.file, generation), signature, key.key)) {
+  let valid: boolean;
+  try {
+    valid = verifyPayload(payloadOf(record.approval, record.file, generation), signature, key.key);
+  } catch {
+    // Belt and braces: the shape check below already refuses what the canonical
+    // encoder refuses (a signed number outside the safe range), and this catch
+    // turns that from an invariant into a promise — no record on disk, however
+    // shaped, makes a reader throw.
+    return { kind: 'refused', why: 'the record cannot be verified: run `team approve` once' };
+  }
+  if (!valid) {
     return { kind: 'refused', why: 'the record does not carry a valid signature: it was changed after approval, or written without the key: run `team approve` once' };
   }
   if (!sameRoot(record.approval.root, root)) {
@@ -229,6 +239,20 @@ export interface ApprovalRecord {
 }
 
 /**
+ * A number this version signs must be a counting number inside the canonical
+ * encoder's safe range, or the encoder's own refusal would escape the reader:
+ * the shape check names the field instead, so the record is `refused`, never a
+ * throw. Negative zero passes JavaScript's `>= 0` (and `JSON.stringify` would
+ * write it out as plain `0`), so it is named on its own.
+ */
+function countProblem(value: unknown, field: string): string | null {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return `"${field}" is not a non-negative integer`;
+  if (Object.is(value, -0)) return `"${field}" is negative zero`;
+  if (value > SAFE_GENERATION) return `"${field}" is beyond the safe integer range`;
+  return null;
+}
+
+/**
  * The record's shape, checked whole before anything is built from it: nothing
  * outside the signed bytes may carry meaning, so a field this version does not
  * know is a problem naming the field, and a missing or wrongly-typed field is
@@ -256,6 +280,7 @@ export function shapeProblem(record: unknown): string | null {
   if (flat.format === 2) {
     if (flat.generation === undefined) return 'the record has no "generation"';
     if (typeof flat.generation !== 'number' || !Number.isInteger(flat.generation) || flat.generation < 1) return `"generation" is not a positive integer`;
+    if (flat.generation > SAFE_GENERATION) return '"generation" is beyond the safe integer range';
     if (flat.signature === undefined) return 'the record has no "signature"';
     if (typeof flat.signature !== 'string') return '"signature" is not a string';
   }
@@ -282,11 +307,13 @@ export function shapeProblem(record: unknown): string | null {
     if (ceilings[key] === undefined) return `"ceilings" has no "${key}"`;
   }
   for (const key of ['seats', 'temporary']) {
-    if (typeof ceilings[key] !== 'number' || !Number.isInteger(ceilings[key]) || ceilings[key] < 0) return `"ceilings.${key}" is not a non-negative integer`;
+    const problem = countProblem(ceilings[key], `ceilings.${key}`);
+    if (problem !== null) return problem;
   }
   if (ceilings.vendors === null || typeof ceilings.vendors !== 'object' || Array.isArray(ceilings.vendors)) return '"ceilings.vendors" is not an object';
   for (const [vendor, seats] of Object.entries(ceilings.vendors as Record<string, unknown>)) {
-    if (typeof seats !== 'number' || !Number.isInteger(seats) || seats < 0) return `"ceilings.vendors.${vendor}" is not a non-negative integer`;
+    const problem = countProblem(seats, `ceilings.vendors.${vendor}`);
+    if (problem !== null) return problem;
   }
   if (flat.checks !== undefined) {
     if (flat.checks === null || typeof flat.checks !== 'object' || Array.isArray(flat.checks)) return '"checks" is not an object';

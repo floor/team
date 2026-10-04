@@ -41,6 +41,9 @@ export type AddSources = {
   // The approval store's one read, overridable so a test can count it or swap the record
   // after the gate. Absent: the real read.
   standing?(root: string): Standing;
+  // The budget gate, overridable so a test can count its calls. Absent: the real gate.
+  // The standing gate refuses before it is ever consulted.
+  seatBudget?: typeof seatBudget;
 };
 
 const realLaunch: Launch = {
@@ -233,7 +236,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // The gate reads the approved budgets, never the edited file's: the seat this `add` inserts
   // changes no section of its own, and no unapproved reserve may unblock a launch (#50).
   const budgets = budgetsInForceOf(standing, prepared.team);
-  const decision = seatBudget(budgets, loadReadings(dir), built.seat, sources.now().getTime(), loadSpendReadings(dir));
+  const decision = (sources.seatBudget ?? seatBudget)(budgets, loadReadings(dir), built.seat, sources.now().getTime(), loadSpendReadings(dir));
   const stray = unnamedIn(recorded.seats[built.name]?.workspace, agents);
   const starting = seatPlan(prepared.team, built.seat, start);
   const planned = stray

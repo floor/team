@@ -9,10 +9,10 @@
 // still does what the gate said has read the store once.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
+import { approvalDifferences, approvalOf, notInForce, type NotVerified } from '../../src/approve/approval.ts';
 import { runAdd, type AddSources } from '../../src/commands/add.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
 import { runDown } from '../../src/commands/down.ts';
@@ -344,5 +344,192 @@ describe('the watch reads the store once per pass', () => {
     expect(code).toBe(0);
     expect(asks).toBe(2);
     expect(io.out.match(/watching the session "acme"/g)?.length).toBe(1);
+  });
+});
+
+// The second security review's crash: a shape-correct record whose generation is 2^53
+// reached the canonical encoder inside the reader, and the encoder's throw escaped it —
+// every reader command crashed on one record. The shape check now refuses it naming the
+// field, and the reader treats any error from building or verifying the payload as a
+// refusal, so no record on disk, however shaped, makes a reader throw.
+describe('a record with a signed number past the safe range is refused, never a crash', () => {
+  function unsafeGeneration(): void {
+    const store = join(storePath('acme', project, home), 'approval.json');
+    const record = JSON.parse(readFileSync(store, 'utf8')) as Record<string, unknown>;
+    writeFileSync(store, `${JSON.stringify({ ...record, generation: 2 ** 53 }, null, 2)}\n`);
+  }
+
+  test('every reader command says the refusal and comes back', async () => {
+    unsafeGeneration();
+    const named = '"generation" is beyond the safe integer range';
+
+    const upIo = testIo(project, owner);
+    const up = await runUp(['--dry-run', '--file', file], upIo, {
+      sessionRunning: () => false,
+      agents: () => [],
+      home,
+      doctor: doctorSources(),
+      now: () => NOW,
+    } satisfies Partial<UpSources> as UpSources);
+    expect(up).toBe(0);
+    expect(upIo.out).toContain('! up would refuse: the approval record cannot be read');
+    expect(upIo.out).toContain(named);
+    expect(upIo.out).toContain('run `team approve` once');
+
+    const launch: Launch = {
+      sessionState: () => 'running',
+      startServer: () => true,
+      sessionUp: () => true,
+      createWorkspace: () => null,
+      paneRun: () => true,
+      renameAgent: () => true,
+      closeWorkspace: () => true,
+      agentPanes: () => [],
+      paneText: () => '',
+      foreground: () => [],
+      sleep: async () => {},
+      now: () => NOW,
+    };
+    const addIo = testIo(project, owner);
+    const add = await runAdd(['worker', '--file', file], addIo, {
+      home,
+      sessionState: () => 'running',
+      agents: () => [],
+      workspaces: () => [],
+      doctor: doctorSources(),
+      now: () => NOW,
+      launch,
+    } satisfies AddSources);
+    expect(add).toBe(1);
+    expect(addIo.err).toContain(`team add: the approval record cannot be read`);
+    expect(addIo.err).toContain(named);
+
+    const doctorIo = testIo(project, owner);
+    const doctor = await runDoctor(['--file', file], doctorIo, doctorSources());
+    expect(doctorIo.out + doctorIo.err).toContain(named);
+    expect(doctorIo.out + doctorIo.err).toContain('run `team approve` once');
+
+    const statusIo = testIo(project, owner);
+    const status = await runStatus(['--file', file, '--json'], statusIo, {
+      live: () => ({ running: false, agents: [], workspaces: [], screens: {} }),
+      branch: () => 'main',
+      standing: (root) => approvalStanding(root, home),
+      now: () => NOW,
+      home,
+    } satisfies StatusSources);
+    expect(status).toBe(1); // the session is down: every seat is missing
+    const doc = JSON.parse(statusIo.out);
+    // The refused record is the whole case, as one difference of its own.
+    expect(doc.differences.some((difference: { what: string }) => difference.what.includes(named))).toBe(true);
+
+    const worktreeIo = testIo(project, owner);
+    const worktree = await runWorktree(['new', 'unsafe-number', '--kind', 'fix', '--seat', 'lead', '--file', file], worktreeIo, {
+      home,
+      now: () => NOW,
+      standing: (root) => approvalStanding(root, home),
+    } satisfies WorktreeSources);
+    expect(worktree).toBe(1);
+    expect(worktreeIo.err).toContain(`team worktree: the approval record cannot be read`);
+
+    const watchIo = testIo(project, owner);
+    const watch = await runWatch(['--file', file], watchIo, {
+      live: () => ({ running: true, agents: [], workspaces: [], screens: {} }),
+      machine: () => fine,
+      standing: (root) => approvalStanding(root, home),
+      readChecks: () => [],
+      screen: () => IDLE,
+      status: () => 'working',
+      foreground: () => ['claude'],
+      typeText: () => true,
+      pressEnter: () => true,
+      notify: () => {},
+      now: () => NOW,
+      wait: async () => false,
+      alive: () => false,
+      pid: 4242,
+    } satisfies WatchSources);
+    expect(watch).toBe(0);
+    expect(watchIo.out).toContain(named);
+
+    // The restore reads the same record and refuses in its own words.
+    unlinkSync(file);
+    const initIo = testIo(project, owner);
+    const init = await runInit(['--restore'], initIo, home);
+    expect(init).toBe(1);
+    expect(initIo.err).toContain('team init: nothing was restored: the approval record cannot be read');
+    expect(existsSync(file)).toBe(false);
+  });
+});
+
+// What makes a standing that is not verified safe is the ordering, not the values it
+// yields: the default budgets name no account, and `seatBudget` reads them `clear` —
+// permissive as a value. Safe because `up` and `add` refuse every standing that is not
+// verified before any budget is consulted, and no command reaches a standalone wrapper
+// after its gate. The count is the pin: zero calls, for each of the three standings.
+describe('the ordering is the guard: a standing that is not verified refuses before any budget is consulted', () => {
+  const refused: Standing = {
+    kind: 'refused',
+    why: 'the record does not carry a valid signature: it was changed after approval, or written without the key: run `team approve` once',
+  };
+  const notVerified: NotVerified[] = [{ kind: 'none' }, { kind: 'legacy' }, refused];
+
+  test('up refuses a none, legacy and refused standing with the budget gate unasked: zero calls', async () => {
+    for (const standing of notVerified) {
+      let consulted = 0;
+      const io = testIo(project, owner);
+      const code = await runUp(['--file', file], io, {
+        sessionRunning: () => false,
+        agents: () => [],
+        home,
+        doctor: doctorSources(),
+        now: () => NOW,
+        standing: () => standing,
+        seatBudget: () => {
+          consulted += 1;
+          throw new Error('the budget gate was consulted');
+        },
+      } satisfies Partial<UpSources> as UpSources);
+      expect(code).toBe(1);
+      expect(consulted).toBe(0);
+      expect(io.err).toContain(`team up: ${notInForce(standing)}`);
+    }
+  });
+
+  test('add refuses a none, legacy and refused standing with the budget gate unasked: zero calls', async () => {
+    const launch: Launch = {
+      sessionState: () => 'running',
+      startServer: () => true,
+      sessionUp: () => true,
+      createWorkspace: () => null,
+      paneRun: () => true,
+      renameAgent: () => true,
+      closeWorkspace: () => true,
+      agentPanes: () => [],
+      paneText: () => '',
+      foreground: () => [],
+      sleep: async () => {},
+      now: () => NOW,
+    };
+    for (const standing of notVerified) {
+      let consulted = 0;
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker', '--file', file], io, {
+        home,
+        sessionState: () => 'running',
+        agents: () => [],
+        workspaces: () => [],
+        doctor: doctorSources(),
+        now: () => NOW,
+        launch,
+        standing: () => standing,
+        seatBudget: () => {
+          consulted += 1;
+          throw new Error('the budget gate was consulted');
+        },
+      } satisfies AddSources);
+      expect(code).toBe(1);
+      expect(consulted).toBe(0);
+      expect(io.err).toContain(`team add: ${notInForce(standing)}`);
+    }
   });
 });

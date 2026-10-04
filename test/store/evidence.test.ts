@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { approvalCase, approvalOf, approvedFingerprints, budgetsInForce, budgetsInForceOf, recordSeatDigest, verifiedOf, watchInForce, watchInForceOf } from '../../src/approve/approval.ts';
 import { fingerprints } from '../../src/approve/fingerprint.ts';
 import { overridesInForceOf } from '../../src/profiles/overrides.ts';
@@ -364,6 +365,13 @@ describe('round 2: the record\'s shape, the key file, and the root\'s identity',
       { ...flat, signature: 9 },
       { ...flat, checks: 'none' },
       { ...flat, overrides: 3 },
+      // Unsafe integers: shape-correct, but past the encoder's safe range. The second
+      // review's crash — the encoder's throw used to escape the reader.
+      { ...flat, generation: 2 ** 53 },
+      { ...flat, ceilings: { seats: 2 ** 53, temporary: 0, vendors: {} } },
+      { ...flat, ceilings: { seats: 1e21, temporary: 0, vendors: {} } },
+      // A nested numeric field, held to the same range and named as deeply.
+      { ...flat, ceilings: { seats: 1, temporary: 0, vendors: { anthropic: 2 ** 53 } } },
     ];
     for (const one of broken) {
       restore(one as Record<string, unknown>);
@@ -373,6 +381,19 @@ describe('round 2: the record\'s shape, the key file, and the root\'s identity',
     // A huge string is read and refused, not crashed on.
     restore({ ...flat, file: 'x'.repeat(1_000_000) });
     expect(standing().kind).toBe('refused');
+    // Negative zero cannot travel through JSON.stringify (it would leave as `0`), so the
+    // record's bytes carry it literally. NaN and Infinity cannot travel through JSON at
+    // all: a file spelling them is not JSON, and reads as the unreadable record below.
+    // The `seats` the regex touches is the ceiling's (fingerprints' own `seats` is a map).
+    restore(flat as Record<string, unknown>);
+    const store = join(storePath('acme', realpathSync(root), home), 'approval.json');
+    const text = readFileSync(store, 'utf8');
+    writeFileSync(store, text.replace(/"seats": \d+/, '"seats": -0'));
+    expect(standing()).toEqual({ kind: 'refused', why: expect.stringContaining('"ceilings.seats"') });
+    writeFileSync(store, text.replace(/"generation": \d+/, '"generation": NaN'));
+    expect(standing()).toEqual({ kind: 'refused', why: expect.stringContaining('cannot be read') });
+    writeFileSync(store, text.replace(/"generation": \d+/, '"generation": Infinity'));
+    expect(standing()).toEqual({ kind: 'refused', why: expect.stringContaining('cannot be read') });
   });
 
   test('a record with a field this version does not know is refused, naming the field', () => {
@@ -429,7 +450,68 @@ describe('round 2: the record\'s shape, the key file, and the root\'s identity',
     expect(state.why).toContain('restore');
   });
 
+  test('two processes approving at once end with one key, and both verify with it', async () => {
+    // A real race, not the serial call below it: two child processes, one empty home,
+    // both in the first-approve path at the same moment — they hold at a go file, so
+    // both are alive and past startup before either touches the key folder. Whatever
+    // the interleaving, one key results (the first writer wins) and both records
+    // verify with it.
+    const source = (path: string) => pathToFileURL(join(import.meta.dir, '../../src', path)).href;
+    const child = `import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { approvalOf } from ${JSON.stringify(source('approve/approval.ts'))};
+import { loadTeamFile } from ${JSON.stringify(source('file/load.ts'))};
+import { keyFingerprint, keyOf } from ${JSON.stringify(source('store/keys.ts'))};
+import { approvalStanding, storePath, writeApproval } from ${JSON.stringify(source('store/store.ts'))};
+const home = process.argv[2] as string;
+const project = process.argv[3] as string;
+const file = process.argv[4] as string;
+while (!existsSync(join(home, 'go'))) await new Promise((done) => setTimeout(done, 2));
+const root = join(home, 'race-' + project);
+mkdirSync(root, { recursive: true });
+writeFileSync(join(root, '.agents-team.yaml'), file);
+const loaded = loadTeamFile(root, { file: '.agents-team.yaml' });
+if (!loaded.ok) process.exit(2);
+writeApproval(storePath(loaded.team.project, loaded.root, home), { approval: approvalOf(loaded.team, loaded.root), file }, loaded.team.seats, home);
+const standing = approvalStanding(loaded.root, home);
+console.log(JSON.stringify({ kind: standing.kind, fingerprint: keyFingerprint(keyOf(home)) }));
+`;
+    const script = join(home, 'race.ts');
+    writeFileSync(script, child);
+    const start = (project: string) =>
+      Bun.spawn([process.execPath, script, home, project, FILE.replace('project: acme', `project: race-${project}`)], { cwd: home, stdout: 'pipe', stderr: 'pipe' });
+    const one = start('one');
+    const two = start('two');
+    // The starting gun: both processes are running and waiting on it.
+    writeFileSync(join(home, 'go'), '');
+    const read = async (spawned: ReturnType<typeof start>) => ({
+      code: await spawned.exited,
+      out: await new Response(spawned.stdout).text(),
+      err: await new Response(spawned.stderr).text(),
+    });
+    const [first, second] = await Promise.all([read(one), read(two)]);
+    expect(`${first.code} ${first.err}`).toBe('0 ');
+    expect(`${second.code} ${second.err}`).toBe('0 ');
+    const a = JSON.parse(first.out) as { kind: string; fingerprint: string };
+    const b = JSON.parse(second.out) as { kind: string; fingerprint: string };
+    expect(a.kind).toBe('verified');
+    expect(b.kind).toBe('verified');
+    expect(a.fingerprint).toBe(b.fingerprint);
+    // One key, whole, mode 600 — and nothing else in the folder: no torn temporary file.
+    const folder = join(home, '.config', 'team-key');
+    expect(readdirSync(folder).sort()).toEqual(['generations', 'key.json']);
+    expect(statSync(join(folder, 'key.json')).mode & 0o777).toBe(0o600);
+    expect(statSync(folder).mode & 0o777).toBe(0o700);
+    // Each project's counter is its own: both first approvals are #1.
+    const counters = readdirSync(join(folder, 'generations')) as string[];
+    expect(counters.length).toBe(2);
+    for (const counter of counters) {
+      expect(JSON.parse(readFileSync(join(folder, 'generations', counter), 'utf8'))).toMatchObject({ format: 1, generation: 1 });
+    }
+  });
+
   test('two first approvals racing end with one key: the first writer wins', () => {
+    // The serial half of the race, where only the install step loses.
     const folder = join(home, '.config', 'team-key');
     const key = keyOf(home);
     const bytes = readFileSync(join(folder, 'key.json'), 'utf8');
@@ -488,8 +570,11 @@ describe('round 2: the record\'s shape, the key file, and the root\'s identity',
 });
 
 // Round 2: one snapshot carries a whole operation. A standing that is not
-// verified never widens into permissive values — each value says what it
-// becomes, and each is the restrictive side.
+// verified never carries the file's own values — each value says what it
+// becomes instead. Those fallback values are permissive as values (the default
+// budgets name no account, so `seatBudget` reads them `clear`); what keeps them
+// from ever being consulted is the commands' own gates, which refuse every
+// standing that is not verified first — pinned by name in the one-read tests.
 describe('round 2: what a standing that is not verified yields', () => {
   const refused: Standing = {
     kind: 'refused',
