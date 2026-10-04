@@ -1,0 +1,45 @@
+import { format } from './format.ts';
+import { project } from './project.ts';
+import { trust } from './trust.ts';
+import { limits } from './limits.ts';
+import { machine } from './machine.ts';
+import { rules } from './rules.ts';
+import { identity } from './identity.ts';
+import { workspace } from './workspace.ts';
+import { coordinator } from './coordinator.ts';
+import { operator } from './operator.ts';
+import { session } from './session.ts';
+import { visibility } from './visibility.ts';
+import { tools } from './tools.ts';
+import { budgets } from './budgets.ts';
+import { watch } from './watch.ts';
+import { watchChecks } from './watch-checks.ts';
+import { seats } from './seats.ts';
+import type { Section } from './section.ts';
+
+/**
+ * Every section of the team file, in one order. The owner-only list is generated from this order
+ * (`SECTIONS.filter(s => s.owner).map(s => s.name)`), and that order feeds the approval digest,
+ * so it is part of the contract: the owner sections appear here exactly as the digest reads them.
+ * The validator walks the list running each section once every section it names in `after` has
+ * run, which is the order `validate.ts` read them in before the sections were modules.
+ */
+export const SECTIONS: readonly Section[] = [
+  format,
+  project,
+  trust,
+  limits,
+  machine,
+  rules,
+  identity,
+  workspace,
+  coordinator,
+  operator,
+  session,
+  visibility,
+  tools,
+  budgets,
+  watch,
+  watchChecks,
+  seats,
+];
