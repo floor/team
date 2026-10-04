@@ -178,6 +178,7 @@ describe('team add', () => {
       agents: () => [],
       alive: () => false,
       screen: () => ({ kind: 'idle' }),
+      screenText: () => undefined,
       status: () => 'idle',
       now: () => NOW,
       sleep: async () => {},
