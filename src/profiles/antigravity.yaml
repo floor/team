@@ -43,6 +43,12 @@ screen:
           - 'Do you trust the contents of this project\?'
           - '>\s*Yes, I trust this folder'
         below_last_rule: 'enter Confirm'
+      # The captured trust dialog fills the pane: there is no composer rule.
+      - all:
+          - 'Do you trust the contents of this project\?'
+          - '>\s*Yes, I trust this folder'
+          - 'enter Confirm'
+        without_rule: true
   permission:
     ignore_case: true
     rules:

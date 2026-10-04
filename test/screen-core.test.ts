@@ -69,6 +69,16 @@ describe('claude-code through the screen core', () => {
     }
   });
 
+  test('prose that mentions Esc to cancel above an empty box is idle', () => {
+    const text = `The docs say Esc to cancel.\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
+    expect(readScreen('claude-code', text).kind).toBe('idle');
+  });
+
+  test('a transcript of 1. Yes / 2. No above an empty box is idle', () => {
+    const text = `1. Yes\n2. No\n❯ \n`;
+    expect(readScreen('claude-code', text).kind).toBe('idle');
+  });
+
   test('a quoted permission question above an empty box is the one difference', () => {
     const text = fixtures.find(([name]) => name === 'quoted permission')?.[1] ?? '';
     const lines = text.split('\n').map((line) => line.trimEnd()).slice(-20);

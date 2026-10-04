@@ -7,7 +7,11 @@ export type Rule = {
   any?: LinePattern[];
   all?: LinePattern[];
   footer?: string;
+  /** `any` and `all` are read on the dialog's last line, not on every line. */
+  onFooter?: boolean;
   belowLastRule?: RegExp;
+  /** The window has no composer rule: the dialog is the pane. */
+  withoutRule?: boolean;
   noneAfter?: { anchor: LinePattern; patterns: LinePattern[] };
 };
 
