@@ -468,6 +468,37 @@ screen:
     expect(() => loadScreen(text)).toThrow(YamlError);
   });
 
+  test('the chrome guard follows the shape a dialog draws its choices in', () => {
+    // A dialog draws the choice the cursor is on with its mark and the others indented
+    // without one (screen-core's choiceLine and twoLine; the fake seat draws the same
+    // shape and the profiles' rules name the labels). Chrome must match none of the drawn
+    // lines: the safety floor reads the first two numbered ones.
+    const snippet = (line: string) => `
+format: 1
+cli: sample
+screen:
+  chrome: ['${line}']
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    placeholders:
+      - equals: ''
+`;
+    const drawn: string[] = [];
+    for (const mark of ['❯ ', '› ', '> ', '  ']) {
+      for (const number of [1, 2]) {
+        for (const tail of ['', ' Yes', ' No']) drawn.push(`${mark}${number}.${tail}`);
+      }
+    }
+    for (const line of drawn) {
+      const escaped = line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      expect(() => loadScreen(snippet(`^${escaped}$`))).toThrow(YamlError);
+    }
+    // Chrome that names no drawn line stays: the antigravity profile's menu line is chrome.
+    expect(loadScreen(snippet('^\\s*↑/↓ Navigate.*$')).chrome).toHaveLength(1);
+  });
+
   test('a composer may name its suggestions\' style, and only dim', () => {
     const text = `
 format: 1
