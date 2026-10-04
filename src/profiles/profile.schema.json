@@ -56,11 +56,24 @@
     "screen": { "$ref": "#/$defs/screen" },
     "screen_module": { "$ref": "#/$defs/screenModule" }
   },
+  "anyOf": [
+    { "required": ["screen_module"] },
+    {
+      "properties": {
+        "screen": {
+          "anyOf": [
+            { "required": ["composer"] },
+            { "required": ["screen_module"] }
+          ]
+        }
+      }
+    }
+  ],
   "$defs": {
     "screenModule": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?!.*\\.\\.)[^/~\\\\:][^:]*$"
+      "pattern": "^(?!(?:node_modules|test|src|dist|scripts|examples|worktrees|\\.github)(?:[/\\\\]|$))(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))(?!.*%2[eE]%2[eE])[^/~\\\\:][^:]*\\.(?:ts|js|cjs|mjs)$"
     },
     "quota": {
       "type": "object",
@@ -79,7 +92,6 @@
     "screen": {
       "type": "object",
       "additionalProperties": false,
-      "anyOf": [{ "required": ["composer"] }, { "required": ["screen_module"] }],
       "properties": {
         "chrome": { "type": "array", "items": { "type": "string", "maxLength": 200 } },
         "unknown": { "$ref": "#/$defs/stage" },

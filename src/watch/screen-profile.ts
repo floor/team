@@ -10,6 +10,13 @@ export type ComposerReading = {
 
 export interface ScreenProfile {
   unknown?: (lines: string[]) => boolean;
+  /**
+   * Predicate for the workspace trust stage.
+   * With a hatch trust returning false on a real trust dialog, the screen
+   * reads question (a later stage wins): that is the hatch's own answer
+   * under the rule that exactly true matches and exactly false misses.
+   * The safety floor's guarantee holds: a dialog never reads idle or unsent.
+   */
   trust?: (lines: string[]) => boolean;
   permission?: (lines: string[]) => boolean;
   question?: (lines: string[]) => boolean;

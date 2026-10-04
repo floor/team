@@ -1,7 +1,7 @@
 // A profile file, in team's YAML subset, checked as it is loaded. The JSON Schema
 // next to the profiles describes the same shape; this is what actually refuses a file,
 // because the package does not carry a schema validator.
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,23 +63,33 @@ export function loadScreen(text: string, baseDir?: string, profileFile?: string)
 function loadScreenModule(specifier: string, baseDir: string | undefined, line: number, profileFile?: string): ScreenProfile {
   const label = profileFile ? `profile "${profileFile}"` : 'profile';
 
-  // 1. Refuse absolute path
+  // 1. Refuse empty string
+  if (!specifier || specifier.trim() === '') {
+    fail(line, `${label}: "screen_module" cannot be an empty string`);
+  }
+
+  // 2. Refuse current directory "."
+  if (specifier === '.' || specifier === './' || specifier === '.\\') {
+    fail(line, `${label}: "screen_module" cannot be current directory "."`);
+  }
+
+  // 3. Refuse absolute path
   if (isAbsolute(specifier) || specifier.startsWith('/') || specifier.startsWith('\\')) {
     fail(line, `${label}: "screen_module" cannot be an absolute path: "${specifier}"`);
   }
 
-  // 2. Refuse home directory path
-  if (specifier === '~' || specifier.startsWith('~/') || specifier.startsWith('~\\')) {
+  // 4. Refuse home directory path
+  if (specifier.startsWith('~')) {
     fail(line, `${label}: "screen_module" cannot be a home directory path: "${specifier}"`);
   }
 
-  // 3. Refuse URL or other scheme
+  // 5. Refuse URL or other scheme
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(specifier)) {
     fail(line, `${label}: "screen_module" cannot be a URL or scheme: "${specifier}"`);
   }
 
-  // 4. Refuse ".." segment
-  if (specifier.split(/[/\\]/).includes('..')) {
+  // 6. Refuse ".." segment
+  if (specifier.split(/[/\\]/).includes('..') || /%2[eE]%2[eE]/.test(specifier)) {
     fail(line, `${label}: "screen_module" cannot contain ".." segments: "${specifier}"`);
   }
 
@@ -87,9 +97,9 @@ function loadScreenModule(specifier: string, baseDir: string | undefined, line: 
   const dir = baseDir ? resolve(baseDir) : defaultDir;
   const resolvedDir = resolve(dir);
 
-  // 5. Refuse paths in the project outside profiles
+  // 7. Refuse paths in the project outside profiles
   const projectSegments = ['test', 'src', 'dist', 'scripts', 'examples', 'node_modules', 'worktrees', '.github'];
-  const firstSegment = specifier.split(/[/\\]/)[0] ?? '';
+  const firstSegment = specifier.replace(/^\.[/\\]/, '').split(/[/\\]/)[0] ?? '';
   if (
     projectSegments.includes(firstSegment) ||
     (existsSync(resolve(process.cwd(), specifier)) && !resolve(process.cwd(), specifier).startsWith(resolvedDir + sep))
@@ -97,38 +107,91 @@ function loadScreenModule(specifier: string, baseDir: string | undefined, line: 
     fail(line, `${label}: "screen_module" cannot be a path in the project: "${specifier}"`);
   }
 
-  // 6. Must resolve inside profiles directory
+  // 8. Must resolve inside profiles directory
   let target = resolve(resolvedDir, specifier);
   if (!target.startsWith(resolvedDir + sep) && target !== resolvedDir) {
     fail(line, `${label}: "screen_module" must resolve inside profiles directory: "${specifier}"`);
   }
 
-  if (!existsSync(target)) {
-    if (target.endsWith('.ts') && existsSync(target.slice(0, -3) + '.js')) {
-      target = target.slice(0, -3) + '.js';
-    } else if (target.endsWith('.js') && existsSync(target.slice(0, -3) + '.ts')) {
-      target = target.slice(0, -3) + '.ts';
-    } else if (existsSync(target + '.ts')) {
-      target = target + '.ts';
-    } else if (existsSync(target + '.js')) {
-      target = target + '.js';
+  // Check if target exists and if it is a directory or symlink loop
+  let st;
+  try {
+    st = statSync(target);
+  } catch (err: any) {
+    if (err && err.code === 'ELOOP') {
+      fail(line, `${label}: "screen_module" contains a symlink loop: "${specifier}"`);
     }
   }
 
-  if (!existsSync(target)) {
+  if (st && st.isDirectory()) {
+    fail(line, `${label}: "screen_module" cannot be a directory: "${specifier}"`);
+  }
+
+  // 9. Refuse bare names (no slash, no script extension)
+  if (
+    !specifier.startsWith('./') &&
+    !specifier.startsWith('.\\') &&
+    !specifier.includes('/') &&
+    !specifier.includes('\\') &&
+    !/\.(ts|js|cjs|mjs)$/i.test(specifier)
+  ) {
+    fail(line, `${label}: "screen_module" cannot be a bare name: "${specifier}"`);
+  }
+
+  let fileTarget = target;
+  if (!existsSync(fileTarget)) {
+    if (fileTarget.endsWith('.ts') && existsSync(fileTarget.slice(0, -3) + '.js')) {
+      fileTarget = fileTarget.slice(0, -3) + '.js';
+    } else if (fileTarget.endsWith('.js') && existsSync(fileTarget.slice(0, -3) + '.ts')) {
+      fileTarget = fileTarget.slice(0, -3) + '.ts';
+    } else if (existsSync(fileTarget + '.ts')) {
+      fileTarget = fileTarget + '.ts';
+    } else if (existsSync(fileTarget + '.js')) {
+      fileTarget = fileTarget + '.js';
+    } else if (existsSync(fileTarget + '.cjs')) {
+      fileTarget = fileTarget + '.cjs';
+    } else if (existsSync(fileTarget + '.mjs')) {
+      fileTarget = fileTarget + '.mjs';
+    }
+  }
+
+  let fileStat;
+  try {
+    fileStat = statSync(fileTarget);
+  } catch (err: any) {
+    if (err && err.code === 'ELOOP') {
+      fail(line, `${label}: "screen_module" contains a symlink loop: "${specifier}"`);
+    }
     fail(line, `${label}: cannot load "screen_module": Cannot find module "${specifier}"`);
   }
 
-  // 7. Symlink check: realpath must be inside profiles directory
-  const realTarget = realpathSync(target);
-  const realDir = realpathSync(resolvedDir);
+  if (!fileStat.isFile()) {
+    if (fileStat.isDirectory()) {
+      fail(line, `${label}: "screen_module" cannot be a directory: "${specifier}"`);
+    }
+    fail(line, `${label}: cannot load "screen_module": Cannot find module "${specifier}"`);
+  }
+
+  // Symlink check: realpath must be inside profiles directory
+  let realTarget: string;
+  let realDir: string;
+  try {
+    realTarget = realpathSync(fileTarget);
+    realDir = realpathSync(resolvedDir);
+  } catch (err: any) {
+    if (err && err.code === 'ELOOP') {
+      fail(line, `${label}: "screen_module" contains a symlink loop: "${specifier}"`);
+    }
+    fail(line, `${label}: cannot load "screen_module": ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   if (!realTarget.startsWith(realDir + sep) && realTarget !== realDir) {
     fail(line, `${label}: "screen_module" symlink leads outside profiles directory: "${specifier}"`);
   }
 
   let mod: any;
   try {
-    mod = require(target);
+    mod = require(realTarget);
   } catch (error) {
     fail(line, `${label}: cannot load "screen_module": ${error instanceof Error ? error.message : String(error)}`);
   }
