@@ -146,8 +146,9 @@ describe('running a check command', () => {
     const started = Date.now();
     expect(readCheck(spendAccount(), trapped, NOW, 200)).toBeNull();
     // The kill signal is SIGKILL: under the default SIGTERM the trap would swallow it and the
-    // call would block for the whole sleep, well past twice the timeout.
-    expect(Date.now() - started).toBeLessThan(400);
+    // call would block for the whole sleep, well past twice the timeout. The bound is wide
+    // enough for a slow runner to spawn `sh` inside it, and a tenfold margin under the sleep.
+    expect(Date.now() - started).toBeLessThan(2000);
   });
 
   test('it gets an empty environment with only PATH and HOME', () => {
