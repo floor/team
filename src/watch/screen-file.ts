@@ -188,18 +188,32 @@ function loadScreenModule(specifier: string, baseDir: string | undefined, line: 
   }
 
   try {
+    const defaultExport =
+      mod && typeof mod === 'object' && 'default' in mod ? mod.default : undefined;
     const candidate =
-      mod && typeof mod === 'object' && 'default' in mod && mod.default && typeof mod.default === 'object'
-        ? mod.default
+      defaultExport && typeof defaultExport === 'object'
+        ? defaultExport
         : mod;
-    return {
-      unknown: typeof candidate?.unknown === 'function' ? candidate.unknown : (typeof mod?.unknown === 'function' ? mod.unknown : undefined),
-      trust: typeof candidate?.trust === 'function' ? candidate.trust : (typeof mod?.trust === 'function' ? mod.trust : undefined),
-      permission: typeof candidate?.permission === 'function' ? candidate.permission : (typeof mod?.permission === 'function' ? mod.permission : undefined),
-      question: typeof candidate?.question === 'function' ? candidate.question : (typeof mod?.question === 'function' ? mod.question : undefined),
-      working: typeof candidate?.working === 'function' ? candidate.working : (typeof mod?.working === 'function' ? mod.working : undefined),
-      composer: typeof candidate?.composer === 'function' ? candidate.composer : (typeof mod?.composer === 'function' ? mod.composer : undefined),
+
+    const readExport = (key: string): ((...args: any[]) => any) | undefined => {
+      let val = candidate !== null && (typeof candidate === 'object' || typeof candidate === 'function')
+        ? (candidate as any)[key]
+        : undefined;
+      if (val === undefined && mod !== candidate && mod !== null && (typeof mod === 'object' || typeof mod === 'function')) {
+        val = (mod as any)[key];
+      }
+      return typeof val === 'function' ? val : undefined;
     };
+
+    const snapshot: ScreenProfile = Object.freeze({
+      unknown: readExport('unknown'),
+      trust: readExport('trust'),
+      permission: readExport('permission'),
+      question: readExport('question'),
+      working: readExport('working'),
+      composer: readExport('composer'),
+    });
+    return snapshot;
   } catch (error) {
     fail(line, `${label}: cannot load "screen_module": ${error instanceof Error ? error.message : String(error)}`);
   }

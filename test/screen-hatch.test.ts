@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
-import { readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, statSync, mkdirSync, existsSync, copyFileSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, statSync, mkdirSync, existsSync, copyFileSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -898,29 +898,6 @@ seats:
 
   test('round 8: stateful composer getter is refused at load on all four shipped profiles in source and built code (b)', async () => {
     const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-stateful-composer-'));
-    // A stateful getter returning a function on odd reads (first read) and undefined on even reads:
-    writeFileSync(
-      resolve(tempDir, 'stateful-composer.cjs'),
-      `let reads = 0;
-Object.defineProperty(module.exports, "composer", {
-  get() {
-    reads++;
-    return reads % 2 === 1 ? () => ({ kind: "idle" }) : undefined;
-  },
-});`,
-    );
-
-    // Also a stateful getter returning undefined on read 1 and function on read 2:
-    writeFileSync(
-      resolve(tempDir, 'stateful-composer-delayed.cjs'),
-      `let reads = 0;
-Object.defineProperty(module.exports, "composer", {
-  get() {
-    reads++;
-    return reads === 1 ? undefined : () => ({ kind: "idle" });
-  },
-});`,
-    );
 
     try {
       const clis = ['claude-code', 'codex', 'cursor', 'antigravity'];
@@ -929,21 +906,48 @@ Object.defineProperty(module.exports, "composer", {
       for (const cli of clis) {
         const rawYaml = readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8');
 
+        // Fresh module files for each check so getter read count starts at 0 for every probe
+        const srcMod = `stateful-composer-${cli}-src.cjs`;
+        const builtMod = `stateful-composer-${cli}-built.cjs`;
+        const code = `let reads = 0;
+Object.defineProperty(module.exports, "composer", {
+  get() {
+    reads++;
+    return reads % 2 === 1 ? () => ({ kind: "idle" }) : undefined;
+  },
+});`;
+        writeFileSync(resolve(tempDir, srcMod), code);
+        writeFileSync(resolve(tempDir, builtMod), code);
+
         // First read returns function -> must be refused at load (cannot bypass exclusivity check)
-        const withHatch1 = `${rawYaml}\nscreen_module: "stateful-composer.cjs"\n`;
-        expect(() => loadScreen(withHatch1, tempDir, `${cli}.yaml`)).toThrow(
+        const withHatchSrc = `${rawYaml}\nscreen_module: "${srcMod}"\n`;
+        expect(() => loadScreen(withHatchSrc, tempDir, `${cli}.yaml`)).toThrow(
           new RegExp(`profile "${cli}\\.yaml": profile has a data composer and screen_module exports a composer`),
         );
-        expect(() => dist.loadScreen(withHatch1, tempDir, `${cli}.yaml`)).toThrow(
+        const withHatchBuilt = `${rawYaml}\nscreen_module: "${builtMod}"\n`;
+        expect(() => dist.loadScreen(withHatchBuilt, tempDir, `${cli}.yaml`)).toThrow(
           new RegExp(`profile "${cli}\\.yaml": profile has a data composer and screen_module exports a composer`),
         );
 
         // Delayed getter: read 1 snapshots undefined, so profile gets snapshot with composer: undefined.
         // It must NOT receive a hatch composer later via subsequent reads.
-        const withHatch2 = `${rawYaml}\nscreen_module: "stateful-composer-delayed.cjs"\n`;
-        const dataSrc = loadScreen(withHatch2, tempDir, `${cli}.yaml`);
+        const srcModDelayed = `stateful-delayed-${cli}-src.cjs`;
+        const builtModDelayed = `stateful-delayed-${cli}-built.cjs`;
+        const codeDelayed = `let reads = 0;
+Object.defineProperty(module.exports, "composer", {
+  get() {
+    reads++;
+    return reads === 1 ? undefined : () => ({ kind: "idle" });
+  },
+});`;
+        writeFileSync(resolve(tempDir, srcModDelayed), codeDelayed);
+        writeFileSync(resolve(tempDir, builtModDelayed), codeDelayed);
+
+        const withHatchSrc2 = `${rawYaml}\nscreen_module: "${srcModDelayed}"\n`;
+        const dataSrc = loadScreen(withHatchSrc2, tempDir, `${cli}.yaml`);
         expect(typeof dataSrc.profile?.composer).toBe('undefined');
-        const dataBuilt = dist.loadScreen(withHatch2, tempDir, `${cli}.yaml`);
+        const withHatchBuilt2 = `${rawYaml}\nscreen_module: "${builtModDelayed}"\n`;
+        const dataBuilt = dist.loadScreen(withHatchBuilt2, tempDir, `${cli}.yaml`);
         expect(typeof dataBuilt.profile?.composer).toBe('undefined');
       }
     } finally {
@@ -972,8 +976,7 @@ module.exports.getReads = () => reads;`,
       const data = loadScreen(yaml, tempDir, 'fake.yaml');
       expect(data.profile?.working).toBeDefined();
 
-      // The export was read during snapshot creation; only one read happened on load
-      const mod = require(resolve(tempDir, 'stateful-predicate.cjs'));
+      const mod = require(realpathSync(resolve(tempDir, 'stateful-predicate.cjs')));
       expect(mod.getReads()).toBe(1);
 
       // When predicate is called, it runs p1 (which returns false), NOT p2 (which returns true)
@@ -982,8 +985,8 @@ module.exports.getReads = () => reads;`,
       // Property on module was not read again
       expect(mod.getReads()).toBe(1);
 
-      // classifyLines evaluates working predicate
-      const lines = ['HATCH_NO_MATCH'];
+      // classifyLines evaluates working predicate; when working returns false, composer matches and returns idle
+      const lines = ['> ', 'status'];
       const res = classifyLines(data, lines);
       // Working returns false (p1), so result is idle, not working
       expect(res.kind).toBe('idle');
