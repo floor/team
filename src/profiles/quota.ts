@@ -28,24 +28,16 @@ const RESET = /^(?:[0-9]+h(?:[0-9]+m)?|[0-9]+m)$/;
 const PERCENT = /^([0-9]+)%$/;
 
 /**
- * Figures from the profile's status line: the last line of the window that matches `statusLine`,
- * as the composer reads it. A cut line, or a figure over 100, is absent, and with no status line
- * identified there are no figures at all — a pattern must never read the transcript or the input
- * box, where a seat can print or type a line that only looks like a quota.
+ * Figures from one line: the composer's own status row, handed over by the caller (`statusRow`
+ * in the watch's screen core). Nothing else on the pane is ever read — a seat can print or type
+ * a line that only looks like a quota, and such a line is not the row. A row that is null, and
+ * a figure over 100, gives no figure.
  */
-export function figuresOf(
-  patterns: readonly QuotaPattern[],
-  screen: string,
-  statusLine: RegExp | null,
-): QuotaFigure[] {
-  if (statusLine === null) return [];
-  const lines = screen.split('\n').map((line) => line.trimEnd()).slice(-20);
-  let line: string | null = null;
-  for (const candidate of lines) if (statusLine.test(candidate)) line = candidate;
-  if (line === null) return [];
+export function figuresOf(patterns: readonly QuotaPattern[], row: string | null): QuotaFigure[] {
+  if (row === null) return [];
   const found: QuotaFigure[] = [];
   for (const pattern of patterns) {
-    const match = pattern.match.exec(line);
+    const match = pattern.match.exec(row);
     if (!match) continue;
     const next = figureOf(pattern, match);
     if (next) found.push(next);

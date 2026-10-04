@@ -15,9 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- A seat can no longer write its own quota: figures are read only off the profile's status line, so a
-  line printed into the transcript or typed into the input box is not read as one. A CLI whose
-  composer shows no status line reads no figures at all.
+- Quota figures are read only from the status line's own row of a composer screen: a line printed
+  into the transcript or typed into the input box is not read as one, a CLI whose composer shows no
+  status line reads no figures at all, and a dialog, a question, a trust or an unknown screen reads
+  none. A pane's owner can still draw a whole fake composer; a fresh `check` reading stays first,
+  and a wrong figure can only refuse a launch or produce a report.
 
 ## [0.1.0] - 2026-10-04
 
