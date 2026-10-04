@@ -93,7 +93,10 @@ screen:
   composer:
     mode: box-to-rule
     prompt: '^\s*[❯›>]'
-    rule: '^\s*[─━]{8,}'
+    # The box's two rules, as unsent-typed-ansi.txt draws them: one unbroken run of ─ from the
+    # pane's first column, the closing rule the window's last rule row. A rule-looking row the
+    # box holds is drawn at the content column and is content, never the frame.
+    rule: '^[─━]{8,}$'
     footers:
       - '^\s{2,}.*·.*(?:Opus|Sonnet|Haiku|Fable)\s+[0-9]+.*$'
       - '^\s{2,}(?:⏵⏵\s+)?bypass permissions\b.*$'

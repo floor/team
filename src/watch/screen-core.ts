@@ -314,6 +314,13 @@ function compose(data: ScreenData, plain: string[], styled: string[], tick: () =
   return twoRules(plain, styled, composer, tick);
 }
 
+/** The rule a line carries, or null: the profile's rule pattern anchored to the line's own
+ *  first column, as the captures draw the box's rules. */
+function ruleRun(composer: { rule: RegExp }, line: string): string | null {
+  const hit = composer.rule.exec(line);
+  return hit === null ? null : hit[0];
+}
+
 function boxToRule(lines: string[], styled: string[], composer: Extract<ScreenData['composer'], { mode: 'box-to-rule' }>, tick: () => boolean): Hit {
   let input = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -321,16 +328,22 @@ function boxToRule(lines: string[], styled: string[], composer: Extract<ScreenDa
     if (composer.prompt.test(lines[i] ?? '')) { input = i; break; }
   }
   if (input < 0) return { kind: 'unknown' };
-  // The frame is the box itself: a closing rule under this prompt. A rule anywhere
-  // above, or a rule with shell output under it, is not the box. A shell's last
-  // prompt never has that closing rule.
+  // The frame is the box itself, read as the captures draw it (unsent-typed-ansi.txt): a rule
+  // is an unbroken run from the pane's first column, and the closing rule under this prompt is
+  // the window's last rule row — a shell's last prompt never has one, and nothing rule-shaped
+  // sits under the box's footers. A rule-looking row the box holds is content: the pane draws
+  // content rows at the text's own column, never at the first one, so it is compared with the
+  // rows like any other. A window whose last rule row is not the opening rule's own width, or
+  // which shows no rule row under the prompt, is not this frame and reads unknown.
+  const opening = input > 0 ? ruleRun(composer, lines[input - 1] ?? '') : null;
   let close = -1;
-  for (let i = input + 1; i < lines.length; i++) {
+  for (let i = lines.length - 1; i > input; i--) {
     if (tick()) return { kind: 'stop' };
-    if (composer.rule.test(lines[i] ?? '')) { close = i; break; }
+    if (ruleRun(composer, lines[i] ?? '') !== null) { close = i; break; }
   }
   if (close < 0) return { kind: 'unknown' };
-  const above = input > 0 && composer.rule.test(lines[input - 1] ?? '');
+  if (opening !== null && ruleRun(composer, lines[close] ?? '') !== opening) return { kind: 'unknown' };
+  const above = opening !== null;
   let footer = false;
   const rawFooters: string[] = [];
   for (let j = close + 1; j < lines.length; j++) {
