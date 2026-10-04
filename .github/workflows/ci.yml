@@ -31,6 +31,22 @@ jobs:
       - run: bun install --frozen-lockfile
       # The live-herdr tests skip themselves: TEAM_LIVE_UP is not set here.
       - run: bun run ci
+
+      # The release's tarball guard, on every pull request, so the real path is
+      # exercised before any tag. The filename comes from npm's own --json
+      # report, never a glob.
+      - name: Pack the tarball
+        id: pack
+        run: |
+          filename="$(npm pack --json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8"))[0].filename')"
+          test -f "$filename" || { echo "npm pack reported '$filename', which is not a file" >&2; exit 1; }
+          echo "tarball=$filename" >> "$GITHUB_OUTPUT"
+
+      - name: No internal ticket references in the tarball
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: bun scripts/check-pack.ts "$TARBALL"
+
       - name: Every commit and the pull request body are signed
         env:
           EVENT: ${{ github.event_name }}
