@@ -94,21 +94,31 @@ describe('Antigravity launch and captured screens', () => {
   });
 });
 
+/** The captured idle frame once `text` sits in the box: the bare prompt row replaced, the text's
+ *  first line after the prompt, every later line at the column the `unsent` capture draws
+ *  continuation rows in — two columns, the prompt's own width (see the fixtures README). */
+function boxed(text: string): string {
+  const [first = '', ...rest] = text.split('\n');
+  const body = [`> ${first}`, ...rest.map((line) => `  ${line}`)].join('\n');
+  return fixture('idle').replace('\n>\n', `\n${body}\n`);
+}
+
 function delivery(initial = 'idle') {
-  let shown = initial;
+  let raw = fixture(initial);
   let status = initial === 'working' ? 'working' : 'idle';
   let clock = 0;
   const calls: string[] = [];
   const io: Delivery = {
-    screen: () => fixture(shown),
+    screen: () => raw,
     status: () => status,
-    type(text) { calls.push(text); shown = 'unsent'; return true; },
-    enter() { calls.push('Enter'); shown = 'working'; status = 'working'; return true; },
+    // The paste renders as the box the CLI draws for its text.
+    type(text) { calls.push(text); raw = boxed(text); return true; },
+    enter() { calls.push('Enter'); raw = fixture('working'); status = 'working'; return true; },
     foreground: () => ['agy'],
     now: () => clock,
     sleep: async (ms) => { clock += ms; },
   };
-  return { io, calls, show: (name: string) => { shown = name; }, status: (value: string) => { status = value; } };
+  return { io, calls, show: (name: string) => { raw = fixture(name); }, showText: (screen: string) => { raw = screen; }, status: (value: string) => { status = value; } };
 }
 
 describe('Antigravity rules delivery', () => {
@@ -116,6 +126,34 @@ describe('Antigravity rules delivery', () => {
     const d = delivery();
     expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(true);
     expect(d.calls).toEqual(['Rules.', 'Enter']);
+  });
+
+  test('a box holding a person\'s own text gets no Enter', async () => {
+    // The captured rules box against a shorter first message: the box is not the typed text.
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.show('unsent'); return true; };
+    expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
+  });
+
+  test('the typed text with one character changed gets no Enter', async () => {
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed('Rules!')); return true; };
+    expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
+  });
+
+  test('the typed text with more below it gets no Enter', async () => {
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed('Rules.\nand a line of their own')); return true; };
+    expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
+  });
+
+  test('a boxed multi-line paste reads back row for row and is entered', async () => {
+    const d = delivery();
+    expect(await deliverRules('antigravity', 'Rules.\nOne more line.', 1, d.io)).toBe(true);
+    expect(d.calls).toEqual(['Rules.\nOne more line.', 'Enter']);
   });
 
   test.each(['trust', 'permission', 'unsent', 'exit', 'working'])('types nothing at %s', async (screen) => {
@@ -159,7 +197,7 @@ describe('Antigravity rules delivery', () => {
     let clock = 0;
     d.io.type = () => true;
     d.io.now = () => clock;
-    d.io.sleep = async (ms) => { clock += ms; d.show('unsent'); };
+    d.io.sleep = async (ms) => { clock += ms; d.showText(boxed('Rules.')); };
     expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(true);
   });
 });
@@ -224,6 +262,33 @@ describe('Antigravity folded rules paste', () => {
 
   test('a fold whose tail is not the typed text gets no Enter', async () => {
     const d = foldedPane((screen) => screen.replace('d fix/agy-rules-fold.', 'd fix/some-other-branch.'));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('a prompt-marked fold whose count cannot be right (zero) gets no Enter', async () => {
+    // A marker that claims nothing is hidden while the box shows only its tail. Read as an
+    // ordinary unsent box, this got the Enter; a fold marker is never submitted unverified.
+    const d = foldedPane((screen) => screen.replace('↑ 21 more lines', '> ↑ 0 more lines'));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('a zero-count fold with an unrelated tail gets no Enter either', async () => {
+    // The reproduction: prompt-marked marker, count zero, and visible rows that are not the
+    // typed text's ending at all.
+    const d = foldedPane((screen) => screen
+      .replace(
+        ['d fix/agy-rules-fold.', 'These are standing rules, not a task: reply ready and ', 'wait for your brief.'].join('\n'),
+        ['d fix/some-other-branch.', 'Nothing here is the text team typed, and ', 'the count below is wrong as well.'].join('\n'),
+      )
+      .replace('↑ 21 more lines', '> ↑ 0 more lines'));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('a fold whose count is larger than the text\'s rows gets no Enter', async () => {
+    const d = foldedPane((screen) => screen.replace('↑ 21 more lines', '> ↑ 99 more lines'));
     expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
     expect(d.calls).toEqual([RULES]);
   });

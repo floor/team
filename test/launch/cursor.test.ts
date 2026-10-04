@@ -158,21 +158,31 @@ describe('Cursor launch and captured screens', () => {
   });
 });
 
+/** The captured idle frame once `text` sits in the box: the placeholder row replaced, the text's
+ *  first line after the prompt, every later line at the column the captured wrap draws
+ *  continuation rows in — four columns, the prompt row's own width (see the fixtures README). */
+function boxed(text: string): string {
+  const [first = '', ...rest] = text.split('\n');
+  const body = [`  → ${first}`, ...rest.map((line) => `    ${line}`)].join('\n');
+  return fixture('idle').replace('  → Plan, search, build anything', body);
+}
+
 function delivery(initial = 'idle') {
-  let shown = initial;
+  let raw = fixture(initial);
   let status = initial === 'working' || initial === 'thinking' ? 'working' : 'idle';
   let clock = 0;
   const calls: string[] = [];
   const io: Delivery = {
-    screen: () => fixture(shown),
+    screen: () => raw,
     status: () => status,
-    type(text) { calls.push(text); shown = 'unsent'; return true; },
-    enter() { calls.push('Enter'); shown = 'working'; status = 'working'; return true; },
+    // The paste renders as the box the CLI draws for its text.
+    type(text) { calls.push(text); raw = boxed(text); return true; },
+    enter() { calls.push('Enter'); raw = fixture('working'); status = 'working'; return true; },
     foreground: () => ['cursor-agent'],
     now: () => clock,
     sleep: async (ms) => { clock += ms; },
   };
-  return { io, calls, show: (name: string) => { shown = name; }, status: (value: string) => { status = value; } };
+  return { io, calls, show: (name: string) => { raw = fixture(name); }, showText: (screen: string) => { raw = screen; }, status: (value: string) => { status = value; } };
 }
 
 describe('Cursor rules delivery', () => {
@@ -182,16 +192,55 @@ describe('Cursor rules delivery', () => {
     expect(d.calls).toEqual(['Rules.', 'Enter']);
   });
 
-  test('the captured long paste wraps inline, with no fold row to verify', async () => {
-    // unsent.txt is the capture of this message wrapped over two rows in Cursor's composer: a
-    // long paste stays an ordinary unsent box, and the profile declares no fold, so delivery
-    // reads it as before.
+  test('the captured wrapped paste is not entered: its wrap cannot be checked', async () => {
+    // unsent.txt is the capture of this message wrapped over two rows at the pane's width (the
+    // first row is 45 characters; the next word would not fit). The profile declares no wrap
+    // rule, so the box's two rows cannot be joined to the typed line without guessing where
+    // Cursor wrapped. Delivery holds the Enter and the report says the rules were not delivered.
     const message = 'Reply with exactly RULES_RECEIVED. Do not use tools. Do not read or write files.';
     expect(readFold('cursor', fixture('unsent'))).toBeNull();
     expect(readScreen('cursor', fixture('unsent')).kind).toBe('unsent');
     const d = delivery();
-    expect(await deliverRules('cursor', message, 1, d.io)).toBe(true);
-    expect(d.calls).toEqual([message, 'Enter']);
+    d.io.type = (text) => { d.calls.push(text); d.show('unsent'); return true; };
+    expect(await deliverRules('cursor', message, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([message]);
+  });
+
+  test('a box holding a person\'s own text gets no Enter', async () => {
+    // The captured rules box against a shorter first message: the box is not the typed text.
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.show('unsent'); return true; };
+    expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
+  });
+
+  test('the typed text with one character changed gets no Enter', async () => {
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed('Rules!')); return true; };
+    expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
+  });
+
+  test('the typed text with more below it gets no Enter', async () => {
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed('Rules.\nand a line of their own')); return true; };
+    expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
+  });
+
+  test('a boxed multi-line paste reads back row for row and is entered', async () => {
+    const d = delivery();
+    expect(await deliverRules('cursor', 'Rules.\nOne more line.', 1, d.io)).toBe(true);
+    expect(d.calls).toEqual(['Rules.\nOne more line.', 'Enter']);
+  });
+
+  test('the typed exit read back from the captured completion frame is entered', async () => {
+    // exit-typed.txt: `/exit` in the box with the suggestion menu below it. The box's own row
+    // is the typed text, so the exit's Enter may be sent.
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.show('exit-typed'); return true; };
+    expect(await deliverRules('cursor', '/exit', 1, d.io)).toBe(true);
+    expect(d.calls).toEqual(['/exit', 'Enter']);
   });
 
   test.each(['trust', 'unsent', 'exit', 'working', 'thinking'])('types nothing at %s', async (screen) => {
@@ -235,7 +284,7 @@ describe('Cursor rules delivery', () => {
     let clock = 0;
     d.io.type = () => true;
     d.io.now = () => clock;
-    d.io.sleep = async (ms) => { clock += ms; d.show('unsent'); };
+    d.io.sleep = async (ms) => { clock += ms; d.showText(boxed('Rules.')); };
     expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(true);
   });
 });

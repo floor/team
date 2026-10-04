@@ -29,3 +29,13 @@ not assert a permission or question layout that was not observed. Unknown screen
 permit no input.
 
 No trust, login, or settings dialog was answered, and no vendor configuration was edited.
+
+## Constructed: delivery-verification boxes
+
+Not captures. `test/launch/cursor.test.ts` builds the post-paste box from `idle.txt`:
+the placeholder row is replaced by `  → ` and the first line of the typed text, and each
+later line is drawn at four columns, the continuation indent `unsent.txt` shows (the
+prompt row's own width). The captured `unsent.txt` is used as it is: it is the one box
+capture that cannot be read back, because Cursor wrapped the message at that pane's
+width and the profile declares no wrap rule, so its test locks in that an Enter is not
+sent to it.

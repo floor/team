@@ -84,19 +84,38 @@ describe('Codex launch and captured screens', () => {
   });
 });
 
+/** The captured idle frame once `text` sits in the box: the placeholder row replaced, the text's
+ *  first line after the prompt, every later line at the column the captures draw continuation
+ *  rows in — two columns, the prompt's own width (see the fixtures README). */
+function boxed(text: string): string {
+  const [first = '', ...rest] = text.split('\n');
+  const body = [`› ${first}`, ...rest.map((line) => `  ${line}`)].join('\n');
+  return fixture('idle').replace('› Ask Codex to do anything', body);
+}
+
+// The rules message the real capture holds, as team composed it: its lines sat at column zero,
+// and Codex drew each later line through its own prompt column (see the fixtures README).
+const CAPTURED_MESSAGE = [
+  'Rules for this session, from the team file:',
+  '- Do not use tools or edit files.',
+  '- Do not change trust or configuration.',
+  '- Reply only RULES_RECEIVED, then wait.',
+].join('\n');
+
 function delivery(initial = 'idle') {
-  let shown = initial;
+  let raw = fixture(initial);
   let status = initial === 'working' ? 'working' : 'idle';
   let clock = 0;
   const calls: string[] = [];
   const io: Delivery = {
-    screen: () => fixture(shown), status: () => status,
-    type(text) { calls.push(text); shown = 'unsent'; return true; },
-    enter() { calls.push('Enter'); shown = 'working'; status = 'working'; return true; },
+    screen: () => raw, status: () => status,
+    // The paste renders as the box the CLI draws for its text.
+    type(text) { calls.push(text); raw = boxed(text); return true; },
+    enter() { calls.push('Enter'); raw = fixture('working'); status = 'working'; return true; },
     foreground: () => ['codex'],
     now: () => clock, sleep: async (ms) => { clock += ms; },
   };
-  return { io, calls, show: (name: string) => { shown = name; }, status: (value: string) => { status = value; } };
+  return { io, calls, show: (name: string) => { raw = fixture(name); }, showText: (screen: string) => { raw = screen; }, status: (value: string) => { status = value; } };
 }
 
 describe('Codex rules delivery', () => {
@@ -104,6 +123,33 @@ describe('Codex rules delivery', () => {
     const d = delivery();
     expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(true);
     expect(d.calls).toEqual(['Rules.', 'Enter']);
+  });
+  test('the captured box reads back as the typed message and is entered', async () => {
+    // The real capture, with the message as team composed it: the box's own rows are the typed
+    // lines, so the Enter is the delivery's to send.
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.show('unsent'); return true; };
+    expect(await deliverRules('codex', CAPTURED_MESSAGE, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([CAPTURED_MESSAGE, 'Enter']);
+  });
+  test('a box holding a person\'s own text gets no Enter', async () => {
+    // The captured rules box against a different first message: the box is not the typed text.
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.show('unsent'); return true; };
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
+  });
+  test('the typed text with one character changed gets no Enter', async () => {
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed('Rules!')); return true; };
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
+  });
+  test('the typed text with more below it gets no Enter', async () => {
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed('Rules.\nand a line of their own')); return true; };
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
   });
   test.each(['permission', 'trust', 'startup', 'unsent', 'exit', 'working'])('types nothing at %s', async (screen) => {
     const d = delivery(screen);
@@ -152,7 +198,7 @@ describe('Codex rules delivery', () => {
     const d = delivery(); let clock = 0;
     d.io.type = () => true;
     d.io.now = () => clock;
-    d.io.sleep = async (ms) => { clock += ms; d.show('unsent'); };
+    d.io.sleep = async (ms) => { clock += ms; d.showText(boxed('Rules.')); };
     expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(true);
   });
 });

@@ -31,3 +31,12 @@ Paths, user email, plan, and conversation UUID are replaced with placeholders. S
 before Antigravity's header banner is removed. All other visible text is retained, including the
 box borders, prompts, and model footer (`Gemini 3.8 Flash · high`). Unknown screens permit no input.
 No vendor configuration in `~/.gemini` was edited.
+
+## Constructed: delivery-verification boxes
+
+Not captures. `test/launch/antigravity.test.ts` builds the post-paste box from `idle.txt`:
+the bare `>` row is replaced by `> ` and the first line of the typed text, and each later
+line is drawn at two columns, the continuation indent `unsent.txt` shows. The fold tests
+edit `folded-rules.txt`: the reviewer's zero-count marker with an unrelated tail, and
+counts of 0 and 99 against the same 24-row text. Those screens are constructed too, and
+each test names what it changes; a fold marker is never submitted unverified.

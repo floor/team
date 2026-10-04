@@ -78,3 +78,13 @@ drawn while that pinned status line stays below it — a screen the classifier r
 as `unsent`, so `deliverRules` reported the rules delivered and the watch typed a
 nudge and Enter onto the dialog. Nothing else is added or changed. Its tests are
 in `test/launch/codex.test.ts` and `test/screen-core.test.ts`.
+
+## Constructed: delivery-verification boxes
+
+Not captures. `test/launch/codex.test.ts` builds the post-paste box from `idle.txt`:
+the placeholder row is replaced by `› ` and the first line of the typed text, and each
+later line is drawn at two columns, the prompt row's own width, matching the continuation
+indent `unsent.txt` shows. A box built this way stands for the typed text as Codex draws
+it, and the same tests paste into the captured `unsent.txt`, whose four rows read back as
+the message the capture submitted. No captured box shows a wrapped line, so none is
+modelled: a box whose rows do not read back as the typed lines is never entered.
