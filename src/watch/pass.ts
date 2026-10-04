@@ -84,10 +84,13 @@ export function pass(
       delete memory.idleSince[name];
       delete memory.lastWorking[name];
       delete memory.unsentSince[name];
-      if (live.running) once(`missing:${name}`, `${name} is in the file and is not running`);
+      // A parked seat is the file's to keep: it is only news while it is running.
+      if (!parked && live.running) once(`missing:${name}`, `${name} is in the file and is not running`);
       continue;
     }
     known.add(agent.pane);
+    // Parked in the file and running: said once, then watched like any other running seat.
+    if (parked) once(`parked:${name}`, `${name} is parked in the file but running`);
     const lead = name === team.coordinator || name === team.operator;
     const screen = readScreen(cli, live.screens[agent.pane]);
     const quiet = agent.status === 'idle' || agent.status === 'done';
@@ -133,7 +136,7 @@ export function pass(
       }
     } else delete memory.unsentSince[name];
 
-    if (lead || parked) continue;
+    if (lead) continue;
     // The idle duration counts from the last moment the seat was seen working. A seat never
     // seen working was already idle when the watch started: it is reported that way, with no
     // duration from another source.
