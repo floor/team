@@ -68,16 +68,24 @@ function adoptFlagDigests(stored: Record<string, string>, team: TeamFile): Recor
 }
 
 /**
- * `remove --keep` and `add` write `parked` or `stopped` themselves. The seat's
- * digest is recorded with that edit, and the rest of the approval stays as it
- * was, so a launch line edited beside it is not approved along the way.
+ * `remove --keep` and `add` write `stopped` and nothing else. The new digest is
+ * recorded only when putting `stopped` back to its approved value makes the
+ * seat match the approval. A launch line or a `parked` flag edited beside the
+ * mark stays drift. A stored copy that can't be read records nothing.
  */
 export function recordSeatDigest(team: TeamFile, root: string, name: string, home: string = homedir()): void {
   const store = storePath(team.project, root, home);
   const record = readApproval(store);
   if (record === null) return;
+  if (!validateTeamFile(record.file).ok) return;
+  const approved = approvedFingerprints(record).seats[name];
   const digest = fingerprints(team).seats[name];
-  if (digest === undefined || record.approval.fingerprints.seats[name] === digest) return;
+  if (approved === undefined || digest === undefined || record.approval.fingerprints.seats[name] === digest) return;
+  const withStopped = (stopped: boolean) => fingerprints({
+    ...team,
+    seats: team.seats.map((seat) => (seat.name === name ? { ...seat, stopped } : seat)),
+  }).seats[name];
+  if (withStopped(true) !== approved && withStopped(false) !== approved) return;
   writeApproval(store, {
     approval: {
       ...record.approval,

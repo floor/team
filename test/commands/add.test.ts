@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runAdd, type AddSources } from '../../src/commands/add.ts';
+import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
 import type { DoctorSources } from '../../src/commands/doctor.ts';
 import type { Launch } from '../../src/commands/up.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
@@ -165,6 +166,38 @@ describe('team add', () => {
     expect(readState(join(project, '.agents')).sessions.acme?.seats.worker?.stage).toBe('ready');
     const loaded = loadTeamFile(project);
     expect(loaded.ok && approvalDifferences(loaded.team, project, home)).toEqual([]);
+  });
+
+  test('add after a clean remove --keep leaves no drift', async () => {
+    approve(FILE.replace('\n    stopped: true', ''));
+    const removeSources: RemoveSources = {
+      sessionRunning: () => true,
+      agents: () => [],
+      alive: () => false,
+      screen: () => ({ kind: 'idle' }),
+      status: () => 'idle',
+      now: () => NOW,
+      sleep: async () => {},
+      launch: {
+        typeText: () => true,
+        pressEnter: () => true,
+        agentPanes: () => [],
+        closeWorkspace: () => true,
+        stopSession: () => false,
+        kill: () => false,
+        sleep: async () => {},
+        now: () => NOW,
+      },
+      foreground: () => [],
+      home,
+    };
+    expect(await runRemove(['worker', '--keep'], testIo(project, owner), removeSources)).toBe(0);
+    const kept = loadTeamFile(project);
+    expect(kept.ok && approvalDifferences(kept.team, project, home)).toEqual([]);
+    expect(await runAdd(['worker'], testIo(project, owner), sources(world()))).toBe(0);
+    const after = loadTeamFile(project);
+    expect(after.ok && approvalDifferences(after.team, project, home)).toEqual([]);
+    expect(after.ok && after.team.seats.find((seat) => seat.name === 'worker')?.stopped).toBe(false);
   });
 
   test('refuses a seat the approved file does not hold, and a caller who may not change the team', async () => {
