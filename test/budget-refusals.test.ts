@@ -10,7 +10,9 @@ import { runAdd, type AddSources } from '../src/commands/add.ts';
 import type { DoctorSources } from '../src/commands/doctor.ts';
 import { runUp, type Launch, type UpSources } from '../src/commands/up.ts';
 import { loadTeamFile } from '../src/file/load.ts';
+import type { HerdrAgent } from '../src/herdr.ts';
 import { storePath, writeApproval } from '../src/store/store.ts';
+import { emptySession, updateState } from '../src/state.ts';
 import { testIo } from './helpers.ts';
 
 const NOW = new Date('2026-10-04T09:00:00Z');
@@ -18,7 +20,8 @@ const now = NOW.getTime();
 const FILE = ['--file', '.agents/team.yaml'];
 const OWNER = { kind: 'owner' } as const;
 const IDLE = '❯ \n';
-const WHY = 'openai weekly left 5%, changed 1m ago; room: anthropic';
+const TAIL = 'openai weekly left 5%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic';
+const WHY = `refused: ${TAIL}`;
 
 const BASE = `format: 1
 project: acme
@@ -102,6 +105,9 @@ function world() {
     launch: {} as Launch,
     labels: [] as string[],
     session: 'absent' as 'absent' | 'running',
+    seed(pane: string, text: string, agent: boolean) {
+      panes.set(pane, { text, agent });
+    },
   };
   made.launch = {
     sessionState: () => made.session,
@@ -131,7 +137,7 @@ function world() {
   return made;
 }
 
-async function up(argv: string[], made: ReturnType<typeof world>) {
+async function up(argv: string[], made: ReturnType<typeof world>, over: Partial<UpSources> = {}) {
   const io = testIo(root, OWNER);
   const sources: UpSources = {
     sessionRunning: () => made.session === 'running',
@@ -140,6 +146,7 @@ async function up(argv: string[], made: ReturnType<typeof world>) {
     home,
     now: () => NOW,
     launch: made.launch,
+    ...over,
   };
   const code = await runUp([...argv, ...FILE], io, sources);
   return { code, out: io.out, err: io.err, labels: made.labels };
@@ -177,7 +184,7 @@ describe('a stored reading refuses one seat', () => {
     store([reading('anthropic', 80), reading('openai', 5)]);
     const dry = await up(['--dry-run'], world());
     expect(dry.code).toBe(0);
-    expect(dry.out).toContain(`  skip worker: would refuse: ${WHY}\n`);
+    expect(dry.out).toContain(`  skip worker: would refuse: ${TAIL}\n`);
     expect(dry.out).toContain('--label lead');
     expect(dry.out).not.toContain('--label worker');
     expect(dry.labels).toEqual([]);
@@ -197,14 +204,19 @@ describe('a stored reading refuses one seat', () => {
       reading('openai', 5, { changedAt: now - 31 * 60_000 }),
     ]);
     const dry = await up(['--dry-run'], world());
-    expect(dry.out).toContain('skip worker: would refuse: openai weekly left 5%, changed 31m ago; room: anthropic');
+    expect(dry.out).toContain('skip worker: would refuse: openai weekly left 5%, inside its 10% reserve, changed 31m ago; accounts with room: anthropic');
   });
 
   test('a first sight, an unknown figure, a stale reading with no reset, and an account with no entry do not refuse', async () => {
     store([reading('anthropic', 80), reading('openai', 5, { confirmed: false })]);
     const first = await up(['--dry-run'], world());
     expect(first.out).not.toContain('would refuse');
+    expect(first.out).toContain('openai: first sight only, not yet counted; would launch');
     expect(first.out).toContain('--label worker');
+    const firstLive = await up([], world());
+    expect(firstLive.code).toBe(0);
+    expect(firstLive.out).toContain('worker: openai: first sight only, not yet counted\n');
+    expect(firstLive.out).toContain('worker: ready\n');
 
     store([reading('anthropic', 80)]);
     const unknown = await up(['--dry-run'], world());
@@ -232,8 +244,59 @@ describe('a stored reading refuses one seat', () => {
     const made = world();
     expect(made.session).toBe('absent');
     const dry = await up(['--dry-run'], made);
-    expect(dry.out).toContain(`skip worker: would refuse: ${WHY}`);
+    expect(dry.out).toContain(`skip worker: would refuse: ${TAIL}`);
     expect(dry.labels).toEqual([]);
+  });
+
+  test('a launched seat that is already running finishes setup', async () => {
+    store([reading('anthropic', 80), reading('openai', 5)]);
+    const remember = (stage: 'launched' | 'named') => {
+      updateState(join(root, '.agents'), (state) => {
+        const session = state.sessions.acme ?? emptySession();
+        session.seats.worker = { stage, pane: 'w7:p1', workspace: 'w7' };
+        state.sessions.acme = session;
+      });
+    };
+    const agent: HerdrAgent = {
+      name: 'worker',
+      agent: 'claude',
+      pane: 'w7:p1',
+      workspace: 'w7',
+      status: 'idle',
+      cwd: null,
+    };
+    remember('launched');
+    const made = world();
+    made.session = 'running';
+    made.seed('w7:p1', IDLE, true);
+    const live = await up([], made, {
+      agents: () => [agent],
+      workspaces: () => [{ id: 'w7' }],
+    });
+    expect(live.code).toBe(0);
+    expect(live.out).toContain(`worker: ${TAIL}\n`);
+    expect(live.out).not.toContain('refused');
+    expect(live.out).toContain('worker: ready\n');
+    expect(live.labels).not.toContain('worker');
+
+    remember('launched');
+    const blocked = world();
+    blocked.session = 'running';
+    const dry = await up(['--dry-run'], blocked, {
+      workspaces: () => [{ id: 'w7' }],
+    });
+    expect(dry.out).toContain(`skip worker: would refuse: ${TAIL}`);
+    expect(dry.out).not.toContain('rename w7:p1 worker');
+
+    remember('named');
+    const named = await up(['--dry-run'], world(), {
+      sessionState: () => 'running',
+      agents: () => [agent],
+      workspaces: () => [{ id: 'w7' }],
+    });
+    expect(named.out).not.toContain('would refuse');
+    expect(named.out).toContain(`(${TAIL})`);
+    expect(named.out).toContain('worker: named, and its rules went with the launch; marked ready');
   });
 
   test('an unknown account is said, and the seat still starts', async () => {
@@ -245,18 +308,30 @@ describe('a stored reading refuses one seat', () => {
     expect(live.labels).toContain('worker');
   });
 
-  test('the tighter window is the one named', () => {
+  test('the tightest window is the one named', () => {
     approve();
     const loaded = loadTeamFile(root);
     if (!loaded.ok) throw new Error('file');
     const worker = loaded.team.seats.find((seat) => seat.name === 'worker');
     if (!worker) throw new Error('worker');
-    const decision = seatBudget(loaded.team, [
-      reading('openai', 40),
+    const inside = seatBudget(loaded.team, [
+      reading('openai', 8),
       reading('openai', 5, { window: 'session' }),
       reading('anthropic', 80),
     ], worker, now);
-    expect(decision).toEqual({ kind: 'refuse', why: 'openai session left 5%, changed 1m ago; room: anthropic' });
+    expect(inside).toEqual({
+      kind: 'refuse',
+      why: 'openai session left 5%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic',
+    });
+    const tied = seatBudget(loaded.team, [
+      reading('openai', 5),
+      reading('openai', 5, { window: 'session' }),
+      reading('anthropic', 80),
+    ], worker, now);
+    expect(tied).toEqual({
+      kind: 'refuse',
+      why: 'openai session left 5%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic',
+    });
   });
 
   test('a spend account is unknown until a money reading exists', () => {
@@ -269,7 +344,7 @@ describe('a stored reading refuses one seat', () => {
     if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
     const worker = loaded.team.seats.find((seat) => seat.name === 'worker');
     if (!worker) throw new Error('worker');
-    expect(seatBudget(loaded.team, [], worker, now)).toEqual({ kind: 'unknown', account: 'openai' });
+    expect(seatBudget(loaded.team, [], worker, now)).toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
   });
 });
 
@@ -283,7 +358,7 @@ describe('team add', () => {
 
     const dry = await add(['worker', '--dry-run'], world());
     expect(dry.code).toBe(0);
-    expect(dry.out).toContain(`worker: would refuse: ${WHY}\n`);
+    expect(dry.out).toContain(`worker: would refuse: ${TAIL}\n`);
     expect(dry.out).toContain('dry run: nothing was run\n');
     expect(dry.labels).toEqual([]);
   });

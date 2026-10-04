@@ -13,10 +13,10 @@ export type Op =
   | { do: 'create'; seat?: string; label: string; cwd: string; notice?: string }
   | { do: 'launch'; seat: string; label: string; command: string; pane?: string; notice?: string }
   | { do: 'refuse'; seat: string; why: string }
-  | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; pane?: string; workspace?: string }
+  | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; pane?: string; workspace?: string; notice?: string }
   | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
-  | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; seconds: number; pane?: string }
-  | { do: 'ready'; seat: string; rules: 'option' | 'message' }
+  | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; seconds: number; pane?: string; notice?: string }
+  | { do: 'ready'; seat: string; rules: 'option' | 'message'; notice?: string }
   | { do: 'watch'; label: string; command: string }
   | { do: 'type'; seat: string; pane: string; text: string }
   | { do: 'gone'; seat: string; pane: string; seconds: number }
@@ -29,9 +29,9 @@ export type Step =
   /** A command that is run. */
   | { kind: 'run'; argv: string[]; note?: string; do?: Op }
   /** A wait, with its time limit. */
-  | { kind: 'wait'; text: string; do?: Op }
+  | { kind: 'wait'; text: string; note?: string; do?: Op }
   /** A seat that is left out, and why. */
-  | { kind: 'skip'; text: string; do?: Op };
+  | { kind: 'skip'; text: string; note?: string; do?: Op };
 
 export interface UpSeat {
   name: string;
@@ -51,8 +51,11 @@ export interface UpSeat {
   agentLive?: boolean;
   /** The seat works in worktrees: it waits in the lobby until a brief names its worktree. */
   lobby?: boolean;
-  /** Set when this launch is refused, or the account's figure is unknown. */
-  budget?: { kind: 'refuse'; why: string } | { kind: 'unknown'; account: string };
+  /**
+   * Set when a counted reading is inside the reserve, or the figure is unknown
+   * or a first sight. A refusal stops the seat only when this plan would launch it.
+   */
+  budget?: { kind: 'refuse'; why: string } | { kind: 'unknown'; account: string; text: string };
 }
 
 export interface UpInput {
@@ -118,7 +121,13 @@ export function upPlan(input: UpInput): Step[] {
       steps.push({ kind: 'skip', text: `${seat.name}: already ready; left as it is` });
       continue;
     }
-    if (seat.budget?.kind === 'refuse') {
+    const pane = seat.pane ?? paneOf(seat.label);
+    const cwd = join(input.root, seat.cwd);
+    const fresh = seat.stage === undefined || !seat.pane;
+    // The same condition as the launch step below. A seat already running keeps
+    // its idle wait, rename and rules, and hears the reading as a notice.
+    const wouldLaunch = fresh || (seat.stage === 'launched' && !seat.agentLive);
+    if (seat.budget?.kind === 'refuse' && wouldLaunch) {
       steps.push({
         kind: 'skip',
         text: `${seat.name}: would refuse: ${seat.budget.why}`,
@@ -126,15 +135,14 @@ export function upPlan(input: UpInput): Step[] {
       });
       continue;
     }
-    const pane = seat.pane ?? paneOf(seat.label);
-    let notice = seat.budget?.kind === 'unknown' ? `${seat.budget.account} is unknown` : undefined;
+    let notice: string | undefined;
+    if (seat.budget?.kind === 'unknown') notice = seat.budget.text;
+    else if (seat.budget?.kind === 'refuse') notice = seat.budget.why;
     const takeNotice = (): string | undefined => {
       const text = notice;
       notice = undefined;
       return text;
     };
-    const cwd = join(input.root, seat.cwd);
-    const fresh = seat.stage === undefined || !seat.pane;
     if (fresh) {
       // The lobby is one folder for the team, made before the first seat waits in it.
       if (seat.lobby && !lobbies.has(cwd)) {
@@ -166,11 +174,13 @@ export function upPlan(input: UpInput): Step[] {
     }
     const rules = profile.rulesOption === null ? 'message' : 'option';
     if (seat.stage !== 'named') {
+      const said = takeNotice();
       steps.push({
         kind: 'wait',
         text:
           `until ${seat.name} shows its idle prompt (${profile.idleTimeout} s at most); ` +
           'anything else is reported, its workspace closed without input, and the seat left out',
+        ...(said ? { note: said } : {}),
         do: {
           do: 'idle',
           seat: seat.name,
@@ -179,6 +189,7 @@ export function upPlan(input: UpInput): Step[] {
           seconds: profile.idleTimeout,
           pane: seat.pane,
           workspace: seat.workspace,
+          ...(said ? { notice: said } : {}),
         },
       });
       steps.push({
@@ -188,17 +199,31 @@ export function upPlan(input: UpInput): Step[] {
       });
     }
     if (profile.rulesOption === null) {
+      const said = takeNotice();
       steps.push({
         kind: 'run',
         argv: herdr(session, 'pane', 'send-text', pane, seat.rules),
-        note: 'the rules, only at an empty idle prompt; re-read before Enter, then wait for working with empty input',
-        do: { do: 'deliver', seat: seat.name, label: seat.label, cli: seat.cli, rules: seat.rules, seconds: profile.idleTimeout, pane: seat.pane },
+        note: said
+          ? `${said}; the rules, only at an empty idle prompt; re-read before Enter, then wait for working with empty input`
+          : 'the rules, only at an empty idle prompt; re-read before Enter, then wait for working with empty input',
+        do: {
+          do: 'deliver',
+          seat: seat.name,
+          label: seat.label,
+          cli: seat.cli,
+          rules: seat.rules,
+          seconds: profile.idleTimeout,
+          pane: seat.pane,
+          ...(said ? { notice: said } : {}),
+        },
       });
     } else if (seat.stage === 'named') {
+      const said = takeNotice();
       steps.push({
         kind: 'skip',
         text: `${seat.name}: named, and its rules went with the launch; marked ready`,
-        do: { do: 'ready', seat: seat.name, rules: 'option' },
+        ...(said ? { note: said } : {}),
+        do: { do: 'ready', seat: seat.name, rules: 'option', ...(said ? { notice: said } : {}) },
       });
     }
   }
@@ -347,7 +372,8 @@ export function formatPlan(steps: readonly Step[]): string {
         .join(' ');
       return `+ ${command}${step.note ? `\n    (${step.note})` : ''}`;
     }
-    return step.kind === 'wait' ? `  wait ${step.text}` : `  skip ${step.text}`;
+    if (step.kind === 'wait') return `  wait ${step.text}${step.note ? `\n    (${step.note})` : ''}`;
+    return `  skip ${step.text}${step.note ? `\n    (${step.note})` : ''}`;
   });
   return `${lines.join('\n')}\ndry run: nothing was run\n`;
 }

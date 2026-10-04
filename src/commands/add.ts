@@ -224,28 +224,35 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 1;
   }
   const decision = seatBudget(prepared.team, loadReadings(dir, session), built.seat, sources.now().getTime());
+  const stray = unnamedIn(built.seat.label, agents, workspaces);
+  const starting = seatPlan(prepared.team, built.seat, start);
+  const planned = stray
+    ? { ...starting, stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
+    : starting;
+  const wouldLaunch = planned.stage === undefined || !planned.pane || (planned.stage === 'launched' && !planned.agentLive);
+  const seatForPlan = decision.kind === 'refuse' && !wouldLaunch ? { ...planned, budget: decision } : planned;
   const dry = args.flags.has('dry-run');
   if (dry) {
-    if (decision.kind === 'refuse') {
+    if (decision.kind === 'refuse' && wouldLaunch) {
       io.stdout(`${built.name}: would refuse: ${decision.why}\ndry run: nothing was run\n`);
       return 0;
     }
-    if (decision.kind === 'unknown') io.stdout(`${built.name}: ${decision.account} is unknown\n`);
+    if (decision.kind === 'unknown') io.stdout(`${built.name}: ${decision.text}\n`);
     const preview = upPlan({
       root,
       session,
       sessionRunning: live === 'running',
-      seats: [seatPlan(prepared.team, built.seat, start)],
+      seats: [seatForPlan],
       watchAlive: true,
     });
     io.stdout(formatPlan(preview));
     return 0;
   }
-  if (decision.kind === 'refuse') {
-    io.stderr(`team add: ${decision.why}\n`);
+  if (decision.kind === 'refuse' && wouldLaunch) {
+    io.stderr(`team add: refused: ${decision.why}\n`);
     return 1;
   }
-  if (decision.kind === 'unknown') io.stdout(`${built.name}: ${decision.account} is unknown\n`);
+  if (decision.kind === 'unknown') io.stdout(`${built.name}: ${decision.text}\n`);
   if (built.edited !== original) {
     const written = withLock(dir, () => {
       if (readFileSync(path, 'utf8') !== original) return { kind: 'changed' as const };
@@ -262,11 +269,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     }
   }
 
-  const stray = unnamedIn(built.seat.label, agents, workspaces);
-  const planned = stray
-    ? { ...seatPlan(prepared.team, built.seat, start), stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
-    : seatPlan(prepared.team, built.seat, start);
-  const plan = upPlan({ root, session, sessionRunning: live === 'running', seats: [planned], watchAlive: true });
+  const plan = upPlan({ root, session, sessionRunning: live === 'running', seats: [seatForPlan], watchAlive: true });
   const who = describeCaller(caller);
   const host = hostOf({
     dir, session, team: prepared.team, root, ceilings, running, seat: built.seat, temporary: built.temporary,

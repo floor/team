@@ -70,15 +70,20 @@ A seat that doesn't get there is printed once with what stopped it, and `up` exi
 | `<seat>: its lobby folder was not created; left out` | the folder a seat that works in worktrees waits in could not be made |
 | `<seat>: its launch command did not run; left at launched` | the pane took no command |
 | `<seat>: the approval allows 3 seats; 4 would be running` | the approval's ceiling, from the record, not the file |
-| `<seat>: <account> <window> left <n>%, changed <age> ago; room: <accounts>` | a counted reading is inside that account's reserve; this seat is not started, and the others still are. `room: none` when no other account has room |
+| `<seat>: refused: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | a counted reading is inside that account's reserve and this run would launch the seat; this seat is not started, and the others still are. `accounts with room: none` when no other account has room |
+| `<seat>: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | the same reading, and the seat is already running; setup continues and the line is only a notice |
 | `<seat>: <account> is unknown` | the account is in the file and its figure is unknown, including a stale reading with no reset time; the seat still starts |
+| `<seat>: <account>: first sight only, not yet counted` | the account's only readings are unconfirmed; the seat still starts |
 
 The plan a `--dry-run` prints is also what `team down --dry-run` prints: `+ <command>` for a command
 that would run, a `    (<note>)` line under one that carries a note, `  wait <text>` for a wait,
 `  skip <text>` for a seat left out, and `dry run: nothing was run` at the end. A seat a stored
-reading would refuse is `  skip <seat>: would refuse: …` and is not in the commands. A seat whose
-account is unknown carries `(<account> is unknown; would launch)` under its first command. A launch
-carries the seat's rules, so its line is long.
+reading would refuse, and that this run would launch, is `  skip <seat>: would refuse: …` and is not
+in the commands. The words after `would refuse:` are the same as the words after `refused:`. A seat
+already running keeps its setup, with that reading in a note. A seat whose account is unknown
+carries `(<account> is unknown; would launch)` under its first command. A first sight carries
+`(<account>: first sight only, not yet counted; would launch)`. A launch carries the seat's rules,
+so its line is long.
 
 ## Refusals
 

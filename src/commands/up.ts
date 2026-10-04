@@ -275,12 +275,16 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const refused = new Set<string>();
   for (const seat of team.seats) {
     const planned = seatPlan(team, seat, recorded?.seats[seat.name], agents ?? [], workspaces, state === 'running');
-    // Only a seat this run creates a workspace for is placed, so only its folder can refuse the
-    // team: a stopped seat, one without a profile, one already ready, and one resumed into a live
-    // workspace start nowhere new.
-    const placed = planned.stage === undefined || !planned.pane;
-    if (planned.stopped || !profileFor(seat.cli) || planned.stage === 'ready' || !placed) {
+    // A stopped seat, one without a profile, and one already ready are left out of the budget.
+    // A seat resumed into a live workspace starts nowhere new, but its reading is still said.
+    if (planned.stopped || !profileFor(seat.cli) || planned.stage === 'ready') {
       seats.push(planned);
+      continue;
+    }
+    const placed = planned.stage === undefined || !planned.pane;
+    if (!placed) {
+      const budget = seatBudget(team, readings, seat, readAt());
+      seats.push({ ...planned, ...(budget.kind === 'clear' ? {} : { budget }) });
       continue;
     }
     const start = seatStart(team, seat, root);

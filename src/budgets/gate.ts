@@ -7,7 +7,7 @@ import { verdict, type Seen } from './readings.ts';
 
 export type LaunchDecision =
   | { kind: 'clear' }
-  | { kind: 'unknown'; account: string }
+  | { kind: 'unknown'; account: string; text: string }
   | { kind: 'refuse'; why: string };
 
 const RANK: Record<WindowName, number> = { session: 0, daily: 1, weekly: 2 };
@@ -17,11 +17,13 @@ export function seatBudget(team: TeamFile, readings: readonly Seen[], seat: Seat
   const name = seat.vendor;
   const account = team.budgets.accounts[name];
   if (!account) return { kind: 'clear' };
-  if (account.kind === 'spend') return { kind: 'unknown', account: name };
+  if (account.kind === 'spend') return { kind: 'unknown', account: name, text: `${name} is unknown` };
 
   const staleAfterMs = team.budgets.staleAfter * 1000;
   const mine = readings.filter((item) => item.account === name);
   let unknown = mine.length === 0;
+  let unconfirmed = false;
+  let counted = false;
   let worst: Seen | null = null;
   for (const group of windowsOf(mine)) {
     const result = verdict(group, now, staleAfterMs, account.reserve);
@@ -29,8 +31,12 @@ export function seatBudget(team: TeamFile, readings: readonly Seen[], seat: Seat
       unknown = true;
       continue;
     }
-    // A first sight is unconfirmed. It never refuses, and it is not unknown.
-    if (result.kind === 'unconfirmed') continue;
+    // A first sight is unconfirmed. It never refuses.
+    if (result.kind === 'unconfirmed') {
+      unconfirmed = true;
+      continue;
+    }
+    counted = true;
     const inside = account.reserve !== null && result.reading.left <= account.reserve;
     if (!inside && result.kind !== 'refusing') continue;
     if (
@@ -41,14 +47,15 @@ export function seatBudget(team: TeamFile, readings: readonly Seen[], seat: Seat
       worst = result.reading;
     }
   }
-  if (worst) {
+  if (worst && account.reserve !== null) {
     const room = accountsWithRoom(team, readings, now).filter((accountName) => accountName !== name);
     return {
       kind: 'refuse',
-      why: `${name} ${worst.window} left ${worst.left}%, changed ${age(now - worst.changedAt)} ago; room: ${room.length ? room.join(', ') : 'none'}`,
+      why: `${name} ${worst.window} left ${worst.left}%, inside its ${account.reserve}% reserve, changed ${age(now - worst.changedAt)} ago; accounts with room: ${room.length ? room.join(', ') : 'none'}`,
     };
   }
-  if (unknown) return { kind: 'unknown', account: name };
+  if (unknown) return { kind: 'unknown', account: name, text: `${name} is unknown` };
+  if (unconfirmed && !counted) return { kind: 'unknown', account: name, text: `${name}: first sight only, not yet counted` };
   return { kind: 'clear' };
 }
 
