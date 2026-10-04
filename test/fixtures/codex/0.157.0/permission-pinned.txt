@@ -1,0 +1,25 @@
+⚠ Heads up, you have less than 25% of your weekly
+  limit left. Run /status for a breakdown.
+
+• I’ll request approval before listing anything.
+
+• Exploring
+  └ List ls
+
+
+  Would you like to run the following command?
+
+  Environment: local
+
+  Reason: `/bin/zsh -lc ls` requires approval:
+  Permission dialog capture
+
+  $ ls
+
+
+› 1. Yes, proceed (y)
+  2. No, and tell Codex what to do differently (esc)
+
+  Press enter to confirm or esc to cancel
+
+  GPT-5.6-Terra medium · …  ⚠ 1 warning · f2 to view

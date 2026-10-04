@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
-import { readScreen } from '../../src/watch/screen.ts';
+import { classify, classifyComposer, readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
 import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
 import { upPlan } from '../../src/launch/plan.ts';
@@ -28,6 +28,18 @@ describe('Codex launch and captured screens', () => {
   ] as const)('%s capture has %s composer shape', (file, kind) => {
     // A working screen never permits input, even if herdr's status has not caught up.
     expect(readScreen('codex', fixture(file)).kind).toBe(kind);
+  });
+  test('a permission dialog above the pinned status line is the dialog, not unsent text', () => {
+    // `permission-pinned` is constructed, not captured: the captured dialog with the captured
+    // status line below it (see the fixtures README). Read before the fix: `unsent` — the
+    // composer took the choice line for an input prompt, and the floor's markers missed the
+    // dialog's lower-case `esc to cancel` below it.
+    const pinned = fixture('permission-pinned');
+    expect(classify('codex', pinned.split('\n')).kind).toBe('permission');
+    expect(readScreen('codex', pinned).kind).toBe('permission');
+    // The composer alone never says idle or unsent on the dialog either: `deliverRules` waits
+    // on that reading after the paste.
+    expect(classifyComposer('codex', pinned.split('\n')).kind).toBe('unknown');
   });
   test('a trust dialog with a running turn beside it is still trust, not working', () => {
     // The turn's own status line stays on the pane while the dialog is up: the dialog shape is
@@ -111,6 +123,20 @@ describe('Codex rules delivery', () => {
   test.each(['trust', 'permission'])('a %s dialog arriving at the final re-read gets no Enter', async (dialog) => {
     const d = delivery(); let reads = 0;
     d.io.screen = () => fixture(++reads === 3 ? dialog : reads === 1 ? 'idle' : 'unsent');
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
+  });
+  test('a permission dialog above the pinned status line appearing after paste gets no Enter', async () => {
+    // Read before the fix: the dialog was `unsent` to both re-reads below, so the paste looked
+    // submitted and the Enter went to the dialog's first choice.
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.show('permission-pinned'); return true; };
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.']);
+  });
+  test('a permission dialog above the pinned status line arriving at the final re-read gets no Enter', async () => {
+    const d = delivery(); let reads = 0;
+    d.io.screen = () => fixture(++reads === 3 ? 'permission-pinned' : reads === 1 ? 'idle' : 'unsent');
     expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
     expect(d.calls).toEqual(['Rules.']);
   });

@@ -27,19 +27,20 @@ export type QuotaFigure = {
 const RESET = /^(?:[0-9]+h(?:[0-9]+m)?|[0-9]+m)$/;
 const PERCENT = /^([0-9]+)%$/;
 
-/** Figures from the last six lines. A cut line, or a figure over 100, is absent. */
-export function figuresOf(patterns: readonly QuotaPattern[], screen: string): QuotaFigure[] {
-  const lines = screen.split('\n').map((line) => line.trimEnd()).slice(-6);
+/**
+ * Figures from one line: the composer's own status row, handed over by the caller (`statusRow`
+ * in the watch's screen core). Nothing else on the pane is ever read — a seat can print or type
+ * a line that only looks like a quota, and such a line is not the row. A row that is null, and
+ * a figure over 100, gives no figure.
+ */
+export function figuresOf(patterns: readonly QuotaPattern[], row: string | null): QuotaFigure[] {
+  if (row === null) return [];
   const found: QuotaFigure[] = [];
   for (const pattern of patterns) {
-    let hit: QuotaFigure | null = null;
-    for (const line of lines) {
-      const match = pattern.match.exec(line);
-      if (!match) continue;
-      const next = figureOf(pattern, match);
-      if (next) hit = next;
-    }
-    if (hit) found.push(hit);
+    const match = pattern.match.exec(row);
+    if (!match) continue;
+    const next = figureOf(pattern, match);
+    if (next) found.push(next);
   }
   return found;
 }

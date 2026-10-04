@@ -9,10 +9,12 @@
 # the tag checks, the gate and `npm pack`, and uploads the tarball; `publish`
 # alone holds `id-token: write` and downloads the tarball, re-checks its version
 # and publishes it — no checkout, no install, no build.
-# The tag's commit must be on main and the version must be package.json's; a
-# tag ruleset protecting v* (only the owner creates them) is recommended.
-# The 0.1.0 release itself is a manual `npm publish` from a clean main; this
-# workflow is for the releases after it.
+# The tag's commit must be on main, the version must be package.json's, and the
+# version's CHANGELOG heading must carry a real date (the placeholder is
+# legitimate between releases, so only this workflow checks it); a tag ruleset
+# protecting v* (only the owner creates them) is recommended. The 0.1.0 release
+# went out from its tag through trusted publishing, and the releases after it go
+# the same way — no manual `npm publish`.
 # Never push this repository's version tags to another repository with a
 # publish workflow (floor/material's Release runs on any v* tag): a pushed tag
 # starts a publish there.
@@ -58,6 +60,13 @@ jobs:
       - name: The tagged commit must be on main
         run: |
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "the tag is not on main" >&2; exit 1; }
+
+      # The version's CHANGELOG heading must carry a real date: the release
+      # notes are the section's body, so a tag on a commit that still says
+      # YYYY-MM-DD would publish and release without a complaint. Only this
+      # workflow runs the check — between releases the placeholder is legitimate.
+      - name: The version's CHANGELOG heading carries a real date
+        run: bun scripts/check-release-date.ts "${GITHUB_REF_NAME#v}"
 
       - run: bun install --frozen-lockfile
 
