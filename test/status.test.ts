@@ -121,8 +121,10 @@ describe('team status', () => {
     const agents = built().agents.map((one) => (one.name === 'deepseek-acme' ? { ...one, name: null } : one.name === 'codex-acme' ? { ...one, name: 'codex-old' } : one));
     live = { ...built(), agents };
     const { out } = await status();
-    expect(out).toContain('deepseek-acme: the agent in its workspace "deepseek flash v4.1" is unnamed\n  repair: herdr --session acme-web agent rename w3:p1 deepseek-acme');
-    expect(out).toContain('codex-acme: the agent in its workspace "gpt sol 6" is named "codex-old"');
+    expect(out).toContain('deepseek-acme: the agent in w3:p1 is unnamed\n  repair: herdr --session acme-web agent rename w3:p1 deepseek-acme');
+    expect(out).toContain('codex-acme: the agent in w2:p1 is named "codex-old"');
+    expect(out).not.toContain('deepseek flash v4.1');
+    expect(out).not.toContain('gpt sol 6');
     expect(out).toContain('2 difference(s)');
   });
 
