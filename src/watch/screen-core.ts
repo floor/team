@@ -78,22 +78,35 @@ function foldFrame(data: ScreenData, lines: string[]): Fold | null {
     if (hit) { marker = i; found = hit; break; }
   }
   if (marker < 0 || !found) return null;
-  let bottom = -1;
-  for (let i = marker + 1; i < lines.length; i++) {
-    if (composer.rule.test(lines[i] ?? '')) { bottom = i; break; }
-  }
-  if (bottom < 0) return null;
+  // The frame, as the capture draws it (folded-rules.txt): the box's opening rule at the pane's
+  // first column — the profile's rule pattern is anchored to it — sits directly above the
+  // marker, and the box's closing rule is the window's last rule row, drawn at the opening
+  // rule's own width. A rule-looking row between the marker and the closing rule is a tail row
+  // then, content that cannot match the typed text's own rows; a rule row where the capture
+  // draws none — directly above the opening rule, or at a width the opening rule does not have
+  // — leaves the read unable to tell the frame from content, and it fails closed.
   let top = -1;
   for (let i = marker - 1; i >= 0; i--) {
     if (composer.rule.test(lines[i] ?? '')) { top = i; break; }
   }
   if (top < 0) return null;
+  if (top > 0 && composer.rule.test(lines[top - 1] ?? '')) return null;
+  for (let i = top + 1; i < marker; i++) {
+    if ((lines[i] ?? '').trim()) return null;
+  }
+  let bottom = -1;
+  for (let i = lines.length - 1; i > marker; i--) {
+    if (composer.rule.test(lines[i] ?? '')) { bottom = i; break; }
+  }
+  if (bottom < 0) return null;
+  const width = (lines[top] ?? '').trim().length;
+  if ((lines[bottom] ?? '').trim().length !== width) return null;
   const rows = lines.slice(marker + 1, bottom).filter((line) => line.trim());
   if (rows.length === 0) return null;
   if (!lines.slice(bottom + 1).some((line) => composer.footers.some((pattern) => pattern.test(line)))) return null;
   const count = Number(found[1]);
   if (!Number.isInteger(count)) return null;
-  return { count, rows, width: (lines[top] ?? '').trim().length };
+  return { count, rows, width };
 }
 
 /**
@@ -322,43 +335,72 @@ function ruleRun(composer: { rule: RegExp }, line: string): string | null {
 }
 
 function boxToRule(lines: string[], styled: string[], composer: Extract<ScreenData['composer'], { mode: 'box-to-rule' }>, tick: () => boolean): Hit {
-  let input = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (tick()) return { kind: 'stop' };
-    if (composer.prompt.test(lines[i] ?? '')) { input = i; break; }
-  }
-  if (input < 0) return { kind: 'unknown' };
-  // The frame is the box itself, read as the captures draw it (unsent-typed-ansi.txt): a rule
-  // is an unbroken run from the pane's first column, and the closing rule under this prompt is
-  // the window's last rule row — a shell's last prompt never has one, and nothing rule-shaped
-  // sits under the box's footers. A rule-looking row the box holds is content: the pane draws
-  // content rows at the text's own column, never at the first one, so it is compared with the
-  // rows like any other. A window whose last rule row is not the opening rule's own width, or
-  // which shows no rule row under the prompt, is not this frame and reads unknown.
-  const opening = input > 0 ? ruleRun(composer, lines[input - 1] ?? '') : null;
+  // The frame first, as the captures draw it (unsent-typed-ansi.txt): a rule is an unbroken run
+  // from the pane's first column — the profile's rule pattern is anchored to it — and the box's
+  // closing rule is the window's last rule row; nothing rule-shaped sits under the box's
+  // footers, and a rule-looking row the box holds is drawn at the content column: content,
+  // never the frame.
   let close = -1;
-  for (let i = lines.length - 1; i > input; i--) {
+  for (let i = lines.length - 1; i >= 0; i--) {
     if (tick()) return { kind: 'stop' };
     if (ruleRun(composer, lines[i] ?? '') !== null) { close = i; break; }
   }
   if (close < 0) return { kind: 'unknown' };
-  if (opening !== null && ruleRun(composer, lines[close] ?? '') !== opening) return { kind: 'unknown' };
-  const above = opening !== null;
-  let footer = false;
-  const rawFooters: string[] = [];
-  for (let j = close + 1; j < lines.length; j++) {
+  // The capture draws only the box's own footers under the closing rule. A prompt-looking row
+  // there is a row the frame does not draw — leftover-box.txt shows a second, leftover prompt
+  // under the box's status — so this pane is not the one box the caller can compare against
+  // typed text, and the read fails closed.
+  for (let i = close + 1; i < lines.length; i++) {
     if (tick()) return { kind: 'stop' };
-    const raw = lines[j] ?? '';
-    if (raw.trim()) rawFooters.push(raw);
+    if (composer.prompt.test(lines[i] ?? '')) return { kind: 'unknown' };
   }
-  if (composer.footers.length > 0 && rawFooters.length === composer.footers.length) {
-    footer = composer.footers.every((pattern, idx) => pattern.test(rawFooters[idx] ?? ''));
+  let open = -1;
+  for (let i = close - 1; i >= 0; i--) {
+    if (tick()) return { kind: 'stop' };
+    if (ruleRun(composer, lines[i] ?? '') !== null) { open = i; break; }
   }
-  // The opening rule on the line directly above, or the ordered footer frame
-  // (every pattern matched in sequence, equal count) when that rule has
-  // scrolled out of the window.
-  if (!above && !footer) return { kind: 'unknown' };
-  const from = above ? input - 1 : input;
+  let input: number;
+  let from: number;
+  if (open >= 0) {
+    // The two rules of one box are drawn at one width (53 columns in unsent-typed-ansi.txt).
+    if (ruleRun(composer, lines[close] ?? '') !== ruleRun(composer, lines[open] ?? '')) return { kind: 'unknown' };
+    // The input row is the box's first row under its opening frame, and it carries the prompt
+    // at the capture's own column. A row there that does not is not this box's input — the read
+    // fails closed rather than take some later row whose content begins with a prompt glyph,
+    // which would drop the rows above it from the box the caller compares.
+    input = open + 1;
+    if (input >= close || !composer.prompt.test(lines[input] ?? '')) return { kind: 'unknown' };
+    from = open;
+  } else {
+    // The opening rule has scrolled out of the window. The frame is then the ordered footers
+    // under the closing rule — every pattern matched in sequence, equal count, as the capture
+    // draws them — and the input row is the lowest row above the closing rule carrying the
+    // prompt at that column: content is drawn at the text's column, so a row at the prompt's
+    // own can only be the box's first. Any non-blank row above it is a row the frame does not
+    // explain, and the read fails closed.
+    let footer = false;
+    const rawFooters: string[] = [];
+    for (let j = close + 1; j < lines.length; j++) {
+      if (tick()) return { kind: 'stop' };
+      const raw = lines[j] ?? '';
+      if (raw.trim()) rawFooters.push(raw);
+    }
+    if (composer.footers.length > 0 && rawFooters.length === composer.footers.length) {
+      footer = composer.footers.every((pattern, idx) => pattern.test(rawFooters[idx] ?? ''));
+    }
+    if (!footer) return { kind: 'unknown' };
+    input = -1;
+    for (let i = close - 1; i >= 0; i--) {
+      if (tick()) return { kind: 'stop' };
+      if (composer.prompt.test(lines[i] ?? '')) { input = i; break; }
+    }
+    if (input < 0) return { kind: 'unknown' };
+    for (let i = 0; i < input; i++) {
+      if (tick()) return { kind: 'stop' };
+      if ((lines[i] ?? '').trim()) return { kind: 'unknown' };
+    }
+    from = input;
+  }
   const rows = lines.slice(input + 1, close);
   for (let i = input + 1; i < close; i++) {
     if ((lines[i] ?? '').trim()) return { kind: 'unsent', from, input, rows };
@@ -409,18 +451,30 @@ function statusThenOne(lines: string[], styled: string[], composer: Extract<Scre
 }
 
 function twoRules(lines: string[], styled: string[], composer: Extract<ScreenData['composer'], { mode: 'two-rules-footer-below' }>, tick: () => boolean): Hit {
+  // The frame first: the box's bottom rule is the window's last rule row, and its top rule is
+  // the nearest rule row above it — the captures draw exactly two rules around the box, both
+  // unbroken runs from the pane's first column (unsent.txt draws them at rows 7 and 12). A
+  // rule-looking row the box holds is drawn at the content column and is content, never frame.
   let bottom = -1;
   let top = -1;
-  let input = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
     if (tick()) return { kind: 'stop' };
-    const line = lines[i] ?? '';
-    if (composer.rule.test(line)) {
+    if (composer.rule.test(lines[i] ?? '')) {
       if (bottom === -1) bottom = i;
-      else if (top === -1 && input !== -1) { top = i; break; }
-    } else if (bottom !== -1 && input === -1 && composer.prompt.test(line)) input = i;
+      else { top = i; break; }
+    }
   }
-  if (top < 0 || bottom < 0 || input <= top || input >= bottom) return { kind: 'unknown' };
+  if (top < 0 || bottom < 0) return { kind: 'unknown' };
+  // The two rules of one box are drawn at one width (53 columns in unsent.txt, 54 in
+  // folded-rules.txt). A window whose rules differ is not that frame — the box the caller
+  // compares against typed text cannot be established — and the read fails closed.
+  if (ruleRun(composer, lines[bottom] ?? '') !== ruleRun(composer, lines[top] ?? '')) return { kind: 'unknown' };
+  // The input row is the box's first row under its opening frame, and it carries the prompt at
+  // the capture's own column. A row there that does not — a folded box's marker row
+  // (folded-rules.txt) — is not this box's input, and the read fails closed rather than take
+  // some later row whose content begins with a prompt glyph.
+  const input = top + 1;
+  if (input >= bottom || !composer.prompt.test(lines[input] ?? '')) return { kind: 'unknown' };
   let footer = false;
   for (let i = bottom + 1; i < lines.length; i++) {
     if (tick()) return { kind: 'stop' };
@@ -428,7 +482,7 @@ function twoRules(lines: string[], styled: string[], composer: Extract<ScreenDat
   }
   if (!footer) return { kind: 'unknown' };
   const rows = lines.slice(input + 1, bottom);
-  if (lines.slice(input + 1, bottom).some((line) => line.trim())) return { kind: 'unsent', from: top, input, rows };
+  if (rows.some((line) => line.trim())) return { kind: 'unsent', from: top, input, rows };
   const typed = (lines[input] ?? '').replace(composer.prompt, '').trim();
   return { kind: placeholder(typed, composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from: top, input, rows };
 }

@@ -15,7 +15,7 @@ import { parseLoadavg, parseMeminfo, parseMemoryPressure, parseSwapUsage, readMa
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, NUDGE_TEXT, pass } from '../src/watch/pass.ts';
 import { readScreen } from '../src/watch/screen.ts';
-import { claudeBox, testIo, wordWrap } from './helpers.ts';
+import { agyMismatchedFrame, claudeBox, testIo, wordWrap } from './helpers.ts';
 
 const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url), 'utf8')
   .replace('operator: claude-coordinator-acme', 'operator: claude-operator-acme')
@@ -30,6 +30,27 @@ const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url)
     launch: claude --model claude-opus-5-5
     mode: shared
 `).replace('  seats: 6', '  seats: 8');
+
+// The example's operator as an Antigravity seat: the watch's nudge path then reads the
+// operator's box through the two-rules reader.
+const agyOperator = example.replace(
+  `  - role: operator
+    name: claude-operator-acme
+    label: claude-operator-acme
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5`,
+  `  - role: operator
+    name: claude-operator-acme
+    label: claude-operator-acme
+    cli: antigravity
+    vendor: google
+    model: Gemini Flash
+    version: "3.8"
+    launch: agy`,
+);
 
 function team(): TeamFile {
   const result = validateTeamFile(example);
@@ -822,6 +843,42 @@ describe('team watch', () => {
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
     expect(io.out).toContain('a nudge was typed and not sent');
   });
+
+  test('a prompt-glyph continuation row in the operator\'s box is never typed into and never gets the Enter', async () => {
+    // The round-6 reproduction on the nudge path: the operator's box holds their own text and
+    // then a continuation row carrying only the prompt glyph. The box is not idle — the input
+    // row is the box's first row under its opening rule, and the glyph row is content — so
+    // nothing is typed. Read by glyph, the box was idle, the nudge was appended after the
+    // glyph, and the nudge and the operator's text were submitted together.
+    screenNow = claudeBox('person text\n❯');
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = claudeBox(`person text\n❯ ${text}`); return true; },
+    }));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain('nudged the operator');
+  });
+
+  test.each(['close-short', 'close-long', 'open-short'] as const)(
+    'a nudge is not typed or sent into an Antigravity operator\'s mismatched-rules box (%s)',
+    async (shape) => {
+      // The round-7 reproduction on the nudge path: the operator's two rules disagree in
+      // width, so the frame cannot be established and the window is not idle. Without the
+      // width check the window read idle, the nudge was typed into it, the read-back held,
+      // and the Enter went with it. With it, nothing is typed.
+      writeFileSync(file, agyOperator);
+      scene = live({
+        'deepseek-acme-2': { status: 'blocked', screen: question },
+        'claude-operator-acme': { screen: agyMismatchedFrame(shape) },
+      });
+      screenNow = agyMismatchedFrame(shape);
+      const io = testIo(dir);
+      await runWatch(['--file', file], io, sources(1, {
+        typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = agyMismatchedFrame(shape, text); return true; },
+      }));
+      expect(typed).toEqual([]);
+      expect(io.out).not.toContain('nudged the operator');
+    });
 
   test('--no-notify still notifies the fallback when the operator never frees up', async () => {
     scene = live({
