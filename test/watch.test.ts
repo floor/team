@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runWatch } from '../src/commands/watch.ts';
 import type { WatchSources } from '../src/commands/watch.ts';
@@ -9,7 +9,7 @@ import type { TeamFile } from '../src/file/types.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import { emptySession, readState, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
-import { parseMeminfo, parseMemoryPressure, parseSwapUsage, readMachine } from '../src/watch/machine.ts';
+import { parseLoadavg, parseMeminfo, parseMemoryPressure, parseSwapUsage, readMachine } from '../src/watch/machine.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, NUDGE_TEXT, pass } from '../src/watch/pass.ts';
 import { readScreen } from '../src/watch/screen.ts';
@@ -102,6 +102,22 @@ describe('the machine\'s figures', () => {
     expect(parseMeminfo(info)).toEqual({ memoryFree: 25, swapFree: 500000 * 1024, swapUsed: 1500000 * 1024 });
     expect(parseMeminfo('MemTotal: 16000000 kB\nMemAvailable: 8000000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n')).toEqual({ memoryFree: 50, swapFree: null, swapUsed: null });
   });
+  test('Linux load average, from /proc/loadavg', () => {
+    expect(parseLoadavg('0.52 0.58 0.59 1/1234 5678')).toBe(0.52);
+    expect(parseLoadavg('12.00 9.50 8.25 3/999 4242')).toBe(12);
+    expect(parseLoadavg('')).toBeNull();
+    expect(parseLoadavg('load average: 1.00')).toBeNull();
+  });
+
+  test('Linux: memory, swap and load read from a captured /proc, not from macOS commands', () => {
+    // A 16 GB machine halfway through its memory, 2 GB of swap with 1.5 GB of it used, load 0.52.
+    const machine = readMachine(process.cwd(), 'linux', new URL('./fixtures/linux/proc', import.meta.url).pathname);
+    expect(machine.memoryFree).toBe(50);
+    expect(machine.swapFree).toBe(512 * 1024 ** 2);
+    expect(machine.swapUsed).toBe(1536 * 1024 ** 2);
+    expect(machine.loadPerCore).toBeCloseTo(0.52 / cpus().length, 10);
+  });
+
   test('this machine: every figure it can read is a number', () => {
     const machine = readMachine(process.cwd());
     expect(machine.loadPerCore).toBeGreaterThanOrEqual(0);
