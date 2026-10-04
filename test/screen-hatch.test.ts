@@ -1076,7 +1076,7 @@ module.exports = { default: def };`,
       expect(Object.isFrozen(data)).toBe(true);
       expect(Object.isFrozen(data.composer)).toBe(true);
       if (data.composer.placeholders) expect(Object.isFrozen(data.composer.placeholders)).toBe(true);
-      if (data.composer.footers) expect(Object.isFrozen(data.composer.footers)).toBe(true);
+      if ('footers' in data.composer && data.composer.footers) expect(Object.isFrozen(data.composer.footers)).toBe(true);
       if (data.trust?.rules) expect(Object.isFrozen(data.trust.rules)).toBe(true);
 
       // Post-load assignment of composer is refused / throws
