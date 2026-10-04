@@ -42,9 +42,13 @@ export type SeatObservation = {
   herdr: boolean;
   screen: Screen;
   cli: string;
-  // The account whose budget this seat spends: the file's seat vendor, or the one a
-  // temporary seat is like. '' when neither says.
+  // The model's maker: the file's seat vendor, or the one a temporary seat is like. For the
+  // ceilings, and the model a seat was declared to run; the budget's account is `account` below.
   vendor: string;
+  // The account whose budget this seat spends (RFC 0003 § 3b): its own `account:` when the file
+  // names one, its vendor when it does not, and the seat it is like for a temporary one. ''
+  // when neither says.
+  account: string;
   // The quota figures the seat's screen showed (RFC 0003 § 4.1), parsed by the core so a
   // check never reads a screen. Empty for a seat that is not running, or shows none.
   quota: QuotaFigure[];

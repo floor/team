@@ -635,6 +635,71 @@ describe('team add', () => {
   });
 });
 
+// RFC 0003 § 3b: one vendor's two accounts are two buckets. The seat names its account with
+// `account:`, defaulting to its vendor, so a reading on one account refuses only the seats on it.
+const TWO = `format: 1
+project: acme
+session: acme
+coordinator: lead
+operator: lead
+workspace:
+  mode: shared
+seats:
+  - role: coordinator
+    name: lead
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+    mode: shared
+  - role: implementer
+    name: work
+    cli: claude-code
+    vendor: openai
+    account: openai-work
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+    mode: shared
+  - role: implementer
+    name: home
+    cli: claude-code
+    vendor: openai
+    account: openai-home
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+    mode: shared
+budgets:
+  accounts:
+    anthropic: { kind: subscription, reserve: 20%, sources: [status_line] }
+    openai-work: { kind: subscription, reserve: 10%, sources: [status_line] }
+    openai-home: { kind: subscription, reserve: 10%, sources: [status_line] }
+`;
+
+describe('two accounts on one vendor', () => {
+  beforeEach(() => approve(TWO));
+
+  test('a reading inside one account refuses only the seats that spend it', async () => {
+    store([reading('anthropic', 80), reading('openai-work', 5), reading('openai-home', 80)]);
+    const dry = await up(['--dry-run'], world());
+    expect(dry.code).toBe(0);
+    expect(dry.out).toContain('  skip work: would refuse: openai-work weekly left 5%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic, openai-home\n');
+    expect(dry.out).toContain('--label home');
+    expect(dry.labels).toEqual([]);
+
+    const live = await up([], world());
+    expect(live.code).toBe(1);
+    expect(live.out).toContain('work: refused: openai-work weekly left 5%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic, openai-home\n');
+    expect(live.out).toContain('lead: ready\n');
+    expect(live.out).toContain('home: ready\n');
+    expect(live.labels).toContain('lead');
+    expect(live.labels).toContain('home');
+    expect(live.labels).not.toContain('work');
+  });
+});
+
 describe('an unapproved edit to the budgets', () => {
   // A reserve the file lowers on its own: valid, and weaker than the approved one. If it were
   // read before approval, the same reading would unblock the launch it now refuses.
