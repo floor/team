@@ -147,6 +147,14 @@ describe('running a check command', () => {
     expect(readCheck(spendAccount(), script('echo "12.40 USD"; echo "12.40 USD"'), NOW)).toBeNull();
   });
 
+  test('a figure past four decimals is refused, not truncated; four decimals count as read', () => {
+    // § 5 holds a check to at most four decimals: `4.99605` matches nothing, so the reading is
+    // dropped and the account unknown — never rounded to `4.9961` or cut to `4.9960`.
+    expect(readCheck(spendAccount(), script('echo "4.99605 USD"'), NOW)).toBeNull();
+    expect(readCheck(spendAccount(), script('echo "4.9960 USD"'), NOW))
+      .toEqual({ kind: 'spend', amount: 4.996, currency: 'USD', at: NOW });
+  });
+
   test('a command that does not finish in time reads unknown', () => {
     const slow = script('sleep 5; echo "12.40 USD"');
     const started = Date.now();

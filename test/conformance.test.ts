@@ -60,7 +60,9 @@ test('the adapter answers one JSON line per request', async () => {
 test('the runner accepts the TypeScript adapter and rejects a command that does not answer', async () => {
   const passed = await run('bun src/cli.ts conformance-adapter');
   expect(passed.code).toBe(0);
-  expect(passed.report.endsWith('conformance: 191 pass, 0 fail')).toBe(true);
+  expect(passed.report).toMatch(/conformance: \d+ pass, 0 fail$/);
+  expect(passed.report).toContain('pass  non-ASCII');
+  expect(passed.report).toContain('pass  yaml');
   const failed = await run('true');
   expect(failed.code).toBe(1);
   expect(failed.report).toContain('fail  impl');

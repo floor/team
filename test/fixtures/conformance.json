@@ -157,6 +157,12 @@
       "composer": "unknown"
     },
     {
+      "file": "claude-code/shell-bypass-only.txt",
+      "cli": "claude-code",
+      "classify": "unknown",
+      "composer": "unknown"
+    },
+    {
       "file": "claude-code/shell-git-log.txt",
       "cli": "claude-code",
       "classify": "unknown",
@@ -182,6 +188,12 @@
     },
     {
       "file": "claude-code/shell-shortcuts.txt",
+      "cli": "claude-code",
+      "classify": "unknown",
+      "composer": "unknown"
+    },
+    {
+      "file": "claude-code/shell-status-only.txt",
       "cli": "claude-code",
       "classify": "unknown",
       "composer": "unknown"
