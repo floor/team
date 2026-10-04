@@ -15,8 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `bun run build` empties `dist/` first, so a file left by an older build can no longer end up in a
-  packed or globally installed tarball.
+- A Codex permission dialog with the status line still pinned below it is read as the dialog, not as
+  unsent text: the safety floor's markers match without regard to case, and a rule's footer may sit
+  above a `status-last` composer's pinned line. The dialog is reported and never answered, and rules
+  delivery and the watch type nothing into it.
 
 ## [0.1.0] - 2026-10-04
 
