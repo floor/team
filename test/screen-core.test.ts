@@ -79,6 +79,15 @@ describe('claude-code through the screen core', () => {
     }
   });
 
+  test('shell output embedding a shortcuts footer or in uppercase reads unknown', () => {
+    const prompt = '~/acme % ls\nREADME.md\nsrc\n❯ \n';
+    const vim = `${prompt}${RULE}\npress ? for shortcuts in vim\n`;
+    expect(readScreen('claude-code', vim).kind).toBe('unknown');
+
+    const upper = `${prompt}${RULE}\n? FOR SHORTCUTS\n`;
+    expect(readScreen('claude-code', upper).kind).toBe('unknown');
+  });
+
   test('every fixture matches the classifier main had', () => {
     for (const [name, text] of fixtures) {
       if (name === 'quoted permission') continue;
