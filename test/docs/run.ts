@@ -1,8 +1,9 @@
 // Runs one command reference page's examples. The commands are the real ones, in process: the
 // world, the home and the caller are handed in, so no example reaches herdr, a CLI, or the owner's
 // home. A `$ ` line is run, the lines under it must match byte for byte.
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, symlinkSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runAdd } from '../../src/commands/add.ts';
 import { runApprove } from '../../src/commands/approve.ts';
 import { check, loadConfig } from '../../src/commands/check.ts';
@@ -95,6 +96,14 @@ async function setup(page: Page): Promise<void> {
   updateState(dir, (state) => {
     state.sessions[page.session] = session as never;
   });
+
+  // A check the page names is the repo's own file, linked in: approve resolves and hashes the
+  // real script, and a fence's write cannot carry an executable bit.
+  for (const path of page.spec.checks) {
+    const target = join(fixture.root, path);
+    mkdirSync(dirname(target), { recursive: true });
+    symlinkSync(fileURLToPath(new URL(`../../${path}`, import.meta.url)), target);
+  }
 
   if (page.spec.approved && page.team) {
     const parts: string[] = [];
