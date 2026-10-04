@@ -32,6 +32,8 @@ The first release: set up, change and watch a project's team of AI agents from o
 - `team watch`: report idle and blocked seats, unsent input and machine figures, and nudge the
   operator only into an empty idle prompt; `--no-nudge` and `--no-notify` turn those off. (#6, #7,
   #22)
+- Linux: the caller check and the watch's load, memory and swap figures are read from `/proc`, so
+  `team` answers there as on macOS. (#29)
 - `team up` and `team down`: start and stop the session and its seats, each with its caller rule;
   staged launches, a wait for an empty idle prompt, trust and update screens read and never
   answered; `--dry-run` prints the plan and changes nothing. (#5, #13, #14)
@@ -44,5 +46,6 @@ The first release: set up, change and watch a project's team of AI agents from o
 - `team worktree new` and `team worktree remove`: create a task worktree from an up-to-date base, or
   remove its folder; a failed setup is kept and recorded, and the branch is never deleted. (#15)
 - A README that covers the file by example and every command with who may run it. (#9)
+- A page per command in `docs/commands`, every example run in CI. (#31)
 
 [0.1.0]: https://github.com/floor/team/releases/tag/v0.1.0

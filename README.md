@@ -147,6 +147,10 @@ the commands below read.
 | `team remove <name>` | stops one seat, then takes it out of the file; `--keep` leaves it stopped; `--abandon` is the owner's, and types nothing | the owner, the coordinator or the operator; only the owner removes the coordinator or the operator |
 | `team worktree new <task>` / `team worktree remove <task>` | creates a task worktree from an up-to-date base, or removes its folder; a failed setup is kept and recorded; the branch is never deleted; ignored files in the worktree are deleted with it | the owner, the coordinator or the operator |
 
+Each command has its own page in [docs/commands](docs/commands/): the synopsis, what it reads and
+writes, who may run it, every flag, the refusals with their exact text, the exit codes, and examples
+that `bun run ci` runs against a fixture team.
+
 The owner is a terminal outside herdr with no agent process above it: a seat, or a script a seat
 runs, cannot approve a file or start a team. Every command that reads the file also takes
 `--file <path>` for a file other than `.agents/team.yaml`.
