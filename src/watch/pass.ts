@@ -267,13 +267,14 @@ export function pass({
   // The four § 4.2 keeps out of `watch.checks` run whatever the file says: the validation refuses
   // them, and this holds even for a file that reached memory another way.
   //
-  // And nothing is turned off until the owner approves (RFC 0002 § 4.2): a file whose
-  // `watch.checks` differs from the approved one, a file never approved, and an approval that
-  // wasn't looked at keep every check running and report the difference instead. A difference in
-  // some other section leaves the checks turned off as the section in force has them — that
-  // section is the approved watch, passed in, never the file's own list.
-  const approved = Array.isArray(approval) && !approval.includes(WATCH_CHECKS_CHANGED);
-  const off = approved ? new Set(watch.checks) : new Set<string>();
+  // The off list is the section in force (RFC 0002 § 4.2). A pass that was not given that
+  // section — `watch` still the file's own list — turns nothing off when the checks are
+  // unapproved, when nothing was approved, or when the approval was not looked at. Once the
+  // section in force carries a different list, that list is what runs, drift line included.
+  const checksNamed = Array.isArray(approval) && approval.includes(WATCH_CHECKS_CHANGED);
+  const sameList = watch.checks.length === team.watch.checks.length
+    && watch.checks.every((name, index) => name === team.watch.checks[index]);
+  const off = !Array.isArray(approval) || (checksNamed && sameList) ? new Set<string>() : new Set(watch.checks);
   const enabled = (name: string) => ALWAYS_ON.includes(name) || !off.has(name);
   for (const seat of observations) {
     for (const check of SEAT_CHECKS) if (enabled(check.name)) reports.push(...check.run(seat, ctx));

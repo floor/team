@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { approvalDifferences } from '../src/approve/approval.ts';
+import { approvalDifferences, watchInForce } from '../src/approve/approval.ts';
 import { compare, describe as describeDifference, fingerprints, OWNER_SECTIONS, WATCH_CHECKS_CHANGED } from '../src/approve/fingerprint.ts';
 import { runApprove } from '../src/commands/approve.ts';
 import type { TeamFile } from '../src/file/types.ts';
@@ -163,22 +163,6 @@ describe('a pass with checks turned off', () => {
     ]);
   });
 
-  test('an unapproved checks: { idle: off } still reports idle', () => {
-    const file = teamFile('  checks:\n    idle: off\n');
-    // The section in force is the approved watch: idle is still on. The file's edit is not.
-    // Drift in another section is reported; it must not let the file's checks through.
-    const watch = teamFile().watch;
-    const quiet = live({ 'deepseek-acme': { status: 'done', screen: idle } });
-    const memory = newMemory();
-    const at = (minute: number) => texts(pass({
-      team: file, state: emptySession(), live: quiet, machine: fine, now: minute * 60_000, memory,
-      approval: ['`rules` changed'], watch,
-    }));
-    expect(at(0)).toContain('the file differs from the approved one: `rules` changed');
-    expect(at(0)).not.toContain('deepseek-acme has been idle since the watch started');
-    expect(at(10)).toContain('deepseek-acme has been idle since the watch started');
-  });
-
   test('nothing is turned off until the owner approves the edit', () => {
     const off = teamFile('  checks:\n    disk: off\n');
     const reported = (approval: string[] | null) => texts(pass({ team: off, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval }));
@@ -290,6 +274,40 @@ describe('team approve and watch.checks', () => {
     expect(run.code).toBe(2);
     expect(run.err).toContain('unknown check "disks" in watch.checks');
     expect(readApproval(storePath('acme-web', root, home))).toBeNull();
+  });
+
+  test('an unapproved checks: { idle: off } stays out of the section in force, and idle is still reported', async () => {
+    write(source());
+    expect((await approve()).code).toBe(0);
+    write(source('  checks:\n    idle: off\n'));
+    const edited = teamFile('  checks:\n    idle: off\n');
+    // The real approval, not a list built by hand: a checks-only edit is this one line.
+    expect(approvalDifferences(edited, root, home)).toEqual([WATCH_CHECKS_CHANGED]);
+    const inForce = watchInForce(edited, root, home);
+    expect(inForce.checks).toEqual([]);
+    expect(inForce.idleFirst).toBe(edited.watch.idleFirst);
+    const quiet = live({ 'deepseek-acme': { status: 'done', screen: idle } });
+    const memory = newMemory();
+    const at = (minute: number) => texts(pass({
+      team: edited, state: emptySession(), live: quiet, machine: fine, now: minute * 60_000, memory,
+      approval: approvalDifferences(edited, root, home), watch: inForce,
+    }));
+    expect(at(0)).toContain('the file differs from the approved one: `watch.checks` changed');
+    expect(at(10)).toContain('deepseek-acme has been idle since the watch started');
+  });
+
+  test('an approved check stays off when a later edit adds another', async () => {
+    write(source('  checks:\n    disk: off\n'));
+    expect((await approve()).code).toBe(0);
+    const edited = teamFile('  checks:\n    disk: off\n    idle: off\n');
+    const inForce = watchInForce(edited, root, home);
+    expect(inForce.checks).toEqual(['disk']);
+    const reported = texts(pass({
+      team: edited, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(),
+      approval: approvalDifferences(edited, root, home), watch: inForce,
+    }));
+    expect(reported).toContain('the file differs from the approved one: `watch.checks` changed');
+    expect(reported).not.toContain('free disk is 5.0 GB, below 10.0 GB');
   });
 
   test('a check turned off approves, and editing it later is the owner\'s difference', async () => {

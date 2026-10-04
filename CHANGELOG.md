@@ -7,11 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Changed
 
-- An unapproved `watch.checks` edit no longer turns a check off while the file differs from the
-  approved one. The watch runs the checks of the section in force, so `checks: { idle: off }` that
-  the owner has not approved still reports an idle seat.
+- The watch takes its turned-off checks from the section in force, not from the file. An approved
+  file is unchanged.
 
 ### Added
 
