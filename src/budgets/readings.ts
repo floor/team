@@ -135,7 +135,8 @@ export function revive(stored: StoredReading): Seen {
   };
 }
 
-function resetsFrom(duration: string | null, now: number): number | null {
+/** When a duration such as `114h4m` ends, counted from a time. Null for no or an odd duration. */
+export function resetsFrom(duration: string | null, now: number): number | null {
   if (duration === null) return null;
   const match = /^(?:([0-9]+)h)?(?:([0-9]+)m)?$/.exec(duration);
   if (!match || (match[1] === undefined && match[2] === undefined)) return null;

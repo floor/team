@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `team status` prints a budgets table, and the same rows in `--json`, when an account is named or
   a reading is stored. Unknown and stale are shown as such. A row inside its reserve says so even
   when the figure is still fresh.
+- `team watch` reports a budget: each mark a window crosses, an account inside its reserve or floor
+  (to the owner), and an account that reads unknown while seats run on it (to the operator). The
+  accounts' check commands run in the watch loop, outside the pass: at most every `budgets.check_every`,
+  ten seconds, an empty environment, and only when the approval covers them — their output is never
+  logged. The core parses each seat's quota line, and a reading the pass saw is saved, so `status`,
+  `up` and `add` count it. `watch.checks: { budget: off }` turns the report off.
 
 ### Fixed
 

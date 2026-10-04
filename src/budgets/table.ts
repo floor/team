@@ -17,6 +17,8 @@ export type BudgetRow = {
   state: BudgetState;
   /** True when a subscription's left figure is at or inside its reserve. */
   inside: boolean;
+  /** The reserve the row was read against, or null: the line and the JSON can't disagree. */
+  reserve: number | null;
 };
 
 const WINDOWS: WindowName[] = ['session', 'daily', 'weekly'];
@@ -37,23 +39,28 @@ export function budgetTable(team: TeamFile, list: readonly Seen[], now: number):
     const account = key.slice(0, key.indexOf('\0'));
     const window = group[0]?.window ?? null;
     named.add(account);
-    const accountEntry = team.budgets.accounts[account];
-    const reserve = accountEntry?.kind === 'subscription' ? accountEntry.reserve : null;
+    const reserve = reserveOf(team, account);
     rows.push(rowOf(account, window, verdict(group, now, staleAfterMs, reserve), now, reserve));
   }
   for (const account of Object.keys(team.budgets.accounts)) {
-    if (!named.has(account)) rows.push(blank(account));
+    if (!named.has(account)) rows.push(blank(account, reserveOf(team, account)));
   }
   return rows.sort(byAccount);
 }
 
-export function budgetLine(row: BudgetRow, reserve: number | null = null): string {
+/** An account's reserve: a subscription's own, and none for anything else. */
+export function reserveOf(team: TeamFile, account: string): number | null {
+  const entry = team.budgets.accounts[account];
+  return entry?.kind === 'subscription' ? entry.reserve : null;
+}
+
+export function budgetLine(row: BudgetRow): string {
   if (row.state === 'unknown' || row.left === null || row.used === null) {
     return [row.account, row.window, 'unknown'].filter((part) => part).join('  ');
   }
   const reset = row.resetsIn === null ? 'resets unknown' : `resets in ${row.resetsIn}`;
   const from = row.source === 'status_line' ? 'status line' : 'unknown source';
-  const state = row.inside && reserve !== null ? `${row.state}, inside reserve ${reserve}%` : row.state;
+  const state = row.inside && row.reserve !== null ? `${row.state}, inside reserve ${row.reserve}%` : row.state;
   return `${row.account}  ${row.window}  left ${row.left}%  used ${row.used}%  ${reset}  ${row.seat}  changed ${row.age} ago  ${from}  ${state}`;
 }
 
@@ -64,7 +71,7 @@ function rowOf(
   now: number,
   reserve: number | null,
 ): BudgetRow {
-  if (result.kind === 'unknown') return { ...blank(account), window };
+  if (result.kind === 'unknown') return { ...blank(account, reserve), window };
   const reading = result.reading;
   return {
     account,
@@ -77,10 +84,11 @@ function rowOf(
     source: 'status_line',
     state: result.kind,
     inside: reserve !== null && reading.left <= reserve,
+    reserve,
   };
 }
 
-function blank(account: string): BudgetRow {
+function blank(account: string, reserve: number | null): BudgetRow {
   return {
     account,
     window: null,
@@ -92,6 +100,7 @@ function blank(account: string): BudgetRow {
     source: null,
     state: 'unknown',
     inside: false,
+    reserve,
   };
 }
 

@@ -374,6 +374,8 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         live: () => live(),
         machine,
         approval: (team, at) => approvalDifferences(team, at, home),
+        // A page's world runs no real check commands: every account reads what the pass saw.
+        readChecks: () => [],
         screen: (pane) => action.paneText('', pane),
         status: (_pane) => agentOf(_pane)?.status ?? null,
         typeText: action.typeText,

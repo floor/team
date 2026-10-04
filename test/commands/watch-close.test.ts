@@ -71,6 +71,7 @@ function sources(over: Partial<WatchSources> = {}): WatchSources {
     live: () => scene(),
     machine: () => fine,
     approval: () => [],
+    readChecks: () => [],
     screen: () => idle,
     status: () => 'idle',
     typeText: () => true,

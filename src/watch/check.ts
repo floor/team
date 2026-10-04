@@ -4,8 +4,11 @@
 // read it: a check that reaches for herdr, a screen or the file itself can be wrong in a way the
 // observation cannot. The core owns the order the checks run in, the report-once rule, and the
 // nudge; a check owns the conditions it knows and the memory slot it keeps them in.
+import type { CheckOutcome } from '../budgets/run.ts';
+import type { Seen } from '../budgets/readings.ts';
 import type { TeamFile } from '../file/types.ts';
 import type { HerdrAgent } from '../herdr.ts';
+import type { QuotaFigure } from '../profiles/quota.ts';
 import type { Live } from '../status/compare.ts';
 import type { SessionState } from '../state.ts';
 import type { Machine } from './machine.ts';
@@ -39,6 +42,12 @@ export type SeatObservation = {
   herdr: boolean;
   screen: Screen;
   cli: string;
+  // The account whose budget this seat spends: the file's seat vendor, or the one a
+  // temporary seat is like. '' when neither says.
+  vendor: string;
+  // The quota figures the seat's screen showed (RFC 0003 § 4.1), parsed by the core so a
+  // check never reads a screen. Empty for a seat that is not running, or shows none.
+  quota: QuotaFigure[];
   // Whether an agent answers for the seat. False: the seat's own checks never run.
   running: boolean;
   quiet: boolean;
@@ -71,6 +80,10 @@ export type TeamObservation = {
   workers: { idle: boolean }[];
   // How the file differs from the approved one: [] none, null never approved, undefined unlooked.
   approval: string[] | null | undefined;
+  // The readings that count this pass (§ 4.3): the state's, with the seats' figures folded in.
+  readings: Seen[];
+  // What each checked account's command read this pass, or why it has none (§ 5).
+  budgets: readonly CheckOutcome[];
 };
 
 // What every check is handed: the pass's clock, the file's watch section, the report-once rule,
@@ -114,6 +127,7 @@ export const CHECK_NAMES = [
   'disk',
   'swap-free',
   'swap-growth',
+  'budget',
 ] as const;
 
 // The checks the file cannot turn off (RFC 0002 § 4.2): the four whose condition is the one thing
