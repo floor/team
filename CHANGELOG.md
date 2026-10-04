@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command is resolved and hashed at `team approve`. `watch.quota_marks` is still read, with a warning.
 - A quota figure is kept per seat in the state file. The newest change counts, a first sight does
   not, and a reading from before its reset is dropped.
+- `team status` prints a budgets table, and the same rows in `--json`, when an account is named or
+  a reading is stored. Unknown and stale are shown as such.
 
 ### Fixed
 
