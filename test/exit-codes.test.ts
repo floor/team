@@ -211,11 +211,12 @@ function downSources(over: Partial<RemoveSources> = {}): RemoveSources {
     agents: () => [],
     alive: () => false,
     screen: () => ({ kind: 'idle' }),
+    screenText: () => undefined,
     status: () => 'idle',
     foreground: () => null,
     now: () => NOW,
     ...over,
-  };
+  } as RemoveSources;
 }
 
 function statusSources(live: Live | null, approval: string[] | null): StatusSources {
