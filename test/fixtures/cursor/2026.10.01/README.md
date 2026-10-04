@@ -25,6 +25,21 @@ the default session had eight agents before and after.
   `working`; the composer showed the empty follow-up placeholder and
   `ctrl+c to stop`. The only model response was `RULES_RECEIVED`. It was
   instructed to use no tools or files.
+- `exit-typed.txt`, `exit.txt`: `/exit` pasted at idle, read back, then submitted.
+  The suggestion menu also listed `/quit`. Herdr subsequently listed zero agents
+  and the foreground process was the shell.
+
+Paths and the session id are replaced with placeholders. Shell launch scrollback
+before Cursor Agent's header is removed from idle and unsent captures. All other
+visible text is retained, including wrapping and the model footer. The model was
+the owner's CLI default; the profile does not select a model. These fixtures do
+not assert a permission or question layout that was not observed. Unknown screens
+permit no input.
+
+No trust, login, or settings dialog was answered, and no vendor configuration was edited.
+
+## Constructed
+
 - `working-no-spinner.txt`: constructed from `working.txt` by removing the braille spinner line. Not a capture. That line sits several lines above the prompt, so a longer tool transcript pushes it out of the 20-line window. The prompt still ends in `ctrl+c to stop`.
 - `follow-up-queue-two.txt`, `follow-up-queue-hint.txt`, `follow-up-queue-one.txt`,
   `follow-up-queue-typed.txt`: transcribed by the operator on 2026-10-04 from plain
@@ -38,18 +53,6 @@ the default session had eight agents before and after.
   of the read. `follow-up-queue-typed.txt` puts frame 3's one-message box (frame 1's
   spinner and status rows) over the rules message typed on the prompt row, as
   `unsent.txt` has it.
-- `exit-typed.txt`, `exit.txt`: `/exit` pasted at idle, read back, then submitted.
-  The suggestion menu also listed `/quit`. Herdr subsequently listed zero agents
-  and the foreground process was the shell.
-
-Paths and the session id are replaced with placeholders. Shell launch scrollback
-before Cursor Agent's header is removed from idle and unsent captures. All other
-visible text is retained, including wrapping and the model footer. The model was
-the owner's CLI default; the profile does not select a model. These fixtures do
-not assert a permission or question layout that was not observed. Unknown screens
-permit no input.
-
-No trust, login, or settings dialog was answered, and no vendor configuration was edited.
 
 ## Not produced
 

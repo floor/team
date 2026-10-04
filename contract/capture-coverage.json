@@ -1,673 +1,644 @@
 {
-  "screens": [
+  "kind": "capture-coverage",
+  "clis": [
+    "antigravity",
+    "claude-code",
+    "codex",
+    "cursor"
+  ],
+  "kinds": [
+    "idle",
+    "working",
+    "unsent",
+    "permission",
+    "question",
+    "trust",
+    "unknown"
+  ],
+  "cells": {
+    "antigravity": {
+      "idle": {
+        "real": 2,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "working": {
+        "real": 1,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "unsent": {
+        "real": 2,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "permission": {
+        "real": 0,
+        "constructed": 2,
+        "undocumented": 0
+      },
+      "question": {
+        "real": 0,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "trust": {
+        "real": 2,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "unknown": {
+        "real": 1,
+        "constructed": 1,
+        "undocumented": 0
+      }
+    },
+    "claude-code": {
+      "idle": {
+        "real": 2,
+        "constructed": 2,
+        "undocumented": 0
+      },
+      "working": {
+        "real": 1,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "unsent": {
+        "real": 3,
+        "constructed": 2,
+        "undocumented": 0
+      },
+      "permission": {
+        "real": 8,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "question": {
+        "real": 4,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "trust": {
+        "real": 4,
+        "constructed": 1,
+        "undocumented": 0
+      },
+      "unknown": {
+        "real": 1,
+        "constructed": 11,
+        "undocumented": 0
+      }
+    },
+    "codex": {
+      "idle": {
+        "real": 2,
+        "constructed": 1,
+        "undocumented": 0
+      },
+      "working": {
+        "real": 1,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "unsent": {
+        "real": 2,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "permission": {
+        "real": 1,
+        "constructed": 1,
+        "undocumented": 0
+      },
+      "question": {
+        "real": 1,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "trust": {
+        "real": 1,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "unknown": {
+        "real": 2,
+        "constructed": 0,
+        "undocumented": 0
+      }
+    },
+    "cursor": {
+      "idle": {
+        "real": 3,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "working": {
+        "real": 2,
+        "constructed": 5,
+        "undocumented": 0
+      },
+      "unsent": {
+        "real": 2,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "permission": {
+        "real": 0,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "question": {
+        "real": 0,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "trust": {
+        "real": 2,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "unknown": {
+        "real": 1,
+        "constructed": 0,
+        "undocumented": 0
+      }
+    }
+  },
+  "notProduced": {
+    "antigravity": {
+      "permission": "behind the trust dialog",
+      "question": "behind the trust dialog"
+    },
+    "claude-code": {},
+    "codex": {},
+    "cursor": {
+      "permission": "behind the trust dialog",
+      "question": "behind the trust dialog"
+    }
+  },
+  "fixtures": [
     {
       "file": "antigravity/1.2.16/exit-typed.txt",
       "cli": "antigravity",
-      "classify": "unsent",
-      "composer": "unsent",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/exit.txt",
       "cli": "antigravity",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/folded-rules.txt",
       "cli": "antigravity",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "constructed"
     },
     {
       "file": "antigravity/1.2.16/idle.txt",
       "cli": "antigravity",
-      "classify": "idle",
-      "composer": "idle",
+      "kind": "idle",
       "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/permission-cut.txt",
       "cli": "antigravity",
-      "classify": "permission",
-      "composer": "unknown",
+      "kind": "permission",
       "provenance": "constructed"
     },
     {
       "file": "antigravity/1.2.16/permission.txt",
       "cli": "antigravity",
-      "classify": "permission",
-      "composer": "unknown",
+      "kind": "permission",
       "provenance": "constructed"
     },
     {
       "file": "antigravity/1.2.16/rules-accepted.txt",
       "cli": "antigravity",
-      "classify": "idle",
-      "composer": "idle",
+      "kind": "idle",
       "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/trust-54.txt",
       "cli": "antigravity",
-      "classify": "trust",
-      "composer": "unknown",
+      "kind": "trust",
       "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/trust.txt",
       "cli": "antigravity",
-      "classify": "trust",
-      "composer": "unknown",
+      "kind": "trust",
       "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/unsent.txt",
       "cli": "antigravity",
-      "classify": "unsent",
-      "composer": "unsent",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/working.txt",
       "cli": "antigravity",
-      "classify": "working",
-      "composer": "idle",
+      "kind": "working",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/bash-mode-ansi.txt",
       "cli": "claude-code",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/idle-suggestion-ansi.txt",
       "cli": "claude-code",
-      "classify": "idle",
-      "composer": "idle",
+      "kind": "idle",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/idle-suggestion-other-ansi.txt",
       "cli": "claude-code",
-      "classify": "idle",
-      "composer": "idle",
+      "kind": "idle",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/2.1.289/idle-suggestion-other-plain.txt",
       "cli": "claude-code",
-      "classify": "unsent",
-      "composer": "unsent",
+      "kind": "unsent",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/2.1.289/idle-suggestion-plain.txt",
       "cli": "claude-code",
-      "classify": "idle",
-      "composer": "idle",
+      "kind": "idle",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-create-ansi.txt",
       "cli": "claude-code",
-      "classify": "permission",
-      "composer": "unknown",
+      "kind": "permission",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-create-plain.txt",
       "cli": "claude-code",
-      "classify": "permission",
-      "composer": "unknown",
+      "kind": "permission",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-create-wide-ansi.txt",
       "cli": "claude-code",
-      "classify": "permission",
-      "composer": "unknown",
+      "kind": "permission",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-create-wide-plain.txt",
       "cli": "claude-code",
-      "classify": "permission",
-      "composer": "unknown",
+      "kind": "permission",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-plan-wide-ansi.txt",
       "cli": "claude-code",
-      "classify": "permission",
-      "composer": "unknown",
+      "kind": "permission",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-plan-wide-plain.txt",
       "cli": "claude-code",
-      "classify": "permission",
-      "composer": "unknown",
+      "kind": "permission",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-read-wide-ansi.txt",
       "cli": "claude-code",
-      "classify": "permission",
-      "composer": "unknown",
+      "kind": "permission",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-read-wide-plain.txt",
       "cli": "claude-code",
-      "classify": "permission",
-      "composer": "unknown",
+      "kind": "permission",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/question-ansi.txt",
       "cli": "claude-code",
-      "classify": "question",
-      "composer": "unknown",
+      "kind": "question",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/question-plain.txt",
       "cli": "claude-code",
-      "classify": "question",
-      "composer": "unknown",
+      "kind": "question",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/question-wide-ansi.txt",
       "cli": "claude-code",
-      "classify": "question",
-      "composer": "unknown",
+      "kind": "question",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/question-wide-plain.txt",
       "cli": "claude-code",
-      "classify": "question",
-      "composer": "unknown",
+      "kind": "question",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/trust-ansi.txt",
       "cli": "claude-code",
-      "classify": "trust",
-      "composer": "unknown",
+      "kind": "trust",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/trust-plain.txt",
       "cli": "claude-code",
-      "classify": "trust",
-      "composer": "unknown",
+      "kind": "trust",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/trust-wide-ansi.txt",
       "cli": "claude-code",
-      "classify": "trust",
-      "composer": "unknown",
+      "kind": "trust",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/trust-wide-plain.txt",
       "cli": "claude-code",
-      "classify": "trust",
-      "composer": "unknown",
+      "kind": "trust",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/unsent-faint-first-ansi.txt",
       "cli": "claude-code",
-      "classify": "unsent",
-      "composer": "unsent",
+      "kind": "unsent",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/2.1.289/unsent-paste-ansi.txt",
       "cli": "claude-code",
-      "classify": "unsent",
-      "composer": "unsent",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/unsent-slash-ansi.txt",
       "cli": "claude-code",
-      "classify": "unsent",
-      "composer": "unsent",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/unsent-typed-ansi.txt",
       "cli": "claude-code",
-      "classify": "unsent",
-      "composer": "unsent",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/unsent-typing-while-running-ansi.txt",
       "cli": "claude-code",
-      "classify": "working",
-      "composer": "unsent",
+      "kind": "working",
       "provenance": "capture"
     },
     {
       "file": "claude-code/leftover-box.txt",
       "cli": "claude-code",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/output-under-rule.txt",
       "cli": "claude-code",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/quoted-dialog.txt",
       "cli": "claude-code",
-      "classify": "idle",
-      "composer": "idle",
+      "kind": "idle",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/rule-above.txt",
       "cli": "claude-code",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/scrolled-shortcuts.txt",
       "cli": "claude-code",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-bypass-only.txt",
       "cli": "claude-code",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-git-log.txt",
       "cli": "claude-code",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-prompt.txt",
       "cli": "claude-code",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-right-prompt.txt",
       "cli": "claude-code",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-shortcuts-indented.txt",
       "cli": "claude-code",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-shortcuts.txt",
       "cli": "claude-code",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-status-only.txt",
       "cli": "claude-code",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "constructed"
     },
     {
       "file": "claude-code/trust-unnumbered.txt",
       "cli": "claude-code",
-      "classify": "trust",
-      "composer": "unknown",
+      "kind": "trust",
       "provenance": "constructed"
     },
     {
       "file": "codex/0.157.0/exit-typed.txt",
       "cli": "codex",
-      "classify": "unsent",
-      "composer": "unsent",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/exit.txt",
       "cli": "codex",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/idle.txt",
       "cli": "codex",
-      "classify": "idle",
-      "composer": "idle",
+      "kind": "idle",
       "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/owner-status.txt",
       "cli": "codex",
-      "classify": "idle",
-      "composer": "idle",
+      "kind": "idle",
       "provenance": "constructed"
     },
     {
       "file": "codex/0.157.0/permission-pinned.txt",
       "cli": "codex",
-      "classify": "permission",
-      "composer": "unknown",
+      "kind": "permission",
       "provenance": "constructed"
     },
     {
       "file": "codex/0.157.0/permission.txt",
       "cli": "codex",
-      "classify": "permission",
-      "composer": "unknown",
+      "kind": "permission",
       "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/rules-accepted.txt",
       "cli": "codex",
-      "classify": "idle",
-      "composer": "idle",
+      "kind": "idle",
       "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/startup-loading.txt",
       "cli": "codex",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/startup.txt",
       "cli": "codex",
-      "classify": "question",
-      "composer": "unknown",
+      "kind": "question",
       "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/trust.txt",
       "cli": "codex",
-      "classify": "trust",
-      "composer": "unknown",
+      "kind": "trust",
       "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/unsent.txt",
       "cli": "codex",
-      "classify": "unsent",
-      "composer": "unsent",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/working.txt",
       "cli": "codex",
-      "classify": "working",
-      "composer": "idle",
+      "kind": "working",
       "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/exit-typed.txt",
       "cli": "cursor",
-      "classify": "unsent",
-      "composer": "unsent",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/exit.txt",
       "cli": "cursor",
-      "classify": "unknown",
-      "composer": "unknown",
+      "kind": "unknown",
       "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/follow-up-queue-hint.txt",
       "cli": "cursor",
-      "classify": "working",
-      "composer": "idle",
+      "kind": "working",
       "provenance": "constructed"
     },
     {
       "file": "cursor/2026.10.01/follow-up-queue-one.txt",
       "cli": "cursor",
-      "classify": "working",
-      "composer": "idle",
+      "kind": "working",
       "provenance": "constructed"
     },
     {
       "file": "cursor/2026.10.01/follow-up-queue-two.txt",
       "cli": "cursor",
-      "classify": "working",
-      "composer": "idle",
+      "kind": "working",
       "provenance": "constructed"
     },
     {
       "file": "cursor/2026.10.01/follow-up-queue-typed.txt",
       "cli": "cursor",
-      "classify": "working",
-      "composer": "unsent",
+      "kind": "working",
       "provenance": "constructed"
     },
     {
       "file": "cursor/2026.10.01/idle.txt",
       "cli": "cursor",
-      "classify": "idle",
-      "composer": "idle",
+      "kind": "idle",
       "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/rules-accepted.txt",
       "cli": "cursor",
-      "classify": "idle",
-      "composer": "idle",
+      "kind": "idle",
       "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/startup.txt",
       "cli": "cursor",
-      "classify": "idle",
-      "composer": "idle",
+      "kind": "idle",
       "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/thinking.txt",
       "cli": "cursor",
-      "classify": "working",
-      "composer": "idle",
+      "kind": "working",
       "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/trust-54.txt",
       "cli": "cursor",
-      "classify": "trust",
-      "composer": "unknown",
+      "kind": "trust",
       "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/trust.txt",
       "cli": "cursor",
-      "classify": "trust",
-      "composer": "unknown",
+      "kind": "trust",
       "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/unsent.txt",
       "cli": "cursor",
-      "classify": "unsent",
-      "composer": "unsent",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/working-no-spinner.txt",
       "cli": "cursor",
-      "classify": "working",
-      "composer": "idle",
+      "kind": "working",
       "provenance": "constructed"
     },
     {
       "file": "cursor/2026.10.01/working.txt",
       "cli": "cursor",
-      "classify": "working",
-      "composer": "idle",
+      "kind": "working",
       "provenance": "capture"
-    }
-  ],
-  "yaml": [
-    {
-      "file": "yaml/a-complex-key.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-deeper-line-with-no-parent.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-directive.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-document-marker.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-duplicate-key-in-a-flow-map.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-duplicate-key-in-a-nested-map.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-duplicate-key.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-duplicate-quoted-key.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-flow-list-left-open.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-flow-map-across-lines.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-folded-block.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-line-that-is-no-key.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-list-inside-a-list-item.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-list-item-among-keys.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-list-on-its-key-s-line.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-literal-block.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-merge-key.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-second-document.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-second-key-on-a-key-s-line.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-tab-in-the-indentation.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-tag.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-value-that-ends-with-a-colon.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-value-that-starts-with.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-alias.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-anchor.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-empty-file.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-indented-first-line.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-unclosed-double-quote.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-unclosed-single-quote.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-unknown-escape.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/text-after-a-flow-list.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/text-after-a-quoted-string.yaml",
-      "ok": false
     }
   ]
 }
