@@ -6,7 +6,7 @@ changes nothing, and names the command that repairs each difference.
 
 ## Synopsis
 
-    team status [--session <name>] [--file <path>]
+    team status [--session <name>] [--file <path>] [--json]
 
 ## What it reads and writes
 
@@ -25,6 +25,7 @@ it, `status` can't say anything and exits 2.
 | --- | --- |
 | `--session <name>` | the herdr session to read, instead of `team.session` |
 | `--file <path>` | the team file, instead of `.agents/team.yaml` |
+| `--json` | print the same reading as one JSON document instead of the table, the notes and the repairs |
 
 ## Rows
 
@@ -60,6 +61,24 @@ The model is the seat's `display` when the running model matches the file, and
 | `the protected checkout "." is on "x", not on "main"` | `git -C . switch main` |
 | `the file was never approved on this machine` | the owner runs `team approve` |
 | `the file differs from the approved one: <line>` | the owner runs `team approve` |
+
+## The JSON
+
+`--json` prints the same reading as one document, format 1:
+
+    {
+      "format": 1,
+      "project": "beacon",
+      "session": "beacon",
+      "rows": [{ "name": "claude-keeper", "state": "missing", "model": "Claude Opus 5.5", "pane": "-" }],
+      "notes": [],
+      "differences": [{ "what": "claude-keeper is in the file and is not running", "repair": "team add claude-keeper" }],
+      "notice": null
+    }
+
+`rows`, `notes` and `differences` hold what the table, the notes and the repairs hold; `notice` is
+the line a normal run prints above the table, or null when there is none. The exit code is the same
+as without `--json`, and the file's warnings still go to stderr.
 
 ## Refusals
 
@@ -125,6 +144,40 @@ team beacon, session "beacon"
 difference: claude-keeper is in the file and is not running
   repair: team add claude-keeper
 1 difference(s)
+exit 1
+```
+
+`--json` prints that reading as one document, for a script to read instead of the table:
+
+```console
+$ team status --json ; echo "exit $?"
+{
+  "format": 1,
+  "project": "beacon",
+  "session": "beacon",
+  "rows": [
+    {
+      "name": "claude-keeper",
+      "state": "missing",
+      "model": "Claude Opus 5.5",
+      "pane": "-"
+    },
+    {
+      "name": "claude-beacon",
+      "state": "working",
+      "model": "Claude Opus 5.5",
+      "pane": "w1:p1"
+    }
+  ],
+  "notes": [],
+  "differences": [
+    {
+      "what": "claude-keeper is in the file and is not running",
+      "repair": "team add claude-keeper"
+    }
+  ],
+  "notice": null
+}
 exit 1
 ```
 

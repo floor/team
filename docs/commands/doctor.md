@@ -7,7 +7,7 @@ whether each launch names the model the file says, and whether a watch has run f
 
 ## Synopsis
 
-    team doctor [--session <name>] [--file <path>]
+    team doctor [--session <name>] [--file <path>] [--login]
 
 ## What it reads and writes
 
@@ -26,6 +26,7 @@ Anyone, in any terminal. It needs no approval of its own — reporting on the ap
 | --- | --- |
 | `--session <name>` | the herdr session to report on, instead of `team.session` |
 | `--file <path>` | the team file, instead of `.agents/team.yaml` |
+| `--login` | read the seats' CLIs' logins alone, one line per CLI, instead of the whole report; herdr, the session and the machine are not read |
 
 ## What it prints
 
@@ -49,6 +50,11 @@ A seat the file stops is left out of the CLI findings. The last line counts them
 
     team doctor: nothing missing, 1 warning
     team doctor: 2 missing, 0 warnings: `up` and `add` refuse until the missing ones are done
+
+`--login` reads the logins alone: one line per CLI the file's seats use, in the order the seats first
+name them, then the same last line. A login check that passed is `ok  `; one that failed is `MISS`,
+with the command that logs in; a CLI that can't be asked — one with no login check, or no launch
+profile in this version — is `--  `.
 
 A watch that has not run, or whose heartbeat is old, is `MISS` here but not a reason for `up` to
 refuse: `up` starts the watch itself.
@@ -225,11 +231,60 @@ team doctor: 2 missing, 1 warning: `up` and `add` refuse until the missing ones 
 exit 1
 ```
 
+`--login` answers the one question that needs no herdr, no session and no machine — which CLIs have
+an account to run under. Two seats share a CLI, so it is said once:
+
+```yaml file=.agents/team.yaml
+format: 1
+project: beacon
+coordinator: claude-keeper
+operator: claude-keeper
+
+workspace:
+  mode: shared
+
+seats:
+  - role: coordinator
+    name: claude-keeper
+    label: coordinator
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+
+  - role: implementer
+    name: claude-beacon
+    label: implementer
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+
+  - role: researcher
+    name: codex-scribe
+    label: researcher
+    cli: codex
+    vendor: openai
+    model: GPT-5 Codex
+    version: "5"
+    launch: codex --model gpt-5-codex
+```
+
+```console tools="codex=logged-out"
+$ team doctor --login ; echo "exit $?"
+ok    claude-code: logged in
+MISS  log in to codex: `codex login`
+team doctor: 1 missing, 0 warnings: `up` and `add` refuse until the missing ones are done
+exit 1
+```
+
 An option it doesn't know stops it before it reads anything:
 
 ```console
 $ team doctor --nope ; echo "exit $?"
 team doctor: unknown option --nope
-Usage: team doctor [--session <name>] [--file <path>]
+Usage: team doctor [--session <name>] [--file <path>] [--login]
 exit 2
 ```

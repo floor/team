@@ -17,7 +17,7 @@ import type { HerdrAgent } from '../../src/herdr.ts';
 import type { Live } from '../../src/status/compare.ts';
 import type { Machine } from '../../src/watch/machine.ts';
 import { readScreen } from '../../src/watch/screen.ts';
-import type { ScreenKind, Spec } from './spec.ts';
+import type { ScreenKind, Spec, ToolState } from './spec.ts';
 
 /** The pid the fixture's state records for a watch that is alive. */
 export const WATCH_PID = 4242;
@@ -91,6 +91,8 @@ export type World = {
   doctorSources(): DoctorSources;
   setScreen(seat: string, kind: ScreenKind): void;
   setMachine(kind: Spec['machine']): void;
+  /** One CLI's installed-and-logged-in state, on top of the fixture's own. */
+  setTools(tools: Record<string, ToolState>): void;
   readonly did: {
     starts: number;
     runs: string[];
@@ -158,9 +160,10 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
   const workspaces = () => slots.map((slot) => ({ id: slot.workspace, label: slot.label }));
   const sessionState = (): 'absent' | 'running' | 'stopped' => (herdr === 'running' ? 'running' : herdr === 'stopped' ? 'stopped' : 'absent');
 
-  // A page may change the machine for one example (`machine=` on a console fence); the fixture's
-  // own machine is back for the next one.
+  // A page may change the machine or a CLI's tool state for one example (`machine=` or `tools=` on
+  // a console fence); the fixture's own are back for the next one.
   let machineKind = spec.machine;
+  let toolState: Record<string, ToolState> = { ...spec.tools };
   const machine = (): Machine =>
     machineKind === 'calm'
       ? { loadPerCore: 0.4, memoryFree: 62, diskFree: 120e9, swapFree: 8e9, swapUsed: 0 }
@@ -279,7 +282,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     version(binary) {
       for (const [cli, tool] of Object.entries(TOOL_TESTED)) {
         if (tool.binary !== binary) continue;
-        const state = spec.tools[cli] ?? 'fine';
+        const state = toolState[cli] ?? 'fine';
         if (state === 'missing') return null;
         if (state === 'old') return tool.old;
         return tool.version;
@@ -288,7 +291,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     },
     onPath: () => true,
     loggedIn(profile) {
-      const state = spec.tools[profile.cli] ?? 'fine';
+      const state = toolState[profile.cli] ?? 'fine';
       if (profile.loginCheck === null) return null;
       return state === 'logged-out' ? false : true;
     },
@@ -322,6 +325,9 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     },
     setMachine(kind) {
       machineKind = kind;
+    },
+    setTools(tools) {
+      toolState = { ...spec.tools, ...tools };
     },
     upSources(): UpSources {
       return {

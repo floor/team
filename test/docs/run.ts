@@ -21,7 +21,7 @@ import type { Io } from '../../src/io.ts';
 import { emptySession, updateState } from '../../src/state.ts';
 import { blocksOf, EXIT_SUFFIX, transcript, type Block } from './blocks.ts';
 import { createFixture, type Fixture } from './fixture.ts';
-import { DEFAULT_SPEC, specOf, type ScreenKind, type Spec } from './spec.ts';
+import { DEFAULT_SPEC, specOf, type ScreenKind, type Spec, type ToolState } from './spec.ts';
 import { createWorld, RUN_WATCH_PID, WATCH_PID, type World } from './world.ts';
 
 export type Failure = { page: string; line: number; message: string };
@@ -172,9 +172,9 @@ function diff(expected: string, produced: string): string {
 }
 
 /**
- * `screens="claude-beacon=question"` and `machine="tight"` on a `console` fence: the world that
- * block's commands run in. Both last for the block alone — the fixture's own world is back for the
- * next one.
+ * `screens="claude-beacon=question"`, `machine="tight"` and `tools="codex=logged-out"` on a
+ * `console` fence: the world that block's commands run in. Each lasts for the block alone — the
+ * fixture's own world is back for the next one.
  */
 function blockWorld(page: Page, block: Block): void {
   const world = page.world as World;
@@ -191,6 +191,16 @@ function blockWorld(page: Page, block: Block): void {
     if (kind !== 'calm' && kind !== 'tight') throw new Error(`machine="${kind}": it is calm or tight`);
     world.setMachine(kind);
   }
+  const tools = block.attrs.tools;
+  if (tools) {
+    const state: Record<string, ToolState> = {};
+    for (const entry of tools.split(',')) {
+      const [cli, kind] = entry.split('=');
+      if (!cli?.trim() || !kind?.trim()) throw new Error(`tools="${tools}": each entry is <cli>=<state>`);
+      state[cli.trim()] = kind.trim() as ToolState;
+    }
+    world.setTools(state);
+  }
 }
 
 function restoreWorld(page: Page, block: Block): void {
@@ -200,6 +210,7 @@ function restoreWorld(page: Page, block: Block): void {
     if (seat) world.setScreen(seat, page.spec.screens[seat] ?? 'idle');
   }
   if (block.attrs.machine) world.setMachine(page.spec.machine);
+  if (block.attrs.tools) world.setTools(page.spec.tools);
 }
 
 async function consoleBlock(page: Page, block: Block, failures: Failure[]): Promise<void> {
