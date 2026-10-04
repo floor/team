@@ -5,7 +5,9 @@ screens, the file, the approval, the machine — prints what is wrong, and close
 a merged worktree whose end holds. When a seat asks a question, or goes idle, it types one fixed
 line into the operator's pane — the nudge — so the operator reads its log. It types nothing into a
 screen it can't read as an empty idle prompt, so a permission dialog and a half-typed sentence are
-left alone.
+left alone. A screen hatch is an escape hatch for a CLI whose screens the data primitives cannot
+express. The guarantees cover what a hatch returns and what load accepts; a hatch is trusted package
+code, not a sandbox.
 
 ## Synopsis
 

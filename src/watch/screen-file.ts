@@ -1,10 +1,17 @@
 // A profile file, in team's YAML subset, checked as it is loaded. The JSON Schema
 // next to the profiles describes the same shape; this is what actually refuses a file,
 // because the package does not carry a schema validator.
+import { existsSync, realpathSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { isAbsolute, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DialectError, compilePattern } from './dialect.ts';
 import type { Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage, Wrap } from './screen-data.ts';
+import type { ScreenProfile } from './screen-profile.ts';
 import type { Screen } from './screen.ts';
 import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts';
+
+const require = createRequire(import.meta.url);
 
 const STAGES = ['unknown', 'trust', 'permission', 'question', 'working'] as const;
 const KINDS = ['idle', 'working', 'unsent', 'permission', 'trust', 'question', 'unknown'] as const;
@@ -31,28 +38,232 @@ const CHOICE_SAMPLES = CHOICE_MARKS.flatMap((mark) =>
   ['1', '2'].flatMap((number) => CHOICE_TAILS.map((tail) => `${mark}${number}.${tail}`)),
 );
 
-export function loadScreen(text: string): ScreenData {
+const DEFAULT_COMPOSER: Composer = {
+  mode: 'box-to-rule',
+  prompt: /(?!)/,
+  rule: /(?!)/,
+  footers: [],
+  placeholders: [],
+  frameRows: 0,
+};
+
+export function loadScreen(text: string, baseDir?: string, profileFile?: string): ScreenData {
   const root = parseYaml(text);
   const entries = mapping(root, 'a profile');
   // Launch keys are read by profile.ts. A screen-only snippet, as in the tests, omits them.
-  only(entries, ['format', 'cli', 'screen', 'quota', 'binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'timeouts', 'models', 'status_model']);
+  only(entries, ['format', 'cli', 'screen', 'screen_module', 'quota', 'binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'timeouts', 'models', 'status_model']);
   const format = required(entries, 'format', root.line);
   if (format.value.kind !== 'scalar' || format.value.value !== 1) fail(format.line, '"format" must be 1');
   const cli = required(entries, 'cli', root.line);
   if (!stringOf(cli.value)) fail(cli.line, '"cli" must be a string');
+  const topScreenModule = optional(entries, 'screen_module');
   const screen = required(entries, 'screen', root.line);
-  return screenOf(screen.value);
+  return deepFreeze(screenOf(screen.value, topScreenModule, baseDir, profileFile));
 }
 
-function screenOf(node: YamlNode): ScreenData {
+function deepFreeze<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object' || obj instanceof RegExp) return obj;
+  if (Object.isFrozen(obj)) return obj;
+  Object.freeze(obj);
+  for (const key of Object.getOwnPropertyNames(obj)) {
+    const val = (obj as any)[key];
+    if (val !== null && typeof val === 'object' && !(val instanceof RegExp)) {
+      deepFreeze(val);
+    }
+  }
+  return obj;
+}
+
+function loadScreenModule(specifier: string, baseDir: string | undefined, line: number, profileFile?: string): ScreenProfile {
+  const label = profileFile ? `profile "${profileFile}"` : 'profile';
+
+  // 1. Refuse empty string
+  if (!specifier || specifier.trim() === '') {
+    fail(line, `${label}: "screen_module" cannot be an empty string`);
+  }
+
+  // 2. Refuse current directory "."
+  if (specifier === '.' || specifier === './' || specifier === '.\\') {
+    fail(line, `${label}: "screen_module" cannot be current directory "."`);
+  }
+
+  // 3. Refuse absolute path
+  if (isAbsolute(specifier) || specifier.startsWith('/') || specifier.startsWith('\\')) {
+    fail(line, `${label}: "screen_module" cannot be an absolute path: "${specifier}"`);
+  }
+
+  // 4. Refuse home directory path
+  if (specifier.startsWith('~')) {
+    fail(line, `${label}: "screen_module" cannot be a home directory path: "${specifier}"`);
+  }
+
+  // 5. Refuse URL or other scheme
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(specifier)) {
+    fail(line, `${label}: "screen_module" cannot be a URL or scheme: "${specifier}"`);
+  }
+
+  // 6. Refuse ".." segment
+  if (specifier.split(/[/\\]/).includes('..') || /%2[eE]%2[eE]/.test(specifier)) {
+    fail(line, `${label}: "screen_module" cannot contain ".." segments: "${specifier}"`);
+  }
+
+  const defaultDir = fileURLToPath(new URL('../profiles', import.meta.url));
+  const dir = baseDir ? resolve(baseDir) : defaultDir;
+  const resolvedDir = resolve(dir);
+
+  // 7. Refuse paths in the project outside profiles
+  const projectSegments = ['test', 'src', 'dist', 'scripts', 'examples', 'node_modules', 'worktrees', '.github'];
+  const stripped = specifier.replace(/^(?:\.[/\\])+/, '');
+  const firstSegment = stripped.split(/[/\\]/)[0] ?? '';
+  if (
+    projectSegments.includes(firstSegment) ||
+    (existsSync(resolve(process.cwd(), specifier)) && !resolve(process.cwd(), specifier).startsWith(resolvedDir + sep))
+  ) {
+    fail(line, `${label}: "screen_module" cannot be a path in the project: "${specifier}"`);
+  }
+
+  // 8. Must resolve inside profiles directory
+  let target = resolve(resolvedDir, specifier);
+  if (!target.startsWith(resolvedDir + sep) && target !== resolvedDir) {
+    fail(line, `${label}: "screen_module" must resolve inside profiles directory: "${specifier}"`);
+  }
+
+  // Check if target exists and if it is a directory or symlink loop
+  let st;
+  try {
+    st = statSync(target);
+  } catch (err: any) {
+    if (err && err.code === 'ELOOP') {
+      fail(line, `${label}: "screen_module" contains a symlink loop: "${specifier}"`);
+    }
+  }
+
+  if (st && st.isDirectory()) {
+    fail(line, `${label}: "screen_module" cannot be a directory: "${specifier}"`);
+  }
+
+  // 9. Refuse bare names or paths without a script extension (.ts, .js, .cjs, .mjs)
+  if (!/\.(ts|js|cjs|mjs)$/.test(specifier)) {
+    if (!specifier.includes('/') && !specifier.includes('\\') && !/\.[^/\\]+$/.test(specifier)) {
+      fail(line, `${label}: "screen_module" cannot be a bare name: "${specifier}"`);
+    }
+    fail(line, `${label}: "screen_module" must have a script extension (.ts, .js, .cjs, .mjs): "${specifier}"`);
+  }
+
+  let fileTarget = target;
+  if (!existsSync(fileTarget)) {
+    if (fileTarget.endsWith('.ts') && existsSync(fileTarget.slice(0, -3) + '.js')) {
+      fileTarget = fileTarget.slice(0, -3) + '.js';
+    } else if (fileTarget.endsWith('.js') && existsSync(fileTarget.slice(0, -3) + '.ts')) {
+      fileTarget = fileTarget.slice(0, -3) + '.ts';
+    }
+  }
+
+  let fileStat;
+  try {
+    fileStat = statSync(fileTarget);
+  } catch (err: any) {
+    if (err && err.code === 'ELOOP') {
+      fail(line, `${label}: "screen_module" contains a symlink loop: "${specifier}"`);
+    }
+    fail(line, `${label}: cannot load "screen_module": Cannot find module "${specifier}"`);
+  }
+
+  if (!fileStat.isFile()) {
+    if (fileStat.isDirectory()) {
+      fail(line, `${label}: "screen_module" cannot be a directory: "${specifier}"`);
+    }
+    fail(line, `${label}: cannot load "screen_module": Cannot find module "${specifier}"`);
+  }
+
+  // Symlink check: realpath must be inside profiles directory
+  let realTarget: string;
+  let realDir: string;
+  try {
+    realTarget = realpathSync(fileTarget);
+    realDir = realpathSync(resolvedDir);
+  } catch (err: any) {
+    if (err && err.code === 'ELOOP') {
+      fail(line, `${label}: "screen_module" contains a symlink loop: "${specifier}"`);
+    }
+    fail(line, `${label}: cannot load "screen_module": ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (!realTarget.startsWith(realDir + sep) && realTarget !== realDir) {
+    fail(line, `${label}: "screen_module" symlink leads outside profiles directory: "${specifier}"`);
+  }
+
+  let mod: any;
+  try {
+    mod = require(realTarget);
+  } catch (error) {
+    fail(line, `${label}: cannot load "screen_module": ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  try {
+    const defaultExport =
+      (typeof mod === 'object' && mod !== null) || typeof mod === 'function'
+        ? mod.default
+        : undefined;
+    const candidate =
+      defaultExport && (typeof defaultExport === 'object' || typeof defaultExport === 'function')
+        ? defaultExport
+        : mod;
+
+    const readExport = (key: string): ((...args: any[]) => any) | undefined => {
+      let val = candidate !== null && (typeof candidate === 'object' || typeof candidate === 'function')
+        ? (candidate as any)[key]
+        : undefined;
+      if (val === undefined && mod !== candidate && mod !== null && (typeof mod === 'object' || typeof mod === 'function')) {
+        val = (mod as any)[key];
+      }
+      return typeof val === 'function' ? val : undefined;
+    };
+
+    const snapshot: ScreenProfile = Object.freeze({
+      unknown: readExport('unknown'),
+      trust: readExport('trust'),
+      permission: readExport('permission'),
+      question: readExport('question'),
+      working: readExport('working'),
+      composer: readExport('composer'),
+    });
+    return snapshot;
+  } catch (error) {
+    fail(line, `${label}: cannot load "screen_module": ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function screenOf(node: YamlNode, topScreenModule?: YamlEntry, baseDir?: string, profileFile?: string): ScreenData {
   const entries = mapping(node, 'screen');
-  only(entries, ['chrome', 'composer', ...STAGES]);
+  only(entries, ['chrome', 'composer', 'screen_module', ...STAGES]);
   const chrome = optional(entries, 'chrome');
-  const composer = required(entries, 'composer', node.line);
+  const screenScreenModule = optional(entries, 'screen_module');
+  const moduleEntry = screenScreenModule ?? topScreenModule;
+  const composer = optional(entries, 'composer');
+  const label = profileFile ? `profile "${profileFile}"` : 'profile';
+
+  let profile: ScreenProfile | undefined;
+  if (moduleEntry) {
+    const specifier = stringOf(moduleEntry.value);
+    if (specifier === null) fail(moduleEntry.line, '"screen_module" must be a string');
+    profile = loadScreenModule(specifier, baseDir, moduleEntry.line, profileFile);
+  }
+
+  // Rule (b): A composer comes from data or from the hatch, never both; the load refuses both.
+  if (composer && typeof profile?.composer === 'function') {
+    fail(moduleEntry!.line, `${label}: profile has a data composer and screen_module exports a composer: a composer comes from data or from the hatch, never both`);
+  }
+  if (!composer && typeof profile?.composer !== 'function') {
+    fail(node.line, `${label}: missing "composer"`);
+  }
+
   const data: ScreenData = {
     chrome: chrome ? chromeOf(chrome.value) : [],
-    composer: composerOf(composer.value),
+    composer: composer ? composerOf(composer.value) : DEFAULT_COMPOSER,
   };
+  if (profile) data.profile = profile;
+
   for (const name of STAGES) {
     const entry = optional(entries, name);
     if (entry) data[name] = stageOf(entry.value);

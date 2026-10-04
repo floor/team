@@ -1,0 +1,8 @@
+format: 1
+cli: fake-hatch
+screen_module: hatch.ts
+screen:
+  permission:
+    - any: ['HATCH_DATA_PERMISSION']
+  working:
+    - any: ['HATCH_DATA_WORKING']
