@@ -7,7 +7,7 @@ import { observe, observeCheck, recall, type Seen } from '../budgets/readings.ts
 import type { CheckOutcome } from '../budgets/run.ts';
 import type { TeamFile } from '../file/types.ts';
 import { quotaFor } from '../profiles/profile.ts';
-import { figuresOf } from '../profiles/quota.ts';
+import { figuresOf, type QuotaFigure } from '../profiles/quota.ts';
 import type { SessionState } from '../state.ts';
 import type { Live } from '../status/compare.ts';
 import { seatModel } from '../status/statusline.ts';
@@ -38,7 +38,7 @@ import { swapGrowth } from './checks/swap-growth.ts';
 import { teamIdle } from './checks/team-idle.ts';
 import { unsent } from './checks/unsent.ts';
 import type { Machine } from './machine.ts';
-import { readScreen, type Screen } from './screen.ts';
+import { readScreen, statusRow, type Screen } from './screen.ts';
 
 // What the watch remembers between passes. It lives in the watch's process: a restarted watch
 // starts its timers again, and reports again what is still true.
@@ -90,6 +90,15 @@ function attentionOf(screen: Screen, status: string, quiet: boolean): Attention 
   if (status === 'blocked') return 'blocked';
   if (!quiet && status !== 'working') return 'unknown';
   return null;
+}
+
+// The figures off a seat's own pane: only a composer screen — idle, unsent or working — shows a
+// status row at all, and only that row's line is read. A dialog, a question, a trust screen or an
+// unknown one gives no figures, and neither does a line the seat printed or typed.
+function quotaOf(cli: string, screen: Screen, pane: string | undefined): QuotaFigure[] {
+  if (pane === undefined) return [];
+  if (screen.kind !== 'idle' && screen.kind !== 'unsent' && screen.kind !== 'working') return [];
+  return figuresOf(quotaFor(cli), statusRow(cli, pane));
 }
 
 // What one pass is handed: the file, the session, the observed world, the clock, the watch's
@@ -212,7 +221,7 @@ export function pass({
       screen,
       cli,
       vendor,
-      quota: pane === undefined ? [] : figuresOf(quotaFor(cli), pane),
+      quota: quotaOf(cli, screen, pane),
       running: true,
       quiet,
       working,

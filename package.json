@@ -23,7 +23,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "e2e": "bun scripts/e2e.ts",
-    "build": "tsc -p tsconfig.build.json && mkdir -p dist/profiles && cp src/profiles/*.yaml dist/profiles/",
+    "build": "bun scripts/build.ts",
     "ci": "bun run typecheck && bun test && bun run build && node dist/cli.js --version"
   },
   "devDependencies": {

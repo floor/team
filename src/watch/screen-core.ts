@@ -11,9 +11,47 @@ const BUDGET_MS = 100;
 // The rule a `below_last_rule` pattern has to sit under. It is the core's, not the profile's.
 const RULE_LINE = /^\s*[─━]{8,}\s*$/;
 
-const FLOOR_PHRASES = ['Do you want to', 'Esc to cancel', 'enter Confirm', 'enter continue', 'esc quit', 'esc skip', '↑/↓'];
+// The safety floor's markers, matched without case: a dialog's wording is not always title-case
+// (`Press enter to confirm or esc to cancel`). RFC 0002 § 4.1 permits it.
+const FLOOR_PHRASES = ['do you want to', 'esc to cancel', 'enter confirm', 'enter continue', 'esc quit', 'esc skip', '↑/↓'];
 
 export type ReadClock = { now(): number; budgetMs: number };
+
+/**
+ * The index of the composer's status line in the window, or -1. A `status-last` composer pins it
+ * as the last non-blank line; a `status-then-one` composer allows one chrome line below it. The
+ * classification and the quota read both take their line from here, so the two cannot disagree
+ * about which line the composer's status line is.
+ */
+function statusIndex(
+  composer: Extract<ScreenData['composer'], { mode: 'status-last' | 'status-then-one' }>,
+  lines: string[],
+  allowOneTrailing: boolean,
+  tick: () => boolean,
+): number | 'stop' {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (tick()) return 'stop';
+    if (!composer.statusLine.test(lines[i] ?? '')) continue;
+    const trailing = lines.slice(i + 1).filter((line) => line.trim());
+    if (allowOneTrailing) {
+      if (trailing.length > 0 && (trailing.length > 1 || composer.prompt.test(trailing[0] ?? ''))) return -1;
+    } else if (trailing.length > 0) return -1;
+    return i;
+  }
+  return -1;
+}
+
+/**
+ * The one line a quota figure may be read from: the composer's own status row, or null when the
+ * window shows none. A dialog, a transcript line, the input box — anything the seat printed or
+ * typed — is never the row. The caller still has to know the screen is a composer screen.
+ */
+export function statusRowOf(data: ScreenData, lines: string[]): string | null {
+  const composer = data.composer;
+  if (composer.mode !== 'status-last' && composer.mode !== 'status-then-one') return null;
+  const at = statusIndex(composer, lines, composer.mode === 'status-then-one', () => false);
+  return at === 'stop' || at < 0 ? null : (lines[at] ?? null);
+}
 
 type Hit = { kind: Screen['kind']; from: number; input: number } | { kind: 'unknown' } | { kind: 'stop' };
 
@@ -33,7 +71,7 @@ export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClo
   for (const [kind, stage] of order) {
     if (!stage) continue;
     for (const rule of stage.rules) {
-      const hit = ruleMatches(lines, rule, tick);
+      const hit = ruleMatches(data, lines, rule, tick);
       if (hit === 'stop') return { kind: 'unknown' };
       if (hit) return { kind };
     }
@@ -57,7 +95,7 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
   const tick = () => now() - start > budget;
   if (data.unknown) {
     for (const rule of data.unknown.rules) {
-      const hit = ruleMatches(lines, rule, tick);
+      const hit = ruleMatches(data, lines, rule, tick);
       if (hit === 'stop') return { kind: 'unknown' };
       if (hit) return { kind: 'unknown' };
     }
@@ -70,7 +108,7 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
   return { kind: composed.kind };
 }
 
-function ruleMatches(lines: string[], rule: Rule, tick: () => boolean): boolean | 'stop' {
+function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => boolean): boolean | 'stop' {
   if (rule.any) {
     const hit = anyLine(lines, rule.any, tick);
     if (hit === 'stop') return 'stop';
@@ -84,8 +122,7 @@ function ruleMatches(lines: string[], rule: Rule, tick: () => boolean): boolean 
     }
   }
   if (rule.footer !== undefined) {
-    const last = [...lines].reverse().find((line) => line.trim());
-    if ((last ?? '').trim() !== rule.footer) return false;
+    if (footerLine(data, lines) !== rule.footer) return false;
   }
   if (rule.belowLastRule) {
     if (tick()) return 'stop';
@@ -130,6 +167,22 @@ function lineSomewhere(lines: string[], pattern: LinePattern, tick: () => boolea
   return false;
 }
 
+/**
+ * The line a rule's footer must be: the last non-blank one. The composer's own chrome is the one
+ * thing allowed below it — a `status-last` mode pins the status line to the pane's last line, and
+ * a dialog drawn above it is still the dialog its footer belongs to. Any other line below the
+ * footer means the footer is not the dialog's, and the rule doesn't match.
+ */
+function footerLine(data: ScreenData, lines: string[]): string {
+  const nonBlank = lines.filter((line) => line.trim());
+  const last = nonBlank[nonBlank.length - 1] ?? '';
+  const composer = data.composer;
+  if (composer.mode === 'status-last' && composer.statusLine.test(last)) {
+    return (nonBlank[nonBlank.length - 2] ?? '').trim();
+  }
+  return last.trim();
+}
+
 function matches(line: string, pattern: LinePattern, tick: () => boolean): boolean | 'stop' {
   if (tick()) return 'stop';
   if (!pattern.match.test(line)) return false;
@@ -171,17 +224,9 @@ function statusLast(
   tick: () => boolean,
   allowOneTrailing: boolean,
 ): Hit {
-  let status = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (tick()) return { kind: 'stop' };
-    if (composer.statusLine.test(lines[i] ?? '')) { status = i; break; }
-  }
+  const status = statusIndex(composer, lines, allowOneTrailing, tick);
+  if (status === 'stop') return { kind: 'stop' };
   if (status < 0) return { kind: 'unknown' };
-  const trailing: string[] = [];
-  for (let i = status + 1; i < lines.length; i++) if ((lines[i] ?? '').trim()) trailing.push(lines[i] ?? '');
-  if (allowOneTrailing) {
-    if (trailing.length > 1 || trailing.some((line) => composer.prompt.test(line))) return { kind: 'unknown' };
-  } else if (trailing.length > 0) return { kind: 'unknown' };
   let input = status - 1;
   while (input >= 0 && !composer.prompt.test(lines[input] ?? '')) input--;
   if (input < 0) return { kind: 'unknown' };
@@ -256,7 +301,8 @@ function floorHits(lines: string[], from: number, input: number, chrome: RegExp[
     const line = lines[i] ?? '';
     if (chrome.some((pattern) => pattern.test(line))) continue;
     if (i !== input && choiceLine(line) && lines.slice(i + 1).some((later) => twoLine(later))) return true;
-    if (FLOOR_PHRASES.some((phrase) => line.includes(phrase))) return true;
+    const lower = line.toLowerCase();
+    if (FLOOR_PHRASES.some((phrase) => lower.includes(phrase))) return true;
   }
   return false;
 }

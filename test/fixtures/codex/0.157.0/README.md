@@ -66,3 +66,15 @@ zero agents after workspace closure; the default session had 14 agents before an
 after. No owner configuration was written by the harness. The auth hash stayed
 unchanged; the config hash changed during the capture window, so this run does
 not assert that the owner's configuration remained unchanged.
+
+## Constructed: `permission-pinned.txt`
+
+Not a capture. It is the captured dialog with the captured status line below it,
+built from the files here with
+`{ cat permission.txt; echo; tail -n 1 idle.txt; } > permission-pinned.txt`:
+the dialog's own footer, a blank line, then `idle.txt`'s last line, the model
+footer Codex keeps pinned at the pane's bottom. It stands for a permission dialog
+drawn while that pinned status line stays below it — a screen the classifier read
+as `unsent`, so `deliverRules` reported the rules delivered and the watch typed a
+nudge and Enter onto the dialog. Nothing else is added or changed. Its tests are
+in `test/launch/codex.test.ts` and `test/screen-core.test.ts`.
