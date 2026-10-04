@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import type { TeamFile } from './file/types.ts';
 import { agentList, paneRootPid } from './herdr.ts';
@@ -73,20 +74,54 @@ export function describeCaller(caller: Caller): string {
 // One process's parent and name, or null. By name only: arguments can hold credentials.
 export type ReadProcess = (pid: number) => { ppid: number; name: string } | null;
 
-const readWithPs: ReadProcess = (pid) => {
+// A process's name, however the platform spells it: ps prints a path, /proc a bare name, and a
+// login shell leads with a dash.
+function processName(raw: string): string {
+  return basename(raw).replace(/^-/, '');
+}
+
+export const readWithPs: ReadProcess = (pid) => {
   try {
     const line = execFileSync('ps', ['-o', 'ppid=,comm=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     const match = /^(\d+)\s+(.+)$/.exec(line);
-    return match ? { ppid: Number(match[1]), name: basename(match[2] as string).replace(/^-/, '') } : null;
+    return match ? { ppid: Number(match[1]), name: processName(match[2] as string) } : null;
   } catch {
     return null;
   }
 };
 
+// "10 (herdr) S 1 10 …", one line of /proc/<pid>/stat: the name in parentheses — it can hold
+// spaces and parentheses, so the last of them closes it — then the state, then the parent.
+export function parseStat(text: string): { ppid: number; name: string } | null {
+  const open = text.indexOf('(');
+  const close = text.lastIndexOf(')');
+  if (open < 0 || close < open) return null;
+  const after = text.slice(close + 1).trim().split(/\s+/);
+  const ppid = Number(after[1]);
+  if (!Number.isInteger(ppid) || ppid < 0) return null;
+  const name = processName(text.slice(open + 1, close));
+  return name ? { ppid, name } : null;
+}
+
+// One process, from Linux's own table. `proc` is the /proc root, a parameter so a test can walk a
+// captured one.
+export function readWithProc(pid: number, proc = '/proc'): { ppid: number; name: string } | null {
+  try {
+    return parseStat(readFileSync(`${proc}/${pid}/stat`, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+// The table this platform keeps: Linux answers from /proc, every other system through ps.
+export function processReader(platform: string = process.platform): ReadProcess {
+  return platform === 'linux' ? readWithProc : readWithPs;
+}
+
 // The parent processes of `pid`, nearest first, up to the system's first process. Null when a
 // process on the way can't be read, or the chain is longer than any real one: a partial list
 // could hide the herdr server above it.
-export function readAncestors(pid: number = process.ppid, read: ReadProcess = readWithPs): Process[] | null {
+export function readAncestors(pid: number = process.ppid, read: ReadProcess = processReader()): Process[] | null {
   const out: Process[] = [];
   let at = pid;
   for (let depth = 0; depth < 64; depth++) {
