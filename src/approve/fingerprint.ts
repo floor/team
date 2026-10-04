@@ -1,29 +1,13 @@
 import { createHash } from 'node:crypto';
+import { SECTIONS } from '../file/sections/index.ts';
 
 /**
  * The sections only the owner changes. An edit to any of them needs a new
- * approval before the file runs.
+ * approval before the file runs. Generated from the section modules, in their
+ * list's order — the order feeds the approval digest, so the list keeps it:
+ * `watch` last with `watch.checks`, the line inside it, after it.
  */
-export const OWNER_SECTIONS = [
-  'trust',
-  'limits',
-  'machine',
-  'rules',
-  'identity',
-  'workspace',
-  'coordinator',
-  'operator',
-  'session',
-  'visibility',
-  'tools',
-  'budgets',
-  // The watch's own timings, thresholds included: a seat allowed to stretch `unsent_after` or
-  // `idle_first` could silence the watch itself, so the section is the owner's like the rest.
-  'watch',
-  // And turning a check off is the finer line inside it: the digest above leaves the checks out,
-  // so turning one off reads as `watch.checks` alone, never as a threshold change too.
-  'watch.checks',
-] as const;
+export const OWNER_SECTIONS: readonly string[] = SECTIONS.filter((section) => section.owner).map((section) => section.name);
 
 /** One owner section, read from the file; the two watch sections sit inside `watch`, not at the top. */
 function sectionOf(team: Approvable, name: string): unknown {
