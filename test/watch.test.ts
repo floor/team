@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadReadings, loadSpendReadings } from '../src/budgets/readings.ts';
+import { runStatus } from '../src/commands/status.ts';
 import { runWatch } from '../src/commands/watch.ts';
 import type { WatchSources } from '../src/commands/watch.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
@@ -698,8 +699,51 @@ describe('team watch', () => {
     expect(typed[1]).toBe('w0:p1 <enter>');
   });
 
+  test('--no-notify still delivers a floor report, and the log keeps it', async () => {
+    writeFileSync(file, withAccounts(`  accounts:
+    openai: { kind: subscription, reserve: 3%, sources: [status_line] }
+    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }
+`));
+    scene = live({
+      'deepseek-acme-2': { status: 'blocked', screen: question },
+      'codex-acme': { screen: '• Working (2m 10s • esc to interrupt)\n\nweekly 2% left\n' },
+    });
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file, '--no-notify'], io, sources(1, {
+      readChecks: (_team, _root, at) => [
+        { account: 'deepseek', state: 'read', reading: { kind: 'spend', amount: 4.2, currency: 'USD', at } },
+      ],
+    }));
+    // The question is the operator's, and the flag may silence it. The floor is the owner's.
+    expect(notified).toContain('deepseek 4.2 USD left, at its 5 USD floor');
+    expect(notified).not.toContain('deepseek-acme-2 asked a question: the operator\'s to act on');
+    const log = readFileSync(join(dir, '.agents', 'team.log'), 'utf8');
+    expect(log).toContain('deepseek 4.2 USD left, at its 5 USD floor');
+    expect(log).toContain('deepseek-acme-2 asked a question');
+    // `status` does not read the flag. The reserve row is still there.
+    const status = testIo(dir);
+    await runStatus(['--file', file], status, {
+      live: () => scene,
+      branch: () => 'main',
+      approval: () => [],
+      watchInForce: (team) => team.watch,
+      budgetsInForce: (team) => team.budgets,
+      now: () => new Date(clock),
+    });
+    expect(status.out).toContain('inside reserve 3%');
+  });
+
+  test('a seat cannot pass --no-notify or --no-nudge', async () => {
+    const io = testIo(dir, { kind: 'seat', name: 'deepseek-acme', pane: 'w3:p1' });
+    expect(await runWatch(['--file', file, '--no-notify'], io, sources(1))).toBe(1);
+    expect(io.err).toContain('--no-nudge and --no-notify are the owner\'s');
+    expect(io.err).toContain('deepseek-acme');
+    expect(notified).toEqual([]);
+    expect(readState(join(dir, '.agents')).sessions['acme-web']?.watch).toBeUndefined();
+  });
+
   test('--no-nudge types nothing and --no-notify notifies nothing; the log still has it', async () => {
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file, '--no-nudge', '--no-notify'], io, sources(1));
     expect(typed).toEqual([]);
     expect(notified).toEqual([]);

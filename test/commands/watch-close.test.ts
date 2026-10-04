@@ -97,7 +97,7 @@ describe('the watch closes what its authority allows', () => {
       };
     });
     const stopped: string[] = [];
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     const tmp = agent('worker-tmp-1', 'idle');
     await runWatch(['--file', file, '--no-nudge'], io, sources({
       live: () => scene([tmp]),
@@ -120,7 +120,7 @@ describe('the watch closes what its authority allows', () => {
     });
     writeFileSync(join(dir, 'done.md'), 'done\n');
     const stopped: string[] = [];
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file, '--no-nudge'], io, sources({
       live: () => scene([agent('worker-tmp-1', 'idle'), agent('worker-tmp-2', 'idle')]),
       stopSeat: async (_session, seat) => { stopped.push(seat.name); return true; },
@@ -140,7 +140,7 @@ describe('the watch closes what its authority allows', () => {
       session.worktrees.done = { path: 'work/done', branch: 'fix/done', own_commits: true, setup: 'ok' };
     });
     const removed: string[] = [];
-    await runWatch(['--file', file, '--no-nudge'], testIo(dir), sources({
+    await runWatch(['--file', file, '--no-nudge'], testIo(dir, { kind: 'owner' }), sources({
       readEnd: () => ({ kind: 'merged', verdict: 'merged', detail: 'its own commits are in the base', ownNow: 0 }),
       removeWorktree: (task) => { removed.push(task); return 0; },
     }));

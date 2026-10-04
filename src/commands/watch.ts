@@ -1,5 +1,6 @@
 import { readArgs } from '../args.ts';
 import { budgetsInForce, watchInForce } from '../approve/approval.ts';
+import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { saveReadings, saveSpendReadings, type SpendReading } from '../budgets/readings.ts';
 import { runChecks, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
@@ -116,17 +117,31 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
   const session = args.values.session ?? first.team.session;
   const { dir } = first;
 
+  // A seat that starts the session's only watch must not be able to drop the operator's nudge
+  // or the operator's desktop notices. The owner's own `--no-notify` still cannot silence a
+  // report addressed to the owner: those are routed below.
+  if (args.flags.has('no-nudge') || args.flags.has('no-notify')) {
+    const caller = callerOf(io, session);
+    if (!isOwner(caller)) {
+      io.stderr(`team watch: --no-nudge and --no-notify are the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
+      return 1;
+    }
+  }
+
   const other = readState(dir).sessions[session]?.watch;
   if (other && other.pid !== sources.pid && sources.alive(other.pid)) {
     io.stderr(`team watch: a watch already runs for the session "${session}" (pid ${other.pid})\n`);
     return 1;
   }
 
-  const say = (text: string, desktop: boolean) => {
+  // The log line is written for every report. `--no-notify` never removes it, and it never
+  // removes a desktop notice addressed to the owner. It does silence every other notice.
+  const tell = (text: string, notify: boolean) => {
     io.stdout(`${sources.now().toISOString()} ${text}\n`);
     logLine(dir, 'watch', 'watch', text, sources.now());
-    if (desktop && !args.flags.has('no-notify')) sources.notify(text);
+    if (notify) sources.notify(text);
   };
+  const say = (text: string, desktop: boolean) => tell(text, desktop && !args.flags.has('no-notify'));
   const beat = () => updateState(dir, (state) => {
     const record = (state.sessions[session] ??= emptySession());
     record.watch = { pid: sources.pid, heartbeat: sources.now().toISOString() };
@@ -193,7 +208,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
           team, state, live, machine: sources.machine(root), now, memory,
           approval: sources.approval(team, root), watch: inForce, outcomes, budgets: budget,
         });
-        for (const report of result.reports) say(report.text, true);
+        for (const report of result.reports) tell(report.text, report.to === 'owner' || !args.flags.has('no-notify'));
         saveReadings(dir, session, result.readings, now);
         if (result.nudge) {
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);

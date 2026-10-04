@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `team watch` routes each report to the owner or the operator. `--no-notify` no longer silences a
+  report addressed to the owner. The log line stays, and `team status` does not read the flag.
+  `--no-nudge` and `--no-notify` are the owner's.
+
 ### Added
 
 - A spend account's `floor` refuses a launch: the watch keeps the money each spend check reads in the
