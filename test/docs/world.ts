@@ -73,6 +73,14 @@ export function screenText(cli: string, kind: ScreenKind, seat?: Seat): string {
   }
 }
 
+/** What a pane shows once text is typed into it: the composer holding the text, in the shape
+ *  `screenText` gives for an unsent box of the same CLI — the prompt row, then the rest. */
+function typedBox(cli: string, text: string, seat?: Seat): string {
+  const [first = '', ...rest] = text.split('\n');
+  const unsent = screenText(cli, 'unsent', seat).split('\n');
+  return [`❯ ${first}`, ...rest.map((line) => `  ${line}`), ...unsent.slice(1)].join('\n');
+}
+
 /** What herdr's own status says of a pane showing this screen: down.ts reads a dialog as blocked. */
 function statusOf(kind: ScreenKind): string {
   if (kind === 'working') return 'working';
@@ -115,6 +123,8 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
   let watchPid: number | null = spec.watch === 'alive' || spec.watch === 'stale' ? WATCH_PID : null;
   let made = 0;
   const slots: Slot[] = [];
+  // What each pane holds once text was typed into it, so a read-back reads the typed text.
+  const typedInto = new Map<string, string>();
   const did: World['did'] = { starts: 0, runs: [], typed: [], closed: [], stopped: 0, killed: [], notified: [] };
   const now = () => new Date(clock);
   const sleep = async (ms: number) => {
@@ -226,10 +236,13 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     agentPanes: () => slots.filter((slot) => slot.agent).map((slot) => slot.pane),
     paneText: (_session: string, pane: string) => {
       const slot = agentOf(pane);
-      return slot ? screenText(slot.cli, slot.screen, slot.seat) : '';
+      if (!slot) return '';
+      const typed = typedInto.get(pane);
+      return typed !== undefined ? typedBox(slot.cli, typed, slot.seat) : screenText(slot.cli, slot.screen, slot.seat);
     },
-    typeText: (_session: string, _pane: string, text: string) => {
+    typeText: (_session: string, pane: string, text: string) => {
       did.typed.push(text);
+      typedInto.set(pane, text);
       return true;
     },
     pressEnter: () => true,
@@ -315,6 +328,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     agents: () => (herdr === 'running' ? agents() : []),
     alive: (pid) => watchPid !== null && pid === watchPid,
     screen: (_session, pane) => readScreen(agentOf(pane)?.cli ?? '', action.paneText('', pane)),
+    screenText: (_session, pane) => action.paneText('', pane),
     status: (_session, pane) => agentOf(pane)?.status ?? null,
     // The CLI is the foreground until its exit is typed; the pane is then back at its shell.
     foreground: (_session, pane) => {
@@ -404,7 +418,8 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
           const cli = agentOf(pane)?.cli ?? 'claude-code';
           return [profileFor(cli)?.processNames[0] ?? 'claude'];
         },
-        typeText: action.typeText,
+        // The watch orders these (pane, text, session); the fake's own action takes (session, pane, text).
+        typeText: (pane, text, session) => action.typeText(session, pane, text),
         pressEnter: action.pressEnter,
         notify: (text) => did.notified.push(text),
         now,

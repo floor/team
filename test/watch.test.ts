@@ -15,7 +15,7 @@ import { parseLoadavg, parseMeminfo, parseMemoryPressure, parseSwapUsage, readMa
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, NUDGE_TEXT, pass } from '../src/watch/pass.ts';
 import { readScreen } from '../src/watch/screen.ts';
-import { testIo } from './helpers.ts';
+import { claudeBox, testIo } from './helpers.ts';
 
 const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url), 'utf8')
   .replace('operator: claude-coordinator-acme', 'operator: claude-operator-acme')
@@ -606,7 +606,7 @@ describe('team watch', () => {
       screen: () => screenNow,
       status: () => statusNow,
       foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
-      typeText: (pane, text) => { typed.push(`${pane} ${text}`); return true; },
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = claudeBox(text); return true; },
       pressEnter: (pane) => { typed.push(`${pane} <enter>`); return true; },
       notify: (text) => { notified.push(text); },
       now: () => new Date(clock),
@@ -679,7 +679,7 @@ describe('team watch', () => {
 
   test('a kept nudge is typed on a later pass, once the operator is free again', async () => {
     let calls = 0;
-    await runWatch(['--file', file], testIo(dir), sources(2, { screen: () => (calls++ === 0 ? permission : idle) }));
+    await runWatch(['--file', file], testIo(dir), sources(2, { screen: () => (calls++ === 0 ? permission : screenNow) }));
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
   });
 
@@ -737,10 +737,17 @@ describe('team watch', () => {
     expect(io.out).toContain('a nudge was typed and not sent');
   });
 
-  test('the text in the box, seen before the Enter, is the nudge\'s own: the Enter is sent', async () => {
+  test('the box, read back before the Enter, is the nudge\'s own: the Enter is sent', async () => {
+    await runWatch(['--file', file], testIo(dir), sources(1));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+  });
+
+  test('a box that holds someone else\'s text gets no Enter', async () => {
     let looks = 0;
-    await runWatch(['--file', file], testIo(dir), sources(1, { screen: () => (looks++ === 0 ? idle : unsent) }));
-    expect(typed[1]).toBe('w0:p1 <enter>');
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, { screen: () => (looks++ === 0 ? idle : unsent) }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was typed and not sent');
   });
 
   test('--no-notify still notifies the fallback when the operator never frees up', async () => {

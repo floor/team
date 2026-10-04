@@ -18,6 +18,7 @@ import type { Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
 import { downPlan, formatPlan, type DownSeat } from '../launch/plan.ts';
+import { boxHoldsText } from '../launch/deliver.ts';
 import { profileFor } from '../profiles/index.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
@@ -30,6 +31,8 @@ export type DownSources = {
   alive(pid: number): boolean;
   /** Herdr's status is not enough: a permission prompt is reported as idle. */
   screen(session: string, pane: string, cli: string): Screen;
+  /** The pane's raw text, for reading the input box back before any Enter. */
+  screenText(session: string, pane: string, cli: string): string | undefined;
   /** Herdr's own status for the pane. The Enter waits for idle or done. */
   status(session: string, pane: string): string | null;
   /** Foreground argv0 names, or null when the pane can't be read. */
@@ -90,6 +93,7 @@ export const realSources: DownSources = {
   screen(session, pane, cli) {
     return readScreen(cli, paneRead(pane, 200, aim(session)) ?? undefined);
   },
+  screenText: (session, pane) => paneRead(pane, 200, aim(session)) ?? undefined,
   status: (session, pane) => agentStatus(pane, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
   now: () => new Date(),
@@ -245,8 +249,8 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     typeLine(sessionName, pane, text) {
       // Free was decided when the plan was built. Look again, and once more between the text and
       // the Enter: a prompt that appeared would take the key, as the watch's nudge does. Herdr's
-      // status is asked both times; Enter waits until it is idle or done and the screen is idle
-      // or holding unsent text.
+      // status is asked both times; the Enter waits until it is idle or done and the box reads
+      // back as exactly the typed text.
       const cli = seats.find((seat) => seat.pane === pane)?.cli ?? '';
       const names = profileFor(cli)?.processNames ?? [];
       const live = () => reportedLiveAgent(sources.foreground(sessionName, pane), names);
@@ -259,8 +263,9 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       if (!resting() || look() !== 'idle') return false;
       if (!launch.typeText(sessionName, pane, text)) return false;
       if (!live()) return 'no-agent';
-      const after = look();
-      if (!resting() || (after !== 'idle' && after !== 'unsent')) return false;
+      // An idle screen after the typing is the text not rendered, and unsent text alone is not
+      // this exit's: only a box that reads back as the typed text gets the Enter.
+      if (!resting() || !boxHoldsText(cli, text, sources.screenText(sessionName, pane, cli))) return false;
       return launch.pressEnter(sessionName, pane);
     },
     renameAgent: () => false,

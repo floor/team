@@ -56,13 +56,18 @@ export function statusRowOf(data: ScreenData, lines: string[]): string | null {
 
 export type Fold = { count: number; rows: string[]; width: number };
 
+/** The input box a composer draws for its current text: the first line after the prompt, the
+ *  continuation rows under it, and the column those rows start at (the prompt's own width plus
+ *  the separator the input row draws). */
+export type Box = { first: string; indent: number; rows: string[] };
+
 /**
- * The fold a `two-rules-footer-below` composer's window shows, or null: the marker row whose
- * capture 1 is the hidden-row count, the tail rows below it, the box's two rules around both,
- * and a footer under the bottom one. The top rule's width is the width the text wrapped at.
- * This is the shape alone; whether the fold holds the typed text is the caller's to verify.
+ * The fold-shaped frame a window shows, or null: the marker row and the count it names (any
+ * integer, zero included), the tail rows below it, the box's two rules around both, and a footer
+ * under the bottom one. The top rule's width is the width the text wrapped at. The shape alone;
+ * whether the fold holds the typed text is the caller's to verify.
  */
-export function foldOf(data: ScreenData, lines: string[]): Fold | null {
+function foldFrame(data: ScreenData, lines: string[]): Fold | null {
   const composer = data.composer;
   if (composer.mode !== 'two-rules-footer-below' || !composer.fold) return null;
   let marker = -1;
@@ -86,11 +91,31 @@ export function foldOf(data: ScreenData, lines: string[]): Fold | null {
   if (rows.length === 0) return null;
   if (!lines.slice(bottom + 1).some((line) => composer.footers.some((pattern) => pattern.test(line)))) return null;
   const count = Number(found[1]);
-  if (!Number.isInteger(count) || count < 1) return null;
+  if (!Number.isInteger(count)) return null;
   return { count, rows, width: (lines[top] ?? '').trim().length };
 }
 
-type Hit = { kind: Screen['kind']; from: number; input: number } | { kind: 'unknown' } | { kind: 'stop' };
+/**
+ * The fold a `two-rules-footer-below` composer's window shows, or null. A marker whose count is
+ * zero names no hidden rows to compare against, so it is no fold; it is still a marker, and
+ * `foldMarked` catches it.
+ */
+export function foldOf(data: ScreenData, lines: string[]): Fold | null {
+  const frame = foldFrame(data, lines);
+  if (frame === null || frame.count < 1) return null;
+  return frame;
+}
+
+/**
+ * Whether the window shows a fold marker at all, whatever count it names: a marker claiming zero
+ * hidden rows (or a count a fold could not have) is still a box that is not showing the whole
+ * text, and it must never be taken for an ordinary unsent box and submitted unverified.
+ */
+export function foldMarked(data: ScreenData, lines: string[]): boolean {
+  return foldFrame(data, lines) !== null;
+}
+
+type Hit = { kind: Screen['kind']; from: number; input: number; rows?: string[] } | { kind: 'unknown' } | { kind: 'stop' };
 
 /** `lines` is already the window: the last 20 lines, each keeping any ANSI styling. Matching
  *  runs on each line's plain form, trimmed at the end; the styled form is kept for the one
@@ -152,6 +177,31 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
   const marked = floorHits(plain, composed.from, composed.input, data.chrome, tick);
   if (marked === 'stop' || marked) return { kind: 'unknown' };
   return { kind: composed.kind };
+}
+
+/**
+ * The input box a composer draws for its current text, or null when the composer does not read
+ * `unsent`: an idle box holds nothing, and every other shape is not the box. The rows are the
+ * ones the mode's own frame delimits — between the prompt row and the box's closing line; the
+ * `status-then-one` fallback (the captured completion frame) delimits nothing, so its box is
+ * its one input row, the popup rows below it being its filter's to exclude. The caller compares
+ * the box to the text it typed; nothing here decides that.
+ */
+export function composerBox(data: ScreenData, lines: string[]): Box | null {
+  const plain = plainLines(lines);
+  const hit = compose(data, plain, lines, () => false);
+  if (hit.kind === 'stop' || hit.kind === 'unknown') return null;
+  if (hit.kind !== 'unsent') return null;
+  const input = plain[hit.input] ?? '';
+  const found = data.composer.prompt.exec(input);
+  if (!found) return null;
+  let rest = input.slice(found[0].length);
+  const suffix: RegExp | null | undefined = 'stripSuffix' in data.composer ? data.composer.stripSuffix : undefined;
+  if (suffix) rest = rest.replace(suffix, '');
+  const indent = found[0].length + rest.length - rest.trimStart().length;
+  const rows = hit.rows ?? [];
+  while (rows.length > 0 && rows[rows.length - 1] === '') rows.pop();
+  return { first: rest.trimStart(), indent, rows };
 }
 
 function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => boolean): boolean | 'stop' {
@@ -286,11 +336,12 @@ function boxToRule(lines: string[], styled: string[], composer: Extract<ScreenDa
   // scrolled out of the window.
   if (!above && !footer) return { kind: 'unknown' };
   const from = above ? input - 1 : input;
+  const rows = lines.slice(input + 1, close);
   for (let i = input + 1; i < close; i++) {
-    if ((lines[i] ?? '').trim()) return { kind: 'unsent', from, input };
+    if ((lines[i] ?? '').trim()) return { kind: 'unsent', from, input, rows };
   }
   const typed = (lines[input] ?? '').replace(composer.prompt, '').trim();
-  return { kind: placeholder(typed, composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from, input };
+  return { kind: placeholder(typed, composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from, input, rows };
 }
 
 function statusLast(
@@ -306,8 +357,9 @@ function statusLast(
   let input = status - 1;
   while (input >= 0 && !composer.prompt.test(lines[input] ?? '')) input--;
   if (input < 0) return { kind: 'unknown' };
-  for (let i = input + 1; i < status; i++) if ((lines[i] ?? '').trim()) return { kind: 'unsent', from: input, input };
-  return { kind: placeholder(stripTyped(lines[input] ?? '', composer), composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from: input, input };
+  const rows = lines.slice(input + 1, status);
+  for (let i = input + 1; i < status; i++) if ((lines[i] ?? '').trim()) return { kind: 'unsent', from: input, input, rows };
+  return { kind: placeholder(stripTyped(lines[input] ?? '', composer), composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from: input, input, rows };
 }
 
 function statusThenOne(lines: string[], styled: string[], composer: Extract<ScreenData['composer'], { mode: 'status-then-one' }>, tick: () => boolean): Hit {
@@ -352,9 +404,10 @@ function twoRules(lines: string[], styled: string[], composer: Extract<ScreenDat
     if (composer.footers.some((pattern) => pattern.test(lines[i] ?? ''))) footer = true;
   }
   if (!footer) return { kind: 'unknown' };
-  if (lines.slice(input + 1, bottom).some((line) => line.trim())) return { kind: 'unsent', from: top, input };
+  const rows = lines.slice(input + 1, bottom);
+  if (lines.slice(input + 1, bottom).some((line) => line.trim())) return { kind: 'unsent', from: top, input, rows };
   const typed = (lines[input] ?? '').replace(composer.prompt, '').trim();
-  return { kind: placeholder(typed, composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from: top, input };
+  return { kind: placeholder(typed, composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from: top, input, rows };
 }
 
 function stripTyped(line: string, composer: { prompt: RegExp; stripSuffix?: RegExp | null }): string {

@@ -12,7 +12,7 @@ import { storePath } from '../../src/store/store.ts';
 import { readState } from '../../src/state.ts';
 import { parseMemoryPressure, parseSwapUsage, type Machine } from '../../src/watch/machine.ts';
 import { readScreen, type Screen } from '../../src/watch/screen.ts';
-import { testIo } from '../helpers.ts';
+import { claudeBox, testIo } from '../helpers.ts';
 
 const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8').replace('parked: true', 'stopped: true');
 const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
@@ -178,11 +178,18 @@ describe('team up, live', () => {
     const sent: string[] = [];
     const read = made.launch.paneText;
     let pasted = false;
+    let typed = '';
+    // The pane with the paste rendered: the idle frame's placeholder row replaced by the typed
+    // message, later lines at the prompt's own column, as the fixtures README describes.
+    const boxed = () => {
+      const [first = '', ...rest] = typed.split('\n');
+      return capture('idle').replace('› Ask Codex to do anything', [`› ${first}`, ...rest.map((line) => `  ${line}`)].join('\n'));
+    };
     made.launch.agentStatus = () => status;
-    made.launch.typeText = (_session, pane, text) => { codexPane = pane; sent.push(text); pasted = true; return true; };
+    made.launch.typeText = (_session, pane, text) => { codexPane = pane; typed = text; sent.push(text); pasted = true; return true; };
     made.launch.pressEnter = () => { sent.push('Enter'); if (outcome === 'accepted') { status = 'working'; pasted = false; } return true; };
     made.launch.paneText = (session, pane) => pane === codexPane
-      ? capture(pasted ? 'unsent' : 'working') : read(session, pane);
+      ? (pasted ? boxed() : capture('working')) : read(session, pane);
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['codex-acme'];
@@ -231,11 +238,19 @@ describe('team up, live', () => {
     const sent: string[] = [];
     const read = made.launch.paneText;
     let pasted = false;
+    let typed = '';
+    // The pane with the paste rendered: the idle frame's bare prompt row replaced by the typed
+    // message, later lines at the prompt's own column, as the fixtures README describes.
+    const boxed = () => {
+      const [first = '', ...rest] = typed.split('\n');
+      const body = [`> ${first}`, ...rest.map((line) => `  ${line}`)].join('\n');
+      return capture('idle').replace('\n>\n', `\n${body}\n`);
+    };
     made.launch.agentStatus = () => status;
-    made.launch.typeText = (_session, pane, text) => { geminiPane = pane; sent.push(text); pasted = true; return true; };
+    made.launch.typeText = (_session, pane, text) => { geminiPane = pane; typed = text; sent.push(text); pasted = true; return true; };
     made.launch.pressEnter = () => { sent.push('Enter'); if (outcome === 'accepted') { status = 'working'; pasted = false; } return true; };
     made.launch.paneText = (session, pane) => (pane === geminiPane
-      ? capture(pasted ? 'unsent' : 'working') : read(session, pane));
+      ? (pasted ? boxed() : capture('working')) : read(session, pane));
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['gemini-acme'];
@@ -530,9 +545,12 @@ describe('team down, live', () => {
     let gone = false;
     let current = status;
     let onSleep = () => {};
+    // What the pane shows after a typing: the box with the typed text, as the CLI renders it.
+    let box: string | undefined;
     const launch: DownLaunch = {
       typeText(_session, _pane, text) {
         typed.push(text);
+        box = claudeBox(text);
         return true;
       },
       pressEnter() {
@@ -564,6 +582,7 @@ describe('team down, live', () => {
       agents: () => [seat(current)],
       alive: () => false,
       screen: () => screen,
+      screenText: () => box,
       status: () => current,
       foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
       now: () => new Date(clock),
@@ -649,10 +668,8 @@ describe('team down, live', () => {
   });
 
   test('a pinned Codex permission after the exit text gets no Enter', async () => {
-    const pinned = readScreen(
-      'codex',
-      readFileSync(new URL('../fixtures/codex/0.157.0/permission-pinned.txt', import.meta.url), 'utf8'),
-    );
+    const pinnedRaw = readFileSync(new URL('../fixtures/codex/0.157.0/permission-pinned.txt', import.meta.url), 'utf8');
+    const pinned = readScreen('codex', pinnedRaw);
     const run = harness({ kind: 'idle' });
     let screen: Screen = { kind: 'idle' };
     run.launch.typeText = (_session, _pane, text) => {
@@ -663,6 +680,8 @@ describe('team down, live', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runDown(FILE, io, run.sourcesOf({
       screen: () => screen,
+      // The pane really shows the dialog after the typing: the box read-back refuses it.
+      screenText: () => pinnedRaw,
       agents: () => [{ ...agent('codex-acme', 'w3:p1', 'idle'), agent: 'codex' }],
     }));
     expect(code).toBe(1);
@@ -701,7 +720,6 @@ describe('team down, live', () => {
   test('a seat that does not leave is left as it is', async () => {
     const run = harness({ kind: 'idle' });
     run.launch.agentPanes = () => ['w3:p1'];
-    run.launch.typeText = () => true;
     run.launch.pressEnter = () => true;
     const io = testIo(root, { kind: 'owner' });
     const code = await runDown(FILE, io, run.sourcesOf());

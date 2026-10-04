@@ -1,6 +1,6 @@
 import { reportedLiveAgent } from './agent.ts';
 import { profileFor } from '../profiles/index.ts';
-import { classifyComposer, readFold, readScreen, type Fold } from '../watch/screen.ts';
+import { classifyComposer, readBox, readFold, readFoldMark, readScreen, type Box, type Fold } from '../watch/screen.ts';
 
 export interface Delivery {
   screen(): string | undefined;
@@ -37,19 +37,50 @@ function holdsText(text: string, fold: Fold): boolean {
   return fold.rows.every((row, i) => row.trimEnd() === (tail[i] ?? '').trimEnd());
 }
 
+/** Whether the box shows exactly `text`: the first line after the prompt and every later line at
+ *  the box's own continuation column — no more rows, no fewer, none changed. A continuation row
+ *  that does not start at that column is not the text's own row and the box is not trusted. A
+ *  box whose profile shows a wrap the profile's data cannot model (a wrapped line, no join rule)
+ *  never equals the text line for line, so it waits and is refused at the deadline, not entered
+ *  on trust. */
+function holdsBox(text: string, box: Box): boolean {
+  const [first = '', ...rest] = text.split('\n');
+  if (rest.length !== box.rows.length || first !== box.first) return false;
+  const pad = ' '.repeat(box.indent);
+  return box.rows.every((row, i) => {
+    const line = rest[i] ?? '';
+    if (row === '') return line === '';
+    return row.startsWith(pad) && row.slice(pad.length) === line;
+  });
+}
+
 /** What the box holds right now: `ready` to submit, still rendering (`wait`), or a state that is
- *  never the typed text (`no`). An ordinary box is ready when it reads `unsent`; a folded one is
- *  ready only when its tail and hidden-row count are the ones the text renders to at the width
- *  the box reports. */
+ *  never the typed text (`no`). A folded box — and one showing a fold marker whatever its count —
+ *  is ready only when its tail and hidden-row count are the ones the text renders to at the width
+ *  the box reports. An ordinary box is ready only when its rows read back as exactly the text
+ *  typed; anything else waits, and a wait that outlives the deadline is a refusal, not an Enter. */
 function boxState(cli: string, text: string, screen: string | undefined): 'ready' | 'wait' | 'no' {
   const kind = readScreen(cli, screen).kind;
   const fold = readFold(cli, screen);
-  if (fold) {
+  if (fold || readFoldMark(cli, screen)) {
     if (kind !== 'unsent' && kind !== 'unknown') return 'no';
-    return holdsText(text, fold) ? 'ready' : 'wait';
+    return fold !== null && holdsText(text, fold) ? 'ready' : 'wait';
   }
-  if (kind === 'unsent') return 'ready';
+  if (kind === 'unsent') {
+    const box = readBox(cli, screen);
+    return box !== null && holdsBox(text, box) ? 'ready' : 'wait';
+  }
   return kind === 'idle' ? 'wait' : 'no';
+}
+
+/** Whether the pane's box holds exactly `text` right now: an unsent composer, no fold marker, and
+ *  rows that read back as the text. The one check the watch's nudge and the exit typing share
+ *  with delivery — false for anything not observed, never `true` on trust. */
+export function boxHoldsText(cli: string, text: string, screen: string | undefined): boolean {
+  if (readFoldMark(cli, screen)) return false;
+  if (readScreen(cli, screen).kind !== 'unsent') return false;
+  const box = readBox(cli, screen);
+  return box !== null && holdsBox(text, box);
 }
 
 /** A first message is accepted only after working is observed with the composer empty again. */

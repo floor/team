@@ -11,7 +11,7 @@ import type { DownLaunch } from '../../src/commands/down.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { emptySession, readState, updateState } from '../../src/state.ts';
 import { readScreen, type Screen } from '../../src/watch/screen.ts';
-import { testIo } from '../helpers.ts';
+import { testIo, claudeBox } from '../helpers.ts';
 
 const FILE = `format: 1
 project: acme
@@ -57,11 +57,13 @@ function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
   const typed: string[] = [];
   const closed: string[] = [];
   let sent = false;
+  // What the pane shows after a typing: the box with the typed text, as the CLI renders it.
+  let box: string | undefined;
   const agents: HerdrAgent[] = [];
   const running: boolean[] = [];
   clock = 0;
   const launch: DownLaunch = {
-    typeText: (_session, _pane, text) => { typed.push(text); return true; },
+    typeText: (_session, _pane, text) => { typed.push(text); box = claudeBox(text); return true; },
     pressEnter: () => { sent = true; return true; },
     agentPanes: () => agents.map((agent) => agent.pane),
     closeWorkspace: (_session, workspace) => { closed.push(workspace); return true; },
@@ -75,6 +77,7 @@ function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
     agents: () => agents,
     alive: () => false,
     screen: () => screen,
+    screenText: () => box,
     status: () => status,
     now: () => new Date(clock),
     sleep: async (ms) => { clock += ms; },
@@ -123,13 +126,13 @@ describe('team remove', () => {
   });
 
   test('a pinned Codex permission after the exit text gets no Enter', async () => {
-    const pinned = readScreen(
-      'codex',
-      readFileSync(new URL('../fixtures/codex/0.157.0/permission-pinned.txt', import.meta.url), 'utf8'),
-    );
+    const pinnedRaw = readFileSync(new URL('../fixtures/codex/0.157.0/permission-pinned.txt', import.meta.url), 'utf8');
+    const pinned = readScreen('codex', pinnedRaw);
     const made = world();
     let screen: Screen = { kind: 'idle' };
     made.sources.screen = () => screen;
+    // The pane really shows the dialog after the typing: the box read-back refuses it.
+    made.sources.screenText = () => pinnedRaw;
     const entered: string[] = [];
     const launch = made.sources.launch;
     if (!launch) throw new Error('fixture');
@@ -147,6 +150,18 @@ describe('team remove', () => {
     expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
     expect(made.typed).toEqual(['/exit']);
     expect(entered).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(io.out).toContain('worker: its exit was not typed; left as it is');
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
+  test('a box that holds someone else\'s text gets no Enter', async () => {
+    const made = world();
+    made.sources.screenText = () => claudeBox('half a sentence, not this exit');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    expect(made.typed).toEqual(['/exit']);
     expect(made.closed).toEqual([]);
     expect(io.out).toContain('worker: its exit was not typed; left as it is');
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
