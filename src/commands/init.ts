@@ -9,7 +9,6 @@ import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { LOCK_FILE, LOG_FILE, STATE_FILE, writeAtomic } from '../state.ts';
 import { approvedCopy } from '../store/store.ts';
-import { version } from '../version.ts';
 
 // What git must never pick up: the file and the runtime files beside it.
 export const EXCLUDED = [TEAM_FILE, `.agents/${STATE_FILE}`, `.agents/${LOG_FILE}*`, `.agents/${LOCK_FILE}`];
@@ -26,7 +25,12 @@ function git(root: string, ...args: string[]): string | null {
   }
 }
 
-export function skeleton(project: string, head: string | null, teamVersion = version()): string {
+function cliVersion(): string {
+  const text = readFileSync(new URL('../../package.json', import.meta.url), 'utf8');
+  return (JSON.parse(text) as { version: string }).version;
+}
+
+export function skeleton(project: string, head: string | null, teamVersion = cliVersion()): string {
   return `# yaml-language-server: $schema=https://raw.githubusercontent.com/floor/team/v${teamVersion}/schema/team.schema.json
 # The team of ${project}. Private to this clone: see .git/info/exclude.
 # Nothing here runs until the owner has read it and run \`team approve\`.
