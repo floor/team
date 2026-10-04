@@ -109,6 +109,10 @@ function patternsOf(node: YamlNode, key: string, ignoreCase: boolean): LinePatte
   return node.items.map((item) => linePattern(item, ignoreCase));
 }
 
+// A pattern is a string, or a mapping with `match`, its optional `except` list and its
+// own `ignore_case`. The pattern's flag is read with the stage's: a screen whose own
+// case varies carries the flag beside the pattern, where a stage-wide flag would reach
+// every rule. The flag is the entry's, so `except` is read on the same lines `match` is.
 function linePattern(node: YamlNode, ignoreCase: boolean): LinePattern {
   if (node.kind === 'scalar') {
     const text = stringOf(node);
@@ -116,12 +120,14 @@ function linePattern(node: YamlNode, ignoreCase: boolean): LinePattern {
     return { match: patternOf(text, ignoreCase, node.line), except: [] };
   }
   const entries = mapping(node, 'a pattern');
-  only(entries, ['match', 'except']);
+  only(entries, ['match', 'except', 'ignore_case']);
   const match = required(entries, 'match', node.line);
   const text = stringOf(match.value);
   if (text === null) fail(match.line, '"match" must be a string');
+  const flag = optional(entries, 'ignore_case');
+  const own = flag ? boolOf(flag.value, 'ignore_case') : false;
   const except = optional(entries, 'except');
-  return { match: patternOf(text, ignoreCase, match.line), except: except ? exceptOf(except.value, ignoreCase) : [] };
+  return { match: patternOf(text, ignoreCase || own, match.line), except: except ? exceptOf(except.value, ignoreCase || own) : [] };
 }
 
 function exceptOf(node: YamlNode, ignoreCase: boolean): RegExp[] {
@@ -167,7 +173,7 @@ function composerOf(node: YamlNode): Composer {
       prompt: regexField(entries, 'prompt', node.line),
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
       placeholderStyle,
-      stripSuffix: suffix ? patternOf(stringOf(suffix.value) ?? fail(suffix.line, '"strip_suffix" must be a string'), false, suffix.line) : null,
+      stripSuffix: suffix ? composerString(suffix.value, 'strip_suffix', suffix.line) : null,
       fallback: fallbackOf(fallback.value),
     };
   }
@@ -190,11 +196,7 @@ function composerOf(node: YamlNode): Composer {
 
 function footersOf(entry: YamlEntry, ignoreCase: boolean): RegExp[] {
   if (entry.value.kind !== 'seq' || entry.value.items.length === 0) fail(entry.line, '"footers" must be a non-empty list');
-  return entry.value.items.map((item) => {
-    const text = stringOf(item);
-    if (text === null) fail(item.line, '"footers" entries must be strings');
-    return patternOf(text, ignoreCase, item.line);
-  });
+  return entry.value.items.map((item) => composerString(item, 'footers', item.line, ignoreCase));
 }
 
 function placeholderStyleOf(entry: YamlEntry): 'dim' {
@@ -253,9 +255,19 @@ function chromeOf(node: YamlNode): RegExp[] {
 
 function regexField(entries: YamlEntry[], key: string, line: number, ignoreCase = false): RegExp {
   const entry = required(entries, key, line);
-  const text = stringOf(entry.value);
-  if (text === null) fail(entry.line, `"${key}" must be a string`);
-  return patternOf(text, ignoreCase, entry.line);
+  return composerString(entry.value, key, entry.line, ignoreCase);
+}
+
+// A composer key that reads a pattern string. The dialog shape aims its flag at the one
+// line it sits on; a composer's own patterns — its prompt, rule, footers, status line,
+// suffix — are strings, and the flag among them is refused in words that name the key.
+function composerString(node: YamlNode, key: string, line: number, ignoreCase = false): RegExp {
+  if (node.kind === 'map' && node.entries.some((item) => item.key === 'ignore_case')) {
+    fail(line, `"${key}" cannot ignore case: only a dialog pattern may`);
+  }
+  const text = stringOf(node);
+  if (text === null) fail(line, `"${key}" must be a string`);
+  return patternOf(text, ignoreCase, line);
 }
 
 function patternOf(text: string, ignoreCase: boolean, line: number): RegExp {
