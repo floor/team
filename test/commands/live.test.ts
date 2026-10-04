@@ -648,6 +648,31 @@ describe('team down, live', () => {
     expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is\n');
   });
 
+  test('a pinned Codex permission after the exit text gets no Enter', async () => {
+    const pinned = readScreen(
+      'codex',
+      readFileSync(new URL('../fixtures/codex/0.157.0/permission-pinned.txt', import.meta.url), 'utf8'),
+    );
+    const run = harness({ kind: 'idle' });
+    let screen: Screen = { kind: 'idle' };
+    run.launch.typeText = (_session, _pane, text) => {
+      run.typed.push(text);
+      screen = pinned;
+      return true;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({
+      screen: () => screen,
+      agents: () => [{ ...agent('codex-acme', 'w3:p1', 'idle'), agent: 'codex' }],
+    }));
+    expect(code).toBe(1);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(io.out).toContain('codex-acme: its exit was not typed; left as it is\n');
+  });
+
   test('does not type into a permission prompt', async () => {
     const run = harness({ kind: 'permission' });
     const io = testIo(root, { kind: 'owner' });
