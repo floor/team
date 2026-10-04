@@ -38,7 +38,7 @@ test('an unknown command is an error', async () => {
 test('check is a command of this build', async () => {
   const run = io();
   expect(await main(['check', '--help'], run)).toBe(0);
-  expect(run.out).toStartWith('usage: team check <ref>');
+  expect(run.out).toStartWith('Usage: team check <ref>');
   const help = io();
   await main(['--help'], help);
   expect(help.out).toContain('\n  check\n');
@@ -54,7 +54,7 @@ test('every command of the table takes --help and -h, and prints its usage', asy
       expect(await main([name, flag], run)).toBe(0);
       expect(run.out).toBe(usage);
       const first = run.out.split('\n')[0] ?? '';
-      expect(first).toMatch(new RegExp(`^[Uu]sage: team ${name}\\b`));
+      expect(first).toMatch(new RegExp(`^Usage: team ${name}\\b`));
     }
   }
 });
