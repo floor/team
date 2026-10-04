@@ -43,7 +43,7 @@
         "undocumented": 0
       },
       "trust": {
-        "real": 1,
+        "real": 2,
         "constructed": 0,
         "undocumented": 0
       },
@@ -70,17 +70,17 @@
         "undocumented": 0
       },
       "permission": {
-        "real": 0,
+        "real": 8,
         "constructed": 0,
         "undocumented": 0
       },
       "question": {
-        "real": 0,
+        "real": 4,
         "constructed": 0,
         "undocumented": 0
       },
       "trust": {
-        "real": 1,
+        "real": 4,
         "constructed": 1,
         "undocumented": 0
       },
@@ -154,7 +154,7 @@
         "undocumented": 0
       },
       "trust": {
-        "real": 1,
+        "real": 2,
         "constructed": 0,
         "undocumented": 0
       },
@@ -163,6 +163,18 @@
         "constructed": 0,
         "undocumented": 0
       }
+    }
+  },
+  "notProduced": {
+    "antigravity": {
+      "permission": "behind the trust dialog",
+      "question": "behind the trust dialog"
+    },
+    "claude-code": {},
+    "codex": {},
+    "cursor": {
+      "permission": "behind the trust dialog",
+      "question": "behind the trust dialog"
     }
   },
   "fixtures": [
@@ -206,6 +218,12 @@
       "file": "antigravity/1.2.16/rules-accepted.txt",
       "cli": "antigravity",
       "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/trust-54.txt",
+      "cli": "antigravity",
+      "kind": "trust",
       "provenance": "capture"
     },
     {
@@ -257,7 +275,97 @@
       "provenance": "capture"
     },
     {
+      "file": "claude-code/2.1.289/permission-create-ansi.txt",
+      "cli": "claude-code",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-create-plain.txt",
+      "cli": "claude-code",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-create-wide-ansi.txt",
+      "cli": "claude-code",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-create-wide-plain.txt",
+      "cli": "claude-code",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-plan-wide-ansi.txt",
+      "cli": "claude-code",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-plan-wide-plain.txt",
+      "cli": "claude-code",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-read-wide-ansi.txt",
+      "cli": "claude-code",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/permission-read-wide-plain.txt",
+      "cli": "claude-code",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/question-ansi.txt",
+      "cli": "claude-code",
+      "kind": "question",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/question-plain.txt",
+      "cli": "claude-code",
+      "kind": "question",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/question-wide-ansi.txt",
+      "cli": "claude-code",
+      "kind": "question",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/question-wide-plain.txt",
+      "cli": "claude-code",
+      "kind": "question",
+      "provenance": "capture"
+    },
+    {
       "file": "claude-code/2.1.289/trust-ansi.txt",
+      "cli": "claude-code",
+      "kind": "trust",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/trust-plain.txt",
+      "cli": "claude-code",
+      "kind": "trust",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/trust-wide-ansi.txt",
+      "cli": "claude-code",
+      "kind": "trust",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/trust-wide-plain.txt",
       "cli": "claude-code",
       "kind": "trust",
       "provenance": "capture"
@@ -500,6 +608,12 @@
       "file": "cursor/2026.10.01/thinking.txt",
       "cli": "cursor",
       "kind": "working",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/trust-54.txt",
+      "cli": "cursor",
+      "kind": "trust",
       "provenance": "capture"
     },
     {

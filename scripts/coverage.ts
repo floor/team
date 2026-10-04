@@ -4,6 +4,7 @@
 // transcribed or not captured marks that subject constructed; under a Constructed heading the
 // bullets need no marker. A fixture its README never names is undocumented, not real: the
 // matrix decides which real captures get taken, so an unproven file must never count as one.
+// A README's "Not produced" section names kinds no capture exists for, with the reason.
 //
 //   bun run coverage           prints the matrix
 //   bun run coverage --json    writes contract/capture-coverage.json
@@ -38,11 +39,13 @@ function backticked(text: string): string[] {
   return names;
 }
 
-/** What one README says: the names it marks constructed, and every name it mentions. */
-function readOf(readme: string): { constructed: Set<string>; mentioned: Set<string> } {
+/** What one README says: constructed and mentioned names, and kinds it says were not produced. */
+function readOf(readme: string): { constructed: Set<string>; mentioned: Set<string>; notProduced: Map<Kind, string> } {
   const constructed = new Set<string>();
   const mentioned = new Set<string>();
+  const notProduced = new Map<Kind, string>();
   let inConstructed = false;
+  let inNotProduced = false;
   let bullet = false;
   let block: string[] = [];
   const flush = () => {
@@ -67,6 +70,19 @@ function readOf(readme: string): { constructed: Set<string>; mentioned: Set<stri
       subjects = colon === -1 ? names.slice(0, 1) : backticked(text.slice(0, colon));
     }
     for (const name of subjects) constructed.add(name);
+    if (inNotProduced && /not produced/i.test(text)) {
+      // A Not-produced bullet names the kind it is about (backticked or bare, before the
+      // colon) and says why; the reason is the first clause after "not produced".
+      const colon = text.indexOf(':');
+      const lead = colon === -1 ? text : text.slice(0, colon);
+      const plain = lead.replace(/`[^`]+`/g, ' ');
+      const kinds = KINDS.filter((kind) => lead.includes(`\`${kind}\``) || new RegExp(`\\b${kind}\\b`).test(plain));
+      const tail = colon === -1 ? '' : text.slice(colon + 1).trim();
+      const stripped = tail.replace(/^not produced\s*[:,—-]?\s*/i, '');
+      const cut = /[,;.—]/.exec(stripped);
+      const reason = (cut ? stripped.slice(0, cut.index) : stripped).trim() || 'reason not stated';
+      for (const kind of kinds) notProduced.set(kind, reason);
+    }
     block = [];
   };
   for (const line of readme.split('\n')) {
@@ -75,6 +91,7 @@ function readOf(readme: string): { constructed: Set<string>; mentioned: Set<stri
       flush();
       const title = heading[1] ?? '';
       inConstructed = /constructed/i.test(title);
+      inNotProduced = /not produced/i.test(title);
       // A heading can name its own subject, as "Constructed: `permission-pinned.txt`".
       for (const name of backticked(title)) {
         mentioned.add(name);
@@ -96,7 +113,7 @@ function readOf(readme: string): { constructed: Set<string>; mentioned: Set<stri
     block.push(line);
   }
   flush();
-  return { constructed, mentioned };
+  return { constructed, mentioned, notProduced };
 }
 
 /** The deepest README governing a fixture: its own folder's, or the CLI's above it. */
@@ -109,15 +126,21 @@ function readmeOf(file: string): string {
   throw new Error(`${file}: no README in its folder, so its provenance cannot be read`);
 }
 
-const cache = new Map<string, { constructed: Set<string>; mentioned: Set<string> }>();
-/** Constructed, real, or undocumented — by the fixture's folder's README. */
-function provenanceOf(file: string): Provenance {
+const cache = new Map<string, ReturnType<typeof readOf>>();
+/** What the README governing this fixture says. */
+function readFor(file: string): ReturnType<typeof readOf> {
   const readme = readmeOf(file);
   let read = cache.get(readme);
   if (!read) {
     read = readOf(readFileSync(readme, 'utf8'));
     cache.set(readme, read);
   }
+  return read;
+}
+
+/** Constructed, real, or undocumented — by the fixture's folder's README. */
+function provenanceOf(file: string): Provenance {
+  const read = readFor(file);
   const name = file.split('/').at(-1) ?? '';
   if (read.constructed.has(name)) return 'constructed';
   return read.mentioned.has(name) ? 'capture' : 'undocumented';
@@ -130,6 +153,7 @@ type Cell = { real: number; constructed: number; undocumented: number };
 function matrix(): {
   clis: string[];
   cells: Record<string, Record<Kind, Cell>>;
+  notProduced: Record<string, Record<string, string>>;
   fixtures: { file: string; cli: string; kind: Kind; provenance: Provenance }[];
 } {
   const manifest = JSON.parse(readFileSync(join(fixtures, 'conformance.json'), 'utf8')) as Manifest;
@@ -143,6 +167,8 @@ function matrix(): {
     if (cell === undefined) throw new Error(`${cli} ${kind}: no cell, which cannot happen here`);
     return cell;
   };
+  // Why a kind was never captured, per CLI, from each governing README's Not-produced section.
+  const reasons = new Map<string, Partial<Record<Kind, string>>>();
   const listed: { file: string; cli: string; kind: Kind; provenance: Provenance }[] = [];
   for (const screen of manifest.screens) {
     const kind = screen.classify as Kind;
@@ -150,25 +176,41 @@ function matrix(): {
     const provenance = provenanceOf(screen.file);
     cellOf(screen.cli, kind)[provenance === 'capture' ? 'real' : provenance]++;
     listed.push({ file: screen.file, cli: screen.cli, kind, provenance });
+    const cliReasons = reasons.get(screen.cli) ?? {};
+    for (const [notKind, reason] of readFor(screen.file).notProduced) {
+      if (cliReasons[notKind] === undefined) cliReasons[notKind] = reason;
+    }
+    reasons.set(screen.cli, cliReasons);
+  }
+  const notProduced: Record<string, Record<string, string>> = {};
+  for (const cli of clis) {
+    const source = reasons.get(cli) ?? {};
+    const entry: Record<string, string> = {};
+    for (const kind of KINDS) {
+      const reason = source[kind];
+      if (reason !== undefined) entry[kind] = reason;
+    }
+    notProduced[cli] = entry;
   }
   const byFile = (a: { file: string }, b: { file: string }) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0);
-  return { clis, cells, fixtures: listed.sort(byFile) };
+  return { clis, cells, notProduced, fixtures: listed.sort(byFile) };
 }
 
 /** The checked-in document, byte for byte: sorted, no dates, no paths but the fixtures' own. */
 function document(): string {
-  const { clis, cells, fixtures } = matrix();
-  return `${JSON.stringify({ kind: 'capture-coverage', clis, kinds: KINDS, cells, fixtures }, null, 2)}\n`;
+  const { clis, cells, notProduced, fixtures } = matrix();
+  return `${JSON.stringify({ kind: 'capture-coverage', clis, kinds: KINDS, cells, notProduced, fixtures }, null, 2)}\n`;
 }
 
 /** The matrix a person reads. */
 function table(): string {
-  const { clis, cells } = matrix();
+  const { clis, cells, notProduced } = matrix();
   const cellOf = (cli: string, kind: Kind): Cell => {
     const cell = cells[cli]?.[kind];
     if (cell === undefined) throw new Error(`${cli} ${kind}: no cell, which cannot happen here`);
     return cell;
   };
+  const reasonOf = (cli: string, kind: Kind): string | undefined => notProduced[cli]?.[kind];
   const head = ['cli', 'kind', 'real', 'constructed', 'undocumented'];
   const rows: string[][] = [];
   const empty: string[] = [];
@@ -176,7 +218,14 @@ function table(): string {
     for (const kind of KINDS) {
       const cell = cellOf(cli, kind);
       rows.push([cli, kind, String(cell.real), String(cell.constructed), String(cell.undocumented)]);
-      if (cell.real === 0) empty.push(`${cli} ${kind}${cell.constructed + cell.undocumented === 0 ? ' (no fixtures)' : cell.constructed === 0 ? ' (undocumented only)' : ' (constructed only)'}`);
+      if (cell.real === 0) {
+        const note = cell.constructed > 0
+          ? ' (constructed only)'
+          : reasonOf(cli, kind) !== undefined
+            ? ` (not produced: ${reasonOf(cli, kind)})`
+            : ' (no fixtures)';
+        empty.push(`${cli} ${kind}${note}`);
+      }
     }
   }
   const widths = head.map((_, column) => Math.max(head[column]?.length ?? 0, ...rows.map((row) => row[column]?.length ?? 0)));
