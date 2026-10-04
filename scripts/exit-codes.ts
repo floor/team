@@ -16,8 +16,9 @@
 // A file under `src/commands/` is a command. The gate walks its default export when that
 // export is a function in the file: a default function, a function expression, or a name
 // declared there. A re-export, a default that names an import, and a file with no default
-// are refused. An entry of the `commands` table must load one of those files, and a file
-// the gate walked must be an entry.
+// are refused. The `commands` table and those files are one-to-one: a key equals its
+// module's basename, no two keys load one file, and every file has one key. The contract's
+// command names are those keys. A mismatch names the key and the file.
 //
 // Every `process.exit` and every write to `process.exitCode` under `src/` is scanned, including
 // module scope. A numeric literal is a site and needs a marker. `process.exit()` with no
@@ -63,7 +64,7 @@ const MARKER = /\/\/\s*exit:\s*([a-z0-9]+(?:[.-][a-z0-9]+)*)\s*$/;
 const UNROOTED = "a command file whose default export the contract can't read";
 
 type CommandFile = { command: string; file: string };
-type TableEntry = { line: number; spec: string };
+type TableEntry = { key: string; line: number; spec: string };
 
 export type CheckInput = {
   contractText?: string;
@@ -251,28 +252,44 @@ function commandTable(text: string): TableEntry[] {
       if (!ts.isObjectLiteralExpression(obj)) continue;
       for (const prop of obj.properties) {
         if (!ts.isPropertyAssignment(prop)) continue;
-        out.push({ spec: importSpecOf(prop.initializer) ?? '', line: lineOf(source, prop) });
+        const key = ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name) ? prop.name.text : '';
+        out.push({ key, spec: importSpecOf(prop.initializer) ?? '', line: lineOf(source, prop) });
       }
     }
   }
   return out;
 }
 
+function moduleBase(file: string): string {
+  const slash = file.lastIndexOf('/');
+  const base = slash >= 0 ? file.slice(slash + 1) : file;
+  return base.endsWith('.ts') ? base.slice(0, -3) : base;
+}
+
 function commandFiles(extra?: ReadonlyMap<string, string>): CommandFile[] {
   const names = new Set(
     readdirSync(join(root, 'src', 'commands')).filter((name) => name.endsWith('.ts')),
   );
+  const keysByName = new Map<string, string[]>();
   for (const entry of commandTable(textOf('src/cli.ts', extra))) {
     const target = resolveSpec('src/cli.ts', entry.spec);
     if (!target?.startsWith('src/commands/') || !target.endsWith('.ts')) continue;
     const name = target.slice('src/commands/'.length);
     if (name.includes('/')) continue;
-    if (names.has(name) || extra?.has(target)) names.add(name);
+    if (!names.has(name) && !extra?.has(target)) continue;
+    names.add(name);
+    const keys = keysByName.get(name) ?? [];
+    keys.push(entry.key);
+    keysByName.set(name, keys);
   }
   return [
     { command: 'team', file: 'src/cli.ts' },
     { command: 'conformance-adapter', file: 'src/conformance/adapter.ts' },
-    ...[...names].sort().map((name) => ({ command: name.slice(0, -3), file: `src/commands/${name}` })),
+    ...[...names].sort().map((name) => {
+      const keys = keysByName.get(name) ?? [];
+      const command = keys.length === 1 && keys[0] ? keys[0] : name.slice(0, -3);
+      return { command, file: `src/commands/${name}` };
+    }),
   ];
 }
 
@@ -724,17 +741,30 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
     walkThrows(item.file, func, item.command);
   }
   const discovered = new Set(list.filter((item) => item.file.startsWith('src/commands/')).map((item) => item.file));
-  const tableTargets = new Set<string>();
+  const byFile = new Map<string, TableEntry[]>();
   for (const entry of commandTable(textOf('src/cli.ts', files))) {
     const target = resolveSpec('src/cli.ts', entry.spec);
-    if (target && discovered.has(target)) {
-      tableTargets.add(target);
+    if (!target || !discovered.has(target)) {
+      const shown = target || entry.spec || 'an unreadable module';
+      unreadable.push(`src/cli.ts:${entry.line}: ${entry.key} loads ${shown}: an entry in the commands table whose module the gate didn't walk`);
       continue;
     }
-    unreadable.push(`src/cli.ts:${entry.line}: an entry in the commands table whose module the gate didn't walk`);
+    const group = byFile.get(target) ?? [];
+    group.push(entry);
+    byFile.set(target, group);
+    if (entry.key !== moduleBase(target)) {
+      unreadable.push(`src/cli.ts:${entry.line}: ${entry.key} loads ${target}, and the key is not the module's name`);
+    }
+  }
+  for (const [file, group] of byFile) {
+    if (group.length < 2) continue;
+    const keys = group.map((entry) => entry.key).join(' and ');
+    unreadable.push(`src/cli.ts:${group[0]?.line ?? 1}: ${keys} load ${file}`);
   }
   for (const file of [...walked].sort()) {
-    if (tableTargets.has(file)) continue;
+    const group = byFile.get(file) ?? [];
+    if (group.length === 1 && group[0]?.key === moduleBase(file)) continue;
+    if (group.length > 0) continue;
     const source = load(file);
     const at = source ? exportedFunction(source, 'default') ?? source : source;
     unreadable.push(`${file}:${source && at ? lineOf(source, at) : 1}: a walked file that is in no table entry`);
@@ -863,7 +893,10 @@ export function problems(input: CheckInput = {}): string[] {
   }
   if (render(contract.rows) !== page) out.push('docs/reference/exit-codes.md: differs from the contract');
 
-  const known = new Set(commandFiles(input.files).map((item) => item.command));
+  const known = new Set<string>(['team', 'conformance-adapter']);
+  for (const entry of commandTable(textOf('src/cli.ts', input.files))) {
+    if (entry.key) known.add(entry.key);
+  }
   for (const row of contract.rows) {
     if (!known.has(row.command)) out.push(`contract/exit-codes.json: ${row.command} is not a command`);
   }

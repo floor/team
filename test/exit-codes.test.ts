@@ -1640,7 +1640,7 @@ test('a command file with no default export fails the check', () => {
 test('a table entry outside src/commands fails the check', () => {
   const files = withTable("probe: () => import('./outside.ts'),");
   const found = problems({ files });
-  expect(found.some((line) => line.includes('src/cli.ts:') && line.includes("an entry in the commands table whose module the gate didn't walk"))).toBe(true);
+  expect(found.some((line) => line.includes('probe') && line.includes('src/outside.ts') && line.includes("an entry in the commands table whose module the gate didn't walk"))).toBe(true);
 });
 
 test('a default export imported from another file fails the check', () => {
@@ -1656,4 +1656,20 @@ test('a walked command file missing from the table fails the check', () => {
   const next = text.replace("  add: () => import('./commands/add.ts'),\n", '');
   const found = problems({ files: new Map([['src/cli.ts', next]]) });
   expect(found.some((line) => line.includes('src/commands/add.ts') && line.includes('a walked file that is in no table entry'))).toBe(true);
+});
+
+test('a second table key for one file fails the check', () => {
+  const files = withTable("probe: () => import('./commands/doctor.ts'),");
+  const found = problems({ files });
+  expect(found.some((line) => line.includes('doctor and probe load src/commands/doctor.ts'))).toBe(true);
+});
+
+test('a table key that is not the module name fails the check', () => {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const next = text.replace(
+    "  doctor: () => import('./commands/doctor.ts'),\n",
+    "  medic: () => import('./commands/doctor.ts'),\n",
+  );
+  const found = problems({ files: new Map([['src/cli.ts', next]]) });
+  expect(found.some((line) => line.includes('medic loads src/commands/doctor.ts'))).toBe(true);
 });
