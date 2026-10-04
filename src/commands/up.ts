@@ -136,19 +136,24 @@ export const USAGE = 'Usage: team up [--dry-run] [--session <name>] [--file <pat
 export const up: Command = (argv, io) => runUp(argv, io, realSources);
 export default up;
 
-/** The rules one seat gets at launch, with its own signature lines. */
+/** The rules one seat gets at launch, with its own signature lines, as its delivery carries them. */
 export function rulesOf(team: TeamFile, seat: Seat): string {
   const { commits, pullRequests } = team.identity.signature;
-  return rulesText({
-    coordinator: team.coordinator,
-    rules: team.rules,
-    signature: {
-      commit: renderSignature(commits.template, seat),
-      pullRequest: renderSignature(pullRequests.template, seat),
-      commitPosition: commits.position,
+  const profile = profileFor(seat.cli);
+  const delivery = profile && profile.rulesOption !== null ? 'option' : 'message';
+  return rulesText(
+    {
+      coordinator: team.coordinator,
+      rules: team.rules,
+      signature: {
+        commit: renderSignature(commits.template, seat),
+        pullRequest: renderSignature(pullRequests.template, seat),
+        commitPosition: commits.position,
+      },
+      workspace: { mode: seat.mode, protected: team.workspace.protected, branch: team.workspace.branch },
     },
-    workspace: { mode: seat.mode, protected: team.workspace.protected, branch: team.workspace.branch },
-  });
+    delivery,
+  );
 }
 
 function resolveState(sources: UpSources, session: string): SessionState | null {
