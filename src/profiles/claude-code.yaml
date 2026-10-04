@@ -90,6 +90,10 @@ screen:
     mode: box-to-rule
     prompt: '^\s*[❯›>]'
     rule: '^\s*[─━]{8,}'
+    # Claude Code greys every suggestion it shows — "Try …", "Resume briefly.", any other —
+    # with faint styling, while typed text carries none. The list below stays the fallback
+    # for a source without styling.
+    placeholder_style: dim
     placeholders:
       - equals: ''
       - prefix: 'Try "'

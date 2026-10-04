@@ -1,3 +1,5 @@
+import { reportedLiveAgent } from './agent.ts';
+import { profileFor } from '../profiles/index.ts';
 import { classifyComposer, readFold, readScreen, type Fold } from '../watch/screen.ts';
 
 export interface Delivery {
@@ -5,6 +7,8 @@ export interface Delivery {
   status(): string | null;
   type(text: string): boolean;
   enter(): boolean;
+  /** Foreground argv0 names, or null when the pane can't be read. */
+  foreground(): string[] | null;
   now(): number;
   sleep(ms: number): Promise<void>;
 }
@@ -49,8 +53,11 @@ function boxState(cli: string, text: string, screen: string | undefined): 'ready
 }
 
 /** A first message is accepted only after working is observed with the composer empty again. */
-export async function deliverRules(cli: string, text: string, seconds: number, io: Delivery): Promise<boolean> {
+export async function deliverRules(cli: string, text: string, seconds: number, io: Delivery): Promise<boolean | 'no-agent'> {
+  const names = profileFor(cli)?.processNames ?? [];
+  const live = () => reportedLiveAgent(io.foreground(), names);
   const free = () => ['idle', 'done'].includes(io.status() ?? '');
+  if (!live()) return 'no-agent';
   if (!free() || readScreen(cli, io.screen()).kind !== 'idle' || !io.type(text)) return false;
   const deadline = io.now() + seconds * 1000;
   // Terminal rendering can lag send-text. Never press Enter until the box is verified to hold the
@@ -65,8 +72,10 @@ export async function deliverRules(cli: string, text: string, seconds: number, i
     await io.sleep(100);
     if (io.now() <= before) return false;
   }
-  // Re-read immediately before Enter; a dialog that appeared after the paste gets no key, and a
-  // folded box that no longer matches the text gets none either.
+  // Re-read immediately before Enter. The agent is asked again: it may have exited since the
+  // paste, and a dialog that appeared gets no key; a folded box that no longer matches the text
+  // gets none either.
+  if (!live()) return 'no-agent';
   if (!free() || boxState(cli, text, io.screen()) !== 'ready' || !io.enter()) return false;
   for (;;) {
     const status = io.status();

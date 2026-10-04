@@ -1,0 +1,6 @@
+The last answer drew a rule.
+
+────────────────────────────────────────
+Goodbye.
+~/acme % ls
+❯ 

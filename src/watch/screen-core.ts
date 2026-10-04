@@ -1,10 +1,11 @@
 // The screen core. Stage order, dialog primitives, the four composer modes and the
 // safety floor live here, never in a profile. A profile is data: it can add a
 // pattern, and it cannot move a stage or turn the floor off.
+import { allDimAfter, hasSgr, stripSgr } from '../ansi.ts';
 import type { Screen } from './screen.ts';
 import type { LinePattern, Rule, ScreenData } from './screen-data.ts';
 
-export type { Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage } from './screen-data.ts';
+export type { Composer, FallbackRule, LinePattern, Placeholder, PlaceholderStyle, Rule, ScreenData, Stage } from './screen-data.ts';
 
 const BUDGET_MS = 100;
 
@@ -91,12 +92,20 @@ export function foldOf(data: ScreenData, lines: string[]): Fold | null {
 
 type Hit = { kind: Screen['kind']; from: number; input: number } | { kind: 'unknown' } | { kind: 'stop' };
 
+/** `lines` is already the window: the last 20 lines, each keeping any ANSI styling. Matching
+ *  runs on each line's plain form, trimmed at the end; the styled form is kept for the one
+ *  question styling can answer, whether the composer's input line is all dim. */
+function plainLines(lines: string[]): string[] {
+  return lines.map((line) => stripSgr(line).trimEnd());
+}
+
 /** `lines` is already the window: the last 20 lines, each trimmed at the end. */
 export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClock): Screen {
   const now = clock?.now ?? Date.now;
   const budget = clock?.budgetMs ?? BUDGET_MS;
   const start = now();
   const tick = () => now() - start > budget;
+  const plain = plainLines(lines);
   const order: [Screen['kind'], ScreenData['trust']][] = [
     ['unknown', data.unknown],
     ['trust', data.trust],
@@ -107,15 +116,15 @@ export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClo
   for (const [kind, stage] of order) {
     if (!stage) continue;
     for (const rule of stage.rules) {
-      const hit = ruleMatches(data, lines, rule, tick);
+      const hit = ruleMatches(data, plain, rule, tick);
       if (hit === 'stop') return { kind: 'unknown' };
       if (hit) return { kind };
     }
   }
-  const composed = compose(data, lines, tick);
+  const composed = compose(data, plain, lines, tick);
   if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
   if (composed.kind !== 'idle' && composed.kind !== 'unsent') return { kind: composed.kind };
-  const marked = floorHits(lines, composed.from, composed.input, data.chrome, tick);
+  const marked = floorHits(plain, composed.from, composed.input, data.chrome, tick);
   if (marked === 'stop' || marked) return { kind: 'unknown' };
   return { kind: composed.kind };
 }
@@ -129,17 +138,18 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
   const budget = clock?.budgetMs ?? BUDGET_MS;
   const start = now();
   const tick = () => now() - start > budget;
+  const plain = plainLines(lines);
   if (data.unknown) {
     for (const rule of data.unknown.rules) {
-      const hit = ruleMatches(data, lines, rule, tick);
+      const hit = ruleMatches(data, plain, rule, tick);
       if (hit === 'stop') return { kind: 'unknown' };
       if (hit) return { kind: 'unknown' };
     }
   }
-  const composed = compose(data, lines, tick);
+  const composed = compose(data, plain, lines, tick);
   if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
   if (composed.kind !== 'idle' && composed.kind !== 'unsent') return { kind: composed.kind };
-  const marked = floorHits(lines, composed.from, composed.input, data.chrome, tick);
+  const marked = floorHits(plain, composed.from, composed.input, data.chrome, tick);
   if (marked === 'stop' || marked) return { kind: 'unknown' };
   return { kind: composed.kind };
 }
@@ -235,33 +245,58 @@ function matches(line: string, pattern: LinePattern, tick: () => boolean): boole
   return true;
 }
 
-function compose(data: ScreenData, lines: string[], tick: () => boolean): Hit {
+/** `plain` is the window's plain form; `styled` the window itself, for the input line's dim question. */
+function compose(data: ScreenData, plain: string[], styled: string[], tick: () => boolean): Hit {
   const composer = data.composer;
-  if (composer.mode === 'box-to-rule') return boxToRule(lines, composer, tick);
-  if (composer.mode === 'status-last') return statusLast(lines, composer, tick, false);
-  if (composer.mode === 'status-then-one') return statusThenOne(lines, composer, tick);
-  return twoRules(lines, composer, tick);
+  if (composer.mode === 'box-to-rule') return boxToRule(plain, styled, composer, tick);
+  if (composer.mode === 'status-last') return statusLast(plain, styled, composer, tick, false);
+  if (composer.mode === 'status-then-one') return statusThenOne(plain, styled, composer, tick);
+  return twoRules(plain, styled, composer, tick);
 }
 
-function boxToRule(lines: string[], composer: Extract<ScreenData['composer'], { mode: 'box-to-rule' }>, tick: () => boolean): Hit {
+function boxToRule(lines: string[], styled: string[], composer: Extract<ScreenData['composer'], { mode: 'box-to-rule' }>, tick: () => boolean): Hit {
   let input = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
     if (tick()) return { kind: 'stop' };
     if (composer.prompt.test(lines[i] ?? '')) { input = i; break; }
   }
   if (input < 0) return { kind: 'unknown' };
-  const from = boundaryBefore(lines, input, composer.rule);
+  // The frame is the box itself: a closing rule under this prompt. A rule anywhere
+  // above, or a rule with shell output under it, is not the box. A shell's last
+  // prompt never has that closing rule.
+  let close = -1;
   for (let i = input + 1; i < lines.length; i++) {
     if (tick()) return { kind: 'stop' };
-    if (composer.rule.test(lines[i] ?? '')) break;
+    if (composer.rule.test(lines[i] ?? '')) { close = i; break; }
+  }
+  if (close < 0) return { kind: 'unknown' };
+  const above = input > 0 && composer.rule.test(lines[input - 1] ?? '');
+  let footer = false;
+  for (let j = close + 1; j < lines.length; j++) {
+    if (tick()) return { kind: 'stop' };
+    if (statusFooter(lines[j] ?? '')) { footer = true; break; }
+  }
+  // The opening rule on the line directly above, or the status footer when that
+  // rule has scrolled out of the window.
+  if (!above && !footer) return { kind: 'unknown' };
+  const from = above ? input - 1 : input;
+  for (let i = input + 1; i < close; i++) {
     if ((lines[i] ?? '').trim()) return { kind: 'unsent', from, input };
   }
   const typed = (lines[input] ?? '').replace(composer.prompt, '').trim();
-  return { kind: placeholder(typed, composer.placeholders) ? 'idle' : 'unsent', from, input };
+  return { kind: placeholder(typed, composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from, input };
+}
+
+// The composer footer, not a line of shell output under a stray rule. The model
+// row uses a middot; the permissions line is the other footer.
+function statusFooter(line: string): boolean {
+  const text = line.trim();
+  return text.includes('·') || /bypass permissions/i.test(text);
 }
 
 function statusLast(
   lines: string[],
+  styled: string[],
   composer: Extract<ScreenData['composer'], { mode: 'status-last' | 'status-then-one' }>,
   tick: () => boolean,
   allowOneTrailing: boolean,
@@ -273,11 +308,11 @@ function statusLast(
   while (input >= 0 && !composer.prompt.test(lines[input] ?? '')) input--;
   if (input < 0) return { kind: 'unknown' };
   for (let i = input + 1; i < status; i++) if ((lines[i] ?? '').trim()) return { kind: 'unsent', from: input, input };
-  return { kind: placeholder(stripTyped(lines[input] ?? '', composer), composer.placeholders) ? 'idle' : 'unsent', from: input, input };
+  return { kind: placeholder(stripTyped(lines[input] ?? '', composer), composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from: input, input };
 }
 
-function statusThenOne(lines: string[], composer: Extract<ScreenData['composer'], { mode: 'status-then-one' }>, tick: () => boolean): Hit {
-  const found = statusLast(lines, composer, tick, true);
+function statusThenOne(lines: string[], styled: string[], composer: Extract<ScreenData['composer'], { mode: 'status-then-one' }>, tick: () => boolean): Hit {
+  const found = statusLast(lines, styled, composer, tick, true);
   if (found.kind !== 'unknown') return found;
   // No status line: the fallback rules decide. Anything they don't name is unknown.
   const hasStatus = lines.some((line) => composer.statusLine.test(line));
@@ -299,7 +334,7 @@ function statusThenOne(lines: string[], composer: Extract<ScreenData['composer']
   return { kind: 'unknown' };
 }
 
-function twoRules(lines: string[], composer: Extract<ScreenData['composer'], { mode: 'two-rules-footer-below' }>, tick: () => boolean): Hit {
+function twoRules(lines: string[], styled: string[], composer: Extract<ScreenData['composer'], { mode: 'two-rules-footer-below' }>, tick: () => boolean): Hit {
   let bottom = -1;
   let top = -1;
   let input = -1;
@@ -320,12 +355,7 @@ function twoRules(lines: string[], composer: Extract<ScreenData['composer'], { m
   if (!footer) return { kind: 'unknown' };
   if (lines.slice(input + 1, bottom).some((line) => line.trim())) return { kind: 'unsent', from: top, input };
   const typed = (lines[input] ?? '').replace(composer.prompt, '').trim();
-  return { kind: placeholder(typed, composer.placeholders) ? 'idle' : 'unsent', from: top, input };
-}
-
-function boundaryBefore(lines: string[], input: number, rule: RegExp): number {
-  for (let i = input - 1; i >= 0; i--) if (rule.test(lines[i] ?? '')) return i;
-  return input;
+  return { kind: placeholder(typed, composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from: top, input };
 }
 
 function stripTyped(line: string, composer: { prompt: RegExp; stripSuffix?: RegExp | null }): string {
@@ -333,8 +363,23 @@ function stripTyped(line: string, composer: { prompt: RegExp; stripSuffix?: RegE
   return stripped.trim();
 }
 
-function placeholder(typed: string, list: ScreenData['composer']['placeholders']): boolean {
-  return list.some((entry) => ('equals' in entry ? typed === entry.equals : typed.startsWith(entry.prefix)));
+// A placeholder, not text. When the composer says its suggestions render dim and the input
+// line carries any styling at all, the styling decides alone: all faint past the prompt is a
+// greyed suggestion, anything else is text — the list is not asked, so no suggestion's
+// styling can lend its words to typed characters after it. A line without styling (a plain
+// read, an old herdr) leaves the list to decide, as does a composer without the style.
+function placeholder(
+  typed: string,
+  composer: { prompt: RegExp; placeholders: ScreenData['composer']['placeholders']; placeholderStyle?: ScreenData['composer']['placeholderStyle'] },
+  plainLine: string,
+  styledLine: string | undefined,
+): boolean {
+  if (composer.placeholderStyle === 'dim' && styledLine !== undefined && hasSgr(styledLine)) {
+    const hit = composer.prompt.exec(plainLine);
+    const skip = hit === null ? 0 : plainLine.slice(0, hit.index + hit[0].length).replace(/\s/g, '').length;
+    return allDimAfter(styledLine, skip);
+  }
+  return composer.placeholders.some((entry) => ('equals' in entry ? typed === entry.equals : typed.startsWith(entry.prefix)));
 }
 
 function floorHits(lines: string[], from: number, input: number, chrome: RegExp[], tick: () => boolean): boolean | 'stop' {

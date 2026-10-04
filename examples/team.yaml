@@ -49,6 +49,7 @@ seats:
     label: codex
     cli: codex
     vendor: openai
+    account: openai-team       # the seat's account, when one vendor has two; absent, its vendor
     model: GPT Comet
     version: "3"
     display: GPT-3 Comet       # the vendor's spelling, for the signature
@@ -74,3 +75,10 @@ seats:
     version: "1"
     launch: nimbus-claude      # a launcher on the PATH, holding the account's key and endpoint
     count: 3
+
+budgets:                      # the owner's: what is budgeted, and how long a figure stays fresh
+  accounts:
+    openai-team:              # the account codex-beacon spends
+      kind: subscription
+      reserve: 20%            # refuse a launch on a figure inside it
+      sources: [status_line]  # Codex's status line carries its weekly figure

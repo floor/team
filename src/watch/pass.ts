@@ -2,10 +2,12 @@
 // runs the registered checks in the order it owns, applies the report-once rule, and dials the
 // nudge. A check never reads herdr, a screen or the file itself — only the observation it is
 // handed (RFC 0002 § 4.2).
+import { seatNamed } from '../approve/fingerprint.ts';
 import { observe, observeCheck, type Seen } from '../budgets/readings.ts';
 import type { CheckOutcome } from '../budgets/run.ts';
 import type { TeamFile } from '../file/types.ts';
-import { quotaFor } from '../profiles/profile.ts';
+import { reportedLiveAgent } from '../launch/agent.ts';
+import { profileFor, quotaFor } from '../profiles/profile.ts';
 import { figuresOf, type QuotaFigure } from '../profiles/quota.ts';
 import type { SessionState } from '../state.ts';
 import type { Live } from '../status/compare.ts';
@@ -93,9 +95,13 @@ function attentionOf(screen: Screen, status: string, quiet: boolean): Attention 
 
 // The figures off a seat's own pane: only a composer screen — idle, unsent or working — shows a
 // status row at all, and only that row's line is read. A dialog, a question, a trust screen or an
-// unknown one gives no figures, and neither does a line the seat printed or typed.
-function quotaOf(cli: string, screen: Screen, pane: string | undefined): QuotaFigure[] {
-  if (pane === undefined) return [];
+// unknown one gives no figures, and neither does a line the seat printed or typed. And only a
+// pane where herdr reports the seat's CLI still running: a shell's last row is a last row by
+// position, not a status row, and a pane herdr could not read gives none either — no figure is
+// invented where the CLI was not seen. (`down` and `remove` read that same null the other way at
+// their departure wait; not knowing must not end a wait.)
+function quotaOf(cli: string, screen: Screen, pane: string | undefined, runs: boolean): QuotaFigure[] {
+  if (pane === undefined || !runs) return [];
   if (screen.kind !== 'idle' && screen.kind !== 'unsent' && screen.kind !== 'working') return [];
   return figuresOf(quotaFor(cli), statusRow(cli, pane));
 }
@@ -107,7 +113,11 @@ function quotaOf(cli: string, screen: Screen, pane: string | undefined): QuotaFi
 // defaults while the file's own are not approved — and the checks read those, never the file's.
 // `outcomes` is what the accounts' check commands read outside the pass, when the watch last ran
 // them. `readings` is the project's stored cache, recalled by the caller; this pass folds its
-// figures into it, whatever session they were seen in (§ 4.4).
+// figures into it, whatever session they were seen in (§ 4.4). `foreground` is herdr's
+// process-info per pane: the pane's foreground process names, or null where herdr could not be
+// read. Only a pane it reports the seat's CLI in gives a figure — a null, or a pane the map
+// doesn't hold, gives none; the departure wait (`paneStillRunning`) reads that same null the
+// other way, keeping its wait.
 export type PassInput = {
   team: TeamFile;
   state: SessionState;
@@ -120,6 +130,7 @@ export type PassInput = {
   outcomes?: readonly CheckOutcome[];
   budgets?: TeamFile['budgets'];
   readings?: readonly Seen[];
+  foreground?: Readonly<Record<string, readonly string[] | null>>;
 };
 
 // One pass of the watch. Pure: it reads what it is handed and changes only `memory`.
@@ -135,6 +146,7 @@ export function pass({
   outcomes = [],
   budgets = team.budgets,
   readings: stored = [],
+  foreground,
 }: PassInput): PassResult {
   const reports: Report[] = [];
   const current = new Set<string>();
@@ -157,6 +169,7 @@ export function pass({
       name: seat.name,
       cli: seat.cli,
       vendor: seat.vendor,
+      account: seat.account ?? seat.vendor,
       parked: seat.parked || seat.stopped,
       stopped: seat.stopped,
       seat,
@@ -164,11 +177,19 @@ export function pass({
     ...Object.entries(state.seats).filter(([, recorded]) => recorded.temporary).map(([name, recorded]) => {
       // A temporary seat signs like the seat it is like: its CLI, and its account.
       const like = team.seats.find((seat) => seat.name === recorded.temporary?.like);
-      return { name, cli: like?.cli ?? '', vendor: like?.vendor ?? '', parked: false, stopped: false, seat: undefined };
+      return {
+        name,
+        cli: like?.cli ?? '',
+        vendor: like?.vendor ?? '',
+        account: like?.account ?? like?.vendor ?? '',
+        parked: false,
+        stopped: false,
+        seat: undefined,
+      };
     }),
   ];
 
-  for (const { name, cli, vendor, parked, stopped, seat } of seats) {
+  for (const { name, cli, vendor, account, parked, stopped, seat } of seats) {
     const agent = live.agents.find((candidate) => candidate.name === name);
     const lead = name === team.coordinator || name === team.operator;
     if (!agent) {
@@ -181,6 +202,7 @@ export function pass({
         screen: { kind: 'unknown' },
         cli,
         vendor,
+        account,
         quota: [],
         running: false,
         quiet: false,
@@ -223,7 +245,8 @@ export function pass({
       screen,
       cli,
       vendor,
-      quota: quotaOf(cli, screen, pane),
+      account,
+      quota: quotaOf(cli, screen, pane, reportedLiveAgent(foreground?.[agent.pane] ?? null, profileFor(cli)?.processNames ?? [])),
       running: true,
       quiet,
       working,
@@ -239,13 +262,26 @@ export function pass({
 
   // The figures this pass saw, folded into the readings the project keeps (§ 4.3, § 4.4). Only an
   // account whose `sources` name `status_line` takes a screen reading: a check-only account never
-  // records one here, and neither does an account the budgets in force don't name (#50).
+  // records one here, and neither does an account the budgets in force don't name (#50). A figure
+  // names the account its pattern measures (§ 3b): one that measures this seat's vendor is this
+  // seat's account — its own `account:` when the file names one, so two accounts of one vendor
+  // keep two buckets — while a figure on another account (a launcher showing the vendor it really
+  // runs on) stays that account's, whichever seat's screen showed it.
+  //
+  // A seat the approval lists as changed — or as not in the approved file — is drift, and its
+  // figures are read as they are but none is folded: an unapproved edit to its `account:` must
+  // not move its figure into another account's bucket, where `up` and `add` would count it.
+  // Nothing is saved for that seat until the owner approves.
+  const drift = new Set(
+    (Array.isArray(approval) ? approval : []).map(seatNamed).filter((name): name is string => name !== null),
+  );
   let readings = stored.slice();
   for (const seat of observations) {
-    if (!seat.running) continue;
+    if (!seat.running || drift.has(seat.name)) continue;
     for (const figure of seat.quota) {
-      if (budgets.accounts[figure.account]?.sources.includes('status_line')) {
-        readings = observe(readings, figure, seat.name, now);
+      const account = figure.account === seat.vendor ? seat.account : figure.account;
+      if (budgets.accounts[account]?.sources.includes('status_line')) {
+        readings = observe(readings, { ...figure, account }, seat.name, now);
       }
     }
   }

@@ -1,0 +1,39 @@
+{
+  "process_info": {
+    "foreground_process_group_id": 41283,
+    "foreground_processes": [
+      {
+        "argv": [
+          "caffeinate",
+          "<arg withheld>",
+          "<arg withheld>",
+          "<arg withheld>"
+        ],
+        "argv0": "caffeinate",
+        "cmdline": "<withheld: may carry secrets>",
+        "cwd": "/home/owner/project",
+        "name": "caffeinate",
+        "pid": 24787
+      },
+      {
+        "argv": [
+          "claude",
+          "<arg withheld>",
+          "<arg withheld>",
+          "<arg withheld>",
+          "<arg withheld>",
+          "<arg withheld>",
+          "<arg withheld>"
+        ],
+        "argv0": "claude",
+        "cmdline": "<withheld: may carry secrets>",
+        "cwd": "/home/owner/project",
+        "name": "2.1.289",
+        "pid": 41283
+      }
+    ],
+    "pane_id": "w0:p1",
+    "shell_pid": 41283
+  },
+  "type": "pane_process_info"
+}

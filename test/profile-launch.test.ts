@@ -162,7 +162,7 @@ describe('launch data through the profile files', () => {
       if (!profile) throw new Error(cli);
       same(`${cli} command`, launchCommand(profile, launch, rules), expected);
     }
-    const claudeScreen = '❯\n────\n  main · …/floor/docs · Opus 5.5 · S: $5.8\n';
+    const claudeScreen = `❯\n${'─'.repeat(40)}\n  main · …/floor/docs · Opus 5.5 · S: $5.8\n`;
     same('claude-code status', runningModel('claude-code', claudeScreen), mainRunning('claude-code', claudeScreen));
     same('claude-code bare', runningModel('claude-code', 'Do you want to proceed?\n1. Yes\n'), null);
     same('codex prose', runningModel('codex', 'GPT-6-Sol high'), null);

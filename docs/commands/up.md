@@ -77,6 +77,9 @@ A seat that doesn't get there is printed once with what stopped it, and `up` exi
 | `<seat>: <account> is unknown` | the account is in the file and its figure is unknown — a subscription with no counted reading, including a stale one with no reset time, or a spend account whose money reading is missing, older than `budgets.stale_after`, or in another currency than the floor's; the seat still starts |
 | `<seat>: <account>: first sight only, not yet counted` | the account's only readings are unconfirmed; the seat still starts |
 
+`<account>` in these lines is the seat's own account: its `account:` when the file names one, its
+`vendor` when it doesn't.
+
 The plan a `--dry-run` prints is also what `team down --dry-run` prints: `+ <command>` for a command
 that would run, a `    (<note>)` line under one that carries a note, `  wait <text>` for a wait,
 `  skip <text>` for a seat left out, and `dry run: nothing was run` at the end. A seat a stored
@@ -85,7 +88,9 @@ in the commands. The words after `would refuse:` are the same as the words after
 already running keeps its setup, with that reading in a note. A seat whose account is unknown
 carries `(<account> is unknown; would launch)` under its first command. A first sight carries
 `(<account>: first sight only, not yet counted; would launch)`. A launch carries the seat's rules,
-so its line is long.
+so its line is long. Rules delivered as a launch option (claude-code) close with `These are standing
+rules, not a task.`; rules typed as a first message (codex, cursor and antigravity) close with
+`These are standing rules, not a task: reply ready and wait for your brief.`
 
 ## Refusals
 

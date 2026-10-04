@@ -24,7 +24,8 @@ the default session had nine agents before and after. Config and auth hashes wer
   multi-line paste: the box's top rule, `↑ 19 more lines`, the last three rows of the text, the
   bottom rule, the model footer. The rows are the rules message `test/launch/antigravity.test.ts`
   names, hard-wrapped at 54 columns (a line longer than the width split into width-sized chunks,
-  no word wrapping): 22 rows, 19 hidden. The header block is copied from `unsent.txt`.
+  no word wrapping): 24 rows, 21 hidden. The tail is the worktree line's last row and the closing
+  line, which the rules text gained in 0.1.2. The header block is copied from `unsent.txt`.
 
 Paths, user email, plan, and conversation UUID are replaced with placeholders. Shell launch scrollback
 before Antigravity's header banner is removed. All other visible text is retained, including the

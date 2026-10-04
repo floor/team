@@ -14,7 +14,7 @@ import { storePath, writeApproval } from '../../src/store/store.ts';
 import { testIo } from '../helpers.ts';
 
 const NOW = new Date('2026-10-04T09:00:00Z');
-const IDLE = '❯ \n';
+const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
 const FILE = ['--file', '.agents/team.yaml'];
 const OWNER = { kind: 'owner' } as const;
 
@@ -125,6 +125,7 @@ function world(): {
     closeWorkspace: () => true,
     agentPanes: () => [...panes].filter(([, pane]) => pane.agent).map(([id]) => id),
     paneText: (_session, pane) => panes.get(pane)?.text ?? '',
+    foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
     sleep: async (ms) => {
       clock += ms;
     },

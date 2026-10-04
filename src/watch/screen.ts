@@ -1,6 +1,9 @@
 // What a pane's visible text shows, read against the shapes of its CLI. A screen that matches no
 // shape is "unknown": never ready, never idle, and never grounds for typing anything.
+// The text may keep its ANSI styling, as `herdr pane read --format ansi` reads it: matching
+// runs on the plain form, and the styling tells a greyed suggestion from typed text.
 import { readFileSync } from 'node:fs';
+import { stripSgr } from '../ansi.ts';
 import { classifyLines, composeLines, foldOf, statusRowOf, type Fold } from './screen-core.ts';
 import type { ScreenData } from './screen-data.ts';
 import { loadScreen } from './screen-file.ts';
@@ -28,7 +31,8 @@ const DATA: Record<string, ScreenData> = {
   antigravity: load('antigravity'),
 };
 
-// The window every pattern sees: the pane's last 20 lines, each trimmed at the end.
+// The window every pattern sees: the pane's last 20 lines. Styled lines are trimmed only past
+// their last escape; the core trims each line's plain form for matching.
 function windowOf(lines: string[]): string[] {
   return lines.map((line) => line.trimEnd()).slice(-20);
 }
@@ -61,10 +65,11 @@ export function readFold(cli: string, screen: string | undefined): Fold | null {
 }
 
 /** The one line a quota figure may come from: the composer's own status row, in the pane's last
- * 20 lines. Null for a CLI with no status line, and for a window that shows no status row — a
- * dialog, a question, a trust screen, a shell or an unknown one reads no figures. */
+ * 20 lines, read plain — a figure is never styled. Null for a CLI with no status line, and for
+ * a window that shows no status row — a dialog, a question, a trust screen, a shell or an
+ * unknown one reads no figures. */
 export function statusRow(cli: string, screen: string | undefined): string | null {
   const data = DATA[cli];
   if (data === undefined || screen === undefined) return null;
-  return statusRowOf(data, windowOf(screen.split('\n')));
+  return statusRowOf(data, windowOf(stripSgr(screen).split('\n')));
 }

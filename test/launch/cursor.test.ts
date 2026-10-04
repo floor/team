@@ -168,6 +168,7 @@ function delivery(initial = 'idle') {
     status: () => status,
     type(text) { calls.push(text); shown = 'unsent'; return true; },
     enter() { calls.push('Enter'); shown = 'working'; status = 'working'; return true; },
+    foreground: () => ['cursor-agent'],
     now: () => clock,
     sleep: async (ms) => { clock += ms; },
   };

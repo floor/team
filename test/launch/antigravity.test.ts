@@ -104,6 +104,7 @@ function delivery(initial = 'idle') {
     status: () => status,
     type(text) { calls.push(text); shown = 'unsent'; return true; },
     enter() { calls.push('Enter'); shown = 'working'; status = 'working'; return true; },
+    foreground: () => ['agy'],
     now: () => clock,
     sleep: async (ms) => { clock += ms; },
   };
@@ -180,7 +181,7 @@ const RULES_INPUT: RulesInput = {
   },
   workspace: { mode: 'worktree', protected: [], branch: 'fix/agy-rules-fold' },
 };
-const RULES = rulesText(RULES_INPUT);
+const RULES = rulesText(RULES_INPUT, 'message');
 
 /** A pane idle before the paste, the given folded pane after it, working after Enter. */
 function foldedPane(edit: (screen: string) => string = (screen) => screen) {
@@ -201,7 +202,7 @@ describe('Antigravity folded rules paste', () => {
   });
 
   test('the prompt-marked fold reads unsent, and is verified the same way', async () => {
-    const marked = (screen: string) => screen.replace('↑ 19 more lines', '> ↑ 19 more lines');
+    const marked = (screen: string) => screen.replace('↑ 21 more lines', '> ↑ 21 more lines');
     expect(readScreen('antigravity', marked(fixture('folded-rules'))).kind).toBe('unsent');
     const d = foldedPane(marked);
     expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(true);
@@ -210,13 +211,13 @@ describe('Antigravity folded rules paste', () => {
 
   test('a prompt-marked fold with a wrong count gets no Enter', async () => {
     // Before the fold was read, this box only had to read `unsent` to be submitted unverified.
-    const d = foldedPane((screen) => screen.replace('↑ 19 more lines', '> ↑ 20 more lines'));
+    const d = foldedPane((screen) => screen.replace('↑ 21 more lines', '> ↑ 22 more lines'));
     expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
     expect(d.calls).toEqual([RULES]);
   });
 
   test('a fold whose hidden count does not close the gap gets no Enter', async () => {
-    const d = foldedPane((screen) => screen.replace('↑ 19 more lines', '↑ 20 more lines'));
+    const d = foldedPane((screen) => screen.replace('↑ 21 more lines', '↑ 22 more lines'));
     expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
     expect(d.calls).toEqual([RULES]);
   });

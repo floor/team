@@ -18,7 +18,7 @@ Node 22 or later runs the built command.
 
 ```sh
 npm install -g team       # or run it without installing: npx team
-team --version            # 0.1.1
+team --version            # 0.1.2
 ```
 
 ## The file is private to each clone
@@ -48,7 +48,10 @@ identity:
       position: trailer       # last-line | trailer | anywhere
       exempt: [merge]         # merge commits need no signature
 
-rules:                        # lines added to every seat's rules at launch
+rules:                        # lines added to every seat's rules at launch. Rules delivered as a launch
+                              # option (claude-code) close with "These are standing rules, not a task.";
+                              # rules typed as a first message (codex, cursor, antigravity) close with
+                              # "These are standing rules, not a task: reply ready and wait for your brief."
   - Run the tests your change touches, not the whole suite.
 
 workspace:
@@ -67,6 +70,7 @@ seats:
     name: codex-hello
     cli: codex
     vendor: openai
+    account: openai-hello     # the seat's account, when one vendor has two; absent, its vendor
     model: GPT Sol
     version: "6"
     display: GPT-6 Sol        # the vendor's spelling, for the signature
@@ -91,6 +95,13 @@ seats:
     version: "4.7"
     launch: grok --model grok-4.7
     stopped: true             # kept in the file; `up` doesn't start it
+
+budgets:                      # the owner's: reserve or floor per account, marks, freshness
+  accounts:
+    openai-hello:             # the account codex-hello spends
+      kind: subscription
+      reserve: 10%            # refuse a launch on a figure inside it
+      sources: [status_line]  # the figure comes off Codex's status line
 ```
 
 - `session` names the herdr session and defaults to `project`; `--session` overrides it.
@@ -104,6 +115,8 @@ seats:
   and session links are always refused.
 - `seats[*].cli` picks the launch profile; `claude-code`, `codex`, `cursor` and `antigravity` are available, and `team
   doctor` says what the others still need. `vendor`, `model` and `version` spell one seat's model.
+  `account` names the budget account the seat spends when one vendor has two; without it, the seat
+  spends its `vendor`, and changing either is an edit the owner re-approves.
 - `launch` is the plain command, without approval flags: the profile adds them. `count: 2` makes the
   numbered names; `parked` keeps a seat out of idle reports, `stopped` keeps it out of `up`.
 - `workspace.mode` is `shared` (every seat in the project) or `worktree` (each task in its own
@@ -134,7 +147,9 @@ under ~/.cursor/projects for that folder; team writes no trust (.workspace-trust
 config.
 
 `budgets` is the owner's: marks (percent used), how long a figure stays fresh, and each
-account's reserve or floor. A `check` command is resolved to a file and hashed when the
+account's reserve or floor. A seat spends its own `account:` when the file names one, its `vendor`
+when it doesn't, so one vendor's two accounts are two buckets; a pattern names the account it
+measures, not the seat's. A `check` command is resolved to a file and hashed when the
 owner approves. A change to that file leaves that account's check unapproved: it is
 not run, and the account reads unknown, until the owner approves again. The rest of
 the file still runs. `watch.quota_marks` is still read, with a warning, until you move it to
@@ -249,7 +264,7 @@ cd team
 bun install
 bun run build
 npm install -g .          # puts `team` on the PATH
-team --version            # 0.1.1
+team --version            # 0.1.2
 ```
 
 Bun builds and tests the sources:

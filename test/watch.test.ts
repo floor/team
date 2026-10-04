@@ -602,6 +602,7 @@ describe('team watch', () => {
       readChecks: () => [],
       screen: () => screenNow,
       status: () => statusNow,
+      foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); return true; },
       pressEnter: (pane) => { typed.push(`${pane} <enter>`); return true; },
       notify: (text) => { notified.push(text); },
@@ -677,6 +678,25 @@ describe('team watch', () => {
     let calls = 0;
     await runWatch(['--file', file], testIo(dir), sources(2, { screen: () => (calls++ === 0 ? permission : idle) }));
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+  });
+
+  test('a pane with no live agent is not typed into', async () => {
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(2, { foreground: () => ['zsh'] }));
+    expect(typed).toEqual([]);
+    const line = 'a nudge was not typed: no live agent in the operator\'s pane';
+    expect(io.out.split(line).length - 1).toBe(1);
+  });
+
+  test('an agent that exits between the text and the Enter is not sent the Enter', async () => {
+    let live = true;
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      foreground: () => (live ? ['claude'] : ['zsh']),
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); live = false; return true; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was not typed: no live agent in the operator\'s pane');
   });
 
   test('an operator that started working since the pass is not typed into', async () => {
@@ -848,6 +868,29 @@ describe('team watch', () => {
       .toEqual([{ account: 'openai', window: 'weekly', left: 39, used: 61, seat: 'codex-acme' }]);
   });
 
+  test('a reading is not saved from a pane back at its shell', async () => {
+    writeFileSync(file, withAccounts('  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [status_line] }\n'));
+    // The pane after the CLI exited: the recorded exit screen, and a status-shaped line printed
+    // with no newline after it. herdr still lists the agent; its foreground process is the shell.
+    const exit = readFileSync(new URL('./fixtures/codex/0.157.0/exit.txt', import.meta.url), 'utf8');
+    const fake = '  GPT-5.6-Terra medium · Context 98% left · weekly 90% left\n';
+    scene = live({ 'codex-acme': { screen: `${exit.trimEnd()}\n${fake}` } });
+    const fore = { foreground: () => ['zsh'] };
+    const code = await runWatch(['--file', file], testIo(dir), sources(1, fore));
+    expect(code).toBe(0);
+    expect(loadReadings(join(dir, '.agents'))).toEqual([]);
+  });
+
+  test('a reading is not saved from a pane herdr could not read', async () => {
+    writeFileSync(file, withAccounts('  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [status_line] }\n'));
+    // The same status-line figure, and a pane whose process list herdr could not read: a null is
+    // not a CLI, and the reading is not invented to fill it.
+    scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n` } });
+    const code = await runWatch(['--file', file], testIo(dir), sources(1, { foreground: () => null }));
+    expect(code).toBe(0);
+    expect(loadReadings(join(dir, '.agents'))).toEqual([]);
+  });
+
   test('a spend check reading is kept, so `up` and `add` count the floor against it', async () => {
     writeFileSync(file, withAccounts('  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n'));
     const code = await runWatch(['--file', file], testIo(dir), sources(1, {
@@ -872,6 +915,33 @@ describe('team watch', () => {
       account: 'openai', window: 'weekly', left: 5, used: 95,
       changedAt: Date.parse('2026-10-03T14:00:00Z'), resetsAt: null, seat: null, source: 'check', confirmed: true,
     }]);
+  });
+
+  test('a watch on a session that is not the file\'s saves no reading, and says so once', async () => {
+    writeFileSync(file, withAccounts(
+      '  accounts:\n'
+      + '    openai: { kind: subscription, reserve: 3%, sources: [status_line, check], check: openai-usage }\n'
+      + '    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n',
+    ));
+    scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n` } });
+    const checks: WatchSources['readChecks'] = (_team, _root, at) => [
+      { account: 'openai', state: 'read', reading: { kind: 'subscription', windows: [{ window: 'weekly', left: 5, used: 95, at, resetsAt: null }] } },
+      { account: 'deepseek', state: 'read', reading: { kind: 'spend', amount: 4.2, currency: 'USD', at } },
+    ];
+    // Anyone may watch another session; only the file's own session's watch is the cache that
+    // `up` and `add` count (§ 4.4).
+    const io = testIo(dir);
+    expect(await runWatch(['--file', file, '--session', 'team-test'], io, sources(2, { readChecks: checks }))).toBe(0);
+    expect(loadReadings(join(dir, '.agents'))).toEqual([]);
+    expect(loadSpendReadings(join(dir, '.agents'))).toEqual([]);
+    expect(io.out.match(/is not this file's "acme-web"/g)?.length).toBe(1);
+
+    // The file's own session saves the same figures.
+    scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n` } });
+    expect(await runWatch(['--file', file], testIo(dir), sources(1, { readChecks: checks }))).toBe(0);
+    expect(loadReadings(join(dir, '.agents')).map(({ account, source }) => `${account}/${source}`).sort())
+      .toEqual(['openai/check', 'openai/status_line']);
+    expect(loadSpendReadings(join(dir, '.agents')).map(({ account, amount }) => [account, amount])).toEqual([['deepseek', 4.2]]);
   });
 
   test('a file that never validated, and a bad option', async () => {

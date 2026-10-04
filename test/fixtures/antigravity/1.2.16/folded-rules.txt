@@ -5,9 +5,9 @@
   ▄▀▀      ▀▀▄
 
 ──────────────────────────────────────────────────────
-↑ 19 more lines
-- Work on the code in the worktree your brief names, n
-ever in the checkout you started in. Branches are name
+↑ 21 more lines
 d fix/agy-rules-fold.
+These are standing rules, not a task: reply ready and 
+wait for your brief.
 ──────────────────────────────────────────────────────
                                Gemini 3.8 Flash · high

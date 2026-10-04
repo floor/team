@@ -116,16 +116,20 @@ function composerOf(node: YamlNode): Composer {
   const entries = mapping(node, 'composer');
   const mode = required(entries, 'mode', node.line);
   const name = stringOf(mode.value);
+  // How the CLI renders its greyed suggestions, read off the input line's styling. Optional:
+  // a composer whose suggestions plain text already names needs none of it.
+  const style = optional(entries, 'placeholder_style');
+  const placeholderStyle = style ? placeholderStyleOf(style) : undefined;
   if (name === 'box-to-rule') {
-    only(entries, ['mode', 'prompt', 'rule', 'placeholders']);
-    return { mode: name, prompt: regexField(entries, 'prompt', node.line), rule: regexField(entries, 'rule', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value) };
+    only(entries, ['mode', 'prompt', 'rule', 'placeholders', 'placeholder_style']);
+    return { mode: name, prompt: regexField(entries, 'prompt', node.line), rule: regexField(entries, 'rule', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value), placeholderStyle };
   }
   if (name === 'status-last') {
-    only(entries, ['mode', 'status_line', 'prompt', 'placeholders']);
-    return { mode: name, statusLine: regexField(entries, 'status_line', node.line), prompt: regexField(entries, 'prompt', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value) };
+    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style']);
+    return { mode: name, statusLine: regexField(entries, 'status_line', node.line), prompt: regexField(entries, 'prompt', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value), placeholderStyle };
   }
   if (name === 'status-then-one') {
-    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'strip_suffix', 'fallback']);
+    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style', 'strip_suffix', 'fallback']);
     const suffix = optional(entries, 'strip_suffix');
     const fallback = required(entries, 'fallback', node.line);
     return {
@@ -133,12 +137,13 @@ function composerOf(node: YamlNode): Composer {
       statusLine: regexField(entries, 'status_line', node.line),
       prompt: regexField(entries, 'prompt', node.line),
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
+      placeholderStyle,
       stripSuffix: suffix ? patternOf(stringOf(suffix.value) ?? fail(suffix.line, '"strip_suffix" must be a string'), false, suffix.line) : null,
       fallback: fallbackOf(fallback.value),
     };
   }
   if (name === 'two-rules-footer-below') {
-    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'fold']);
+    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'fold', 'placeholder_style']);
     const flag = optional(entries, 'ignore_case');
     const ignoreCase = flag ? boolOf(flag.value, 'ignore_case') : false;
     const footers = required(entries, 'footers', node.line);
@@ -155,9 +160,16 @@ function composerOf(node: YamlNode): Composer {
       }),
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
       fold: fold ? patternOf(stringOf(fold.value) ?? fail(fold.line, '"fold" must be a string'), ignoreCase, fold.line) : null,
+      placeholderStyle,
     };
   }
   fail(mode.line, `"mode" must be box-to-rule, status-last, status-then-one or two-rules-footer-below`);
+}
+
+function placeholderStyleOf(entry: YamlEntry): 'dim' {
+  const text = stringOf(entry.value);
+  if (text !== 'dim') fail(entry.line, '"placeholder_style" must be dim');
+  return text;
 }
 
 function fallbackOf(node: YamlNode): FallbackRule[] {
