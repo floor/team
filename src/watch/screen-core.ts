@@ -236,16 +236,14 @@ function boxToRule(lines: string[], styled: string[], composer: Extract<ScreenDa
   if (close < 0) return { kind: 'unknown' };
   const above = input > 0 && composer.rule.test(lines[input - 1] ?? '');
   let footer = false;
+  const rawFooters: string[] = [];
   for (let j = close + 1; j < lines.length; j++) {
     if (tick()) return { kind: 'stop' };
     const raw = lines[j] ?? '';
-    if (!raw.trim()) continue;
-    if (composer.footers.some((pattern) => pattern.test(raw))) {
-      footer = true;
-    } else {
-      footer = false;
-      break;
-    }
+    if (raw.trim()) rawFooters.push(raw);
+  }
+  if (composer.footers.length > 0 && rawFooters.length === composer.footers.length) {
+    footer = composer.footers.every((pattern, idx) => pattern.test(rawFooters[idx] ?? ''));
   }
   // The opening rule on the line directly above, or the status footer when that
   // rule has scrolled out of the window.
