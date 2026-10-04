@@ -2,9 +2,7 @@ format: 1
 cli: fake-hatch
 screen_module: hatch.ts
 screen:
-  composer:
-    mode: status-last
-    status_line: "^status$"
-    prompt: "^>"
-    placeholders:
-      - equals: ""
+  permission:
+    - any: ['HATCH_DATA_PERMISSION']
+  working:
+    - any: ['HATCH_DATA_WORKING']

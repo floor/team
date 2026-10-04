@@ -113,7 +113,20 @@ const SCREEN_KINDS: ReadonlySet<string> = new Set<Screen['kind']>([
 
 type PredicateOutcome = 'match' | 'miss' | 'fail';
 
+function getProfileFn(profile: unknown, key: string): ((lines: string[]) => unknown) | undefined | 'fail' {
+  if (!profile || (typeof profile !== 'object' && typeof profile !== 'function')) return undefined;
+  try {
+    const fn = (profile as Record<string, unknown>)[key];
+    if (fn === undefined || fn === null) return undefined;
+    if (typeof fn !== 'function') return 'fail';
+    return fn as (lines: string[]) => unknown;
+  } catch {
+    return 'fail';
+  }
+}
+
 function evalPredicate(predicate: unknown, lines: string[]): PredicateOutcome {
+  if (predicate === 'fail') return 'fail';
   if (typeof predicate !== 'function') return 'fail';
   try {
     const res = (predicate as Function)(lines);
@@ -132,6 +145,7 @@ function evalPredicate(predicate: unknown, lines: string[]): PredicateOutcome {
 }
 
 function callComposer(composer: unknown, lines: string[]): Hit {
+  if (composer === 'fail') return { kind: 'unknown' };
   if (typeof composer !== 'function') return { kind: 'unknown' };
   try {
     const reading = (composer as Function)(lines);
@@ -142,7 +156,12 @@ function callComposer(composer: unknown, lines: string[]): Hit {
       return { kind: 'unknown' };
     }
     if (!reading || typeof reading !== 'object') return { kind: 'unknown' };
-    const kind = (reading as any).kind;
+    let kind: unknown;
+    try {
+      kind = (reading as any).kind;
+    } catch {
+      return { kind: 'unknown' };
+    }
     if (typeof kind !== 'string' || !SCREEN_KINDS.has(kind)) {
       return { kind: 'unknown' };
     }
@@ -160,65 +179,59 @@ type StageName = 'unknown' | 'trust' | 'permission' | 'question' | 'working';
 
 /** `lines` is already the window: the last 20 lines, each trimmed at the end. */
 export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClock): Screen {
-  const now = clock?.now ?? Date.now;
-  const budget = clock?.budgetMs ?? BUDGET_MS;
-  const start = now();
-  const tick = () => now() - start > budget;
-  const plain = plainLines(lines);
+  try {
+    const now = clock?.now ?? Date.now;
+    const budget = clock?.budgetMs ?? BUDGET_MS;
+    const start = now();
+    const tick = () => now() - start > budget;
+    const plain = plainLines(lines);
 
-  // Dialog kinds: unknown, trust, permission, question.
-  // The profile's data stage always runs; matches if data matches OR hatch returns true.
-  const dialogStages: [StageName, ScreenData['trust']][] = [
-    ['unknown', data.unknown],
-    ['trust', data.trust],
-    ['permission', data.permission],
-    ['question', data.question],
-  ];
-  for (const [kind, stage] of dialogStages) {
-    if (tick()) return { kind: 'unknown' };
-    const predicate = data.profile?.[kind];
-    if (predicate !== undefined) {
-      const outcome = evalPredicate(predicate, plain);
-      if (outcome === 'match') return { kind };
-      if (outcome === 'fail') return { kind: 'unknown' };
-    }
-    if (stage) {
-      for (const rule of stage.rules) {
-        const hit = ruleMatches(data, plain, rule, tick);
-        if (hit === 'stop') return { kind: 'unknown' };
-        if (hit) return { kind };
+    // Rule (a): Every hatch predicate is monotone toward caution: hatch OR data, for working,
+    // every dialog (trust, permission, question) and unknown. The data stage of a profile always runs;
+    // a hatch predicate can only add a match. A hatch can only add caution, never remove it.
+    const cautionStages: [StageName, ScreenData['trust']][] = [
+      ['unknown', data.unknown],
+      ['trust', data.trust],
+      ['permission', data.permission],
+      ['question', data.question],
+      ['working', data.working],
+    ];
+    for (const [kind, stage] of cautionStages) {
+      if (tick()) return { kind: 'unknown' };
+      const fn = getProfileFn(data.profile, kind);
+      if (fn !== undefined) {
+        const outcome = evalPredicate(fn, plain);
+        if (outcome === 'match') return { kind };
+        if (outcome === 'fail') return { kind: 'unknown' };
+      }
+      if (stage) {
+        for (const rule of stage.rules) {
+          const hit = ruleMatches(data, plain, rule, tick);
+          if (hit === 'stop') return { kind: 'unknown' };
+          if (hit) return { kind };
+        }
       }
     }
-  }
 
-  // Working stage: may be supplied by hatch in place of data.
-  if (tick()) return { kind: 'unknown' };
-  if (data.profile?.working !== undefined) {
-    const outcome = evalPredicate(data.profile.working, plain);
-    if (outcome === 'match') return { kind: 'working' };
-    if (outcome === 'fail') return { kind: 'unknown' };
-  } else if (data.working) {
-    for (const rule of data.working.rules) {
-      const hit = ruleMatches(data, plain, rule, tick);
-      if (hit === 'stop') return { kind: 'unknown' };
-      if (hit) return { kind: 'working' };
+    // Composer stage: comes from hatch OR from data (refused if both at load).
+    const composerFn = getProfileFn(data.profile, 'composer');
+    if (composerFn !== undefined) {
+      const composed = callComposer(composerFn, plain);
+      if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
+      const marked = floorHits(plain, 0, -1, data.chrome, tick);
+      if (marked === 'stop' || marked) return { kind: 'unknown' };
+      return { kind: composed.kind };
     }
-  }
 
-  // Composer stage: may be supplied by hatch in place of data.
-  if (data.profile?.composer !== undefined) {
-    const composed = callComposer(data.profile.composer, plain);
+    const composed = compose(data, plain, lines, tick);
     if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
-    const marked = floorHits(plain, 0, -1, data.chrome, tick);
+    if (composed.kind !== 'idle' && composed.kind !== 'unsent') return { kind: composed.kind };
+    const marked = floorHits(plain, composed.from, composed.input, data.chrome, tick);
     if (marked === 'stop' || marked) return { kind: 'unknown' };
     return { kind: composed.kind };
+  } catch {
+    return { kind: 'unknown' };
   }
-  const composed = compose(data, plain, lines, tick);
-  if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
-  if (composed.kind !== 'idle' && composed.kind !== 'unsent') return { kind: composed.kind };
-  const marked = floorHits(plain, composed.from, composed.input, data.chrome, tick);
-  if (marked === 'stop' || marked) return { kind: 'unknown' };
-  return { kind: composed.kind };
 }
 
 /**
@@ -226,48 +239,81 @@ export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClo
  * floor must not be overridden by composer readings returning idle or unsent.
  */
 export function composeLines(data: ScreenData, lines: string[], clock?: ReadClock): Screen {
-  const now = clock?.now ?? Date.now;
-  const budget = clock?.budgetMs ?? BUDGET_MS;
-  const start = now();
-  const tick = () => now() - start > budget;
-  const plain = plainLines(lines);
+  try {
+    const now = clock?.now ?? Date.now;
+    const budget = clock?.budgetMs ?? BUDGET_MS;
+    const start = now();
+    const tick = () => now() - start > budget;
+    const plain = plainLines(lines);
 
-  // Dialog stages: a composer reading never overrides a dialog found by a stage or by the floor.
-  const dialogStages: [StageName, ScreenData['trust']][] = [
-    ['unknown', data.unknown],
-    ['trust', data.trust],
-    ['permission', data.permission],
-    ['question', data.question],
-  ];
-  for (const [kind, stage] of dialogStages) {
-    if (tick()) return { kind: 'unknown' };
-    const predicate = data.profile?.[kind];
-    if (predicate !== undefined) {
-      const outcome = evalPredicate(predicate, plain);
-      if (outcome === 'match' || outcome === 'fail') return { kind: 'unknown' };
+    const composerFn = getProfileFn(data.profile, 'composer');
+    if (composerFn !== undefined) {
+      // Profile has a HATCH composer (no data composer).
+      // Check if any caution stage (data or hatch) matches:
+      const stages: [StageName, ScreenData['trust']][] = [
+        ['unknown', data.unknown],
+        ['trust', data.trust],
+        ['permission', data.permission],
+        ['question', data.question],
+        ['working', data.working],
+      ];
+      for (const [kind, stage] of stages) {
+        if (tick()) return { kind: 'unknown' };
+        const fn = getProfileFn(data.profile, kind);
+        if (fn !== undefined) {
+          const outcome = evalPredicate(fn, plain);
+          if (outcome === 'match' || outcome === 'fail') return { kind: 'unknown' };
+        }
+        if (stage) {
+          for (const rule of stage.rules) {
+            const hit = ruleMatches(data, plain, rule, tick);
+            if (hit === 'stop') return { kind: 'unknown' };
+            if (hit) return { kind: 'unknown' };
+          }
+        }
+      }
+      const composed = callComposer(composerFn, plain);
+      if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
+      const marked = floorHits(plain, 0, -1, data.chrome, tick);
+      if (marked === 'stop' || marked) return { kind: 'unknown' };
+      return { kind: composed.kind };
     }
-    if (stage) {
-      for (const rule of stage.rules) {
+
+    // Profile has a DATA composer.
+    // Check hatch dialog predicates:
+    const dialogKinds: StageName[] = ['unknown', 'trust', 'permission', 'question'];
+    for (const kind of dialogKinds) {
+      if (tick()) return { kind: 'unknown' };
+      const fn = getProfileFn(data.profile, kind);
+      if (fn !== undefined) {
+        const outcome = evalPredicate(fn, plain);
+        if (outcome === 'match' || outcome === 'fail') return { kind: 'unknown' };
+      }
+    }
+    // Also if hatch working returns 'fail', fail safe:
+    const workingFn = getProfileFn(data.profile, 'working');
+    if (workingFn !== undefined) {
+      const outcome = evalPredicate(workingFn, plain);
+      if (outcome === 'fail') return { kind: 'unknown' };
+    }
+
+    if (data.unknown) {
+      for (const rule of data.unknown.rules) {
         const hit = ruleMatches(data, plain, rule, tick);
         if (hit === 'stop') return { kind: 'unknown' };
         if (hit) return { kind: 'unknown' };
       }
     }
-  }
 
-  if (data.profile?.composer !== undefined) {
-    const composed = callComposer(data.profile.composer, plain);
+    const composed = compose(data, plain, lines, tick);
     if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
-    const marked = floorHits(plain, 0, -1, data.chrome, tick);
+    if (composed.kind !== 'idle' && composed.kind !== 'unsent') return { kind: composed.kind };
+    const marked = floorHits(plain, composed.from, composed.input, data.chrome, tick);
     if (marked === 'stop' || marked) return { kind: 'unknown' };
     return { kind: composed.kind };
+  } catch {
+    return { kind: 'unknown' };
   }
-  const composed = compose(data, plain, lines, tick);
-  if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
-  if (composed.kind !== 'idle' && composed.kind !== 'unsent') return { kind: composed.kind };
-  const marked = floorHits(plain, composed.from, composed.input, data.chrome, tick);
-  if (marked === 'stop' || marked) return { kind: 'unknown' };
-  return { kind: composed.kind };
 }
 
 function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => boolean): boolean | 'stop' {

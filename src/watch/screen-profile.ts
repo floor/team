@@ -9,11 +9,8 @@ export type ComposerReading = {
 };
 
 /**
- * A hatch can add a dialog, never take one away: for unknown, trust, permission, and question,
- * the profile's data stage always runs and matches if the data stage matches or the hatch predicate
- * returns exactly true. Working and composer may be supplied by the hatch in place of data, but they
- * run after the dialog stages and the floor, and a composer reading never overrides a dialog found
- * by a stage or by the floor.
+ * Every hatch predicate is monotone toward caution, running alongside the data stage for unknown, trust, permission, question, and working so a hatch can only add caution, never remove it.
+ * A composer comes from data or from the hatch, never both, and a profile that has a data composer while its screen_module exports a composer is refused at load.
  */
 export interface ScreenProfile {
   unknown?: (lines: string[]) => boolean;

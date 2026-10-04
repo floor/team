@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, statSync, mkdirSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, statSync, mkdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -9,6 +9,8 @@ import { classify, classifyComposer, readScreen, screenData, type Screen } from 
 import { callOrder, resetCalls } from './fixtures/hatch/hatch.ts';
 import type { ScreenProfile } from '../src/watch/screen-profile.ts';
 import { parseOverrides } from '../src/profiles/overrides.ts';
+import { newMemory, pass } from '../src/watch/pass.ts';
+import { validateTeamFile } from '../src/file/validate.ts';
 
 const fixtureDir = fileURLToPath(new URL('./fixtures/hatch', import.meta.url));
 
@@ -684,7 +686,7 @@ screen:
     }
   });
 
-  test('round 6: a hatch composer on each of the four shipped profiles is refused at load (b)', () => {
+  test('round 6: a hatch composer on each of the four shipped profiles is refused at load (b)', async () => {
     const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-composer-test-'));
     writeFileSync(resolve(tempDir, 'composer-hatch.cjs'), 'module.exports = { composer: () => ({ kind: "idle" }) };');
 
@@ -693,13 +695,68 @@ screen:
       for (const cli of clis) {
         const rawYaml = readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8');
         const withHatch = `${rawYaml}\nscreen_module: "composer-hatch.cjs"\n`;
+        // In source:
         expect(() => loadScreen(withHatch, tempDir, `${cli}.yaml`)).toThrow(
           new RegExp(`profile "${cli}\\.yaml": profile has a data composer and screen_module exports a composer`),
         );
       }
+
+      // Against built CLI:
+      const distPath = resolve(process.cwd(), 'dist/watch/screen-file.js');
+      if (existsSync(distPath)) {
+        const dist = await import(distPath);
+        for (const cli of clis) {
+          const rawYaml = readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8');
+          const withHatch = `${rawYaml}\nscreen_module: "composer-hatch.cjs"\n`;
+          expect(() => dist.loadScreen(withHatch, tempDir, `${cli}.yaml`)).toThrow(
+            new RegExp(`profile "${cli}\\.yaml": profile has a data composer and screen_module exports a composer`),
+          );
+        }
+      }
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  test('round 6: fake CLI in test/fixtures/hatch (hatch composer, no data composer): data stages and floor win over hatch composer (b, 3)', () => {
+    const yaml = readFileSync(resolve(fixtureDir, 'fake-cli.yaml'), 'utf8');
+    const data = loadScreen(yaml, fixtureDir, 'fake-cli.yaml');
+    expect(data.profile?.composer).toBeDefined();
+
+    // 1. A dialog fixture under it still reads the dialog (numbered-choice.txt has 1. Proceed)
+    const dialogLines = readFileSync(resolve(fixtureDir, 'numbered-choice.txt'), 'utf8').split('\n');
+    expect(classifyLines(data, dialogLines).kind).toBe('permission');
+    expect(readScreen(data, dialogLines.join('\n')).kind).toBe('permission');
+    expect(composeLines(data, dialogLines).kind).toBe('unknown');
+    expect(classifyComposer(data, dialogLines).kind).toBe('unknown');
+
+    // 2. Data stage marks working -> working wins over hatch composer returning idle/unsent
+    const workingLines = ['HATCH_DATA_WORKING'];
+    expect(classifyLines(data, workingLines).kind).toBe('working');
+    expect(readScreen(data, workingLines.join('\n')).kind).toBe('working');
+    expect(composeLines(data, workingLines).kind).toBe('unknown');
+    expect(classifyComposer(data, workingLines).kind).toBe('unknown');
+
+    // 3. Data stage marks permission -> permission wins
+    const permLines = ['HATCH_DATA_PERMISSION'];
+    expect(classifyLines(data, permLines).kind).toBe('permission');
+    expect(readScreen(data, permLines.join('\n')).kind).toBe('permission');
+    expect(composeLines(data, permLines).kind).toBe('unknown');
+    expect(classifyComposer(data, permLines).kind).toBe('unknown');
+
+    // 4. Floor marks dialog (e.g. "Do you want to proceed?") -> unknown wins over hatch composer returning idle/unsent
+    const floorLines = ['Do you want to proceed?', 'Press enter to continue'];
+    expect(classifyLines(data, floorLines).kind).toBe('unknown');
+    expect(readScreen(data, floorLines.join('\n')).kind).toBe('unknown');
+    expect(composeLines(data, floorLines).kind).toBe('unknown');
+    expect(classifyComposer(data, floorLines).kind).toBe('unknown');
+
+    // 5. Clean line with no stage or floor match -> hatch composer returns idle
+    const cleanLines = ['regular terminal prompt > '];
+    expect(classifyLines(data, cleanLines).kind).toBe('idle');
+    expect(readScreen(data, cleanLines.join('\n')).kind).toBe('idle');
+    expect(composeLines(data, cleanLines).kind).toBe('idle');
+    expect(classifyComposer(data, cleanLines).kind).toBe('idle');
   });
 
   test('round 6: throwing getters on profile object and throwing Proxy fail safe to unknown on all readers and through watch pass (c)', () => {
@@ -741,6 +798,46 @@ screen:
     expect(readScreen(dataWithThrowingProxy, content).kind).toBe('unknown');
     expect(composeLines(dataWithThrowingProxy, lines).kind).toBe('unknown');
     expect(classifyComposer(dataWithThrowingProxy, lines).kind).toBe('unknown');
+
+    // 3. One watch pass hooked to throwing proxy completes cleanly
+    const teamYaml = `format: 1
+project: test
+session: test
+coordinator: bot
+operator: bot
+workspace:
+  mode: shared
+seats:
+  - name: bot
+    role: coordinator
+    cli: codex
+    vendor: openai
+    model: Codex
+    version: "1"
+    launch: codex
+`;
+    const resTeam = validateTeamFile(teamYaml);
+    expect(resTeam.ok).toBe(true);
+    if (resTeam.ok) {
+      const memory = newMemory();
+      const passResult = pass({
+        team: resTeam.team,
+        watch: resTeam.team.watch,
+        state: { id: 'test', team: 'test', seats: [{ name: 'bot', pane: 'w0:p1', live: true }] },
+        live: {
+          agents: [{ name: 'bot', workspace: 'w0', pane: 'w0:p1', status: 'idle' }],
+          screens: { 'w0:p1': 'some terminal text' },
+          workspaces: [{ id: 'w0', label: 'workspace 0' }],
+        },
+        machine: { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 },
+        now: 0,
+        memory,
+        approval: [],
+        foreground: { 'w0:p1': ['codex'] },
+        readScreen: (_cli, screen) => readScreen(dataWithThrowingProxy, screen),
+      });
+      expect(passResult).toBeDefined();
+    }
   });
 
   test('round 6: throwing proxy module at loadScreen names the profile file (c)', () => {

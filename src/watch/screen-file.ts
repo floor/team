@@ -129,8 +129,8 @@ function loadScreenModule(specifier: string, baseDir: string | undefined, line: 
   }
 
   // 9. Refuse bare names or paths without a script extension (.ts, .js, .cjs, .mjs)
-  if (!/\.(ts|js|cjs|mjs)$/i.test(specifier)) {
-    if (!specifier.includes('/') && !specifier.includes('\\')) {
+  if (!/\.(ts|js|cjs|mjs)$/.test(specifier)) {
+    if (!specifier.includes('/') && !specifier.includes('\\') && !/\.[^/\\]+$/.test(specifier)) {
       fail(line, `${label}: "screen_module" cannot be a bare name: "${specifier}"`);
     }
     fail(line, `${label}: "screen_module" must have a script extension (.ts, .js, .cjs, .mjs): "${specifier}"`);
@@ -186,18 +186,22 @@ function loadScreenModule(specifier: string, baseDir: string | undefined, line: 
     fail(line, `${label}: cannot load "screen_module": ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  const candidate =
-    mod && typeof mod === 'object' && 'default' in mod && mod.default && typeof mod.default === 'object'
-      ? mod.default
-      : mod;
-  return {
-    unknown: typeof candidate?.unknown === 'function' ? candidate.unknown : (typeof mod?.unknown === 'function' ? mod.unknown : undefined),
-    trust: typeof candidate?.trust === 'function' ? candidate.trust : (typeof mod?.trust === 'function' ? mod.trust : undefined),
-    permission: typeof candidate?.permission === 'function' ? candidate.permission : (typeof mod?.permission === 'function' ? mod.permission : undefined),
-    question: typeof candidate?.question === 'function' ? candidate.question : (typeof mod?.question === 'function' ? mod.question : undefined),
-    working: typeof candidate?.working === 'function' ? candidate.working : (typeof mod?.working === 'function' ? mod.working : undefined),
-    composer: typeof candidate?.composer === 'function' ? candidate.composer : (typeof mod?.composer === 'function' ? mod.composer : undefined),
-  };
+  try {
+    const candidate =
+      mod && typeof mod === 'object' && 'default' in mod && mod.default && typeof mod.default === 'object'
+        ? mod.default
+        : mod;
+    return {
+      unknown: typeof candidate?.unknown === 'function' ? candidate.unknown : (typeof mod?.unknown === 'function' ? mod.unknown : undefined),
+      trust: typeof candidate?.trust === 'function' ? candidate.trust : (typeof mod?.trust === 'function' ? mod.trust : undefined),
+      permission: typeof candidate?.permission === 'function' ? candidate.permission : (typeof mod?.permission === 'function' ? mod.permission : undefined),
+      question: typeof candidate?.question === 'function' ? candidate.question : (typeof mod?.question === 'function' ? mod.question : undefined),
+      working: typeof candidate?.working === 'function' ? candidate.working : (typeof mod?.working === 'function' ? mod.working : undefined),
+      composer: typeof candidate?.composer === 'function' ? candidate.composer : (typeof mod?.composer === 'function' ? mod.composer : undefined),
+    };
+  } catch (error) {
+    fail(line, `${label}: cannot load "screen_module": ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function screenOf(node: YamlNode, topScreenModule?: YamlEntry, baseDir?: string, profileFile?: string): ScreenData {
@@ -207,16 +211,29 @@ function screenOf(node: YamlNode, topScreenModule?: YamlEntry, baseDir?: string,
   const screenScreenModule = optional(entries, 'screen_module');
   const moduleEntry = screenScreenModule ?? topScreenModule;
   const composer = optional(entries, 'composer');
-  if (!composer && !moduleEntry) fail(node.line, 'missing "composer"');
+  const label = profileFile ? `profile "${profileFile}"` : 'profile';
+
+  let profile: ScreenProfile | undefined;
+  if (moduleEntry) {
+    const specifier = stringOf(moduleEntry.value);
+    if (specifier === null) fail(moduleEntry.line, '"screen_module" must be a string');
+    profile = loadScreenModule(specifier, baseDir, moduleEntry.line, profileFile);
+  }
+
+  // Rule (b): A composer comes from data or from the hatch, never both; the load refuses both.
+  if (composer && typeof profile?.composer === 'function') {
+    fail(moduleEntry!.line, `${label}: profile has a data composer and screen_module exports a composer: a composer comes from data or from the hatch, never both`);
+  }
+  if (!composer && typeof profile?.composer !== 'function') {
+    fail(node.line, `${label}: missing "composer"`);
+  }
+
   const data: ScreenData = {
     chrome: chrome ? chromeOf(chrome.value) : [],
     composer: composer ? composerOf(composer.value) : DEFAULT_COMPOSER,
   };
-  if (moduleEntry) {
-    const specifier = stringOf(moduleEntry.value);
-    if (specifier === null) fail(moduleEntry.line, '"screen_module" must be a string');
-    data.profile = loadScreenModule(specifier, baseDir, moduleEntry.line, profileFile);
-  }
+  if (profile) data.profile = profile;
+
   for (const name of STAGES) {
     const entry = optional(entries, name);
     if (entry) data[name] = stageOf(entry.value);
