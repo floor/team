@@ -20,6 +20,11 @@ the default session had nine agents before and after. Config and auth hashes wer
 - `permission-cut.txt`: constructed from `permission.txt`, not a capture. The lines above the
   rule, and the rule, are removed, which is the last-20-line window once a command of about ten
   lines has pushed that rule out.
+- `folded-rules.txt`: constructed, not a capture. A 54-column pane's composer holding a folded
+  multi-line paste: the box's top rule, `↑ 19 more lines`, the last three rows of the text, the
+  bottom rule, the model footer. The rows are the rules message `test/launch/antigravity.test.ts`
+  names, hard-wrapped at 54 columns (a line longer than the width split into width-sized chunks,
+  no word wrapping): 22 rows, 19 hidden. The header block is copied from `unsent.txt`.
 
 Paths, user email, plan, and conversation UUID are replaced with placeholders. Shell launch scrollback
 before Antigravity's header banner is removed. All other visible text is retained, including the

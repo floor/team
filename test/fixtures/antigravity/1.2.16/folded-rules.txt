@@ -1,0 +1,13 @@
+      ▄▀▀▄        Antigravity CLI 1.2.16
+     ▀▀▀▀▀▀       user@example.com
+    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (High)
+   ▄▀▀    ▀▀▄     ~/project
+  ▄▀▀      ▀▀▄
+
+──────────────────────────────────────────────────────
+↑ 19 more lines
+- Work on the code in the worktree your brief names, n
+ever in the checkout you started in. Branches are name
+d fix/agy-rules-fold.
+──────────────────────────────────────────────────────
+                               Gemini 3.8 Flash · high
