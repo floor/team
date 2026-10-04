@@ -27,41 +27,20 @@ and a seat could silence the watch's reports about itself. Upgrade.
 - **In 0.1.1, `--no-notify` on the watch silenced a report addressed to the owner**, and any caller
   could run the session's only watch with it. Each report is now routed to the owner or the
   operator, and `--no-notify` drops only the operator's notice — the log line stays, and
-  `team status` does not read the flag. `--no-nudge` and `--no-notify` are the owner's.
+  `team status` does not read the flag. The watch's own notices — the operator could not be
+  nudged, herdr does not answer, the file cannot be read, a typed nudge was not sent, the watch
+  stopped — are the owner's and survive the flag too. `--no-nudge` and `--no-notify` are the owner's.
 - **In 0.1.1, a watch on a session other than the file's own saved its readings into the state a
   launch gate counts.** Such a watch now reads and reports as before, says so once, and saves no
   reading — budget or spend — so a session the file doesn't name can never decide a launch.
-
-### Fixed
-
-- A greyed suggestion in a Claude Code input box is no longer read as text that was never sent:
-  input text whose characters are all faint is the box's placeholder, and the seat reads idle. Text
-  with any other styling reads as typed, and a line with no styling keeps the `Try "` rule.
-- Cursor's running turn is the braille spinner, or the prompt line that ends in `ctrl+c to stop`.
-  The same words quoted in the transcript are not a turn, and text typed on that prompt is unsent in
-  the composer.
-- A subscription check reading is kept in the state beside the screen readings, and `up`, `add` and
-  `status` count it: a fresh check inside its reserve refuses a launch after the watch has exited, a
-  stale one reads unknown, and the account's `sources` decide which reading counts.
-- Budget readings are kept per project, not per herdr session: `up`, `add`, `status` and the watch
-  read the one cache, so a figure one session saw counts for every session, and state files written
-  before this change migrate as they are read — no reading is lost.
-- A stale check reading inside its reserve keeps refusing until its known reset, as a stale screen
-  reading does; an unconfirmed screen reading no longer hides a fresh check reading later in
-  `sources`.
-- A Claude question is the dialog's own last line. Prose that says "Esc to cancel", and a transcript
-  of "1. Yes" / "2. No" above an empty box, stay idle.
-- An Antigravity permission dialog whose rule line has scrolled out of the window (a long command)
-  is still read as the dialog, and a Claude Code question with a line below its footer and no rule
-  in the window is still read as a question.
-- The watch folds its readings inside the state's own lock, so two watches of one project fold onto
-  each other's figures instead of overwriting them.
 
 ### Added
 
 - A seat may name the budget account it spends, `account:`, when one vendor's two accounts are two
   buckets; without it a seat spends its `vendor`, and the choice is part of the seat's fingerprint,
-  so the owner approves it. A figure measuring the seat's vendor lands on the seat's own account,
+  so the owner approves it. It must be a key of the file's `budgets.accounts` — a name the budgets
+  don't hold is refused where it is — and an unapproved edit to it folds none of that seat's figures
+  until the owner approves. A figure measuring the seat's vendor lands on the seat's own account,
   and a figure naming another account stays that account's, whichever seat's screen showed it.
 
 ### Changed
@@ -76,6 +55,31 @@ and a seat could silence the watch's reports about itself. Upgrade.
 - A team whose seats were stopped by `remove --keep`, or parked by hand, since its last approval
   shows `seat X changed` for each after upgrading, and `up` and `add` refuse until the owner
   approves once.
+
+### Fixed
+
+- A greyed suggestion in a Claude Code input box is no longer read as text that was never sent:
+  input text whose characters are all faint is the box's placeholder, and the seat reads idle. Text
+  with any other styling reads as unsent text, and a line with no styling keeps the `Try "` rule.
+- Cursor's running turn is the braille spinner, or the prompt line that ends in `ctrl+c to stop`.
+  The same words quoted in the transcript are not a turn, and text typed on that prompt is unsent in
+  the composer.
+- A subscription check reading is kept in the state beside the screen readings, and `up`, `add` and
+  `status` count it: a fresh check inside its reserve refuses a launch after the watch has exited, a
+  stale one outside its reserve reads unknown, and the account's `sources` decide which reading counts.
+- Budget readings are kept per project, not per herdr session: `up`, `add`, `status` and the watch
+  read the one cache, so a figure one session saw counts for every session, and state files written
+  before this change migrate as they are read — no reading is lost.
+- A stale check reading inside its reserve keeps refusing until its known reset, as a stale screen
+  reading does; an unconfirmed screen reading no longer hides a fresh check reading later in
+  `sources`.
+- A Claude question is the dialog's own last line. Prose that says "Esc to cancel", and a transcript
+  of "1. Yes" / "2. No" above an empty box, stay idle.
+- An Antigravity permission dialog whose rule line has scrolled out of the window (a long command)
+  is still read as the dialog, and a Claude Code question with a line below its footer and no rule
+  in the window is still read as a question.
+- The watch folds its readings inside the state's own lock, so two watches of one project fold onto
+  each other's figures instead of overwriting them.
 
 ## [0.1.1] - 2026-10-04
 
