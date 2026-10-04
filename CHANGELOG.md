@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `bun run build` empties `dist/` first, so a file left by an older build can no longer end up in a
+  packed or globally installed tarball.
+
 ## [0.1.0] - 2026-10-04
 
 The first release: set up, change and watch a project's team of AI agents from one file,
