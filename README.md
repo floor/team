@@ -137,7 +137,9 @@ config.
 account's reserve or floor. A `check` command is resolved to a file and hashed when the
 owner approves; a change to that file needs a new approval, and the command is not run
 until then. `watch.quota_marks` is still read, with a warning, until you move it to
-`budgets.marks`.
+`budgets.marks`. A figure first seen on one seat does not count until it changes or a
+second seat shows the same number. It goes stale from the moment it last changed, and
+the last readings are kept in the state file beside the team file.
 
 More fields exist — `tools`, `trust`, `machine`, `limits`, `watch`, `visibility` — and the comments
 `team init` writes name them; validation refuses what it cannot check, and this build acts on what
