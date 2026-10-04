@@ -140,7 +140,8 @@ not run, and the account reads unknown, until the owner approves again. The rest
 the file still runs. `watch.quota_marks` is still read, with a warning, until you move it to
 `budgets.marks`. A figure first seen on one seat does not count until it changes or a
 second seat shows the same number. It goes stale from the moment it last changed, and
-the last readings are kept in the state file beside the team file.
+the last readings are kept in the state file beside the team file. `team status` prints
+them, one row per account and window, when there is an account or a stored reading.
 
 More fields exist — `tools`, `trust`, `machine`, `limits`, `watch`, `visibility` — and the comments
 `team init` writes name them; validation refuses what it cannot check, and this build acts on what

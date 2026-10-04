@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { relative, resolve } from 'node:path';
 import { approvalDifferences } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
+import { budgetLine, budgetTable, type BudgetRow } from '../budgets/table.ts';
+import { recall } from '../budgets/readings.ts';
 import { currentTeam } from '../file/current.ts';
 import type { Problem, TeamFile } from '../file/types.ts';
 import { agentList, paneRead, sessionRunning, workspaceList } from '../herdr.ts';
@@ -69,6 +71,8 @@ export interface StatusJson {
     repair: string;
   }>;
   notice: string | null;
+  /** Present when the file names an account, or a reading is stored. */
+  budgets?: BudgetRow[];
 }
 
 export const USAGE = 'Usage: team status [--session <name>] [--file <path>] [--json]\n';
@@ -96,6 +100,7 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     return 2;
   }
   const state = readState(dir).sessions[session] ?? emptySession();
+  const budgets = budgetTable(team, recall(state.budgets), sources.now().getTime());
   const comparison = compare(team, session, state, live, sources.now());
   if (!live.running) comparison.notes.unshift(`the herdr session "${session}" is not running`);
   comparison.differences.push(...protectedCheckouts(team, root, sources), ...approvalDrift(sources.approval(team, root)));
@@ -109,10 +114,11 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
       notes: comparison.notes,
       differences: comparison.differences,
       notice: current.notice ?? null,
+      ...(budgets.length ? { budgets } : {}),
     };
     io.stdout(`${JSON.stringify(doc, null, 2)}\n`);
   } else {
-    io.stdout(render(team, session, comparison));
+    io.stdout(render(team, session, comparison, budgets));
   }
   return comparison.differences.length ? 1 : 0;
 }
@@ -140,7 +146,7 @@ function protectedCheckouts(team: TeamFile, root: string, sources: StatusSources
   return out;
 }
 
-function render(team: TeamFile, session: string, comparison: Comparison): string {
+function render(team: TeamFile, session: string, comparison: Comparison, budgets: BudgetRow[]): string {
   const lines = [`team ${team.project}, session "${session}"`];
   const widths = [0, 0, 0];
   for (const row of comparison.rows) {
@@ -150,6 +156,14 @@ function render(team: TeamFile, session: string, comparison: Comparison): string
   }
   for (const row of comparison.rows) {
     lines.push(`  ${row.name.padEnd(widths[0] as number)}  ${row.state.padEnd(widths[1] as number)}  ${row.model.padEnd(widths[2] as number)}  ${row.pane}`.trimEnd());
+  }
+  if (budgets.length) {
+    lines.push('budgets:');
+    for (const row of budgets) {
+      const account = team.budgets.accounts[row.account];
+      const reserve = account?.kind === 'subscription' ? account.reserve : null;
+      lines.push(`  ${budgetLine(row, reserve)}`);
+    }
   }
   for (const note of comparison.notes) lines.push(`note: ${note}`);
   for (const difference of comparison.differences) {
