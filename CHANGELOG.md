@@ -7,11 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [0.1.1] - YYYY-MM-DD
 
-- A spend account's `floor` refuses a launch: the watch keeps the money each spend check reads in the
-  state, and `up` and `add` refuse a seat whose account is at or below its floor. A reading that is
-  missing, stale or in another currency than the floor's reads unknown, is said, and never refuses.
+Two fixes that stop `team` typing into, or reading wrongly, a Codex screen.
 
 ### Fixed
 
@@ -19,6 +17,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unsent text: the safety floor's markers match without regard to case, and a rule's footer may sit
   above a `status-last` composer's pinned line. The dialog is reported and never answered, and rules
   delivery and the watch type nothing into it.
+- Quota figures are read only from the status line's own row of a composer screen: a line printed
+  into the transcript or typed into the input box is not read as one, a CLI whose composer shows no
+  status line reads no figures at all, and a dialog, a question, a trust or an unknown screen reads
+  none. A pane's owner can still draw a whole fake composer; a fresh `check` reading stays first,
+  and a wrong figure can only refuse a launch or produce a report.
+
+### Added
+
+- A spend account's `floor` refuses a launch: the watch keeps the money each spend check reads in the
+  state, and `up` and `add` refuse a seat whose account is at or below its floor. A reading that is
+  missing, stale or in another currency than the floor's reads unknown, is said, and never refuses.
+
+### Changed
+
+- `bun run build` empties `dist/` first, so a file left by an older build can no longer end up in a
+  packed or globally installed tarball.
 
 ## [0.1.0] - 2026-10-04
 
@@ -111,4 +125,5 @@ The first release: set up, change and watch a project's team of AI agents from o
   footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
   stays idle.
 
+[0.1.1]: https://github.com/floor/team/releases/tag/v0.1.1
 [0.1.0]: https://github.com/floor/team/releases/tag/v0.1.0
