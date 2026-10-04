@@ -293,9 +293,10 @@ nothing until the owner approves it — the passes keep running with the values 
 or with the defaults when nothing was approved, and the difference is reported.
 
 A check the team doesn't want is turned off in `watch.checks` — a section only the owner changes,
-so it is approved like the rest of them. The machine below sits at 8% free memory, and this file
-turns that one report off — but the edit is not approved yet, so nothing is turned off: the report
-still comes, with the difference beside it.
+so it is approved like the rest of them. While that edit is unapproved, the approved list stays
+in force: nothing new is turned off, and a check the approved file turned off stays off. The
+machine below sits at 8% free memory, and this file turns that report off. The approved list left
+it on, so the report still comes, with the difference beside it.
 
 ```yaml file=.agents/team.yaml
 format: 1

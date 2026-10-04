@@ -144,37 +144,38 @@ describe('a pass with checks turned off', () => {
   const APPROVED: string[] = [];
 
   test('a disabled check reports nothing; the others report as usual', () => {
-    expect(texts(pass({ team: teamFile(), state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval: APPROVED }))).toEqual([
+    expect(texts(pass({ team: teamFile(), watch: teamFile().watch, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval: APPROVED }))).toEqual([
       'the load is 6.5 per core, above 6',
       'free memory is 10%, below 15%',
       'free disk is 5.0 GB, below 10.0 GB',
       'free swap is 0.3 GB, below 2.0 GB',
     ]);
     const off = teamFile('  checks:\n    disk: off\n');
-    expect(texts(pass({ team: off, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval: APPROVED }))).toEqual([
+    expect(texts(pass({ team: off, watch: off.watch, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval: APPROVED }))).toEqual([
       'the load is 6.5 per core, above 6',
       'free memory is 10%, below 15%',
       'free swap is 0.3 GB, below 2.0 GB',
     ]);
     const both = teamFile('  checks:\n    disk: off\n    memory: off\n');
-    expect(texts(pass({ team: both, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval: APPROVED }))).toEqual([
+    expect(texts(pass({ team: both, watch: both.watch, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval: APPROVED }))).toEqual([
       'the load is 6.5 per core, above 6',
       'free swap is 0.3 GB, below 2.0 GB',
     ]);
   });
 
-  test('nothing is turned off until the owner approves the edit', () => {
+  test('the list in force is what turns a check off, even while `watch.checks` is the difference', () => {
     const off = teamFile('  checks:\n    disk: off\n');
-    const reported = (approval: string[] | null) => texts(pass({ team: off, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval }));
-    // The edit is a difference: the check it would turn off keeps running, and the difference is
-    // the owner's to answer.
-    expect(reported([WATCH_CHECKS_CHANGED])).toContain('free disk is 5.0 GB, below 10.0 GB');
+    const reported = (approval: string[] | null) => texts(pass({
+      team: off, watch: off.watch, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval,
+    }));
+    // The caller passed this file's own list. Naming the checks as a difference does not turn
+    // that list back on: disk stays off, and the difference is still the owner's to answer.
+    expect(reported([WATCH_CHECKS_CHANGED])).not.toContain('free disk is 5.0 GB, below 10.0 GB');
     expect(reported([WATCH_CHECKS_CHANGED])).toContain('the file differs from the approved one: `watch.checks` changed');
-    // And a file that was never approved turns nothing off either.
+    // A file that was never approved turns nothing off.
     expect(reported(null)).toContain('free disk is 5.0 GB, below 10.0 GB');
     expect(reported(null)).toContain('the file was never approved on this machine');
-    // Approved: the check is off. A difference in another section leaves it off — the owner owns
-    // both questions, and agreed to this one.
+    // Approved: the check is off. A difference in another section leaves the list in force off.
     expect(reported(APPROVED)).not.toContain('free disk is 5.0 GB, below 10.0 GB');
     expect(reported(['`rules` changed'])).not.toContain('free disk is 5.0 GB, below 10.0 GB');
   });
@@ -183,16 +184,16 @@ describe('a pass with checks turned off', () => {
     const memory = newMemory();
     const off = teamFile('  checks:\n    disk: off\n');
     expect(texts(pass({
-      team: off, state: emptySession(), live: live(), machine: tight, now: 0, memory, approval: APPROVED,
+      team: off, watch: off.watch, state: emptySession(), live: live(), machine: tight, now: 0, memory, approval: APPROVED,
     }))).not.toContain('free disk is 5.0 GB, below 10.0 GB');
     expect(texts(pass({
-      team: teamFile(), state: emptySession(), live: live(), machine: tight, now: 60_000, memory, approval: APPROVED,
+      team: teamFile(), watch: teamFile().watch, state: emptySession(), live: live(), machine: tight, now: 60_000, memory, approval: APPROVED,
     }))).toContain('free disk is 5.0 GB, below 10.0 GB');
     expect(texts(pass({
-      team: off, state: emptySession(), live: live(), machine: tight, now: 2 * 60_000, memory, approval: APPROVED,
+      team: off, watch: off.watch, state: emptySession(), live: live(), machine: tight, now: 2 * 60_000, memory, approval: APPROVED,
     }))).not.toContain('free disk is 5.0 GB, below 10.0 GB');
     expect(texts(pass({
-      team: teamFile(), state: emptySession(), live: live(), machine: tight, now: 3 * 60_000, memory, approval: APPROVED,
+      team: teamFile(), watch: teamFile().watch, state: emptySession(), live: live(), machine: tight, now: 3 * 60_000, memory, approval: APPROVED,
     }))).toContain('free disk is 5.0 GB, below 10.0 GB');
   });
 
@@ -204,7 +205,7 @@ describe('a pass with checks turned off', () => {
     const now = live({ 'deepseek-acme': { status: 'idle', screen: permission } });
     now.agents = now.agents.filter((one) => one.name !== 'deepseek-acme-2');
     now.screens['w1:p1'] = busy.replace('Opus 5.5', 'Fable 5.1');
-    const reported = texts(pass({ team: smuggled, state: emptySession(), live: now, machine: fine, now: 0, memory: newMemory(), approval: ['`rules` changed'] }));
+    const reported = texts(pass({ team: smuggled, watch: smuggled.watch, state: emptySession(), live: now, machine: fine, now: 0, memory: newMemory(), approval: ['`rules` changed'] }));
     expect(reported).toContain('deepseek-acme-2 is in the file and is not running');
     expect(reported).toContain('claude-coordinator-acme runs Claude Fable 5.1; the file says Claude Opus 5.5: it signs with the wrong model');
     expect(reported).toContain("deepseek-acme waits at a permission prompt: its owner's to answer");
@@ -219,8 +220,7 @@ describe('watch.checks and the approval', () => {
     const after = fingerprints(teamFile('  checks:\n    disk: off\n'));
     expect(after.sections['watch.checks']).not.toBe(before.sections['watch.checks']);
     expect(compare(before, after)).toEqual([{ kind: 'section', name: 'watch.checks' }]);
-    // The line the watch reads to know the checks are not the approved ones is the one the
-    // approval report prints.
+    // The line the approval report prints. pass does not read it; the list in force does.
     expect(compare(before, after).map(describeDifference)).toEqual([WATCH_CHECKS_CHANGED]);
   });
 

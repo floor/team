@@ -2,7 +2,6 @@
 // runs the registered checks in the order it owns, applies the report-once rule, and dials the
 // nudge. A check never reads herdr, a screen or the file itself — only the observation it is
 // handed (RFC 0002 § 4.2).
-import { WATCH_CHECKS_CHANGED } from '../approve/fingerprint.ts';
 import { observe, recall, type Seen } from '../budgets/readings.ts';
 import type { CheckOutcome } from '../budgets/run.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -116,7 +115,7 @@ export type PassInput = {
   now: number;
   memory: Memory;
   approval?: string[] | null;
-  watch?: TeamFile['watch'];
+  watch: TeamFile['watch'];
   outcomes?: readonly CheckOutcome[];
   budgets?: TeamFile['budgets'];
 };
@@ -130,7 +129,7 @@ export function pass({
   now,
   memory,
   approval,
-  watch = team.watch,
+  watch,
   outcomes = [],
   budgets = team.budgets,
 }: PassInput): PassResult {
@@ -273,17 +272,14 @@ export function pass({
     },
   };
 
-  // The four § 4.2 keeps out of `watch.checks` run whatever the file says: the validation refuses
+  // The four § 4.2 keeps out of `watch.checks` run whatever the list says: the validation refuses
   // them, and this holds even for a file that reached memory another way.
   //
-  // The off list is the section in force (RFC 0002 § 4.2). A pass that was not given that
-  // section — `watch` still the file's own list — turns nothing off when the checks are
-  // unapproved, when nothing was approved, or when the approval was not looked at. Once the
-  // section in force carries a different list, that list is what runs, drift line included.
-  const checksNamed = Array.isArray(approval) && approval.includes(WATCH_CHECKS_CHANGED);
-  const sameList = watch.checks.length === team.watch.checks.length
-    && watch.checks.every((name, index) => name === team.watch.checks[index]);
-  const off = !Array.isArray(approval) || (checksNamed && sameList) ? new Set<string>() : new Set(watch.checks);
+  // The off list is the section in force, which the caller passes as `watch`. A file that was
+  // approved — `approval` is a list, empty or not — runs that list. An unapproved `watch.checks`
+  // edit does not turn anything new off, and a check the approved list turned off stays off.
+  // A file never approved, or whose approval was not looked at, turns nothing off.
+  const off = Array.isArray(approval) ? new Set(watch.checks) : new Set<string>();
   const enabled = (name: string) => ALWAYS_ON.includes(name) || !off.has(name);
   for (const seat of observations) {
     for (const check of SEAT_CHECKS) if (enabled(check.name)) reports.push(...check.run(seat, ctx));

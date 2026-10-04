@@ -191,7 +191,7 @@ seats:
     if (!parsed.ok) throw new Error('invalid team file');
     const teamFile = parsed.team;
     const result = pass({
-      team: teamFile,
+      team: teamFile, watch: teamFile.watch,
       state: emptySession(),
       live: {
         running: true,
