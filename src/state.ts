@@ -1,6 +1,6 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { StoredReading } from './budgets/readings.ts';
+import type { StoredReading, StoredSpend } from './budgets/readings.ts';
 
 // What only exists while a team runs. It lives beside the team file, is keyed by session, and is
 // written by team alone: every write holds the lock and goes through a temporary file.
@@ -34,6 +34,8 @@ export type SessionState = {
   nudge?: { pending_since: string | null };
   /** The last screen readings for this project, keyed by account, window and seat. */
   budgets?: Record<string, StoredReading>;
+  /** The last spend check readings for this project, keyed by account. */
+  spend?: Record<string, StoredSpend>;
 };
 
 export type State = {

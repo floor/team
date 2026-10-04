@@ -1,6 +1,6 @@
 import { readArgs } from '../args.ts';
 import { budgetsInForce, watchInForce } from '../approve/approval.ts';
-import { saveReadings } from '../budgets/readings.ts';
+import { saveReadings, saveSpendReadings, type SpendReading } from '../budgets/readings.ts';
 import { runChecks, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -172,6 +172,10 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         if (checksAt === null || now - checksAt >= budget.checkEvery * 1000) {
           checksAt = now;
           outcomes = sources.readChecks(team, root, now);
+          // The money a spend check counted is kept, like the pass's screen readings: the launch
+          // gate of `up` and `add` reads it later, and one that is stale by then reads unknown
+          // (§ 5). An account whose check did not run keeps its stored reading.
+          saveSpendReadings(dir, session, spendOf(outcomes));
           for (const outcome of outcomes) {
             const key = `check:${outcome.account}`;
             if (outcome.state === 'read') {
@@ -206,6 +210,21 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
     say(`the watch of "${session}" stopped`, true);
   }
   return 0;
+}
+
+/** The spend readings among a pass's check outcomes, for the state. */
+function spendOf(outcomes: readonly CheckOutcome[]): SpendReading[] {
+  const list: SpendReading[] = [];
+  for (const outcome of outcomes) {
+    if (outcome.state !== 'read' || outcome.reading.kind !== 'spend') continue;
+    list.push({
+      account: outcome.account,
+      amount: outcome.reading.amount,
+      currency: outcome.reading.currency,
+      at: outcome.reading.at,
+    });
+  }
+  return list;
 }
 
 // Types the nudge, after reading the operator's screen once more: the pass saw it free, and a

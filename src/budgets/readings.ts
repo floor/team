@@ -1,5 +1,5 @@
 // Which screen reading counts for an account and a window. A check reading
-// has its own freshness and is not decided here.
+// has its own freshness and is not decided here, screen or spend alike.
 import type { QuotaFigure, WindowName } from '../profiles/quota.ts';
 import { emptySession, readState, updateState } from '../state.ts';
 
@@ -28,6 +28,22 @@ export type StoredReading = {
 export type Verdict =
   | { kind: 'fresh' | 'unconfirmed' | 'stale' | 'refusing'; reading: Seen }
   | { kind: 'unknown' };
+
+/** A spend check reading (RFC 0003 § 5): the money the account still holds. */
+export type SpendReading = {
+  account: string;
+  amount: number;
+  currency: string;
+  /** When the check ran: a spend line carries no time of its own (§ 5). */
+  at: number;
+};
+
+export type StoredSpend = {
+  account: string;
+  amount: number;
+  currency: string;
+  at: string;
+};
 
 /** Fold one seat's figure into the readings kept for this pass. */
 export function observe(list: readonly Seen[], figure: QuotaFigure, seat: string, now: number): Seen[] {
@@ -107,6 +123,44 @@ export function saveReadings(dir: string, session: string, list: readonly Seen[]
 
 export function loadReadings(dir: string, session: string): Seen[] {
   return recall(readState(dir).sessions[session]?.budgets);
+}
+
+/**
+ * Write the spend readings a pass's checks read, merging by account: an account whose check did
+ * not run this pass keeps the reading the state already holds. Nothing read, nothing written.
+ */
+export function saveSpendReadings(dir: string, session: string, list: readonly SpendReading[]): void {
+  if (!list.length) return;
+  updateState(dir, (state) => {
+    const current = state.sessions[session] ?? emptySession();
+    const spend = current.spend ?? {};
+    for (const reading of list) spend[reading.account] = storeSpend(reading);
+    current.spend = spend;
+    state.sessions[session] = current;
+  });
+}
+
+export function loadSpendReadings(dir: string, session: string): SpendReading[] {
+  return recallSpend(readState(dir).sessions[session]?.spend);
+}
+
+export function storeSpend(reading: SpendReading): StoredSpend {
+  return {
+    account: reading.account,
+    amount: reading.amount,
+    currency: reading.currency,
+    at: new Date(reading.at).toISOString(),
+  };
+}
+
+export function recallSpend(stored: Record<string, StoredSpend> | undefined): SpendReading[] {
+  if (!stored) return [];
+  return Object.values(stored).map((one) => ({
+    account: one.account,
+    amount: one.amount,
+    currency: one.currency,
+    at: Date.parse(one.at),
+  }));
 }
 
 export function store(reading: Seen): StoredReading {

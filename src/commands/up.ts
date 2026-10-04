@@ -37,7 +37,7 @@ import { profileFor } from '../profiles/index.ts';
 import { readApproval, storePath, type Ceilings } from '../store/store.ts';
 import { emptySession, readState, updateState, type SeatState } from '../state.ts';
 import { seatBudget } from '../budgets/gate.ts';
-import { loadReadings } from '../budgets/readings.ts';
+import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from './doctor.ts';
 import { launchLimit, readMachine, type Machine, type SwapSample } from '../watch/machine.ts';
 import { readScreen } from '../watch/screen.ts';
@@ -274,6 +274,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const recorded = readState(dir).sessions[session];
   const workspaces = sources.workspaces?.(session) ?? null;
   const readings = loadReadings(dir, session);
+  const spend = loadSpendReadings(dir, session);
   const seats: UpSeat[] = [];
   const refused = new Set<string>();
   for (const seat of team.seats) {
@@ -286,7 +287,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     }
     const placed = planned.stage === undefined || !planned.pane;
     if (!placed) {
-      const budget = seatBudget(budgets, readings, seat, readAt());
+      const budget = seatBudget(budgets, readings, seat, readAt(), spend);
       seats.push({ ...planned, ...(budget.kind === 'clear' ? {} : { budget }) });
       continue;
     }
@@ -298,7 +299,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       }
       continue;
     }
-    const budget = seatBudget(budgets, readings, seat, readAt());
+    const budget = seatBudget(budgets, readings, seat, readAt(), spend);
     seats.push({
       ...planned,
       cwd: start.cwd,

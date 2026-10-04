@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ten seconds, an empty environment, and only when the approval covers them — their output is never
   logged. The core parses each seat's quota line, and a reading the pass saw is saved, so `status`,
   `up` and `add` count it. `watch.checks: { budget: off }` turns the report off.
+- A spend account's `floor` refuses a launch: the watch keeps the money each spend check reads in the
+  state, and `up` and `add` refuse a seat whose account is at or below its floor. A reading that is
+  missing, stale or in another currency than the floor's reads unknown, is said, and never refuses.
 
 ### Changed
 

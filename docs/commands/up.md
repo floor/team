@@ -71,8 +71,10 @@ A seat that doesn't get there is printed once with what stopped it, and `up` exi
 | `<seat>: its launch command did not run; left at launched` | the pane took no command |
 | `<seat>: the approval allows 3 seats; 4 would be running` | the approval's ceiling, from the record, not the file |
 | `<seat>: refused: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | a counted reading is inside that account's reserve and this run would launch the seat; this seat is not started, and the others still are. `accounts with room: none` when no other account has room |
+| `<seat>: refused: <account> spend <amount> <CUR>, at or below its <floor> <CUR> floor, read <age> ago; accounts with room: <accounts>` | the money its check counted is at or below the account's floor, and this run would launch the seat; this seat is not started, and the others still are |
 | `<seat>: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | the same reading, and the seat is already running; setup continues and the line is only a notice |
-| `<seat>: <account> is unknown` | the account is in the file and its figure is unknown, including a stale reading with no reset time; the seat still starts |
+| `<seat>: <account> spend <amount> <CUR>, at or below its <floor> <CUR> floor, read <age> ago; accounts with room: <accounts>` | the same money reading, and the seat is already running; setup continues and the line is only a notice |
+| `<seat>: <account> is unknown` | the account is in the file and its figure is unknown — a subscription with no counted reading, including a stale one with no reset time, or a spend account whose money reading is missing, older than `budgets.stale_after`, or in another currency than the floor's; the seat still starts |
 | `<seat>: <account>: first sight only, not yet counted` | the account's only readings are unconfirmed; the seat still starts |
 
 The plan a `--dry-run` prints is also what `team down --dry-run` prints: `+ <command>` for a command
