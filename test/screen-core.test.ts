@@ -327,6 +327,27 @@ const captured: [string, string, (lines: string[]) => Screen['kind']][] = [
 ];
 
 describe('codex, cursor and antigravity through the screen core', () => {
+  test('typed text ending in ctrl+c to stop is a running turn, and unsent in the composer', () => {
+    // Constructed, not a capture. The suffix on the prompt is the running turn.
+    // The composer strips it, and the words typed under it are unsent.
+    const text = '→ ship the fix   ctrl+c to stop\n  Grok 4.7 medium\n';
+    expect(classifyComposer('cursor', text.split('\n')).kind).toBe('unsent');
+    expect(classify('cursor', text.split('\n')).kind).toBe('working');
+  });
+
+  test('a quoted ctrl+c to stop above an idle box is idle', () => {
+    const idle = readFileSync(new URL('./fixtures/cursor/2026.10.01/idle.txt', import.meta.url), 'utf8');
+    const text = `  the transcript quoted ctrl+c to stop\n${idle}`;
+    expect(classify('cursor', text.split('\n')).kind).toBe('idle');
+    expect(readScreen('cursor', text).kind).toBe('idle');
+  });
+
+  test('a running turn whose spinner has scrolled out is still working', () => {
+    const text = readFileSync(new URL('./fixtures/cursor/2026.10.01/working-no-spinner.txt', import.meta.url), 'utf8');
+    expect(classify('cursor', text.split('\n')).kind).toBe('working');
+    expect(readScreen('cursor', text).kind).toBe('working');
+  });
+
   test('every captured screen matches the classifier main had', () => {
     for (const [cli, version, read] of captured) {
       const dir = fileURLToPath(new URL(`./fixtures/${cli}/${version}/`, import.meta.url));
