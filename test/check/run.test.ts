@@ -352,7 +352,7 @@ describe('the command', () => {
   });
 
   test('exits 2 on a usage error', async () => {
-    expect((await run([])).stderr).toStartWith('team check: a <ref> is required\n\nusage: team check <ref>');
+    expect((await run([])).stderr).toStartWith('team check: a <ref> is required\n\nUsage: team check <ref>');
     expect((await run(['a', 'b'])).code).toBe(2);
     expect((await run(['main', '--force'])).stderr).toStartWith('team check: unknown option --force');
     expect((await run(['main', '--since'])).stderr).toStartWith('team check: --since needs a value');

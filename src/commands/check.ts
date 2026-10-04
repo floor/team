@@ -14,7 +14,7 @@ export type LoadConfig = (
   file?: string,
 ) => { ok: true; config: CheckConfig; warnings: Problem[] } | { ok: false; errors: Problem[]; path?: string };
 
-export const USAGE = `usage: team check <ref> [--pr <file>] [--since <ref>] [--file <path>]
+export const USAGE = `Usage: team check <ref> [--pr <file>] [--since <ref>] [--file <path>]
 
   <ref>            a range when it holds "..", passed to git as given
                    (origin/main..HEAD); otherwise that one commit
