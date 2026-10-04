@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mayChangeTeam, placeCaller, readAncestors } from '../src/caller.ts';
+import { mayChangeTeam, parseStat, placeCaller, processReader, readAncestors, readWithProc, readWithPs } from '../src/caller.ts';
 import type { CallerSources, Process } from '../src/caller.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 
@@ -111,5 +111,35 @@ describe('reading the process table', () => {
 
   test('a chain that never ends is incomplete', () => {
     expect(readAncestors(5, () => ({ ppid: 5, name: 'loop' }))).toBeNull();
+  });
+
+  // A captured /proc tree, as Linux writes one: the same ancestors the table above names.
+  const linuxProc = new URL('./fixtures/linux/proc', import.meta.url).pathname;
+
+  test('Linux walks /proc and answers what the table above answers', () => {
+    expect(readAncestors(210, (pid) => readWithProc(pid, linuxProc))).toEqual([
+      { pid: 210, name: 'zsh' },
+      { pid: 200, name: 'claude' },
+      { pid: 10, name: 'herdr' },
+    ]);
+  });
+
+  test('a line of /proc/<pid>/stat: the name may hold a space or a parenthesis', () => {
+    const line = '210 (zsh) S 200 210 210 34816 210 4194304 1185 0 0 0 12 5 0 0 20 0 1 0 1234567 12345678 1234 18446744073709551615 0 0 0';
+    expect(parseStat(line)).toEqual({ ppid: 200, name: 'zsh' });
+    // The last parenthesis closes the name, whatever the name holds.
+    expect(parseStat(line.replace('(zsh)', '(tmux: server (2))'))).toEqual({ ppid: 200, name: 'tmux: server (2)' });
+  });
+
+  test('a line of /proc that holds no parent places nobody, and so does one that can\'t be read', () => {
+    expect(parseStat('')).toBeNull();
+    expect(parseStat('210 (zsh) S')).toBeNull();
+    expect(parseStat('nonsense')).toBeNull();
+    expect(readWithProc(999_999, linuxProc)).toBeNull();
+  });
+
+  test('the platform picks the table: /proc on Linux, ps everywhere else', () => {
+    expect(processReader('linux')).toBe(readWithProc);
+    expect(processReader('darwin')).toBe(readWithPs);
   });
 });
