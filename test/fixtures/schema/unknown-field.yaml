@@ -1,0 +1,17 @@
+format: 1
+project: beacon
+coordinator: keeper
+operator: keeper
+workspace:
+  mode: shared
+limits:
+  seats: 3
+  temporray: 2
+seats:
+  - role: coordinator
+    name: keeper
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude
