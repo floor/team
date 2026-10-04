@@ -23,6 +23,10 @@ Writes `.agents/team.state.json` (the watch's pid and a heartbeat, once a pass; 
 spend checks read), `.agents/team.log` (every line it prints), and, through herdr: the nudge's text
 and Enter, and the panes and workspaces of the seats it closes.
 
+The readings are only written when the watch's session is the file's own `session`: `up` and `add`
+count the state as the project's, so a watch on another session — `--session <other>`, which anyone
+may run — reads and reports, says so once, and saves no reading, budget or spend.
+
 ## Who may run it
 
 Anyone, in any terminal. `up` starts one for the session in a pane of its own, and this is the one
@@ -89,6 +93,7 @@ A report that is the operator's to act on is also what the nudge stands for. The
 | `herdr doesn't answer; the watch keeps trying` | the pass is skipped and the watch goes on |
 | `<account>: its check is unreadable` | the check command failed, timed out, or broke RFC 0003 § 5's output contract; its output is never logged |
 | `the check for <account> is unapproved; that account reads unknown` | the check's file changed since the approval, or was never approved: it is not run |
+| `the session "<session>" is not this file's "<session>": its readings are not saved` | `--session` names a session other than the file's own; said once, on the first pass that sees it |
 | `team.yaml can't be read (<problem>); watching with the team as it was` | the file broke and no copy of it validated |
 | `closed <seat>; its end <until> holds` | a temporary seat whose end is proved and whose pane is free was stopped |
 | `worktree <task> was not removed` | its removal failed; it is tried again on the next pass |

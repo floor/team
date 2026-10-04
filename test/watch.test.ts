@@ -818,6 +818,33 @@ describe('team watch', () => {
     }]);
   });
 
+  test('a watch on a session that is not the file\'s saves no reading, and says so once', async () => {
+    writeFileSync(file, withAccounts(
+      '  accounts:\n'
+      + '    openai: { kind: subscription, reserve: 3%, sources: [status_line, check], check: openai-usage }\n'
+      + '    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n',
+    ));
+    scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n` } });
+    const checks: WatchSources['readChecks'] = (_team, _root, at) => [
+      { account: 'openai', state: 'read', reading: { kind: 'subscription', windows: [{ window: 'weekly', left: 5, used: 95, at, resetsAt: null }] } },
+      { account: 'deepseek', state: 'read', reading: { kind: 'spend', amount: 4.2, currency: 'USD', at } },
+    ];
+    // Anyone may watch another session; only the file's own session's watch is the cache that
+    // `up` and `add` count (§ 4.4).
+    const io = testIo(dir);
+    expect(await runWatch(['--file', file, '--session', 'team-test'], io, sources(2, { readChecks: checks }))).toBe(0);
+    expect(loadReadings(join(dir, '.agents'))).toEqual([]);
+    expect(loadSpendReadings(join(dir, '.agents'))).toEqual([]);
+    expect(io.out.match(/is not this file's "acme-web"/g)?.length).toBe(1);
+
+    // The file's own session saves the same figures.
+    scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n` } });
+    expect(await runWatch(['--file', file], testIo(dir), sources(1, { readChecks: checks }))).toBe(0);
+    expect(loadReadings(join(dir, '.agents')).map(({ account, source }) => `${account}/${source}`).sort())
+      .toEqual(['openai/check', 'openai/status_line']);
+    expect(loadSpendReadings(join(dir, '.agents')).map(({ account, amount }) => [account, amount])).toEqual([['deepseek', 4.2]]);
+  });
+
   test('a file that never validated, and a bad option', async () => {
     writeFileSync(file, 'format: 9\n');
     expect(await runWatch(['--file', file], testIo(dir), sources(1))).toBe(2);
