@@ -14,6 +14,7 @@ const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url)
 const NOW = new Date('2026-10-03T14:10:00Z');
 
 const claudeScreen = (model: string) => `❯ \n────\n  main · …/acme · ${model} · S: $1.2 · W: 12%\n  ⏵⏵ bypass permissions on\n`;
+const codexScreen = (name: string) => readFileSync(new URL(`./fixtures/codex/0.157.0/${name}.txt`, import.meta.url), 'utf8');
 
 function agent(name: string | null, workspace: string, status = 'idle', kind = 'claude'): HerdrAgent {
   return { name, agent: kind, pane: `${workspace}:p1`, workspace, status, cwd: null };
@@ -123,6 +124,34 @@ describe('team status', () => {
     const { code, out } = await status();
     expect(out).toContain('difference: claude-coordinator-acme runs Claude Fable 5.1; the file says Claude Opus 5.5');
     expect(code).toBe(1);
+  });
+
+  // Each profile's own status line, through the same comparison: the codex seat's captured
+  // footer names another model, and an id the map doesn't know is unread, never a difference.
+  test('a codex seat whose captured status line names another model', async () => {
+    live = { ...built(), screens: { ...built().screens, 'w2:p1': codexScreen('idle') } };
+    const { code, out } = await status();
+    expect(out).toContain('difference: codex-acme runs GPT Terra 5.6; the file says GPT Sol 6');
+    expect(code).toBe(1);
+  });
+
+  test('a status-line id the map doesn\'t know is unread: a note, never a difference', async () => {
+    const screen = codexScreen('idle').replace('GPT-5.6-Terra medium ·', 'GPT-9-Nova medium ·');
+    live = { ...built(), screens: { ...built().screens, 'w2:p1': screen } };
+    const { code, out } = await status();
+    expect(out).toContain('note: codex-acme: version unread');
+    expect(out).not.toContain('codex-acme runs');
+    expect(code).toBe(0);
+  });
+
+  // Claude Code's line names Claude's families only: the DeepSeek seat's own status line says
+  // nothing to compare, so it is unread rather than wrong.
+  test('a seat that runs another maker\'s model through Claude Code is unread, never a mismatch', async () => {
+    live = { ...built(), screens: { ...built().screens, 'w3:p1': claudeScreen('Opus 5.5') } };
+    const { code, out } = await status();
+    expect(out).toContain('note: deepseek-acme: version unread');
+    expect(out).not.toContain('deepseek-acme runs');
+    expect(code).toBe(0);
   });
 
   test('a stopped seat that runs', async () => {
