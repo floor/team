@@ -143,9 +143,12 @@ second seat shows the same number. It goes stale from the moment it last changed
 the last readings are kept in the state file beside the team file. `team status` prints
 them, one row per account and window, when there is an account or a stored reading.
 
-`examples/checks/codex-quota` is a check for an openai account. It is a Bun script:
-Bun is already how `team` runs, and the script uses only built-in file modules, so
-there is no package to install beside it. Copy it onto `PATH` and name that command:
+`examples/checks/codex-quota` is a check for an openai account. It ships with the package: with a
+global install it is at `$(npm root -g)/team/examples/checks/codex-quota`, and it is
+[examples/checks/codex-quota](https://github.com/floor/team/blob/main/examples/checks/codex-quota)
+in the repository. It is a Bun script — the check needs Bun on `PATH`, whatever runs `team` — and
+it uses only built-in file modules, so there is no package to install beside it. Copy it onto
+`PATH` and name that command:
 
 ```yaml
 openai:
@@ -199,7 +202,7 @@ the commands below read.
 | `team remove <name>` | stops one seat, then takes it out of the file; `--keep` leaves it stopped; `--abandon` is the owner's, and types nothing | the owner, the coordinator or the operator; only the owner removes the coordinator or the operator |
 | `team worktree new <task>` / `team worktree remove <task>` | creates a task worktree from an up-to-date base, or removes its folder; a failed setup is kept and recorded; the branch is never deleted; ignored files in the worktree are deleted with it | the owner, the coordinator or the operator |
 
-Each command has its own page in [docs/commands](docs/commands/): the synopsis, what it reads and
+Each command has its own page in [docs/commands](https://github.com/floor/team/tree/main/docs/commands): the synopsis, what it reads and
 writes, who may run it, every flag, the refusals with their exact text, the exit codes, and examples
 that `bun run ci` runs against a fixture team.
 
