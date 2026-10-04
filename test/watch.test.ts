@@ -823,6 +823,21 @@ describe('team watch', () => {
     expect(io.out).toContain('a nudge was typed and not sent');
   });
 
+  test('a prompt-glyph continuation row in the operator\'s box is never typed into and never gets the Enter', async () => {
+    // The round-6 reproduction on the nudge path: the operator's box holds their own text and
+    // then a continuation row carrying only the prompt glyph. The box is not idle — the input
+    // row is the box's first row under its opening rule, and the glyph row is content — so
+    // nothing is typed. Read by glyph, the box was idle, the nudge was appended after the
+    // glyph, and the nudge and the operator's text were submitted together.
+    screenNow = claudeBox('person text\n❯');
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = claudeBox(`person text\n❯ ${text}`); return true; },
+    }));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain('nudged the operator');
+  });
+
   test('--no-notify still notifies the fallback when the operator never frees up', async () => {
     scene = live({
       'deepseek-acme-2': { status: 'blocked', screen: question },

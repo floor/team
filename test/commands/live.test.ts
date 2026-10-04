@@ -837,6 +837,28 @@ describe('team down, live', () => {
     expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is\n');
   });
 
+  test('a prompt-glyph continuation row after the exit text gets no Enter', async () => {
+    // The round-6 reproduction on the exit path: the box holds the person's own text and then
+    // a continuation row carrying only the prompt glyph, and the pane appends `/exit` after
+    // the glyph. The input row is the box's first row under its opening rule, so the box does
+    // not read back as the exit text — read by glyph it did, and the exit and the person's
+    // text were submitted together. The exit is typed, and not sent.
+    const run = harness({ kind: 'idle' });
+    let shown: string | undefined;
+    run.launch.typeText = (_session, _pane, text) => {
+      run.typed.push(text);
+      shown = claudeBox(`person text\n❯ ${text}`);
+      return true;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ screenText: () => shown }));
+    expect(code).toBe(1);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is\n');
+  });
+
   test('does not type into a permission prompt', async () => {
     const run = harness({ kind: 'permission' });
     const io = testIo(root, { kind: 'owner' });

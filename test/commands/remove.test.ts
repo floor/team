@@ -168,6 +168,31 @@ describe('team remove', () => {
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
+  test('a prompt-glyph continuation row after the exit text gets no Enter', async () => {
+    // The round-6 reproduction on the remove path: the box holds the person's own text and
+    // then a continuation row carrying only the prompt glyph, and the pane appends `/exit`
+    // after the glyph. The input row is the box's first row under its opening rule, so the box
+    // does not read back as the exit text — read by glyph it did, and the exit and the
+    // person's text were submitted together. The exit is typed, and not sent.
+    const made = world();
+    let box: string | undefined;
+    const launch = made.sources.launch;
+    if (!launch) throw new Error('fixture');
+    launch.typeText = (_session, _pane, text) => {
+      made.typed.push(text);
+      box = claudeBox(`person text\n❯ ${text}`);
+      return true;
+    };
+    made.sources.screenText = () => box;
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    expect(made.typed).toEqual(['/exit']);
+    expect(made.closed).toEqual([]);
+    expect(io.out).toContain('worker: its exit was not typed; left as it is');
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
   test('a seat that is not running is taken out without typing', async () => {
     const made = world();
     const io = testIo(dir, lead);

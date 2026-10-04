@@ -435,3 +435,34 @@ seats:
     expect(plan.some((step) => step.do?.do === 'type')).toBe(false);
   });
 });
+
+describe('the prompt-glyph continuation row (Antigravity)', () => {
+  // The person's box holds their own text, then a continuation row at the content column
+  // carrying only the prompt glyph. The input row is the box's first row under its opening
+  // rule — unsent.txt draws `>` there, at the pane's first column — never the last row whose
+  // content begins with a glyph.
+  const GLYPH = '>';
+
+  test('the box reads unsent, never idle: the person\'s text is in it', () => {
+    expect(readScreen('antigravity', boxed(`person text\n${GLYPH}`)).kind).toBe('unsent');
+  });
+
+  test('the read-back after typing refuses: the box holds the person\'s row too', () => {
+    // The pane appends the typed text after the glyph: `person text` / `> Rules.`.
+    expect(boxHoldsText('antigravity', 'Rules.', boxed(`person text\n${GLYPH} Rules.`))).toBe(false);
+  });
+
+  test('a full delivery records no Enter', async () => {
+    const d = delivery();
+    d.showText(boxed(`person text\n${GLYPH}`));
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed(`person text\n${GLYPH} ${text}`)); return true; };
+    expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+  });
+
+  test('a glyph row with text after it and two glyph rows all leave the text above them in the box', () => {
+    expect(boxHoldsText('antigravity', 'quoted', boxed(`person text\n${GLYPH} quoted`))).toBe(false);
+    expect(readScreen('antigravity', boxed(`person text\n${GLYPH}\n${GLYPH}`)).kind).toBe('unsent');
+    expect(boxHoldsText('antigravity', 'Rules.', boxed(`person text\n${GLYPH}\n${GLYPH} Rules.`))).toBe(false);
+  });
+});
