@@ -275,6 +275,11 @@ export function pass({
   const drift = new Set(
     (Array.isArray(approval) ? approval : []).map(seatNamed).filter((name): name is string => name !== null),
   );
+  for (const [name, recorded] of Object.entries(state.seats)) {
+    if (recorded.temporary && drift.has(recorded.temporary.like)) {
+      drift.add(name);
+    }
+  }
   let readings = stored.slice();
   for (const seat of observations) {
     if (!seat.running || drift.has(seat.name)) continue;
