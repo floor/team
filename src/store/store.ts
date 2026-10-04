@@ -3,7 +3,7 @@ import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFi
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Fingerprints } from '../approve/fingerprint.ts';
-import { bumpGeneration, keyOf, loadKey, recordedGeneration, signPayload, verifyPayload, type Json } from './keys.ts';
+import { bumpGeneration, keyOf, keyState, recordedGeneration, signPayload, verifyPayload, type Json } from './keys.ts';
 
 /**
  * The user-level store: what must survive the project folder and stay out of
@@ -116,11 +116,15 @@ function sameRoot(a: string, b: string): boolean {
   return real(a) === real(b);
 }
 
-/** The bytes a signature covers: the approval, the stored copy, the root inside it, the generation. */
-function payloadOf(approval: Approval, file: string, generation: number): Json {
+/**
+ * The bytes a signature covers: the approval (its `format` included, so the
+ * stored format cannot be flipped outside the signature), the stored copy, the
+ * root inside the approval, and the generation.
+ */
+export function payloadOf(approval: Approval, file: string, generation: number): Json {
   return {
-    format: 2,
     approval: {
+      format: approval.format,
       approvedAt: approval.approvedAt,
       root: approval.root,
       fingerprints: { sections: approval.fingerprints.sections, seats: approval.fingerprints.seats },
@@ -152,14 +156,19 @@ export function approvalStanding(root: string, home: string = homedir()): Standi
   if (record === null) return { kind: 'none' };
   if (record.approval.format === 1) return { kind: 'legacy' };
   const { generation, signature } = record;
-  if (typeof signature !== 'string' || generation === undefined || !Number.isInteger(generation) || generation < 1) {
+  // `shapeProblem` guarantees both on a format-2 record; the check below only
+  // narrows the type to what it already proved.
+  if (generation === undefined || signature === undefined) {
     return { kind: 'refused', why: 'the record is not in the signed form this version writes: run `team approve` once' };
   }
-  const key = loadKey(home);
-  if (key === null) {
+  const key = keyState(home);
+  if (key.kind === 'missing') {
     return { kind: 'refused', why: 'the record is signed, but its key is missing: run `team approve` once to approve again' };
   }
-  if (!verifyPayload(payloadOf(record.approval, record.file, generation), signature, key)) {
+  if (key.kind === 'unreadable') {
+    return { kind: 'refused', why: `${key.why} — no record verifies until it is back` };
+  }
+  if (!verifyPayload(payloadOf(record.approval, record.file, generation), signature, key.key)) {
     return { kind: 'refused', why: 'the record does not carry a valid signature: it was changed after approval, or written without the key: run `team approve` once' };
   }
   if (!sameRoot(record.approval.root, root)) {
@@ -220,21 +229,100 @@ export interface ApprovalRecord {
 }
 
 /**
+ * The record's shape, checked whole before anything is built from it: nothing
+ * outside the signed bytes may carry meaning, so a field this version does not
+ * know is a problem naming the field, and a missing or wrongly-typed field is
+ * a problem naming the path. Null when the shape is exactly what this version
+ * writes — a legacy record included, which is the same shape minus the
+ * signature and the generation.
+ */
+export function shapeProblem(record: unknown): string | null {
+  if (record === null || typeof record !== 'object' || Array.isArray(record)) return 'the record is not an object';
+  const flat = record as Record<string, unknown>;
+  if (flat.format !== 1 && flat.format !== 2) return `"format" is neither 1 nor 2`;
+  if (flat.format === 1 && (flat.signature !== undefined || flat.generation !== undefined)) {
+    return 'the record says format 1 but carries a signature';
+  }
+  const allowed = ['format', 'approvedAt', 'root', 'fingerprints', 'ceilings', 'file', 'checks', 'overrides'];
+  if (flat.format === 2) allowed.push('generation', 'signature');
+  for (const key of Object.keys(flat)) {
+    if (!allowed.includes(key)) return `the record carries a field this version does not know ("${key}")`;
+  }
+  const missing = ['approvedAt', 'root', 'fingerprints', 'ceilings', 'file'].find((key) => flat[key] === undefined);
+  if (missing !== undefined) return `the record has no "${missing}"`;
+  for (const key of ['approvedAt', 'root', 'file']) {
+    if (typeof flat[key] !== 'string') return `"${key}" is not a string`;
+  }
+  if (flat.format === 2) {
+    if (flat.generation === undefined) return 'the record has no "generation"';
+    if (typeof flat.generation !== 'number' || !Number.isInteger(flat.generation) || flat.generation < 1) return `"generation" is not a positive integer`;
+    if (flat.signature === undefined) return 'the record has no "signature"';
+    if (typeof flat.signature !== 'string') return '"signature" is not a string';
+  }
+  for (const key of ['fingerprints', 'ceilings']) {
+    if (flat[key] === null || typeof flat[key] !== 'object' || Array.isArray(flat[key])) return `"${key}" is not an object`;
+  }
+  const fingerprints = flat.fingerprints as Record<string, unknown>;
+  for (const key of Object.keys(fingerprints)) {
+    if (!['sections', 'seats'].includes(key)) return `the record carries a field this version does not know ("fingerprints.${key}")`;
+  }
+  for (const key of ['sections', 'seats']) {
+    if (fingerprints[key] === undefined) return `"fingerprints" has no "${key}"`;
+    const map = fingerprints[key];
+    if (map === null || typeof map !== 'object' || Array.isArray(map)) return `"fingerprints.${key}" is not an object`;
+    for (const [name, hash] of Object.entries(map as Record<string, unknown>)) {
+      if (typeof hash !== 'string') return `"fingerprints.${key}.${name}" is not a string`;
+    }
+  }
+  const ceilings = flat.ceilings as Record<string, unknown>;
+  for (const key of Object.keys(ceilings)) {
+    if (!['seats', 'temporary', 'vendors'].includes(key)) return `the record carries a field this version does not know ("ceilings.${key}")`;
+  }
+  for (const key of ['seats', 'temporary', 'vendors']) {
+    if (ceilings[key] === undefined) return `"ceilings" has no "${key}"`;
+  }
+  for (const key of ['seats', 'temporary']) {
+    if (typeof ceilings[key] !== 'number' || !Number.isInteger(ceilings[key]) || ceilings[key] < 0) return `"ceilings.${key}" is not a non-negative integer`;
+  }
+  if (ceilings.vendors === null || typeof ceilings.vendors !== 'object' || Array.isArray(ceilings.vendors)) return '"ceilings.vendors" is not an object';
+  for (const [vendor, seats] of Object.entries(ceilings.vendors as Record<string, unknown>)) {
+    if (typeof seats !== 'number' || !Number.isInteger(seats) || seats < 0) return `"ceilings.vendors.${vendor}" is not a non-negative integer`;
+  }
+  if (flat.checks !== undefined) {
+    if (flat.checks === null || typeof flat.checks !== 'object' || Array.isArray(flat.checks)) return '"checks" is not an object';
+    for (const [account, check] of Object.entries(flat.checks as Record<string, unknown>)) {
+      if (check === null || typeof check !== 'object' || Array.isArray(check)) return `"checks.${account}" is not an object`;
+      const fields = check as Record<string, unknown>;
+      for (const key of ['command', 'path', 'hash']) {
+        if (fields[key] === undefined) return `"checks.${account}" has no "${key}"`;
+        if (typeof fields[key] !== 'string') return `"checks.${account}.${key}" is not a string`;
+      }
+      for (const key of Object.keys(fields)) {
+        if (!['command', 'path', 'hash'].includes(key)) return `the record carries a field this version does not know ("checks.${account}.${key}")`;
+      }
+    }
+  }
+  if (flat.overrides !== undefined && flat.overrides !== null && typeof flat.overrides !== 'string') return '"overrides" is not a string or null';
+  return null;
+}
+
+/**
  * The approval for this project as the store holds it, parsed without judging
  * it: legacy records read here too, so `approve` can diff against what is on
- * disk. Trusting it is `approvalStanding`'s to decide, never a caller's.
+ * disk. Anything malformed throws, so no caller ever builds on half a record;
+ * trusting what reads clean is `approvalStanding`'s to decide, never a caller's.
  */
 export function readApproval(store: string): ApprovalRecord | null {
-  const stored = readJson<Approval & { file?: unknown; generation?: unknown; signature?: unknown }>(join(store, APPROVAL));
+  const stored = readJson<Record<string, unknown>>(join(store, APPROVAL));
   if (stored === null) return null;
-  if (stored.format !== 1 && stored.format !== 2) throw new Error(`${join(store, APPROVAL)}: unknown format ${String(stored.format)}`);
-  const { file, generation, signature, ...approval } = stored;
-  if (typeof file !== 'string') return null;
+  const problem = shapeProblem(stored);
+  if (problem !== null) throw new Error(`${join(store, APPROVAL)}: ${problem}`);
+  const { file, generation, signature, ...approval } = stored as unknown as Approval & { file: string; generation?: number; signature?: string };
   return {
     approval,
     file,
-    ...(typeof generation === 'number' ? { generation } : {}),
-    ...(typeof signature === 'string' ? { signature } : {}),
+    ...(generation !== undefined ? { generation } : {}),
+    ...(signature !== undefined ? { signature } : {}),
   };
 }
 
@@ -264,8 +352,10 @@ export function mergeLedger(ledger: readonly LedgerEntry[], seats: readonly Ledg
  * write, so a write that stops halfway leaves the earlier approval stale, which
  * every reader refuses with the repair rather than trusting half a record.
  * `approved.yaml` stays a copy for the owner to read, never read back. Every
- * signing moves the generation: an amendment by `add` or `remove --keep` is a
- * signing too, and shows up as one.
+ * signing `team` itself performs moves the generation — an amendment by `add`
+ * or `remove --keep` is a signing too. A process that holds the key could
+ * re-sign at the same generation instead; the counter is evidence of what
+ * `team` wrote, never of every signing that ever happened.
  */
 export function writeApproval(
   store: string,

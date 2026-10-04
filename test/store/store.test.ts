@@ -16,6 +16,7 @@ import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
 import { legacySeatDigests } from '../../src/approve/fingerprint.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
 import {
+  approvalStanding,
   approvedCopy,
   findStore,
   mergeLedger,
@@ -102,7 +103,8 @@ describe('an approval', () => {
     const store = storePath('acme-web', home, home);
     mkdirSync(store, { recursive: true });
     writeFileSync(join(store, 'approval.json'), '{"format":3}');
-    expect(() => readApproval(store)).toThrow('unknown format 3');
+    // The strict shape names the field, so no half-record is ever parsed.
+    expect(() => readApproval(store)).toThrow('"format" is neither 1 nor 2');
   });
 
   test('the approved text is in the record itself: one write, never half an approval', () => {
@@ -117,11 +119,14 @@ describe('an approval', () => {
     });
   });
 
-  test('a record without its copy counts as no approval', () => {
+  test('a record without its copy is a malformed record, not a missing one', () => {
     const store = storePath('acme-web', home, home);
     mkdirSync(store, { recursive: true });
     writeFileSync(join(store, 'approval.json'), JSON.stringify(approval(home)));
-    expect(readApproval(store)).toBeNull();
+    // Round 2: the shape is checked whole, so a record that lost its copy is
+    // refused — never read as "no approval at all", which reads permissively.
+    expect(() => readApproval(store)).toThrow('the record has no "file"');
+    expect(approvalStanding(home, home).kind).toBe('refused');
   });
 });
 
