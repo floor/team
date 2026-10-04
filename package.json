@@ -30,7 +30,8 @@
     "schema:check": "bun scripts/schema.ts",
     "contract": "bun scripts/contract.ts",
     "contract:check": "bun scripts/contract.ts --check",
-    "ci": "bun run typecheck && bun test && bun run build && node dist/cli.js --version && bun run conformance && bun run schema:check && bun run contract:check && bun run coverage:check"
+    "exit-codes:check": "bun scripts/exit-codes.ts --check",
+    "ci": "bun run typecheck && bun test && bun run build && node dist/cli.js --version && bun run conformance && bun run schema:check && bun run contract:check && bun run coverage:check && bun run exit-codes:check"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",

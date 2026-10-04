@@ -70,3 +70,5 @@ jobs:
               *) node dist/cli.js check HEAD --file .github/team.yaml ;;
             esac
           fi
+
+      - run: bun run exit-codes:check

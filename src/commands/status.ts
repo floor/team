@@ -93,12 +93,16 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
   const args = readArgs(argv, ['session', 'file'], ['json']);
   if (args.error || args.rest.length) {
     io.stderr(`team status: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
+    // exit: status.invocation
     return 2;
   }
 
   const current = currentTeam(io.cwd, args.values.file, sources.now());
   if (!current.ok) {
     printProblems(io, current.errors);
+    // exit: status.not-a-repo
+    // exit: status.file
+    // exit: status.file-invalid
     return 2;
   }
   const { team, root, dir } = current;
@@ -111,6 +115,7 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
   const live = sources.live(session, team);
   if (!live) {
     io.stderr('team status: herdr doesn\'t answer; is it installed and running?\n');
+    // exit: status.herdr
     return 2;
   }
   const whole = readState(dir);
@@ -139,6 +144,8 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
   } else {
     io.stdout(render(team, session, comparison, budgets));
   }
+  // exit: status.agrees
+  // exit: status.difference
   return comparison.differences.length ? 1 : 0;
 }
 

@@ -82,12 +82,17 @@ export async function check(argv: string[], io: Io, load: LoadConfig = loadConfi
   const args = parse(argv);
   if (typeof args === 'string') {
     io.stderr(`team check: ${args}\n\n${USAGE}`);
+    // exit: check.invocation
     return 2;
   }
 
   const loaded = load(io.cwd, args.file);
   if (!loaded.ok) {
     for (const problem of loaded.errors) io.stderr(`team check: ${place(problem, loaded.path)}\n`);
+    // exit: check.not-a-repo
+    // exit: check.file
+    // exit: check.file-invalid
+    // exit: check.ledger
     return 2;
   }
 
@@ -99,6 +104,7 @@ export async function check(argv: string[], io: Io, load: LoadConfig = loadConfi
       pullRequestBody = readFileSync(args.pr === '-' ? 0 : resolve(io.cwd, args.pr), 'utf8');
     } catch (error) {
       io.stderr(`team check: can't read the pull request body: ${(error as Error).message}\n`);
+      // exit: check.pr-body
       return 2;
     }
   }
@@ -106,10 +112,20 @@ export async function check(argv: string[], io: Io, load: LoadConfig = loadConfi
   try {
     const report = runCheck(loaded.config, { cwd: io.cwd, ref: args.ref, since: args.since, pullRequestBody });
     io.stdout(formatReport(report));
+    // exit: check.passed
+    // exit: check.refused
     return report.ok ? 0 : 1;
   } catch (error) {
+    // exit: check.threw
     if (!(error instanceof GitError)) throw error;
     io.stderr(`team check: ${error.message}\n`);
+    // exit: check.outside
+    // exit: check.no-commit
+    // exit: check.range
+    // exit: check.empty-range
+    // exit: check.since-missing
+    // exit: check.since-unreachable
+    // exit: check.not-a-ref
     return 2;
   }
 }

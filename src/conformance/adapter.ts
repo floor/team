@@ -42,7 +42,7 @@ const adapter: Command = async (_argv, io) => {
     if (line.length === 0) continue;
     io.stdout(`${respond(line)}\n`);
   }
-  return 0;
+  return 0; // exit: conformance-adapter.finished
 };
 
 export default adapter;

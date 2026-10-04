@@ -219,6 +219,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const args = readArgs(argv, ['session', 'file'], ['dry-run']);
   if (args.error || args.rest.length) {
     io.stderr(`team up: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
+    // exit: up.invocation
     return 2;
   }
   const dry = args.flags.has('dry-run');
@@ -227,6 +228,9 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     for (const problem of loaded.errors) {
       io.stderr(`team up: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
     }
+    // exit: up.not-a-repo
+    // exit: up.file
+    // exit: up.file-invalid
     return 2;
   }
   const { team, root } = loaded;
@@ -330,15 +334,27 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   if (dry) {
     for (const refusal of refusals) io.stdout(`! up would refuse: ${refusal}\n`);
     io.stdout(formatPlan(plan));
+    // exit: up.dry-run
     return 0;
   }
   if (refusals.length) {
     for (const refusal of refusals) io.stderr(`team up: ${refusal}\n`);
+    // exit: up.not-owner
+    // exit: up.never-approved
+    // exit: up.differs
+    // exit: up.doctor
+    // exit: up.machine
+    // exit: up.herdr
+    // exit: up.stopped
+    // exit: up.agents
+    // exit: up.unknown
+    // exit: up.placement
     return 1;
   }
   const launch = sources.launch;
   if (!launch) {
     io.stderr('team up: this call has no way to reach herdr\n');
+    // exit: up.no-launch
     return 1;
   }
 
@@ -427,5 +443,9 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     if (seat.stopped || !profileFor(seat.cli)) return false;
     return afterwards[seat.name]?.stage !== 'ready';
   });
+  // exit: up.ready
+  // exit: up.pending
+  // exit: up.server
+  // exit: up.watch
   return pending.length || report.serverFailed || report.watchFailed ? 1 : 0;
 }
