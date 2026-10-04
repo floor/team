@@ -522,7 +522,19 @@ function isBodyLevelFunction(decl: ts.FunctionDeclaration): boolean {
   if (ts.isSourceFile(parent) || ts.isModuleBlock(parent)) return true;
   if (!ts.isBlock(parent)) return false;
   const owner = parent.parent;
-  return !!owner && ts.isFunctionLike(owner) && owner.body === parent;
+  if (!owner) return false;
+  if (
+    ts.isFunctionDeclaration(owner) ||
+    ts.isFunctionExpression(owner) ||
+    ts.isArrowFunction(owner) ||
+    ts.isMethodDeclaration(owner) ||
+    ts.isConstructorDeclaration(owner) ||
+    ts.isGetAccessorDeclaration(owner) ||
+    ts.isSetAccessorDeclaration(owner)
+  ) {
+    return owner.body === parent;
+  }
+  return false;
 }
 
 /**
