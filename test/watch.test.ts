@@ -180,6 +180,16 @@ describe('a pass of the watch', () => {
     expect(pass(team(), emptySession(), stuck, fine, 30 * MIN, memory).reports).toEqual([]);
   });
 
+  test.each(['idle', 'working'])('a captured Codex permission goes to its owner when herdr says %s', (status) => {
+    const screen = readFileSync(new URL('./fixtures/codex/0.157.0/permission.txt', import.meta.url), 'utf8');
+    const memory = newMemory();
+    const stuck = live({ 'codex-acme': { status, screen } });
+    const first = pass(team(), emptySession(), stuck, fine, 0, memory);
+    expect(first.reports).toEqual([{ key: 'blocked:codex-acme', text: "codex-acme waits at a permission prompt: its owner's to answer", to: 'owner' }]);
+    expect(first.nudge).toBeNull();
+    expect(pass(team(), emptySession(), stuck, fine, 30 * MIN, memory).reports).toEqual([]);
+  });
+
   test('a question is the operator\'s', () => {
     const asked = live({ 'deepseek-acme-2': { status: 'blocked', screen: question } });
     const result = pass(team(), emptySession(), asked, fine, 0, newMemory());
