@@ -140,6 +140,33 @@ describe('claude-code through the screen core', () => {
     const text = readFileSync(new URL('./fixtures/claude-code/trust-unnumbered.txt', import.meta.url), 'utf8');
     expect(readScreen('claude-code', text).kind).toBe('trust');
   });
+
+  test('prose saying "Yes, I trust this folder" above an idle box is idle', () => {
+    const text = `Yes, I trust this folder\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
+    expect(readScreen('claude-code', text).kind).toBe('idle');
+    const prose = `The assistant wrote: Yes, I trust this folder\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
+    expect(readScreen('claude-code', prose).kind).toBe('idle');
+  });
+
+  test('a numbered trust dialog still reads trust', () => {
+    const text = `Do you trust this folder?\n❯ 1. Yes, proceed\n  2. No, exit\n\nEnter to confirm · Esc to cancel\n`;
+    expect(readScreen('claude-code', text).kind).toBe('trust');
+    const live = [
+      'Accessing workspace:',
+      'Quick safety check: Is this a project you created or one you trust?',
+      'Claude Code will be able to read, edit, and execute files here.',
+      '❯ 1. Yes, I trust this folder',
+      '  2. No, exit',
+    ].join('\n');
+    expect(readScreen('claude-code', live).kind).toBe('trust');
+  });
+
+  test('permission and question fixtures still read as before', () => {
+    const permission = `Bash command\n\n  chmod +x run.sh\n\nDo you want to proceed?\n❯ 1. Yes\n  2. No, and tell Claude what to do differently\n\nEsc to cancel · Tab to amend\n`;
+    expect(readScreen('claude-code', permission).kind).toBe('permission');
+    const question = `Which branch should this start from?\n\n❯ 1. main\n  2. next\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n`;
+    expect(readScreen('claude-code', question).kind).toBe('question');
+  });
 });
 
 // Claude Code's screens as herdr reads them styled (`--format ansi`): a greyed suggestion is
