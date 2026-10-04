@@ -188,6 +188,22 @@ describe('Antigravity rules delivery', () => {
     expect(d.calls).toEqual([long]);
   });
 
+  test('a trailing blank row after the word-wrapped line gets no Enter', async () => {
+    // No capture shows Antigravity drawing an empty row of its own inside the box — idle.txt's
+    // composer is the bare `>` row and unsent.txt's rows sit directly between the rules — so a
+    // trailing blank row is never the pane's frame: it is a row the text does not have.
+    const long = 'These are standing rules, not a task: reply ready and wait for your brief.';
+    const rows = wordWrap(long, 53 - 2);
+    const [firstRow = '', ...rest] = rows;
+    const body = [`> ${firstRow}`, ...rest.map((row) => `  ${row}`), ''].join('\n');
+    const screen = fixture('idle').replace('\n>\n', `\n${body}\n`);
+    expect(boxHoldsText('antigravity', long, screen)).toBe(false);
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(screen); return true; };
+    expect(await deliverRules('antigravity', long, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([long]);
+  });
+
   test('a blank line the typed text itself has is entered', async () => {
     const typed = 'Rules.\n\nMore rules.';
     const d = delivery();

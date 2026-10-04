@@ -399,6 +399,42 @@ describe('Cursor rules delivery', () => {
     expect(d.calls).toEqual([typed, 'Enter']);
   });
 
+  test('a trailing blank row after the wrapped text gets no Enter', async () => {
+    // The reviewer's reproduction: the correctly wrapped text, then one more empty row inside
+    // the box. Cursor draws two empty rows of its own under the text — idle.txt and unsent.txt
+    // show them, the drop before the status line — and those rows are the box's frame, not its
+    // content. A row beyond them is a row the text does not have: someone pressed a newline
+    // after it.
+    const rows = wordWrap(CAPTURED_WRAP, 51 - 4);
+    const [firstRow = '', ...rest] = rows;
+    const body = [`  → ${firstRow}`, ...rest.map((row) => `    ${row}`), ''].join('\n');
+    const screen = fixture('idle').replace('  → Plan, search, build anything', body);
+    expect(boxHoldsText('cursor', CAPTURED_WRAP, screen)).toBe(false);
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(screen); return true; };
+    expect(await deliverRules('cursor', CAPTURED_WRAP, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([CAPTURED_WRAP]);
+  });
+
+  test('a typed text whose own last line is empty: the box shows the row, or no Enter', async () => {
+    // The text ends with a newline, so its last line is empty and the pane draws a row for it,
+    // above the two frame rows it draws under every box. That screen and the reviewer's are the
+    // same: only the typed text tells them apart. With the row the box holds the text; without
+    // it the box stops at the sentence and the trailing newline is unaccounted for.
+    const typed = CAPTURED_WRAP + '\n';
+    const rows = wordWrap(CAPTURED_WRAP, 51 - 4);
+    const [firstRow = '', ...rest] = rows;
+    const body = [`  → ${firstRow}`, ...rest.map((row) => `    ${row}`)];
+    const withRow = fixture('idle').replace('  → Plan, search, build anything', [...body, ''].join('\n'));
+    const withoutRow = fixture('idle').replace('  → Plan, search, build anything', body.join('\n'));
+    expect(boxHoldsText('cursor', typed, withRow)).toBe(true);
+    expect(boxHoldsText('cursor', typed, withoutRow)).toBe(false);
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(withoutRow); return true; };
+    expect(await deliverRules('cursor', typed, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([typed]);
+  });
+
   test('a box holding a person\'s own text gets no Enter', async () => {
     // The captured rules box against a shorter first message: the box is not the typed text.
     const d = delivery();

@@ -767,6 +767,23 @@ describe('team watch', () => {
     expect(io.out).toContain('a nudge was typed and not sent');
   });
 
+  test('a trailing blank row after the wrapped nudge never gets the Enter', async () => {
+    // The same reproduction on the nudge path: the wrapped nudge's rows, then one more empty
+    // row inside the box, above the closing rule. No capture shows Claude Code drawing an empty
+    // row of its own inside the composer, so a trailing blank row is a row the nudge does not
+    // have. The nudge is typed, and not sent.
+    const rows = wordWrap(NUDGE_TEXT, 24);
+    const [firstRow = '', ...rest] = rows;
+    const rule = '─'.repeat(40);
+    const wrapped = claudeBox([firstRow, ...rest].join('\n')).replace(`\n${rule}\n`, `\n\n${rule}\n`);
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = wrapped; return true; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was typed and not sent');
+  });
+
   test('a box that holds someone else\'s text gets no Enter', async () => {
     let looks = 0;
     const io = testIo(dir);

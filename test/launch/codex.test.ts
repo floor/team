@@ -190,6 +190,21 @@ describe('Codex rules delivery', () => {
     expect(await deliverRules('codex', typed, 1, d.io)).toBe(true);
     expect(d.calls).toEqual([typed, 'Enter']);
   });
+  test('a trailing blank row after the word-wrapped line gets no Enter', async () => {
+    // One empty row of the pane's own sits under the text — idle.txt and unsent.txt show it
+    // between the text and the status line, and it is the box's frame, not content. A second
+    // empty row is a row the text does not have: someone pressed a newline after it.
+    const line = 'End every commit message and every pull request body with your signature, given below.';
+    const rows = wordWrap(line, 53 - 2);
+    const [firstRow = '', ...rest] = rows;
+    const body = [`› ${firstRow}`, ...rest.map((row) => `  ${row}`), ''].join('\n');
+    const screen = fixture('idle').replace('› Ask Codex to do anything', body);
+    expect(boxHoldsText('codex', line, screen)).toBe(false);
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(screen); return true; };
+    expect(await deliverRules('codex', line, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([line]);
+  });
   test('two spaces typed, one shown, gets no Enter', async () => {
     // The shared read refuses a box that shows a single space where the typed text has two: the
     // wrap did not add or drop it. Every profile without a captured wrap reads the same way.
