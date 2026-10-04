@@ -112,6 +112,12 @@ describe('team status', () => {
   });
 
   test('an agent in a seat\'s workspace under another name, or none', async () => {
+    updateState(join(dir, '.agents'), (state) => {
+      const session = state.sessions['acme-web'] ?? emptySession();
+      session.seats['deepseek-acme'] = { stage: 'ready', workspace: 'w3', pane: 'w3:p1' };
+      session.seats['codex-acme'] = { stage: 'ready', workspace: 'w2', pane: 'w2:p1' };
+      state.sessions['acme-web'] = session;
+    });
     const agents = built().agents.map((one) => (one.name === 'deepseek-acme' ? { ...one, name: null } : one.name === 'codex-acme' ? { ...one, name: 'codex-old' } : one));
     live = { ...built(), agents };
     const { out } = await status();

@@ -231,7 +231,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // changes no section of its own, and no unapproved reserve may unblock a launch (#50).
   const budgets = budgetsInForce(prepared.team, root, sources.home);
   const decision = seatBudget(budgets, loadReadings(dir), built.seat, sources.now().getTime(), loadSpendReadings(dir));
-  const stray = unnamedIn(built.seat.label, agents, workspaces);
+  const stray = unnamedIn(recorded.seats[built.name]?.workspace, agents);
   const starting = seatPlan(prepared.team, built.seat, start);
   const planned = stray
     ? { ...starting, stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
@@ -372,9 +372,9 @@ function seatPlan(team: TeamFile, seat: Seat, start: { cwd: string; lobby?: true
   };
 }
 
-function unnamedIn(label: string, agents: readonly HerdrAgent[], workspaces: readonly { id: string; label: string }[]): HerdrAgent | undefined {
-  const ids = new Set(workspaces.filter((workspace) => workspace.label === label).map((workspace) => workspace.id));
-  return agents.find((agent) => !agent.name && ids.has(agent.workspace));
+function unnamedIn(workspace: string | undefined, agents: readonly HerdrAgent[]): HerdrAgent | undefined {
+  if (!workspace) return undefined;
+  return agents.find((agent) => !agent.name && agent.workspace === workspace);
 }
 
 function runningOf(agents: readonly HerdrAgent[], team: TeamFile, state: SessionState): Running[] {

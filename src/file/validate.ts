@@ -382,7 +382,6 @@ function readSeats(
     }
   }
   reportCollisions(seats, 'name', check);
-  reportCollisions(seats, 'label', check);
   return seats;
 }
 
@@ -417,7 +416,7 @@ function readCwd(entry: YamlEntry | undefined, at: string, trust: string[], chec
   return path;
 }
 
-function reportCollisions(seats: DraftSeat[], field: 'name' | 'label', check: Check): void {
+function reportCollisions(seats: DraftSeat[], field: 'name', check: Check): void {
   const seen = new Map<string, DraftSeat>();
   for (const seat of seats) {
     const first = seen.get(seat[field]);

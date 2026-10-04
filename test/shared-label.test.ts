@@ -21,7 +21,7 @@ import { testIo } from './helpers.ts';
 const SHARED = `format: 1
 project: acme
 coordinator: coordinator
-operator: implementer
+operator: coordinator
 workspace:
   mode: shared
 seats:
@@ -181,7 +181,7 @@ describe('a shared label', () => {
     const result = pass({
       team, state: emptySession(), live, machine: fine, now: 0, memory, approval: [], watch: team.watch,
     });
-    expect(result.nudge?.pane).toBe('w2:p1');
+    expect(result.nudge?.pane).toBe('w1:p1');
   });
 });
 
@@ -203,7 +203,7 @@ describe('down and remove with one label on two seats', () => {
       now: () => new Date(0),
       screen: () => ({ kind: 'idle' }),
       status: () => 'idle',
-      foreground: () => [],
+      foreground: () => ['claude'],
       launch: {
         typeText: (_session, pane, text) => { typed.push(text); panes.push(pane); return true; },
         pressEnter: () => true,
@@ -240,7 +240,7 @@ describe('down and remove with one label on two seats', () => {
       status: () => 'idle',
       now: () => new Date(0),
       sleep: async () => {},
-      foreground: () => [],
+      foreground: () => ['claude'],
       launch: {
         typeText: (_session, pane, text) => { panes.push(`${pane}:${text}`); return true; },
         pressEnter: () => true,
