@@ -2,11 +2,14 @@
 // patterns and quota patterns to a profile this version ships. It cannot take a
 // shipped pattern out, and it cannot change a composer, a prompt, a footer, a
 // launch line or the order of the stages: anything else in the file is refused
-// with its line.
+// with its line. An edit takes effect only once `approve` records the text: until
+// then the approved copy stays in force, and a copy that cannot be read leaves
+// the shipped profiles.
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { QuotaPattern } from './quota.ts';
 import { profileFor, quotaFor, quotaList } from './profile.ts';
-import { storePath } from '../store/store.ts';
+import { readApproval, storePath } from '../store/store.ts';
 import { addedRules } from '../watch/screen-file.ts';
 import type { ScreenData, Stage } from '../watch/screen-data.ts';
 import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts';
@@ -61,6 +64,70 @@ export function mergeScreen(base: ScreenData, added: ProfileOverride): ScreenDat
 export function quotaWith(cli: string, profiles: readonly ProfileOverride[]): readonly QuotaPattern[] {
   const added = profiles.find((profile) => profile.cli === cli)?.quota ?? [];
   return [...quotaFor(cli), ...added];
+}
+
+/** What `approve` records when the override file itself is the change. */
+export const OVERRIDE_CHANGED = '`overrides` changed';
+
+/** A stored copy that does not parse. The shipped profiles stay in force. */
+export const OVERRIDE_UNREADABLE = "the approved overrides can't be read";
+
+export type OverrideForce = {
+  /** The approved patterns. Empty when none were approved, or the copy cannot be read. */
+  profiles: ProfileOverride[];
+  /** Drift from the approved copy. Empty when the file is the approved one, or there is none. */
+  differences: string[];
+  /** The live file, when it cannot be read or parsed. Already carrying the path and the line. */
+  problems: string[];
+};
+
+/** The override file's text, and why it was refused. A missing file is an empty text and no problem. */
+export function overrideFile(project: string, root: string, home: string): { path: string; text: string | null; problems: string[] } {
+  const path = overridesPath(project, root, home);
+  try {
+    const text = readFileSync(path, 'utf8');
+    const parsed = parseOverrides(text);
+    return { path, text, problems: parsed.ok ? [] : parsed.errors.map((problem) => overrideProblem(path, problem)) };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { path, text: null, problems: [] };
+    return { path, text: null, problems: [overrideProblem(path, { line: 0, message: "can't be read" })] };
+  }
+}
+
+/**
+ * The patterns in force for this project. Keyed on the project root, the same
+ * store as the team-file approval: another checkout of the same name has its
+ * own. No file, or a stored copy that cannot be read, leaves the shipped profiles.
+ * The live file is used only when it is the text `approve` recorded.
+ */
+export function overridesInForce(project: string, root: string, home: string): OverrideForce {
+  const record = readApproval(storePath(project, root, home));
+  const recorded = record !== null && Object.hasOwn(record.approval, 'overrides');
+  const stored = recorded ? record?.approval.overrides : undefined;
+  const approvedText = typeof stored === 'string' ? stored : null;
+  const live = overrideFile(project, root, home);
+  const differences: string[] = [];
+  const profiles: ProfileOverride[] = [];
+
+  if (approvedText !== null) {
+    const parsed = parseOverrides(approvedText);
+    if (parsed.ok) profiles.push(...parsed.profiles);
+    else differences.push(OVERRIDE_UNREADABLE);
+  } else if (recorded && stored !== null && stored !== undefined) {
+    differences.push(OVERRIDE_UNREADABLE);
+  }
+
+  if (live.text !== approvedText) {
+    if (record === null) {
+      if (live.text !== null) differences.push('the overrides were never approved');
+    } else differences.push(OVERRIDE_CHANGED);
+  }
+
+  return { profiles, differences, problems: live.problems };
+}
+
+export function overrideProblem(path: string, problem: OverrideProblem): string {
+  return problem.line ? `${path}: line ${problem.line}: ${problem.message}` : `${path}: ${problem.message}`;
 }
 
 function profilesOf(root: YamlNode): ProfileOverride[] {

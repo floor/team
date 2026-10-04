@@ -24,6 +24,7 @@ import { stopRunning, realSources as removeSources } from './remove.ts';
 import { removeWorktree } from './worktree.ts';
 import { stateOf } from './down.ts';
 import { profileFor } from '../profiles/index.ts';
+import { overridesInForce, quotaWith, type OverrideForce } from '../profiles/overrides.ts';
 import { realSources } from './status.ts';
 
 // What the watch reads and does outside its own process, so tests can stand in for it.
@@ -59,6 +60,8 @@ export type WatchSources = {
   stopSeat?(session: string, seat: DownSeat): Promise<boolean>;
   /** Removes one merged worktree. The real watch calls `worktree remove`. */
   removeWorktree?(task: string): number;
+  /** The home whose store holds the override file. Absent in a test that does not set one. */
+  home?: string;
 };
 
 function waitOrStop(seconds: number): Promise<boolean> {
@@ -101,6 +104,7 @@ export const realWatchSources: WatchSources = {
     }
   },
   pid: process.pid,
+  home: homedir(),
 };
 
 export const watch: Command = (argv, io) => runWatch(argv, io, realWatchSources);
@@ -165,6 +169,17 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
       const current = currentTeam(io.cwd, args.values.file, sources.now());
       const team = current.ok ? current.team : first.team;
       const root = current.ok ? current.root : first.root;
+      const overrides: OverrideForce = sources.home
+        ? overridesInForce(team.project, root, sources.home)
+        : { profiles: [], differences: [], problems: [] };
+      for (const line of [
+        ...overrides.problems,
+        ...overrides.differences.map((difference) => `the overrides differ from the approved copy: ${difference}`),
+      ]) {
+        if (told.has(line)) continue;
+        told.add(line);
+        say(line, false);
+      }
       const problem = current.ok ? current.notice : `team.yaml can't be read (${current.errors[0]?.message ?? 'unknown'}); watching with the team as it was`;
       if (problem !== notice) {
         notice = problem;
@@ -227,6 +242,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         const run = (stored: readonly Seen[]) => pass({
           team, state, live, machine: sources.machine(root), now, memory,
           approval: sources.approval(team, root), watch: inForce, outcomes, budgets: budget,
+          quotaFor: (cli) => quotaWith(cli, overrides.profiles),
           readings: stored, foreground,
         });
         // The pass folds its figures where the state is held: two watches of the project fold one
