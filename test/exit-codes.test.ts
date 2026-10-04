@@ -1780,13 +1780,25 @@ function shadowedDispatcher(): Map<string, string> {
   return new Map([['src/cli.ts', next]]);
 }
 
-function fileWideLookup(): Map<string, string> {
+function fileWideLookup(): { files: Map<string, string>; rows: ExitRow[] } {
   const files = withDoctor(
     "  if (argv[0] === '--review-shadow') return reviewShadow();\n",
-    "import { reviewShadow } from '../review-shadow.ts';\nfunction holder(): void {\n  function reviewShadow(): number {\n    return 1;\n  }\n}\n",
+    "import { reviewShadow } from '../review-shadow.ts';\nfunction holder(): void {\n  function reviewShadow(): number {\n    // exit: doctor.review-hidden\n    return 1;\n  }\n}\n",
   );
   files.set('src/review-shadow.ts', 'export function reviewShadow(): number {\n  return 17;\n}\n');
-  return files;
+  return {
+    files,
+    rows: [{ code: 1, command: 'doctor', id: 'doctor.review-hidden', meaning: 'the hidden helper', trigger: 'team doctor --review-shadow' }],
+  };
+}
+
+function shadowedImport(body: string, before = ''): { files: Map<string, string>; extra: ExitRow[] } {
+  const files = withDoctor(body, `import { reviewShadow } from '../review-shadow.ts';\n${before}`);
+  files.set('src/review-shadow.ts', 'export function reviewShadow(): number {\n  // exit: doctor.review-shadow\n  return 1;\n}\n');
+  return {
+    files,
+    extra: [{ code: 1, command: 'doctor', id: 'doctor.review-shadow', meaning: 'the imported helper', trigger: 'team doctor --review-shadow' }],
+  };
 }
 
 function failureMoved(): Map<string, string> {
@@ -1850,7 +1862,7 @@ const unreadForms: { name: string; files: Map<string, string>; needle: string; e
         "  function probeShadow(): number { return 17; }\n  if (argv[0] === '--gate-probe') return probeShadow();\n",
         'function probeShadow(): number { return runDoctor(); }\n',
       ),
-      needle: 'probeShadow is ambiguous',
+      needle: `probeShadow: ${UNREADABLE}`,
     },
     {
       name: 'helper with no return',
@@ -1883,7 +1895,51 @@ const unreadForms: { name: string; files: Map<string, string>; needle: string; e
     { name: 'Object.defineProperty exitCode', files: withCli("Object.defineProperty(process, 'exitCode', { value: 1 });"), needle: UNREADABLE },
     { name: "process['exitCode']", files: withCli("process['exitCode'] = 1;"), needle: UNREADABLE },
     { name: 'shadowed dispatcher', files: shadowedDispatcher(), needle: UNREADABLE },
-    { name: 'imported name also declared in the file', files: fileWideLookup(), needle: 'reviewShadow is ambiguous' },
+    {
+      name: 'imported name also declared in the file',
+      files: fileWideLookup().files,
+      extra: fileWideLookup().rows,
+      needle: 'exit site has no row',
+    },
+    {
+      name: 'callback parameter',
+      ...shadowedImport(
+        "  if (argv[0] === '--review-param') return callbackExit(() => 17);\n",
+        'function callbackExit(reviewShadow: () => number): number {\n  return reviewShadow();\n}\n',
+      ),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
+    {
+      name: 'default-valued parameter',
+      ...shadowedImport(
+        "  if (argv[0] === '--review-default') return callbackExit();\n",
+        'function callbackExit(reviewShadow = () => 17): number {\n  return reviewShadow();\n}\n',
+      ),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
+    {
+      name: 'destructured parameter',
+      ...shadowedImport(
+        "  if (argv[0] === '--review-destructured') return callbackExit({ reviewShadow: () => 17 });\n",
+        'function callbackExit({ reviewShadow }: { reviewShadow: () => number }): number {\n  return reviewShadow();\n}\n',
+      ),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
+    {
+      name: 'let reassigned',
+      ...shadowedImport("  let reviewShadow = () => 2;\n  reviewShadow = () => 17;\n  if (argv[0] === '--review-let') return reviewShadow();\n"),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
+    {
+      name: 'catch variable',
+      ...shadowedImport("  try {\n    throw new Error('review');\n  } catch (reviewShadow) {\n    if (argv[0] === '--review-catch') return reviewShadow();\n  }\n"),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
+    {
+      name: 'inner const hiding an import',
+      ...shadowedImport("  const reviewShadow = () => 17;\n  if (argv[0] === '--review-const') return reviewShadow();\n"),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
     {
       name: 'local reportFailure',
       files: withDoctor(

@@ -9,12 +9,15 @@
 // A returned expression is a numeric literal with a marker, a conditional whose branches are
 // both such, or an `await`/call of a function the gate has walked. That callee needs at least
 // one return, and every path through it must end in a return or a throw. Type assertions and
-// non-null assertions are looked through. A called name with more than one declaration in
-// scope, a name that is both declared and imported, or a returned call whose only declaration
-// is not visible at the call is refused as ambiguous. The same name in two functions is the one
-// in scope at the call. In `src/cli.ts` the only `.default()` that is not itself an exit
+// non-null assertions are looked through. The callee is the nearest binding walking outward
+// from the call. Only a function declaration, a `const` initialised with a function, or an
+// import is followed. A `const { name } = await import('literal')` is that module's export.
+// A parameter, a `let` or `var`, any other `const`, any other destructured binding, a
+// catch or loop binding, a class, an enum or a namespace is refused, and so is a binding that
+// hides a function or an import further out. The same name in two functions is the one in
+// scope at the call. In `src/cli.ts` the only `.default()` that is not itself an exit
 // is `command.default`, where `command` is the awaited load from the `commands` table and that
-// binding is the only one of its name in the function.
+// binding is the nearest one of its name at the call.
 //
 // A file under `src/commands/` is a command. The gate walks its default export when that
 // export is a function in the file: a default function, a function expression, or a name
@@ -430,55 +433,113 @@ function filesUnderSrc(extra?: ReadonlyMap<string, string>): string[] {
   return [...found].sort();
 }
 
-function encloses(scope: ts.Node, at: ts.Node): boolean {
-  let current: ts.Node | undefined = at;
-  while (current) {
-    if (current === scope) return true;
-    current = current.parent;
+function bindingNames(name: ts.BindingName): string[] {
+  if (ts.isIdentifier(name)) return [name.text];
+  const found: string[] = [];
+  for (const el of name.elements) {
+    if (ts.isBindingElement(el)) found.push(...bindingNames(el.name));
   }
-  return false;
-}
-
-function bindingScope(node: ts.VariableDeclaration): ts.Node | null {
-  return node.parent?.parent?.parent ?? null;
-}
-
-/** Every `const name = ...` in this function. A nested function's bindings are not included. */
-function bindingsIn(fn: ts.Node, name: string): { scope: ts.Node; init: ts.Expression }[] {
-  const found: { scope: ts.Node; init: ts.Expression }[] = [];
-  visitOwn(fn, (node) => {
-    if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) || node.name.text !== name || !node.initializer) return;
-    const scope = bindingScope(node);
-    if (scope) found.push({ scope, init: node.initializer });
-  });
   return found;
 }
 
-/**
- * The one initializer of `name` in scope at `at`. Another declaration of that name, in this
- * function or in a block that does not contain the call, means the binding is not that one.
- */
-function bindingAt(fn: ts.Node, name: string, at: ts.Node): ts.Expression | null {
-  const all = bindingsIn(fn, name);
-  if (all.length !== 1) return null;
-  const hit = all[0];
-  if (!hit || !encloses(hit.scope, at)) return null;
-  return hit.init;
+/** A binding this node introduces for `name`. The nearest node walking outward is the one in scope. */
+type ChainHit =
+  | { kind: 'function'; func: ExitFunc }
+  | { kind: 'const'; init: ts.Expression }
+  | { kind: 'dynamic'; spec: string; exportName: string }
+  | { kind: 'other' };
+
+/** `const { name } = await import('literal')` names that module's export. Any other pattern does not. */
+function importBinding(decl: ts.VariableDeclaration, name: string, init: ts.Expression): { spec: string; exportName: string } | null {
+  if (!ts.isObjectBindingPattern(decl.name)) return null;
+  const awaited = ts.isAwaitExpression(init) ? unwrap(init.expression) : init;
+  if (!ts.isCallExpression(awaited) || awaited.expression.kind !== ts.SyntaxKind.ImportKeyword) return null;
+  const specNode = awaited.arguments[0];
+  if (!specNode || !ts.isStringLiteral(specNode)) return null;
+  for (const el of decl.name.elements) {
+    if (!ts.isIdentifier(el.name) || el.name.text !== name || el.dotDotDotToken) continue;
+    const exportName = el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : el.name.text;
+    return { spec: specNode.text, exportName };
+  }
+  return null;
+}
+
+function hitsInNode(node: ts.Node, name: string): ChainHit[] {
+  const hits: ChainHit[] = [];
+  const pushDecl = (decl: ts.VariableDeclaration, loop: boolean): void => {
+    if (!bindingNames(decl.name).includes(name)) return;
+    const init = decl.initializer ? unwrap(decl.initializer) : null;
+    const list = decl.parent;
+    const isConst = ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.Const) !== 0;
+    const dynamic = !loop && isConst && init ? importBinding(decl, name, init) : null;
+    if (dynamic) hits.push({ kind: 'dynamic', spec: dynamic.spec, exportName: dynamic.exportName });
+    else if (!loop && isConst && ts.isIdentifier(decl.name) && init && isFunc(init)) hits.push({ kind: 'function', func: init });
+    else if (!loop && isConst && ts.isIdentifier(decl.name) && decl.initializer) hits.push({ kind: 'const', init: decl.initializer });
+    else hits.push({ kind: 'other' });
+  };
+  if (ts.isFunctionLike(node)) {
+    if (ts.isFunctionExpression(node) && node.name?.text === name) hits.push({ kind: 'function', func: node });
+    for (const param of node.parameters) {
+      if (bindingNames(param.name).includes(name)) hits.push({ kind: 'other' });
+    }
+  }
+  if (ts.isCatchClause(node) && node.variableDeclaration && bindingNames(node.variableDeclaration.name).includes(name)) {
+    hits.push({ kind: 'other' });
+  }
+  if ((ts.isForStatement(node) || ts.isForInStatement(node) || ts.isForOfStatement(node)) && node.initializer && ts.isVariableDeclarationList(node.initializer)) {
+    for (const decl of node.initializer.declarations) pushDecl(decl, true);
+  }
+  const statements = ts.isBlock(node) || ts.isSourceFile(node) || ts.isModuleBlock(node)
+    ? node.statements
+    : ts.isCaseClause(node) || ts.isDefaultClause(node)
+      ? node.statements
+      : undefined;
+  if (statements) {
+    for (const stmt of statements) {
+      if (ts.isFunctionDeclaration(stmt) && stmt.name?.text === name) hits.push({ kind: 'function', func: stmt });
+      if (ts.isClassDeclaration(stmt) && stmt.name?.text === name) hits.push({ kind: 'other' });
+      if (ts.isEnumDeclaration(stmt) && stmt.name.text === name) hits.push({ kind: 'other' });
+      if (ts.isModuleDeclaration(stmt) && ts.isIdentifier(stmt.name) && stmt.name.text === name) hits.push({ kind: 'other' });
+      if (ts.isVariableStatement(stmt)) {
+        for (const decl of stmt.declarationList.declarations) pushDecl(decl, false);
+      }
+    }
+  }
+  return hits;
+}
+
+function chainHits(name: string, at: ts.Node): ChainHit[] {
+  const hits: ChainHit[] = [];
+  let current: ts.Node | undefined = at.parent;
+  while (current) {
+    hits.push(...hitsInNode(current, name));
+    current = current.parent;
+  }
+  return hits;
+}
+
+/** The initializer of the nearest `const` of `name`. A nearer binding, or one that hides a function, is not it. */
+function nearestConstInit(name: string, at: ts.Node): ts.Expression | null {
+  const hits = chainHits(name, at);
+  if (hits.slice(1).some((hit) => hit.kind === 'function' || hit.kind === 'dynamic')) return null;
+  const first = hits[0];
+  if (!first || first.kind !== 'const') return null;
+  return first.init;
 }
 
 /** `command.default` only when `command` is the awaited load from the commands table. */
-function isCommandDispatcher(expr: ts.CallExpression, fn: ts.Node): boolean {
+function isCommandDispatcher(expr: ts.CallExpression): boolean {
   const called = unwrap(expr.expression);
   if (!ts.isPropertyAccessExpression(called) || called.name.text !== 'default') return false;
   const recv = unwrap(called.expression);
   if (!ts.isIdentifier(recv)) return false;
-  const loaded = bindingAt(fn, recv.text, expr);
+  const loaded = nearestConstInit(recv.text, expr);
   if (!loaded) return false;
   const awaited = unwrapExit(loaded);
   if (!ts.isCallExpression(awaited)) return false;
   const callee = unwrap(awaited.expression);
   if (!ts.isIdentifier(callee)) return false;
-  const loader = bindingAt(fn, callee.text, expr);
+  const loader = nearestConstInit(callee.text, expr);
   if (!loader) return false;
   const access = unwrap(loader);
   if (!ts.isElementAccessExpression(access)) return false;
@@ -603,7 +664,6 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
   const coveredThrows: CoveredThrow[] = [];
   const returnSeen = new Set<string>();
   const throwSeen = new Set<string>();
-  const declared = new Map<string, { name: string; scope: ts.Node; func: ExitFunc }[]>();
   let thrown: number[] = [];
 
   const unreadFiles = new Set<string>();
@@ -667,26 +727,6 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
     return map;
   }
 
-  function dynamicBindings(fn: ts.Node, file: string): Map<string, { file: string; exportName: string }> {
-    const map = new Map<string, { file: string; exportName: string }>();
-    visitOwn(fn, (node) => {
-      if (!ts.isVariableDeclaration(node) || !node.initializer || !ts.isObjectBindingPattern(node.name)) return;
-      const init = unwrap(node.initializer);
-      const awaited = ts.isAwaitExpression(init) ? unwrap(init.expression) : init;
-      if (!ts.isCallExpression(awaited) || awaited.expression.kind !== ts.SyntaxKind.ImportKeyword) return;
-      const spec = awaited.arguments[0];
-      if (!spec || !ts.isStringLiteral(spec)) return;
-      const target = resolveSpec(file, spec.text);
-      if (!target) return;
-      for (const el of node.name.elements) {
-        if (!ts.isIdentifier(el.name)) continue;
-        const exportName = el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : el.name.text;
-        map.set(el.name.text, { file: target, exportName });
-      }
-    });
-    return map;
-  }
-
   function exportedFunction(source: ts.SourceFile, name: string): ExitFunc | null {
     if (name !== 'default') return functionsIn(source).get(name) ?? null;
     for (const stmt of source.statements) {
@@ -706,46 +746,30 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
     return func ? { file, func } : null;
   }
 
-  function functionsNamed(source: ts.SourceFile): { name: string; scope: ts.Node; func: ExitFunc }[] {
-    const hit = declared.get(source.fileName);
-    if (hit) return hit;
-    const found: { name: string; scope: ts.Node; func: ExitFunc }[] = [];
-    const visit = (node: ts.Node): void => {
-      if (ts.isFunctionDeclaration(node) && node.name && node.parent) {
-        found.push({ name: node.name.text, scope: node.parent, func: node });
-      }
-      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isFunc(unwrap(node.initializer))) {
-        const scope = node.parent?.parent?.parent;
-        if (scope) found.push({ name: node.name.text, scope, func: unwrap(node.initializer) as ExitFunc });
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(source);
-    declared.set(source.fileName, found);
-    return found;
-  }
-
   function resolveCall(
     call: ts.CallExpression,
     file: string,
     source: ts.SourceFile,
-    fn: ts.Node,
-  ): { file: string; func: ExitFunc } | { ambiguous: string } | null {
+  ): { file: string; func: ExitFunc } | { unreadable: string } | null {
     const called = unwrap(call.expression);
     if (!ts.isIdentifier(called)) return null;
     const name = called.text;
-    const decls = functionsNamed(source).filter((item) => item.name === name);
-    const imported = moduleBindings(source, file).get(name) ?? dynamicBindings(fn, file).get(name);
-    const visible = decls.filter((item) => encloses(item.scope, call));
-    // Two functions of one name in different functions are ordinary: the call is the one in scope.
-    // A declaration that does not enclose the call is not the callee. An import of a name that is
-    // also declared in this file is ambiguous, and so is more than one declaration in scope.
-    if (visible.length > 1 || (visible.length === 1 && imported)) return { ambiguous: name };
-    const local = visible[0];
-    if (local) return { file, func: local.func };
-    if (decls.length > 0 && imported) return { ambiguous: name };
-    if (!imported) return null;
-    return loadExport(imported.file, imported.exportName);
+    const hits: (ChainHit | { kind: 'import'; file: string; exportName: string })[] = chainHits(name, call);
+    const imported = moduleBindings(source, file).get(name);
+    if (imported) hits.push({ kind: 'import', file: imported.file, exportName: imported.exportName });
+    if (hits.length === 0) return null;
+    const followable = (hit: (typeof hits)[number]): boolean => hit.kind === 'function' || hit.kind === 'import' || hit.kind === 'dynamic';
+    // The nearest binding wins. A parameter, a let, a non-function const, or any other binding is
+    // not followed, and neither is a binding that hides a function or an import further out.
+    if (hits.slice(1).some(followable) || !followable(hits[0]!)) return { unreadable: name };
+    const first = hits[0]!;
+    if (first.kind === 'function') return { file, func: first.func };
+    if (first.kind === 'import') return loadExport(first.file, first.exportName);
+    if (first.kind === 'dynamic') {
+      const target = resolveSpec(file, first.spec);
+      return target ? loadExport(target, first.exportName) : { unreadable: name };
+    }
+    return { unreadable: name };
   }
 
   function reject(file: string, source: ts.SourceFile, node: ts.Node): void {
@@ -768,18 +792,14 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
       return;
     }
     if (ts.isCallExpression(unwrapped)) {
-      if (file === 'src/cli.ts' && isCommandDispatcher(unwrapped, fn)) return;
-      const resolved = resolveCall(unwrapped, file, source, fn);
-      if (resolved && 'ambiguous' in resolved) {
-        unreadable.push(`${file}:${lineOf(source, at)}: ${resolved.ambiguous} is ambiguous`);
+      if (file === 'src/cli.ts' && isCommandDispatcher(unwrapped)) return;
+      const resolved = resolveCall(unwrapped, file, source);
+      if (resolved && 'unreadable' in resolved) {
+        unreadable.push(`${file}:${lineOf(source, at)}: ${resolved.unreadable}: ${UNREADABLE}`);
         return;
       }
       if (!resolved) {
-        const called = unwrap(unwrapped.expression);
-        const name = ts.isIdentifier(called) ? called.text : null;
-        const hidden = name !== null && functionsNamed(source).some((item) => item.name === name);
-        if (name && hidden) unreadable.push(`${file}:${lineOf(source, at)}: ${name} is ambiguous`);
-        else reject(file, source, at);
+        reject(file, source, at);
         return;
       }
       walkReturns(resolved.file, resolved.func, commandFor(list, resolved.file, command));
@@ -806,13 +826,9 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
   }
 
   function knownReport(call: ts.CallExpression): boolean {
-    const host = call.parent ?? call;
-    let fn: ts.Node = host;
-    while (fn.parent && !isFunc(fn)) fn = fn.parent;
-    const scope = isFunc(fn) ? fn : call.getSourceFile();
     const source = call.getSourceFile();
     const file = source.fileName.replaceAll('\\', '/');
-    const resolved = resolveCall(call, file.startsWith('src/') ? file.slice(file.indexOf('src/')) : file, source, scope);
+    const resolved = resolveCall(call, file.startsWith('src/') ? file.slice(file.indexOf('src/')) : file, source);
     if (!resolved || !('func' in resolved) || resolved.file !== 'src/cli.ts') return false;
     const cli = load('src/cli.ts');
     const known = cli ? functionsIn(cli).get('reportFailure') : undefined;
@@ -878,10 +894,8 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
           sites.push({ command: commandFor(list, file, command), file, line: lineOf(source, node), codes: [...thrown], ids });
         }
       } else if (ts.isCallExpression(node) && !insideCatchingTry(node)) {
-        const resolved = resolveCall(node, file, source, func);
-        if (resolved && 'ambiguous' in resolved) {
-          unreadable.push(`${file}:${lineOf(source, node)}: ${resolved.ambiguous} is ambiguous`);
-        } else if (resolved) {
+        const resolved = resolveCall(node, file, source);
+        if (resolved && 'func' in resolved) {
           walkThrows(resolved.file, resolved.func, commandFor(list, resolved.file, command));
         }
         for (const arg of node.arguments) {
@@ -907,7 +921,7 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
       return [...new Set([...left, ...right])].sort((a, b) => a - b);
     }
     if (!ts.isCallExpression(unwrapped)) return null;
-    const resolved = resolveCall(unwrapped, file, source, fn);
+    const resolved = resolveCall(unwrapped, file, source);
     if (!resolved || !('func' in resolved)) return null;
     return functionCodes(resolved.file, resolved.func, stack);
   }
