@@ -20,7 +20,7 @@ export type Screen =
   | { kind: 'unknown' };
 
 function load(name: string): ScreenData {
-  return loadScreen(readFileSync(new URL(`../profiles/${name}.yaml`, import.meta.url), 'utf8'));
+  return loadScreen(readFileSync(new URL(`../profiles/${name}.yaml`, import.meta.url), 'utf8'), undefined, `${name}.yaml`);
 }
 
 // Every shipped CLI is data. The core owns the order.

@@ -54,9 +54,14 @@
     "status_model": { "type": "array", "items": { "$ref": "#/$defs/modelRule" }, "minItems": 1 },
     "quota": { "type": "array", "items": { "$ref": "#/$defs/quota" }, "minItems": 1 },
     "screen": { "$ref": "#/$defs/screen" },
-    "screen_module": { "type": "string", "minLength": 1 }
+    "screen_module": { "$ref": "#/$defs/screenModule" }
   },
   "$defs": {
+    "screenModule": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!.*\\.\\.)[^/~\\\\:][^:]*$"
+    },
     "quota": {
       "type": "object",
       "additionalProperties": false,
@@ -74,7 +79,7 @@
     "screen": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["composer"],
+      "anyOf": [{ "required": ["composer"] }, { "required": ["screen_module"] }],
       "properties": {
         "chrome": { "type": "array", "items": { "type": "string", "maxLength": 200 } },
         "unknown": { "$ref": "#/$defs/stage" },
@@ -83,7 +88,7 @@
         "question": { "$ref": "#/$defs/stage" },
         "working": { "$ref": "#/$defs/stage" },
         "composer": { "$ref": "#/$defs/composer" },
-        "screen_module": { "type": "string", "minLength": 1 }
+        "screen_module": { "$ref": "#/$defs/screenModule" }
       }
     },
     "stage": {

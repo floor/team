@@ -353,7 +353,8 @@ describe('Slice C: ScreenProfile escape hatch', () => {
     ];
 
     const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-test-'));
-    const outsideFile = resolve(tempDir, 'outside-evil.cjs');
+    const outsideDir = mkdtempSync(resolve(tmpdir(), 'outside-test-'));
+    const outsideFile = resolve(outsideDir, 'outside-evil.cjs');
     writeFileSync(outsideFile, 'module.exports = { unknown: () => true };');
     const symlinkPath = resolve(tempDir, 'inside-symlink.cjs');
     symlinkSync(outsideFile, symlinkPath);
@@ -413,6 +414,7 @@ screen:
       }
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
+      rmSync(outsideDir, { recursive: true, force: true });
     }
   });
 
@@ -422,7 +424,7 @@ screen:
     expect(screenDef.required).toBeUndefined();
     expect(screenDef.anyOf || screenDef.oneOf).toBeDefined();
 
-    const modulePattern = screenDef.properties.screen_module.pattern;
+    const modulePattern = schema.$defs.screenModule.pattern;
     expect(modulePattern).toBeDefined();
     const regex = new RegExp(modulePattern);
     expect(regex.test('hatch.ts')).toBe(true);
