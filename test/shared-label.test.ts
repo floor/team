@@ -200,6 +200,7 @@ describe('down and remove with one label on two seats', () => {
     const sources: DownSources = {
       sessionRunning: () => true,
       agents: () => agents,
+      alive: () => false,
       now: () => new Date(0),
       screen: () => ({ kind: 'idle' }),
       status: () => 'idle',
