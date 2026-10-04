@@ -186,13 +186,15 @@ export function doctorFindings(
   session: string,
   sources: DoctorSources,
   warnings: { line: number; message: string }[],
+  /** The file as approved. `add` hands the team about to run, whose `stopped` mark is already cleared. */
+  approved: TeamFile = team,
 ): Finding[] {
   const findings: Finding[] = warnings.map((warning) => ({
     level: 'warn',
     text: `the file, line ${warning.line}: ${warning.message}`,
   }));
 
-  findings.push(...approvalFindings(team, root, sources.home), ...checkFindings(team, root, sources.home));
+  findings.push(...approvalFindings(approved, root, sources.home), ...checkFindings(team, root, sources.home));
 
   const herdr = sources.herdrVersion();
   const running = herdr === null ? null : sources.sessionRunning(session);

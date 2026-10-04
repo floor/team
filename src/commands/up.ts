@@ -273,8 +273,8 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
 
   const recorded = readState(dir).sessions[session];
   const workspaces = sources.workspaces?.(session) ?? null;
-  const readings = loadReadings(dir, session);
-  const spend = loadSpendReadings(dir, session);
+  const readings = loadReadings(dir);
+  const spend = loadSpendReadings(dir);
   const seats: UpSeat[] = [];
   const refused = new Set<string>();
   for (const seat of team.seats) {

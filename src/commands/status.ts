@@ -106,8 +106,9 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     io.stderr('team status: herdr doesn\'t answer; is it installed and running?\n');
     return 2;
   }
-  const state = readState(dir).sessions[session] ?? emptySession();
-  const budgets = budgetTable(sources.budgetsInForce(team, root), recall(state.budgets), sources.now().getTime());
+  const whole = readState(dir);
+  const state = whole.sessions[session] ?? emptySession();
+  const budgets = budgetTable(sources.budgetsInForce(team, root), recall(whole.budgets), sources.now().getTime());
   const comparison = compare(team, session, state, live, sources.now(), sources.watchInForce(team, root));
   if (!live.running) comparison.notes.unshift(`the herdr session "${session}" is not running`);
   comparison.differences.push(...protectedCheckouts(team, root, sources), ...approvalDrift(sources.approval(team, root)));

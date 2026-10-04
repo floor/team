@@ -229,9 +229,10 @@ describe('status reads them', () => {
       changedAt: NOW_MS - MIN,
       resetsAt: NOW_MS + 60 * MIN,
       seat: 'codex-acme',
+      source: 'status_line',
       confirmed: true,
     };
-    saveReadings(join(root, '.agents'), SESSION, [stored], NOW_MS);
+    saveReadings(join(root, '.agents'), [stored], NOW_MS);
     const sources: StatusSources = {
       live: () => live(),
       branch: () => 'main',
