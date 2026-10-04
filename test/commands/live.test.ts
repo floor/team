@@ -11,7 +11,7 @@ import { sessionState, type HerdrAgent } from '../../src/herdr.ts';
 import { storePath } from '../../src/store/store.ts';
 import { readState } from '../../src/state.ts';
 import { parseMemoryPressure, parseSwapUsage, type Machine } from '../../src/watch/machine.ts';
-import type { Screen } from '../../src/watch/screen.ts';
+import { readScreen, type Screen } from '../../src/watch/screen.ts';
 import { testIo } from '../helpers.ts';
 
 const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8').replace('parked: true', 'stopped: true');
@@ -596,6 +596,21 @@ describe('team down, live', () => {
     expect(run.typed).toEqual([]);
     expect(run.closed).toEqual([]);
     expect(io.out).toContain('is blocked at a prompt');
+  });
+
+  test.each(['idle', 'working'])('a captured Codex permission blocks down when herdr says %s', async (status) => {
+    const captured = readFileSync(new URL('../fixtures/codex/0.157.0/permission.txt', import.meta.url), 'utf8');
+    const run = harness(readScreen('codex', captured), status);
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({
+      agents: () => [{ ...agent('codex-acme', 'w3:p1', status), agent: 'codex' }],
+    }));
+    expect(code).toBe(0);
+    expect(io.out).toContain('is blocked at a prompt');
+    expect(run.typed).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
   });
 
   test('a seat that does not leave is left as it is', async () => {

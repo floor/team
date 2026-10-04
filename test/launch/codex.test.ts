@@ -21,7 +21,7 @@ describe('Codex launch and captured screens', () => {
   test.each([
     ['idle', 'idle'], ['unsent', 'unsent'], ['working', 'working'],
     ['rules-accepted', 'idle'], ['startup', 'question'], ['startup-loading', 'unknown'], ['trust', 'trust'],
-    ['exit-typed', 'unsent'], ['exit', 'unknown'],
+    ['exit-typed', 'unsent'], ['exit', 'unknown'], ['permission', 'permission'],
   ] as const)('%s capture has %s composer shape', (file, kind) => {
     // A working screen never permits input, even if herdr's status has not caught up.
     expect(readScreen('codex', fixture(file)).kind).toBe(kind);
@@ -34,6 +34,13 @@ describe('Codex launch and captured screens', () => {
       '• Working (0s • esc to interrupt)\n\n› 1. Trust and continue',
     );
     expect(readScreen('codex', screen).kind).toBe('trust');
+  });
+  test('permission takes precedence over a running turn and requires an active footer', () => {
+    const captured = fixture('permission');
+    const working = captured.replace('› 1. Yes', '• Working (0s • esc to interrupt)\n\n› 1. Yes');
+    expect(readScreen('codex', working).kind).toBe('permission');
+    expect(readScreen('codex', captured + fixture('rules-accepted')).kind).toBe('idle');
+    expect(readScreen('codex', captured.replace('Press enter to confirm or esc to cancel', '')).kind).toBe('unknown');
   });
   test('unknown, shell and unobserved dialogs never count as idle', () => {
     for (const screen of [undefined, '❯\n', '›\n', 'Welcome to Codex\nSign in to continue', 'Do you allow this command?\n› 1. Yes\nEnter to confirm']) {
@@ -81,7 +88,7 @@ describe('Codex rules delivery', () => {
     expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(true);
     expect(d.calls).toEqual(['Rules.', 'Enter']);
   });
-  test.each(['trust', 'startup', 'unsent', 'exit', 'working'])('types nothing at %s', async (screen) => {
+  test.each(['permission', 'trust', 'startup', 'unsent', 'exit', 'working'])('types nothing at %s', async (screen) => {
     const d = delivery(screen);
     expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
     expect(d.calls).toEqual([]);
@@ -91,15 +98,15 @@ describe('Codex rules delivery', () => {
     expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
     expect(d.calls).toEqual([]);
   });
-  test('a trust question appearing after paste gets no Enter', async () => {
+  test.each(['trust', 'permission'])('a %s dialog appearing after paste gets no Enter', async (dialog) => {
     const d = delivery();
-    d.io.type = (text) => { d.calls.push(text); d.show('trust'); return true; };
+    d.io.type = (text) => { d.calls.push(text); d.show(dialog); return true; };
     expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
     expect(d.calls).toEqual(['Rules.']);
   });
-  test('a dialog arriving at the final re-read gets no Enter', async () => {
+  test.each(['trust', 'permission'])('a %s dialog arriving at the final re-read gets no Enter', async (dialog) => {
     const d = delivery(); let reads = 0;
-    d.io.screen = () => fixture(++reads === 3 ? 'trust' : reads === 1 ? 'idle' : 'unsent');
+    d.io.screen = () => fixture(++reads === 3 ? dialog : reads === 1 ? 'idle' : 'unsent');
     expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
     expect(d.calls).toEqual(['Rules.']);
   });
