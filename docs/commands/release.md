@@ -109,8 +109,10 @@ The Linear read is read-only: the command never writes to Linear.
 | `--file <path>` | the team file, instead of the main checkout's `.agents/team.yaml` |
 | `--help`, `-h` | the usage, and exit 0 |
 
-`--file` takes its value even when it looks like an option: `--file --json` names a file called
-`--json`, and only a `--json` that is not some option's value selects the JSON output.
+`--file` takes its value even when the value looks like another option: `--file --json` names a
+file called `--json`, and only a `--json` that is not some option's value selects the JSON output.
+`--help` and `-h` are not part of that rule: they are answered before the arguments are parsed,
+wherever they appear, so `--file --help` prints the usage and exits 0.
 
 ## What it finds
 
