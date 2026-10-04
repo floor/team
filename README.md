@@ -8,20 +8,16 @@ works under, the folders it may touch. Commands then check that file against a m
 and a history, and build and watch the team itself. Version 0.1 runs teams in
 [herdr](https://herdr.dev).
 
-**Status: alpha, in construction.** This build parses and validates the file, checks who is
-calling, and holds `add`, `approve`, `check`, `doctor`, `down`, `init`, `remove`, `status`, `up`,
-`watch` and `worktree`.
+**Status: 0.1, early: herdr only; trust is specified, not built yet.** This build parses and
+validates the file, checks who is calling, and holds `add`, `approve`, `check`, `doctor`, `down`,
+`init`, `remove`, `status`, `up`, `watch` and `worktree`.
 
-## Install, from git until it is on npm
+## Install
 
-Node 22 or later runs the built command; Bun builds and tests the sources.
+Node 22 or later runs the built command.
 
 ```sh
-git clone https://github.com/floor/team.git
-cd team
-bun install
-bun run build
-npm install -g .          # puts `team` on the PATH
+npm install -g team       # or run it without installing: npx team
 team --version            # 0.1.0
 ```
 
@@ -178,6 +174,19 @@ back and asks you to type how many seats it holds, so no file approves itself un
 run — and `up` starts the team, from the owner's terminal outside herdr.
 
 ## Development
+
+To run this tree's command from a clone instead of npm:
+
+```sh
+git clone https://github.com/floor/team.git
+cd team
+bun install
+bun run build
+npm install -g .          # puts `team` on the PATH
+team --version            # 0.1.0
+```
+
+Bun builds and tests the sources:
 
 ```sh
 bun install

@@ -39,3 +39,5 @@ The first release: set up, change and watch a project's team of AI agents from o
 - `team worktree new` and `team worktree remove`: create a task worktree from an up-to-date base, or
   remove its folder; a failed setup is kept and recorded, and the branch is never deleted. (#15)
 - A README that covers the file by example and every command with who may run it. (#9)
+
+[0.1.0]: https://github.com/floor/team/releases/tag/v0.1.0
