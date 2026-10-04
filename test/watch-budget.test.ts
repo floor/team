@@ -42,6 +42,8 @@ const OPENAI = '  accounts:\n    openai: { kind: subscription, reserve: 3%, sour
 const RESERVE = '  accounts:\n    openai: { kind: subscription, reserve: 10%, sources: [check], check: openai-quota }\n';
 const SCREEN_READ = '  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [status_line] }\n';
 const DEEPSEEK = '  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n';
+const BOTH = '  accounts:\n    openai: { kind: subscription, reserve: 20%, sources: [check, status_line], check: openai-quota }\n';
+const SCREEN_FIRST = '  accounts:\n    openai: { kind: subscription, reserve: 20%, sources: [status_line, check], check: openai-quota }\n';
 
 // Screens of Claude Code, as the live team shows them, and a Codex one whose status line carries
 // the weekly figure the codex profile reads.
@@ -245,6 +247,45 @@ describe('an account that reads unknown', () => {
       machine: fine, now: NOW, memory: newMemory(), approval: [], outcomes: [],
     });
     expect(budgetReports(result)).toEqual([]);
+  });
+});
+
+describe('the source fallback is per window', () => {
+  // A reading a status line gave in an earlier pass, still in the project's cache (§ 4.4).
+  const seen = (window: 'session' | 'weekly', left: number, changedAt: number) => ({
+    account: 'openai', window, left, used: 100 - left, changedAt,
+    resetsAt: NOW + 3_600_000, seat: 'codex-acme', source: 'status_line' as const, confirmed: true,
+  });
+  const at = (teamSource: string, readings: ReturnType<typeof seen>[]) =>
+    pass({
+      team: team(teamSource), watch: team(teamSource).watch, state: emptySession(), live: live(), machine: fine,
+      now: NOW, memory: newMemory(), approval: [],
+      outcomes: checkWindows('openai', NOW, [{ window: 'session', left: 80, used: 20, resetsAt: NOW + 3_600_000 }]),
+      readings,
+    });
+
+  test('a check that reported only session leaves the status line\'s weekly counted', () => {
+    // The check filled `session`; the status line's `weekly` from an earlier pass sits at 5% left,
+    // inside the 20% reserve. The check answering one window must not hide the other window's
+    // source: the weekly figure is counted, and its reserve crossing is reported.
+    expect(shown(at(BOTH, [seen('weekly', 5, NOW - MIN)]))).toEqual([
+      'openai weekly is 95% used, past the 50% mark (operator)',
+      'openai weekly is 95% used, past the 75% mark (operator)',
+      'openai weekly is 95% used, past the 90% mark (operator)',
+      'openai weekly left 5%, inside its 20% reserve (owner)',
+    ]);
+  });
+
+  test('a window the check reported is not overridden by a staler status-line figure', () => {
+    // The check owns `session` (80% left); the staler screen figure of the same window (15% left,
+    // inside the reserve) is below the check in `sources` and must not be read at all.
+    expect(budgetReports(at(BOTH, [seen('session', 15, NOW - 20 * MIN)]))).toEqual([]);
+  });
+
+  test('a fresh check below a stale status line is not hidden by it', () => {
+    // The screen's `session` figure is stale and inside the reserve; the check below it is fresh,
+    // and § 4.3's order lets it count: a stale higher source is exactly when the lower one counts.
+    expect(budgetReports(at(SCREEN_FIRST, [seen('session', 15, NOW - 40 * MIN)]))).toEqual([]);
   });
 });
 
