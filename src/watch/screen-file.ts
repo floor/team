@@ -8,7 +8,14 @@ import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts'
 
 const STAGES = ['unknown', 'trust', 'permission', 'question', 'working'] as const;
 const KINDS = ['idle', 'working', 'unsent', 'permission', 'trust', 'question', 'unknown'] as const;
-const CHOICE_SAMPLES = ['❯ 1. Yes', '› 1. Yes', '> 1. Yes', '❯ 1.', '› 1.', '> 1.'];
+// The lines a dialog draws for its choices, built from their parts: the mark on the choice
+// the cursor is on (claude-code ❯, codex ›, antigravity >) or the indent of the others, the
+// number, and the labels the profiles' rules name. The safety floor reads the first two
+// numbered lines (screen-core's choiceLine and twoLine), so chrome must match none of them.
+const CHOICE_MARKS = ['❯ ', '› ', '> ', '  '];
+const CHOICE_SAMPLES = CHOICE_MARKS.flatMap((mark) =>
+  ['1', '2'].flatMap((number) => ['', ' Yes', ' No'].map((tail) => `${mark}${number}.${tail}`)),
+);
 
 export function loadScreen(text: string): ScreenData {
   const root = parseYaml(text);
