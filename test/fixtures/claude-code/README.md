@@ -4,3 +4,6 @@
 - `rule-above.txt`: constructed. A long rule in the answer above the exit, then a bare `❯ `.
 - `leftover-box.txt`: constructed. The box Claude left (rule, prompt, rule, status), then the shell's `❯ `.
 - `output-under-rule.txt`: constructed. A bare `❯ `, a rule, and a line of output under the rule.
+- `quoted-dialog.txt`: constructed. An idle box whose transcript above it quotes a dialog's
+  words (`Do you want to proceed? 1. Yes`); the quote is prose and the box reads idle. Nothing
+  here was read from a live pane.

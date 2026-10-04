@@ -86,6 +86,17 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('idle');
   });
 
+  test('prose quoting a dialog above the box stays prose: the box is idle', () => {
+    // Constructed (fixtures/claude-code/README.md). The quote is the dialog's own words:
+    // the classifier main had read this screen as a permission, and the box below the
+    // quote is what the pane is.
+    const text = readFileSync(new URL('./fixtures/claude-code/quoted-dialog.txt', import.meta.url), 'utf8');
+    const lines = text.split('\n').map((line) => line.trimEnd()).slice(-20);
+    expect(mainClaude(lines)).toBe('permission');
+    expect(readScreen('claude-code', text).kind).toBe('idle');
+    expect(classify('claude-code', text.split('\n')).kind).toBe('idle');
+  });
+
   test('a transcript of 1. Yes / 2. No above a bare prompt is unknown', () => {
     // No rule above the prompt and no status footer under it, so it is not Claude's box.
     const text = `1. Yes\n2. No\n❯ \n`;
