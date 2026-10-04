@@ -14,7 +14,7 @@ import { storePath, writeApproval } from '../../src/store/store.ts';
 import { testIo } from '../helpers.ts';
 
 const NOW = new Date('2026-10-04T09:00:00Z');
-const IDLE = '❯ \n';
+const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
 const FILE = ['--file', '.agents/team.yaml'];
 const OWNER = { kind: 'owner' } as const;
 

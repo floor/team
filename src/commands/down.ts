@@ -16,6 +16,7 @@ import {
 import type { Command, Io } from '../io.ts';
 import type { Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
+import { reportedLiveAgent } from '../launch/agent.ts';
 import { downPlan, formatPlan, type DownSeat } from '../launch/plan.ts';
 import { profileFor } from '../profiles/index.ts';
 import { logLine } from '../log.ts';
@@ -247,6 +248,8 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       // status is asked both times; Enter waits until it is idle or done and the screen is idle
       // or holding unsent text.
       const cli = seats.find((seat) => seat.pane === pane)?.cli ?? '';
+      const names = profileFor(cli)?.processNames ?? [];
+      if (sources.foreground && !reportedLiveAgent(sources.foreground(sessionName, pane), names)) return 'no-agent';
       const look = () => sources.screen(sessionName, pane, cli).kind;
       const resting = () => {
         const status = sources.status(sessionName, pane);

@@ -6,7 +6,7 @@ import { runChecks, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
 import { homedir } from 'node:os';
-import { agentStatus, paneRead, pressEnter, typeText } from '../herdr.ts';
+import { agentStatus, paneForeground, paneRead, pressEnter, typeText } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
@@ -18,10 +18,12 @@ import { newMemory, pass } from '../watch/pass.ts';
 import { readScreen } from '../watch/screen.ts';
 import { judgeTemporary, judgeWorktree } from '../watch/close.ts';
 import { readEnd, type EndView } from '../watch/end.ts';
+import { reportedLiveAgent } from '../launch/agent.ts';
 import type { DownSeat } from '../launch/plan.ts';
 import { stopRunning, realSources as removeSources } from './remove.ts';
 import { removeWorktree } from './worktree.ts';
 import { stateOf } from './down.ts';
+import { profileFor } from '../profiles/index.ts';
 import { realSources } from './status.ts';
 
 // What the watch reads and does outside its own process, so tests can stand in for it.
@@ -41,6 +43,8 @@ export type WatchSources = {
   screen(pane: string, session: string): string | null;
   // The operator's status, asked again with its screen.
   status(pane: string, session: string): string | null;
+  /** Foreground process names, or null when the pane can't be read. */
+  foreground?(pane: string, session: string): string[] | null;
   typeText(pane: string, text: string, session: string): boolean;
   pressEnter(pane: string, session: string): boolean;
   notify(text: string): void;
@@ -82,6 +86,7 @@ export const realWatchSources: WatchSources = {
   readChecks: (team, root, now) => runChecks(team, root, now),
   screen: (pane, session) => paneRead(pane, 14, session),
   status: agentStatus,
+  foreground: (pane, session) => paneForeground(pane, session),
   typeText,
   pressEnter,
   notify,
@@ -262,6 +267,12 @@ function deliver(
     memory.pending.push(...nudge.pending);
     memory.pendingSince ??= sources.now().getTime();
   };
+  const names = profileFor(cli)?.processNames ?? [];
+  if (sources.foreground && !reportedLiveAgent(sources.foreground(nudge.pane, session), names)) {
+    tell('a nudge was not typed: no live agent in the operator\'s pane', true);
+    keep();
+    return;
+  }
   if ((status !== 'idle' && status !== 'done') || look() !== 'idle' || !sources.typeText(nudge.pane, nudge.text, session)) {
     keep();
     return;

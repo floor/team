@@ -221,7 +221,20 @@ function boxToRule(lines: string[], composer: Extract<ScreenData['composer'], { 
     if ((lines[i] ?? '').trim()) return { kind: 'unsent', from, input };
   }
   const typed = (lines[input] ?? '').replace(composer.prompt, '').trim();
-  return { kind: placeholder(typed, composer.placeholders) ? 'idle' : 'unsent', from, input };
+  const kind = placeholder(typed, composer.placeholders) ? 'idle' : 'unsent';
+  // Idle is what a nudge and a first message are typed into. A bare prompt is not
+  // Claude's box: that needs the rule above it, or the status footer under it.
+  if (kind === 'idle' && !boxFrame(lines, input, from, composer.rule)) return { kind: 'unknown' };
+  return { kind, from, input };
+}
+
+function boxFrame(lines: string[], input: number, from: number, rule: RegExp): boolean {
+  if (from < input) return true;
+  for (let i = input + 1; i < lines.length; i++) {
+    if (!rule.test(lines[i] ?? '')) continue;
+    for (let j = i + 1; j < lines.length; j++) if ((lines[j] ?? '').trim()) return true;
+  }
+  return false;
 }
 
 function statusLast(

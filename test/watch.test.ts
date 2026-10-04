@@ -679,6 +679,13 @@ describe('team watch', () => {
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
   });
 
+  test('a pane with no live agent is not typed into', async () => {
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, { foreground: () => ['zsh'] }));
+    expect(typed).toEqual([]);
+    expect(io.out).toContain('a nudge was not typed: no live agent in the operator\'s pane');
+  });
+
   test('an operator that started working since the pass is not typed into', async () => {
     statusNow = 'working';
     await runWatch(['--file', file], testIo(dir), sources(1));

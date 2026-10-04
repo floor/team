@@ -19,7 +19,7 @@ const NOW = new Date('2026-10-04T09:00:00Z');
 const now = NOW.getTime();
 const FILE = ['--file', '.agents/team.yaml'];
 const OWNER = { kind: 'owner' } as const;
-const IDLE = '❯ \n';
+const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
 const TAIL = 'openai weekly left 5%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic';
 const WHY = `refused: ${TAIL}`;
 
