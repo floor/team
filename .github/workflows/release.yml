@@ -4,6 +4,8 @@
 # file), no token is stored, and the release carries provenance. A pre-release
 # version (x.y.z-next.N) goes under the `next` dist-tag, anything else under
 # `latest`.
+# The tag's commit must be on main and the version must be package.json's; a
+# tag ruleset protecting v* (only the owner creates them) is recommended.
 # The 0.1.0 release itself is a manual `npm publish` from a clean main; this
 # workflow is for the releases after it.
 # Never push this repository's version tags to another repository with a
@@ -24,19 +26,22 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # The actions are pinned by commit; the version comment says which release it is.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0   # the tagged commit is checked against origin/main
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      # trusted publishing needs npm 11.5.1 or later
-      - run: npm install -g npm@latest
+      # Trusted publishing needs npm 11.5.1 or later; pinned, bump on purpose.
+      - run: npm install -g npm@11.21.0
 
       - name: The tag must be the package version
         run: |
@@ -46,6 +51,11 @@ jobs:
             echo "tag v$tag does not match package.json version $version" >&2
             exit 1
           fi
+
+      # Only a commit on main is releaseable: a tag on an unmerged branch must not publish.
+      - name: The tagged commit must be on main
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "the tag is not on main" >&2; exit 1; }
 
       - run: bun install --frozen-lockfile
 
@@ -70,7 +80,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Create the GitHub Release
         env:
