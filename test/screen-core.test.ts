@@ -467,6 +467,24 @@ screen:
     expect(loadScreen(text).composer.placeholderStyle).toBe('dim');
     expect(() => loadScreen(text.replace('placeholder_style: dim', 'placeholder_style: bold'))).toThrow(YamlError);
   });
+
+  test('a box-to-rule composer recognizes footers declared in the profile', () => {
+    const data = loadScreen(`
+format: 1
+cli: sample
+screen:
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    footers:
+      - 'status'
+    placeholders:
+      - equals: ''
+`);
+    const lines = ['> ', '--------', 'status'];
+    expect(classifyLines(data, lines).kind).toBe('idle');
+  });
 });
 
 describe('a shell prompt against the other composers', () => {
