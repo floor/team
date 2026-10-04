@@ -138,10 +138,11 @@ describe('claude-code through the screen core', () => {
   test('both rows typed by hand under a rule below a shell prompt reproduce the frame', () => {
     const prompt = '~/acme % ls\nREADME.md\nsrc\n❯ \n';
     const handTypedFrame = `${prompt}${RULE}\n  main · Opus 5.5\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n`;
-    // A person typing both rows under a rule below a shell prompt reproduces the exact
-    // multi-row frame and reads idle; this residual is acceptable because it requires
-    // reproducing the entire multi-row frame in order.
-    expect(readScreen('claude-code', handTypedFrame).kind).toBe('idle');
+    // The frame alone, scrolled out of its opening rule, is not enough any more: the rows
+    // above the prompt row — the shell prompt and its output — are rows the frame does not
+    // explain, so the read fails closed rather than take the box for an empty idle one.
+    // The residual this closes required a person to type the whole multi-row frame by hand.
+    expect(readScreen('claude-code', handTypedFrame).kind).toBe('unknown');
   });
 
   test('a real box with a custom status line stays idle with the footer frame', () => {
@@ -483,9 +484,10 @@ const captured: [string, string, (lines: string[]) => Screen['kind']][] = [
 
 describe('codex, cursor and antigravity through the screen core', () => {
   test('typed text ending in ctrl+c to stop is a running turn, and unsent in the composer', () => {
-    // Constructed, not a capture. The suffix on the prompt is the running turn.
-    // The composer strips it, and the words typed under it are unsent.
-    const text = '→ ship the fix   ctrl+c to stop\n  Grok 4.7 medium\n';
+    // Constructed, not a capture, drawn at the capture's own columns: the prompt sits at
+    // the pane's second column, as unsent.txt draws it. The suffix on the prompt is the
+    // running turn. The composer strips it, and the words typed under it are unsent.
+    const text = '  → ship the fix   ctrl+c to stop\n  Grok 4.7 medium\n';
     expect(classifyComposer('cursor', text.split('\n')).kind).toBe('unsent');
     expect(classify('cursor', text.split('\n')).kind).toBe('working');
   });

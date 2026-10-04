@@ -63,3 +63,18 @@ of its own inside the box either — `idle.txt`'s composer is the bare `>` row a
 `unsent.txt`'s rows sit directly between the rules — so the profile counts none
 (`frame_rows` omitted, zero) and every trailing empty row is read as a row the text does
 not have.
+
+The round-6 fold tests insert one more row the fold read must not drop: a rule-looking row
+(a 54-column run of `─`, one of `━`, two of them, or an indented one at the content column)
+between the true tail and the box's closing rule, and, in the other shape, a rule-looking
+row between the opening rule and the marker. The frame the read trusts is the capture's:
+the opening rule directly above the marker and the closing rule the window's last rule row
+at the opening rule's own width; a rule-looking row anywhere else is a row of the box, so
+the box is not the typed text and nothing is entered.
+
+The round-7 tests redraw one of `idle.txt`'s two rules at another width — the closing rule
+one column shorter (52) or longer (54) than the opening, or the opening one shorter instead —
+with the typed text, where the test types, drawn in the box as `unsent.txt` draws it. The
+captures draw the box's two rules at one width (53 columns in `idle.txt`; 54 in
+`folded-rules.txt`), so a window whose rules differ is not the frame they draw: the read
+fails closed and nothing is entered.

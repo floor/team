@@ -74,7 +74,12 @@ screen:
   composer:
     mode: status-last
     status_line: '^\s+GPT-[0-9][\w.-]*\s+[^·]*·'
-    prompt: '^\s*›(?:\s|$)'
+    # The input row carries the prompt at the pane's first column — unsent.txt draws `› Rules.`
+    # there, content on the rows below at the second, and exit-typed.txt keeps the old
+    # transcript and menu rows above it — and a prompt glyph on a content row is never the
+    # input row. The read scans up from the status line and anchors this pattern to the
+    # captured column.
+    prompt: '^›(?:\s|$)'
     placeholders:
       - equals: ''
       - equals: Ask Codex to do anything
