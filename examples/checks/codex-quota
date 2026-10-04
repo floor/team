@@ -1,0 +1,194 @@
+#!/usr/bin/env bun
+// Prints one subscription line from a Codex session rollout.
+//
+// Bun runs this. The check is one JSONL scan, and the owner already has Bun on
+// PATH to run team. It uses only the built-in file modules, so there is no
+// package to install beside the script.
+//
+// team runs a check with an empty environment plus PATH and HOME. CODEX_HOME
+// from the owner's shell never reaches this process, so sessions are read from
+// $HOME/.codex/sessions. When Codex's home is somewhere else, install a two-line
+// wrapper, name that wrapper as the account's check, and let it set CODEX_HOME
+// before it execs this script:
+//
+//   #!/bin/sh
+//   CODEX_HOME=/path/to/codex exec /path/to/codex-quota
+//
+// When that variable is set, sessions are $CODEX_HOME/sessions
+// (codex-rs/utils/home-dir and rollout's SESSIONS_SUBDIR, tag rust-v0.157.0).
+//
+// Files named rollout-*.jsonl are taken newest first. The first that has a
+// token_count event with a primary window is the one used, and at most ten
+// files are opened. A newer session that has only session_meta does not hide
+// the last figure. From that file the last such event is kept. The line's at
+// time is that event's timestamp, so an older figure stays dated. The fields
+// used are that window's used_percent, window_minutes and resets_at, plus the
+// event's timestamp. Nothing else from the file is printed.
+//
+// window_minutes maps to a contract name: 300 session, 1440 daily, 10080 weekly.
+// Any other length prints nothing and exits 0. The line has no name for it, and
+// inventing one would be a false figure.
+// used_percent is rounded to the nearest integer. Below 0 or above 100 prints
+// nothing. A reset in the past, or none, is left off the line.
+//
+// primary is the only line. RateLimitSnapshot.secondary is a second window in the
+// same event. A later check can print it as its own line when its window_minutes
+// is one of the three above and is not the same window as primary. Duplicate
+// windows make the whole reading unknown, so this script does not print it.
+
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
+const WINDOWS = { 300: 'session', 1440: 'daily', 10080: 'weekly' };
+const MAX_ROLLOUTS = 10;
+const LINE =
+  /^(session|daily|weekly) (100|[0-9]{1,2})% used( resets (?:[0-9]+h(?:[0-9]+m)?|[0-9]+m))? at [0-9]{10}$/;
+
+function main() {
+  for (const path of newestRollouts(sessionsDir(), MAX_ROLLOUTS)) {
+    const line = lineFromRollout(readFileSync(path, 'utf8'));
+    if (line === undefined) continue;
+    if (line) process.stdout.write(`${line}\n`);
+    return;
+  }
+}
+
+function sessionsDir() {
+  const codex = process.env.CODEX_HOME;
+  if (codex) return join(codex, 'sessions');
+  const home = process.env.HOME;
+  if (!home) return null;
+  return join(home, '.codex', 'sessions');
+}
+
+/** @param {string | null} root @param {number} limit */
+function newestRollouts(root, limit) {
+  if (!root) return [];
+  /** @type {{ path: string, mtimeMs: number, name: string }[]} */
+  const found = [];
+  walk(root, found);
+  found.sort((a, b) => b.mtimeMs - a.mtimeMs || (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));
+  return found.slice(0, limit).map((file) => file.path);
+}
+
+/** @param {string} dir @param {{ path: string, mtimeMs: number, name: string }[]} found */
+function walk(dir, found) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walk(path, found);
+      continue;
+    }
+    if (!entry.isFile() || !entry.name.startsWith('rollout-') || !entry.name.endsWith('.jsonl')) continue;
+    try {
+      found.push({ path, mtimeMs: statSync(path).mtimeMs, name: entry.name });
+    } catch {
+      // A file that disappears between listing and stat is not the newest.
+    }
+  }
+}
+
+/**
+ * The contract line, null when a primary window is present but cannot be
+ * written, or undefined when this file has no token_count with a primary.
+ * A null result stops the scan: this file already has a primary window, and an
+ * older file must not stand in for it.
+ * @param {string} text
+ * @returns {string | null | undefined}
+ */
+function lineFromRollout(text) {
+  const lines = text.split('\n');
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const raw = lines[index]?.trim();
+    if (!raw) continue;
+    const event = tokenCount(raw);
+    if (event === undefined) continue;
+    return event;
+  }
+  return undefined;
+}
+
+/**
+ * undefined: not a token_count with a primary window; keep looking.
+ * null: the latest primary window cannot be written; stop.
+ * string: the contract line.
+ * @param {string} raw
+ * @returns {string | null | undefined}
+ */
+function tokenCount(raw) {
+  let row;
+  try {
+    row = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  const payload = row?.payload;
+  if (!payload || payload.type !== 'token_count') return undefined;
+  const primary = payload.rate_limits?.primary;
+  if (primary == null) return undefined;
+  if (typeof primary !== 'object') return null;
+  return formatPrimary(primary, row.timestamp);
+}
+
+/** @param {Record<string, unknown>} primary @param {unknown} timestamp */
+function formatPrimary(primary, timestamp) {
+  const used = roundedPercent(primary.used_percent);
+  const window = windowName(primary.window_minutes);
+  const at = unixSeconds(timestamp);
+  if (used === null || window === null || at === null) return null;
+  const resets = resetPhrase(primary.resets_at);
+  if (resets === null) return null;
+  const line = `${window} ${used}% used${resets} at ${at}`;
+  return LINE.test(line) ? line : null;
+}
+
+/** @param {unknown} value */
+function roundedPercent(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) return null;
+  return Math.round(value);
+}
+
+/** @param {unknown} minutes */
+function windowName(minutes) {
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes)) return null;
+  return WINDOWS[minutes] ?? null;
+}
+
+/** @param {unknown} timestamp */
+function unixSeconds(timestamp) {
+  const ms = typeof timestamp === 'string' ? Date.parse(timestamp) : NaN;
+  if (!Number.isFinite(ms)) return null;
+  const seconds = Math.floor(ms / 1000);
+  return seconds >= 1_000_000_000 && seconds <= 9_999_999_999 ? String(seconds) : null;
+}
+
+/**
+ * '' when the reset is absent or already past. null when the field is present
+ * and not a finite number of seconds.
+ * @param {unknown} resetsAt
+ */
+function resetPhrase(resetsAt) {
+  if (resetsAt == null) return '';
+  if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) return null;
+  const remaining = Math.floor(resetsAt) - Math.floor(Date.now() / 1000);
+  if (remaining <= 0) return '';
+  const minutes = Math.floor(remaining / 60);
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours > 0 && rest > 0) return ` resets ${hours}h${rest}m`;
+  if (hours > 0) return ` resets ${hours}h`;
+  return ` resets ${rest}m`;
+}
+
+try {
+  main();
+} catch {
+  // No file, a bad path, or a read error is an unknown figure. Exit 0, no text.
+}
