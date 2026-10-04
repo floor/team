@@ -69,7 +69,14 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('unknown');
   });
 
-  test.each(['shell-git-log.txt', 'shell-right-prompt.txt', 'shell-shortcuts.txt', 'shell-shortcuts-indented.txt'])('%s reads unknown', (name) => {
+  test.each([
+    'shell-git-log.txt',
+    'shell-right-prompt.txt',
+    'shell-shortcuts.txt',
+    'shell-shortcuts-indented.txt',
+    'shell-status-only.txt',
+    'shell-bypass-only.txt',
+  ])('%s reads unknown', (name) => {
     const text = readFileSync(new URL(`./fixtures/claude-code/${name}`, import.meta.url), 'utf8');
     expect(readScreen('claude-code', text).kind).toBe('unknown');
   });
