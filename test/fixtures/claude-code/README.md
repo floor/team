@@ -13,3 +13,5 @@
 - `shell-right-prompt.txt`: constructed, not a capture. A shell prompt, a closing rule, then a zsh right-prompt segment containing `·`.
 - `shell-shortcuts.txt`: constructed, not a capture. A shell prompt, a closing rule, then the exact line `? for shortcuts` alone.
 - `shell-shortcuts-indented.txt`: constructed, not a capture. A shell prompt, a closing rule, then `  ? for shortcuts` with two leading spaces.
+- `shell-status-only.txt`: constructed, not a capture. A shell prompt, a closing rule, then `  build · Opus 5 notes` (two leading spaces, a middot, and a model word).
+- `shell-bypass-only.txt`: constructed, not a capture. A shell prompt, a closing rule, then `  bypass permissions`.

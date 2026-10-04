@@ -143,6 +143,8 @@ function composerOf(node: YamlNode): Composer {
   const placeholderStyle = style ? placeholderStyleOf(style) : undefined;
   if (name === 'box-to-rule') {
     only(entries, ['mode', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style']);
+    // For a scrolled-out box, the non-blank lines under the closing rule must match
+    // every pattern, in order, and the counts must be equal.
     const footers = optional(entries, 'footers');
     return {
       mode: name,
@@ -175,6 +177,7 @@ function composerOf(node: YamlNode): Composer {
     only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'fold', 'placeholder_style']);
     const flag = optional(entries, 'ignore_case');
     const ignoreCase = flag ? boolOf(flag.value, 'ignore_case') : false;
+    // Any line below the closing rule matches any pattern in the list.
     const footers = required(entries, 'footers', node.line);
     const fold = optional(entries, 'fold');
     return {

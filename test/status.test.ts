@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { saveReadings } from '../src/budgets/readings.ts';
+import { saveReadings, saveSpendReadings } from '../src/budgets/readings.ts';
 import { runStatus } from '../src/commands/status.ts';
 import type { StatusSources } from '../src/commands/status.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
@@ -32,8 +32,8 @@ function built(): Live {
       agent('deepseek-acme-2', 'w4'),
     ],
     workspaces: [
-      { id: 'w1', label: 'claude-coordinator-acme' }, { id: 'w2', label: 'codex-acme' },
-      { id: 'w3', label: 'deepseek-acme' }, { id: 'w4', label: 'deepseek-acme-2' }, { id: 'w9', label: 'watchdog' },
+      { id: 'w1', label: 'claude opus 5.5' }, { id: 'w2', label: 'gpt sol 6' },
+      { id: 'w3', label: 'deepseek flash v4.1' }, { id: 'w4', label: 'deepseek flash v4.1-2' }, { id: 'w9', label: 'watchdog' },
     ],
     screens: { 'w1:p1': claudeScreen('Opus 5.5') },
   };
@@ -112,11 +112,19 @@ describe('team status', () => {
   });
 
   test('an agent in a seat\'s workspace under another name, or none', async () => {
+    updateState(join(dir, '.agents'), (state) => {
+      const session = state.sessions['acme-web'] ?? emptySession();
+      session.seats['deepseek-acme'] = { stage: 'ready', workspace: 'w3', pane: 'w3:p1' };
+      session.seats['codex-acme'] = { stage: 'ready', workspace: 'w2', pane: 'w2:p1' };
+      state.sessions['acme-web'] = session;
+    });
     const agents = built().agents.map((one) => (one.name === 'deepseek-acme' ? { ...one, name: null } : one.name === 'codex-acme' ? { ...one, name: 'codex-old' } : one));
     live = { ...built(), agents };
     const { out } = await status();
-    expect(out).toContain('deepseek-acme: the agent in its workspace "deepseek-acme" is unnamed\n  repair: herdr --session acme-web agent rename w3:p1 deepseek-acme');
-    expect(out).toContain('codex-acme: the agent in its workspace "codex-acme" is named "codex-old"');
+    expect(out).toContain('deepseek-acme: the agent in w3:p1 is unnamed\n  repair: herdr --session acme-web agent rename w3:p1 deepseek-acme');
+    expect(out).toContain('codex-acme: the agent in w2:p1 is named "codex-old"');
+    expect(out).not.toContain('deepseek flash v4.1');
+    expect(out).not.toContain('gpt sol 6');
     expect(out).toContain('2 difference(s)');
   });
 
@@ -265,6 +273,27 @@ describe('team status', () => {
     expect(doc.budgets).toEqual([
       { account: 'deepseek', window: null, left: null, used: null, resetsIn: null, seat: null, age: null, source: null, fallback: false, state: 'unknown', inside: false, reserve: null },
       { account: 'openai', window: 'weekly', left: 39, used: 61, resetsIn: '44m', seat: 'codex-acme', age: '2m', source: 'status_line', fallback: false, state: 'fresh', inside: false, reserve: 10 },
+    ]);
+  });
+
+  test('a stored spend reading prints no figure: its row is unknown in the table and the JSON', async () => {
+    writeFileSync(file, example.replace(
+      '  marks: [50, 75, 90]          # percent used, per account and window\n',
+      `  marks: [50, 75, 90]
+  accounts:
+    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }
+`,
+    ));
+    saveSpendReadings(join(dir, '.agents'), [
+      { account: 'deepseek', amount: 4.996, currency: 'USD', at: NOW.getTime() - 3 * 60 * 1000 },
+    ]);
+    const { code, out } = await status();
+    expect(code).toBe(0);
+    expect(out).toContain('deepseek  unknown');
+    expect(out).not.toContain('4.996');
+    const doc = JSON.parse((await status('--json')).out);
+    expect(doc.budgets).toEqual([
+      { account: 'deepseek', window: null, left: null, used: null, resetsIn: null, seat: null, age: null, source: null, fallback: false, state: 'unknown', inside: false, reserve: null },
     ]);
   });
 

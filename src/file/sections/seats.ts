@@ -44,7 +44,7 @@ export const seats: Section = {
         count: { type: 'integer', minimum: 1 },
       },
       required: ['role', 'name', 'cli', 'vendor', 'model', 'version', 'launch'],
-      $comment: 'account must name a key of budgets.accounts; label defaults to the name; a seat with count is neither lead',
+      $comment: 'account must name a key of budgets.accounts; label defaults to the model and version; a seat with count is neither lead',
     },
   },
 };
@@ -101,6 +101,8 @@ function readSeats(
     const stopped = check.flag(fields.get('stopped'), `${at}: stopped`);
     const count = check.whole(fields.get('count'), `${at}: count`, 1) ?? 1;
     const label = check.text(fields.get('label'), `${at}: label`);
+    // Left out, the herdr title is the model and version. A written label wins, so a file that
+    // already names one keeps the title, and the fingerprint, it had.
     if (!role || !name || !cli || !vendor || !model || !version || !launch || !display) {
       if (name) broken.add(name);
       continue;
@@ -110,7 +112,7 @@ function readSeats(
       seats.push({
         role, cli, vendor, model, version, display, launch, cwd, parked, stopped, line,
         name: name + suffix,
-        label: (label ?? name) + suffix,
+        label: (label ?? defaultLabel(model, version)) + suffix,
         declared: name,
         count,
         instance,
@@ -120,8 +122,11 @@ function readSeats(
     }
   }
   reportCollisions(seats, 'name', check);
-  reportCollisions(seats, 'label', check);
   return seats;
+}
+
+export function defaultLabel(model: string, version: string): string {
+  return `${model} ${version}`.toLowerCase();
 }
 
 function readVersion(entry: YamlEntry | undefined, at: string, line: number, check: Check): string | undefined {
@@ -151,7 +156,7 @@ function readCwd(entry: YamlEntry | undefined, at: string, trust: string[], chec
   return path;
 }
 
-function reportCollisions(seats: DraftSeat[], field: 'name' | 'label', check: Check): void {
+function reportCollisions(seats: DraftSeat[], field: 'name', check: Check): void {
   const seen = new Map<string, DraftSeat>();
   for (const seat of seats) {
     const first = seen.get(seat[field]);

@@ -263,6 +263,7 @@ workspace:
 seats:
   - role: operator
     name: fake-coordinator
+    label: fake-coordinator
     cli: claude-code
     vendor: anthropic
     model: Claude Opus
@@ -270,6 +271,7 @@ seats:
     launch: ${launches.coordinator}
   - role: implementer
     name: fake-work
+    label: fake-work
     cli: claude-code
     vendor: anthropic
     model: Claude Opus

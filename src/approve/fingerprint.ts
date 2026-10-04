@@ -81,6 +81,23 @@ export function legacySeatDigests(team: Approvable): Record<string, string> {
   return seats;
 }
 
+/**
+ * Seat digests as a record written when an omitted label was the seat's name.
+ * `v0.1.2` hashed `parked` and `stopped`; `v0.1.1` left them out. A written
+ * label hashes the same title in every shape, so these equal a stored digest
+ * only where the title was the name.
+ */
+export function legacyLabelDigests(team: Approvable): { named: Record<string, string>; namedWithoutFlags: Record<string, string> } {
+  const named: Record<string, string> = {};
+  const namedWithoutFlags: Record<string, string> = {};
+  for (const seat of team.seats) {
+    const titled = { ...seat, label: seat.name };
+    named[seat.name] = seatDigest(titled, SEAT_FREE_FIELDS);
+    namedWithoutFlags[seat.name] = seatDigest(titled, LEGACY_SEAT_FREE_FIELDS);
+  }
+  return { named, namedWithoutFlags };
+}
+
 function seatDigest(seat: Record<string, unknown>, free: Set<string>): string {
   const fields = Object.fromEntries(Object.entries(seat).filter(([key]) => !free.has(key)));
   return digest(fields);

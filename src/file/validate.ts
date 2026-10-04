@@ -10,6 +10,7 @@ import type { DraftSeat } from './sections/seats.ts';
 import type { Watched } from './sections/watch.ts';
 import type { Seat, TeamFile, ValidateResult } from './types.ts';
 
+export { defaultLabel } from './sections/seats.ts';
 export { defaultWatch } from './sections/watch.ts';
 export { defaultBudgets } from './sections/budgets.ts';
 

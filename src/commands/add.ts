@@ -33,7 +33,7 @@ export type AddSources = {
   home: string;
   sessionState(session: string): 'absent' | 'running' | 'stopped' | null;
   agents(session: string): HerdrAgent[] | null;
-  workspaces(session: string): { id: string; label: string }[] | null;
+  workspaces(session: string): { id: string }[] | null;
   doctor: DoctorSources;
   machine?: (root: string) => Machine;
   now(): Date;
@@ -68,7 +68,7 @@ export const realSources: AddSources = {
   agents: (session) => agentList(aim(session)),
   workspaces(session) {
     const listed = workspaceList(aim(session));
-    return listed === null ? null : listed.map((workspace) => ({ id: workspace.id, label: workspace.label }));
+    return listed === null ? null : listed.map((workspace) => ({ id: workspace.id }));
   },
   doctor: doctorSources,
   machine: readMachine,
@@ -149,6 +149,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 1;
   }
   const agents = live === 'running' ? sources.agents(session) : [];
+  // Read so a session whose workspace list can't be read is refused. The title is not a key.
   const workspaces = live === 'running' ? sources.workspaces(session) : [];
   if (agents === null || workspaces === null) {
     io.stderr(`team add: session ${session} runs, and its agents can't be read\n`);
@@ -231,7 +232,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // changes no section of its own, and no unapproved reserve may unblock a launch (#50).
   const budgets = budgetsInForce(prepared.team, root, sources.home);
   const decision = seatBudget(budgets, loadReadings(dir), built.seat, sources.now().getTime(), loadSpendReadings(dir));
-  const stray = unnamedIn(built.seat.label, agents, workspaces);
+  const stray = unnamedIn(recorded.seats[built.name]?.workspace, agents);
   const starting = seatPlan(prepared.team, built.seat, start);
   const planned = stray
     ? { ...starting, stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
@@ -372,9 +373,9 @@ function seatPlan(team: TeamFile, seat: Seat, start: { cwd: string; lobby?: true
   };
 }
 
-function unnamedIn(label: string, agents: readonly HerdrAgent[], workspaces: readonly { id: string; label: string }[]): HerdrAgent | undefined {
-  const ids = new Set(workspaces.filter((workspace) => workspace.label === label).map((workspace) => workspace.id));
-  return agents.find((agent) => !agent.name && ids.has(agent.workspace));
+function unnamedIn(workspace: string | undefined, agents: readonly HerdrAgent[]): HerdrAgent | undefined {
+  if (!workspace) return undefined;
+  return agents.find((agent) => !agent.name && agent.workspace === workspace);
 }
 
 function runningOf(agents: readonly HerdrAgent[], team: TeamFile, state: SessionState): Running[] {
