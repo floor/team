@@ -1,0 +1,36 @@
+# Antigravity's screen. Trust and permission are case-insensitive. The slash
+# menu's arrow line and the esc footer are chrome, so exit-typed stays unsent.
+format: 1
+cli: antigravity
+screen:
+  chrome:
+    - '^\s*↑/↓ Navigate.*$'
+    - '^esc to cancel\s+Gemini\s+[0-9].*$'
+  trust:
+    ignore_case: true
+    rules:
+      - all:
+          - 'Do you trust the contents of this project\?'
+          - '>\s*Yes, I trust this folder'
+        below_last_rule: 'enter Confirm'
+  permission:
+    ignore_case: true
+    rules:
+      - all:
+          - 'Requesting permission for:'
+          - '^\s*>\s*[0-9]\.\s+Yes\b'
+        below_last_rule: '↑/↓ Navigate'
+  working:
+    - any: ['\bGenerating\.\.\.']
+  composer:
+    mode: two-rules-footer-below
+    ignore_case: true
+    prompt: '^\s*>\s*'
+    rule: '^\s*[─━]{8,}\s*$'
+    footers:
+      - '\? for shortcuts'
+      - 'Gemini\s+[0-9]'
+      - 'esc to cancel'
+      - '>\s*/exit\s+Exit'
+    placeholders:
+      - equals: ''

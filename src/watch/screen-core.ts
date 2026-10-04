@@ -79,9 +79,11 @@ function ruleMatches(lines: string[], rule: Rule, tick: () => boolean): boolean 
   }
   if (rule.belowLastRule) {
     if (tick()) return 'stop';
+    // No rule line counts as below one: today's check is `index > lastIndex`, and
+    // lastIndex is -1 when the window has no rule. A later rule still hides a quoted dialog.
     const ruleAt = findLast(lines, (line) => RULE_LINE.test(line));
     const at = findLast(lines, (line) => rule.belowLastRule?.test(line) ?? false);
-    if (ruleAt < 0 || at <= ruleAt) return false;
+    if (at < 0 || at <= ruleAt) return false;
   }
   if (rule.noneAfter) {
     let anchor = -1;

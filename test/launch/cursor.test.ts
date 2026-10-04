@@ -1,10 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { cursor, cursorModel } from '../../src/profiles/cursor.ts';
-import { cursorComposer } from '../../src/profiles/cursor-screen.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
 import { profileFor } from '../../src/profiles/index.ts';
-import { readScreen } from '../../src/watch/screen.ts';
+import { classifyComposer, readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
 import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
 import { upPlan } from '../../src/launch/plan.ts';
@@ -62,9 +61,9 @@ describe('Cursor launch and captured screens', () => {
   test('a working turn still has an empty composer, which is what delivery waits for', () => {
     const lines = fixture('working').split('\n').map((line) => line.trimEnd()).slice(-20);
     expect(readScreen('cursor', fixture('working')).kind).toBe('working');
-    expect(cursorComposer(lines).kind).toBe('idle');
+    expect(classifyComposer('cursor', lines).kind).toBe('idle');
     const thinking = fixture('thinking').split('\n').map((line) => line.trimEnd()).slice(-20);
-    expect(cursorComposer(thinking).kind).toBe('idle');
+    expect(classifyComposer('cursor', thinking).kind).toBe('idle');
   });
 
   test('unknown, shell and unobserved dialogs never count as idle', () => {

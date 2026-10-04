@@ -1,0 +1,32 @@
+# Codex's screen. An empty box is idle, as the old classifier treated it; the
+# grey suggestion is the other placeholder.
+format: 1
+cli: codex
+screen:
+  unknown:
+    - any: ['\bmodel:\s+loading\b']
+  trust:
+    - all:
+        - 'Trust this folder\?'
+        - '^\s*›?\s*1\. Trust and continue\s*$'
+      footer: 'enter continue · esc quit'
+  permission:
+    - all:
+        - '^\s*Would you like to run the following command\?\s*$'
+        - '^\s*›?\s*1\. Yes, proceed \(y\)\s*$'
+        - '^\s*›?\s*2\. No, and tell Codex what to do differently \(esc\)\s*$'
+      footer: 'Press enter to confirm or esc to cancel'
+  question:
+    - all:
+        - 'Update available ·'
+        - '^\s*›?\s*1\. Update now\b'
+      footer: 'enter continue · esc skip'
+  working:
+    - any: ['esc to interrupt']
+  composer:
+    mode: status-last
+    status_line: '^\s+GPT-[0-9][\w.-]*\s+[^·]*·'
+    prompt: '^\s*›(?:\s|$)'
+    placeholders:
+      - equals: ''
+      - equals: Ask Codex to do anything
