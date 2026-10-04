@@ -23,7 +23,7 @@ import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock, type SeatState, type SessionState } from '../state.ts';
 import { approvedCopy, readApproval, recordLedger, storePath, type Ceilings } from '../store/store.ts';
-import { readMachine, type Machine } from '../watch/machine.ts';
+import { launchLimit, readMachine, type Machine, type SwapSample } from '../watch/machine.ts';
 import { readScreen } from '../watch/screen.ts';
 
 export type AddSources = {
@@ -193,18 +193,25 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       return 1;
     }
   }
-  const machine = sources.machine?.(root);
-  if (machine) {
-    const problem = pastMachine(machine, team.machine);
-    if (problem) {
-      io.stderr(`team add: ${problem}\n`);
-      return 1;
-    }
+  const samples: SwapSample[] = [];
+  const crossed = () => {
+    const machine = sources.machine?.(root);
+    return machine ? launchLimit(machine, team.machine, samples, sources.now().getTime()) : null;
+  };
+  const problem = crossed();
+  if (problem) {
+    io.stderr(`team add: ${problem}\n`);
+    return 1;
   }
   const running = runningOf(agents, prepared.team, recorded);
   const room = ceilingProblem(ceilings, running, built.seat, Boolean(built.temporary));
   if (room) {
     io.stderr(`team add: ${room}\n`);
+    return 1;
+  }
+  const again = crossed();
+  if (again) {
+    io.stderr(`team add: ${again}\n`);
     return 1;
   }
   if (built.edited !== original) {
@@ -231,7 +238,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const who = describeCaller(caller);
   const host = hostOf({
     dir, session, team: prepared.team, root, ceilings, running, seat: built.seat, temporary: built.temporary,
-    caller: who, now: sources.now, launch: sources.launch, machine, limits: team.machine, io,
+    caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io,
   });
   const report = await executePlan(plan, session, host);
   const afterwards = readState(dir).sessions[session]?.seats[built.name];
@@ -353,17 +360,6 @@ function ceilingProblem(ceilings: Ceilings, running: readonly Running[], seat: S
   return null;
 }
 
-function pastMachine(machine: Machine, limits: TeamFile['machine']): string | null {
-  if (machine.loadPerCore !== null && machine.loadPerCore > limits.loadStart) {
-    return `the load is ${machine.loadPerCore.toFixed(1)} per core, above ${limits.loadStart}`;
-  }
-  if (machine.memoryFree !== null && machine.memoryFree < limits.memoryStart) {
-    return `free memory is ${Math.round(machine.memoryFree)}%, below ${limits.memoryStart}%`;
-  }
-  if (machine.diskFree !== null && machine.diskFree < limits.diskMin) return `free disk is below the file's minimum`;
-  if (machine.swapFree !== null && machine.swapFree < limits.swapFreeMin) return `free swap is below the file's minimum`;
-  return null;
-}
 
 function where(problem: Problem): string {
   return problem.line ? `line ${problem.line}: ` : '';
@@ -372,7 +368,7 @@ function where(problem: Problem): string {
 function hostOf(input: {
   dir: string; session: string; team: TeamFile; root: string; ceilings: Ceilings; running: Running[];
   seat: Seat; temporary?: SeatState['temporary']; caller: string; now(): Date; launch: Launch;
-  machine?: Machine; limits: TeamFile['machine']; io: Io;
+  readMachine?: (root: string) => Machine; samples: SwapSample[]; limits: TeamFile['machine']; io: Io;
 }): Host {
   const { dir, session, launch, seat, temporary } = input;
   const running = [...input.running];
@@ -391,8 +387,8 @@ function hostOf(input: {
     sleep: launch.sleep,
     now: () => input.now().getTime(),
     allow(name) {
-      if (input.machine) {
-        const problem = pastMachine(input.machine, input.limits);
+      if (input.readMachine) {
+        const problem = launchLimit(input.readMachine(input.root), input.limits, input.samples, input.now().getTime());
         if (problem) return problem;
       }
       if (name !== seat.name) return null;

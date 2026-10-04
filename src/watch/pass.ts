@@ -3,7 +3,7 @@ import type { SessionState } from '../state.ts';
 import { WATCH_LABEL } from '../status/compare.ts';
 import type { Live } from '../status/compare.ts';
 import { seatModel } from '../status/statusline.ts';
-import type { Machine } from './machine.ts';
+import { gb, recordSwap, type Machine } from './machine.ts';
 import { readScreen } from './screen.ts';
 
 // What the watch remembers between passes. It lives in the watch's process: a restarted watch
@@ -47,7 +47,6 @@ export type PassResult = {
 };
 
 const minutes = (ms: number) => Math.floor(ms / 60_000);
-const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
 
 // One pass of the watch. Pure: it reads what it is handed and changes only `memory`.
 // `approval` is how the file differs from the approved one: [] when it doesn't, null when it was
@@ -198,9 +197,7 @@ export function pass(
     once('swap-free', `free swap is ${gb(machine.swapFree)}, below ${gb(limits.swapFreeMin)}`, 'owner');
   }
   if (machine.swapUsed !== null) {
-    memory.swap.push({ at: now, used: machine.swapUsed });
-    memory.swap = memory.swap.filter((sample) => now - sample.at <= limits.swapGrowthWindow * 1000);
-    const growth = machine.swapUsed - Math.min(...memory.swap.map((sample) => sample.used));
+    const growth = recordSwap(memory.swap, machine.swapUsed, now, limits.swapGrowthWindow);
     if (growth > limits.swapGrowthMax) {
       once('swap-growth', `swap grew by ${gb(growth)} in ${minutes(limits.swapGrowthWindow * 1000)} minutes, above ${gb(limits.swapGrowthMax)}`, 'owner');
     }
