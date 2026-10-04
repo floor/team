@@ -6,7 +6,8 @@ import { seatNamed } from '../approve/fingerprint.ts';
 import { observe, observeCheck, type Seen } from '../budgets/readings.ts';
 import type { CheckOutcome } from '../budgets/run.ts';
 import type { TeamFile } from '../file/types.ts';
-import { quotaFor } from '../profiles/profile.ts';
+import { reportedLiveAgent } from '../launch/agent.ts';
+import { profileFor, quotaFor } from '../profiles/profile.ts';
 import { figuresOf, type QuotaFigure } from '../profiles/quota.ts';
 import type { SessionState } from '../state.ts';
 import type { Live } from '../status/compare.ts';
@@ -94,9 +95,13 @@ function attentionOf(screen: Screen, status: string, quiet: boolean): Attention 
 
 // The figures off a seat's own pane: only a composer screen — idle, unsent or working — shows a
 // status row at all, and only that row's line is read. A dialog, a question, a trust screen or an
-// unknown one gives no figures, and neither does a line the seat printed or typed.
-function quotaOf(cli: string, screen: Screen, pane: string | undefined): QuotaFigure[] {
-  if (pane === undefined) return [];
+// unknown one gives no figures, and neither does a line the seat printed or typed. And only a
+// pane where herdr reports the seat's CLI still running: a shell's last row is a last row by
+// position, not a status row, and a pane herdr could not read gives none either — no figure is
+// invented where the CLI was not seen. (`down` and `remove` read that same null the other way at
+// their departure wait; not knowing must not end a wait.)
+function quotaOf(cli: string, screen: Screen, pane: string | undefined, runs: boolean): QuotaFigure[] {
+  if (pane === undefined || !runs) return [];
   if (screen.kind !== 'idle' && screen.kind !== 'unsent' && screen.kind !== 'working') return [];
   return figuresOf(quotaFor(cli), statusRow(cli, pane));
 }
@@ -108,7 +113,11 @@ function quotaOf(cli: string, screen: Screen, pane: string | undefined): QuotaFi
 // defaults while the file's own are not approved — and the checks read those, never the file's.
 // `outcomes` is what the accounts' check commands read outside the pass, when the watch last ran
 // them. `readings` is the project's stored cache, recalled by the caller; this pass folds its
-// figures into it, whatever session they were seen in (§ 4.4).
+// figures into it, whatever session they were seen in (§ 4.4). `foreground` is herdr's
+// process-info per pane: the pane's foreground process names, or null where herdr could not be
+// read. Only a pane it reports the seat's CLI in gives a figure — a null, or a pane the map
+// doesn't hold, gives none; the departure wait (`paneStillRunning`) reads that same null the
+// other way, keeping its wait.
 export type PassInput = {
   team: TeamFile;
   state: SessionState;
@@ -121,6 +130,7 @@ export type PassInput = {
   outcomes?: readonly CheckOutcome[];
   budgets?: TeamFile['budgets'];
   readings?: readonly Seen[];
+  foreground?: Readonly<Record<string, readonly string[] | null>>;
 };
 
 // One pass of the watch. Pure: it reads what it is handed and changes only `memory`.
@@ -136,6 +146,7 @@ export function pass({
   outcomes = [],
   budgets = team.budgets,
   readings: stored = [],
+  foreground,
 }: PassInput): PassResult {
   const reports: Report[] = [];
   const current = new Set<string>();
@@ -235,7 +246,7 @@ export function pass({
       cli,
       vendor,
       account,
-      quota: quotaOf(cli, screen, pane),
+      quota: quotaOf(cli, screen, pane, reportedLiveAgent(foreground?.[agent.pane] ?? null, profileFor(cli)?.processNames ?? [])),
       running: true,
       quiet,
       working,
@@ -264,6 +275,11 @@ export function pass({
   const drift = new Set(
     (Array.isArray(approval) ? approval : []).map(seatNamed).filter((name): name is string => name !== null),
   );
+  for (const [name, recorded] of Object.entries(state.seats)) {
+    if (recorded.temporary && drift.has(recorded.temporary.like)) {
+      drift.add(name);
+    }
+  }
   let readings = stored.slice();
   for (const seat of observations) {
     if (!seat.running || drift.has(seat.name)) continue;

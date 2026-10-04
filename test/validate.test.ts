@@ -206,7 +206,9 @@ describe('names and labels after count is expanded', () => {
   });
   test('two seats with one label', () => {
     const named = minimal.replace('    launch:', '    label: lead\n    launch:');
-    expect(errors(`${named + second}    label: lead\n`).join('\n')).toMatch(/two seats have the label "lead"/);
+    const team = valid(`${named + second}    label: lead\n`).team;
+    expect(team.seats.map((item) => item.name)).toEqual(['lead', 'lead-2']);
+    expect(team.seats.every((item) => item.label === 'lead')).toBe(true);
   });
   test('distinct seats pass, and every instance counts for the default ceiling', () => {
     expect(valid(minimal + counted + second).team.limits.seats).toBe(6);

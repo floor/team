@@ -73,12 +73,13 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     host.log(seat, what);
   };
 
-  const place = (label: string, pane?: string, workspace?: string): Place | null => {
-    const have = places.get(label);
+  // The display label may be shared. The seat's name is the only key; the watch has no seat.
+  const place = (key: string, pane?: string, workspace?: string): Place | null => {
+    const have = places.get(key);
     if (have) return have;
     if (!pane) return null;
     const made = { pane, workspace };
-    places.set(label, made);
+    places.set(key, made);
     return made;
   };
 
@@ -151,7 +152,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           }
           break;
         }
-        places.set(op.label, made);
+        places.set(op.seat ?? op.label, made);
         if (op.seat) {
           host.record(op.seat, { stage: 'launched', pane: made.pane, workspace: made.workspace });
           host.running(op.seat);
@@ -166,7 +167,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           finish(op.seat, why);
           break;
         }
-        const here = place(op.label, op.pane);
+        const here = place(op.seat, op.pane);
         if (!here || !host.paneRun(session, here.pane, op.command)) {
           dropped.add(op.seat);
           finish(op.seat, 'its launch command did not run; left at launched');
@@ -177,7 +178,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
       }
       case 'idle': {
         if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
-        const here = place(op.label, op.pane, op.workspace);
+        const here = place(op.seat, op.pane, op.workspace);
         if (!here) {
           dropped.add(op.seat);
           finish(op.seat, 'has no pane to read; left at launched');
@@ -197,7 +198,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           if (host.now() <= before) break;
         }
         if (outcome === 'idle') break;
-        const workspace = here.workspace ?? places.get(op.label)?.workspace;
+        const workspace = here.workspace ?? places.get(op.seat)?.workspace;
         if (outcome === 'permission' || outcome === 'trust' || outcome === 'question') {
           // A trust question is closed with no key and no text. The same for a permission or a question.
           if (workspace) host.closeWorkspace(session, workspace);
@@ -215,7 +216,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'rename': {
-        const here = place(op.label, op.pane);
+        const here = place(op.seat, op.pane);
         if (!here) {
           dropped.add(op.seat);
           finish(op.seat, 'has no pane to name; left at launched');
@@ -241,7 +242,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
       }
       case 'deliver': {
         if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
-        const here = place(op.label, op.pane);
+        const here = place(op.seat, op.pane);
         const delivered = here ? await host.deliverRules?.(session, here.pane, op.cli, op.rules, op.seconds) : false;
         if (delivered === 'no-agent') {
           dropped.add(op.seat);

@@ -69,6 +69,53 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('unknown');
   });
 
+  test.each(['shell-git-log.txt', 'shell-right-prompt.txt', 'shell-shortcuts.txt', 'shell-shortcuts-indented.txt'])('%s reads unknown', (name) => {
+    const text = readFileSync(new URL(`./fixtures/claude-code/${name}`, import.meta.url), 'utf8');
+    expect(readScreen('claude-code', text).kind).toBe('unknown');
+  });
+
+  test('the three constructed shell prompt fixtures still read unknown with a footer pattern added under them', () => {
+    for (const name of ['shell-prompt.txt', 'rule-above.txt', 'output-under-rule.txt']) {
+      const text = readFileSync(new URL(`./fixtures/claude-code/${name}`, import.meta.url), 'utf8');
+      for (const footer of ['? for shortcuts', '  main · Opus 5.5', '  bypass permissions']) {
+        const screen = `${text.trimEnd()}\n${footer}\n`;
+        expect(readScreen('claude-code', screen).kind).toBe('unknown');
+      }
+    }
+  });
+
+  test('shell output embedding a shortcuts footer or in uppercase reads unknown', () => {
+    const prompt = '~/acme % ls\nREADME.md\nsrc\n❯ \n';
+    const vim = `${prompt}${RULE}\npress ? for shortcuts in vim\n`;
+    expect(readScreen('claude-code', vim).kind).toBe('unknown');
+
+    const upper = `${prompt}${RULE}\n? FOR SHORTCUTS\n`;
+    expect(readScreen('claude-code', upper).kind).toBe('unknown');
+  });
+
+  test('failure directions: person typing shortcuts, real box followed by nothing, two-row footer', () => {
+    const prompt = '~/acme % ls\nREADME.md\nsrc\n❯ \n';
+    // A person typing ? for shortcuts on its own line has no leading indentation and reads unknown
+    const unindented = `${prompt}${RULE}\n? for shortcuts\n`;
+    expect(readScreen('claude-code', unindented).kind).toBe('unknown');
+
+    // A real box followed by nothing reads idle
+    const realBoxFollowedByNothing = `${RULE}\n❯ \n${RULE}\n`;
+    expect(readScreen('claude-code', realBoxFollowedByNothing).kind).toBe('idle');
+
+    // A real box whose footer has two rows reads idle
+    const twoRowFooter = `${RULE}\n❯ \n${RULE}\n  main · Opus 5.5\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n`;
+    expect(readScreen('claude-code', twoRowFooter).kind).toBe('idle');
+
+    // A scrolled-out box with a two-row footer reads idle
+    const scrolledTwoRow = `❯ \n${RULE}\n  main · Opus 5.5\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n`;
+    expect(readScreen('claude-code', scrolledTwoRow).kind).toBe('idle');
+
+    // A scrolled-out box with one valid footer row and one foreign line reads unknown
+    const scrolledOneValidOneForeign = `❯ \n${RULE}\n  main · Opus 5.5\nshell output\n`;
+    expect(readScreen('claude-code', scrolledOneValidOneForeign).kind).toBe('unknown');
+  });
+
   test('every fixture matches the classifier main had', () => {
     for (const [name, text] of fixtures) {
       if (name === 'quoted permission') continue;
@@ -86,6 +133,17 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('idle');
   });
 
+  test('prose quoting a dialog above the box stays prose: the box is idle', () => {
+    // Constructed (fixtures/claude-code/README.md). The quote is the dialog's own words:
+    // the classifier main had read this screen as a permission, and the box below the
+    // quote is what the pane is.
+    const text = readFileSync(new URL('./fixtures/claude-code/quoted-dialog.txt', import.meta.url), 'utf8');
+    const lines = text.split('\n').map((line) => line.trimEnd()).slice(-20);
+    expect(mainClaude(lines)).toBe('permission');
+    expect(readScreen('claude-code', text).kind).toBe('idle');
+    expect(classify('claude-code', text.split('\n')).kind).toBe('idle');
+  });
+
   test('a transcript of 1. Yes / 2. No above a bare prompt is unknown', () => {
     // No rule above the prompt and no status footer under it, so it is not Claude's box.
     const text = `1. Yes\n2. No\n❯ \n`;
@@ -99,6 +157,11 @@ describe('claude-code through the screen core', () => {
   test('a box whose rule above has scrolled out stays idle when the status footer remains', () => {
     const text = `❯ \n${RULE}\n${STATUS}\n`;
     expect(readScreen('claude-code', text).kind).toBe('idle');
+  });
+
+  test('a box whose top rule has scrolled out reads unknown with only the shortcuts row', () => {
+    const text = readFileSync(new URL('./fixtures/claude-code/scrolled-shortcuts.txt', import.meta.url), 'utf8');
+    expect(readScreen('claude-code', text).kind).toBe('unknown');
   });
 
   test('a question dialog with a status line under it and no rule stays a question', () => {
@@ -119,6 +182,38 @@ describe('claude-code through the screen core', () => {
     const busy = `✶ Transfiguring… (9m 34s · ↓ 64.5k tokens)\n\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
     expect(classify('claude-code', busy.split('\n')).kind).toBe('working');
     expect(classifyComposer('claude-code', busy.split('\n')).kind).toBe('idle');
+  });
+
+  test('an unnumbered trust dialog reads trust', () => {
+    const text = readFileSync(new URL('./fixtures/claude-code/trust-unnumbered.txt', import.meta.url), 'utf8');
+    expect(readScreen('claude-code', text).kind).toBe('trust');
+  });
+
+  test('prose saying "Yes, I trust this folder" above an idle box is idle', () => {
+    const text = `Yes, I trust this folder\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
+    expect(readScreen('claude-code', text).kind).toBe('idle');
+    const prose = `The assistant wrote: Yes, I trust this folder\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
+    expect(readScreen('claude-code', prose).kind).toBe('idle');
+  });
+
+  test('a numbered trust dialog still reads trust', () => {
+    const text = `Do you trust this folder?\n❯ 1. Yes, proceed\n  2. No, exit\n\nEnter to confirm · Esc to cancel\n`;
+    expect(readScreen('claude-code', text).kind).toBe('trust');
+    const live = [
+      'Accessing workspace:',
+      'Quick safety check: Is this a project you created or one you trust?',
+      'Claude Code will be able to read, edit, and execute files here.',
+      '❯ 1. Yes, I trust this folder',
+      '  2. No, exit',
+    ].join('\n');
+    expect(readScreen('claude-code', live).kind).toBe('trust');
+  });
+
+  test('permission and question fixtures still read as before', () => {
+    const permission = `Bash command\n\n  chmod +x run.sh\n\nDo you want to proceed?\n❯ 1. Yes\n  2. No, and tell Claude what to do differently\n\nEsc to cancel · Tab to amend\n`;
+    expect(readScreen('claude-code', permission).kind).toBe('permission');
+    const question = `Which branch should this start from?\n\n❯ 1. main\n  2. next\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n`;
+    expect(readScreen('claude-code', question).kind).toBe('question');
   });
 });
 
@@ -196,11 +291,10 @@ describe('claude-code reads the input line\'s styling', () => {
     expect(kind).toBe('unknown');
   });
 
-  test('the styled trust dialog is attention, never idle or unsent', () => {
+  test('the styled trust dialog reads trust', () => {
     // 2.1.289 draws this dialog's choices without numbers (`❯ No, exit` / `Yes, I trust this
-    // folder`), so the trust stage's `1. Yes` does not match and the dialog reads question —
-    // the same on the plain capture. A question is attention either way; the floor holds.
-    expect(readScreen('claude-code', styled('trust-ansi.txt')).kind).toBe('question');
+    // folder`), matching the unnumbered trust pattern together with its footer.
+    expect(readScreen('claude-code', styled('trust-ansi.txt')).kind).toBe('trust');
   });
 });
 
@@ -414,6 +508,50 @@ describe('the pattern dialect', () => {
     expect(compilePattern('(a|aa)*').test('aaaa')).toBe(true);
   });
 
+  test('an astral code point is the character it says, not five hex digits', () => {
+    // U+1F600 is one code point above U+FFFF. A four-digit "\u" escape cannot spell it:
+    // the digits spill into a following character — the pattern a corruption, and a range
+    // whose ends fall off. The compiled source must use the "\u{…}" form for these.
+    const face = compilePattern('^😀$');
+    expect(face.test('😀')).toBe(true);
+    expect(face.test('ὠ0')).toBe(false);
+    expect(face.test('ὠ')).toBe(false);
+    const range = compilePattern('^[😀-🙏]$');
+    for (const drawn of ['😀', '🙏']) expect(range.test(drawn)).toBe(true);
+    for (const other of ['🦄', 'ὠ', 'a', '😀😀']) expect(range.test(other)).toBe(false);
+    const mixed = compilePattern('^[😀0-9]$');
+    expect(mixed.test('😀')).toBe(true);
+    expect(mixed.test('7')).toBe(true);
+    expect(mixed.test('x')).toBe(false);
+  });
+
+  test('a positive class mixing a complement shorthand with members is refused', () => {
+    // `[\D0-9]` is everything, but its rewrite reads as `[\s\S]` — a match-all nobody wrote.
+    // The positive class refuses the mix; the negated forms stay: `[^\S\n]` is the
+    // whitespace set without a newline, and a shorthand alone is its own negated class.
+    expect(() => compilePattern('[\\D0-9]')).toThrow('a class cannot mix a complement shorthand with other members');
+    expect(() => compilePattern('[\\W0-9]')).toThrow(DialectError);
+    const alone = compilePattern('^[\\D]$');
+    expect(alone.test('a')).toBe(true);
+    expect(alone.test('4')).toBe(false);
+    expect(compilePattern('^[^\\S\\n]$').test('\t')).toBe(true);
+    // A profile that writes the mix is refused when it loads, with the reason.
+    const text = `
+format: 1
+cli: sample
+screen:
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    placeholders:
+      - equals: ''
+  working:
+    - any: ['^[\\D0-9]+$']
+`;
+    expect(() => loadScreen(text)).toThrow(YamlError);
+  });
+
   test('a read that passes the time bound is unknown', () => {
     const data = loadScreen(`
 format: 1
@@ -451,6 +589,77 @@ screen:
     expect(() => loadScreen(text)).toThrow(YamlError);
   });
 
+  test('the chrome guard follows the shape a dialog draws its choices in', () => {
+    // A dialog draws the choice the cursor is on with its mark and the others indented
+    // without one (screen-core's choiceLine and twoLine; the fake seat draws the same
+    // shape and the profiles' rules name the labels). Chrome must match none of the drawn
+    // lines: the safety floor reads the first two numbered ones.
+    const snippet = (line: string) => `
+format: 1
+cli: sample
+screen:
+  chrome: ['${line}']
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    placeholders:
+      - equals: ''
+`;
+    const drawn: string[] = [];
+    for (const mark of ['❯ ', '› ', '> ', '  ']) {
+      for (const number of [1, 2]) {
+        for (const tail of ['', ' Yes', ' No']) drawn.push(`${mark}${number}.${tail}`);
+      }
+    }
+    for (const line of drawn) {
+      const escaped = line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      expect(() => loadScreen(snippet(`^${escaped}$`))).toThrow(YamlError);
+    }
+    // Chrome that names no drawn line stays: the antigravity profile's menu line is chrome.
+    expect(loadScreen(snippet('^\\s*↑/↓ Navigate.*$')).chrome).toHaveLength(1);
+  });
+
+  test('the chrome guard covers the long label a choice line runs on with', () => {
+    // A choice's label runs past its Yes or No: the trust dialog draws "Yes, I trust this
+    // folder" and "No, exit", the permission dialog "No, and tell Claude what to do
+    // differently" (the escape hint included on some CLIs), codex names its own two lines.
+    // A chrome pattern for any of them hides a real choice from the floor, so it is refused
+    // at load like the short labels are.
+    const snippet = (line: string) => `
+format: 1
+cli: sample
+screen:
+  chrome: ['${line}']
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    placeholders:
+      - equals: ''
+`;
+    const tails = [
+      ' Yes, I trust this folder',
+      ' No, exit',
+      ' No, and tell Claude what to do differently',
+      ' No, and tell Claude what to do differently (esc)',
+      ' Yes, proceed (y)',
+      ' No, and tell Codex what to do differently (esc)',
+    ];
+    const drawn: string[] = [];
+    for (const mark of ['❯ ', '› ', '> ', '  ']) {
+      for (const number of [1, 2]) {
+        for (const tail of tails) drawn.push(`${mark}${number}.${tail}`);
+      }
+    }
+    for (const line of drawn) {
+      const escaped = line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      expect(() => loadScreen(snippet(`^${escaped}$`))).toThrow(YamlError);
+    }
+    // The long second choice the screen tests draw, as the pattern that missed the guard.
+    expect(() => loadScreen(snippet('^  2\\. No, and tell Claude what to do differently$'))).toThrow(YamlError);
+  });
+
   test('a composer may name its suggestions\' style, and only dim', () => {
     const text = `
 format: 1
@@ -466,6 +675,24 @@ screen:
 `;
     expect(loadScreen(text).composer.placeholderStyle).toBe('dim');
     expect(() => loadScreen(text.replace('placeholder_style: dim', 'placeholder_style: bold'))).toThrow(YamlError);
+  });
+
+  test('a box-to-rule composer recognizes footers declared in the profile', () => {
+    const data = loadScreen(`
+format: 1
+cli: sample
+screen:
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    footers:
+      - 'status'
+    placeholders:
+      - equals: ''
+`);
+    const lines = ['> ', '--------', 'status'];
+    expect(classifyLines(data, lines).kind).toBe('idle');
   });
 });
 

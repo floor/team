@@ -3,12 +3,12 @@
 // the seats' quota figures and what the check commands read; it reads no screen, runs nothing,
 // and never refuses a seat — the launch gate owns refusing. Turn-off-able in `watch.checks`.
 import type { BudgetAccount } from '../../file/types.ts';
-import { verdict, type Seen } from '../../budgets/readings.ts';
+import { countedFor, type Seen } from '../../budgets/readings.ts';
 import { WINDOWS, type WindowName } from '../../profiles/quota.ts';
 import { reported, type CheckContext, type Report, type TeamCheck, type TeamObservation } from '../check.ts';
 
-// A window with a figure that counts this pass, from whichever source the account's `sources`
-// name: the first source that has one wins, and the ones below it are not read (§ 4.3).
+// A window with a figure that counts this pass, from the first source the account's `sources`
+// name that has one for that window (§ 4.3).
 type Position = { window: WindowName; left: number; used: number; resetsAt: number | null };
 type Counted = { kind: 'subscription'; windows: Position[] } | { kind: 'spend'; amount: number; currency: string };
 
@@ -53,9 +53,11 @@ export const budget: TeamCheck = {
 };
 
 /**
- * The account's figure this pass, from the first source that has one (§ 4.3, § 5). A check
- * reading counts while it is fresh; a screen reading counts when the verdict keeps it — fresh,
- * stale, or refusing — and a bare first sight is `unseen`. Null: nothing counts at all.
+ * The account's figures this pass, per window, from the first source that has one for it (§ 4.3,
+ * § 5) — the same rule `countedFor` applies for the launch gate and the table, so the three can't
+ * drift apart. A check reading counts while it is fresh; a screen reading counts when the verdict
+ * keeps it — fresh, stale, or refusing — and a bare first sight is `unseen`. Null: nothing counts
+ * at all. A spend check is one number and no window, fresh by § 5.
  */
 function countedOf(
   name: string,
@@ -64,51 +66,49 @@ function countedOf(
   staleMs: number,
   now: number,
 ): Counted | 'unseen' | null {
-  for (const source of account.sources) {
-    if (source === 'check') {
-      const outcome = team.outcomes.find((one) => one.account === name);
-      if (!outcome || outcome.state !== 'read') continue;
-      if (outcome.reading.kind === 'spend') {
-        if (now - outcome.reading.at < staleMs) {
-          return { kind: 'spend', amount: outcome.reading.amount, currency: outcome.reading.currency };
-        }
-        continue;
-      }
-      const windows = outcome.reading.windows
-        .filter((window) => now - window.at < staleMs)
-        .map(({ window, left, used, resetsAt }) => ({ window, left, used, resetsAt }));
-      if (windows.length) return { kind: 'subscription', windows };
+  const outcome = team.outcomes.find((one) => one.account === name);
+  const read = outcome && outcome.state === 'read' ? outcome : null;
+  if (read && read.reading.kind === 'spend' && account.sources.includes('check') && now - read.reading.at < staleMs) {
+    return { kind: 'spend', amount: read.reading.amount, currency: read.reading.currency };
+  }
+  const windows: Position[] = [];
+  let seen = false;
+  for (const window of WINDOWS) {
+    // The readings of one window, by source: the screen readings the core folded in, and the
+    // check's when this pass's outcome carries that window (§ 5).
+    const screen = team.readings.filter((reading) =>
+      reading.account === name && reading.window === window && reading.source === 'status_line');
+    const checks = read && read.reading.kind === 'subscription'
+      ? read.reading.windows
+        .filter((one) => one.window === window)
+        .map((one): Seen => ({
+          account: name,
+          window: one.window,
+          left: one.left,
+          used: one.used,
+          changedAt: one.at,
+          resetsAt: one.resetsAt,
+          seat: null,
+          source: 'check',
+          confirmed: true,
+        }))
+      : [];
+    if (!screen.length && !checks.length) continue;
+    const result = countedFor(account.sources, screen, checks, now, staleMs, account.reserve);
+    if (result.kind === 'unknown') continue;
+    if (result.kind === 'unconfirmed') {
+      seen = true;
       continue;
     }
-    const groups = new Map<WindowName, Seen[]>();
-    for (const reading of team.readings) {
-      if (reading.account !== name) continue;
-      // The check readings of the same account live in this slot too: this source reads screens.
-      if (reading.source !== 'status_line') continue;
-      const group = groups.get(reading.window) ?? [];
-      group.push(reading);
-      groups.set(reading.window, group);
-    }
-    const windows: Position[] = [];
-    let seen = false;
-    for (const group of groups.values()) {
-      const result = verdict(group, now, staleMs, account.reserve);
-      if (result.kind === 'unknown') continue;
-      if (result.kind === 'unconfirmed') {
-        seen = true;
-        continue;
-      }
-      windows.push({
-        window: result.reading.window,
-        left: result.reading.left,
-        used: result.reading.used,
-        resetsAt: result.reading.resetsAt,
-      });
-    }
-    if (windows.length) return { kind: 'subscription', windows };
-    if (seen) return 'unseen';
-    continue;
+    windows.push({
+      window: result.reading.window,
+      left: result.reading.left,
+      used: result.reading.used,
+      resetsAt: result.reading.resetsAt,
+    });
   }
+  if (windows.length) return { kind: 'subscription', windows };
+  if (seen) return 'unseen';
   return null;
 }
 

@@ -8,7 +8,7 @@ import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
 import type { DoctorSources } from '../../src/commands/doctor.ts';
 import type { Launch } from '../../src/commands/up.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
-import { readState } from '../../src/state.ts';
+import { emptySession, readState, updateState } from '../../src/state.ts';
 import { readLedger, storePath, writeApproval } from '../../src/store/store.ts';
 import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
@@ -277,6 +277,11 @@ describe('team add', () => {
   });
 
   test('names an unnamed agent already in the seat\'s workspace instead of launching another', async () => {
+    updateState(join(project, '.agents'), (state) => {
+      const session = state.sessions.acme ?? emptySession();
+      session.seats.lead = { stage: 'launched', workspace: 'w9', pane: 'w9:p1' };
+      state.sessions.acme = session;
+    });
     const made = world();
     made.launch.paneText = () => IDLE;
     made.launch.agentPanes = () => ['w9:p1'];
@@ -285,7 +290,7 @@ describe('team add', () => {
     const code = await runAdd(['lead'], io, sources(made, {
       sessionState: () => 'running',
       agents: () => [agent],
-      workspaces: () => [{ id: 'w9', label: 'lead' }],
+      workspaces: () => [{ id: 'w9' }],
     }));
     expect(code).toBe(0);
     expect(made.creates).toEqual([]);

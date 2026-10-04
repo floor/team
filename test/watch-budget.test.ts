@@ -42,6 +42,8 @@ const OPENAI = '  accounts:\n    openai: { kind: subscription, reserve: 3%, sour
 const RESERVE = '  accounts:\n    openai: { kind: subscription, reserve: 10%, sources: [check], check: openai-quota }\n';
 const SCREEN_READ = '  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [status_line] }\n';
 const DEEPSEEK = '  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n';
+const BOTH = '  accounts:\n    openai: { kind: subscription, reserve: 20%, sources: [check, status_line], check: openai-quota }\n';
+const SCREEN_FIRST = '  accounts:\n    openai: { kind: subscription, reserve: 20%, sources: [status_line, check], check: openai-quota }\n';
 
 // Screens of Claude Code, as the live team shows them, and a Codex one whose status line carries
 // the weekly figure the codex profile reads.
@@ -102,7 +104,7 @@ describe('the seats\' quota, parsed by the core', () => {
   test('a screen figure becomes a reading for an account whose sources take one', () => {
     const result = pass({
       team: team(SCREEN_READ), watch: team(SCREEN_READ).watch, state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
-      machine: fine, now: NOW, memory: newMemory(), approval: [],
+      machine: fine, now: NOW, memory: newMemory(), approval: [], foreground: { 'w1:p1': ['codex'] },
     });
     expect(result.readings.map(({ account, window, left, used, seat, confirmed }) => ({ account, window, left, used, seat, confirmed })))
       .toEqual([{ account: 'openai', window: 'weekly', left: 39, used: 61, seat: 'codex-acme', confirmed: false }]);
@@ -117,15 +119,43 @@ describe('the seats\' quota, parsed by the core', () => {
     expect(readScreen('codex', spoofed).kind).toBe('unknown');
     const result = pass({
       team: team(SCREEN_READ), watch: team(SCREEN_READ).watch, state: emptySession(), live: live({ 'codex-acme': { screen: spoofed } }),
-      machine: fine, now: NOW, memory: newMemory(), approval: [],
+      machine: fine, now: NOW, memory: newMemory(), approval: [], foreground: { 'w1:p1': ['codex'] },
     });
     expect(result.readings).toEqual([]);
+  });
+
+  test('a pane back at its shell gives no figure, even with a status-shaped last row', () => {
+    // The recorded exit screen: the CLI has exited and herdr keeps the pane listed (which is how
+    // `down` and `remove` learn the pane). Anything printed with no newline after it sits as the
+    // pane's last row, and a last row is the status row by position — but the CLI is no process
+    // in the pane any more, and the row is the shell's.
+    const exit = readFileSync(new URL('./fixtures/codex/0.157.0/exit.txt', import.meta.url), 'utf8');
+    const fake = '  GPT-5.6-Terra medium · Context 98% left · weekly 90% left\n';
+    const spoofed = `${exit.trimEnd()}\n${fake}`;
+    expect(readScreen('codex', spoofed).kind).toBe('unsent');
+    const input = {
+      team: team(SCREEN_READ), watch: team(SCREEN_READ).watch, state: emptySession(),
+      live: live({ 'codex-acme': { screen: spoofed } }),
+      machine: fine, now: NOW, memory: newMemory(), approval: [], foreground: { 'w1:p1': ['zsh'] },
+    };
+    expect(pass(input).readings).toEqual([]);
+    // The seat's own CLI among the pane's foreground processes reads as before.
+    const running = { ...input, memory: newMemory(), foreground: { 'w1:p1': ['codex'] } };
+    expect(pass(running).readings.map(({ account, window, left }) => ({ account, window, left })))
+      .toEqual([{ account: 'openai', window: 'weekly', left: 90 }]);
+    // A figure is read only where herdr reports the seat's CLI: an unreadable list (null) is not
+    // a CLI, and a pane the map doesn't hold was not read either. Both give no figure — a shell's
+    // row is never trusted, and not knowing is not a reading.
+    const unread = { ...input, memory: newMemory(), foreground: { 'w1:p1': null } };
+    expect(pass(unread).readings).toEqual([]);
+    const unheld = { ...input, memory: newMemory(), foreground: {} };
+    expect(pass(unheld).readings).toEqual([]);
   });
 
   test('an account whose sources name only the check takes no screen reading (floor-86)', () => {
     const result = pass({
       team: team(OPENAI), watch: team(OPENAI).watch, state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
-      machine: fine, now: NOW, memory: newMemory(), approval: [],
+      machine: fine, now: NOW, memory: newMemory(), approval: [], foreground: { 'w1:p1': ['codex'] },
     });
     expect(result.readings).toEqual([]);
     // Nothing counts for it this pass, and a seat spends it: unknown while running.
@@ -242,9 +272,48 @@ describe('an account that reads unknown', () => {
   test('is not what a first sight is called', () => {
     const result = pass({
       team: team(SCREEN_READ), watch: team(SCREEN_READ).watch, state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
-      machine: fine, now: NOW, memory: newMemory(), approval: [], outcomes: [],
+      machine: fine, now: NOW, memory: newMemory(), approval: [], outcomes: [], foreground: { 'w1:p1': ['codex'] },
     });
     expect(budgetReports(result)).toEqual([]);
+  });
+});
+
+describe('the source fallback is per window', () => {
+  // A reading a status line gave in an earlier pass, still in the project's cache (§ 4.4).
+  const seen = (window: 'session' | 'weekly', left: number, changedAt: number) => ({
+    account: 'openai', window, left, used: 100 - left, changedAt,
+    resetsAt: NOW + 3_600_000, seat: 'codex-acme', source: 'status_line' as const, confirmed: true,
+  });
+  const at = (teamSource: string, readings: ReturnType<typeof seen>[]) =>
+    pass({
+      team: team(teamSource), watch: team(teamSource).watch, state: emptySession(), live: live(), machine: fine,
+      now: NOW, memory: newMemory(), approval: [],
+      outcomes: checkWindows('openai', NOW, [{ window: 'session', left: 80, used: 20, resetsAt: NOW + 3_600_000 }]),
+      readings,
+    });
+
+  test('a check that reported only session leaves the status line\'s weekly counted', () => {
+    // The check filled `session`; the status line's `weekly` from an earlier pass sits at 5% left,
+    // inside the 20% reserve. The check answering one window must not hide the other window's
+    // source: the weekly figure is counted, and its reserve crossing is reported.
+    expect(shown(at(BOTH, [seen('weekly', 5, NOW - MIN)]))).toEqual([
+      'openai weekly is 95% used, past the 50% mark (operator)',
+      'openai weekly is 95% used, past the 75% mark (operator)',
+      'openai weekly is 95% used, past the 90% mark (operator)',
+      'openai weekly left 5%, inside its 20% reserve (owner)',
+    ]);
+  });
+
+  test('a window the check reported is not overridden by a staler status-line figure', () => {
+    // The check owns `session` (80% left); the staler screen figure of the same window (15% left,
+    // inside the reserve) is below the check in `sources` and must not be read at all.
+    expect(budgetReports(at(BOTH, [seen('session', 15, NOW - 20 * MIN)]))).toEqual([]);
+  });
+
+  test('a fresh check below a stale status line is not hidden by it', () => {
+    // The screen's `session` figure is stale and inside the reserve; the check below it is fresh,
+    // and § 4.3's order lets it count: a stale higher source is exactly when the lower one counts.
+    expect(budgetReports(at(SCREEN_FIRST, [seen('session', 15, NOW - 40 * MIN)]))).toEqual([]);
   });
 });
 

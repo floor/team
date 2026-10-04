@@ -18,7 +18,7 @@ Node 22 or later runs the built command.
 
 ```sh
 npm install -g team       # or run it without installing: npx team
-team --version            # 0.1.1
+team --version            # 0.1.2
 ```
 
 ## The file is private to each clone
@@ -156,7 +156,8 @@ under ~/.cursor/projects for that folder; team writes no trust (.workspace-trust
 config.
 
 `budgets` is the owner's: marks (percent used), how long a figure stays fresh, and each
-account's reserve or floor. A seat spends its own `account:` when the file names one, its `vendor`
+account's reserve or floor. An account's `shared` key is informational; `team` does not act
+on it. A seat spends its own `account:` when the file names one, its `vendor`
 when it doesn't, so one vendor's two accounts are two buckets; a pattern names the account it
 measures, not the seat's. A `check` command is resolved to a file and hashed when the
 owner approves. A change to that file leaves that account's check unapproved: it is
@@ -273,7 +274,7 @@ cd team
 bun install
 bun run build
 npm install -g .          # puts `team` on the PATH
-team --version            # 0.1.1
+team --version            # 0.1.2
 ```
 
 Bun builds and tests the sources:

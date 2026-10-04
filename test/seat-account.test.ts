@@ -15,8 +15,7 @@ import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import type { TeamFile } from '../src/file/types.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
-import { emptySession } from '../src/state.ts';
-import type { SessionState } from '../src/state.ts';
+import { emptySession, updateState, type SessionState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, pass } from '../src/watch/pass.ts';
@@ -215,6 +214,7 @@ describe('the watch reads a seat\'s figures onto its own account', () => {
       now: NOW,
       memory: newMemory(),
       approval: [],
+      foreground: { 'w0:p1': ['codex'], 'w1:p1': ['codex'] },
     });
     expect(result.readings.map(({ account, seat, left }) => ({ account, seat, left }))).toEqual([
       { account: 'openai-work', seat: 'codex-work', left: 39 },
@@ -237,6 +237,7 @@ describe('the watch reads a seat\'s figures onto its own account', () => {
       now: NOW,
       memory: newMemory(),
       approval: [],
+      foreground: { 'w0:p1': ['codex'], 'w1:p1': ['codex'] },
     });
     expect(result.reports.filter((report) => report.key.startsWith('budget:')).map((report) => report.text))
       .toEqual(['openai-home is unknown while codex-home runs on it']);
@@ -254,6 +255,7 @@ describe('the watch reads a seat\'s figures onto its own account', () => {
       now: NOW,
       memory: newMemory(),
       approval: [],
+      foreground: { 'w0:p1': ['codex'], 'w1:p1': ['codex'] },
     });
     expect(result.readings.map(({ account, seat, left }) => ({ account, seat, left }))).toEqual([
       { account: 'openai-work', seat: 'codex-work', left: 39 },
@@ -340,5 +342,109 @@ describe('a seat the approval lists as changed', () => {
         { account: 'openai-home', seat: 'codex-home', left: 20 },
         { account: 'openai-home', seat: 'codex-work', left: 39 },
       ]);
+  });
+
+  test('a temporary seat like a changed seat folds no figures until the owner approves', async () => {
+    write(TEAM);
+    expect(await approve()).toBe(0);
+
+    updateState(join(root, '.agents'), (state) => {
+      const session = (state.sessions['acme'] ??= emptySession());
+      session.seats['codex-temp'] = {
+        stage: 'ready',
+        temporary: { like: 'codex-work', until: 'result:briefs/x.result.md' },
+      };
+    });
+
+    const edited = TEAM.replace('    account: openai-work\n', '    account: openai-home\n');
+    write(edited);
+    expect(approvalDifferences(team(edited), root, home)).toEqual(['seat codex-work changed']);
+
+    const scene = { 'codex-temp': CODEX(12) };
+    const io = testIo(root);
+    expect(await runWatch(['--file', '.agents/team.yaml'], io, watchSources(scene))).toBe(0);
+
+    // codex-temp's figure is not stored under either openai-work or openai-home
+    expect(loadReadings(join(root, '.agents'))).toEqual([]);
+
+    // Approved, the temporary seat's figure folds into the approved account
+    expect(await approve()).toBe(0);
+    const after = testIo(root);
+    expect(await runWatch(['--file', '.agents/team.yaml'], after, watchSources(scene))).toBe(0);
+    expect(loadReadings(join(root, '.agents')).map(({ account, seat, left }) => ({ account, seat, left })))
+      .toEqual([{ account: 'openai-home', seat: 'codex-temp', left: 12 }]);
+  });
+
+  test('a temporary seat whose like-seat is not in drift still folds figures', async () => {
+    write(TEAM);
+    expect(await approve()).toBe(0);
+
+    updateState(join(root, '.agents'), (state) => {
+      const session = (state.sessions['acme'] ??= emptySession());
+      session.seats['codex-temp-home'] = {
+        stage: 'ready',
+        temporary: { like: 'codex-home', until: 'result:briefs/x.result.md' },
+      };
+    });
+
+    // Edit codex-work (not codex-home)
+    const edited = TEAM.replace('    account: openai-work\n', '    account: openai-home\n');
+    write(edited);
+    expect(approvalDifferences(team(edited), root, home)).toEqual(['seat codex-work changed']);
+
+    const scene = { 'codex-temp-home': CODEX(25) };
+    const io = testIo(root);
+    expect(await runWatch(['--file', '.agents/team.yaml'], io, watchSources(scene))).toBe(0);
+
+    // codex-temp-home's like-seat (codex-home) is not in drift, so its figure folds normally
+    expect(loadReadings(join(root, '.agents')).map(({ account, seat, left }) => ({ account, seat, left })))
+      .toEqual([{ account: 'openai-home', seat: 'codex-temp-home', left: 25 }]);
+  });
+
+  test('a temporary seat like a seat removed from the file folds no figure', () => {
+    const state = emptySession();
+    state.seats['temp-orphan'] = {
+      stage: 'ready',
+      temporary: { like: 'vanished-seat', until: 'result:briefs/x.result.md' },
+    };
+    const result = pass({
+      team: team(),
+      watch: team().watch,
+      state,
+      live: live({ 'temp-orphan': CODEX(15) }),
+      machine: fine,
+      now: NOW,
+      memory: newMemory(),
+      approval: [],
+      foreground: { 'w0:p1': ['codex'] },
+    });
+    // Vanished like-seat leaves cli and account empty, so no quota figure is extracted or folded
+    expect(result.readings).toEqual([]);
+  });
+
+  test('the reports of the pass are unchanged apart from the fold', () => {
+    const memory = newMemory();
+    const state = emptySession();
+    state.seats['codex-temp'] = {
+      stage: 'ready',
+      temporary: { like: 'codex-work', until: 'result:briefs/x.result.md' },
+    };
+    const result = pass({
+      team: team(),
+      watch: team().watch,
+      state,
+      live: live({ 'codex-temp': CODEX(12) }),
+      machine: fine,
+      now: NOW,
+      memory,
+      approval: ['seat codex-work changed'],
+      foreground: { 'w0:p1': ['codex'] },
+    });
+
+    // The approval check reports the drifted like-seat, naming the file's seat
+    expect(result.reports.find((r) => r.key === 'approval')?.text)
+      .toBe('the file differs from the approved one: seat codex-work changed');
+    // And no figure is folded for the temporary seat
+    expect(result.readings).toEqual([]);
   });
 });
