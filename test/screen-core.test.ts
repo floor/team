@@ -93,6 +93,29 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', upper).kind).toBe('unknown');
   });
 
+  test('failure directions: person typing shortcuts, real box followed by nothing, two-row footer', () => {
+    const prompt = '~/acme % ls\nREADME.md\nsrc\n❯ \n';
+    // A person typing ? for shortcuts on its own line has no leading indentation and reads unknown
+    const unindented = `${prompt}${RULE}\n? for shortcuts\n`;
+    expect(readScreen('claude-code', unindented).kind).toBe('unknown');
+
+    // A real box followed by nothing reads idle
+    const realBoxFollowedByNothing = `${RULE}\n❯ \n${RULE}\n`;
+    expect(readScreen('claude-code', realBoxFollowedByNothing).kind).toBe('idle');
+
+    // A real box whose footer has two rows reads idle
+    const twoRowFooter = `${RULE}\n❯ \n${RULE}\n  main · Opus 5.5\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n`;
+    expect(readScreen('claude-code', twoRowFooter).kind).toBe('idle');
+
+    // A scrolled-out box with a two-row footer reads idle
+    const scrolledTwoRow = `❯ \n${RULE}\n  main · Opus 5.5\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n`;
+    expect(readScreen('claude-code', scrolledTwoRow).kind).toBe('idle');
+
+    // A scrolled-out box with one valid footer row and one foreign line reads unknown
+    const scrolledOneValidOneForeign = `❯ \n${RULE}\n  main · Opus 5.5\nshell output\n`;
+    expect(readScreen('claude-code', scrolledOneValidOneForeign).kind).toBe('unknown');
+  });
+
   test('every fixture matches the classifier main had', () => {
     for (const [name, text] of fixtures) {
       if (name === 'quoted permission') continue;
