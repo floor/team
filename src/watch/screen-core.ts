@@ -245,8 +245,9 @@ function boxToRule(lines: string[], styled: string[], composer: Extract<ScreenDa
   if (composer.footers.length > 0 && rawFooters.length === composer.footers.length) {
     footer = composer.footers.every((pattern, idx) => pattern.test(rawFooters[idx] ?? ''));
   }
-  // The opening rule on the line directly above, or the status footer when that
-  // rule has scrolled out of the window.
+  // The opening rule on the line directly above, or the ordered footer frame
+  // (every pattern matched in sequence, equal count) when that rule has
+  // scrolled out of the window.
   if (!above && !footer) return { kind: 'unknown' };
   const from = above ? input - 1 : input;
   for (let i = input + 1; i < close; i++) {
