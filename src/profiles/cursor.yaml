@@ -47,6 +47,39 @@ screen:
         patterns:
           - '^\s*→'
           - '^\s+Grok\s+[0-9]'
+  # A plan-mode switch. The bar is the dialog's own rule; the title, the selected
+  # row, the reject row and the footer sit under it, in that order. The same
+  # words in a transcript or typed into the box are not this dialog.
+  permission:
+    - all:
+        - '^━{8,}\s*$'
+        - 'Switch to Plan mode\?'
+        - '^\s*→ Approve mode switch \(y\)\s*$'
+        - '^\s+Reject \(n or esc\)\s*$'
+      below_last_rule: '^\s*↑/↓ to navigate • Enter to select'
+      none_after:
+        anchor: '^\s*↑/↓ to navigate • Enter to select'
+        patterns:
+          - 'Switch to Plan mode\?'
+          - '→ Approve mode switch \(y\)'
+          - 'Reject \(n or esc\)'
+  # The question tool's box: its border, the question counter, a selected option,
+  # then the navigation footer, in that order. The footer words alone are not a question.
+  question:
+    - all:
+        - '^\s*┌─+\s*┐\s*$'
+        - 'Question [0-9]+ of [0-9]+'
+        - '› \[ \]'
+        - 'Space select ·'
+        - 'Esc to skip'
+        - '^\s*└─+\s*┘\s*$'
+      none_after:
+        anchor: 'Esc to skip'
+        patterns:
+          - '^\s*┌'
+          - 'Question [0-9]+ of [0-9]+'
+          - '› \[ \]'
+          - 'Space select'
   working:
     # The running turn is the braille spinner (whatever verb it paints), the
     # prompt line ending in "ctrl+c to stop", or the follow-up queue: the box's

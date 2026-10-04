@@ -29,6 +29,13 @@
       "provenance": "capture"
     },
     {
+      "file": "antigravity/1.2.16/permission-command-54.txt",
+      "cli": "antigravity",
+      "classify": "permission",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
       "file": "antigravity/1.2.16/permission-cut.txt",
       "cli": "antigravity",
       "classify": "permission",
@@ -36,11 +43,39 @@
       "provenance": "constructed"
     },
     {
+      "file": "antigravity/1.2.16/permission-edit-54.txt",
+      "cli": "antigravity",
+      "classify": "permission",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/permission-write-54.txt",
+      "cli": "antigravity",
+      "classify": "permission",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
       "file": "antigravity/1.2.16/permission.txt",
       "cli": "antigravity",
       "classify": "permission",
       "composer": "unknown",
       "provenance": "constructed"
+    },
+    {
+      "file": "antigravity/1.2.16/question-54.txt",
+      "cli": "antigravity",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/question-unsent-54.txt",
+      "cli": "antigravity",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/rules-accepted.txt",
@@ -484,6 +519,27 @@
       "provenance": "capture"
     },
     {
+      "file": "cursor/2026.10.01/pasted-two-line.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/permission-plan.txt",
+      "cli": "cursor",
+      "classify": "permission",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/question.txt",
+      "cli": "cursor",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
       "file": "cursor/2026.10.01/rules-accepted.txt",
       "cli": "cursor",
       "classify": "idle",
@@ -516,6 +572,41 @@
       "cli": "cursor",
       "classify": "trust",
       "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-blank-middle.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-glyph-second.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-gt-second.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-two-line.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-wrap.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
       "provenance": "capture"
     },
     {

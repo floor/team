@@ -1,0 +1,23 @@
+  <project-dir>
+
+──────────────────────────────────────────────────
+> Before doing anything, use your question tool to
+  ask me which of two file names to use: notes.txt
+  or memo.txt
+
+▸ Thought for 6s, 408 tokens
+  The task requires determining a file name. The...
+
+? Which file name would you like to use?
+
+Question
+─────────────────────────────────────────────────────
+
+Question 1/1: Which file name would you like to use?
+
+> 1. notes.txt
+  2. memo.txt
+  3. Write-in...
+
+  ↑/↓ Navigate · enter Select · esc Skip
+esc to cancel                 Gemini 3.8 Flash · high
