@@ -187,6 +187,7 @@
         "strip_suffix": { "$ref": "#/$defs/patternString" },
         "ignore_case": { "type": "boolean" },
         "placeholders": { "$ref": "#/$defs/placeholders" },
+        "placeholder_style": { "enum": ["dim"] },
         "footers": { "type": "array", "items": { "$ref": "#/$defs/patternString" }, "minItems": 1 },
         "fallback": {
           "type": "array",
