@@ -4,6 +4,11 @@
 # file), no token is stored, and the release carries provenance. A pre-release
 # version (x.y.z-next.N) goes under the `next` dist-tag, anything else under
 # `latest`.
+#
+# Two jobs, so the OIDC token exists in as few steps as possible: `verify` runs
+# the tag checks, the gate and `npm pack`, and uploads the tarball; `publish`
+# alone holds `id-token: write` and downloads the tarball, re-checks its version
+# and publishes it — no checkout, no install, no build.
 # The tag's commit must be on main and the version must be package.json's; a
 # tag ruleset protecting v* (only the owner creates them) is recommended.
 # The 0.1.0 release itself is a manual `npm publish` from a clean main; this
@@ -20,10 +25,11 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  publish:
+  # Everything that runs this repository's code, with no OIDC token around to
+  # leak: the tag checks, the gate, and the pack.
+  verify:
     runs-on: ubuntu-latest
     steps:
       # The actions are pinned by commit; the version comment says which release it is.
@@ -38,10 +44,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
-
-      # Trusted publishing needs npm 11.5.1 or later; pinned, bump on purpose.
-      - run: npm install -g npm@11.21.0
 
       - name: The tag must be the package version
         run: |
@@ -61,14 +63,50 @@ jobs:
 
       - run: bun run ci
 
-      - name: Publish
+      # Packed once, here, with the npm the Node 22 above ships; this exact file
+      # is what publish uploads and npm gets.
+      - name: Pack the tarball
+        run: npm pack
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: package
+          path: team-*.tgz
+          if-no-files-found: error
+
+  # Only the token, a Node with the pinned npm, and the tarball verify built.
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: package
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or later; pinned, bump on purpose.
+      - run: npm install -g npm@11.21.0
+
+      - name: Publish the tarball
         run: |
-          version="$(node -p "require('./package.json').version")"
+          tgz="$(ls team-*.tgz)"
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(tar -xzOf "$tgz" package/package.json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')"
+          if [ "$tag" != "$version" ]; then
+            echo "the tarball holds $version, not v$tag" >&2
+            exit 1
+          fi
           case "$version" in
-            *-*) tag=next ;;
-            *) tag=latest ;;
+            *-*) dist=next ;;
+            *) dist=latest ;;
           esac
-          npm publish --provenance --access public --tag "$tag"
+          npm publish "$tgz" --provenance --access public --tag "$dist"
 
   # The GitHub Release for the tag, once npm has the version: the CHANGELOG.md
   # section for it. A pre-release is marked one and never becomes Latest. Run
