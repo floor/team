@@ -135,7 +135,7 @@ describe('budgets', () => {
       };
       const findings = doctorFindings(team, dir, dir, team.session, sources, []);
       const finding = findings.find((item) => item.text.includes('deepseek'));
-      expect(finding).toEqual({ level: 'warn', text: 'the check for deepseek is unapproved; that account reads unknown' });
+      expect(finding).toEqual({ level: 'warn', text: 'the check for deepseek changed after approval and was not run; that account reads unknown' });
       expect(blocksLaunch(finding!)).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });

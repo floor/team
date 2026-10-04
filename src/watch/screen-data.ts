@@ -26,7 +26,18 @@ export type FallbackRule = { all: LinePattern[]; kind: Screen['kind'] };
 // (`placeholder_style: dim` in the profile). A source without styling falls back to the list.
 export type PlaceholderStyle = 'dim';
 
-type Box = { mode: 'box-to-rule'; prompt: RegExp; rule: RegExp; footers: RegExp[]; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle };
+type Box = {
+  mode: 'box-to-rule';
+  prompt: RegExp;
+  rule: RegExp;
+  /**
+   * For a scrolled-out box, the non-blank lines under the closing rule must match
+   * every pattern, in order, and the counts must be equal.
+   */
+  footers: RegExp[];
+  placeholders: Placeholder[];
+  placeholderStyle?: PlaceholderStyle;
+};
 type StatusLast = { mode: 'status-last'; statusLine: RegExp; prompt: RegExp; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle };
 type StatusThenOne = {
   mode: 'status-then-one';
@@ -41,6 +52,7 @@ type TwoRules = {
   mode: 'two-rules-footer-below';
   prompt: RegExp;
   rule: RegExp;
+  /** Any line below the closing rule matches any pattern in the list. */
   footers: RegExp[];
   placeholders: Placeholder[];
   /** A row that stands for hidden rows of a folded paste; capture 1 is the hidden count. */

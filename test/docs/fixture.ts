@@ -21,7 +21,8 @@ export type Fixture = {
   git(...args: string[]): GitRun;
   /** An empty commit with this message and author; returns its hash. */
   commit(message: string, email?: string): string;
-  write(relative: string, text: string): void;
+  /** Writes one file of the project; `exec` makes it runnable, as a check script has to be. */
+  write(relative: string, text: string, exec?: boolean): void;
   remove(): void;
 };
 
@@ -87,10 +88,10 @@ export function createFixture(project: string, clock: { at: number }): Fixture {
       run(['commit', '--quiet', '--allow-empty', '--no-gpg-sign', '--cleanup=verbatim', '-F', '-'], email, message);
       return run(['rev-parse', 'HEAD'], email).stdout;
     },
-    write(relative, text) {
+    write(relative, text, exec = false) {
       const path = join(root, relative);
       mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, text);
+      writeFileSync(path, text, exec ? { mode: 0o755 } : {});
     },
     remove: () => rmSync(base, { recursive: true, force: true }),
   };
