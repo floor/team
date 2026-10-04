@@ -138,11 +138,12 @@ function composerOf(node: YamlNode): Composer {
     };
   }
   if (name === 'two-rules-footer-below') {
-    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders']);
+    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'fold']);
     const flag = optional(entries, 'ignore_case');
     const ignoreCase = flag ? boolOf(flag.value, 'ignore_case') : false;
     const footers = required(entries, 'footers', node.line);
     if (footers.value.kind !== 'seq' || footers.value.items.length === 0) fail(footers.line, '"footers" must be a non-empty list');
+    const fold = optional(entries, 'fold');
     return {
       mode: name,
       prompt: regexField(entries, 'prompt', node.line, ignoreCase),
@@ -153,6 +154,7 @@ function composerOf(node: YamlNode): Composer {
         return patternOf(text, ignoreCase, item.line);
       }),
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
+      fold: fold ? patternOf(stringOf(fold.value) ?? fail(fold.line, '"fold" must be a string'), ignoreCase, fold.line) : null,
     };
   }
   fail(mode.line, `"mode" must be box-to-rule, status-last, status-then-one or two-rules-footer-below`);

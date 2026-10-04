@@ -37,6 +37,8 @@ type TwoRules = {
   rule: RegExp;
   footers: RegExp[];
   placeholders: Placeholder[];
+  /** A row that stands for hidden rows of a folded paste; capture 1 is the hidden count. */
+  fold: RegExp | null;
 };
 
 export type Composer = Box | StatusLast | StatusThenOne | TwoRules;

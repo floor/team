@@ -199,6 +199,33 @@ describe('Antigravity folded rules paste', () => {
     expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(true);
     expect(d.calls).toEqual([RULES, 'Enter']);
   });
+
+  test('the prompt-marked fold reads unsent, and is verified the same way', async () => {
+    const marked = (screen: string) => screen.replace('↑ 19 more lines', '> ↑ 19 more lines');
+    expect(readScreen('antigravity', marked(fixture('folded-rules'))).kind).toBe('unsent');
+    const d = foldedPane(marked);
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([RULES, 'Enter']);
+  });
+
+  test('a prompt-marked fold with a wrong count gets no Enter', async () => {
+    // Before the fold was read, this box only had to read `unsent` to be submitted unverified.
+    const d = foldedPane((screen) => screen.replace('↑ 19 more lines', '> ↑ 20 more lines'));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('a fold whose hidden count does not close the gap gets no Enter', async () => {
+    const d = foldedPane((screen) => screen.replace('↑ 19 more lines', '↑ 20 more lines'));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('a fold whose tail is not the typed text gets no Enter', async () => {
+    const d = foldedPane((screen) => screen.replace('d fix/agy-rules-fold.', 'd fix/some-other-branch.'));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
 });
 
 describe('Antigravity permission prompt in watch and down', () => {

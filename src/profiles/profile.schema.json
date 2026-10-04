@@ -188,6 +188,7 @@
         "ignore_case": { "type": "boolean" },
         "placeholders": { "$ref": "#/$defs/placeholders" },
         "footers": { "type": "array", "items": { "$ref": "#/$defs/patternString" }, "minItems": 1 },
+        "fold": { "$ref": "#/$defs/patternString" },
         "fallback": {
           "type": "array",
           "items": {
