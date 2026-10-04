@@ -1055,4 +1055,49 @@ module.exports = Object.create(proto);`,
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  test('round 8 addendum: what loadScreen returns is deeply frozen against post-load mutations', () => {
+    // 1. Shipped profiles (no hatch)
+    for (const cli of ['claude-code', 'codex', 'cursor', 'antigravity']) {
+      const rawYaml = readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8');
+      const data = loadScreen(rawYaml, undefined, `${cli}.yaml`);
+
+      // Root object and nested objects are frozen
+      expect(Object.isFrozen(data)).toBe(true);
+      expect(Object.isFrozen(data.composer)).toBe(true);
+      if (data.composer.placeholders) expect(Object.isFrozen(data.composer.placeholders)).toBe(true);
+      if (data.composer.footers) expect(Object.isFrozen(data.composer.footers)).toBe(true);
+      if (data.trust?.rules) expect(Object.isFrozen(data.trust.rules)).toBe(true);
+
+      // Post-load assignment of composer is refused / throws
+      expect(() => {
+        (data as any).profile = { composer: () => ({ kind: 'idle' }) };
+      }).toThrow();
+
+      // Post-load assignment of a predicate is refused / throws
+      expect(() => {
+        (data as any).trust = { rules: [] };
+      }).toThrow();
+
+      // Post-load mutation of a nested rule pattern is refused / throws
+      if (data.trust?.rules[0]) {
+        expect(() => {
+          (data.trust!.rules[0] as any).all = [];
+        }).toThrow();
+      }
+    }
+
+    // 2. Profile with a hatch: data.profile is also deeply frozen
+    const fakeYaml = readFileSync(resolve(fixtureDir, 'fake-cli.yaml'), 'utf8');
+    const fakeData = loadScreen(fakeYaml, fixtureDir, 'fake-cli.yaml');
+    expect(Object.isFrozen(fakeData)).toBe(true);
+    expect(Object.isFrozen(fakeData.profile)).toBe(true);
+
+    expect(() => {
+      (fakeData.profile as any).composer = () => ({ kind: 'working' });
+    }).toThrow();
+    expect(() => {
+      (fakeData.profile as any).working = () => true;
+    }).toThrow();
+  });
 });
