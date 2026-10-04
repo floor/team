@@ -549,7 +549,8 @@ describe('the --file option', () => {
     expect(withJson.io.err).toBe('');
     expect(withJson.requested).toEqual([]);
 
-    // `team check --file` reads one value per option — the shared parser's rule, so the last
+    // `team check --file` also reads one value per option, last one wins; the parsers are
+    // separate and the table test below holds them to the same classification, so the last
     // occurrence is the file. Both orders pin which one is used.
     const last = await run(['check', 'material@3.0.2', '--file', 'missing.yaml', '--file', '.agents/team.yaml'], happy());
     expect(last.code).toBe(0);
@@ -721,7 +722,7 @@ describe('the --file option is classified the same through both commands', () =>
     return 'past-the-loader';
   }
 
-  test('the nine cases take the same value, or refuse with the same message', async () => {
+  test('the ten cases take the same value, or refuse with the same message', async () => {
     mkdirSync(join(project, 'sub'));
     writeFileSync(join(project, 'sub', 'bad.yaml'), 'format: 2\n');
     writeFileSync(join(project, 'bad.yaml'), 'format: 2\n');

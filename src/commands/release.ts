@@ -71,8 +71,9 @@ export async function runRelease(argv: string[], io: Io, fetcher: Fetch, keyRead
   if (!SEMVER_PATTERN.test(version)) return fail('usage', `the version ${JSON.stringify(version)} is not a Semantic Versioning 2.0.0 version`);
 
   // Only with valid arguments is the file read; an invalid file is the configuration error. The
-  // file is the same as `team check --file`'s: one read, the same shared parser for the option,
-  // the same resolution of the path, and nothing else read from the repository.
+  // load and the path resolution are shared with `team check --file` (loadTeamFile); the argument
+  // parsers are separate, and a table test holds the two to the same classification. Nothing else
+  // is read from the repository.
   const loaded = loadTeamFile(io.cwd, { file: args.values.file });
   if (!loaded.ok) {
     const first = loaded.errors[0] as { line: number; message: string };
