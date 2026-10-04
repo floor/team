@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
@@ -46,11 +46,45 @@ describe('which reading counts', () => {
     expect(counted.reading.changedAt).toBe(minute);
   });
 
-  test('a newer first sight wins, and stays unconfirmed', () => {
+  test('a confirmed reading still counts when a newer first sight arrives', () => {
     const older = observe([], figure(61), 'one', 0);
     const changed = observe(older, figure(40), 'one', minute);
     const sight = observe(changed, figure(20), 'two', minute * 2);
-    expect(verdict(sight, minute * 2, stale, 20).kind).toBe('unconfirmed');
+    const counted = verdict(sight, minute * 2, stale, 20);
+    expect(counted.kind).toBe('fresh');
+    if (counted.kind === 'unknown') return;
+    expect(counted.reading.seat).toBe('one');
+    expect(counted.reading.left).toBe(40);
+  });
+
+  test('a recalled confirmed reading still decides after a new seat differs', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
+    try {
+      const at = 1_700_000_000_000;
+      const confirmed = observe(observe([], figure(61), 'one', at), figure(40), 'one', at + minute);
+      saveReadings(dir, 'default', confirmed, at + minute);
+      const sight = observe(loadReadings(dir, 'default'), figure(20), 'two', at + minute * 2);
+      const counted = verdict(sight, at + minute * 2, stale, 20);
+      expect(counted.kind).toBe('fresh');
+      if (counted.kind === 'unknown') return;
+      expect(counted.reading.seat).toBe('one');
+      expect(counted.reading.confirmed).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('an expired reading does not confirm a frozen pane', () => {
+    const expired = seen({ seat: 'one', confirmed: true, changedAt: 0, left: 61, used: 39, resetsAt: 1 });
+    const frozen = observe([expired], figure(61), 'two', minute);
+    expect(frozen.find((item) => item.seat === 'two')?.confirmed).toBe(false);
+  });
+
+  test('an unchanged figure with no reset takes one when it appears', () => {
+    const first = observe([], figure(61), 'one', 0);
+    const later = observe(first, figure(61, '44m'), 'one', minute);
+    expect(later[0]?.changedAt).toBe(0);
+    expect(later[0]?.resetsAt).toBe(minute + 44 * minute);
   });
 
   test('a second seat showing the same figure confirms it', () => {
@@ -92,12 +126,18 @@ describe('which reading counts', () => {
 
   test('the readings survive in the state file', () => {
     const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
-    const list = observe([], figure(39, '44m'), 'one', 1_700_000_000_000);
-    saveReadings(dir, 'default', list);
+    const at = 1_700_000_000_000;
+    const list = observe([], figure(39, '44m'), 'one', at);
+    saveReadings(dir, 'default', list, at);
     const loaded = loadReadings(dir, 'default');
     expect(loaded).toHaveLength(1);
     expect(loaded[0]?.left).toBe(39);
     expect(loaded[0]?.resetsAt).toBe(1_700_000_000_000 + 44 * minute);
     expect(loaded[0]?.confirmed).toBe(false);
+    const passed = seen({ seat: 'old', confirmed: true, changedAt: at, resetsAt: at });
+    const kept = seen({ seat: 'open', confirmed: true, changedAt: at, resetsAt: null });
+    saveReadings(dir, 'default', [passed, kept], at);
+    expect(loadReadings(dir, 'default').map((item) => item.seat)).toEqual(['open']);
+    rmSync(dir, { recursive: true, force: true });
   });
 });

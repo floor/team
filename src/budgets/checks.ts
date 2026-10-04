@@ -21,7 +21,7 @@ export function checkCommands(team: TeamFile): { account: string; command: strin
 export function resolveCheck(command: string, root: string, pathEnv: string): { path: string; hash: string } | null {
   const path = command.includes('/')
     ? (isAbsolute(command) ? command : resolve(root, command))
-    : pathEnv.split(':').filter(Boolean).map((dir) => join(dir, command)).find((file) => executable(file)) ?? '';
+    : pathEnv.split(':').filter((dir) => dir && isAbsolute(dir)).map((dir) => join(dir, command)).find((file) => executable(file)) ?? '';
   if (!path || !executable(path)) return null;
   return { path, hash: createHash('sha256').update(readFileSync(path)).digest('hex') };
 }
@@ -40,6 +40,20 @@ export function resolveChecks(
   return { ok: true, checks };
 }
 
+export type CheckReading = { account: string; state: 'approved' | 'unknown' };
+
+/**
+ * Whether each account's check may be run. The stored absolute path is hashed
+ * again; PATH is not consulted. A missing or changed file reads unknown.
+ */
+export function checkReadings(team: TeamFile, approved: Record<string, ApprovedCheck> | undefined): CheckReading[] {
+  return checkCommands(team).map(({ account }) => {
+    const known = approved?.[account];
+    if (!known || hashOf(known.path) !== known.hash) return { account, state: 'unknown' };
+    return { account, state: 'approved' };
+  });
+}
+
 /** Lines for a resolved command whose path or hash is not the approved one. */
 export function checkDrift(approved: Record<string, ApprovedCheck> | undefined, current: Record<string, ApprovedCheck>): string[] {
   const lines: string[] = [];
@@ -54,6 +68,15 @@ export function checkDrift(approved: Record<string, ApprovedCheck> | undefined, 
     if (!current[account]) lines.push(`the check for ${account} changed`);
   }
   return lines;
+}
+
+function hashOf(file: string): string | null {
+  try {
+    if (!statSync(file).isFile()) return null;
+    return createHash('sha256').update(readFileSync(file)).digest('hex');
+  } catch {
+    return null;
+  }
 }
 
 function executable(file: string): boolean {
