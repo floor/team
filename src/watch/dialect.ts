@@ -294,7 +294,9 @@ function refuseSpelling(source: string): void {
 
 // A class is a finite set, except a complement shorthand (`\S`, `\D`, `\W`), whose
 // negation brings it back to a finite set. `[^\S\n]` is the whitespace set without
-// a newline, which is what the working-line pattern relies on.
+// a newline, which is what the working-line pattern relies on. A positive class that
+// mixed one with other members would compile to a class nobody wrote (`[\D0-9]` is
+// everything), so it is refused rather than rewritten.
 function classSource(negated: boolean, parts: ClassPart[]): string {
   const positive = new Set<number>();
   const complements: number[][] = [];
@@ -304,6 +306,9 @@ function classSource(negated: boolean, parts: ClassPart[]): string {
     else complements.push(part.cps);
   }
   if (complements.length === 0) return emitClass(negated, [...positive]);
+  if (!negated && positive.size > 0) {
+    throw new DialectError('a class cannot mix a complement shorthand with other members: negate the class, or write the shorthand alone');
+  }
   let inter = new Set(complements[0]);
   for (const extra of complements.slice(1)) inter = new Set([...inter].filter((cp) => extra.includes(cp)));
   const remaining = [...inter].filter((cp) => !positive.has(cp));
