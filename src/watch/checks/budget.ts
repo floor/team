@@ -20,8 +20,8 @@ export const budget: TeamCheck = {
   run(team, ctx) {
     const reports: Report[] = [];
     const marks = ctx.memory<Record<string, MarkState>>('budget', () => ({}));
-    const staleMs = team.team.budgets.staleAfter * 1000;
-    for (const [name, account] of Object.entries(team.team.budgets.accounts)) {
+    const staleMs = ctx.budgets.staleAfter * 1000;
+    for (const [name, account] of Object.entries(ctx.budgets.accounts)) {
       const counted = countedOf(name, account, team, staleMs, ctx.now);
       // A figure nobody has yet seen (a first sight, not yet counted) is not "unknown": the
       // launch gate is the one that says so, and a watch restart would otherwise report every run.
@@ -38,7 +38,7 @@ export const budget: TeamCheck = {
         }
         continue;
       }
-      reports.push(...crossings(marks, name, counted.windows, team.team.budgets.marks, ctx.now));
+      reports.push(...crossings(marks, name, counted.windows, ctx.budgets.marks, ctx.now));
       const reserve = account.reserve;
       if (reserve === null) continue;
       const inside = counted.windows.filter((window) => window.left <= reserve);
@@ -66,7 +66,7 @@ function countedOf(
 ): Counted | 'unseen' | null {
   for (const source of account.sources) {
     if (source === 'check') {
-      const outcome = team.budgets.find((one) => one.account === name);
+      const outcome = team.outcomes.find((one) => one.account === name);
       if (!outcome || outcome.state !== 'read') continue;
       if (outcome.reading.kind === 'spend') {
         if (now - outcome.reading.at < staleMs) {

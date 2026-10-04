@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { approvalDifferences, watchInForce } from '../src/approve/approval.ts';
+import { approvalDifferences, budgetsInForce, watchInForce } from '../src/approve/approval.ts';
 import { compare, describe as describeDifference, fingerprints, OWNER_SECTIONS } from '../src/approve/fingerprint.ts';
 import { runApprove } from '../src/commands/approve.ts';
 import { runStatus, type StatusSources } from '../src/commands/status.ts';
@@ -146,6 +146,7 @@ describe('a threshold edit, and the approval', () => {
       branch: () => 'main',
       approval: (team, at) => approvalDifferences(team, at, home),
       watchInForce: (team, at) => watchInForce(team, at, home),
+      budgetsInForce: (team, at) => budgetsInForce(team, at, home),
       now: () => NOW,
     };
     const status = async () => {

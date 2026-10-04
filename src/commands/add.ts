@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
-import { approvalDifferences } from '../approve/approval.ts';
+import { approvalDifferences, budgetsInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from '../commands/doctor.ts';
@@ -223,7 +223,10 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     io.stderr(`team add: ${again}\n`);
     return 1;
   }
-  const decision = seatBudget(prepared.team, loadReadings(dir, session), built.seat, sources.now().getTime());
+  // The gate reads the approved budgets, never the edited file's: the seat this `add` inserts
+  // changes no section of its own, and no unapproved reserve may unblock a launch (#50).
+  const budgets = budgetsInForce(prepared.team, root, sources.home);
+  const decision = seatBudget(budgets, loadReadings(dir, session), built.seat, sources.now().getTime());
   const stray = unnamedIn(built.seat.label, agents, workspaces);
   const starting = seatPlan(prepared.team, built.seat, start);
   const planned = stray

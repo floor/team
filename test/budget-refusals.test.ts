@@ -314,7 +314,7 @@ describe('a stored reading refuses one seat', () => {
     if (!loaded.ok) throw new Error('file');
     const worker = loaded.team.seats.find((seat) => seat.name === 'worker');
     if (!worker) throw new Error('worker');
-    const inside = seatBudget(loaded.team, [
+    const inside = seatBudget(loaded.team.budgets, [
       reading('openai', 8),
       reading('openai', 5, { window: 'session' }),
       reading('anthropic', 80),
@@ -323,7 +323,7 @@ describe('a stored reading refuses one seat', () => {
       kind: 'refuse',
       why: 'openai session left 5%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic',
     });
-    const tied = seatBudget(loaded.team, [
+    const tied = seatBudget(loaded.team.budgets, [
       reading('openai', 5),
       reading('openai', 5, { window: 'session' }),
       reading('anthropic', 80),
@@ -333,7 +333,7 @@ describe('a stored reading refuses one seat', () => {
       why: 'openai session left 5%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic',
     });
     // The lowest left beats the window rank: weekly, the higher rank, is the tighter one here.
-    const lowest = seatBudget(loaded.team, [
+    const lowest = seatBudget(loaded.team.budgets, [
       reading('openai', 5),
       reading('openai', 8, { window: 'session' }),
       reading('anthropic', 80),
@@ -354,7 +354,7 @@ describe('a stored reading refuses one seat', () => {
     if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
     const worker = loaded.team.seats.find((seat) => seat.name === 'worker');
     if (!worker) throw new Error('worker');
-    expect(seatBudget(loaded.team, [], worker, now)).toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
+    expect(seatBudget(loaded.team.budgets, [], worker, now)).toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
   });
 });
 
@@ -371,5 +371,41 @@ describe('team add', () => {
     expect(dry.out).toContain(`worker: would refuse: ${TAIL}\n`);
     expect(dry.out).toContain('dry run: nothing was run\n');
     expect(dry.labels).toEqual([]);
+  });
+});
+
+describe('an unapproved edit to the budgets', () => {
+  // A reserve the file lowers on its own: valid, and weaker than the approved one. If it were
+  // read before approval, the same reading would unblock the launch it now refuses.
+  const WEAKER = BASE.replace('reserve: 10%', 'reserve: 1%');
+
+  test('up: unblocks nothing until the owner approves it', async () => {
+    store([reading('anthropic', 80), reading('openai', 5)]);
+    writeFileSync(join(root, '.agents', 'team.yaml'), WEAKER);
+    const dry = await up(['--dry-run'], world());
+    expect(dry.out).toContain(`skip worker: would refuse: ${TAIL}`);
+    expect(dry.out).toContain('! up would refuse: the file is not the approved one (`budgets` changed): run `team approve`');
+    const refused = await up([], world());
+    expect(refused.code).toBe(1);
+    expect(refused.labels).toEqual([]);
+    // The owner approves the reserve the file now sets: the same reading no longer refuses.
+    approve(WEAKER);
+    const after = await up([], world());
+    expect(after.code).toBe(0);
+    expect(after.labels).toContain('worker');
+    expect(after.out).not.toContain('would refuse');
+  });
+
+  test('add: launches nothing until the owner approves it', async () => {
+    store([reading('anthropic', 80), reading('openai', 5)]);
+    writeFileSync(join(root, '.agents', 'team.yaml'), WEAKER);
+    const before = await add(['worker'], world());
+    expect(before.code).toBe(1);
+    expect(before.err).toContain('the file is not the approved one (`budgets` changed)');
+    expect(before.labels).toEqual([]);
+    approve(WEAKER);
+    const after = await add(['worker'], world());
+    expect(after.code).toBe(0);
+    expect(after.labels).toContain('worker');
   });
 });

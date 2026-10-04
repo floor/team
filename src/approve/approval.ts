@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import type { ApprovedCheck } from '../budgets/checks.ts';
 import type { TeamFile } from '../file/types.ts';
-import { defaultWatch, validateTeamFile } from '../file/validate.ts';
+import { defaultBudgets, defaultWatch, validateTeamFile } from '../file/validate.ts';
 import { readApproval, storePath, type Approval, type ApprovalRecord, type Ceilings } from '../store/store.ts';
 import { compare, describe, fingerprints, OWNER_SECTIONS, type Fingerprints } from './fingerprint.ts';
 
@@ -65,4 +65,20 @@ export function watchInForce(team: TeamFile, root: string, home: string = homedi
   if (approvedFingerprints(record).sections['watch'] === fingerprints(team).sections['watch']) return team.watch;
   const copy = validateTeamFile(record.file);
   return copy.ok ? copy.team.watch : defaultWatch();
+}
+
+/**
+ * The budget values in force. The `budgets` section is the owner's like the watch's, so what a
+ * file sets takes effect only once the owner has approved it: a file never approved runs with the
+ * defaults — no accounts — and a file whose `budgets` section differs from the approved one runs
+ * with the values of the approved copy, accounts included. An unapproved edit — a reserve lowered,
+ * a mark dropped, `check_every` stretched, an account taken out — silences nothing and unblocks
+ * nothing until `approve`.
+ */
+export function budgetsInForce(team: TeamFile, root: string, home: string = homedir()): TeamFile['budgets'] {
+  const record = readApproval(storePath(team.project, root, home));
+  if (record === null) return defaultBudgets();
+  if (approvedFingerprints(record).sections['budgets'] === fingerprints(team).sections['budgets']) return team.budgets;
+  const copy = validateTeamFile(record.file);
+  return copy.ok ? copy.team.budgets : defaultBudgets();
 }

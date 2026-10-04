@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { approvalDifferences } from '../approve/approval.ts';
+import { approvalDifferences, budgetsInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
@@ -236,6 +236,9 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   else if (differences.length) {
     refusals.push(`the file is not the approved one (${differences.join('; ')}): run \`team approve\``);
   }
+  // The budget readings the gate refuses on are the approved ones: an unapproved lower reserve
+  // unblocks nothing, not even the seat a dry run would plan.
+  const budgets = budgetsInForce(team, root, sources.home);
 
   if (sources.doctor) {
     const findings = doctorFindings(team, root, dir, session, sources.doctor, loaded.warnings);
@@ -283,7 +286,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     }
     const placed = planned.stage === undefined || !planned.pane;
     if (!placed) {
-      const budget = seatBudget(team, readings, seat, readAt());
+      const budget = seatBudget(budgets, readings, seat, readAt());
       seats.push({ ...planned, ...(budget.kind === 'clear' ? {} : { budget }) });
       continue;
     }
@@ -295,7 +298,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       }
       continue;
     }
-    const budget = seatBudget(team, readings, seat, readAt());
+    const budget = seatBudget(budgets, readings, seat, readAt());
     seats.push({
       ...planned,
       cwd: start.cwd,

@@ -83,15 +83,17 @@ export type TeamObservation = {
   // The readings that count this pass (§ 4.3): the state's, with the seats' figures folded in.
   readings: Seen[];
   // What each checked account's command read this pass, or why it has none (§ 5).
-  budgets: readonly CheckOutcome[];
+  outcomes: readonly CheckOutcome[];
 };
 
-// What every check is handed: the pass's clock, the file's watch section, the report-once rule,
-// and the check's own memory.
+// What every check is handed: the pass's clock, the watch and budget sections in force, the
+// report-once rule, and the check's own memory.
 export type CheckContext = {
   now: number;
-  // The file's `watch` section: the thresholds the checks report against.
+  // The `watch` section in force: the thresholds the checks report against.
   watch: TeamFile['watch'];
+  // The `budgets` section in force: the accounts, marks and thresholds the checks read against.
+  budgets: TeamFile['budgets'];
   // The report-once rule. The key goes into this pass's active set; the report comes back the
   // first time and is null while the condition holds. Cleared conditions clear themselves: a
   // check that stops calling `once` for a key drops it from the set at the end of the pass.

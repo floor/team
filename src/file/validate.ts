@@ -545,13 +545,22 @@ function readChecks(entry: YamlEntry | undefined, check: Check): string[] {
   return off;
 }
 
+/**
+ * The budget values a file that sets none runs with — and, since the section is the owner's, the
+ * values a file runs with until the owner approves what it sets instead. No accounts: nothing is
+ * budgeted until the owner names one.
+ */
+export function defaultBudgets(): TeamFile['budgets'] {
+  return { staleAfter: 30 * 60, checkEvery: 10 * 60, marks: defaultWatch().quotaMarks, accounts: {} };
+}
+
 function readBudgets(
   entry: YamlEntry | undefined,
   check: Check,
   fallbackMarks: number[],
   legacyMarks: boolean,
 ): TeamFile['budgets'] {
-  const base = { staleAfter: 30 * 60, checkEvery: 10 * 60, marks: fallbackMarks, accounts: {} };
+  const base = { ...defaultBudgets(), marks: fallbackMarks };
   if (!entry) return base;
   const fields = check.fields(entry.value, 'budgets', ['stale_after', 'check_every', 'marks', 'accounts']);
   const marks = percentList(fields.get('marks'), 'budgets.marks', check);

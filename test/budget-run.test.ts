@@ -174,8 +174,8 @@ describe('the approval gates the run', () => {
       ran.push('ran');
       return null;
     };
-    expect(checkOutcomes(file, undefined, run, NOW)).toEqual([{ account: 'deepseek', state: 'unapproved' }]);
-    expect(checkOutcomes(file, {}, run, NOW)).toEqual([{ account: 'deepseek', state: 'unapproved' }]);
+    expect(checkOutcomes(file.budgets, undefined, run, NOW)).toEqual([{ account: 'deepseek', state: 'unapproved' }]);
+    expect(checkOutcomes(file.budgets, {}, run, NOW)).toEqual([{ account: 'deepseek', state: 'unapproved' }]);
     expect(ran).toEqual([]);
   });
 
@@ -188,7 +188,7 @@ describe('the approval gates the run', () => {
     if (!resolved.ok) throw new Error('the check did not resolve');
     writeFileSync(command, '#!/bin/sh\necho "9 USD"\n', { mode: 0o755 });
     const ran: string[] = [];
-    const outcomes = checkOutcomes(file, resolved.checks, (_account, path) => {
+    const outcomes = checkOutcomes(file.budgets, resolved.checks, (_account, path) => {
       ran.push(path);
       return null;
     }, NOW);
@@ -204,10 +204,10 @@ describe('the approval gates the run', () => {
     const resolved = resolveChecks(file, dir, '');
     if (!resolved.ok) throw new Error('the check did not resolve');
     const reading = { kind: 'spend', amount: 6.2, currency: 'USD', at: NOW } as const;
-    expect(checkOutcomes(file, resolved.checks, () => reading, NOW)).toEqual([
+    expect(checkOutcomes(file.budgets, resolved.checks, () => reading, NOW)).toEqual([
       { account: 'deepseek', state: 'read', reading },
     ]);
-    expect(checkOutcomes(file, resolved.checks, () => null, NOW)).toEqual([{ account: 'deepseek', state: 'unreadable' }]);
+    expect(checkOutcomes(file.budgets, resolved.checks, () => null, NOW)).toEqual([{ account: 'deepseek', state: 'unreadable' }]);
   });
 });
 
@@ -256,7 +256,8 @@ describe('runChecks, end to end', () => {
     }, []);
     writeFileSync(command, '#!/bin/sh\necho "9.90 USD"\n', { mode: 0o755 });
     expect(runChecks(file, dir, NOW, home)).toEqual([{ account: 'deepseek', state: 'unapproved' }]);
-    // And an account the file has, with no approval at all on this machine.
-    expect(runChecks(file, dir, NOW, temp('team-check-home-'))).toEqual([{ account: 'deepseek', state: 'unapproved' }]);
+    // A file never approved on this machine runs no check and reads no account: the budgets
+    // in force are the defaults, which name none, whatever the file's own section says.
+    expect(runChecks(file, dir, NOW, temp('team-check-home-'))).toEqual([]);
   });
 });

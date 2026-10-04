@@ -72,6 +72,7 @@ function sources(over: Partial<WatchSources> = {}): WatchSources {
     machine: () => fine,
     approval: () => [],
     watchInForce: (team) => team.watch,
+    budgetsInForce: (team) => team.budgets,
     readChecks: () => [],
     screen: () => idle,
     status: () => 'idle',

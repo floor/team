@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   An approval recorded before this change stays valid while the section is unchanged; a timing a
   seat changed without an approval shows its difference at the next pass, for the owner to settle.
   A never-approved team now runs on the defaults whatever its file says.
+- The whole `budgets` section is an owner section too, its accounts and marks included: an edit to
+  a reserve, a floor, `stale_after`, `check_every` or the accounts needs a new approval, and until
+  the owner approves it every reader — the watch's reports and its check cadence, the check
+  commands' own run, `up`'s and `add`'s launch gate, and `status`'s table — runs with the values of
+  the approved copy, or with the defaults (no accounts) when nothing was approved. A file never
+  approved runs no check at all. An unapproved edit silences nothing and unblocks nothing.
 
 ### Fixed
 

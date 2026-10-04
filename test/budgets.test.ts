@@ -123,7 +123,7 @@ describe('budgets', () => {
       expect(checkDrift(first.checks, second.checks)).toEqual(['the check for deepseek changed']);
       expect(JSON.stringify(checkDrift(first.checks, second.checks))).not.toContain('echo');
       expect(approvalDifferences(team, dir, home)).toEqual([]);
-      expect(checkReadings(team, first.checks)).toEqual([{ account: 'deepseek', state: 'unknown' }]);
+      expect(checkReadings(team.budgets, first.checks)).toEqual([{ account: 'deepseek', state: 'unknown' }]);
       const sources: DoctorSources = {
         version: () => null,
         onPath: () => true,
@@ -158,10 +158,10 @@ describe('budgets', () => {
       const resolved = resolveChecks(team, dir, bin);
       expect(resolved.ok).toBe(true);
       if (!resolved.ok) return;
-      const approved = checkReadings(team, resolved.checks);
+      const approved = checkReadings(team.budgets, resolved.checks);
       expect(approved).toEqual([{ account: 'deepseek', state: 'approved' }]);
       expect(resolveCheck('balance', dir, join(dir, 'missing'))).toBeNull();
-      expect(checkReadings(team, resolved.checks)).toEqual(approved);
+      expect(checkReadings(team.budgets, resolved.checks)).toEqual(approved);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

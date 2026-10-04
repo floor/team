@@ -94,13 +94,14 @@ function attentionOf(screen: Screen, status: string, quiet: boolean): Attention 
 
 // One pass of the watch. Pure: it reads what it is handed and changes only `memory`.
 // `approval` is how the file differs from the approved one: [] when it doesn't, null when it was
-// never approved, undefined when that wasn't looked at. `watch` is the values in force — the
-// approved ones, or the defaults while the file's own are not approved — and the checks read
-// those, never the file's. `budgets` is what the accounts' check commands read outside the pass,
-// when the watch last ran them.
+// never approved, undefined when that wasn't looked at. `watch` and `budgets` are the sections in
+// force — the approved ones, or the defaults while the file's own are not approved — and the
+// checks read those, never the file's. `outcomes` is what the accounts' check commands read
+// outside the pass, when the watch last ran them.
 export function pass(
   team: TeamFile, state: SessionState, live: Live, machine: Machine, now: number, memory: Memory,
-  approval?: string[] | null, watch: TeamFile['watch'] = team.watch, budgets: readonly CheckOutcome[] = [],
+  approval?: string[] | null, watch: TeamFile['watch'] = team.watch,
+  outcomes: readonly CheckOutcome[] = [], budgets: TeamFile['budgets'] = team.budgets,
 ): PassResult {
   const reports: Report[] = [];
   const current = new Set<string>();
@@ -205,12 +206,12 @@ export function pass(
 
   // The figures this pass saw, folded into the readings the state keeps (§ 4.3). Only an account
   // whose `sources` name `status_line` takes a screen reading: a check-only account never records
-  // one here, and neither does an account the file doesn't name (#50).
+  // one here, and neither does an account the budgets in force don't name (#50).
   let readings = recall(state.budgets);
   for (const seat of observations) {
     if (!seat.running) continue;
     for (const figure of seat.quota) {
-      if (team.budgets.accounts[figure.account]?.sources.includes('status_line')) {
+      if (budgets.accounts[figure.account]?.sources.includes('status_line')) {
         readings = observe(readings, figure, seat.name, now);
       }
     }
@@ -227,12 +228,13 @@ export function pass(
     workers,
     approval,
     readings,
-    budgets,
+    outcomes,
   };
 
   const ctx: CheckContext = {
     now,
     watch,
+    budgets,
     once,
     memory: <T>(kind: string, start: () => T): T => {
       if (!Object.hasOwn(memory.slots, kind)) memory.slots[kind] = start();

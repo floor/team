@@ -12,14 +12,18 @@ export type LaunchDecision =
 
 const RANK: Record<WindowName, number> = { session: 0, daily: 1, weekly: 2 };
 
-/** The seat's account is its vendor. There is no separate account field on a seat. */
-export function seatBudget(team: TeamFile, readings: readonly Seen[], seat: Seat, now: number): LaunchDecision {
+/**
+ * The seat's account is its vendor. There is no separate account field on a seat. `budgets` is
+ * the section in force: an unapproved edit to a reserve refuses no one until it is approved,
+ * and an account only the unapproved edit names is not an account at all.
+ */
+export function seatBudget(budgets: TeamFile['budgets'], readings: readonly Seen[], seat: Seat, now: number): LaunchDecision {
   const name = seat.vendor;
-  const account = team.budgets.accounts[name];
+  const account = budgets.accounts[name];
   if (!account) return { kind: 'clear' };
   if (account.kind === 'spend') return { kind: 'unknown', account: name, text: `${name} is unknown` };
 
-  const staleAfterMs = team.budgets.staleAfter * 1000;
+  const staleAfterMs = budgets.staleAfter * 1000;
   const mine = readings.filter((item) => item.account === name);
   let unknown = mine.length === 0;
   let unconfirmed = false;
@@ -48,7 +52,7 @@ export function seatBudget(team: TeamFile, readings: readonly Seen[], seat: Seat
     }
   }
   if (worst && account.reserve !== null) {
-    const room = accountsWithRoom(team, readings, now).filter((accountName) => accountName !== name);
+    const room = accountsWithRoom(budgets, readings, now).filter((accountName) => accountName !== name);
     return {
       kind: 'refuse',
       why: `${name} ${worst.window} left ${worst.left}%, inside its ${account.reserve}% reserve, changed ${age(now - worst.changedAt)} ago; accounts with room: ${room.length ? room.join(', ') : 'none'}`,
@@ -60,10 +64,10 @@ export function seatBudget(team: TeamFile, readings: readonly Seen[], seat: Seat
 }
 
 /** Subscription accounts whose counted windows are all outside the reserve. */
-export function accountsWithRoom(team: TeamFile, readings: readonly Seen[], now: number): string[] {
-  const staleAfterMs = team.budgets.staleAfter * 1000;
+export function accountsWithRoom(budgets: TeamFile['budgets'], readings: readonly Seen[], now: number): string[] {
+  const staleAfterMs = budgets.staleAfter * 1000;
   const names: string[] = [];
-  for (const [name, account] of Object.entries(team.budgets.accounts)) {
+  for (const [name, account] of Object.entries(budgets.accounts)) {
     if (account.kind !== 'subscription' || account.reserve === null) continue;
     const groups = windowsOf(readings.filter((item) => item.account === name));
     let counted = 0;

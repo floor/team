@@ -23,9 +23,9 @@ export type BudgetRow = {
 
 const WINDOWS: WindowName[] = ['session', 'daily', 'weekly'];
 
-/** Rows for the accounts the file names, and for any reading still in the state. */
-export function budgetTable(team: TeamFile, list: readonly Seen[], now: number): BudgetRow[] {
-  const staleAfterMs = team.budgets.staleAfter * 1000;
+/** Rows for the accounts the budgets in force name, and for any reading still in the state. */
+export function budgetTable(budgets: TeamFile['budgets'], list: readonly Seen[], now: number): BudgetRow[] {
+  const staleAfterMs = budgets.staleAfter * 1000;
   const groups = new Map<string, Seen[]>();
   for (const reading of list) {
     const key = `${reading.account}\0${reading.window}`;
@@ -39,18 +39,18 @@ export function budgetTable(team: TeamFile, list: readonly Seen[], now: number):
     const account = key.slice(0, key.indexOf('\0'));
     const window = group[0]?.window ?? null;
     named.add(account);
-    const reserve = reserveOf(team, account);
+    const reserve = reserveOf(budgets, account);
     rows.push(rowOf(account, window, verdict(group, now, staleAfterMs, reserve), now, reserve));
   }
-  for (const account of Object.keys(team.budgets.accounts)) {
-    if (!named.has(account)) rows.push(blank(account, reserveOf(team, account)));
+  for (const account of Object.keys(budgets.accounts)) {
+    if (!named.has(account)) rows.push(blank(account, reserveOf(budgets, account)));
   }
   return rows.sort(byAccount);
 }
 
 /** An account's reserve: a subscription's own, and none for anything else. */
-export function reserveOf(team: TeamFile, account: string): number | null {
-  const entry = team.budgets.accounts[account];
+export function reserveOf(budgets: TeamFile['budgets'], account: string): number | null {
+  const entry = budgets.accounts[account];
   return entry?.kind === 'subscription' ? entry.reserve : null;
 }
 

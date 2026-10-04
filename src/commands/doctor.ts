@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { accessSync, constants } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
-import { approvalDifferences, watchInForce } from '../approve/approval.ts';
+import { approvalDifferences, budgetsInForce, watchInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { checkReadings } from '../budgets/checks.ts';
 import { loadTeamFile } from '../file/load.ts';
@@ -107,7 +107,7 @@ function launchBinary(launch: string): string | null {
 function checkFindings(team: TeamFile, root: string, home: string): Finding[] {
   const record = readApproval(storePath(team.project, root, home));
   if (!record) return [];
-  return checkReadings(team, record.approval.checks).flatMap((reading) =>
+  return checkReadings(budgetsInForce(team, root, home), record.approval.checks).flatMap((reading) =>
     reading.state === 'unknown'
       ? [{ level: 'warn' as const, text: `the check for ${reading.account} is unapproved; that account reads unknown` }]
       : [],
