@@ -2,10 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
-import { classify, classifyComposer, readFold, readScreen } from '../../src/watch/screen.ts';
+import { classify, classifyComposer, readBox, readFold, readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
-import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
+import { boxHoldsText, deliverRules, type Delivery } from '../../src/launch/deliver.ts';
+import { NUDGE_TEXT } from '../../src/watch/pass.ts';
 import { upPlan } from '../../src/launch/plan.ts';
+import { wordWrap } from '../helpers.ts';
 
 const fixture = (name: string) =>
   readFileSync(new URL(`../fixtures/cursor/2026.10.01/${name}.txt`, import.meta.url), 'utf8');
@@ -230,14 +232,29 @@ describe('Cursor launch and captured screens', () => {
   });
 });
 
-/** The captured idle frame once `text` sits in the box: the placeholder row replaced, the text's
- *  first line after the prompt, every later line at the column the captured wrap draws
- *  continuation rows in — four columns, the prompt row's own width (see the fixtures README). */
-function boxed(text: string): string {
-  const [first = '', ...rest] = text.split('\n');
+/** The captured idle frame once `lines` sit in the box: the placeholder row replaced, the first
+ *  line after the prompt, every later line at the column the captured wrap draws continuation
+ *  rows in — four columns, the prompt row's own width (see the fixtures README). */
+function box(lines: string[]): string {
+  const [first = '', ...rest] = lines;
   const body = [`  → ${first}`, ...rest.map((line) => `    ${line}`)].join('\n');
   return fixture('idle').replace('  → Plan, search, build anything', body);
 }
+
+function boxed(text: string): string {
+  return box(text.split('\n'));
+}
+
+/** The pane's own wrap, as the captured `unsent.txt` shows it: a line wider than the pane's
+ *  content column breaks at a space, the words that fit on the row and the rest continued at the
+ *  text column (the pane is the prompt row's four columns plus its content). */
+function wrapped(text: string, pane: number): string {
+  return box(wordWrap(text, pane - 4));
+}
+
+// The rules message the real capture holds, as team composed it: the 80-character sentence
+// Cursor wrapped over two rows on its 51-column pane (see the fixtures README).
+const CAPTURED_WRAP = 'Reply with exactly RULES_RECEIVED. Do not use tools. Do not read or write files.';
 
 function delivery(initial = 'idle') {
   let raw = fixture(initial);
@@ -264,18 +281,67 @@ describe('Cursor rules delivery', () => {
     expect(d.calls).toEqual(['Rules.', 'Enter']);
   });
 
-  test('the captured wrapped paste is not entered: its wrap cannot be checked', async () => {
-    // unsent.txt is the capture of this message wrapped over two rows at the pane's width (the
-    // first row is 45 characters; the next word would not fit). The profile declares no wrap
-    // rule, so the box's two rows cannot be joined to the typed line without guessing where
-    // Cursor wrapped. Delivery holds the Enter and the report says the rules were not delivered.
-    const message = 'Reply with exactly RULES_RECEIVED. Do not use tools. Do not read or write files.';
-    expect(readFold('cursor', fixture('unsent'))).toBeNull();
-    expect(readScreen('cursor', fixture('unsent')).kind).toBe('unsent');
+  test('the captured wrapped paste reads back through the profile\'s wrap and is entered', async () => {
+    // unsent.txt is this sentence word-wrapped on the pane's 51 columns: the words that fit on
+    // the first row (45 characters; the next word would not), the rest continued at the text
+    // column. The profile's wrap rule joins the rows back into the typed line, so the box is
+    // observed to hold the paste and its Enter is sent.
+    const message = CAPTURED_WRAP;
+    const capture = fixture('unsent');
+    expect(readFold('cursor', capture)).toBeNull();
+    expect(readScreen('cursor', capture).kind).toBe('unsent');
+    // The capture is this very wrap: its box rows are the model's, joined back to the sentence.
+    const box = readBox('cursor', capture);
+    if (!box) throw new Error('the capture has no box');
+    const rows = wordWrap(message, 51 - 4);
+    expect([box.first, ...box.rows.map((row) => row.trim())]).toEqual(rows);
     const d = delivery();
     d.io.type = (text) => { d.calls.push(text); d.show('unsent'); return true; };
-    expect(await deliverRules('cursor', message, 1, d.io)).toBe(false);
-    expect(d.calls).toEqual([message]);
+    expect(await deliverRules('cursor', message, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([message, 'Enter']);
+  });
+
+  test.each([40, 51, 80])('the rules sentence wrapped on a %s-column pane still gets its Enter', async (pane) => {
+    // Wider and narrower panes wrap the same sentence over more or fewer rows; the wrap rule
+    // joins them all, and every pane that shows the whole sentence gets the Enter.
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(wrapped(text, pane)); return true; };
+    expect(await deliverRules('cursor', CAPTURED_WRAP, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([CAPTURED_WRAP, 'Enter']);
+  });
+
+  test('the nudge, wrapped on the same pane, reads back and is entered', async () => {
+    // The watch's nudge and the exit typing share this gate (`boxHoldsText`). On the 51-column
+    // pane Cursor wraps the nudge exactly as it wrapped the rules sentence; a box holding
+    // something else is still refused.
+    expect(boxHoldsText('cursor', NUDGE_TEXT, wrapped(NUDGE_TEXT, 51))).toBe(true);
+    const person = 'Someone else wrote this line and it is not the nudge';
+    expect(boxHoldsText('cursor', NUDGE_TEXT, wrapped(person, 51))).toBe(false);
+  });
+
+  test('a wrapped box holding a person\'s own text gets no Enter', async () => {
+    // The same wrap, a different sentence: joined it is not the typed text.
+    const d = delivery();
+    const person = 'Someone else wrote this sentence on the pane and its words are not ours.';
+    d.io.type = (text) => { d.calls.push(text); d.showText(wrapped(person, 51)); return true; };
+    expect(await deliverRules('cursor', CAPTURED_WRAP, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([CAPTURED_WRAP]);
+  });
+
+  test('a wrapped box with one character changed gets no Enter', async () => {
+    const d = delivery();
+    const changed = CAPTURED_WRAP.replace('RULES_RECEIVED', 'RULES_RECEIVFD');
+    d.io.type = (text) => { d.calls.push(text); d.showText(wrapped(changed, 51)); return true; };
+    expect(await deliverRules('cursor', CAPTURED_WRAP, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([CAPTURED_WRAP]);
+  });
+
+  test('a wrapped box with an extra row below it gets no Enter', async () => {
+    const d = delivery();
+    const extra = [...wordWrap(CAPTURED_WRAP, 51 - 4), 'and a line of their own'];
+    d.io.type = (text) => { d.calls.push(text); d.showText(box(extra)); return true; };
+    expect(await deliverRules('cursor', CAPTURED_WRAP, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([CAPTURED_WRAP]);
   });
 
   test('a box holding a person\'s own text gets no Enter', async () => {

@@ -15,7 +15,7 @@ import { parseLoadavg, parseMeminfo, parseMemoryPressure, parseSwapUsage, readMa
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, NUDGE_TEXT, pass } from '../src/watch/pass.ts';
 import { readScreen } from '../src/watch/screen.ts';
-import { claudeBox, testIo } from './helpers.ts';
+import { claudeBox, testIo, wordWrap } from './helpers.ts';
 
 const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url), 'utf8')
   .replace('operator: claude-coordinator-acme', 'operator: claude-operator-acme')
@@ -739,6 +739,17 @@ describe('team watch', () => {
 
   test('the box, read back before the Enter, is the nudge\'s own: the Enter is sent', async () => {
     await runWatch(['--file', file], testIo(dir), sources(1));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+  });
+
+  test('a wrapped box that reads back as the nudge gets its Enter', async () => {
+    // A narrow pane wraps the nudge onto continuation rows. Claude Code's captures show no
+    // composer wrap, so no wrap is modelled for it: the rows must read back as the nudge's own
+    // text in order, and then the Enter is the nudge's.
+    const wrapped = claudeBox(wordWrap(NUDGE_TEXT, 24).join('\n'));
+    await runWatch(['--file', file], testIo(dir), sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = wrapped; return true; },
+    }));
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
   });
 

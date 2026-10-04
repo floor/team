@@ -150,6 +150,31 @@ describe('Antigravity rules delivery', () => {
     expect(d.calls).toEqual(['Rules.']);
   });
 
+  test('an ordinary box whose rows are the typed line hard-wrapped is entered', async () => {
+    // No Antigravity capture shows its composer wrapping an ordinary line — a long paste folds —
+    // so no wrap is modelled for it: the box rows must read back as the typed line laid out in
+    // order, the continuation at the prompt row's two columns, and then the Enter is the paste's.
+    const long = 'These are standing rules, not a task: reply ready and wait for your brief.';
+    const chunks: string[] = [];
+    for (let at = 0; at < long.length; at += 53) chunks.push(long.slice(at, at + 53));
+    expect(chunks.length).toBeGreaterThan(1);
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed(chunks.join('\n'))); return true; };
+    expect(await deliverRules('antigravity', long, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([long, 'Enter']);
+  });
+
+  test('a hard-wrapped box with one character changed gets no Enter', async () => {
+    const long = 'These are standing rules, not a task: reply ready and wait for your brief.';
+    const changed = long.replace('reply ready', 'reply reidy');
+    const chunks: string[] = [];
+    for (let at = 0; at < changed.length; at += 53) chunks.push(changed.slice(at, at + 53));
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed(chunks.join('\n'))); return true; };
+    expect(await deliverRules('antigravity', long, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([long]);
+  });
+
   test('a boxed multi-line paste reads back row for row and is entered', async () => {
     const d = delivery();
     expect(await deliverRules('antigravity', 'Rules.\nOne more line.', 1, d.io)).toBe(true);

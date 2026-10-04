@@ -13,6 +13,23 @@ export function claudeBox(text: string): string {
   return [rule, `❯ ${first}`, ...rest.map((line) => `  ${line}`), rule, status].join('\n') + '\n';
 }
 
+/** Greedy word wrap at a content width: as many words as fit on one row, the rest on the next —
+ *  how a pane breaks a line wider than its text column. The captured Cursor frame is this wrap of
+ *  its sentence at the pane's content width. */
+export function wordWrap(text: string, width: number): string[] {
+  const rows: string[] = [];
+  for (const line of text.split('\n')) {
+    let row = '';
+    for (const word of line.split(' ')) {
+      if (row === '') row = word;
+      else if (row.length + 1 + word.length <= width) row += ` ${word}`;
+      else { rows.push(row); row = word; }
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
 export function testIo(cwd: string, caller?: Caller): TestIo {
   const io: TestIo = {
     out: '',

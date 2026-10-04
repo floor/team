@@ -6,6 +6,7 @@ import { classify, classifyComposer, readScreen } from '../../src/watch/screen.t
 import { runningModel } from '../../src/status/statusline.ts';
 import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
 import { upPlan } from '../../src/launch/plan.ts';
+import { wordWrap } from '../helpers.ts';
 
 const fixture = (name: string) => readFileSync(new URL(`../fixtures/codex/0.157.0/${name}.txt`, import.meta.url), 'utf8');
 
@@ -150,6 +151,26 @@ describe('Codex rules delivery', () => {
     d.io.type = (text) => { d.calls.push(text); d.showText(boxed('Rules.\nand a line of their own')); return true; };
     expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
     expect(d.calls).toEqual(['Rules.']);
+  });
+  test('a box whose rows are the typed line word-wrapped on the pane is entered', async () => {
+    // No Codex capture shows its composer wrapping a line, so no wrap is modelled for it: the
+    // box rows must read back as the typed line laid out in order — the words that fit, the rest
+    // continued at the prompt row's two columns — and then the Enter is the paste's.
+    const line = 'End every commit message and every pull request body with your signature, given below.';
+    const rows = wordWrap(line, 53 - 2);
+    expect(rows.length).toBeGreaterThan(1);
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed(rows.join('\n'))); return true; };
+    expect(await deliverRules('codex', line, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([line, 'Enter']);
+  });
+  test('a word-wrapped box with one character changed gets no Enter', async () => {
+    const line = 'End every commit message and every pull request body with your signature, given below.';
+    const changed = line.replace('signature', 'signatvre');
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed(wordWrap(changed, 53 - 2).join('\n'))); return true; };
+    expect(await deliverRules('codex', line, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([line]);
   });
   test.each(['permission', 'trust', 'startup', 'unsent', 'exit', 'working'])('types nothing at %s', async (screen) => {
     const d = delivery(screen);
