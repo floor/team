@@ -92,7 +92,12 @@ screen:
         - '^[^\S\n]*[✢✳✶✻✼✽][^\n]*…\s*\(\s*\d'
   composer:
     mode: box-to-rule
-    prompt: '^\s*[❯›>]'
+    # The prompt sits at the pane's first column, as unsent-typed-ansi.txt draws `❯ Fix the`;
+    # the pane draws continuation rows at the content column — two spaces — so a prompt glyph
+    # on one of those is content, never the input row. The reader takes the box's first row
+    # under its opening rule and anchors this pattern to the captured column: a row the box
+    # holds can never be mistaken for the input.
+    prompt: '^[❯›>]'
     # The box's two rules, as unsent-typed-ansi.txt draws them: one unbroken run of ─ from the
     # pane's first column, the closing rule the window's last rule row. A rule-looking row the
     # box holds is drawn at the content column and is content, never the frame.
