@@ -823,9 +823,10 @@ seats:
       const passResult = pass({
         team: resTeam.team,
         watch: resTeam.team.watch,
-        state: { id: 'test', team: 'test', seats: [{ name: 'bot', pane: 'w0:p1', live: true }] },
+        state: { seats: { bot: { pane: 'w0:p1', stage: 'ready' } }, worktrees: {} },
         live: {
-          agents: [{ name: 'bot', workspace: 'w0', pane: 'w0:p1', status: 'idle' }],
+          running: true,
+          agents: [{ name: 'bot', workspace: 'w0', pane: 'w0:p1', status: 'idle', agent: 'codex', cwd: '.' }],
           screens: { 'w0:p1': 'some terminal text' },
           workspaces: [{ id: 'w0', label: 'workspace 0' }],
         },
