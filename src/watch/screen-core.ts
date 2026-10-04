@@ -598,9 +598,11 @@ function statusLast(
   // Cursor's follow-up-queue-typed.txt queued text). Reading the echo as a live row made
   // every post-send idle seat `unknown` — a seat that could then never be dispatched to or
   // nudged — so the empty input row under its frame reads `idle`, exactly as main reads it.
-  // Codex has no typed-newline capture (the trust dialog blocked it): this rests on the
-  // captured continuation column of wrapped text, not on a typed-newline capture, which is
-  // still to be taken.
+  // Codex's typed-newline captures (typed-two-lines.txt, pasted-two-lines.txt,
+  // second-line-glyph.txt, second-line-gt.txt, wrapped-line.txt, blank-middle.txt) draw
+  // every later line of a person's text at the continuation column, two: typed, pasted,
+  // wrapped, after a blank line, or beginning with the prompt glyph. None is drawn at the
+  // prompt column.
   //
   // A window that starts at or inside the box, or a visible continuation or prompt row
   // pressed against the prompt from above, is not the frame the captures draw, and the rows
