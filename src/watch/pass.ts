@@ -153,6 +153,15 @@ export function pass(
     }
   }
 
+  // A stopped seat is kept in the file and not started: herdr may still show one running (the
+  // owner started it by hand). `status` names that difference; the watch stays silent about it,
+  // and above all must not call it an agent the file doesn't hold.
+  for (const seat of team.seats) {
+    if (!seat.stopped) continue;
+    const agent = live.agents.find((candidate) => candidate.name === seat.name);
+    if (agent) known.add(agent.pane);
+  }
+
   for (const agent of live.agents) {
     if (known.has(agent.pane) || labels.get(agent.workspace) === WATCH_LABEL) continue;
     once(`extra:${agent.pane}`, `${agent.name ?? `an unnamed ${agent.agent ?? 'agent'}`} (${agent.pane}) is running and is not in the file`);
