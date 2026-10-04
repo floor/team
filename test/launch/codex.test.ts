@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { codex } from '../../src/profiles/codex.ts';
+import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
 import { readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
@@ -8,6 +8,9 @@ import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
 import { upPlan } from '../../src/launch/plan.ts';
 
 const fixture = (name: string) => readFileSync(new URL(`../fixtures/codex/0.157.0/${name}.txt`, import.meta.url), 'utf8');
+
+const codex = profileFor('codex');
+if (!codex) throw new Error('codex has no profile');
 
 describe('Codex launch and captured screens', () => {
   test('unattended flags are launch arguments; rules are a first message', () => {
@@ -55,6 +58,7 @@ describe('Codex launch and captured screens', () => {
   test('launch model ids and the captured footer map to separate model and version fields', () => {
     expect(codex.modelOf('codex -m gpt-6-sol -c model_reasoning_effort=high')).toEqual({ model: 'GPT Sol', version: '6' });
     expect(codex.modelOf('codex --model=gpt-5.6-terra')).toEqual({ model: 'GPT Terra', version: '5.6' });
+    expect(codex.modelOf('codex -m gpt-6-sol -m gpt-5.6-terra')).toEqual({ model: 'GPT Terra', version: '5.6' });
     expect(codex.modelOf('codex -m unknown')).toBeNull();
     expect(codex.modelOf('launcher')).toBeNull();
     expect(runningModel('codex', fixture('idle'))).toEqual({ model: 'GPT Terra', version: '5.6' });

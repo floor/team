@@ -3,6 +3,39 @@
 # ignore_case would apply to the whole rule.
 format: 1
 cli: claude-code
+binary: claude
+process_names:
+  - claude
+tested:
+  from: '2.1.288'
+  to: '2.1.288'
+unattended:
+  - --dangerously-skip-permissions
+rules:
+  option: --append-system-prompt
+login:
+  check:
+    - auth
+    - status
+  hint: claude auth login
+exit: /exit
+timeouts:
+  idle: 90s
+  exit: 30s
+models:
+  option:
+    - --model
+  ids:
+    - match: '^claude-(opus|sonnet|haiku|fable)-([0-9]+)-([0-9]{1,2})(?:-[0-9]{8})?$'
+      model: 'Claude {1:title}'
+      version: '{2}.{3}'
+    - match: '^claude-(opus|sonnet|haiku|fable)-([0-9]+)(?:-[0-9]{8})?$'
+      model: 'Claude {1:title}'
+      version: '{2}'
+status_model:
+  - match: '(?:^|[\s·|])(Opus|Sonnet|Haiku|Fable)\s+([0-9]+(?:\.[0-9]+)*)(?:$|[\s·|])'
+    model: 'Claude {1}'
+    version: '{2}'
 screen:
   trust:
     - all:

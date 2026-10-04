@@ -2,6 +2,37 @@
 # unknown before trust. The braille range is written as characters: \u is refused.
 format: 1
 cli: cursor
+binary: cursor-agent
+process_names:
+  - cursor-agent
+tested:
+  from: '2026.10.01'
+  to: '2026.10.01'
+unattended:
+  - --force
+  - --sandbox
+  - disabled
+rules: first-message
+login:
+  check:
+    - status
+  hint: cursor-agent login
+exit: /exit
+timeouts:
+  idle: 90s
+  exit: 30s
+models:
+  option:
+    - --model
+  ids:
+    - match: '^(?:cursor-)?grok-([0-9]+(?:\.[0-9]+)*)(?:-(?:xhigh|high|medium|low)(?:-fast)?|-fast)?$'
+      ignore_case: true
+      model: Grok
+      version: '{1}'
+status_model:
+  - match: '(?:^|\s)Grok\s+([0-9]+(?:\.[0-9]+)*)\b'
+    model: Grok
+    version: '{1}'
 screen:
   unknown:
     - any: ['To resume this session:']
