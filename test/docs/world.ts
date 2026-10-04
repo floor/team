@@ -94,12 +94,15 @@ export type World = {
   setMachine(kind: Spec['machine']): void;
   /** One CLI's installed-and-logged-in state, on top of the fixture's own. */
   setTools(tools: Record<string, ToolState>): void;
+  /** The session's state in herdr, for one example (`herdr=` on a console fence). */
+  setHerdr(kind: Spec['herdr']): void;
   readonly did: {
     starts: number;
     runs: string[];
     typed: string[];
     closed: string[];
     stopped: number;
+    deleted: string[];
     killed: number[];
     notified: string[];
   };
@@ -115,7 +118,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
   let watchPid: number | null = spec.watch === 'alive' || spec.watch === 'stale' ? WATCH_PID : null;
   let made = 0;
   const slots: Slot[] = [];
-  const did: World['did'] = { starts: 0, runs: [], typed: [], closed: [], stopped: 0, killed: [], notified: [] };
+  const did: World['did'] = { starts: 0, runs: [], typed: [], closed: [], stopped: 0, deleted: [], killed: [], notified: [] };
   const now = () => new Date(clock);
   const sleep = async (ms: number) => {
     clock += ms;
@@ -178,6 +181,12 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
       return true;
     },
     sessionUp: () => herdr === 'running',
+    // The one case `team` deletes a session: `up` clearing one its own `down` stopped.
+    deleteSession(_session: string) {
+      did.deleted.push(_session);
+      herdr = 'absent';
+      return true;
+    },
     createWorkspace(_session: string, cwd: string, label: string) {
       const seat = team?.seats.find((candidate) => candidate.label === label);
       made++;
@@ -342,10 +351,14 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     setTools(tools) {
       toolState = { ...spec.tools, ...tools };
     },
+    setHerdr(kind) {
+      herdr = kind;
+    },
     upSources(): UpSources {
       return {
         sessionRunning: () => (herdr === 'none' ? null : herdr === 'running'),
         sessionState: action.sessionState,
+        deleteSession: action.deleteSession,
         agents: () => (herdr === 'running' ? agents() : []),
         workspaces: () => (herdr === 'running' ? workspaces() : []),
         home,

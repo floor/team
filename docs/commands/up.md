@@ -5,6 +5,9 @@ declares and this machine can run, and the watchdog pane that runs `team watch`.
 are left as they are; a seat stopped in the file is left out until `team add` starts it. `--dry-run`
 prints the plan and runs nothing.
 
+A session this team's own `down` stopped is cleared by `up` itself, in one line, and the team starts
+again; a session stopped any other way is still refused until its owner clears it.
+
 A seat that isn't `mode: shared` and works in worktrees (`workspace.mode: worktree` is the default)
 starts in the lobby, never in the project root, which holds the owner's uncommitted work. The lobby
 is the folder that holds the worktrees with `.lobby` beside them — the parent of `workspace.path` —
@@ -26,11 +29,13 @@ as they trusted the worktrees. Then it starts.
 ## What it reads and writes
 
 Reads the team file (or the one `--file` names), this machine's approval store, the session's state
-(`.agents/team.state.json`), herdr (whether the session is up, its agents and workspaces), the
-doctor's findings, and the machine's load, free memory, free disk and free swap. Writes
-`.agents/team.state.json` (each seat's stage, pane and workspace; the watch's pid and heartbeat),
-`.agents/team.log`, the lobby folder a seat that works in worktrees waits in, and, through herdr:
-the server, one workspace per seat and one for the watchdog, each seat's launch, and the watch.
+(`.agents/team.state.json`, for each seat's stage and for whether this team's own `down` stopped the
+session), herdr (whether the session is up, its agents and workspaces), the doctor's findings, and
+the machine's load, free memory, free disk and free swap. Writes `.agents/team.state.json` (each
+seat's stage, pane, workspace and the CLI it was launched with; the watch's pid and heartbeat; the
+stop record, once acted on, is dropped), `.agents/team.log`, the lobby folder a seat that works in
+worktrees waits in, and, through herdr: the stopped session it clears when its own `down` stopped
+it, the server, one workspace per seat and one for the watchdog, each seat's launch, and the watch.
 
 ## Who may run it
 
@@ -55,7 +60,8 @@ exits 0.
 
 A seat that reaches its idle prompt with its rules delivered prints `<seat>: ready`. A seat already
 ready, stopped in the file, or on a CLI with no launch profile prints one `  skip` line and is left
-as it is. The watch prints `watch: started`.
+as it is. The watch prints `watch: started`. A session this team's own `down` stopped prints
+``session <session>: stopped by `team down`; cleared`` first, and the team starts again.
 
 A seat that doesn't get there is printed once with what stopped it, and `up` exits 1:
 
@@ -111,6 +117,11 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 
 A watch that has not run, or whose heartbeat is old, is not a reason to refuse: `up` starts the
 watch itself.
+
+A session this team's own `down` stopped is not refused either: the state records the stop, `up`
+deletes the stopped session itself — the one case `team` deletes one — and says
+``session beacon: stopped by `team down`; cleared`` in one line before starting the team. A session
+stopped any other way keeps the refusal above.
 
 ## Exit codes
 
@@ -200,6 +211,20 @@ A seat is not the owner, so it can read a plan but not start a team:
 $ team up ; echo "exit $?"
 team up: only the owner runs `up`, from a terminal outside herdr; this call is claude-beacon
 exit 1
+```
+
+After `team down`, the session sits stopped in herdr's list, and the seats and the watch are gone
+from the state. This stop the team's own `down` made, so `up` clears the session itself and starts
+the team again:
+
+```console herdr=stopped-by-down
+$ team up ; echo "exit $?"
+session beacon: stopped by `team down`; cleared
+claude-keeper: ready
+claude-beacon: ready
+  skip claude-qa: stopped in the file; start it with `team add claude-qa`
+watch: started
+exit 0
 ```
 
 An owner section changed in the file needs a new approval, and the plan says so before the run:

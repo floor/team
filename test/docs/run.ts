@@ -172,9 +172,11 @@ function diff(expected: string, produced: string): string {
 }
 
 /**
- * `screens="claude-beacon=question"`, `machine="tight"` and `tools="codex=logged-out"` on a
- * `console` fence: the world that block's commands run in. Each lasts for the block alone — the
- * fixture's own world is back for the next one.
+ * `screens="claude-beacon=question"`, `machine="tight"`, `tools="codex=logged-out"` and
+ * `herdr=stopped-by-down` on a `console` fence: the world that block's commands run in. Each lasts
+ * for the block alone — the fixture's own world is back for the next one. `stopped-by-down` is a
+ * stopped session the team's own `down` stopped, and the state is left as a real `down` leaves it:
+ * the stop recorded, the seats it stopped gone, the watch's pid dead.
  */
 function blockWorld(page: Page, block: Block): void {
   const world = page.world as World;
@@ -201,6 +203,23 @@ function blockWorld(page: Page, block: Block): void {
     }
     world.setTools(state);
   }
+  const herdr = block.attrs.herdr;
+  if (herdr) {
+    if (herdr === 'stopped-by-down') {
+      world.setHerdr('stopped');
+      updateState(join(page.fixture.root, '.agents'), (state) => {
+        const record = (state.sessions[page.session] ??= emptySession());
+        record.stopped = { at: page.spec.now, by: 'the owner' };
+        record.seats = {};
+        delete record.watch;
+      });
+    } else {
+      if (herdr !== 'running' && herdr !== 'absent' && herdr !== 'stopped' && herdr !== 'none') {
+        throw new Error(`herdr="${herdr}": it is running, absent, stopped, stopped-by-down or none`);
+      }
+      world.setHerdr(herdr);
+    }
+  }
 }
 
 function restoreWorld(page: Page, block: Block): void {
@@ -211,6 +230,7 @@ function restoreWorld(page: Page, block: Block): void {
   }
   if (block.attrs.machine) world.setMachine(page.spec.machine);
   if (block.attrs.tools) world.setTools(page.spec.tools);
+  if (block.attrs.herdr) world.setHerdr(page.spec.herdr);
 }
 
 async function consoleBlock(page: Page, block: Block, failures: Failure[]): Promise<void> {

@@ -273,7 +273,20 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     },
     renameAgent: () => false,
     closeWorkspace: launch.closeWorkspace,
-    stopSession: launch.stopSession,
+    stopSession(name) {
+      const stopped = launch.stopSession(name);
+      // A record that this team's own `down` stopped the session: the next `up` clears the
+      // session itself instead of refusing on the stopped remnant herdr keeps listed.
+      if (stopped) {
+        updateState(dir, (file) => {
+          (file.sessions[session] ??= emptySession()).stopped = {
+            at: now().toISOString(),
+            by: describeCaller(caller),
+          };
+        });
+      }
+      return stopped;
+    },
     kill: launch.kill,
     agentPanes(sessionName) {
       const listed = launch.agentPanes(sessionName);

@@ -17,6 +17,7 @@ import {
   paneRun,
   typeText,
   pressEnter,
+  sessionDelete,
   sessionRunning,
   sessionState,
   startServer,
@@ -118,6 +119,7 @@ const realLaunch: Launch = {
 export const realSources: UpSources = {
   sessionRunning,
   sessionState,
+  deleteSession: sessionDelete,
   agents: (session) => agentList(aim(session)),
   workspaces: (session) => workspaceList(aim(session)),
   home: homedir(),
@@ -264,16 +266,20 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     if (problem) refusals.push(problem);
   }
 
+  const recorded = readState(dir).sessions[session];
+  // A session this team's own `down` stopped is cleared here; any other stopped session is the
+  // owner's to clear, and the refusal says the command.
+  const stoppedByDown = state === 'stopped' && Boolean(recorded?.stopped);
   if (state === null) refusals.push("herdr doesn't answer");
-  if (state === 'stopped') {
+  if (state === 'stopped' && !stoppedByDown) {
     refusals.push(`session ${session} is stopped; clear it with \`herdr session delete ${session}\``);
   }
   const agents = state === 'running' ? sources.agents(session) : [];
   if (state === 'running') {
-    const recorded = readState(dir).sessions[session]?.seats ?? {};
+    const seatsOf = recorded?.seats ?? {};
     if (agents === null) refusals.push(`session ${session} runs, and its agents can't be read`);
     else {
-      const unknown = agents.filter((agent) => !agent.name || !Object.hasOwn(recorded, agent.name));
+      const unknown = agents.filter((agent) => !agent.name || !Object.hasOwn(seatsOf, agent.name));
       if (unknown.length) {
         refusals.push(
           `session ${session} has ${unknown.length} agent${unknown.length === 1 ? '' : 's'} this file's state doesn't record: \`up\` never touches a running team`,
@@ -282,7 +288,6 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     }
   }
 
-  const recorded = readState(dir).sessions[session];
   const workspaces = sources.workspaces?.(session) ?? null;
   const readings = loadReadings(dir);
   const spend = loadSpendReadings(dir);
@@ -322,8 +327,9 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const plan = upPlan({
     root,
     session,
-    // A stopped session is not started. The refusal above names the delete command.
-    sessionRunning: state === 'running' || state === 'stopped',
+    // A stopped session `team` did not stop is not started; the refusal names the delete command.
+    // One its own `down` stopped is cleared below, so the plan starts it from the beginning.
+    sessionRunning: state === 'running' || (state === 'stopped' && !stoppedByDown),
     seats,
     watchAlive: Boolean(watch && sources.alive?.(watch.pid)),
     watchLine: (sources.watchCommand ?? watchCommand)(session),
@@ -331,6 +337,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
 
   if (dry) {
     for (const refusal of refusals) io.stdout(`! up would refuse: ${refusal}\n`);
+    if (stoppedByDown) io.stdout(`session ${session}: stopped by \`team down\`; this run would clear it\n`);
     io.stdout(formatPlan(plan));
     return 0;
   }
@@ -342,6 +349,21 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   if (!launch) {
     io.stderr('team up: this call has no way to reach herdr\n');
     return 1;
+  }
+
+  if (stoppedByDown) {
+    if (!(sources.deleteSession?.(session) ?? false)) {
+      io.stderr(`team up: session ${session} is stopped and did not clear; run \`herdr session delete ${session}\`\n`);
+      return 1;
+    }
+    io.stdout(`session ${session}: stopped by \`team down\`; cleared\n`);
+  }
+  if (stoppedByDown || recorded?.stopped) {
+    // The record has said what it had to: the marker is only meaningful while the session sits
+    // stopped, and this run has seen the session again — cleared, running, or gone.
+    updateState(dir, (file) => {
+      delete file.sessions[session]?.stopped;
+    });
   }
 
   const ceilings = readApproval(storePath(team.project, root, sources.home))?.approval.ceilings ?? null;
