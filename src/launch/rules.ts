@@ -48,7 +48,25 @@ export function seatRules(input: RulesInput): string[] {
   return [...own, ...input.rules, ...signing, ...working];
 }
 
-/** The rules as the one text a launch option or a first message carries. */
-export function rulesText(input: RulesInput): string {
-  return ['Rules for this session, from the team file:', ...seatRules(input).map((rule) => `- ${rule}`)].join('\n');
+/** How the rules reach a seat: typed as its first message, or carried as a launch option. */
+export type RulesDelivery = 'message' | 'option';
+
+/**
+ * The line each form ends with. The message says what the rules are and never that they are not a
+ * task, so some models start complying by investigating instead of waiting for a brief. A first
+ * message is answered once, so it can ask for the ready reply; a system prompt (a launch option)
+ * stays in force on every later turn, so it must not: a Claude seat could answer "ready" to its
+ * real brief.
+ */
+const CLOSING: Record<RulesDelivery, string> = {
+  message: 'These are standing rules, not a task: reply ready and wait for your brief.',
+  option: 'These are standing rules, not a task.',
+};
+
+/** The rules as the one text a launch option or a first message carries, the closing line last. */
+export function rulesText(input: RulesInput, delivery: RulesDelivery): string {
+  // A file whose own rules already carry the form's closing line gets it once: as the closing line.
+  const closing = CLOSING[delivery];
+  const rules = seatRules(input).filter((rule) => rule !== closing);
+  return ['Rules for this session, from the team file:', ...rules.map((rule) => `- ${rule}`), closing].join('\n');
 }

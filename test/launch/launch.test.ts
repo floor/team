@@ -102,9 +102,40 @@ describe('the rules of a seat', () => {
   });
 
   test('are one text, a rule per line', () => {
-    const text = rulesText(rulesInput);
-    expect(text.split('\n')).toHaveLength(10);
+    const text = rulesText(rulesInput, 'message');
+    expect(text.split('\n')).toHaveLength(11);
     expect(text).toStartWith('Rules for this session, from the team file:\n- End every commit');
+  });
+
+  const closingMessage = 'These are standing rules, not a task: reply ready and wait for your brief.';
+  const closingOption = 'These are standing rules, not a task.';
+
+  test('a first message ends with the standing-rules line, whatever the file holds', () => {
+    const lastLine = (input: RulesInput) => rulesText(input, 'message').split('\n').at(-1);
+    // A seat with rules, a seat with only signature lines, and a team file with an empty `rules:`.
+    expect(lastLine(rulesInput)).toBe(closingMessage);
+    expect(lastLine({ ...rulesInput, rules: [] })).toBe(closingMessage);
+    expect(lastLine({ ...rulesInput, rules: [], workspace: { mode: 'shared', protected: [] } })).toBe(closingMessage);
+  });
+
+  test('a launch option ends with only the standing-rules line, whatever the file holds', () => {
+    const lastLine = (input: RulesInput) => rulesText(input, 'option').split('\n').at(-1);
+    // A system prompt stays in force on every later turn, so it never asks for the ready reply.
+    expect(lastLine(rulesInput)).toBe(closingOption);
+    expect(lastLine({ ...rulesInput, rules: [] })).toBe(closingOption);
+    expect(lastLine({ ...rulesInput, rules: [], workspace: { mode: 'shared', protected: [] } })).toBe(closingOption);
+  });
+
+  test('a file whose rules already end with the closing line gets it once, last', () => {
+    const message = rulesText({ ...rulesInput, rules: [...rulesInput.rules, closingMessage] }, 'message');
+    expect(message.split(closingMessage)).toHaveLength(2);
+    expect(message.split('\n').at(-1)).toBe(closingMessage);
+    expect(message).not.toContain(`- ${closingMessage}`);
+
+    const option = rulesText({ ...rulesInput, rules: [...rulesInput.rules, closingOption] }, 'option');
+    expect(option.split(closingOption)).toHaveLength(2);
+    expect(option.split('\n').at(-1)).toBe(closingOption);
+    expect(option).not.toContain(`- ${closingOption}`);
   });
 });
 

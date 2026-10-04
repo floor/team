@@ -20,6 +20,8 @@ const FILE = ['--file', '.agents/team.yaml'];
 const NOW = new Date('2026-10-03T14:02:00Z');
 const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
 const PERMISSION = 'Do you want to proceed?\n1. Yes\n';
+const CLOSING_MESSAGE = 'These are standing rules, not a task: reply ready and wait for your brief.';
+const CLOSING_OPTION = 'These are standing rules, not a task.';
 
 let base: string;
 let root: string;
@@ -188,6 +190,8 @@ describe('team up, live', () => {
       expect(code).toBe(0);
       expect(seat).toMatchObject({ stage: 'ready', rules: 'message' });
       expect(sent[0]).toContain('Agent: GPT-6 Sol · implementer');
+      // The typed first message is answered once, so it asks for the ready reply.
+      expect(sent[0]).toEndWith(CLOSING_MESSAGE);
       expect(sent[1]).toBe('Enter');
       expect(made.runs.some(({ command }) => command.startsWith('Rules for this session'))).toBe(false);
     } else if (outcome === 'swallowed') {
@@ -239,6 +243,8 @@ describe('team up, live', () => {
       expect(code).toBe(0);
       expect(seat).toMatchObject({ stage: 'ready', rules: 'message' });
       expect(sent[0]).toContain('Agent: Gemini 3.8 Flash · implementer');
+      // The typed first message is answered once, so it asks for the ready reply.
+      expect(sent[0]).toEndWith(CLOSING_MESSAGE);
       expect(sent[1]).toBe('Enter');
       expect(made.runs.some(({ command }) => command.startsWith('Rules for this session'))).toBe(false);
     } else if (outcome === 'swallowed') {
@@ -277,6 +283,13 @@ describe('team up, live', () => {
     expect(seats['claude-coordinator-acme']?.stage).toBe('ready');
     expect(seats['claude-coordinator-acme']?.rules).toBe('option');
     expect(seats['deepseek-acme-2']?.pane).toBe('w3:p1');
+    // The system-prompt option stays in force on every later turn: it closes without asking for a reply.
+    const launches = made.runs.filter(({ command }) => command.includes('--append-system-prompt'));
+    expect(launches).toHaveLength(3);
+    for (const { command } of launches) {
+      expect(command).toEndWith(`${CLOSING_OPTION}'`);
+      expect(command).not.toContain('reply ready and wait for your brief');
+    }
     expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain('watch: started');
   });
 
@@ -633,6 +646,31 @@ describe('team down, live', () => {
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
     expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is\n');
+  });
+
+  test('a pinned Codex permission after the exit text gets no Enter', async () => {
+    const pinned = readScreen(
+      'codex',
+      readFileSync(new URL('../fixtures/codex/0.157.0/permission-pinned.txt', import.meta.url), 'utf8'),
+    );
+    const run = harness({ kind: 'idle' });
+    let screen: Screen = { kind: 'idle' };
+    run.launch.typeText = (_session, _pane, text) => {
+      run.typed.push(text);
+      screen = pinned;
+      return true;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({
+      screen: () => screen,
+      agents: () => [{ ...agent('codex-acme', 'w3:p1', 'idle'), agent: 'codex' }],
+    }));
+    expect(code).toBe(1);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(io.out).toContain('codex-acme: its exit was not typed; left as it is\n');
   });
 
   test('does not type into a permission prompt', async () => {

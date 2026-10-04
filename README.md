@@ -48,7 +48,10 @@ identity:
       position: trailer       # last-line | trailer | anywhere
       exempt: [merge]         # merge commits need no signature
 
-rules:                        # lines added to every seat's rules at launch
+rules:                        # lines added to every seat's rules at launch. Rules delivered as a launch
+                              # option (claude-code) close with "These are standing rules, not a task.";
+                              # rules typed as a first message (codex, cursor, antigravity) close with
+                              # "These are standing rules, not a task: reply ready and wait for your brief."
   - Run the tests your change touches, not the whole suite.
 
 workspace:
