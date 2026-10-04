@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, statSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve, relative } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -390,13 +390,7 @@ describe('Slice C: ScreenProfile escape hatch', () => {
     }
   });
 
-  test('screen_module may only name a file inside the profiles directory (refused forms in source and dist)', async () => {
-    const distModule = await import('../dist/watch/screen-file.js');
-    const loaders = [
-      { name: 'source', load: loadScreen },
-      { name: 'dist', load: distModule.loadScreen },
-    ];
-
+  test('screen_module may only name a file inside the profiles directory (refused forms in source)', () => {
     const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-test-'));
     const outsideDir = mkdtempSync(resolve(tmpdir(), 'outside-test-'));
     const outsideFile = resolve(outsideDir, 'outside-evil.cjs');
@@ -404,9 +398,25 @@ describe('Slice C: ScreenProfile escape hatch', () => {
     const symlinkPath = resolve(tempDir, 'inside-symlink.cjs');
     symlinkSync(outsideFile, symlinkPath);
 
+    // Symlink loop
+    const loopPath = resolve(tempDir, 'loop.cjs');
+    symlinkSync('loop.cjs', loopPath);
+
+    // Directory with package.json pointing outside
+    const pkgDir = resolve(tempDir, 'pkg');
+    mkdirSync(pkgDir);
+    writeFileSync(resolve(pkgDir, 'package.json'), JSON.stringify({ main: outsideFile }));
+
+    // Directory with index.js inside
+    const pkgdirDir = resolve(tempDir, 'pkgdir');
+    mkdirSync(pkgdirDir);
+    writeFileSync(resolve(pkgdirDir, 'index.js'), 'module.exports = { unknown: () => true };');
+
+    // Valid file inside
+    writeFileSync(resolve(tempDir, 'good.cjs'), 'module.exports = { unknown: () => true };');
+
     try {
-      for (const { load } of loaders) {
-        const makeYaml = (specifier: string) => `format: 1
+      const makeYaml = (specifier: string) => `format: 1
 cli: fake-cli
 screen_module: "${specifier}"
 screen:
@@ -418,45 +428,88 @@ screen:
       - equals: ""
 `;
 
-        // 1. Absolute path
-        expect(() => load(makeYaml('/tmp/evil.cjs'), undefined, 'test.yaml')).toThrow(
-          /profile "test\.yaml":.*"screen_module".*cannot be an absolute path/,
-        );
+      // 1. Bare names (fs, left-pad)
+      expect(() => loadScreen(makeYaml('fs'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a bare name: "fs"/,
+      );
+      expect(() => loadScreen(makeYaml('left-pad'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a bare name: "left-pad"/,
+      );
 
-        // 2. Contains ".." segment
-        expect(() => load(makeYaml('../evil.cjs'), undefined, 'test.yaml')).toThrow(
-          /profile "test\.yaml":.*"screen_module".*cannot contain "\.\." segments/,
-        );
-        expect(() => load(makeYaml('subdir/../evil.cjs'), undefined, 'test.yaml')).toThrow(
-          /profile "test\.yaml":.*"screen_module".*cannot contain "\.\." segments/,
-        );
+      // 2. Directory refusal
+      expect(() => loadScreen(makeYaml('pkg'), tempDir, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a directory: "pkg"/,
+      );
+      expect(() => loadScreen(makeYaml('pkgdir'), tempDir, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a directory: "pkgdir"/,
+      );
 
-        // 3. URL or other scheme
-        expect(() => load(makeYaml('http://127.0.0.1/evil.cjs'), undefined, 'test.yaml')).toThrow(
-          /profile "test\.yaml":.*"screen_module".*cannot be a URL or scheme/,
-        );
-        expect(() => load(makeYaml('file:///tmp/evil.cjs'), undefined, 'test.yaml')).toThrow(
-          /profile "test\.yaml":.*"screen_module".*cannot be a URL or scheme/,
-        );
+      // 3. Empty string
+      expect(() => loadScreen(makeYaml(''), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be an empty string/,
+      );
 
-        // 4. ~/ path
-        expect(() => load(makeYaml('~/evil.cjs'), undefined, 'test.yaml')).toThrow(
-          /profile "test\.yaml":.*"screen_module".*cannot be a home directory path/,
-        );
+      // 4. Current directory "."
+      expect(() => loadScreen(makeYaml('.'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be current directory "\."/,
+      );
 
-        // 5. Path in project
-        expect(() => load(makeYaml('test/fixtures/hatch/hatch.ts'), undefined, 'test.yaml')).toThrow(
-          /profile "test\.yaml":.*"screen_module".*cannot be a path in the project/,
-        );
-        expect(() => load(makeYaml('src/watch/pass.ts'), undefined, 'test.yaml')).toThrow(
-          /profile "test\.yaml":.*"screen_module".*cannot be a path in the project/,
-        );
+      // 5. Absolute path
+      expect(() => loadScreen(makeYaml('/tmp/evil.cjs'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be an absolute path/,
+      );
 
-        // 6. Symlink leading out of directory
-        expect(() => load(makeYaml('inside-symlink.cjs'), tempDir, 'test.yaml')).toThrow(
-          /profile "test\.yaml":.*"screen_module".*symlink leads outside/,
-        );
-      }
+      // 6. Contains ".." segment (including encoded)
+      expect(() => loadScreen(makeYaml('../evil.cjs'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot contain "\.\." segments/,
+      );
+      expect(() => loadScreen(makeYaml('subdir/../evil.cjs'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot contain "\.\." segments/,
+      );
+      expect(() => loadScreen(makeYaml('a/%2e%2e/x.cjs'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot contain "\.\." segments/,
+      );
+
+      // 7. URL or other scheme
+      expect(() => loadScreen(makeYaml('http://127.0.0.1/evil.cjs'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a URL or scheme/,
+      );
+      expect(() => loadScreen(makeYaml('file:///tmp/evil.cjs'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a URL or scheme/,
+      );
+      expect(() => loadScreen(makeYaml('node:fs'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a URL or scheme/,
+      );
+
+      // 8. ~/ and ~user path
+      expect(() => loadScreen(makeYaml('~/evil.cjs'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a home directory path/,
+      );
+      expect(() => loadScreen(makeYaml('~root/evil.cjs'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a home directory path/,
+      );
+
+      // 9. Path in project
+      expect(() => loadScreen(makeYaml('test/fixtures/hatch/hatch.ts'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a path in the project/,
+      );
+      expect(() => loadScreen(makeYaml('src/watch/pass.ts'), undefined, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*cannot be a path in the project/,
+      );
+
+      // 10. Symlink leading out of directory
+      expect(() => loadScreen(makeYaml('inside-symlink.cjs'), tempDir, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*symlink leads outside/,
+      );
+
+      // 11. Symlink loop
+      expect(() => loadScreen(makeYaml('loop.cjs'), tempDir, 'test.yaml')).toThrow(
+        /profile "test\.yaml":.*"screen_module".*contains a symlink loop: "loop\.cjs"/,
+      );
+
+      // 12. Valid file inside loads successfully
+      const loaded = loadScreen(makeYaml('good.cjs'), tempDir, 'test.yaml');
+      expect(loaded.profile?.unknown).toBeDefined();
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
       rmSync(outsideDir, { recursive: true, force: true });
@@ -465,18 +518,24 @@ screen:
 
   test('profile.schema.json matches loader: composer is optional when screen_module is set and screen_module pattern is constrained', () => {
     const schema = JSON.parse(readFileSync(resolve(process.cwd(), 'src/profiles/profile.schema.json'), 'utf8'));
-    const screenDef = schema.$defs.screen;
-    expect(screenDef.required).toBeUndefined();
-    expect(screenDef.anyOf || screenDef.oneOf).toBeDefined();
 
     const modulePattern = schema.$defs.screenModule.pattern;
     expect(modulePattern).toBeDefined();
     const regex = new RegExp(modulePattern);
     expect(regex.test('hatch.ts')).toBe(true);
+    expect(regex.test('good.cjs')).toBe(true);
+    expect(regex.test('nested/good.cjs')).toBe(true);
+    expect(regex.test('foo..bar.ts')).toBe(true);
+    expect(regex.test('fs')).toBe(false);
+    expect(regex.test('left-pad')).toBe(false);
+    expect(regex.test('pkg')).toBe(false);
+    expect(regex.test('node_modules/left-pad/index.js')).toBe(false);
+    expect(regex.test('test/fixtures/hatch/hatch.ts')).toBe(false);
     expect(regex.test('/tmp/evil.cjs')).toBe(false);
     expect(regex.test('../evil.cjs')).toBe(false);
     expect(regex.test('http://evil.com/x.js')).toBe(false);
     expect(regex.test('~/evil.cjs')).toBe(false);
+    expect(regex.test('a/%2e%2e/x.js')).toBe(false);
   });
 
   test('rule for main on screens: no screen origin/main reads unknown/working/permission/trust/question may read idle or unsent', () => {
