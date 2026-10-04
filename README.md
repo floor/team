@@ -143,8 +143,8 @@ the commands below read.
 | `team init` | writes the skeleton `.agents/team.yaml` and adds it and its runtime files to `.git/info/exclude` | the owner |
 | `team approve` | reads the whole file back for a last look, then records it, its ceilings and its seats on this machine; `--show` prints it | the owner (`--show`: anyone) |
 | `team check <ref>` | checks one commit, a `a..b` range, or a PR body (`--pr <file>`, `-` reads stdin) against the signature rule; exit 1 when one is refused | anyone; read only |
-| `team doctor` | checks this machine for what the file needs: herdr, each CLI, login, launcher, model, watch heartbeat | anyone; read only |
-| `team status` | prints the file's seats against the running session, each difference with its repair; exit 1 when they differ | anyone; read only |
+| `team doctor` | checks this machine for what the file needs: herdr, each CLI, login, launcher, model, watch heartbeat; `--login` checks only CLI sign-ins | anyone; read only |
+| `team status` | prints the file's seats against the running session, each difference with its repair; `--json` outputs a stable JSON document (`format: 1`) for scripts; exit 1 when they differ | anyone; read only |
 | `team up` / `team down` | starts / stops the session and its seats | `up`: the owner; `down`: the owner, the coordinator or the operator seat |
 | `team watch` | watches the session, reports idle seats and nudges the operator; `--no-nudge` and `--no-notify` turn those off | anyone, one per session; it types only its fixed nudge, into an empty idle prompt |
 | `team add <name>` | starts one declared seat, or puts one back from the approved copy; `--temporary --like <seat> --until <end>` starts a seat the file does not hold | the owner, the coordinator or the operator |
@@ -158,6 +158,13 @@ that `bun run ci` runs against a fixture team.
 The owner is a terminal outside herdr with no agent process above it: a seat, or a script a seat
 runs, cannot approve a file or start a team. Every command that reads the file also takes
 `--file <path>` for a file other than `.agents/team.yaml`.
+
+`team status --json` prints the facts `status` prints as one JSON document (`format: 1`) on stdout:
+`project`, `session`, `rows` (`name`, `state`, `model`, `pane`), `notes`, `differences` (`what`, `repair`), and `notice`.
+
+`team doctor --login` checks read-only that each CLI in the file is signed in, using each profile's
+existing login check command (`cursor-agent status`, `agy models`, `codex login status`, `claude auth status`).
+It never answers prompts and performs no sign-in action.
 
 In this build `up` and `down` run only with `--dry-run`: they print every command they would run,
 and every refusal, and change nothing. `team add`, `team remove`, `team worktree new` and `team worktree remove` do run.

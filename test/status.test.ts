@@ -14,6 +14,7 @@ const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url)
 const NOW = new Date('2026-10-03T14:10:00Z');
 
 const claudeScreen = (model: string) => `❯ \n────\n  main · …/acme · ${model} · S: $1.2 · W: 12%\n  ⏵⏵ bypass permissions on\n`;
+const codexScreen = (name: string) => readFileSync(new URL(`./fixtures/codex/0.157.0/${name}.txt`, import.meta.url), 'utf8');
 
 function agent(name: string | null, workspace: string, status = 'idle', kind = 'claude'): HerdrAgent {
   return { name, agent: kind, pane: `${workspace}:p1`, workspace, status, cwd: null };
@@ -125,6 +126,34 @@ describe('team status', () => {
     expect(code).toBe(1);
   });
 
+  // Each profile's own status line, through the same comparison: the codex seat's captured
+  // footer names another model, and an id the map doesn't know is unread, never a difference.
+  test('a codex seat whose captured status line names another model', async () => {
+    live = { ...built(), screens: { ...built().screens, 'w2:p1': codexScreen('idle') } };
+    const { code, out } = await status();
+    expect(out).toContain('difference: codex-acme runs GPT Terra 5.6; the file says GPT Sol 6');
+    expect(code).toBe(1);
+  });
+
+  test('a status-line id the map doesn\'t know is unread: a note, never a difference', async () => {
+    const screen = codexScreen('idle').replace('GPT-5.6-Terra medium ·', 'GPT-9-Nova medium ·');
+    live = { ...built(), screens: { ...built().screens, 'w2:p1': screen } };
+    const { code, out } = await status();
+    expect(out).toContain('note: codex-acme: version unread');
+    expect(out).not.toContain('codex-acme runs');
+    expect(code).toBe(0);
+  });
+
+  // Claude Code's line names Claude's families only: the DeepSeek seat's own status line says
+  // nothing to compare, so it is unread rather than wrong.
+  test('a seat that runs another maker\'s model through Claude Code is unread, never a mismatch', async () => {
+    live = { ...built(), screens: { ...built().screens, 'w3:p1': claudeScreen('Opus 5.5') } };
+    const { code, out } = await status();
+    expect(out).toContain('note: deepseek-acme: version unread');
+    expect(out).not.toContain('deepseek-acme runs');
+    expect(code).toBe(0);
+  });
+
   test('a stopped seat that runs', async () => {
     live = { ...built(), agents: [...built().agents, agent('grok-acme', 'w5', 'idle', 'grok')] };
     const { out } = await status();
@@ -204,6 +233,64 @@ describe('team status', () => {
     live = null;
     expect(await status()).toMatchObject({ code: 2, err: expect.stringContaining('herdr doesn\'t answer') });
     expect(await status('--fix')).toMatchObject({ code: 2, err: expect.stringContaining('unknown option --fix') });
+    expect((await status('--fix')).err).toContain('Usage: team status [--session <name>] [--file <path>] [--json]\n');
+  });
+
+  test('--json: pins the stable format 1 shape on a clean team', async () => {
+    const { code, out, err } = await status('--json');
+    expect(code).toBe(0);
+    expect(err).toBe('');
+    const doc = JSON.parse(out);
+    expect(Object.keys(doc).sort()).toEqual(['differences', 'format', 'notes', 'notice', 'project', 'rows', 'session']);
+    expect(doc.format).toBe(1);
+    expect(doc.project).toBe('acme-web');
+    expect(doc.session).toBe('acme-web');
+    expect(doc.notice).toBeNull();
+    expect(doc.differences).toEqual([]);
+    expect(doc.notes).toEqual([
+      'codex-acme: version unread (its screen doesn\'t show the model)',
+      'deepseek-acme: version unread (its screen doesn\'t show the model)',
+      'deepseek-acme-2: version unread (its screen doesn\'t show the model)',
+    ]);
+    expect(doc.rows).toEqual([
+      { name: 'claude-coordinator-acme', state: 'working', model: 'Claude Opus 5.5', pane: 'w1:p1' },
+      { name: 'codex-acme', state: 'idle, parked', model: 'GPT-6 Sol (unread)', pane: 'w2:p1' },
+      { name: 'deepseek-acme', state: 'done', model: 'DeepSeek V4.1 Flash (unread)', pane: 'w3:p1' },
+      { name: 'deepseek-acme-2', state: 'idle', model: 'DeepSeek V4.1 Flash (unread)', pane: 'w4:p1' },
+      { name: 'grok-acme', state: 'stopped', model: 'Grok 4.7', pane: '-' },
+    ]);
+  });
+
+  test('--json: reports differences with exit 1 and the same structure', async () => {
+    live = { ...built(), agents: built().agents.filter((one) => one.name !== 'deepseek-acme-2') };
+    const { code, out } = await status('--json');
+    expect(code).toBe(1);
+    const doc = JSON.parse(out);
+    expect(doc.format).toBe(1);
+    expect(doc.differences).toEqual([
+      { what: 'deepseek-acme-2 is in the file and is not running', repair: 'team add deepseek-acme-2' },
+    ]);
+  });
+
+  test('--json: includes notice when falling back to last valid copy', async () => {
+    await status();
+    writeFileSync(file, example.replace('format: 1', 'format: 9'));
+    const { code, out } = await status('--json');
+    expect(code).toBe(0);
+    const doc = JSON.parse(out);
+    expect(doc.format).toBe(1);
+    expect(doc.notice).toContain('team.yaml is invalid');
+    expect(doc.differences).toEqual([]);
+  });
+
+  test('--json: notes when session is not running', async () => {
+    live = { running: false, agents: [], workspaces: [], screens: {} };
+    const { code, out } = await status('--json');
+    expect(code).toBe(1);
+    const doc = JSON.parse(out);
+    expect(doc.format).toBe(1);
+    expect(doc.notes).toContain('the herdr session "acme-web" is not running');
+    expect(doc.differences.length).toBe(4);
   });
 });
 
