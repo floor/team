@@ -88,10 +88,11 @@ The wide captures come from a helper client attached on a 160x40 pty (herdr's ne
 guard allowed in a temporary config used only by that client), so the session's panes
 ran at 134x39; the narrow ones are 54x23, the headless session's own size.
 
-Sanitising: the model name in the welcome banner is swapped for `Opus 5.5`, and the
-plan file name in the plan-approval capture is swapped for `plan-example.md`.
-Everything else — including every SGR byte — is the capture's own; the throwaway
-directory names are left as they were.
+Sanitising: the model name in the welcome banner is swapped for `Opus 5.5`, the
+banner's account label is swapped for `Acme billing` (the same form as the earlier
+captures), and the plan file name in the plan-approval capture is swapped for
+`plan-example.md`. Everything else — including every SGR byte — is the capture's own;
+the throwaway directory names are left as they were.
 
 - `permission-create-plain.txt`, `permission-create-ansi.txt` (54x23) and
   `permission-create-wide-plain.txt`, `permission-create-wide-ansi.txt` (134x39): the

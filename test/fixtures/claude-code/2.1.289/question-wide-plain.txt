@@ -1,6 +1,6 @@
 
  ▐▛███▛█   Claude Code v2.1.289
-▝▜██████▀  Opus 5.5 · API Usage Billing
+▝▜██████▀  Opus 5.5 · Acme billing
  ▝▝   ▝▝   /private/tmp/cc-capture-scratch
 
 
