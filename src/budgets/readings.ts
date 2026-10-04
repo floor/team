@@ -119,6 +119,15 @@ export function checkOf(list: readonly Seen[]): Seen[] {
 }
 
 /**
+ * The distance rule for a stale figure with no known reset (§ 5), in one place: more than the
+ * reserve again outside it, the figure is the room last seen rather than unknown. `verdict` and
+ * the check branch of `countedFor` both ask this, so the two cannot be edited apart.
+ */
+function pastTheReserveAgain(left: number, reserve: number): boolean {
+  return left > reserve * 2;
+}
+
+/**
  * The reading that counts. A figure from before a known reset is dropped.
  * Among confirmed live readings, the newest change wins. A first sight counts
  * only when no confirmed reading is still live. Staleness is measured from
@@ -141,7 +150,7 @@ export function verdict(list: readonly Seen[], now: number, staleAfterMs: number
   const inside = reserve !== null && reading.left <= reserve;
   if (inside && reading.resetsAt !== null) return { kind: 'refusing', reading };
   if (reading.resetsAt === null) {
-    if (reserve !== null && reading.left > reserve * 2) return { kind: 'last-seen', reading };
+    if (reserve !== null && pastTheReserveAgain(reading.left, reserve)) return { kind: 'last-seen', reading };
     return { kind: 'unknown' };
   }
   return { kind: 'stale', reading };
@@ -182,7 +191,7 @@ export function countedFor(
       const inside = checks.find((item) => item.resetsAt !== null && item.resetsAt > now && reserve !== null && item.left <= reserve);
       if (inside) fallback ??= inside;
       // A stale check figure with no reset, past the reserve again, is the room last seen.
-      const sight = checks.find((item) => item.resetsAt === null && reserve !== null && item.left > reserve * 2);
+      const sight = checks.find((item) => item.resetsAt === null && reserve !== null && pastTheReserveAgain(item.left, reserve));
       if (sight) lastSeen ??= sight;
       continue;
     }
