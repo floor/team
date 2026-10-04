@@ -1,11 +1,17 @@
 // RFC 0003 § 3b: a seat names its account through its vendor, or through an explicit `account:`
 // when one vendor has two. The seat's account is what the gate, the readings, the reports and the
 // status table key on; a seat that names none spends its vendor.
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { approvalDifferences, budgetsInForce, watchInForce } from '../src/approve/approval.ts';
 import { fingerprints } from '../src/approve/fingerprint.ts';
 import { seatBudget } from '../src/budgets/gate.ts';
-import type { Seen } from '../src/budgets/readings.ts';
+import { loadReadings, type Seen } from '../src/budgets/readings.ts';
 import { budgetTable } from '../src/budgets/table.ts';
+import { runApprove } from '../src/commands/approve.ts';
+import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import type { TeamFile } from '../src/file/types.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
@@ -14,6 +20,7 @@ import type { SessionState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, pass } from '../src/watch/pass.ts';
+import { testIo } from './helpers.ts';
 
 const NOW = Date.parse('2026-10-04T09:00:00Z');
 
@@ -247,5 +254,85 @@ describe('the watch reads a seat\'s figures onto its own account', () => {
       { account: 'openai-work', seat: 'codex-work', left: 39 },
       { account: 'openai-work', seat: 'codex-temp', left: 12 },
     ]);
+  });
+});
+
+// A seat the owner has not approved is drift: the watch reports the difference, and the figures
+// off that seat's screen are read as they are — but none of them is folded into the readings. An
+// unapproved edit to a seat's `account:` must not move its figure into another account's bucket,
+// where `up` and `add` would count it. The owner approves, and the folds resume.
+describe('a seat the approval lists as changed', () => {
+  let base: string;
+  let root: string;
+  let home: string;
+
+  beforeEach(() => {
+    base = realpathSync(mkdtempSync(join(tmpdir(), 'team-seat-account-')));
+    root = join(base, 'acme');
+    home = join(base, 'home');
+    mkdirSync(join(root, '.agents'), { recursive: true });
+    mkdirSync(home);
+  });
+
+  afterEach(() => rmSync(base, { recursive: true, force: true }));
+
+  const write = (text: string) => writeFileSync(join(root, '.agents/team.yaml'), text);
+
+  async function approve(): Promise<number> {
+    return runApprove(['--file', '.agents/team.yaml'], testIo(root, { kind: 'owner' }), {
+      ask: async () => String(team().seats.length),
+      now: () => new Date(NOW),
+      home,
+    });
+  }
+
+  function watchSources(screens: Record<string, string>): WatchSources {
+    let left = 1;
+    return {
+      live: () => live(screens),
+      machine: () => fine,
+      approval: (one, at) => approvalDifferences(one, at, home),
+      watchInForce: (one, at) => watchInForce(one, at, home),
+      budgetsInForce: (one, at) => budgetsInForce(one, at, home),
+      readChecks: () => [],
+      screen: () => '',
+      status: () => 'idle',
+      typeText: () => false,
+      pressEnter: () => false,
+      notify: () => {},
+      now: () => new Date(NOW),
+      wait: async () => --left > 0,
+      alive: () => false,
+      pid: 4242,
+    };
+  }
+
+  test('its figure is not folded, under either account, until the owner approves', async () => {
+    write(TEAM);
+    expect(await approve()).toBe(0);
+    // The seat's account is edited to openai-home, an account the budgets hold too. Unapproved,
+    // the seat is drift; before the guard its figure landed in openai-home's bucket.
+    const edited = TEAM.replace('    account: openai-work\n', '    account: openai-home\n');
+    write(edited);
+    expect(approvalDifferences(team(edited), root, home)).toEqual(['seat codex-work changed']);
+
+    const scene = { 'codex-work': CODEX(39), 'codex-home': CODEX(20) };
+    const io = testIo(root);
+    expect(await runWatch(['--file', '.agents/team.yaml'], io, watchSources(scene))).toBe(0);
+    expect(io.out).toContain('seat codex-work changed');
+    // codex-home still folds onto its own approved account; codex-work's figure is stored under
+    // neither openai-work nor openai-home. The other seat's fold shows the pass read figures.
+    expect(loadReadings(join(root, '.agents')).map(({ account, seat, left }) => ({ account, seat, left })))
+      .toEqual([{ account: 'openai-home', seat: 'codex-home', left: 20 }]);
+
+    // Approved, the seat's figures fold again — into the account the file now names.
+    expect(await approve()).toBe(0);
+    const after = testIo(root);
+    expect(await runWatch(['--file', '.agents/team.yaml'], after, watchSources(scene))).toBe(0);
+    expect(loadReadings(join(root, '.agents')).map(({ account, seat, left }) => ({ account, seat, left })))
+      .toEqual([
+        { account: 'openai-home', seat: 'codex-home', left: 20 },
+        { account: 'openai-home', seat: 'codex-work', left: 39 },
+      ]);
   });
 });
