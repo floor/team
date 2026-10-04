@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { loadReadings, loadSpendReadings, observe, observeCheck, saveReadings, saveSpendReadings, verdict, type Seen } from '../src/budgets/readings.ts';
+import { countedFor, loadReadings, loadSpendReadings, observe, observeCheck, recall, saveReadings, saveSpendReadings, verdict, type Seen, type StoredReading } from '../src/budgets/readings.ts';
 import type { QuotaFigure } from '../src/profiles/quota.ts';
-import { updateState } from '../src/state.ts';
+import { readState, STATE_FILE, updateState } from '../src/state.ts';
 
 const minute = 60 * 1000;
 const stale = 30 * minute;
@@ -64,8 +64,8 @@ describe('which reading counts', () => {
     try {
       const at = 1_700_000_000_000;
       const confirmed = observe(observe([], figure(61), 'one', at), figure(40), 'one', at + minute);
-      saveReadings(dir, 'default', confirmed, at + minute);
-      const sight = observe(loadReadings(dir, 'default'), figure(20), 'two', at + minute * 2);
+      saveReadings(dir, confirmed, at + minute);
+      const sight = observe(loadReadings(dir), figure(20), 'two', at + minute * 2);
       const counted = verdict(sight, at + minute * 2, stale, 20);
       expect(counted.kind).toBe('fresh');
       if (counted.kind === 'unknown') return;
@@ -130,16 +130,16 @@ describe('which reading counts', () => {
     const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
     const at = 1_700_000_000_000;
     const list = observe([], figure(39, '44m'), 'one', at);
-    saveReadings(dir, 'default', list, at);
-    const loaded = loadReadings(dir, 'default');
+    saveReadings(dir, list, at);
+    const loaded = loadReadings(dir);
     expect(loaded).toHaveLength(1);
     expect(loaded[0]?.left).toBe(39);
     expect(loaded[0]?.resetsAt).toBe(1_700_000_000_000 + 44 * minute);
     expect(loaded[0]?.confirmed).toBe(false);
     const passed = seen({ seat: 'old', confirmed: true, changedAt: at, resetsAt: at });
     const kept = seen({ seat: 'open', confirmed: true, changedAt: at, resetsAt: null });
-    saveReadings(dir, 'default', [passed, kept], at);
-    expect(loadReadings(dir, 'default').map((item) => item.seat)).toEqual(['open']);
+    saveReadings(dir, [passed, kept], at);
+    expect(loadReadings(dir).map((item) => item.seat)).toEqual(['open']);
     rmSync(dir, { recursive: true, force: true });
   });
 });
@@ -149,17 +149,17 @@ describe('spend readings', () => {
     const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
     try {
       const at = 1_700_000_000_000;
-      saveSpendReadings(dir, 'default', [{ account: 'openai', amount: 12.4, currency: 'USD', at }]);
-      expect(loadSpendReadings(dir, 'default')).toEqual([{ account: 'openai', amount: 12.4, currency: 'USD', at }]);
-      saveSpendReadings(dir, 'default', [{ account: 'deepseek', amount: 4.2, currency: 'USD', at: at + minute }]);
-      expect(loadSpendReadings(dir, 'default').map((one) => one.account).sort()).toEqual(['deepseek', 'openai']);
+      saveSpendReadings(dir, [{ account: 'openai', amount: 12.4, currency: 'USD', at }]);
+      expect(loadSpendReadings(dir)).toEqual([{ account: 'openai', amount: 12.4, currency: 'USD', at }]);
+      saveSpendReadings(dir, [{ account: 'deepseek', amount: 4.2, currency: 'USD', at: at + minute }]);
+      expect(loadSpendReadings(dir).map((one) => one.account).sort()).toEqual(['deepseek', 'openai']);
       // A later reading for the same account replaces the older one.
-      saveSpendReadings(dir, 'default', [{ account: 'openai', amount: 3, currency: 'USD', at: at + minute }]);
-      expect(loadSpendReadings(dir, 'default').find((one) => one.account === 'openai'))
+      saveSpendReadings(dir, [{ account: 'openai', amount: 3, currency: 'USD', at: at + minute }]);
+      expect(loadSpendReadings(dir).find((one) => one.account === 'openai'))
         .toEqual({ account: 'openai', amount: 3, currency: 'USD', at: at + minute });
       // Nothing read, nothing written.
-      saveSpendReadings(dir, 'other', []);
-      expect(loadSpendReadings(dir, 'other')).toEqual([]);
+      saveSpendReadings(dir, []);
+      expect(loadSpendReadings(dir).map((one) => one.account).sort()).toEqual(['deepseek', 'openai']);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -188,12 +188,12 @@ describe('a check reading in the same slot', () => {
   test('survives the state file with its source, and one whose reset has passed does not', () => {
     const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
     try {
-      saveReadings(dir, 'default', observeCheck([], 'openai', [{ window: 'weekly', left: 5, used: 95, at, resetsAt: at + 3_600_000 }]), at + minute);
-      expect(loadReadings(dir, 'default')).toEqual([
+      saveReadings(dir, observeCheck([], 'openai', [{ window: 'weekly', left: 5, used: 95, at, resetsAt: at + 3_600_000 }]), at + minute);
+      expect(loadReadings(dir)).toEqual([
         { account: 'openai', window: 'weekly', left: 5, used: 95, changedAt: at, resetsAt: at + 3_600_000, seat: null, source: 'check', confirmed: true },
       ]);
-      saveReadings(dir, 'default', observeCheck([], 'openai', [{ window: 'weekly', left: 5, used: 95, at, resetsAt: at + 2 * minute }]), at + 3 * minute);
-      expect(loadReadings(dir, 'default')).toEqual([]);
+      saveReadings(dir, observeCheck([], 'openai', [{ window: 'weekly', left: 5, used: 95, at, resetsAt: at + 2 * minute }]), at + 3 * minute);
+      expect(loadReadings(dir)).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -202,19 +202,159 @@ describe('a check reading in the same slot', () => {
   test('a stored reading from before sources were recorded is a status-line reading', () => {
     const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
     try {
-      updateState(dir, (state) => {
-        state.sessions['default'] = {
-          seats: {},
-          worktrees: {},
-          budgets: {
-            'openai/weekly/one': {
-              account: 'openai', window: 'weekly', left: 39, used: 61,
-              changedAt: new Date(at).toISOString(), resetsAt: null, seat: 'one', confirmed: true,
+      writeFileSync(join(dir, STATE_FILE), `${JSON.stringify({
+        format: 1,
+        sessions: {
+          default: {
+            seats: {},
+            worktrees: {},
+            budgets: {
+              'openai/weekly/one': {
+                account: 'openai', window: 'weekly', left: 39, used: 61,
+                changedAt: new Date(at).toISOString(), resetsAt: null, seat: 'one', confirmed: true,
+              },
             },
           },
-        };
+        },
+      }, null, 2)}\n`);
+      expect(loadReadings(dir).map((item) => item.source)).toEqual(['status_line']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the fallback among the sources', () => {
+  const at = 1_700_000_000_000;
+
+  test('a stale check inside its reserve is the fallback, and a fresh lower source wins', () => {
+    const check = seen({ seat: null, source: 'check', confirmed: true, changedAt: at - 31 * minute, left: 5, used: 95, resetsAt: at + 100 * 3_600_000 });
+    // Nothing below it counts: rule 4's refusal holds for the check's figure too.
+    expect(countedFor(['check', 'status_line'], [], [check], at, stale, 10))
+      .toEqual({ kind: 'counted', reading: check });
+    // § 3: a fresh status line below it is read, and its room clears the account.
+    const screen = seen({ seat: 'one', confirmed: true, changedAt: at - minute, left: 50, used: 50 });
+    expect(countedFor(['check', 'status_line'], [screen], [check], at, stale, 10))
+      .toEqual({ kind: 'counted', reading: screen });
+    // A stale check with room counts for nothing: with nothing below it, unknown.
+    const roomy = seen({ ...check, left: 50, used: 50 });
+    expect(countedFor(['check', 'status_line'], [], [roomy], at, stale, 10)).toEqual({ kind: 'unknown' });
+  });
+
+  test('an unconfirmed status line falls through to a fresh check below it', () => {
+    const sight = seen({ seat: 'one', confirmed: false, changedAt: at, left: 20, used: 80 });
+    const check = seen({ seat: null, source: 'check', confirmed: true, changedAt: at - minute, left: 80, used: 20 });
+    // § 4.3 rule 5: a first sight is not the account's answer while a lower source has one.
+    expect(countedFor(['status_line', 'check'], [sight], [check], at, stale, 10))
+      .toEqual({ kind: 'counted', reading: check });
+    // With nothing below it, the first sight is the answer it was.
+    expect(countedFor(['status_line', 'check'], [sight], [], at, stale, 10))
+      .toEqual({ kind: 'unconfirmed', reading: sight });
+  });
+});
+
+describe('the project keeps the readings, not a session', () => {
+  const at = 1_700_000_000_000;
+
+  function screen(over: Partial<StoredReading> = {}): StoredReading {
+    return {
+      account: 'openai', window: 'weekly', left: 39, used: 61,
+      changedAt: new Date(at).toISOString(), resetsAt: null, seat: 'one', source: 'status_line', confirmed: true,
+      ...over,
+    };
+  }
+
+  // A state file as the watch wrote it while readings were held per herdr session.
+  function legacy(dir: string, sessions: Record<string, unknown>): void {
+    writeFileSync(join(dir, STATE_FILE), `${JSON.stringify({ format: 1, sessions }, null, 2)}\n`);
+  }
+
+  test('a reading held under a session is the project\'s: it is read with no session asked for', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
+    try {
+      legacy(dir, { 'acme-web': { seats: {}, worktrees: {}, budgets: { 'openai/weekly/one': screen() } } });
+      expect(loadReadings(dir)).toEqual([
+        { account: 'openai', window: 'weekly', left: 39, used: 61, changedAt: at, resetsAt: null, seat: 'one', source: 'status_line', confirmed: true },
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a save writes the project\'s cache, and a later save folds into it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
+    try {
+      saveReadings(dir, observe([], figure(39), 'one', at), at);
+      expect(loadReadings(dir).map(({ seat, left }) => [seat, left])).toEqual([['one', 39]]);
+      saveReadings(dir, observe(loadReadings(dir), figure(20, '44m'), 'two', at + minute), at + minute);
+      expect(loadReadings(dir).map(({ seat }) => seat).sort()).toEqual(['one', 'two']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('the migration moves every session\'s records up, losing none, the newer change of a slot winning', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
+    try {
+      legacy(dir, {
+        'acme-web': {
+          seats: {}, worktrees: {},
+          budgets: {
+            'openai/weekly/one': screen(),
+            'openai/session/one': screen({ window: 'session', left: 80, used: 20 }),
+          },
+        },
+        other: {
+          seats: {}, worktrees: {},
+          budgets: { 'openai/weekly/one': screen({ left: 20, used: 80, changedAt: new Date(at + minute).toISOString() }) },
+        },
       });
-      expect(loadReadings(dir, 'default').map((item) => item.source)).toEqual(['status_line']);
+      const state = readState(dir);
+      expect(recall(state.budgets).map(({ window, left }) => `${window}:${left}`).sort())
+        .toEqual(['session:80', 'weekly:20']);
+      expect(state.sessions['acme-web']).not.toHaveProperty('budgets');
+      // Any later write persists the new shape: read old, write new.
+      updateState(dir, () => {});
+      const after = JSON.parse(readFileSync(join(dir, STATE_FILE), 'utf8'));
+      expect(after.budgets['openai/weekly/one'].left).toBe(20);
+      expect(after.sessions['acme-web'].budgets).toBeUndefined();
+      expect(after.sessions['other'].budgets).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a confirmed reading is not displaced by a newer unconfirmed one of another session', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
+    try {
+      legacy(dir, {
+        one: { seats: {}, worktrees: {}, budgets: { 'openai/weekly/one': screen({ left: 61, used: 39, confirmed: false }) } },
+        two: { seats: {}, worktrees: {}, budgets: { 'openai/weekly/one': screen({ left: 39, used: 61, changedAt: new Date(at - minute).toISOString() }) } },
+      });
+      const kept = recall(readState(dir).budgets);
+      expect(kept).toHaveLength(1);
+      expect(kept[0]?.confirmed).toBe(true);
+      expect(kept[0]?.left).toBe(39);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('spend readings are the project\'s too, and a save merges into the migrated ones', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
+    try {
+      legacy(dir, {
+        'acme-web': {
+          seats: {}, worktrees: {},
+          spend: { openai: { account: 'openai', amount: 12.4, currency: 'USD', at: new Date(at).toISOString() } },
+        },
+      });
+      expect(loadSpendReadings(dir)).toEqual([{ account: 'openai', amount: 12.4, currency: 'USD', at }]);
+      saveSpendReadings(dir, [{ account: 'deepseek', amount: 4.2, currency: 'USD', at: at + minute }]);
+      expect(loadSpendReadings(dir).map(({ account }) => account).sort()).toEqual(['deepseek', 'openai']);
+      const after = JSON.parse(readFileSync(join(dir, STATE_FILE), 'utf8'));
+      expect(after.spend.openai.amount).toBe(12.4);
+      expect(after.sessions['acme-web'].spend).toBeUndefined();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

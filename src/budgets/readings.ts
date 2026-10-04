@@ -3,7 +3,7 @@
 // decides the screen readings.
 import type { QuotaFigure, WindowName } from '../profiles/quota.ts';
 import type { CheckWindow } from './run.ts';
-import { emptySession, readState, updateState } from '../state.ts';
+import { readState, updateState } from '../state.ts';
 
 /** Where a reading came from: a pane's own status line, or an approved check command (§ 3). */
 export type ReadingSource = 'status_line' | 'check';
@@ -151,8 +151,9 @@ export type CountedReading =
  * The reading that counts for one window, from the sources the account names in order (§ 3, § 5):
  * a lower source is used only when every higher one is failed, unknown or stale. A check reading
  * counts while it is fresh by § 5's own time and its reset has not passed; a screen reading falls
- * through when it is unknown or a bare first sight, and a stale one inside its reserve is kept as
- * the fallback, so § 4.3's rule 4 still refuses when nothing below counts.
+ * through when it is unknown, and a bare first sight falls through too, so a fresh check below it
+ * still counts (§ 4.3 rule 5). A stale reading inside its reserve with its reset ahead is kept as
+ * the fallback, whichever source it came from, so rule 4 still refuses when nothing below counts.
  */
 export function countedFor(
   sources: readonly ReadingSource[],
@@ -163,19 +164,28 @@ export function countedFor(
   reserve: number | null,
 ): CountedReading {
   let fallback: Seen | null = null;
+  let unconfirmed: Seen | null = null;
   for (const source of sources) {
     if (source === 'check') {
       const reading = checks.find((item) => (item.resetsAt === null || item.resetsAt > now) && now - item.changedAt < staleAfterMs);
-      if (!reading) continue;
-      return { kind: 'counted', reading };
+      if (reading) return { kind: 'counted', reading };
+      // Rule 4 is about the reserve, not the source: a stale check figure inside it keeps
+      // refusing until its known reset, and a fresh source below still wins over this fallback.
+      const inside = checks.find((item) => item.resetsAt !== null && item.resetsAt > now && reserve !== null && item.left <= reserve);
+      if (inside) fallback ??= inside;
+      continue;
     }
     const result = verdict(screen, now, staleAfterMs, reserve);
     if (result.kind === 'unknown') continue;
-    if (result.kind === 'unconfirmed') return { kind: 'unconfirmed', reading: result.reading };
+    if (result.kind === 'unconfirmed') {
+      unconfirmed ??= result.reading;
+      continue;
+    }
     if (result.kind === 'fresh') return { kind: 'counted', reading: result.reading };
     fallback ??= result.reading;
   }
   if (fallback) return { kind: 'counted', reading: fallback };
+  if (unconfirmed) return { kind: 'unconfirmed', reading: unconfirmed };
   return { kind: 'unknown' };
 }
 
@@ -198,36 +208,32 @@ export function recall(stored: Record<string, StoredReading> | undefined): Seen[
   return Object.values(stored).map(revive);
 }
 
-/** Write the readings that still count. The state file is the per-project cache. */
-export function saveReadings(dir: string, session: string, list: readonly Seen[], now: number = Date.now()): void {
+/** Write the readings that still count. The state file is the per-project cache (§ 4.4). */
+export function saveReadings(dir: string, list: readonly Seen[], now: number = Date.now()): void {
   updateState(dir, (state) => {
-    const current = state.sessions[session] ?? emptySession();
-    current.budgets = remember(list, now);
-    state.sessions[session] = current;
+    state.budgets = remember(list, now);
   });
 }
 
-export function loadReadings(dir: string, session: string): Seen[] {
-  return recall(readState(dir).sessions[session]?.budgets);
+export function loadReadings(dir: string): Seen[] {
+  return recall(readState(dir).budgets);
 }
 
 /**
  * Write the spend readings a pass's checks read, merging by account: an account whose check did
  * not run this pass keeps the reading the state already holds. Nothing read, nothing written.
  */
-export function saveSpendReadings(dir: string, session: string, list: readonly SpendReading[]): void {
+export function saveSpendReadings(dir: string, list: readonly SpendReading[]): void {
   if (!list.length) return;
   updateState(dir, (state) => {
-    const current = state.sessions[session] ?? emptySession();
-    const spend = current.spend ?? {};
+    const spend = state.spend ?? {};
     for (const reading of list) spend[reading.account] = storeSpend(reading);
-    current.spend = spend;
-    state.sessions[session] = current;
+    state.spend = spend;
   });
 }
 
-export function loadSpendReadings(dir: string, session: string): SpendReading[] {
-  return recallSpend(readState(dir).sessions[session]?.spend);
+export function loadSpendReadings(dir: string): SpendReading[] {
+  return recallSpend(readState(dir).spend);
 }
 
 export function storeSpend(reading: SpendReading): StoredSpend {

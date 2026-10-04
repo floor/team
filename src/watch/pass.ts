@@ -3,7 +3,7 @@
 // nudge. A check never reads herdr, a screen or the file itself — only the observation it is
 // handed (RFC 0002 § 4.2).
 import { WATCH_CHECKS_CHANGED } from '../approve/fingerprint.ts';
-import { observe, observeCheck, recall, type Seen } from '../budgets/readings.ts';
+import { observe, observeCheck, type Seen } from '../budgets/readings.ts';
 import type { CheckOutcome } from '../budgets/run.ts';
 import type { TeamFile } from '../file/types.ts';
 import { quotaFor } from '../profiles/profile.ts';
@@ -71,7 +71,7 @@ export type PassResult = {
   nudge: { pane: string; text: string; pending: string[] } | null;
   // What to notify instead, when a nudge has waited too long.
   fallback: string | null;
-  // The readings that count, to be saved: the state's, with this pass's figures folded in (§ 4.4).
+  // The readings that count, to be saved: the project's, with this pass's figures folded in (§ 4.4).
   readings: Seen[];
 };
 
@@ -107,7 +107,8 @@ function quotaOf(cli: string, screen: Screen, pane: string | undefined): QuotaFi
 // wasn't looked at. `watch` and `budgets` are the sections in force — the approved ones, or the
 // defaults while the file's own are not approved — and the checks read those, never the file's.
 // `outcomes` is what the accounts' check commands read outside the pass, when the watch last ran
-// them.
+// them. `readings` is the project's stored cache, recalled by the caller; this pass folds its
+// figures into it, whatever session they were seen in (§ 4.4).
 export type PassInput = {
   team: TeamFile;
   state: SessionState;
@@ -119,6 +120,7 @@ export type PassInput = {
   watch?: TeamFile['watch'];
   outcomes?: readonly CheckOutcome[];
   budgets?: TeamFile['budgets'];
+  readings?: readonly Seen[];
 };
 
 // One pass of the watch. Pure: it reads what it is handed and changes only `memory`.
@@ -133,6 +135,7 @@ export function pass({
   watch = team.watch,
   outcomes = [],
   budgets = team.budgets,
+  readings: stored = [],
 }: PassInput): PassResult {
   const reports: Report[] = [];
   const current = new Set<string>();
@@ -235,10 +238,10 @@ export function pass({
     });
   }
 
-  // The figures this pass saw, folded into the readings the state keeps (§ 4.3). Only an account
-  // whose `sources` name `status_line` takes a screen reading: a check-only account never records
-  // one here, and neither does an account the budgets in force don't name (#50).
-  let readings = recall(state.budgets);
+  // The figures this pass saw, folded into the readings the project keeps (§ 4.3, § 4.4). Only an
+  // account whose `sources` name `status_line` takes a screen reading: a check-only account never
+  // records one here, and neither does an account the budgets in force don't name (#50).
+  let readings = stored.slice();
   for (const seat of observations) {
     if (!seat.running) continue;
     for (const figure of seat.quota) {

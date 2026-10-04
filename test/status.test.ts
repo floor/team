@@ -246,7 +246,7 @@ describe('team status', () => {
     deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }
 `,
     ));
-    saveReadings(join(dir, '.agents'), 'acme-web', [{
+    saveReadings(join(dir, '.agents'), [{
       account: 'openai',
       window: 'weekly',
       left: 39,
@@ -276,7 +276,7 @@ describe('team status', () => {
     openai: { kind: subscription, reserve: 10%, sources: [check, status_line], check: openai-usage }
 `,
     ));
-    saveReadings(join(dir, '.agents'), 'acme-web', [{
+    saveReadings(join(dir, '.agents'), [{
       account: 'openai',
       window: 'weekly',
       left: 5,

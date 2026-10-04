@@ -232,7 +232,7 @@ describe('status reads them', () => {
       source: 'status_line',
       confirmed: true,
     };
-    saveReadings(join(root, '.agents'), SESSION, [stored], NOW_MS);
+    saveReadings(join(root, '.agents'), [stored], NOW_MS);
     const sources: StatusSources = {
       live: () => live(),
       branch: () => 'main',
