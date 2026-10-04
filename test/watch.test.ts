@@ -52,6 +52,27 @@ const agyOperator = example.replace(
     launch: agy`,
 );
 
+// The example's operator as a Cursor seat: the watch's nudge path then reads the operator's
+// box through the status-then-one reader.
+const cursorOperator = example.replace(
+  `  - role: operator
+    name: claude-operator-acme
+    label: claude-operator-acme
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5`,
+  `  - role: operator
+    name: claude-operator-acme
+    label: claude-operator-acme
+    cli: cursor
+    vendor: xai
+    model: Grok
+    version: "4.7"
+    launch: cursor-agent`,
+);
+
 function team(): TeamFile {
   const result = validateTeamFile(example);
   if (!result.ok) throw new Error(JSON.stringify(result.errors));
@@ -857,6 +878,110 @@ describe('team watch', () => {
     }));
     expect(typed).toEqual([]);
     expect(io.out).not.toContain('nudged the operator');
+  });
+
+  test('a second glyph row at the operator\'s prompt column is never typed into and never gets the Enter', async () => {
+    // The 0.2.1 boundary on the nudge path, in Codex's shape: the operator's box holds their
+    // own text and then a row carrying the prompt at the input row's own column. No capture
+    // draws a person's continuation there — continuations are indented two columns — so the
+    // read is `unknown`: not idle, and nothing is typed. Read by its lowest row the box was
+    // idle, the nudge was appended after the second glyph, the read-back held only the nudge,
+    // and the Enter submitted the operator's own text with it.
+    const codexIdle = readFileSync(new URL('./fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
+    // The example's codex-acme is parked, and a parked seat can't be the operator.
+    writeFileSync(file, example
+      .replace('operator: claude-operator-acme', 'operator: codex-acme')
+      .replace('    parked: true\n', ''));
+    scene = live({
+      'codex-acme': { status: 'idle', screen: codexIdle },
+      'deepseek-acme-2': { status: 'blocked', screen: question },
+    });
+    screenNow = codexIdle.replace('› Ask Codex to do anything', '› person text\n›');
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => {
+        typed.push(`${pane} ${text}`);
+        screenNow = codexIdle.replace('› Ask Codex to do anything', `› person text\n› ${text}`);
+        return true;
+      },
+    }));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain('nudged the operator');
+  });
+
+  test('the transcript echo above the blank frame is nudged: the box is idle under it', async () => {
+    // The routine post-send layout, in Codex's shape: the operator's sent message echoed at the
+    // prompt column, the captured blank frame, the empty input row. It is the transcript's
+    // echo, not a row of the person's box (a box row is drawn indented), so the box reads
+    // `idle` and the nudge is typed and entered — the seat exists to be nudged.
+    const codexIdle = readFileSync(new URL('./fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
+    writeFileSync(file, example
+      .replace('operator: claude-operator-acme', 'operator: codex-acme')
+      .replace('    parked: true\n', ''));
+    scene = live({
+      'codex-acme': { status: 'idle', screen: codexIdle },
+      'deepseek-acme-2': { status: 'blocked', screen: question },
+    });
+    screenNow = codexIdle.replace('› Ask Codex to do anything', '› person text\n\n›');
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => {
+        typed.push(`${pane} ${text}`);
+        screenNow = codexIdle.replace('› Ask Codex to do anything', `› person text\n\n› ${text}`);
+        return true;
+      },
+    }));
+    expect(typed).toEqual([`w2:p1 ${NUDGE_TEXT}`, 'w2:p1 <enter>']);
+    expect(io.out).toContain('nudged the operator');
+  });
+
+  test('an operator\'s box whose top frame scrolled off gets no nudge', async () => {
+    // The reviewer's second must-fix on the nudge path: the input row scrolled out, a visible
+    // indented continuation, then the prompt row. The row directly above the prompt is not
+    // blank, so the prompt is not a box top the captures draw — nothing is typed.
+    const codexIdle = readFileSync(new URL('./fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
+    writeFileSync(file, example
+      .replace('operator: claude-operator-acme', 'operator: codex-acme')
+      .replace('    parked: true\n', ''));
+    scene = live({
+      'codex-acme': { status: 'idle', screen: codexIdle },
+      'deepseek-acme-2': { status: 'blocked', screen: question },
+    });
+    screenNow = codexIdle.replace('› Ask Codex to do anything', '  person-owned visible continuation\n›');
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => {
+        typed.push(`${pane} ${text}`);
+        screenNow = codexIdle.replace('› Ask Codex to do anything', `  person-owned visible continuation\n› ${text}`);
+        return true;
+      },
+    }));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain('nudged the operator');
+  });
+
+  test('the transcript echo above the blank frame is nudged: the box is idle under it (Cursor)', async () => {
+    // The Cursor twin of the routine post-send layout: `  → person text`, blank frame, `  →`.
+    // typed-blank-middle.txt settles the shape — a person's box draws its third line at the
+    // content column, so a second glyph at the prompt column after a blank is the transcript's
+    // echo. The box reads `idle` and the nudge is typed and entered.
+    const cursorIdle = readFileSync(new URL('./fixtures/cursor/2026.10.01/idle.txt', import.meta.url), 'utf8');
+    writeFileSync(file, cursorOperator);
+    scene = live({
+      'claude-operator-acme': { status: 'idle', screen: cursorIdle },
+      'deepseek-acme-2': { status: 'blocked', screen: question },
+    });
+    screenNow = cursorIdle.replace('  → Plan, search, build anything', '  → person text\n\n  →');
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => {
+        typed.push(`${pane} ${text}`);
+        screenNow = cursorIdle.replace('  → Plan, search, build anything', `  → person text\n\n  → ${text}`);
+        return true;
+      },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+    expect(io.out).toContain('nudged the operator');
   });
 
   test.each(['close-short', 'close-long', 'open-short'] as const)(

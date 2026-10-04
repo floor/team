@@ -582,9 +582,45 @@ function statusLast(
   const status = statusIndex(composer, lines, allowOneTrailing, tick);
   if (status === 'stop') return { kind: 'stop' };
   if (status < 0) return { kind: 'unknown' };
-  let input = status - 1;
-  while (input >= 0 && !composer.prompt.test(lines[input] ?? '')) input--;
-  if (input < 0) return { kind: 'unknown' };
+  // The input row is the lowest prompt row above the status line, and the box's top frame is
+  // the blank run directly above it: every capture draws one — one to two rows in Codex's
+  // (idle.txt's rows 13-14 above the placeholder, exit-typed.txt's row 20 above `› /exit`),
+  // two to four in Cursor's — and no capture draws a non-blank row against the prompt from
+  // above.
+  //
+  // Above the gap sits the transcript's last row, whatever it is. When that row is
+  // prompt-shaped it is the pane's echo of the person's own sent message, not a row of the
+  // box: a box draws every row after its first indented (Codex's wrapped continuations at
+  // column two in unsent.txt and exit-typed.txt, Cursor's at column four —
+  // typed-blank-middle.txt draws a person's blank-middle third line at the content column
+  // four, never the prompt column two), while a sent-message echo carries the glyph at the
+  // prompt column (Codex's working.txt `› Rules for this session, from the team file:`,
+  // Cursor's follow-up-queue-typed.txt queued text). Reading the echo as a live row made
+  // every post-send idle seat `unknown` — a seat that could then never be dispatched to or
+  // nudged — so the empty input row under its frame reads `idle`, exactly as main reads it.
+  // Codex has no typed-newline capture (the trust dialog blocked it): this rests on the
+  // captured continuation column of wrapped text, not on a typed-newline capture, which is
+  // still to be taken.
+  //
+  // A window that starts at or inside the box, or a visible continuation or prompt row
+  // pressed against the prompt from above, is not the frame the captures draw, and the rows
+  // above it cannot be shown to be outside the box: fail closed rather than take the lowest
+  // prompt row for an input row.
+  let low = status - 1;
+  while (low >= 0 && !composer.prompt.test(lines[low] ?? '')) low--;
+  if (low < 0) return { kind: 'unknown' };
+  if (low === 0 || (lines[low - 1] ?? '').trim() !== '') return { kind: 'unknown' };
+  // The lowest prompt row above the status line is the input row when it holds text: the
+  // exit-typed capture draws its menu row `› /exit  exit Codex` above the gap and `/exit` on
+  // the input row itself. When it holds none, the row above the gap is the transcript, read
+  // as nothing — the echo of the person's own sent message is the routine post-send layout,
+  // not a second row of the box.
+  const input = low;
+  // Every capture draws every row of typed text below the input row indented (Codex's
+  // continuations at column two, Cursor's at four), so a prompt row after the input, inside
+  // the box, is a shape the captures do not show. Fail closed on it rather than leave a
+  // person's own text above it unread.
+  for (let i = input + 1; i < status; i++) if (composer.prompt.test(lines[i] ?? '')) return { kind: 'unknown' };
   const rows = lines.slice(input + 1, status);
   for (let i = input + 1; i < status; i++) if ((lines[i] ?? '').trim()) return { kind: 'unsent', from: input, input, rows };
   return { kind: placeholder(stripTyped(lines[input] ?? '', composer), composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from: input, input, rows };
