@@ -57,6 +57,18 @@ const fixtures: [string, string][] = [
 ];
 
 describe('claude-code through the screen core', () => {
+  test('a shell prompt after Claude has exited is unknown', () => {
+    const text = readFileSync(new URL('./fixtures/claude-code/shell-prompt.txt', import.meta.url), 'utf8');
+    const lines = text.split('\n').map((line) => line.trimEnd()).slice(-20);
+    expect(mainClaude(lines)).toBe('idle');
+    expect(readScreen('claude-code', text).kind).toBe('unknown');
+  });
+
+  test.each(['rule-above.txt', 'leftover-box.txt', 'output-under-rule.txt'])('%s is not a box', (name) => {
+    const text = readFileSync(new URL(`./fixtures/claude-code/${name}`, import.meta.url), 'utf8');
+    expect(readScreen('claude-code', text).kind).toBe('unknown');
+  });
+
   test('every fixture matches the classifier main had', () => {
     for (const [name, text] of fixtures) {
       if (name === 'quoted permission') continue;
@@ -74,8 +86,18 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('idle');
   });
 
-  test('a transcript of 1. Yes / 2. No above an empty box is idle', () => {
+  test('a transcript of 1. Yes / 2. No above a bare prompt is unknown', () => {
+    // No rule above the prompt and no status footer under it, so it is not Claude's box.
     const text = `1. Yes\n2. No\n❯ \n`;
+    expect(readScreen('claude-code', text).kind).toBe('unknown');
+  });
+
+  test('typed text with no closing rule is unknown', () => {
+    expect(readScreen('claude-code', '❯ ship the fix\n').kind).toBe('unknown');
+  });
+
+  test('a box whose rule above has scrolled out stays idle when the status footer remains', () => {
+    const text = `❯ \n${RULE}\n${STATUS}\n`;
     expect(readScreen('claude-code', text).kind).toBe('idle');
   });
 
@@ -97,6 +119,88 @@ describe('claude-code through the screen core', () => {
     const busy = `✶ Transfiguring… (9m 34s · ↓ 64.5k tokens)\n\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
     expect(classify('claude-code', busy.split('\n')).kind).toBe('working');
     expect(classifyComposer('claude-code', busy.split('\n')).kind).toBe('idle');
+  });
+});
+
+// Claude Code's screens as herdr reads them styled (`--format ansi`): a greyed suggestion is
+// faint, typed text carries no styling, and the trust dialog keeps the safety floor. The
+// fixtures and their provenance are in fixtures/claude-code/2.1.289/README.md.
+describe('claude-code reads the input line\'s styling', () => {
+  const styled = (name: string): string => readFileSync(new URL(`./fixtures/claude-code/2.1.289/${name}`, import.meta.url), 'utf8');
+
+  test('a greyed suggestion the list does not name is idle', () => {
+    expect(readScreen('claude-code', styled('idle-suggestion-other-ansi.txt')).kind).toBe('idle');
+  });
+
+  test('the captured "Try" suggestion is idle styled and plain', () => {
+    expect(readScreen('claude-code', styled('idle-suggestion-ansi.txt')).kind).toBe('idle');
+    expect(readScreen('claude-code', styled('idle-suggestion-plain.txt')).kind).toBe('idle');
+  });
+
+  test('typed text is unsent, styled read or plain', () => {
+    expect(readScreen('claude-code', styled('unsent-typed-ansi.txt')).kind).toBe('unsent');
+  });
+
+  test('text that opens faint and continues normal is unsent', () => {
+    expect(readScreen('claude-code', styled('unsent-faint-first-ansi.txt')).kind).toBe('unsent');
+  });
+
+  test('typed text in a colour, however grey it renders, is unsent', () => {
+    // Faint is the only placeholder style (see sgrDim's table); a colour is text.
+    const screen = (style: string) => `${RULE}\n❯ \x1b[${style}mFix the\x1b[0m\n${RULE}\n${STATUS}\n`;
+    for (const style of ['38;2;0;0;0', '38;2;153;153;153', '90']) {
+      expect(readScreen('claude-code', screen(style)).kind).toBe('unsent');
+    }
+  });
+
+  test('a faint "Try" with typed characters after it is unsent', () => {
+    // A line with any styling is decided by the styling alone: the list would have called
+    // this idle by its prefix, and idle is the reading the nudge types into.
+    const text = `${RULE}\n❯ \x1b[2mTry "x"\x1b[0m y\n${RULE}\n${STATUS}\n`;
+    expect(readScreen('claude-code', text).kind).toBe('unsent');
+  });
+
+  test('a plain source falls back to the list: "Try" stays idle, the rest stays unsent', () => {
+    expect(readScreen('claude-code', styled('idle-suggestion-plain.txt')).kind).toBe('idle');
+    expect(readScreen('claude-code', styled('idle-suggestion-other-plain.txt')).kind).toBe('unsent');
+  });
+
+  test('a styled read the fold has not reached, CRLF and all, reads the same', () => {
+    const crlf = styled('idle-suggestion-other-ansi.txt').replace(/\n/g, '\r\n');
+    expect(readScreen('claude-code', crlf).kind).toBe('idle');
+  });
+
+  test('a slash command being typed is unsent', () => {
+    expect(readScreen('claude-code', styled('unsent-slash-ansi.txt')).kind).toBe('unsent');
+  });
+
+  test('a paste placeholder chip is unsent', () => {
+    // The chip — [Pasted text #2 +7 lines] — renders unstyled, real content rather than a
+    // greyed suggestion, so the styling gate passes it to the list, which names no such entry.
+    expect(readScreen('claude-code', styled('unsent-paste-ansi.txt')).kind).toBe('unsent');
+  });
+
+  test('text typed while a turn runs is never idle: the screen works, the composer unsent', () => {
+    // The running screen styles the prompt itself (38;2;153;153;153) — grey, but only faint
+    // is a placeholder, and the typed text past the reset carries nothing.
+    const lines = styled('unsent-typing-while-running-ansi.txt').split('\n');
+    expect(classify('claude-code', lines).kind).toBe('working');
+    expect(classifyComposer('claude-code', lines).kind).toBe('unsent');
+  });
+
+  test('bash mode reads unknown: its prompt is "!", not the composer\'s', () => {
+    // `!` swaps the prompt glyph, so the composer finds no input line at all. Unknown is
+    // never idle and never typed into; whether "!" belongs in the prompt set stays open.
+    const kind = readScreen('claude-code', styled('bash-mode-ansi.txt')).kind;
+    expect(kind).not.toBe('idle');
+    expect(kind).toBe('unknown');
+  });
+
+  test('the styled trust dialog is attention, never idle or unsent', () => {
+    // 2.1.289 draws this dialog's choices without numbers (`❯ No, exit` / `Yes, I trust this
+    // folder`), so the trust stage's `1. Yes` does not match and the dialog reads question —
+    // the same on the plain capture. A question is attention either way; the floor holds.
+    expect(readScreen('claude-code', styled('trust-ansi.txt')).kind).toBe('question');
   });
 });
 
@@ -345,5 +449,35 @@ screen:
       - equals: ''
 `;
     expect(() => loadScreen(text)).toThrow(YamlError);
+  });
+
+  test('a composer may name its suggestions\' style, and only dim', () => {
+    const text = `
+format: 1
+cli: sample
+screen:
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    placeholder_style: dim
+    placeholders:
+      - equals: ''
+`;
+    expect(loadScreen(text).composer.placeholderStyle).toBe('dim');
+    expect(() => loadScreen(text.replace('placeholder_style: dim', 'placeholder_style: bold'))).toThrow(YamlError);
+  });
+});
+
+describe('a shell prompt against the other composers', () => {
+  const shell = (mark: string) => `~/acme % ls\nREADME.md\nsrc\n${mark} \n`;
+
+  test('codex, cursor and antigravity do not read a bare shell prompt as idle', () => {
+    for (const cli of ['codex', 'cursor', 'antigravity'] as const) {
+      expect(readScreen(cli, shell('❯')).kind).toBe('unknown');
+      expect(readScreen(cli, shell('›')).kind).toBe('unknown');
+      expect(readScreen(cli, shell('→')).kind).toBe('unknown');
+      expect(readScreen(cli, shell('>')).kind).toBe('unknown');
+    }
   });
 });

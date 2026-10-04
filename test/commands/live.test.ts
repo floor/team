@@ -18,7 +18,7 @@ const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 
 const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
 const FILE = ['--file', '.agents/team.yaml'];
 const NOW = new Date('2026-10-03T14:02:00Z');
-const IDLE = '❯ \n';
+const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
 const PERMISSION = 'Do you want to proceed?\n1. Yes\n';
 
 let base: string;
@@ -124,6 +124,7 @@ function world(text: string | ((pane: string, label: string) => string) = IDLE):
     paneText(_session, pane) {
       return panes.get(pane)?.text ?? '';
     },
+    foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
     sleep: async (ms) => {
       clock += ms;
     },
@@ -145,6 +146,24 @@ function sources(extra: Partial<UpSources>, made: World): UpSources {
 }
 
 describe('team up, live', () => {
+  test('rules are not typed into a pane with no live agent', async () => {
+    const path = join(root, '.agents/team.yaml');
+    writeFileSync(path, EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+    await approve();
+    const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
+    const made = world((_pane, label) => (label === 'codex-acme' ? capture('idle') : IDLE));
+    const sent: string[] = [];
+    made.launch.agentStatus = () => 'idle';
+    made.launch.foreground = () => ['zsh'];
+    made.launch.typeText = (_session, _pane, text) => { sent.push(text); return true; };
+    made.launch.pressEnter = () => { sent.push('Enter'); return true; };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(1);
+    expect(sent).toEqual([]);
+    expect(io.out).toContain('codex-acme: no live agent in its pane; its rules were not delivered');
+  });
+
   test.each(['accepted', 'trust', 'startup', 'swallowed'] as const)('Codex first-message rules: %s', async (outcome) => {
     const path = join(root, '.agents/team.yaml');
     writeFileSync(path, EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
@@ -533,6 +552,7 @@ describe('team down, live', () => {
       alive: () => false,
       screen: () => screen,
       status: () => current,
+      foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
       now: () => new Date(clock),
       sleep: launch.sleep,
       launch,
@@ -554,6 +574,33 @@ describe('team down, live', () => {
       },
     };
   }
+
+  test('an agent that exits between the text and the Enter is not sent the Enter', async () => {
+    const run = harness({ kind: 'idle' });
+    let live = true;
+    run.launch.typeText = (_session, _pane, text) => {
+      run.typed.push(text);
+      live = false;
+      return true;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ foreground: () => (live ? ['claude'] : ['zsh']) }));
+    expect(code).toBe(1);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.entered).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: no live agent in its pane; its exit was not typed\n');
+  });
+
+  test('a pane with no live agent is not typed into', async () => {
+    const run = harness({ kind: 'idle' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ foreground: () => ['zsh'] }));
+    expect(code).toBe(1);
+    expect(run.typed).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: no live agent in its pane; its exit was not typed\n');
+  });
 
   test('types the exit only when the screen is idle, then closes the workspace', async () => {
     const run = harness({ kind: 'idle' });

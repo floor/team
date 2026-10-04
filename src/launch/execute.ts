@@ -10,8 +10,8 @@ export type Host = {
   makeDir?(path: string): boolean;
   createWorkspace(session: string, cwd: string, label: string): { pane: string; workspace: string } | null;
   paneRun(session: string, pane: string, command: string): boolean;
-  typeLine(session: string, pane: string, text: string): boolean;
-  deliverRules?(session: string, pane: string, cli: string, text: string, seconds: number): Promise<boolean>;
+  typeLine(session: string, pane: string, text: string): boolean | 'no-agent';
+  deliverRules?(session: string, pane: string, cli: string, text: string, seconds: number): Promise<boolean | 'no-agent'>;
   renameAgent(session: string, pane: string, name: string): boolean;
   closeWorkspace(session: string, workspace: string): boolean;
   stopSession(session: string): boolean;
@@ -242,7 +242,13 @@ export async function executePlan(steps: readonly Step[], session: string, host:
       case 'deliver': {
         if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         const here = place(op.label, op.pane);
-        if (!here || !await host.deliverRules?.(session, here.pane, op.cli, op.rules, op.seconds)) {
+        const delivered = here ? await host.deliverRules?.(session, here.pane, op.cli, op.rules, op.seconds) : false;
+        if (delivered === 'no-agent') {
+          dropped.add(op.seat);
+          finish(op.seat, 'no live agent in its pane; its rules were not delivered');
+          break;
+        }
+        if (!here || !delivered) {
           dropped.add(op.seat);
           finish(op.seat, 'its rules were not delivered; left at named');
           break;
@@ -264,7 +270,14 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'type': {
-        if (!host.typeLine(session, op.pane, op.text)) {
+        const typed = host.typeLine(session, op.pane, op.text);
+        if (typed === 'no-agent') {
+          held = true;
+          dropped.add(op.seat);
+          finish(op.seat, 'no live agent in its pane; its exit was not typed');
+          break;
+        }
+        if (!typed) {
           held = true;
           dropped.add(op.seat);
           finish(op.seat, 'its exit was not typed; left as it is');
