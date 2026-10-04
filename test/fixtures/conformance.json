@@ -223,6 +223,12 @@
       "composer": "idle"
     },
     {
+      "file": "codex/0.157.0/owner-status.txt",
+      "cli": "codex",
+      "classify": "idle",
+      "composer": "idle"
+    },
+    {
       "file": "codex/0.157.0/permission-pinned.txt",
       "cli": "codex",
       "classify": "permission",

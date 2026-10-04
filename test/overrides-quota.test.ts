@@ -5,7 +5,7 @@ import { quotaFor } from '../src/profiles/profile.ts';
 import { parseOverrides, quotaWith } from '../src/profiles/overrides.ts';
 import { readScreen, statusRow } from '../src/watch/screen.ts';
 
-const screen = readFileSync(new URL('./fixtures/overrides/owner-status.txt', import.meta.url), 'utf8');
+const screen = readFileSync(new URL('./fixtures/codex/0.157.0/owner-status.txt', import.meta.url), 'utf8');
 
 const OVERRIDE = `format: 1
 profiles:
