@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { readFileSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Command, Io } from './io.ts';
+import { version } from './version.ts';
 
 // Each command is loaded only when it is called. A slice adds its line here. The table is exported
 // so a test can walk it: every command, `--help`, `-h` and a usage line.
@@ -33,10 +34,7 @@ Options:
 The team is declared in <project>/.agents/team.yaml.
 `;
 
-export function version(): string {
-  const text = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
-  return (JSON.parse(text) as { version: string }).version;
-}
+export { version };
 
 export async function main(argv: string[], io: Io): Promise<number> {
   const [name, ...rest] = argv;

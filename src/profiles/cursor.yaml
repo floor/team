@@ -79,7 +79,11 @@ screen:
   composer:
     mode: status-then-one
     status_line: '^\s+Grok\s+[0-9]'
-    prompt: '^\s*→'
+    # The input row carries the prompt at the pane's second column — unsent.txt and
+    # follow-up-queue-typed.txt draw `  → Plan, search, build anything` there, continuations at
+    # the fourth — and a prompt glyph on a content or popup row is never the input row. The
+    # read scans up from the status line and anchors this pattern to the captured column.
+    prompt: '^ {2}→'
     strip_suffix: '\s*ctrl\+c to stop\s*$'
     placeholders:
       - equals: ''
