@@ -1,7 +1,7 @@
 import { readArgs } from '../args.ts';
 import { budgetsInForce, watchInForce } from '../approve/approval.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
-import { saveReadings, saveSpendReadings, type SpendReading } from '../budgets/readings.ts';
+import { loadReadings, saveReadings, saveSpendReadings, type SpendReading } from '../budgets/readings.ts';
 import { runChecks, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -190,7 +190,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
           // The money a spend check counted is kept, like the pass's screen readings: the launch
           // gate of `up` and `add` reads it later, and one that is stale by then reads unknown
           // (§ 5). An account whose check did not run keeps its stored reading.
-          saveSpendReadings(dir, session, spendOf(outcomes));
+          saveSpendReadings(dir, spendOf(outcomes));
           for (const outcome of outcomes) {
             const key = `check:${outcome.account}`;
             if (outcome.state === 'read') {
@@ -207,9 +207,10 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         const result = pass({
           team, state, live, machine: sources.machine(root), now, memory,
           approval: sources.approval(team, root), watch: inForce, outcomes, budgets: budget,
+          readings: loadReadings(dir),
         });
         for (const report of result.reports) tell(report.text, report.to === 'owner' || !args.flags.has('no-notify'));
-        saveReadings(dir, session, result.readings, now);
+        saveReadings(dir, result.readings, now);
         if (result.nudge) {
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);
           else deliver(result.nudge, team, session, sources, memory, say, tell);

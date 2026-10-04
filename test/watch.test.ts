@@ -693,6 +693,27 @@ describe('team watch', () => {
     expect(io.out).toContain('a nudge was typed and not sent');
   });
 
+  test('a codex permission dialog above the status line never gets the Enter either', async () => {
+    // The operator is codex here, and the screen it pins after the paste is a permission dialog
+    // drawn above the status line. Read before the fix: `unsent` — the same shape as the
+    // operator's own text — so the Enter went to the dialog's first choice.
+    const codexIdle = readFileSync(new URL('./fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
+    const pinned = readFileSync(new URL('./fixtures/codex/0.157.0/permission-pinned.txt', import.meta.url), 'utf8');
+    // The example's codex-acme is parked, and a parked seat can't be the operator.
+    writeFileSync(file, example
+      .replace('operator: claude-operator-acme', 'operator: codex-acme')
+      .replace('    parked: true\n', ''));
+    scene = live({
+      'codex-acme': { status: 'idle', screen: codexIdle },
+      'deepseek-acme-2': { status: 'blocked', screen: question },
+    });
+    let looks = 0;
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, { screen: () => (looks++ === 0 ? codexIdle : pinned) }));
+    expect(typed).toEqual([`w2:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was typed and not sent');
+  });
+
   test('the text in the box, seen before the Enter, is the nudge\'s own: the Enter is sent', async () => {
     let looks = 0;
     await runWatch(['--file', file], testIo(dir), sources(1, { screen: () => (looks++ === 0 ? idle : unsent) }));
@@ -717,7 +738,7 @@ describe('team watch', () => {
 `));
     scene = live({
       'deepseek-acme-2': { status: 'blocked', screen: question },
-      'codex-acme': { screen: '• Working (2m 10s • esc to interrupt)\n\nweekly 2% left\n' },
+      'codex-acme': { screen: '• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 2% left\n' },
     });
     const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file, '--no-notify'], io, sources(1, {
@@ -820,10 +841,10 @@ describe('team watch', () => {
 
   test('readings the pass saw are saved, so `status`, `up` and `add` see them', async () => {
     writeFileSync(file, withAccounts('  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [status_line] }\n'));
-    scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\nweekly 39% left\n` } });
+    scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n` } });
     const code = await runWatch(['--file', file], testIo(dir), sources(1));
     expect(code).toBe(0);
-    expect(loadReadings(join(dir, '.agents'), 'acme-web').map(({ account, window, left, used, seat }) => ({ account, window, left, used, seat })))
+    expect(loadReadings(join(dir, '.agents')).map(({ account, window, left, used, seat }) => ({ account, window, left, used, seat })))
       .toEqual([{ account: 'openai', window: 'weekly', left: 39, used: 61, seat: 'codex-acme' }]);
   });
 
@@ -835,8 +856,22 @@ describe('team watch', () => {
       ],
     }));
     expect(code).toBe(0);
-    expect(loadSpendReadings(join(dir, '.agents'), 'acme-web'))
+    expect(loadSpendReadings(join(dir, '.agents')))
       .toEqual([{ account: 'deepseek', amount: 4.2, currency: 'USD', at: Date.parse('2026-10-03T14:00:00Z') }]);
+  });
+
+  test('a subscription check reading is kept, so `up` and `add` count the reserve against it', async () => {
+    writeFileSync(file, withAccounts('  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [check, status_line], check: openai-usage }\n'));
+    const code = await runWatch(['--file', file], testIo(dir), sources(1, {
+      readChecks: (_team, _root, at) => [
+        { account: 'openai', state: 'read', reading: { kind: 'subscription', windows: [{ window: 'weekly', left: 5, used: 95, at, resetsAt: null }] } },
+      ],
+    }));
+    expect(code).toBe(0);
+    expect(loadReadings(join(dir, '.agents')).filter((one) => one.source === 'check')).toEqual([{
+      account: 'openai', window: 'weekly', left: 5, used: 95,
+      changedAt: Date.parse('2026-10-03T14:00:00Z'), resetsAt: null, seat: null, source: 'check', confirmed: true,
+    }]);
   });
 
   test('a file that never validated, and a bad option', async () => {

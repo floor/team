@@ -7,18 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-04
+
+A safety release: 0.1.0 could type into a Codex permission dialog, and could read a quota figure a
+seat wrote itself. Upgrade.
+
+### Security
+
+- **In 0.1.0, `team` could answer a Codex permission dialog.** With the status line pinned below
+  the dialog, the screen read as unsent text, so rules delivery and the watch's nudge typed their
+  text and Enter into it, accepting its first choice. The dialog is now read as the dialog: the
+  safety floor's markers match without regard to case, and a rule's footer may sit above a
+  `status-last` composer's pinned line. The dialog is reported and never answered, and rules
+  delivery and the watch type nothing into it.
+- **In 0.1.0, a seat could set its own quota figure** by printing or typing a line shaped like one,
+  which could keep a launch from being refused. Quota figures are now read only from the status
+  line's own row of a composer screen: a line printed into the transcript or typed into the input
+  box is not read as one, a CLI whose composer shows no status line reads no figures at all, and a
+  dialog, a question, a trust or an unknown screen reads none. A pane's owner can still draw a whole
+  fake composer; a fresh `check` reading stays first, and a wrong figure can only refuse a launch or
+  produce a report.
+
 ### Added
 
 - A spend account's `floor` refuses a launch: the watch keeps the money each spend check reads in the
   state, and `up` and `add` refuse a seat whose account is at or below its floor. A reading that is
   missing, stale or in another currency than the floor's reads unknown, is said, and never refuses.
 
-### Fixed
+### Changed
 
-- A Codex permission dialog with the status line still pinned below it is read as the dialog, not as
-  unsent text: the safety floor's markers match without regard to case, and a rule's footer may sit
-  above a `status-last` composer's pinned line. The dialog is reported and never answered, and rules
-  delivery and the watch type nothing into it.
+- `bun run build` empties `dist/` first, so a file left by an older build can no longer end up in a
+  packed or globally installed tarball.
 
 ## [0.1.0] - 2026-10-04
 
@@ -111,4 +130,5 @@ The first release: set up, change and watch a project's team of AI agents from o
   footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
   stays idle.
 
+[0.1.1]: https://github.com/floor/team/releases/tag/v0.1.1
 [0.1.0]: https://github.com/floor/team/releases/tag/v0.1.0
