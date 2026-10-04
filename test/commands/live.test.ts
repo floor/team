@@ -20,6 +20,7 @@ const FILE = ['--file', '.agents/team.yaml'];
 const NOW = new Date('2026-10-03T14:02:00Z');
 const IDLE = '❯ \n';
 const PERMISSION = 'Do you want to proceed?\n1. Yes\n';
+const CLOSING = 'These are standing rules, not a task: reply ready and wait for your brief.';
 
 let base: string;
 let root: string;
@@ -169,6 +170,7 @@ describe('team up, live', () => {
       expect(code).toBe(0);
       expect(seat).toMatchObject({ stage: 'ready', rules: 'message' });
       expect(sent[0]).toContain('Agent: GPT-6 Sol · implementer');
+      expect(sent[0]).toEndWith(CLOSING);
       expect(sent[1]).toBe('Enter');
       expect(made.runs.some(({ command }) => command.startsWith('Rules for this session'))).toBe(false);
     } else if (outcome === 'swallowed') {
@@ -220,6 +222,7 @@ describe('team up, live', () => {
       expect(code).toBe(0);
       expect(seat).toMatchObject({ stage: 'ready', rules: 'message' });
       expect(sent[0]).toContain('Agent: Gemini 3.8 Flash · implementer');
+      expect(sent[0]).toEndWith(CLOSING);
       expect(sent[1]).toBe('Enter');
       expect(made.runs.some(({ command }) => command.startsWith('Rules for this session'))).toBe(false);
     } else if (outcome === 'swallowed') {

@@ -106,6 +106,23 @@ describe('the rules of a seat', () => {
     expect(text.split('\n')).toHaveLength(10);
     expect(text).toStartWith('Rules for this session, from the team file:\n- End every commit');
   });
+
+  const closing = 'These are standing rules, not a task: reply ready and wait for your brief.';
+
+  test('end with the standing-rules line, whatever the file holds', () => {
+    const lastLine = (input: RulesInput) => rulesText(input).split('\n').at(-1);
+    // A seat with rules, a seat with only signature lines, and a team file with an empty `rules:`.
+    expect(lastLine(rulesInput)).toBe(closing);
+    expect(lastLine({ ...rulesInput, rules: [] })).toBe(closing);
+    expect(lastLine({ ...rulesInput, rules: [], workspace: { mode: 'shared', protected: [] } })).toBe(closing);
+  });
+
+  test('a file whose rules already end with the line gets it once, last', () => {
+    const text = rulesText({ ...rulesInput, rules: [...rulesInput.rules, closing] });
+    expect(text.split(closing)).toHaveLength(2);
+    expect(text.split('\n').at(-1)).toBe(closing);
+    expect(text).not.toContain(`- ${closing}`);
+  });
 });
 
 describe('up --dry-run', () => {
