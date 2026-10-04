@@ -1,17 +1,17 @@
 # Claude Code 2.1.289 terminal captures
 
 Captured on 2026-10-04 with herdr 0.7.1, `pane read --source visible --format ansi
---lines 8`, from Claude Code 2.1.289 started through the machine's GLM wrapper
-(`docs/guides/tools/claude-glm.sh`, no Anthropic quota) in the scratch sessions
-`glm-scratch-placeholder` and `glm-scratch-style2`. The panes were the captures' own;
-no other seat was read or typed into. Both sessions were stopped and deleted afterwards,
-and the default session was not touched.
+--lines 8`, from a Claude Code session on a GLM endpoint (no Anthropic quota) in the
+scratch sessions `glm-scratch-placeholder` and `glm-scratch-style2`. The panes were the
+captures' own; no other seat was read or typed into. Both sessions were stopped and
+deleted afterwards, and the default session was not touched.
 
 The captures hold what `paneRead` returns: ANSI-styled text with CRLF folded to LF.
 Personal text is swapped for neutral words — the home path, the worktree name, the
-model name, the account line — and nothing else is changed; every SGR byte is the
-capture's own. The greyed suggestion is `ESC[0m ESC[2m` … `ESC[0m` (faint), and typed
-text carries no styling at all. The gap after the `❯` is U+00A0, as the CLI renders it.
+model name, the account line, the usage figure — and nothing else is changed; every
+SGR byte is the capture's own. The greyed suggestion is `ESC[0m ESC[2m` … `ESC[0m`
+(faint), and typed text carries no styling at all. The gap after the `❯` is U+00A0, as
+the CLI renders it.
 
 - `idle-suggestion-ansi.txt`, `idle-suggestion-plain.txt`: an idle box greying
   `Try "fix typecheck errors"`, in the styled and the plain read. The suggestion is
