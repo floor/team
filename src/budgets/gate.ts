@@ -146,7 +146,12 @@ function age(ms: number): string {
   return `${minutes}m`;
 }
 
-/** A money figure in a refusal: the cents are shown even when the file wrote none. */
+/**
+ * A money figure in a refusal, as read: up to four decimals — the most a check or a floor may
+ * carry — with the trailing zeros beyond the cents dropped, and never fewer than two decimals.
+ * The figure the words judge is the figure the eyes see.
+ */
 function money(amount: number): string {
-  return amount.toFixed(2);
+  const written = amount.toFixed(4).replace(/0+$/, '');
+  return written.padEnd(written.indexOf('.') + 3, '0');
 }
