@@ -42,10 +42,9 @@ the default session had nine agents before and after. Config and auth hashes wer
 
 For the five 2026-10-04 captures: the prompt's truncated absolute path row and the elided paths
 in the tool lines (`Create(...)`, `Read(...)`, `Edit(...)`) are replaced with `<project-dir>`,
-as is the banner's project line. Today's reader classifies
-`permission-command-54.txt` as `permission`; it reads the other four as `unknown` (safe — an
-unknown screen permits no input — but short of what the screens are, a follow-up for the
-profile).
+as is the banner's project line. The profile's permission and question rules are the rounds these
+captures taught it: the command prompt was already known; the file-creation, file-edit, question
+and unsent-comments shapes were added from them, each anchored to the dialog's own structure.
 
 Paths, user email, plan, and conversation UUID are replaced with placeholders. Shell launch scrollback
 before Antigravity's header banner is removed. All other visible text is retained, including the
