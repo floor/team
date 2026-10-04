@@ -71,6 +71,10 @@ or a machine that stays full, is said once, not every pass.
 | `free disk is <n> GB, below <n> GB` | under `machine.disk_min` |
 | `free swap is <n> GB, below <n> GB` | under `machine.swap_free_min` |
 | `swap grew by <n> GB in <n> minutes, above <n> GB` | over `machine.swap_growth_max` inside `machine.swap_growth_window` |
+| `<account> <window> is <n>% used, past the <n>% mark` | the account's figure is at or past a mark of `budgets.marks`, once per window |
+| `<account> <window> left <n>%, inside its <n>% reserve` | a subscription account at or inside its `reserve` |
+| `<account> <n> <currency> left, at its <n> <currency> floor` | a spend account at or below its `floor` |
+| `<account> is unknown while <seat> runs on it` | nothing counts for an account whose seats are running |
 
 A report that is the operator's to act on is also what the nudge stands for. The lines around it:
 
@@ -82,10 +86,33 @@ A report that is the operator's to act on is also what the nudge stands for. The
 | `a nudge was typed and not sent: the operator's screen changed before the Enter` | a dialog opened between the typing and the Enter; the reports wait for the next pass |
 | `the operator could not be nudged for <n> minutes; <k> report(s) wait: <reports>` | the operator was busy for `watch.nudge_wait`; this one is a desktop notification too |
 | `herdr doesn't answer; the watch keeps trying` | the pass is skipped and the watch goes on |
+| `<account>: its check is unreadable` | the check command failed, timed out, or broke RFC 0003 § 5's output contract; its output is never logged |
+| `the check for <account> is unapproved; that account reads unknown` | the check's file changed since the approval, or was never approved: it is not run |
 | `team.yaml can't be read (<problem>); watching with the team as it was` | the file broke and no copy of it validated |
 | `closed <seat>; its end <until> holds` | a temporary seat whose end is proved and whose pane is free was stopped |
 | `worktree <task> was not removed` | its removal failed; it is tried again on the next pass |
 | `the watch of "<session>" stopped` | the last line, on Ctrl-C or a stop signal |
+
+## Budgets
+
+The budget reports read the figures the pass saw on the seats' status lines (RFC 0003 § 4.1), and
+the ones each account's `check` command reads when its `sources` name `check`. A mark crossing is
+the operator's to act on; an account inside its reserve or floor is the owner's. Marks come once
+per window and are armed again at the window's known reset — or when the figure drops ten points
+with no reset known, which is a new window's.
+
+The check commands run outside the pass, at most every `budgets.check_every`, in an empty
+environment with only `PATH` and `HOME`, with a ten-second timeout: one to three lines for a
+subscription (`session 21% used resets 3h`, `weekly 39% used resets 114h4m at 1791091200`), one
+line for a spend account (`12.40 USD`, in its `floor`'s currency). Only their state is ever logged,
+never a line of what they printed — a failure is `<account>: its check is unreadable`, a timeout
+and a contract break alike. A check whose file changed since the approval, or that was never
+approved, is not run at all.
+
+`budget` is a check like the others: `watch.checks` turns it off. It reports, and never refuses a
+seat: the launch gate of `up` and `add` is what refuses. An account whose figure nothing counts —
+a check that stopped reading, a stale status line — is reported while seats on it are running;
+a first sight, which the launch gate calls `first sight only, not yet counted`, is not.
 
 ## Refusals
 
@@ -389,6 +416,6 @@ seats:
 ```console
 $ team approve ; echo "exit $?"
 team approve: line 9: watch.checks can't turn off attention: attention, missing, model-drift, approval always run
-team approve: line 10: unknown check "disks" in watch.checks: the checks are missing, model-drift, attention, unsent, idle, extra, team-idle, approval, load, memory, disk, swap-free, swap-growth
+team approve: line 10: unknown check "disks" in watch.checks: the checks are missing, model-drift, attention, unsent, idle, extra, team-idle, approval, load, memory, disk, swap-free, swap-growth, budget
 exit 2
 ```

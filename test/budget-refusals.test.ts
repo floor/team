@@ -332,6 +332,16 @@ describe('a stored reading refuses one seat', () => {
       kind: 'refuse',
       why: 'openai session left 5%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic',
     });
+    // The lowest left beats the window rank: weekly, the higher rank, is the tighter one here.
+    const lowest = seatBudget(loaded.team, [
+      reading('openai', 5),
+      reading('openai', 8, { window: 'session' }),
+      reading('anthropic', 80),
+    ], worker, now);
+    expect(lowest).toEqual({
+      kind: 'refuse',
+      why: 'openai weekly left 5%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic',
+    });
   });
 
   test('a spend account is unknown until a money reading exists', () => {

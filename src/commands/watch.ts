@@ -1,5 +1,7 @@
 import { readArgs } from '../args.ts';
 import { watchInForce } from '../approve/approval.ts';
+import { saveReadings } from '../budgets/readings.ts';
+import { runChecks, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
 import { homedir } from 'node:os';
@@ -28,6 +30,9 @@ export type WatchSources = {
   approval(team: TeamFile, root: string): string[] | null;
   // The watch values in force: the approved ones, or the defaults when nothing is approved.
   watchInForce(team: TeamFile, root: string): TeamFile['watch'];
+  // What each checked account reads this pass (RFC 0003 § 5). Runs outside the pass, like the
+  // machine figures: a command's raw output never leaves this call, and a failure reads unknown.
+  readChecks(team: TeamFile, root: string, now: number): CheckOutcome[];
   // The operator's screen, read again just before a nudge is typed.
   screen(pane: string, session: string): string | null;
   // The operator's status, asked again with its screen.
@@ -69,6 +74,7 @@ export const realWatchSources: WatchSources = {
   machine: readMachine,
   approval: realSources.approval,
   watchInForce: (team, root) => watchInForce(team, root),
+  readChecks: (team, root, now) => runChecks(team, root, now),
   screen: (pane, session) => paneRead(pane, 14, session),
   status: agentStatus,
   typeText,
@@ -124,6 +130,8 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
 
   const memory = newMemory();
   const told = new Set<string>();
+  let outcomes: CheckOutcome[] = [];
+  let checksAt: number | null = null;
   let notice: string | undefined;
   let silent = false;
   say(`watching the session "${session}" every ${sources.watchInForce(first.team, first.root).interval}s${args.flags.has('no-nudge') ? ', without nudges' : ''}`, false);
@@ -150,8 +158,29 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         silent = false;
         noteWorked(dir, session, live);
         const state = readState(dir).sessions[session] ?? emptySession();
-        const result = pass(team, state, live, sources.machine(root), sources.now().getTime(), memory, sources.approval(team, root), inForce);
+        const now = sources.now().getTime();
+        // The check commands run here, outside the pass, at most every `check_every` (§ 5): the
+        // pass reads what they read, and nothing else. Only their state is ever said — a
+        // contract failure or a timeout says `unreadable`, never a line of what they printed.
+        if (checksAt === null || now - checksAt >= team.budgets.checkEvery * 1000) {
+          checksAt = now;
+          outcomes = sources.readChecks(team, root, now);
+          for (const outcome of outcomes) {
+            const key = `check:${outcome.account}`;
+            if (outcome.state === 'read') {
+              told.delete(key);
+              continue;
+            }
+            if (told.has(key)) continue;
+            told.add(key);
+            say(outcome.state === 'unreadable'
+              ? `${outcome.account}: its check is unreadable`
+              : `the check for ${outcome.account} is unapproved; that account reads unknown`, false);
+          }
+        }
+        const result = pass(team, state, live, sources.machine(root), now, memory, sources.approval(team, root), inForce, outcomes);
         for (const report of result.reports) say(report.text, true);
+        saveReadings(dir, session, result.readings, now);
         if (result.nudge) {
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);
           else deliver(result.nudge, team, session, sources, memory, say);

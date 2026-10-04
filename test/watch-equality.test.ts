@@ -233,7 +233,11 @@ function both(name: string, team: TeamFile, steps: Step[]): void {
     const machine = step.machine ?? fine;
     const was = oldPass(file, state, step.live, machine, step.at, before, step.approval);
     const now = pass(file, state, step.live, machine, step.at, after, step.approval);
-    expect({ name, at: step.at, ...now }).toEqual({ name, at: step.at, ...was });
+    // `readings` is the one field the old pass had no idea of (#46, #50); every fixture here
+    // names no budget account, so it stays empty and the rest must be equal as before.
+    expect({ name, at: step.at, reports: now.reports, nudge: now.nudge, fallback: now.fallback })
+      .toEqual({ name, at: step.at, reports: was.reports, nudge: was.nudge, fallback: was.fallback });
+    expect(now.readings).toEqual([]);
     expect({ name, at: step.at, pending: after.pending, since: after.pendingSince })
       .toEqual({ name, at: step.at, pending: before.pending, since: before.pendingSince });
   }

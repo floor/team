@@ -104,9 +104,10 @@ CODEX_HOME=/path/to/codex exec /path/to/codex-quota
 `rows`, `notes` and `differences` hold what the table, the notes and the repairs hold; `notice` is
 the line a normal run prints above the table, or null when there is none. `budgets` is present only
 when the budgets table would be printed, one object per row (`account`, `window`, `left`, `used`,
-`resetsIn`, `seat`, `age`, `source`, `state`, `inside`). `inside` is true when a subscription's
-left figure is at or inside its reserve. The exit code is the same as without `--json`, and
-the file's warnings still go to stderr.
+`resetsIn`, `seat`, `age`, `source`, `state`, `inside`, `reserve`). `inside` is true when a
+subscription's left figure is at or inside its reserve, and `reserve` is the reserve that row was
+read against — the same figure the table's line names, null when the account has none. The exit
+code is the same as without `--json`, and the file's warnings still go to stderr.
 
 ## Refusals
 

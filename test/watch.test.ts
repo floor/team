@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { loadReadings } from '../src/budgets/readings.ts';
 import { runWatch } from '../src/commands/watch.ts';
 import type { WatchSources } from '../src/commands/watch.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
@@ -32,6 +33,13 @@ function team(): TeamFile {
   const result = validateTeamFile(example);
   if (!result.ok) throw new Error(JSON.stringify(result.errors));
   return result.team;
+}
+
+// The example with budget accounts, where a real file writes them: under `budgets`.
+const MARKS = '  marks: [50, 75, 90]          # percent used, per account and window';
+
+function withAccounts(accounts: string): string {
+  return example.replace(MARKS, `${MARKS}\n${accounts}`);
 }
 
 // The example with codex-acme stopped instead of parked — a stopped seat whose screens the watch
@@ -164,7 +172,7 @@ function live(over: Partial<Record<string, { status?: string; screen?: string }>
 
 describe('a pass of the watch', () => {
   test('a working team reports nothing', () => {
-    expect(pass(team(), emptySession(), live(), fine, 0, newMemory())).toEqual({ reports: [], nudge: null, fallback: null });
+    expect(pass(team(), emptySession(), live(), fine, 0, newMemory())).toEqual({ reports: [], nudge: null, fallback: null, readings: [] });
   });
 
   test('an idle seat is reported after idle_first, and again every idle_repeat', () => {
@@ -583,6 +591,7 @@ describe('team watch', () => {
       machine: () => fine,
       approval: () => [],
       watchInForce: (team) => team.watch,
+      readChecks: () => [],
       screen: () => screenNow,
       status: () => statusNow,
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); return true; },
@@ -717,6 +726,42 @@ describe('team watch', () => {
     const io = testIo(dir);
     await runWatch(['--file', file], io, sources(3));
     expect(io.out.match(/herdr doesn't answer/g)?.length).toBe(1);
+  });
+
+  test('a check that reads nothing is logged as unreadable, once, and the account reads unknown', async () => {
+    writeFileSync(file, withAccounts('  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n'));
+    const io = testIo(dir);
+    const code = await runWatch(['--file', file], io, sources(2, {
+      readChecks: () => [{ account: 'deepseek', state: 'unreadable' }],
+    }));
+    expect(code).toBe(0);
+    // The command's own output is never logged: only that it could not be read.
+    expect(io.out.match(/its check is unreadable/g)?.length).toBe(1);
+    expect(io.out).toContain('deepseek: its check is unreadable');
+    expect(io.out).toContain('deepseek is unknown while deepseek-acme, deepseek-acme-2 run on it');
+  });
+
+  test('an unapproved check is not run, and the line says so once', async () => {
+    writeFileSync(file, withAccounts('  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n'));
+    const io = testIo(dir);
+    let asked = 0;
+    const code = await runWatch(['--file', file], io, sources(2, {
+      readChecks: () => { asked++; return [{ account: 'deepseek', state: 'unapproved' }]; },
+    }));
+    expect(code).toBe(0);
+    // Two passes, one reading: the checks run at most every `budgets.check_every`.
+    expect(asked).toBe(1);
+    expect(io.out.match(/unapproved; that account reads unknown/g)?.length).toBe(1);
+    expect(io.out).toContain('the check for deepseek is unapproved; that account reads unknown');
+  });
+
+  test('readings the pass saw are saved, so `status`, `up` and `add` see them', async () => {
+    writeFileSync(file, withAccounts('  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [status_line] }\n'));
+    scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\nweekly 39% left\n` } });
+    const code = await runWatch(['--file', file], testIo(dir), sources(1));
+    expect(code).toBe(0);
+    expect(loadReadings(join(dir, '.agents'), 'acme-web').map(({ account, window, left, used, seat }) => ({ account, window, left, used, seat })))
+      .toEqual([{ account: 'openai', window: 'weekly', left: 39, used: 61, seat: 'codex-acme' }]);
   });
 
   test('a file that never validated, and a bad option', async () => {

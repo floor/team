@@ -3,7 +3,11 @@
 // nudge. A check never reads herdr, a screen or the file itself — only the observation it is
 // handed (RFC 0002 § 4.2).
 import { WATCH_CHECKS_CHANGED } from '../approve/fingerprint.ts';
+import { observe, recall, type Seen } from '../budgets/readings.ts';
+import type { CheckOutcome } from '../budgets/run.ts';
 import type { TeamFile } from '../file/types.ts';
+import { quotaFor } from '../profiles/profile.ts';
+import { figuresOf } from '../profiles/quota.ts';
 import type { SessionState } from '../state.ts';
 import type { Live } from '../status/compare.ts';
 import { seatModel } from '../status/statusline.ts';
@@ -21,6 +25,7 @@ import {
 import { minutes } from './check.ts';
 import { attention } from './checks/attention.ts';
 import { approval } from './checks/approval.ts';
+import { budget } from './checks/budget.ts';
 import { disk } from './checks/disk.ts';
 import { extra } from './checks/extra.ts';
 import { idle } from './checks/idle.ts';
@@ -66,6 +71,8 @@ export type PassResult = {
   nudge: { pane: string; text: string; pending: string[] } | null;
   // What to notify instead, when a nudge has waited too long.
   fallback: string | null;
+  // The readings that count, to be saved: the state's, with this pass's figures folded in (§ 4.4).
+  readings: Seen[];
 };
 
 // The seat checks, in the order their reports land in the log; the team checks, after them. The
@@ -73,7 +80,7 @@ export type PassResult = {
 // seat before the team. Disabling a check in the file's `watch.checks` takes it out of the run,
 // except the four that can't be turned off.
 export const SEAT_CHECKS: SeatCheck[] = [missing, modelDrift, attention, unsent, idle];
-export const TEAM_CHECKS: TeamCheck[] = [extra, teamIdle, approval, load, memoryCheck, disk, swapFree, swapGrowth];
+export const TEAM_CHECKS: TeamCheck[] = [extra, teamIdle, approval, load, memoryCheck, disk, swapFree, swapGrowth, budget];
 
 // The one exclusive reading of a seat's screen and herdr status. herdr can report a seat at a
 // permission prompt as idle, so the screen decides first.
@@ -89,10 +96,11 @@ function attentionOf(screen: Screen, status: string, quiet: boolean): Attention 
 // `approval` is how the file differs from the approved one: [] when it doesn't, null when it was
 // never approved, undefined when that wasn't looked at. `watch` is the values in force — the
 // approved ones, or the defaults while the file's own are not approved — and the checks read
-// those, never the file's.
+// those, never the file's. `budgets` is what the accounts' check commands read outside the pass,
+// when the watch last ran them.
 export function pass(
   team: TeamFile, state: SessionState, live: Live, machine: Machine, now: number, memory: Memory,
-  approval?: string[] | null, watch: TeamFile['watch'] = team.watch,
+  approval?: string[] | null, watch: TeamFile['watch'] = team.watch, budgets: readonly CheckOutcome[] = [],
 ): PassResult {
   const reports: Report[] = [];
   const current = new Set<string>();
@@ -114,20 +122,19 @@ export function pass(
     ...team.seats.map((seat) => ({
       name: seat.name,
       cli: seat.cli,
+      vendor: seat.vendor,
       parked: seat.parked || seat.stopped,
       stopped: seat.stopped,
       seat,
     })),
-    ...Object.entries(state.seats).filter(([, recorded]) => recorded.temporary).map(([name, recorded]) => ({
-      name,
-      cli: team.seats.find((seat) => seat.name === recorded.temporary?.like)?.cli ?? '',
-      parked: false,
-      stopped: false,
-      seat: undefined,
-    })),
+    ...Object.entries(state.seats).filter(([, recorded]) => recorded.temporary).map(([name, recorded]) => {
+      // A temporary seat signs like the seat it is like: its CLI, and its account.
+      const like = team.seats.find((seat) => seat.name === recorded.temporary?.like);
+      return { name, cli: like?.cli ?? '', vendor: like?.vendor ?? '', parked: false, stopped: false, seat: undefined };
+    }),
   ];
 
-  for (const { name, cli, parked, stopped, seat } of seats) {
+  for (const { name, cli, vendor, parked, stopped, seat } of seats) {
     const agent = live.agents.find((candidate) => candidate.name === name);
     const lead = name === team.coordinator || name === team.operator;
     if (!agent) {
@@ -139,6 +146,8 @@ export function pass(
         herdr: live.running,
         screen: { kind: 'unknown' },
         cli,
+        vendor,
+        quota: [],
         running: false,
         quiet: false,
         working: false,
@@ -153,7 +162,8 @@ export function pass(
       continue;
     }
     known.add(agent.pane);
-    const screen = readScreen(cli, live.screens[agent.pane]);
+    const pane = live.screens[agent.pane];
+    const screen = readScreen(cli, pane);
     const quiet = agent.status === 'idle' || agent.status === 'done';
     // Working is herdr's word or the screen's: a seat mid-turn is never idle, whatever its
     // status says.
@@ -178,6 +188,8 @@ export function pass(
       herdr: live.running,
       screen,
       cli,
+      vendor,
+      quota: pane === undefined ? [] : figuresOf(quotaFor(cli), pane),
       running: true,
       quiet,
       working,
@@ -191,6 +203,19 @@ export function pass(
     });
   }
 
+  // The figures this pass saw, folded into the readings the state keeps (§ 4.3). Only an account
+  // whose `sources` name `status_line` takes a screen reading: a check-only account never records
+  // one here, and neither does an account the file doesn't name (#50).
+  let readings = recall(state.budgets);
+  for (const seat of observations) {
+    if (!seat.running) continue;
+    for (const figure of seat.quota) {
+      if (team.budgets.accounts[figure.account]?.sources.includes('status_line')) {
+        readings = observe(readings, figure, seat.name, now);
+      }
+    }
+  }
+
   const teamObservation: TeamObservation = {
     team,
     state,
@@ -201,6 +226,8 @@ export function pass(
     known,
     workers,
     approval,
+    readings,
+    budgets,
   };
 
   const ctx: CheckContext = {
@@ -250,5 +277,5 @@ export function pass(
       memory.pendingSince = null;
     }
   }
-  return { reports, nudge, fallback };
+  return { reports, nudge, fallback, readings };
 }
