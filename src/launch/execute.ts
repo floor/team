@@ -90,8 +90,11 @@ export async function executePlan(steps: readonly Step[], session: string, host:
 
     if (step.kind === 'skip') {
       if (op?.do === 'ready' && op.seat) {
+        if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         host.record(op.seat, { stage: 'ready', rules: op.rules });
         finish(op.seat, 'ready');
+      } else if (op?.do === 'refuse') {
+        finish(op.seat, `refused: ${op.why}`);
       } else host.say(`  skip ${step.text}\n`);
       continue;
     }
@@ -121,6 +124,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'create': {
+        if (op.seat && op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         if (op.seat) {
           const why = host.allow(op.seat);
           if (why) {
@@ -155,6 +159,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'launch': {
+        if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         const why = host.allow(op.seat);
         if (why) {
           dropped.add(op.seat);
@@ -171,6 +176,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'idle': {
+        if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         const here = place(op.label, op.pane, op.workspace);
         if (!here) {
           dropped.add(op.seat);
@@ -234,6 +240,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'deliver': {
+        if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         const here = place(op.label, op.pane);
         if (!here || !await host.deliverRules?.(session, here.pane, op.cli, op.rules, op.seconds)) {
           dropped.add(op.seat);

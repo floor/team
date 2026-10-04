@@ -5,6 +5,8 @@ import { approvalDifferences } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from '../commands/doctor.ts';
+import { seatBudget } from '../budgets/gate.ts';
+import { loadReadings } from '../budgets/readings.ts';
 import { rulesOf, type Launch } from '../commands/up.ts';
 import { branchPresent, readMerge } from '../end/condition.ts';
 import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines.ts';
@@ -18,7 +20,7 @@ import {
 } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { executePlan, type Host } from '../launch/execute.ts';
-import { upPlan, type UpSeat } from '../launch/plan.ts';
+import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock, type SeatState, type SessionState } from '../state.ts';
@@ -73,8 +75,8 @@ export const realSources: AddSources = {
   launch: realLaunch,
 };
 
-export const USAGE = `Usage: team add <name> [--session <name>] [--file <path>]
-       team add --temporary --like <seat> --until <result:path|merged:branch> [--worktree <task>] [--session <name>] [--file <path>]
+export const USAGE = `Usage: team add <name> [--dry-run] [--session <name>] [--file <path>]
+       team add --temporary --like <seat> --until <result:path|merged:branch> [--worktree <task>] [--dry-run] [--session <name>] [--file <path>]
 `;
 
 type Running = { name: string; vendor: string; temporary: boolean };
@@ -84,7 +86,7 @@ export const add: Command = (argv, io) => runAdd(argv, io, realSources);
 export default add;
 
 export async function runAdd(argv: string[], io: Io, sources: AddSources = realSources): Promise<number> {
-  const args = readArgs(argv, ['like', 'until', 'worktree', 'session', 'file'], ['temporary']);
+  const args = readArgs(argv, ['like', 'until', 'worktree', 'session', 'file'], ['temporary', 'dry-run']);
   if (args.error) {
     io.stderr(`team add: ${args.error}\n${USAGE}`);
     return 2;
@@ -221,6 +223,36 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     io.stderr(`team add: ${again}\n`);
     return 1;
   }
+  const decision = seatBudget(prepared.team, loadReadings(dir, session), built.seat, sources.now().getTime());
+  const stray = unnamedIn(built.seat.label, agents, workspaces);
+  const starting = seatPlan(prepared.team, built.seat, start);
+  const planned = stray
+    ? { ...starting, stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
+    : starting;
+  const wouldLaunch = planned.stage === undefined || !planned.pane || (planned.stage === 'launched' && !planned.agentLive);
+  const seatForPlan = decision.kind === 'refuse' && !wouldLaunch ? { ...planned, budget: decision } : planned;
+  const dry = args.flags.has('dry-run');
+  if (dry) {
+    if (decision.kind === 'refuse' && wouldLaunch) {
+      io.stdout(`${built.name}: would refuse: ${decision.why}\ndry run: nothing was run\n`);
+      return 0;
+    }
+    if (decision.kind === 'unknown') io.stdout(`${built.name}: ${decision.text}\n`);
+    const preview = upPlan({
+      root,
+      session,
+      sessionRunning: live === 'running',
+      seats: [seatForPlan],
+      watchAlive: true,
+    });
+    io.stdout(formatPlan(preview));
+    return 0;
+  }
+  if (decision.kind === 'refuse' && wouldLaunch) {
+    io.stderr(`team add: refused: ${decision.why}\n`);
+    return 1;
+  }
+  if (decision.kind === 'unknown') io.stdout(`${built.name}: ${decision.text}\n`);
   if (built.edited !== original) {
     const written = withLock(dir, () => {
       if (readFileSync(path, 'utf8') !== original) return { kind: 'changed' as const };
@@ -237,11 +269,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     }
   }
 
-  const stray = unnamedIn(built.seat.label, agents, workspaces);
-  const planned = stray
-    ? { ...seatPlan(prepared.team, built.seat, start), stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
-    : seatPlan(prepared.team, built.seat, start);
-  const plan = upPlan({ root, session, sessionRunning: live === 'running', seats: [planned], watchAlive: true });
+  const plan = upPlan({ root, session, sessionRunning: live === 'running', seats: [seatForPlan], watchAlive: true });
   const who = describeCaller(caller);
   const host = hostOf({
     dir, session, team: prepared.team, root, ceilings, running, seat: built.seat, temporary: built.temporary,
