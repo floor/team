@@ -3,7 +3,7 @@
 // decides the screen readings.
 import type { QuotaFigure, WindowName } from '../profiles/quota.ts';
 import type { CheckWindow } from './run.ts';
-import { emptySession, readState, updateState } from '../state.ts';
+import { readState, updateState } from '../state.ts';
 
 /** Where a reading came from: a pane's own status line, or an approved check command (§ 3). */
 export type ReadingSource = 'status_line' | 'check';
@@ -198,36 +198,32 @@ export function recall(stored: Record<string, StoredReading> | undefined): Seen[
   return Object.values(stored).map(revive);
 }
 
-/** Write the readings that still count. The state file is the per-project cache. */
-export function saveReadings(dir: string, session: string, list: readonly Seen[], now: number = Date.now()): void {
+/** Write the readings that still count. The state file is the per-project cache (§ 4.4). */
+export function saveReadings(dir: string, list: readonly Seen[], now: number = Date.now()): void {
   updateState(dir, (state) => {
-    const current = state.sessions[session] ?? emptySession();
-    current.budgets = remember(list, now);
-    state.sessions[session] = current;
+    state.budgets = remember(list, now);
   });
 }
 
-export function loadReadings(dir: string, session: string): Seen[] {
-  return recall(readState(dir).sessions[session]?.budgets);
+export function loadReadings(dir: string): Seen[] {
+  return recall(readState(dir).budgets);
 }
 
 /**
  * Write the spend readings a pass's checks read, merging by account: an account whose check did
  * not run this pass keeps the reading the state already holds. Nothing read, nothing written.
  */
-export function saveSpendReadings(dir: string, session: string, list: readonly SpendReading[]): void {
+export function saveSpendReadings(dir: string, list: readonly SpendReading[]): void {
   if (!list.length) return;
   updateState(dir, (state) => {
-    const current = state.sessions[session] ?? emptySession();
-    const spend = current.spend ?? {};
+    const spend = state.spend ?? {};
     for (const reading of list) spend[reading.account] = storeSpend(reading);
-    current.spend = spend;
-    state.sessions[session] = current;
+    state.spend = spend;
   });
 }
 
-export function loadSpendReadings(dir: string, session: string): SpendReading[] {
-  return recallSpend(readState(dir).sessions[session]?.spend);
+export function loadSpendReadings(dir: string): SpendReading[] {
+  return recallSpend(readState(dir).spend);
 }
 
 export function storeSpend(reading: SpendReading): StoredSpend {

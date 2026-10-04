@@ -226,7 +226,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // The gate reads the approved budgets, never the edited file's: the seat this `add` inserts
   // changes no section of its own, and no unapproved reserve may unblock a launch (#50).
   const budgets = budgetsInForce(prepared.team, root, sources.home);
-  const decision = seatBudget(budgets, loadReadings(dir, session), built.seat, sources.now().getTime(), loadSpendReadings(dir, session));
+  const decision = seatBudget(budgets, loadReadings(dir), built.seat, sources.now().getTime(), loadSpendReadings(dir));
   const stray = unnamedIn(built.seat.label, agents, workspaces);
   const starting = seatPlan(prepared.team, built.seat, start);
   const planned = stray

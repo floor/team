@@ -104,11 +104,11 @@ function checkReading(account: string, left: number, over: Partial<Seen> = {}): 
 }
 
 function store(list: Seen[]): void {
-  saveReadings(join(root, '.agents'), 'acme', list, now);
+  saveReadings(join(root, '.agents'), list, now);
 }
 
 function storeSpend(list: SpendReading[]): void {
-  saveSpendReadings(join(root, '.agents'), 'acme', list);
+  saveSpendReadings(join(root, '.agents'), list);
 }
 
 function approve(text: string = BASE): void {

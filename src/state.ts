@@ -2,8 +2,9 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, s
 import { join } from 'node:path';
 import type { StoredReading, StoredSpend } from './budgets/readings.ts';
 
-// What only exists while a team runs. It lives beside the team file, is keyed by session, and is
-// written by team alone: every write holds the lock and goes through a temporary file.
+// What a team keeps: the live session's seats, worktrees and watch, and the project's last
+// readings, which outlive every session (§ 4.4). It lives beside the team file and is written by
+// team alone: every write holds the lock and goes through a temporary file.
 
 export type SeatState = {
   stage: 'launched' | 'named' | 'ready';
@@ -32,15 +33,18 @@ export type SessionState = {
   worktrees: Record<string, WorktreeState>;
   watch?: { pid: number; heartbeat: string };
   nudge?: { pending_since: string | null };
-  /** The last readings for this project: a screen reading keyed by account, window and seat, a check reading by account and window. */
-  budgets?: Record<string, StoredReading>;
-  /** The last spend check readings for this project, keyed by account. */
-  spend?: Record<string, StoredSpend>;
 };
 
 export type State = {
   format: 1;
   last_valid?: { read_at: string; file: string };
+  /**
+   * The project's last readings, whatever session saw them: a screen reading keyed by account,
+   * window and seat, a check reading by account and window (§ 4.4).
+   */
+  budgets?: Record<string, StoredReading>;
+  /** The project's last spend check readings, keyed by account. */
+  spend?: Record<string, StoredSpend>;
   sessions: Record<string, SessionState>;
 };
 
@@ -70,8 +74,53 @@ export function readState(dir: string): State {
   for (const session of Object.values(state.sessions)) {
     session.seats ??= {};
     session.worktrees ??= {};
+    // Read old, write new: readings used to be held under a session. They are the project's
+    // (§ 4.4), so every session's records are merged to the top level here — no reader loses one,
+    // and the next write persists the new shape.
+    const held = session as SessionState & { budgets?: Record<string, StoredReading>; spend?: Record<string, StoredSpend> };
+    if (held.budgets) {
+      state.budgets = mergeReadings(state.budgets, held.budgets);
+      delete held.budgets;
+    }
+    if (held.spend) {
+      state.spend = mergeSpend(state.spend, held.spend);
+      delete held.spend;
+    }
   }
   return state as State;
+}
+
+/**
+ * One record per slot when two sessions hold the same account, window and seat: the reading that
+ * counts wins — a confirmed one, and among those the newest change (§ 4.3).
+ */
+function mergeReadings(
+  top: Record<string, StoredReading> | undefined,
+  held: Record<string, StoredReading>,
+): Record<string, StoredReading> {
+  const merged = top ?? {};
+  for (const [key, reading] of Object.entries(held)) {
+    const current = merged[key];
+    merged[key] = !current
+      || (reading.confirmed && !current.confirmed)
+      || (reading.confirmed === current.confirmed && Date.parse(reading.changedAt) > Date.parse(current.changedAt))
+      ? reading
+      : current;
+  }
+  return merged;
+}
+
+/** The same for spend: one record per account, the reading whose check ran last winning. */
+function mergeSpend(
+  top: Record<string, StoredSpend> | undefined,
+  held: Record<string, StoredSpend>,
+): Record<string, StoredSpend> {
+  const merged = top ?? {};
+  for (const [key, reading] of Object.entries(held)) {
+    const current = merged[key];
+    merged[key] = !current || Date.parse(reading.at) > Date.parse(current.at) ? reading : current;
+  }
+  return merged;
 }
 
 // Reads the state, lets `change` edit it, and writes it back, all under the lock.

@@ -21,8 +21,8 @@ the same folders `up` refuses, before it writes anything.
 
 Reads the team file (or the one `--file` names), this machine's approval store (the record, and the
 approved copy the seat is put back from), the session's state (`.agents/team.state.json`, including
-stored budget readings), herdr (the session's state, its agents and their workspaces), and, like
-`up`: the doctor's findings and the machine's load, free memory, free disk and free swap.
+the project's stored budget readings), herdr (the session's state, its agents and their workspaces),
+and, like `up`: the doctor's findings and the machine's load, free memory, free disk and free swap.
 
 Writes the team file when the seat has to be put back into it, `.agents/team.state.json` (the seat's
 stage, pane and workspace; a temporary seat's entry), `.agents/team.log`, the store's ledger of
