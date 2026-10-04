@@ -433,6 +433,12 @@
       "composer": "idle"
     },
     {
+      "file": "cursor/2026.10.01/trust-54.txt",
+      "cli": "cursor",
+      "classify": "trust",
+      "composer": "unknown"
+    },
+    {
       "file": "cursor/2026.10.01/trust.txt",
       "cli": "cursor",
       "classify": "trust",
