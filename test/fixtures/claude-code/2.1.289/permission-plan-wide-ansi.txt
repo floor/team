@@ -1,0 +1,39 @@
+
+  [0m[38;2;153;153;153mThought for [0m[1m[38;2;153;153;153m1s[0m[38;2;153;153;153m [0m
+[0m[38;2;177;185;249m▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔[0m
+ 
+  [0m[38;2;72;150;140m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+   [0m[1m[38;2;177;185;249mReady to code?[0m
+ 
+   Here is Claude's plan:
+  [0m[38;2;80;80;80m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌[0m
+   [0m[1m[3m[4mAdd a README.md to cc-capture-scratch[0m
+
+   [0m[1mContext[0m
+
+   The repository at [0m[38;2;177;185;249m/private/tmp/cc-capture-scratch[0m has no README and no existing documentation. It currently contains only
+   scratch material: a tracked [0m[38;2;177;185;249mnote.txt [0m("hello"), an untracked [0m[38;2;177;185;249msorted.txt [0m("hello"), an empty [0m[38;2;177;185;249mout/ [0mdirectory, and an untracked
+   [0m[38;2;177;185;249mlaunch.sh [0msymlink pointing to a script outside the repo. There is no remote, no build/test config, and no code beyond these two
+   one-word text files.
+
+   Since the repo has no evident project purpose, the README will document what is actually verifiable — the workspace as it
+   stands — rather than invent a purpose, usage, or tooling that doesn't exist. [0m[3m(Assumption made because the clarifying question [0m
+   [0m[3mwas declined; if you'd rather the README center on the [0m[3m[38;2;177;185;249mlaunch.sh[0m[3m / launcher-script workflow, or be a fill-in-the-blanks [0m
+   [0m[3mtemplate, say so and I'll adjust.)[0m
+
+   [0m[1mApproach[0m
+
+   Create a single file, [0m[38;2;177;185;249mREADME.md[0m, at the repo root. Short (~15–25 lines), factual, no fabricated sections.
+
+   [0m[1mContent outline[0m
+
+   1. [0m[1mTitle + one-line description [0m— "cc-capture-scratch" and a plain statement that it's a scratch/capture workspace, not a       [0m[38;2;153;153;153m↓[0m
+  [0m[38;2;72;150;140m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+   [0m[38;2;153;153;153mClaude has written up a plan and is ready to execute. Would you like to proceed?[0m
+
+   [0m[38;2;177;185;249m❯[0m [0m[38;2;153;153;153m1. [0m[38;2;177;185;249mYes, and use auto mode[0m                                                                                      
+     [0m[38;2;153;153;153m2. [0mYes, manually approve edits
+     [0m[38;2;153;153;153m3. Tell Claude what to change[0m
+        [0m[38;2;153;153;153mshift+tab to approve with this feedback[0m
+
+   [0m[38;2;153;153;153mctrl+g to edit in Vim · ~/.claude/plans/plan-example.md[0m

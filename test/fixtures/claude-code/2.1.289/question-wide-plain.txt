@@ -1,0 +1,33 @@
+
+ ▐▛███▛█   Claude Code v2.1.289
+▝▜██████▀  Opus 5.5 · API Usage Billing
+ ▝▝   ▝▝   /private/tmp/cc-capture-scratch
+
+
+❯ Create a file notes.txt with the text hello.
+
+  Thought for 2s
+
+⏺ Write(notes.txt)
+  ⎿  User rejected write to notes.txt
+      1 hello
+
+✻ Baked for 2s · done 3:57 PM
+
+❯ Ask me, with your question tool, which of two names to use for a file, before doing anything.
+
+  Thought for 1s
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Filename
+
+Which filename should I use for the file containing "hello"?
+
+❯ 1. notes.txt (Recommended)
+     Matches your original request — creates /private/tmp/cc-capture-scratch/notes.txt with the text hello.
+  2. hello.txt
+     Names the file after its contents instead — creates /private/tmp/cc-capture-scratch/hello.txt with the text hello.
+  3. Type something.
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

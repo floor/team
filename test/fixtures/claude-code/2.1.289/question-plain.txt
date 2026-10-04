@@ -1,0 +1,23 @@
+
+✻ Churned for 3s · done 3:54 PM
+
+❯ Ask me, with your question tool, which of two
+  names to use for a file, before doing anything.
+
+  Thought for 2s
+─────────────────────────────────────────────────────
+ ☐ Filename
+
+Which filename should I use for the file?
+
+❯ 1. notes.txt
+     Plural — a new file, matching your earlier
+     request.
+  2. note.txt
+     Singular — the existing file already in the
+     directory.
+  3. Type something.
+─────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

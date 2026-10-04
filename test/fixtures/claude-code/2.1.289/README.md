@@ -58,3 +58,57 @@ the cost figure; the model name in the status rows reads `Opus 5.5`.
   prompt glyph (styled `38;2;253;93;177`), so the composer finds no input line and
   the screen reads unknown — never idle. Whether `!` belongs in the prompt set is an
   open question for the profile, not this change.
+
+## Round 3: the permission, question and trust screens
+
+Captured on 2026-10-04 with herdr 0.7.1, `pane read --source visible` in the plain and
+`--format ansi` reads, from Claude Code 2.1.289 in a scratch herdr session of the
+captures' own (created for this, stopped and deleted after; `herdr session list` no
+longer shows it, and no other pane was read, typed into, resized or closed). The CLI
+ran in two throwaway directories under /private/tmp (`git init` and one file each),
+launched through a symlink to the seat's launcher script so the pane's own command
+line stays neutral. This machine's user settings open sessions in bypass-permissions
+mode, so each scratch launch passed `--permission-mode manual` (or `plan`) to make the
+prompts appear at all. No answer that grants anything was ever picked: every dialog
+below was dismissed with Escape. The first throwaway directory's workspace-trust
+dialog was answered once before these captures, so the narrow permission and question
+captures sit in an already-trusted scratch directory; the second directory's trust
+dialog was never answered and its captures are of the dialog itself. Everything was
+closed afterwards: each claude exited, the helper client was killed, the session was
+stopped and deleted, and both directories were removed.
+
+The wide captures come from a helper client attached on a 160x40 pty (herdr's nesting
+guard allowed in a temporary config used only by that client), so the session's panes
+ran at 134x39; the narrow ones are 54x23, the headless session's own size.
+
+Sanitising: the model name in the welcome banner is swapped for `Opus 5.5`, and the
+plan file name in the plan-approval capture is swapped for `plan-example.md`.
+Everything else — including every SGR byte — is the capture's own; the throwaway
+directory names are left as they were.
+
+- `permission-create-plain.txt`, `permission-create-ansi.txt` (54x23) and
+  `permission-create-wide-plain.txt`, `permission-create-wide-ansi.txt` (134x39): the
+  Write-tool permission asking to create `notes.txt`, from "Create a file notes.txt
+  with the text hello."; the wide pair is the same prompt from a fresh scratch
+  session. Each was denied with Escape, and the transcript above the dialog shows
+  the rejection.
+- `permission-plan-wide-plain.txt`, `permission-plan-wide-ansi.txt` (134x39): the
+  plan-approval dialog — "Claude has written up a plan and is ready to execute. Would
+  you like to proceed?" — from a `--permission-mode plan` session asked to plan
+  adding a README. Denied with Escape.
+- `permission-read-wide-plain.txt`, `permission-read-wide-ansi.txt` (134x39): the
+  Read-tool prompt asking to allow a read outside the working directories, raised
+  while the plan-mode model tried to read the launcher symlink. Denied with Escape.
+- `question-plain.txt`, `question-ansi.txt` (54x23) and `question-wide-plain.txt`,
+  `question-wide-ansi.txt` (134x39): the question tool's choice screen, from "ask me,
+  with your question tool, which of two names to use for a file"; the footer is
+  `Enter to select · ↑/↓ to navigate · Esc to cancel`. Dismissed with Escape without
+  selecting anything.
+- `trust-plain.txt` (54x23): the workspace-trust dialog of the first throwaway
+  directory, taken before it was answered; `trust-wide-plain.txt`,
+  `trust-wide-ansi.txt` (134x39): the same dialog in the second, never-answered
+  throwaway directory, dismissed with Escape.
+
+Not produced: a Bash-command permission prompt. `ls`, `mkdir`, a redirected `sort`
+and `python3 -c` all ran without a dialog in this scratch launch, so no such prompt
+could be provoked honestly with a harmless command.
