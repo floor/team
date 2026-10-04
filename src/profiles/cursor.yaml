@@ -49,11 +49,14 @@ screen:
           - '^\s+Grok\s+[0-9]'
   working:
     # The running turn is the braille spinner (whatever verb it paints), the
-    # prompt line ending in "ctrl+c to stop", or the follow-up queue: its hint
-    # line under the empty composer, with no prose between the box and the
-    # prompt. A transcript that quotes the box paints its prose lines there, so
-    # the queue rule reads them as content and leaves the screen alone. Idle and
-    # rules-accepted captures paint none of these.
+    # prompt line ending in "ctrl+c to stop", or the follow-up queue: the box's
+    # `enter …` hint row with, below it, the composer's own row — empty, or its
+    # placeholder. The order is the frame's: what follows the hint row may be
+    # chrome or that unpainted composer row and nothing else, so a typed row
+    # under the box falls to the composer read and says unsent. A transcript
+    # that quotes the box paints its prose lines there, so the queue rule reads
+    # them as content and leaves the screen alone. Idle and rules-accepted
+    # captures paint none of these.
     - any:
         - '^\s*→.*\s{2,}ctrl\+c to stop\s*$'
         - '^\s*[⠀-⣿]+\s+\S'
@@ -68,7 +71,7 @@ screen:
               - '^\s*[│┌└─┐┘├┤]'
               - '^\s*[⠀-⣿]'
               - '^\s*Tip:'
-              - '^\s*→'
+              - '^\s*→\s*(?:Add a follow-up|Plan, search, build anything)?\s*$'
               - '^\s+Grok\s'
               - '^\s*<workspace>'
               - '^\s*~/'
