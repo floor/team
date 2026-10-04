@@ -27,39 +27,41 @@ describe('accepted documents read as Bun.YAML reads them', () => {
   }
 });
 
+// The documents live in test/fixtures/yaml so a conformance run can refuse the same bytes.
+// The line and the message stay here: the runner only checks accepted or refused.
 const refused: [string, string, number, RegExp][] = [
-  ['an empty file', '# nothing\n', 1, /empty/],
-  ['a duplicate key', 'a: 1\nb: 2\na: 3', 3, /duplicate key "a"/],
-  ['a duplicate key in a nested map', 'x:\n  a: 1\n  a: 2', 3, /duplicate key/],
-  ['a duplicate key in a flow map', 'x: {a: 1, a: 2}', 1, /duplicate key/],
-  ['a duplicate quoted key', 'a: 1\n"a": 2', 2, /duplicate key/],
-  ['a tab in the indentation', 'a:\n\tb: 1', 2, /tab/],
-  ['an anchor', 'a: &x 1', 1, /anchors/],
-  ['an alias', 'a: *x', 1, /aliases/],
-  ['a tag', 'a: !!str 1', 1, /tags/],
-  ['a literal block', 'a: |\n  text', 1, /block scalars/],
-  ['a folded block', 'a: >\n  text', 1, /block scalars/],
-  ['a document marker', '---\na: 1', 1, /document markers/],
-  ['a second document', 'a: 1\n---\nb: 2', 2, /document markers/],
-  ['a directive', '%YAML 1.2\na: 1', 1, /directives/],
-  ['a merge key', 'a:\n  <<: 1', 2, /merge keys/],
-  ['a complex key', '? a\n: 1', 1, /complex keys/],
-  ['an unclosed double quote', 'a: "open', 1, /not closed/],
-  ['an unclosed single quote', "a: 'open", 1, /not closed/],
-  ['text after a quoted string', 'a: "x" y', 1, /after a quoted string/],
-  ['an unknown escape', 'a: "\\q"', 1, /unknown escape/],
-  ['a flow list left open', 'a: [1, 2', 1, /expected "," or "\]"/],
-  ['a flow map across lines', 'a: {\n  b: 1\n}', 1, /not closed/],
-  ['text after a flow list', 'a: [1] 2', 1, /unexpected text/],
-  ['a line that is no key', 'a: 1\njust words', 2, /expected "key: value"/],
-  ['a deeper line with no parent', 'a: 1\n  b: 2', 2, /unexpected indentation/],
-  ['a list item among keys', 'a: 1\n- b', 2, /list item where a key/],
-  ['a list inside a list item', '- - a', 1, /list directly inside/],
-  ['an indented first line', '  a: 1', 1, /first line/],
-  ['a value that starts with @', 'a: @x', 1, /quote it/],
-  ['a second key on a key\'s line', 'a: b: c', 1, /must be quoted/],
-  ['a value that ends with a colon', 'a: b:', 1, /must be quoted/],
-  ['a list on its key\'s line', 'a: - x', 1, /can't start on its key's line/],
+  ['an empty file', 'an-empty-file', 1, /empty/],
+  ['a duplicate key', 'a-duplicate-key', 3, /duplicate key "a"/],
+  ['a duplicate key in a nested map', 'a-duplicate-key-in-a-nested-map', 3, /duplicate key/],
+  ['a duplicate key in a flow map', 'a-duplicate-key-in-a-flow-map', 1, /duplicate key/],
+  ['a duplicate quoted key', 'a-duplicate-quoted-key', 2, /duplicate key/],
+  ['a tab in the indentation', 'a-tab-in-the-indentation', 2, /tab/],
+  ['an anchor', 'an-anchor', 1, /anchors/],
+  ['an alias', 'an-alias', 1, /aliases/],
+  ['a tag', 'a-tag', 1, /tags/],
+  ['a literal block', 'a-literal-block', 1, /block scalars/],
+  ['a folded block', 'a-folded-block', 1, /block scalars/],
+  ['a document marker', 'a-document-marker', 1, /document markers/],
+  ['a second document', 'a-second-document', 2, /document markers/],
+  ['a directive', 'a-directive', 1, /directives/],
+  ['a merge key', 'a-merge-key', 2, /merge keys/],
+  ['a complex key', 'a-complex-key', 1, /complex keys/],
+  ['an unclosed double quote', 'an-unclosed-double-quote', 1, /not closed/],
+  ['an unclosed single quote', 'an-unclosed-single-quote', 1, /not closed/],
+  ['text after a quoted string', 'text-after-a-quoted-string', 1, /after a quoted string/],
+  ['an unknown escape', 'an-unknown-escape', 1, /unknown escape/],
+  ['a flow list left open', 'a-flow-list-left-open', 1, /expected "," or "\]"/],
+  ['a flow map across lines', 'a-flow-map-across-lines', 1, /not closed/],
+  ['text after a flow list', 'text-after-a-flow-list', 1, /unexpected text/],
+  ['a line that is no key', 'a-line-that-is-no-key', 2, /expected "key: value"/],
+  ['a deeper line with no parent', 'a-deeper-line-with-no-parent', 2, /unexpected indentation/],
+  ['a list item among keys', 'a-list-item-among-keys', 2, /list item where a key/],
+  ['a list inside a list item', 'a-list-inside-a-list-item', 1, /list directly inside/],
+  ['an indented first line', 'an-indented-first-line', 1, /first line/],
+  ['a value that starts with @', 'a-value-that-starts-with', 1, /quote it/],
+  ['a second key on a key\'s line', 'a-second-key-on-a-key-s-line', 1, /must be quoted/],
+  ['a value that ends with a colon', 'a-value-that-ends-with-a-colon', 1, /must be quoted/],
+  ['a list on its key\'s line', 'a-list-on-its-key-s-line', 1, /can't start on its key's line/],
 ];
 
 describe('what the subset refuses, a full parser refuses or reads otherwise', () => {
@@ -70,8 +72,9 @@ describe('what the subset refuses, a full parser refuses or reads otherwise', ()
 });
 
 describe('everything outside the subset is refused with its line', () => {
-  for (const [name, text, line, message] of refused) {
+  for (const [name, slug, line, message] of refused) {
     test(name, () => {
+      const text = readFileSync(new URL(`./fixtures/yaml/${slug}.yaml`, import.meta.url), 'utf8');
       let error: unknown;
       try {
         parseYaml(text);
