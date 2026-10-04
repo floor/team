@@ -34,6 +34,11 @@ models:
       ignore_case: true
       model: 'GPT {2:title}'
       version: '{1}'
+quota:
+  - account: openai
+    match: '\bweekly ([0-9]+)% left\b'
+    left: '{1}%'
+    window: weekly
 status_model:
   - match: '^\s+GPT-([0-9]+(?:\.[0-9]+)?)-([Aa][Ss][Tt][Rr][Aa]|[Ss][Oo][Ll]|[Ll][Uu][Nn][Aa]|[Tt][Ee][Rr][Rr][Aa])\s[^·]*·'
     model: 'GPT {2:title}'

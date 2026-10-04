@@ -1,6 +1,7 @@
 // A launch profile, read from the CLI's YAML file. The screen is loaded separately.
 import { readFileSync } from 'node:fs';
 import { DialectError, compilePattern } from '../watch/dialect.ts';
+import { WINDOWS, type QuotaPattern, type WindowName } from './quota.ts';
 import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts';
 
 /**
@@ -79,7 +80,7 @@ export function launchCommand(profile: Profile, launch: string, rules: string): 
 
 type ModelRule = { match: RegExp; model: string; version: string };
 
-type Shipped = { profile: Profile; status: ModelRule[] };
+type Shipped = { profile: Profile; status: ModelRule[]; quota: QuotaPattern[] };
 
 const NAMES = ['claude-code', 'codex', 'cursor', 'antigravity'] as const;
 const LAUNCH_KEYS = ['binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'timeouts', 'models', 'status_model'] as const;
@@ -89,6 +90,16 @@ const SHIPPED: Record<string, Shipped> = loadShipped();
 /** The profiles this version launches. A `cli` without one is reported and left out. */
 export function profileFor(cli: string): Profile | null {
   return Object.hasOwn(SHIPPED, cli) ? (SHIPPED[cli]?.profile ?? null) : null;
+}
+
+/** The quota patterns shipped with a CLI. An unknown CLI, or one with none, has an empty list. */
+export function quotaFor(cli: string): readonly QuotaPattern[] {
+  return SHIPPED[cli]?.quota ?? [];
+}
+
+/** Patterns from a YAML list, for a profile snippet. A bad pattern throws. */
+export function quotaPatterns(text: string): QuotaPattern[] {
+  return quotaOf(parseYaml(text));
 }
 
 /** The model a status line names. `unreadable` is a line the rules claim that does not name one. */
@@ -113,9 +124,10 @@ function launchOf(root: YamlNode): Shipped {
   const entries = mapping(root, 'a profile');
   const format = required(entries, 'format', root.line);
   if (format.value.kind !== 'scalar' || format.value.value !== 1) fail(format.line, '"format" must be 1');
-  only(entries, ['format', 'cli', 'screen', ...LAUNCH_KEYS]);
+  only(entries, ['format', 'cli', 'screen', 'quota', ...LAUNCH_KEYS]);
   const cli = text(required(entries, 'cli', root.line), 'cli');
   required(entries, 'screen', root.line);
+  const quotaEntry = optional(entries, 'quota');
   for (const key of LAUNCH_KEYS) required(entries, key, root.line);
   const login = loginOf(required(entries, 'login', root.line).value);
   const timeouts = required(entries, 'timeouts', root.line).value;
@@ -136,7 +148,37 @@ function launchOf(root: YamlNode): Shipped {
       modelOf: (launch) => modelOf(models, launch),
     },
     status: modelRules(required(entries, 'status_model', root.line).value, 'status_model'),
+    quota: quotaEntry ? quotaOf(quotaEntry.value) : [],
   };
+}
+
+function quotaOf(node: YamlNode): QuotaPattern[] {
+  if (node.kind !== 'seq' || node.items.length === 0) fail(node.line, '"quota" must be a non-empty list');
+  return node.items.map((item) => {
+    const entries = mapping(item, 'a quota pattern');
+    only(entries, ['account', 'match', 'left', 'used', 'resets', 'window']);
+    const left = optional(entries, 'left');
+    const used = optional(entries, 'used');
+    if (left && used) fail(left.line, 'a quota pattern has left or used, not both');
+    if (!left && !used) fail(item.line, 'a quota pattern needs left or used');
+    const side = left ? 'left' : 'used';
+    const figure = text((left ?? used) as YamlEntry, side);
+    template(figure, (left ?? used)?.line ?? item.line);
+    const resetsEntry = optional(entries, 'resets');
+    const resets = resetsEntry ? text(resetsEntry, 'resets') : null;
+    if (resets !== null) template(resets, resetsEntry?.line ?? item.line);
+    const window = text(required(entries, 'window', item.line), 'window');
+    if (!(WINDOWS as readonly string[]).includes(window)) fail(item.line, '"window" must be session, daily or weekly');
+    const match = required(entries, 'match', item.line);
+    return {
+      account: text(required(entries, 'account', item.line), 'account'),
+      window: window as WindowName,
+      match: pattern(text(match, 'match'), false, match.line),
+      side,
+      figure,
+      resets,
+    };
+  });
 }
 
 // The flag's value is the next token, after "=" or any whitespace. The last flag in the line wins.

@@ -52,9 +52,24 @@
     },
     "models": { "$ref": "#/$defs/models" },
     "status_model": { "type": "array", "items": { "$ref": "#/$defs/modelRule" }, "minItems": 1 },
+    "quota": { "type": "array", "items": { "$ref": "#/$defs/quota" }, "minItems": 1 },
     "screen": { "$ref": "#/$defs/screen" }
   },
   "$defs": {
+    "quota": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account", "match", "window"],
+      "oneOf": [{ "required": ["left"] }, { "required": ["used"] }],
+      "properties": {
+        "account": { "type": "string", "minLength": 1 },
+        "match": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "left": { "type": "string", "minLength": 1 },
+        "used": { "type": "string", "minLength": 1 },
+        "resets": { "type": "string", "minLength": 1 },
+        "window": { "enum": ["session", "daily", "weekly"] }
+      }
+    },
     "screen": {
       "type": "object",
       "additionalProperties": false,
