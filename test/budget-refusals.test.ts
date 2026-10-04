@@ -34,6 +34,7 @@ workspace:
 seats:
   - role: coordinator
     name: lead
+    label: lead
     cli: claude-code
     vendor: anthropic
     model: Claude Opus
@@ -42,6 +43,7 @@ seats:
     mode: shared
   - role: implementer
     name: worker
+    label: worker
     cli: claude-code
     vendor: openai
     model: Claude Opus
@@ -748,6 +750,7 @@ workspace:
 seats:
   - role: coordinator
     name: lead
+    label: lead
     cli: claude-code
     vendor: anthropic
     model: Claude Opus
@@ -756,6 +759,7 @@ seats:
     mode: shared
   - role: implementer
     name: work
+    label: work
     cli: claude-code
     vendor: openai
     account: openai-work
@@ -765,6 +769,7 @@ seats:
     mode: shared
   - role: implementer
     name: home
+    label: home
     cli: claude-code
     vendor: openai
     account: openai-home

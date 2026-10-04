@@ -54,6 +54,42 @@ export function statusRowOf(data: ScreenData, lines: string[]): string | null {
   return at === 'stop' || at < 0 ? null : (lines[at] ?? null);
 }
 
+export type Fold = { count: number; rows: string[]; width: number };
+
+/**
+ * The fold a `two-rules-footer-below` composer's window shows, or null: the marker row whose
+ * capture 1 is the hidden-row count, the tail rows below it, the box's two rules around both,
+ * and a footer under the bottom one. The top rule's width is the width the text wrapped at.
+ * This is the shape alone; whether the fold holds the typed text is the caller's to verify.
+ */
+export function foldOf(data: ScreenData, lines: string[]): Fold | null {
+  const composer = data.composer;
+  if (composer.mode !== 'two-rules-footer-below' || !composer.fold) return null;
+  let marker = -1;
+  let found: RegExpExecArray | null = null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const hit = composer.fold.exec(lines[i] ?? '');
+    if (hit) { marker = i; found = hit; break; }
+  }
+  if (marker < 0 || !found) return null;
+  let bottom = -1;
+  for (let i = marker + 1; i < lines.length; i++) {
+    if (composer.rule.test(lines[i] ?? '')) { bottom = i; break; }
+  }
+  if (bottom < 0) return null;
+  let top = -1;
+  for (let i = marker - 1; i >= 0; i--) {
+    if (composer.rule.test(lines[i] ?? '')) { top = i; break; }
+  }
+  if (top < 0) return null;
+  const rows = lines.slice(marker + 1, bottom).filter((line) => line.trim());
+  if (rows.length === 0) return null;
+  if (!lines.slice(bottom + 1).some((line) => composer.footers.some((pattern) => pattern.test(line)))) return null;
+  const count = Number(found[1]);
+  if (!Number.isInteger(count) || count < 1) return null;
+  return { count, rows, width: (lines[top] ?? '').trim().length };
+}
+
 type Hit = { kind: Screen['kind']; from: number; input: number } | { kind: 'unknown' } | { kind: 'stop' };
 
 /** `lines` is already the window: the last 20 lines, each keeping any ANSI styling. Matching
@@ -236,19 +272,18 @@ function boxToRule(lines: string[], styled: string[], composer: Extract<ScreenDa
   if (close < 0) return { kind: 'unknown' };
   const above = input > 0 && composer.rule.test(lines[input - 1] ?? '');
   let footer = false;
+  const rawFooters: string[] = [];
   for (let j = close + 1; j < lines.length; j++) {
     if (tick()) return { kind: 'stop' };
     const raw = lines[j] ?? '';
-    if (!raw.trim()) continue;
-    if (composer.footers.some((pattern) => pattern.test(raw))) {
-      footer = true;
-    } else {
-      footer = false;
-      break;
-    }
+    if (raw.trim()) rawFooters.push(raw);
   }
-  // The opening rule on the line directly above, or the status footer when that
-  // rule has scrolled out of the window.
+  if (composer.footers.length > 0 && rawFooters.length === composer.footers.length) {
+    footer = composer.footers.every((pattern, idx) => pattern.test(rawFooters[idx] ?? ''));
+  }
+  // The opening rule on the line directly above, or the ordered footer frame
+  // (every pattern matched in sequence, equal count) when that rule has
+  // scrolled out of the window.
   if (!above && !footer) return { kind: 'unknown' };
   const from = above ? input - 1 : input;
   for (let i = input + 1; i < close; i++) {

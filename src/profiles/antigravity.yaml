@@ -70,6 +70,9 @@ screen:
     ignore_case: true
     prompt: '^\s*>\s*'
     rule: '^\s*[─━]{8,}\s*$'
+    # A long paste folds: the row reads `↑ N more lines` (with the prompt glyph on the
+    # input row's own marker), the rows below it are the tail. Capture 1 is N.
+    fold: '^\s*(?:>\s*)?↑\s*([0-9]+)\s+more lines\s*$'
     footers:
       - '\? for shortcuts'
       - 'Gemini\s+[0-9]'

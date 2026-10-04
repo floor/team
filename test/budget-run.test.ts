@@ -113,6 +113,19 @@ describe('the subscription output contract', () => {
     const future = String(Math.floor((NOW + 10 * MIN) / 1000));
     expect(parseSubscription(`weekly 39% used at ${future}\n`, NOW)).toMatchObject({ windows: [{ at: NOW }] });
   });
+
+  test('a CRLF line ending is the line ending, and a CR anywhere else is off the contract', () => {
+    // A check that prints from a pty, or from Windows, ends its lines \r\n: the CR is part
+    // of the ending, not a character of the line.
+    expect(parseSubscription('weekly 39% used\r\n', NOW)).toMatchObject({ windows: [{ window: 'weekly', left: 61, used: 39 }] });
+    expect(parseSubscription('session 21% used\r\ndaily 44% left\r\n', NOW)).toMatchObject({
+      windows: [{ window: 'session' }, { window: 'daily' }],
+    });
+    expect(parseSpend('12.40 USD\r\n', 'USD', NOW)).toMatchObject({ amount: 12.4 });
+    // A CR in the middle of a line is not a line ending, and the line stays off the contract.
+    expect(parseSubscription('weekly 39%\r used\n', NOW)).toBeNull();
+    expect(parseSubscription('weekly 39% used\r \n', NOW)).toBeNull();
+  });
 });
 
 describe('the spend output contract', () => {
