@@ -4,463 +4,540 @@
       "file": "antigravity/1.2.16/exit-typed.txt",
       "cli": "antigravity",
       "classify": "unsent",
-      "composer": "unsent"
+      "composer": "unsent",
+      "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/exit.txt",
       "cli": "antigravity",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/folded-rules.txt",
       "cli": "antigravity",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "antigravity/1.2.16/idle.txt",
       "cli": "antigravity",
       "classify": "idle",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/permission-cut.txt",
       "cli": "antigravity",
       "classify": "permission",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "antigravity/1.2.16/permission.txt",
       "cli": "antigravity",
       "classify": "permission",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "antigravity/1.2.16/rules-accepted.txt",
       "cli": "antigravity",
       "classify": "idle",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/trust-54.txt",
       "cli": "antigravity",
       "classify": "trust",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/trust.txt",
       "cli": "antigravity",
       "classify": "trust",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/unsent.txt",
       "cli": "antigravity",
       "classify": "unsent",
-      "composer": "unsent"
+      "composer": "unsent",
+      "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/working.txt",
       "cli": "antigravity",
       "classify": "working",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/bash-mode-ansi.txt",
       "cli": "claude-code",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/idle-suggestion-ansi.txt",
       "cli": "claude-code",
       "classify": "idle",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/idle-suggestion-other-ansi.txt",
       "cli": "claude-code",
       "classify": "idle",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/2.1.289/idle-suggestion-other-plain.txt",
       "cli": "claude-code",
       "classify": "unsent",
-      "composer": "unsent"
+      "composer": "unsent",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/2.1.289/idle-suggestion-plain.txt",
       "cli": "claude-code",
       "classify": "idle",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-create-ansi.txt",
       "cli": "claude-code",
       "classify": "permission",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-create-plain.txt",
       "cli": "claude-code",
       "classify": "permission",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-create-wide-ansi.txt",
       "cli": "claude-code",
       "classify": "permission",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-create-wide-plain.txt",
       "cli": "claude-code",
       "classify": "permission",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-plan-wide-ansi.txt",
       "cli": "claude-code",
       "classify": "permission",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-plan-wide-plain.txt",
       "cli": "claude-code",
       "classify": "permission",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-read-wide-ansi.txt",
       "cli": "claude-code",
       "classify": "permission",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/permission-read-wide-plain.txt",
       "cli": "claude-code",
       "classify": "permission",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/question-ansi.txt",
       "cli": "claude-code",
       "classify": "question",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/question-plain.txt",
       "cli": "claude-code",
       "classify": "question",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/question-wide-ansi.txt",
       "cli": "claude-code",
       "classify": "question",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/question-wide-plain.txt",
       "cli": "claude-code",
       "classify": "question",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/trust-ansi.txt",
       "cli": "claude-code",
       "classify": "trust",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/trust-plain.txt",
       "cli": "claude-code",
       "classify": "trust",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/trust-wide-ansi.txt",
       "cli": "claude-code",
       "classify": "trust",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/trust-wide-plain.txt",
       "cli": "claude-code",
       "classify": "trust",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/unsent-faint-first-ansi.txt",
       "cli": "claude-code",
       "classify": "unsent",
-      "composer": "unsent"
+      "composer": "unsent",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/2.1.289/unsent-paste-ansi.txt",
       "cli": "claude-code",
       "classify": "unsent",
-      "composer": "unsent"
+      "composer": "unsent",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/unsent-slash-ansi.txt",
       "cli": "claude-code",
       "classify": "unsent",
-      "composer": "unsent"
+      "composer": "unsent",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/unsent-typed-ansi.txt",
       "cli": "claude-code",
       "classify": "unsent",
-      "composer": "unsent"
+      "composer": "unsent",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/2.1.289/unsent-typing-while-running-ansi.txt",
       "cli": "claude-code",
       "classify": "working",
-      "composer": "unsent"
+      "composer": "unsent",
+      "provenance": "capture"
     },
     {
       "file": "claude-code/leftover-box.txt",
       "cli": "claude-code",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/output-under-rule.txt",
       "cli": "claude-code",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/quoted-dialog.txt",
       "cli": "claude-code",
       "classify": "idle",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/rule-above.txt",
       "cli": "claude-code",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/scrolled-shortcuts.txt",
       "cli": "claude-code",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-bypass-only.txt",
       "cli": "claude-code",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-git-log.txt",
       "cli": "claude-code",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-prompt.txt",
       "cli": "claude-code",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-right-prompt.txt",
       "cli": "claude-code",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-shortcuts-indented.txt",
       "cli": "claude-code",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-shortcuts.txt",
       "cli": "claude-code",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/shell-status-only.txt",
       "cli": "claude-code",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "claude-code/trust-unnumbered.txt",
       "cli": "claude-code",
       "classify": "trust",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "codex/0.157.0/exit-typed.txt",
       "cli": "codex",
       "classify": "unsent",
-      "composer": "unsent"
+      "composer": "unsent",
+      "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/exit.txt",
       "cli": "codex",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/idle.txt",
       "cli": "codex",
       "classify": "idle",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/owner-status.txt",
       "cli": "codex",
       "classify": "idle",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "constructed"
     },
     {
       "file": "codex/0.157.0/permission-pinned.txt",
       "cli": "codex",
       "classify": "permission",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "codex/0.157.0/permission.txt",
       "cli": "codex",
       "classify": "permission",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/rules-accepted.txt",
       "cli": "codex",
       "classify": "idle",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/startup-loading.txt",
       "cli": "codex",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/startup.txt",
       "cli": "codex",
       "classify": "question",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/trust.txt",
       "cli": "codex",
       "classify": "trust",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/unsent.txt",
       "cli": "codex",
       "classify": "unsent",
-      "composer": "unsent"
+      "composer": "unsent",
+      "provenance": "capture"
     },
     {
       "file": "codex/0.157.0/working.txt",
       "cli": "codex",
       "classify": "working",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/exit-typed.txt",
       "cli": "cursor",
       "classify": "unsent",
-      "composer": "unsent"
+      "composer": "unsent",
+      "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/exit.txt",
       "cli": "cursor",
       "classify": "unknown",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/follow-up-queue-hint.txt",
       "cli": "cursor",
       "classify": "working",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "constructed"
     },
     {
       "file": "cursor/2026.10.01/follow-up-queue-one.txt",
       "cli": "cursor",
       "classify": "working",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "constructed"
     },
     {
       "file": "cursor/2026.10.01/follow-up-queue-two.txt",
       "cli": "cursor",
       "classify": "working",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "constructed"
     },
     {
       "file": "cursor/2026.10.01/follow-up-queue-typed.txt",
       "cli": "cursor",
       "classify": "working",
-      "composer": "unsent"
+      "composer": "unsent",
+      "provenance": "constructed"
     },
     {
       "file": "cursor/2026.10.01/idle.txt",
       "cli": "cursor",
       "classify": "idle",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/rules-accepted.txt",
       "cli": "cursor",
       "classify": "idle",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/startup.txt",
       "cli": "cursor",
       "classify": "idle",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/thinking.txt",
       "cli": "cursor",
       "classify": "working",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/trust-54.txt",
       "cli": "cursor",
       "classify": "trust",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/trust.txt",
       "cli": "cursor",
       "classify": "trust",
-      "composer": "unknown"
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/unsent.txt",
       "cli": "cursor",
       "classify": "unsent",
-      "composer": "unsent"
+      "composer": "unsent",
+      "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/working-no-spinner.txt",
       "cli": "cursor",
       "classify": "working",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "constructed"
     },
     {
       "file": "cursor/2026.10.01/working.txt",
       "cli": "cursor",
       "classify": "working",
-      "composer": "idle"
+      "composer": "idle",
+      "provenance": "capture"
     }
   ],
   "yaml": [
