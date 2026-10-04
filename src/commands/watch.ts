@@ -1,7 +1,7 @@
 import { readArgs } from '../args.ts';
 import { budgetsInForce, watchInForce } from '../approve/approval.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
-import { loadReadings, saveReadings, saveSpendReadings, type SpendReading } from '../budgets/readings.ts';
+import { loadReadings, saveSpendReadings, updateReadings, type Seen, type SpendReading } from '../budgets/readings.ts';
 import { runChecks, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -171,6 +171,16 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         if (problem) tell(problem, true);
       }
 
+      // Only the watch of the file's own session saves readings. A watch on another session —
+      // anyone may run one, from any terminal — reads and reports, but the figures it sees are
+      // not the project's cache that `up` and `add` count (§ 4.4): it says so once and writes
+      // none, budget or spend.
+      const foreign = session !== team.session;
+      if (foreign && !told.has('foreign-session')) {
+        told.add('foreign-session');
+        say(`the session "${session}" is not this file's "${team.session}": its readings are not saved`, false);
+      }
+
       // The values in force, read with the file: until the owner approves an edit to `watch`,
       // the watch keeps running with what was approved, or with the defaults.
       const inForce = sources.watchInForce(team, root);
@@ -195,7 +205,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
           // The money a spend check counted is kept, like the pass's screen readings: the launch
           // gate of `up` and `add` reads it later, and one that is stale by then reads unknown
           // (§ 5). An account whose check did not run keeps its stored reading.
-          saveSpendReadings(dir, spendOf(outcomes));
+          if (!foreign) saveSpendReadings(dir, spendOf(outcomes));
           for (const outcome of outcomes) {
             const key = `check:${outcome.account}`;
             if (outcome.state === 'read') {
@@ -209,13 +219,21 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
               : `the check for ${outcome.account} is unapproved; that account reads unknown`, false);
           }
         }
-        const result = pass({
+        const run = (stored: readonly Seen[]) => pass({
           team, state, live, machine: sources.machine(root), now, memory,
           approval: sources.approval(team, root), watch: inForce, outcomes, budgets: budget,
-          readings: loadReadings(dir),
+          readings: stored,
         });
+        // The pass folds its figures where the state is held: two watches of the project fold one
+        // after the other, not over each other. A watch on a foreign session still folds, for its
+        // reports, and saves nothing.
+        const result = foreign
+          ? run(loadReadings(dir))
+          : updateReadings(dir, now, (stored) => {
+            const folded = run(stored);
+            return { readings: folded.readings, value: folded };
+          });
         for (const report of result.reports) tell(report.text, report.to === 'owner' || !args.flags.has('no-notify'));
-        saveReadings(dir, result.readings, now);
         if (result.nudge) {
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);
           else deliver(result.nudge, team, session, sources, memory, say, tell, told);

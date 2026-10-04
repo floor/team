@@ -22,6 +22,11 @@ export type Seat = {
   name: string;
   cli: string;
   vendor: string;
+  /**
+   * The account whose budget this seat spends, when one vendor has two (RFC 0003 § 3b). Absent
+   * means the vendor is the account; a seat that names one spends it instead of the vendor.
+   */
+  account?: string;
   model: string;
   version: string;
   display: string;

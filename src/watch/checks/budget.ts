@@ -114,7 +114,7 @@ function countedOf(
 
 /** The account reads unknown while a seat that spends it is running: the operator can stop it. */
 function unknown(name: string, team: TeamObservation, ctx: CheckContext): Report | null {
-  const on = team.seats.filter((seat) => seat.running && seat.vendor === name).map((seat) => seat.name);
+  const on = team.seats.filter((seat) => seat.running && seat.account === name).map((seat) => seat.name);
   if (!on.length) return null;
   const verb = on.length === 1 ? 'runs' : 'run';
   return ctx.once(`budget:unknown:${name}`, `${name} is unknown while ${on.join(', ')} ${verb} on it`, 'operator');

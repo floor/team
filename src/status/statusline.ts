@@ -2,13 +2,15 @@
 // visible text into the file's two fields, `model` and `version`, or null when the text doesn't
 // show them: "unread" is never a mismatch. The last six lines are the window. A line the rules
 // claim but cannot name clears an earlier match; that is how an unknown Codex footer stays unread.
+import { stripSgr } from '../ansi.ts';
 import { statusOnLine } from '../profiles/profile.ts';
 
 export type Running = { model: string; version: string };
 
 export function runningModel(cli: string, screen: string): Running | null {
   let found: Running | null = null;
-  for (const line of screen.split('\n').slice(-6)) {
+  // The pane's text may keep its ANSI styling; the model is read from the plain form.
+  for (const line of stripSgr(screen).split('\n').slice(-6)) {
     const hit = statusOnLine(cli, line);
     if (hit === 'unreadable') found = null;
     else if (hit) found = hit;
