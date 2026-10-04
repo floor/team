@@ -101,6 +101,11 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('idle');
   });
 
+  test('a box whose top rule has scrolled out reads idle with the default shortcuts footer', () => {
+    const text = readFileSync(new URL('./fixtures/claude-code/scrolled-shortcuts.txt', import.meta.url), 'utf8');
+    expect(readScreen('claude-code', text).kind).toBe('idle');
+  });
+
   test('a question dialog with a status line under it and no rule stays a question', () => {
     const text = `Which branch should this start from?\n\n❯ 1. main\n  2. next\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n  main · Opus 5.5\n`;
     const lines = text.split('\n').map((line) => line.trimEnd()).slice(-20);

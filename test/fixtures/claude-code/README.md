@@ -4,3 +4,4 @@
 - `rule-above.txt`: constructed. A long rule in the answer above the exit, then a bare `❯ `.
 - `leftover-box.txt`: constructed. The box Claude left (rule, prompt, rule, status), then the shell's `❯ `.
 - `output-under-rule.txt`: constructed. A bare `❯ `, a rule, and a line of output under the rule.
+- `scrolled-shortcuts.txt`: constructed. A real box whose top rule has scrolled out of the window and the default shortcuts footer remains.
