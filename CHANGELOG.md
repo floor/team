@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A spend account's `floor` refuses a launch: the watch keeps the money each spend check reads in the
+  state, and `up` and `add` refuse a seat whose account is at or below its floor. A reading that is
+  missing, stale or in another currency than the floor's reads unknown, is said, and never refuses.
+
 ## [0.1.0] - 2026-10-04
 
 The first release: set up, change and watch a project's team of AI agents from one file,

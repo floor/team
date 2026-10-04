@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { loadReadings, observe, saveReadings, verdict, type Seen } from '../src/budgets/readings.ts';
+import { loadReadings, loadSpendReadings, observe, saveReadings, saveSpendReadings, verdict, type Seen } from '../src/budgets/readings.ts';
 import type { QuotaFigure } from '../src/profiles/quota.ts';
 
 const minute = 60 * 1000;
@@ -139,5 +139,27 @@ describe('which reading counts', () => {
     saveReadings(dir, 'default', [passed, kept], at);
     expect(loadReadings(dir, 'default').map((item) => item.seat)).toEqual(['open']);
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('spend readings', () => {
+  test('a save merges by account: one it did not read keeps its stored reading', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
+    try {
+      const at = 1_700_000_000_000;
+      saveSpendReadings(dir, 'default', [{ account: 'openai', amount: 12.4, currency: 'USD', at }]);
+      expect(loadSpendReadings(dir, 'default')).toEqual([{ account: 'openai', amount: 12.4, currency: 'USD', at }]);
+      saveSpendReadings(dir, 'default', [{ account: 'deepseek', amount: 4.2, currency: 'USD', at: at + minute }]);
+      expect(loadSpendReadings(dir, 'default').map((one) => one.account).sort()).toEqual(['deepseek', 'openai']);
+      // A later reading for the same account replaces the older one.
+      saveSpendReadings(dir, 'default', [{ account: 'openai', amount: 3, currency: 'USD', at: at + minute }]);
+      expect(loadSpendReadings(dir, 'default').find((one) => one.account === 'openai'))
+        .toEqual({ account: 'openai', amount: 3, currency: 'USD', at: at + minute });
+      // Nothing read, nothing written.
+      saveSpendReadings(dir, 'other', []);
+      expect(loadSpendReadings(dir, 'other')).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

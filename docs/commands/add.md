@@ -77,6 +77,7 @@ without input and the seat left out`, and the rest of the table on the [team up]
 | `team add: no launch profile for \`<cli>\` in this version` | 1 |
 | `team add: the approval allows <n> seats; <m> would be running` / `… <n> temporary seats; …` / `… <n> <vendor> seats; …` | 1 |
 | `team add: refused: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | 1 |
+| `team add: refused: <account> spend <amount> <CUR>, at or below its <floor> <CUR> floor, read <age> ago; accounts with room: <accounts>` | 1 |
 | `team add: session can't be "default", herdr's own session` | 1 |
 | `team add: herdr doesn't answer` | 1 |
 | ``team add: session <session> is stopped; clear it with `herdr session delete <session>` `` | 1 |

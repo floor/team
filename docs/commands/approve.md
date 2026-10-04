@@ -55,8 +55,9 @@ whose turn-offs are their own line) or to a seat's own fields; a seat taken out,
 does not, so `remove --keep` and `add` never send the owner back to `approve`. Until an edit is
 approved its section changes nothing: the watch, the budget reports, the check cadence, `up`'s and
 `add`'s launch gate and `status`'s table run with the approved values, or with the defaults when
-nothing was approved. A stored copy that no longer validates: the defaults run, and the difference
-is reported until the next approve.
+nothing was approved. A stored copy that no longer validates: `budgets` falls back to no accounts (no
+budget reports, no check runs) and the difference is reported until the next approve; `up` and `add`
+refuse a drifted file before the gate.
 
 ## Refusals
 

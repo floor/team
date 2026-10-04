@@ -19,8 +19,9 @@ agents, each pane's screen and status. It also reads the machine's load, free me
 swap, and, when a temporary seat's end is judged, git.
 
 Writes `.agents/team.state.json` (the watch's pid and a heartbeat, once a pass; a temporary seat's
-`worked` and `own_commits` when it sees them), `.agents/team.log` (every line it prints), and,
-through herdr: the nudge's text and Enter, and the panes and workspaces of the seats it closes.
+`worked` and `own_commits` when it sees them; the accounts' latest screen readings and the money the
+spend checks read), `.agents/team.log` (every line it prints), and, through herdr: the nudge's text
+and Enter, and the panes and workspaces of the seats it closes.
 
 ## Who may run it
 
@@ -107,7 +108,9 @@ subscription (`session 21% used resets 3h`, `weekly 39% used resets 114h4m at 17
 line for a spend account (`12.40 USD`, in its `floor`'s currency). Only their state is ever logged,
 never a line of what they printed — a failure is `<account>: its check is unreadable`, a timeout
 and a contract break alike. A check whose file changed since the approval, or that was never
-approved, is not run at all.
+approved, is not run at all. The money a spend check reads is kept in the state with the pass's
+screen figures, so `up` and `add` measure the account's floor against it; a reading that is stale by
+then reads unknown there.
 
 The whole section is the owner's, like the watch's own timings: an edit to a reserve, a floor, the
 marks, `stale_after`, `check_every` or the accounts changes nothing until the owner approves it.

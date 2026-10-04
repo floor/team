@@ -4,8 +4,8 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalOf } from '../src/approve/approval.ts';
-import { seatBudget } from '../src/budgets/gate.ts';
-import { saveReadings, type Seen } from '../src/budgets/readings.ts';
+import { accountsWithRoom, seatBudget } from '../src/budgets/gate.ts';
+import { saveReadings, saveSpendReadings, type Seen, type SpendReading } from '../src/budgets/readings.ts';
 import { runAdd, type AddSources } from '../src/commands/add.ts';
 import type { DoctorSources } from '../src/commands/doctor.ts';
 import { runUp, type Launch, type UpSources } from '../src/commands/up.ts';
@@ -53,6 +53,14 @@ budgets:
     openai: { kind: subscription, reserve: 10%, sources: [status_line] }
 `;
 
+// The same file with the worker's account spent by check instead of a subscription.
+const SPEND = BASE.replace(
+  'openai: { kind: subscription, reserve: 10%, sources: [status_line] }',
+  'openai: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }',
+);
+const SPEND_TAIL = 'openai spend 4.20 USD, at or below its 5.00 USD floor, read 3m ago; accounts with room: anthropic';
+const SPEND_WHY = `refused: ${SPEND_TAIL}`;
+
 let base: string;
 let root: string;
 let home: string;
@@ -71,8 +79,16 @@ function reading(account: string, left: number, over: Partial<Seen> = {}): Seen 
   };
 }
 
+function spend(account: string, amount: number, at: number = now, over: Partial<SpendReading> = {}): SpendReading {
+  return { account, amount, currency: 'USD', at, ...over };
+}
+
 function store(list: Seen[]): void {
   saveReadings(join(root, '.agents'), 'acme', list, now);
+}
+
+function storeSpend(list: SpendReading[]): void {
+  saveSpendReadings(join(root, '.agents'), 'acme', list);
 }
 
 function approve(text: string = BASE): void {
@@ -345,16 +361,123 @@ describe('a stored reading refuses one seat', () => {
   });
 
   test('a spend account is unknown until a money reading exists', () => {
-    const text = BASE.replace(
-      'openai: { kind: subscription, reserve: 10%, sources: [status_line] }',
-      'openai: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }',
-    );
-    approve(text);
+    approve(SPEND);
     const loaded = loadTeamFile(root);
     if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
     const worker = loaded.team.seats.find((seat) => seat.name === 'worker');
     if (!worker) throw new Error('worker');
     expect(seatBudget(loaded.team.budgets, [], worker, now)).toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
+  });
+});
+
+describe('a spend floor refuses one seat', () => {
+  beforeEach(() => approve(SPEND));
+
+  function loadedTeam() {
+    const loaded = loadTeamFile(root);
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+    return loaded.team;
+  }
+
+  function seatOf(name: string) {
+    const seat = loadedTeam().seats.find((one) => one.name === name);
+    if (!seat) throw new Error(name);
+    return seat;
+  }
+
+  test('a counted reading at or below the floor refuses, and the other seats still start', async () => {
+    store([reading('anthropic', 80)]);
+    storeSpend([spend('openai', 4.2, now - 3 * 60_000)]);
+    const dry = await up(['--dry-run'], world());
+    expect(dry.code).toBe(0);
+    expect(dry.out).toContain(`  skip worker: would refuse: ${SPEND_TAIL}\n`);
+    expect(dry.out).not.toContain('--label worker');
+    expect(dry.labels).toEqual([]);
+
+    const live = await up([], world());
+    expect(live.code).toBe(1);
+    expect(live.out).toContain(`worker: ${SPEND_WHY}\n`);
+    expect(live.out).toContain('lead: ready\n');
+    expect(live.labels).toContain('lead');
+    expect(live.labels).not.toContain('worker');
+  });
+
+  test('exactly at the floor refuses; above it launches', async () => {
+    store([reading('anthropic', 80)]);
+    storeSpend([spend('openai', 5)]);
+    const at = await up(['--dry-run'], world());
+    expect(at.out).toContain('would refuse: openai spend 5.00 USD, at or below its 5.00 USD floor, read 0m ago; accounts with room: anthropic');
+
+    storeSpend([spend('openai', 8)]);
+    const above = await up([], world());
+    expect(above.code).toBe(0);
+    expect(above.labels).toContain('worker');
+    expect(above.out).not.toContain('refused');
+    expect(above.out).not.toContain('is unknown');
+  });
+
+  test('another currency than the floor\'s reads unknown, and the seat still starts', async () => {
+    storeSpend([spend('openai', 4.2, now, { currency: 'EUR' })]);
+    const live = await up([], world());
+    expect(live.code).toBe(0);
+    expect(live.out).toContain('worker: openai is unknown\n');
+    expect(live.labels).toContain('worker');
+  });
+
+  test('no reading at all reads unknown', async () => {
+    const dry = await up(['--dry-run'], world());
+    expect(dry.out).not.toContain('would refuse');
+    expect(dry.out).toContain('openai is unknown; would launch');
+  });
+
+  test('a stale reading reads unknown, per § 5 — it never refuses', async () => {
+    storeSpend([spend('openai', 4.2, now - 31 * 60_000)]);
+    const dry = await up(['--dry-run'], world());
+    expect(dry.out).not.toContain('would refuse');
+    expect(dry.out).toContain('openai is unknown; would launch');
+    const live = await up([], world());
+    expect(live.code).toBe(0);
+    expect(live.labels).toContain('worker');
+  });
+
+  test('add refuses the same seat before launching it', async () => {
+    store([reading('anthropic', 80)]);
+    storeSpend([spend('openai', 4.2, now - 3 * 60_000)]);
+    const refused = await add(['worker'], world());
+    expect(refused.code).toBe(1);
+    expect(refused.err).toBe(`team add: ${SPEND_WHY}\n`);
+    expect(refused.labels).toEqual([]);
+
+    const dry = await add(['worker', '--dry-run'], world());
+    expect(dry.code).toBe(0);
+    expect(dry.out).toContain(`worker: would refuse: ${SPEND_TAIL}\n`);
+    expect(dry.labels).toEqual([]);
+  });
+
+  test('the gate counts the reading by the in-force floor, currency and age', () => {
+    const worker = seatOf('worker');
+    const budgets = loadedTeam().budgets;
+    const anthropic = reading('anthropic', 80);
+    expect(seatBudget(budgets, [anthropic], worker, now, [spend('openai', 4.2, now - 3 * 60_000)]))
+      .toEqual({ kind: 'refuse', why: SPEND_TAIL });
+    expect(seatBudget(budgets, [], worker, now, [spend('openai', 4.2)]))
+      .toEqual({ kind: 'refuse', why: 'openai spend 4.20 USD, at or below its 5.00 USD floor, read 0m ago; accounts with room: none' });
+    expect(seatBudget(budgets, [anthropic], worker, now, [spend('openai', 8)])).toEqual({ kind: 'clear' });
+    expect(seatBudget(budgets, [anthropic], worker, now, [spend('openai', 4.2, now, { currency: 'EUR' })]))
+      .toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
+    expect(seatBudget(budgets, [anthropic], worker, now, [spend('openai', 4.2, now - 31 * 60_000)]))
+      .toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
+    expect(seatBudget(budgets, [anthropic], worker, now, [spend('other', 4.2)]))
+      .toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
+  });
+
+  test('a spend account with room is named, and one stale or in another currency is not', () => {
+    const budgets = loadedTeam().budgets;
+    const anthropic = reading('anthropic', 80);
+    expect(accountsWithRoom(budgets, [anthropic], now, [spend('openai', 8)])).toEqual(['anthropic', 'openai']);
+    expect(accountsWithRoom(budgets, [anthropic], now, [spend('openai', 5)])).toEqual(['anthropic']);
+    expect(accountsWithRoom(budgets, [anthropic], now, [spend('openai', 8, now, { currency: 'EUR' })])).toEqual(['anthropic']);
+    expect(accountsWithRoom(budgets, [anthropic], now, [spend('openai', 8, now - 31 * 60_000)])).toEqual(['anthropic']);
   });
 });
 

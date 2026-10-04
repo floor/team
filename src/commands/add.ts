@@ -6,7 +6,7 @@ import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from '../commands/doctor.ts';
 import { seatBudget } from '../budgets/gate.ts';
-import { loadReadings } from '../budgets/readings.ts';
+import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
 import { rulesOf, type Launch } from '../commands/up.ts';
 import { branchPresent, readMerge } from '../end/condition.ts';
 import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines.ts';
@@ -226,7 +226,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // The gate reads the approved budgets, never the edited file's: the seat this `add` inserts
   // changes no section of its own, and no unapproved reserve may unblock a launch (#50).
   const budgets = budgetsInForce(prepared.team, root, sources.home);
-  const decision = seatBudget(budgets, loadReadings(dir, session), built.seat, sources.now().getTime());
+  const decision = seatBudget(budgets, loadReadings(dir, session), built.seat, sources.now().getTime(), loadSpendReadings(dir, session));
   const stray = unnamedIn(built.seat.label, agents, workspaces);
   const starting = seatPlan(prepared.team, built.seat, start);
   const planned = stray
