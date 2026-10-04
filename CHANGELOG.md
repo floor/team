@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-04
+
+A safety release: 0.1.1 could type a nudge or an exit into the shell left after Claude Code exited,
+and a seat could silence the watch's reports about itself. Upgrade.
+
+### Security
+
+- **In 0.1.1, a shell prompt left after Claude Code exited read as an idle composer**, so a nudge, a
+  first message or an exit could be typed into a shell. A composer now reads idle only inside its
+  own frame — the rule above the box or the status footer under it — and every typing path (the
+  nudge, rules delivery, `down`'s and `remove`'s exit) also needs herdr to report the agent's
+  process in the pane, read again immediately before the Enter.
+- **In 0.1.1, parking or stopping a seat was not drift**, so a seat could silence its own idle
+  reports by editing its entry in the file. Parking and stopping are now part of what the owner
+  approves; `remove --keep` and `add` record the new digest when `stopped` is the only change, so
+  those commands still leave that file approved, and an approval recorded before this stays valid
+  while the file is unchanged since the approval.
+- **In 0.1.1, `--no-notify` on the watch silenced a report addressed to the owner**, and any caller
+  could run the session's only watch with it. Each report is now routed to the owner or the
+  operator, and `--no-notify` drops only the operator's notice — the log line stays, and
+  `team status` does not read the flag. `--no-nudge` and `--no-notify` are the owner's.
+- **In 0.1.1, a watch on a session other than the file's own saved its readings into the state a
+  launch gate counts.** Such a watch now reads and reports as before, says so once, and saves no
+  reading — budget or spend — so a session the file doesn't name can never decide a launch.
+
+### Fixed
+
+- A greyed suggestion in a Claude Code input box is no longer read as text that was never sent:
+  input text whose characters are all faint is the box's placeholder, and the seat reads idle. Text
+  with any other styling reads as typed, and a line with no styling keeps the `Try "` rule.
+- Cursor's running turn is the braille spinner, or the prompt line that ends in `ctrl+c to stop`.
+  The same words quoted in the transcript are not a turn, and text typed on that prompt is unsent in
+  the composer.
+- A subscription check reading is kept in the state beside the screen readings, and `up`, `add` and
+  `status` count it: a fresh check inside its reserve refuses a launch after the watch has exited, a
+  stale one reads unknown, and the account's `sources` decide which reading counts.
+- Budget readings are kept per project, not per herdr session: `up`, `add`, `status` and the watch
+  read the one cache, so a figure one session saw counts for every session, and state files written
+  before this change migrate as they are read — no reading is lost.
+- A stale check reading inside its reserve keeps refusing until its known reset, as a stale screen
+  reading does; an unconfirmed screen reading no longer hides a fresh check reading later in
+  `sources`.
+- A Claude question is the dialog's own last line. Prose that says "Esc to cancel", and a transcript
+  of "1. Yes" / "2. No" above an empty box, stay idle.
+- An Antigravity permission dialog whose rule line has scrolled out of the window (a long command)
+  is still read as the dialog, and a Claude Code question with a line below its footer and no rule
+  in the window is still read as a question.
+- The watch folds its readings inside the state's own lock, so two watches of one project fold onto
+  each other's figures instead of overwriting them.
+
+### Added
+
+- A seat may name the budget account it spends, `account:`, when one vendor's two accounts are two
+  buckets; without it a seat spends its `vendor`, and the choice is part of the seat's fingerprint,
+  so the owner approves it. A figure measuring the seat's vendor lands on the seat's own account,
+  and a figure naming another account stays that account's, whichever seat's screen showed it.
+
+### Changed
+
+- While a `watch.checks` edit is unapproved, the approved list stays in force: nothing new is turned
+  off, and an approved-off check stays off. Before, every check ran until the owner approved.
+- **A seat could take the rules message for a task.** Every seat's rules text now ends with a line
+  saying the rules are not a task. A first message closes with `These are standing rules, not a
+  task: reply ready and wait for your brief.`; a launch option that stays in force on every later
+  turn (claude-code's `--append-system-prompt`) closes with only `These are standing rules, not a
+  task.` A team file whose own `rules:` already end with that line doesn't get it twice.
+- A team whose seats were stopped by `remove --keep`, or parked by hand, since its last approval
+  shows `seat X changed` for each after upgrading, and `up` and `add` refuse until the owner
+  approves once.
+
 ## [0.1.1] - 2026-10-04
 
 A safety release: 0.1.0 could type into a Codex permission dialog, and could read a quota figure a
@@ -130,5 +200,6 @@ The first release: set up, change and watch a project's team of AI agents from o
   footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
   stays idle.
 
+[0.1.2]: https://github.com/floor/team/releases/tag/v0.1.2
 [0.1.1]: https://github.com/floor/team/releases/tag/v0.1.1
 [0.1.0]: https://github.com/floor/team/releases/tag/v0.1.0
