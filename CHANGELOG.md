@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   state, and `up` and `add` refuse a seat whose account is at or below its floor. A reading that is
   missing, stale or in another currency than the floor's reads unknown, is said, and never refuses.
 
+### Fixed
+
+- A seat can no longer write its own quota: figures are read only off the profile's status line, so a
+  line printed into the transcript or typed into the input box is not read as one. A CLI whose
+  composer shows no status line reads no figures at all.
+
 ## [0.1.0] - 2026-10-04
 
 The first release: set up, change and watch a project's team of AI agents from one file,

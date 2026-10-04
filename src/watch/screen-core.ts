@@ -15,6 +15,15 @@ const FLOOR_PHRASES = ['Do you want to', 'Esc to cancel', 'enter Confirm', 'ente
 
 export type ReadClock = { now(): number; budgetMs: number };
 
+/**
+ * The line a composer mode identifies as its status line, as a pattern; null when the mode has
+ * none. Readers that must not look anywhere else — the quota figures — take their line from here.
+ */
+export function statusLinePattern(data: ScreenData): RegExp | null {
+  const composer = data.composer;
+  return composer.mode === 'status-last' || composer.mode === 'status-then-one' ? composer.statusLine : null;
+}
+
 type Hit = { kind: Screen['kind']; from: number; input: number } | { kind: 'unknown' } | { kind: 'stop' };
 
 /** `lines` is already the window: the last 20 lines, each trimmed at the end. */

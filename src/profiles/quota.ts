@@ -27,19 +27,28 @@ export type QuotaFigure = {
 const RESET = /^(?:[0-9]+h(?:[0-9]+m)?|[0-9]+m)$/;
 const PERCENT = /^([0-9]+)%$/;
 
-/** Figures from the last six lines. A cut line, or a figure over 100, is absent. */
-export function figuresOf(patterns: readonly QuotaPattern[], screen: string): QuotaFigure[] {
-  const lines = screen.split('\n').map((line) => line.trimEnd()).slice(-6);
+/**
+ * Figures from the profile's status line: the last line of the window that matches `statusLine`,
+ * as the composer reads it. A cut line, or a figure over 100, is absent, and with no status line
+ * identified there are no figures at all — a pattern must never read the transcript or the input
+ * box, where a seat can print or type a line that only looks like a quota.
+ */
+export function figuresOf(
+  patterns: readonly QuotaPattern[],
+  screen: string,
+  statusLine: RegExp | null,
+): QuotaFigure[] {
+  if (statusLine === null) return [];
+  const lines = screen.split('\n').map((line) => line.trimEnd()).slice(-20);
+  let line: string | null = null;
+  for (const candidate of lines) if (statusLine.test(candidate)) line = candidate;
+  if (line === null) return [];
   const found: QuotaFigure[] = [];
   for (const pattern of patterns) {
-    let hit: QuotaFigure | null = null;
-    for (const line of lines) {
-      const match = pattern.match.exec(line);
-      if (!match) continue;
-      const next = figureOf(pattern, match);
-      if (next) hit = next;
-    }
-    if (hit) found.push(hit);
+    const match = pattern.match.exec(line);
+    if (!match) continue;
+    const next = figureOf(pattern, match);
+    if (next) found.push(next);
   }
   return found;
 }

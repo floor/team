@@ -764,7 +764,7 @@ describe('team watch', () => {
 
   test('readings the pass saw are saved, so `status`, `up` and `add` see them', async () => {
     writeFileSync(file, withAccounts('  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [status_line] }\n'));
-    scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\nweekly 39% left\n` } });
+    scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n` } });
     const code = await runWatch(['--file', file], testIo(dir), sources(1));
     expect(code).toBe(0);
     expect(loadReadings(join(dir, '.agents'), 'acme-web').map(({ account, window, left, used, seat }) => ({ account, window, left, used, seat })))

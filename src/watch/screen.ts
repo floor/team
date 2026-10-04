@@ -1,7 +1,7 @@
 // What a pane's visible text shows, read against the shapes of its CLI. A screen that matches no
 // shape is "unknown": never ready, never idle, and never grounds for typing anything.
 import { readFileSync } from 'node:fs';
-import { classifyLines, composeLines } from './screen-core.ts';
+import { classifyLines, composeLines, statusLinePattern } from './screen-core.ts';
 import type { ScreenData } from './screen-data.ts';
 import { loadScreen } from './screen-file.ts';
 
@@ -48,4 +48,11 @@ export function classifyComposer(cli: string, lines: string[]): Screen {
 export function readScreen(cli: string, screen: string | undefined): Screen {
   if (screen === undefined) return { kind: 'unknown' };
   return classify(cli, screen.split('\n'));
+}
+
+/** The profile's status line as a pattern, or null when its composer mode has none: the only line
+ * a quota figure may come from. */
+export function statusLineOf(cli: string): RegExp | null {
+  const data = DATA[cli];
+  return data === undefined ? null : statusLinePattern(data);
 }

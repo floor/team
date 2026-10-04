@@ -38,7 +38,7 @@ import { swapGrowth } from './checks/swap-growth.ts';
 import { teamIdle } from './checks/team-idle.ts';
 import { unsent } from './checks/unsent.ts';
 import type { Machine } from './machine.ts';
-import { readScreen, type Screen } from './screen.ts';
+import { readScreen, statusLineOf, type Screen } from './screen.ts';
 
 // What the watch remembers between passes. It lives in the watch's process: a restarted watch
 // starts its timers again, and reports again what is still true.
@@ -212,7 +212,7 @@ export function pass({
       screen,
       cli,
       vendor,
-      quota: pane === undefined ? [] : figuresOf(quotaFor(cli), pane),
+      quota: pane === undefined ? [] : figuresOf(quotaFor(cli), pane, statusLineOf(cli)),
       running: true,
       quiet,
       working,
