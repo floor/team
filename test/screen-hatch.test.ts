@@ -23,7 +23,7 @@ function enumerateScreenFixtures(): { relPath: string; cli: string; absPath: str
       } else if (name.endsWith('.txt')) {
         const rel = relative(process.cwd(), full);
         const relUnderFixtures = relative(root, full);
-        const cli = relUnderFixtures.split(/[/\\]/)[0];
+        const cli = relUnderFixtures.split(/[/\\]/)[0] ?? '';
         results.push({ relPath: rel, cli, absPath: full });
       }
     }
