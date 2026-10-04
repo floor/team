@@ -91,8 +91,12 @@ security add-generic-password -a linear -s team.linear.example -w
 The command reads the key from the Keychain at run time, holds it in memory, and puts it in exactly
 one place: the `Authorization` header of the single request to `https://api.linear.app/graphql`. It
 is never put in the team file, an argument list, an environment variable, a child process, a file,
-a log line, a diagnostic or the output; it is never sent to another host and never follows a
-redirect. The Linear read is read-only: the command never writes to Linear.
+a log line, a diagnostic or the output, and a redirect is never followed. The command reads no
+proxy setting of its own and always addresses the Linear host over HTTPS; if the runtime it runs on
+is configured to use a proxy — the standard proxy environment variables, where the runtime honours
+them — the connection is tunnelled through it, and a proxy that inspects TLS with a certificate
+this machine trusts can see the request, the header included. Run the check on a network you trust.
+The Linear read is read-only: the command never writes to Linear.
 
 ## Flags
 

@@ -62,6 +62,13 @@ export class Reader {
     this.caps = caps;
   }
 
+  /** Whether one more read could still be made. The budget is a non-secret prerequisite: a
+   *  check that reads a secret before its one request must test this first, so a cap that
+   *  already prevents the request never causes secret access. */
+  canRead(): boolean {
+    return this.reads < this.caps.reads && this.attempts < this.caps.attempts;
+  }
+
   /** One endpoint read: an HTTP response, or a failure after its one allowed retry. The Linear
    *  read passes its POST options; a retry replays them byte for byte (it is a read-only query). */
   async read(url: string, request?: RequestOptions): Promise<Reply> {
@@ -405,8 +412,11 @@ async function linearCheck(
   if (changelog.outcome.status === 'missing') return { status: 'missing', detail: 'release date is missing from changelog' };
   const releaseAt = changelog.releaseAt as number;
 
-  // Every non-secret prerequisite is now known and the request can be formed; only now may the
-  // key be looked up, at most once.
+  // The non-secret prerequisites come first, in one fixed order: the release date above, then
+  // the budget — a cap that already prevents the request must leave the Keychain untouched, and
+  // the spec's cap-failure detail is the read that isn't made — and only then the key, the last
+  // step before the request itself.
+  if (!reader.canRead()) return LINEAR_UNREAD;
   if (keyReader === undefined) return KEYCHAIN_UNAVAILABLE;
   const read = await keyReader(config.keychainService);
   if (!read.ok || !legalKey(read.key)) return KEYCHAIN_UNAVAILABLE;
@@ -442,8 +452,16 @@ function linearRecord(data: Record<string, unknown>, projectId: string, version:
   if (!isObject(project) || typeof project.id !== 'string' || project.id !== projectId) {
     conditions.push(LINEAR_INCOMPLETE);
   } else {
-    if (!('archivedAt' in project)) conditions.push(LINEAR_INCOMPLETE);
-    else if (project.archivedAt !== null) conditions.push({ status: 'missing', detail: 'configured Linear project is archived' });
+    // Two archive states are legal: null, the active project; and a valid timestamp string, the
+    // archived project. Any other shape is malformed selected data — unknown, never missing.
+    const { archivedAt } = project;
+    if (archivedAt === null) {
+      // Not archived: no condition.
+    } else if (typeof archivedAt === 'string' && timestampOf(archivedAt) !== null) {
+      conditions.push({ status: 'missing', detail: 'configured Linear project is archived' });
+    } else {
+      conditions.push(LINEAR_INCOMPLETE);
+    }
     conditions.push(...milestoneConditions(project.projectMilestones, version));
     conditions.push(...updateConditions(project.projectUpdates, releaseAt));
   }

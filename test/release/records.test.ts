@@ -186,6 +186,68 @@ describe('the linear check', () => {
     expect(result.linear).toEqual({ status: 'missing', detail: 'configured Linear project is archived' });
   });
 
+  test('a project archive state that is neither null nor a valid timestamp is an incomplete record', async () => {
+    // Only two shapes are legal — null (not archived) and a valid timestamp string (archived,
+    // the missing detail above). Anything else is malformed selected data: unknown, never
+    // missing, whatever JSON type it arrived as.
+    const shapes: [string, unknown][] = [
+      ['a number', 7],
+      ['a boolean', true],
+      ['an array', []],
+      ['an object', {}],
+      ['an empty string', ''],
+      ['a string that is not a timestamp', 'archived since 2026-09-01'],
+      ['no key at all', undefined],
+    ];
+    for (const [shape, value] of shapes) {
+      const { result } = await run(withAnswer(happyRecords(), URLS.linear, json(linearAnswer({ project: { archivedAt: value } }))));
+      expect([shape, result.linear]).toEqual([shape, { status: 'unknown', detail: 'Linear record is incomplete' }]);
+    }
+    // Null is the not-archived state: the well-formed answer still passes.
+    const active = await run(withAnswer(happyRecords(), URLS.linear, json(linearAnswer({ project: { archivedAt: null } }))));
+    expect(active.result.linear?.status).toBe('pass');
+  });
+
+  test('the sibling sweep: no malformed shape of the answer can read as missing or pass', async () => {
+    // Every field the Linear answer is read from, with wrong types, nulls, absent keys and empty
+    // values — the two failure details are the only legal outcomes for these.
+    const record = { status: 'unknown', detail: 'Linear record is incomplete' };
+    const unread = { status: 'unknown', detail: 'Linear record could not be read' };
+    const cases: [string, unknown, { status: string; detail: string }][] = [
+      ['no data object', {}, unread],
+      ['a data that is not an object', { data: 7 }, unread],
+      ['a data that is an array', { data: [] }, unread],
+      ['an errors key beside a data object', { data: {}, errors: [] }, unread],
+      ['no project', { data: {} }, record],
+      ['a project that is not an object', { data: { project: 7 } }, record],
+      ['a project that is an array', { data: { project: [] } }, record],
+      ['no project id', linearAnswer({ project: { id: undefined } }), record],
+      ['a numeric project id', linearAnswer({ project: { id: 7 } }), record],
+      ['an empty project id', linearAnswer({ project: { id: '' } }), record],
+      ['no milestones relation', linearAnswer({ project: { projectMilestones: undefined } }), record],
+      ['a milestones relation that is not an object', linearAnswer({ project: { projectMilestones: null } }), record],
+      ['a milestones relation that is an array', linearAnswer({ project: { projectMilestones: [] } }), record],
+      [
+        'milestone nodes that are not an array',
+        linearAnswer({ project: { projectMilestones: { nodes: {}, pageInfo: { hasNextPage: false } } } }),
+        record,
+      ],
+      ['a milestone that is not an object', linearAnswer({ milestones: [null] }), record],
+      ['a numeric milestone', linearAnswer({ milestones: [7] }), record],
+      ['a numeric milestone name', linearAnswer({ milestones: [{ name: 3, status: 'done' }] }), record],
+      ['a numeric milestone status', linearAnswer({ milestones: [{ name: '3.0.2', status: 7 }] }), record],
+      ['no updates relation', linearAnswer({ project: { projectUpdates: undefined } }), record],
+      ['an update that is not an object', linearAnswer({ updates: [null] }), record],
+      ['a numeric createdAt', linearAnswer({ updates: [{ createdAt: 7, archivedAt: null }] }), record],
+      ['an empty createdAt', linearAnswer({ updates: [{ createdAt: '', archivedAt: null }] }), record],
+      ['an empty archivedAt', linearAnswer({ updates: [{ createdAt: '2026-10-01T12:00:00Z', archivedAt: '' }] }), record],
+    ];
+    for (const [shape, body, expected] of cases) {
+      const { result } = await run(withAnswer(happyRecords(), URLS.linear, json(body)));
+      expect([shape, result.linear]).toEqual([shape, expected]);
+    }
+  });
+
   test('a project whose id does not match, or no project at all, is an incomplete record', async () => {
     const wrong = await run(withAnswer(happyRecords(), URLS.linear, json(linearAnswer({ project: { id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' } }))));
     expect(wrong.result.linear).toEqual({ status: 'unknown', detail: 'Linear record is incomplete' });
@@ -360,6 +422,27 @@ describe('the activity check', () => {
     expect(tooLarge.result.activity).toEqual({ status: 'unknown', detail: 'public activity file could not be read' });
   });
 
+  test('the sibling sweep: no malformed contents shape can read as missing or pass', async () => {
+    // Every field the activity answer is read from, with wrong types, absent keys and empty
+    // values. An empty file is the one legal answer that is missing: it names no marker.
+    const unread = { status: 'unknown', detail: 'public activity file could not be read' };
+    const cases: [string, unknown][] = [
+      ['no type', { ...activityFile('x'), type: undefined }],
+      ['a type that is not file', { ...activityFile('x'), type: 'blob' }],
+      ['an empty type', { ...activityFile('x'), type: '' }],
+      ['no encoding', { ...activityFile('x'), encoding: undefined }],
+      ['an encoding that is not base64', { ...activityFile('x'), encoding: 'utf-8' }],
+      ['no content', { ...activityFile('x'), content: undefined }],
+      ['a numeric content', { ...activityFile('x'), content: 7 }],
+    ];
+    for (const [shape, body] of cases) {
+      const { result } = await run(withAnswer(happyRecords(), URLS.activity, json(body)));
+      expect([shape, result.activity]).toEqual([shape, unread]);
+    }
+    const empty = await run(withAnswer(happyRecords(), URLS.activity, json(activityFile(''))));
+    expect(empty.result.activity).toEqual({ status: 'missing', detail: 'public activity marker is missing' });
+  });
+
   test('a missing repository makes the activity read not required; an unknown one makes it unknown', async () => {
     const missing = await run(withAnswer(happyRecords(), URLS.repo, json({}, 404)));
     expect(missing.result.activity).toEqual({ status: 'missing', detail: 'public activity marker is missing' });
@@ -401,14 +484,26 @@ describe('the budget with the two reads added', () => {
     for (const outcome of Object.values(result)) expect(outcome.status).toBe('pass');
   });
 
-  test('a cap that prevents the Linear or activity read makes that check unknown', async () => {
-    // Ten reads cover everything before the two new ones in a passing run's shape (npm, attest,
-    // repo, ref, compare, release, changelog = 7; the eleventh would be Linear's).
-    const { result, requested } = await run(happyRecords(), { caps: { reads: 7, attempts: 26 } });
+  test('a cap that prevents the Linear or activity read makes that check unknown, and the key is never read', async () => {
+    // Seven reads cover everything before the two new ones in a passing run's shape (npm, attest,
+    // repo, ref, compare, release, changelog = 7; the eighth would be Linear's). The exhausted
+    // read cap is a non-secret prerequisite: the budget cannot make the request, so the Keychain
+    // must not be touched at all — zero key-reader calls, zero Linear requests.
+    const { result, requested, keyCalls } = await run(happyRecords(), { caps: { reads: 7, attempts: 26 } });
+    expect(keyCalls).toEqual([]);
     expect(requested).not.toContain(URLS.linear);
     expect(requested).not.toContain(URLS.activity);
     expect(result.linear).toEqual({ status: 'unknown', detail: 'Linear record could not be read' });
     expect(result.activity).toEqual({ status: 'unknown', detail: 'public activity file could not be read' });
+  });
+
+  test('an exhausted attempt cap stops the Linear read before the key is read', async () => {
+    // The read cap still allows the read, but every attempt the run could make is already spent:
+    // the request cannot be sent, so the Keychain is not read — zero calls, zero requests.
+    const { result, requested, keyCalls } = await run(happyRecords(), { caps: { reads: 13, attempts: 7 } });
+    expect(keyCalls).toEqual([]);
+    expect(requested).not.toContain(URLS.linear);
+    expect(result.linear).toEqual({ status: 'unknown', detail: 'Linear record could not be read' });
   });
 });
 
