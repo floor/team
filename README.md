@@ -239,11 +239,14 @@ and the session is stopped and deleted on every path.
 
 The owner cuts a release by pushing a version tag: `git tag v0.2.0 && git push origin v0.2.0`. The
 Release workflow (`.github/workflows/release.yml`) refuses a tag that isn't `package.json`'s
-version, runs `bun run ci`, then publishes with npm trusted publishing — the workflow's own
-identity, no token stored — and provenance. A version with a hyphen (`0.2.0-next.1`) goes under the
-`next` dist-tag, any other under `latest`. Once npm has the version, the same run creates the
-GitHub release from the `CHANGELOG.md` section for it, marked a pre-release when the version is
-one.
+version or whose commit isn't on `main`, runs `bun run ci`, then publishes with npm trusted
+publishing — the workflow's own identity, no token stored — and provenance. A version with a
+hyphen (`0.2.0-next.1`) goes under the `next` dist-tag, any other under `latest`. Once npm has the
+version, the same run creates the GitHub release from the `CHANGELOG.md` section for it, marked a
+pre-release when the version is one. If the GitHub release step fails — a missing changelog
+section, say — use "Re-run failed jobs": a full re-run goes back through `npm publish`, which
+fails because that version is already on npm. A tag ruleset protecting `v*`, so that only the
+owner creates version tags, is recommended.
 
 Trusted publishing must be bound once, by the package owner, on npmjs.com: the package `team` →
 Publishing → trusted publishers → GitHub Actions, naming `floor/team` and the workflow file
