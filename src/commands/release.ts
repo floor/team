@@ -6,10 +6,11 @@ import { realFetch, type Fetch } from '../release/http.ts';
 import { keychainReader, realSecurityRun, type KeyReader } from '../release/keychain.ts';
 import type { Command, Io } from '../io.ts';
 
-export const USAGE = `Usage: team release check <package@version> [--json]
+export const USAGE = `Usage: team release check <package@version> [--json] [--file <path>]
 
   <package@version>   a package of the file's releases, and its SemVer version
   --json              print the result as one JSON object
+  --file <path>       the team file, instead of the main checkout's .agents/team.yaml
 
 Checks the public npm and GitHub records of one release: the exact version and
 its checksums (with provenance when the file declares trusted publishing), the
@@ -28,12 +29,25 @@ const ORDER = ['npm', 'tag', 'github', 'changelog', 'linear', 'activity'] as con
 const release: Command = (argv, io) => runRelease(argv, io, realFetch);
 export default release;
 
+/** Whether `--json` appears among the arguments somewhere other than as the value of `--file`.
+ *  An option's value is taken as given, whatever it looks like — the one reading under which
+ *  `--file --json` names a file and never switches the output shape. */
+function jsonRequested(argv: string[]): boolean {
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index] as string;
+    if (argument === '--file') index += 1;
+    else if (argument === '--json') return true;
+  }
+  return false;
+}
+
 export async function runRelease(argv: string[], io: Io, fetcher: Fetch, keyReader?: KeyReader): Promise<number> {
   // All arguments are read before deciding how to report: `--json` decides the shape of even an
   // argument error, wherever it appears — including after an unknown option, which readArgs
-  // reports before ever reaching the flag.
-  const json = argv.includes('--json');
-  const args = readArgs(argv, [], ['json']);
+  // reports before ever reaching the flag. `--json` as the value of `--file` is a path, not the
+  // flag, so it does not select the JSON output.
+  const json = jsonRequested(argv);
+  const args = readArgs(argv, ['file'], ['json']);
   const sub = args.rest[0];
   const fail = (code: 'usage' | 'configuration', message: string): number => {
     if (json) io.stdout(`${JSON.stringify({ error: { code, message } })}\n`);
@@ -56,8 +70,10 @@ export async function runRelease(argv: string[], io: Io, fetcher: Fetch, keyRead
   if (named !== null) return fail('usage', `the package ${JSON.stringify(name)} ${named}`);
   if (!SEMVER_PATTERN.test(version)) return fail('usage', `the version ${JSON.stringify(version)} is not a Semantic Versioning 2.0.0 version`);
 
-  // Only with valid arguments is the file read; an invalid file is the configuration error.
-  const loaded = loadTeamFile(io.cwd, {});
+  // Only with valid arguments is the file read; an invalid file is the configuration error. The
+  // file is the same as `team check --file`'s: one read, the same shared parser for the option,
+  // the same resolution of the path, and nothing else read from the repository.
+  const loaded = loadTeamFile(io.cwd, { file: args.values.file });
   if (!loaded.ok) {
     const first = loaded.errors[0] as { line: number; message: string };
     const where = [loaded.path, first.line > 0 ? `line ${first.line}` : ''].filter(Boolean).join(', ');

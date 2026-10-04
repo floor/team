@@ -83,9 +83,9 @@ beforeEach(() => {
 
 afterEach(() => rmSync(project, { recursive: true, force: true }));
 
-async function run(argv: string[], answers: Answers, keyReader?: KeyReader): Promise<{ code: number; io: TestIo; requested: string[]; requests: Recorded[] }> {
+async function run(argv: string[], answers: Answers, keyReader?: KeyReader, cwd: string = project): Promise<{ code: number; io: TestIo; requested: string[]; requests: Recorded[] }> {
   const { fetcher, requested, requests } = fakeFetch(answers);
-  const io = testIo(project);
+  const io = testIo(cwd);
   return { code: await runRelease(argv, io, fetcher, keyReader), io, requested, requests };
 }
 
@@ -477,5 +477,171 @@ describe('the usage and configuration errors', () => {
     const parsed = JSON.parse(io.out) as { error: { code: string; message: string } };
     expect(parsed.error.code).toBe('configuration');
     expect(parsed.error.message).toContain('releases names "material" twice');
+  });
+});
+
+describe('the --file option', () => {
+  test('reads the named file: the value resolves against the working directory, in every form', async () => {
+    for (const argv of [
+      ['check', 'material@3.0.2', '--file', '.agents/team.yaml'],
+      ['check', 'material@3.0.2', '--file=.agents/team.yaml'],
+      ['check', '--file', '.agents/team.yaml', 'material@3.0.2'],
+    ]) {
+      const { code, io, requested } = await run(argv, happy());
+      expect({ argv, code }).toEqual({ argv, code: 0 });
+      expect(io.err).toBe('');
+      expect(requested.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('an absent named file is configuration: one line on stderr, or the error object with --json', async () => {
+    const plain = await run(['check', 'material@3.0.2', '--file', 'missing.yaml'], happy());
+    expect(plain.code).toBe(64);
+    expect(plain.io.out).toBe('');
+    expect(plain.io.err).toBe(`team release: ${join(project, 'missing.yaml')}: no team file at missing.yaml\n`);
+    expect(plain.requested).toEqual([]);
+
+    const json = await run(['check', 'material@3.0.2', '--file', 'missing.yaml', '--json'], happy());
+    expect(json.code).toBe(64);
+    expect(json.io.err).toBe('');
+    expect(JSON.parse(json.io.out)).toEqual({
+      error: { code: 'configuration', message: `${join(project, 'missing.yaml')}: no team file at missing.yaml` },
+    });
+    expect(json.requested).toEqual([]);
+  });
+
+  test('a named file that fails validation is configuration, in both shapes', async () => {
+    writeFileSync(join(project, 'invalid.yaml'), 'format: 2\n');
+    const plain = await run(['check', 'material@3.0.2', '--file', 'invalid.yaml'], happy());
+    expect(plain.code).toBe(64);
+    expect(plain.io.out).toBe('');
+    expect(plain.io.err.split('\n').filter((line) => line !== '')).toHaveLength(1);
+    expect(plain.io.err).toContain('team release: ');
+    expect(plain.io.err).toContain('invalid.yaml');
+    expect(plain.requested).toEqual([]);
+
+    const json = await run(['check', 'material@3.0.2', '--file', 'invalid.yaml', '--json'], happy());
+    expect(json.code).toBe(64);
+    expect(json.io.err).toBe('');
+    const parsed = JSON.parse(json.io.out) as { error: { code: string; message: string } };
+    expect(parsed.error.code).toBe('configuration');
+    expect(parsed.error.message).toContain('invalid.yaml');
+    expect(json.requested).toEqual([]);
+  });
+
+  test('a missing value is usage; the last value wins when the option is given twice', async () => {
+    for (const argv of [
+      ['check', 'material@3.0.2', '--file'],
+      ['check', 'material@3.0.2', '--file', ''],
+      ['check', 'material@3.0.2', '--file='],
+    ]) {
+      const plain = await run(argv, happy());
+      expect({ argv, code: plain.code }).toEqual({ argv, code: 64 });
+      expect(plain.io.out).toBe('');
+      expect(plain.io.err).toBe('team release: --file needs a value\n');
+      expect(plain.requested).toEqual([]);
+    }
+    const withJson = await run(['check', 'material@3.0.2', '--json', '--file'], happy());
+    expect(withJson.code).toBe(64);
+    expect(withJson.io.out).toBe('{"error":{"code":"usage","message":"--file needs a value"}}\n');
+    expect(withJson.io.err).toBe('');
+    expect(withJson.requested).toEqual([]);
+
+    // `team check --file` reads one value per option — the shared parser's rule, so the last
+    // occurrence is the file. Both orders pin which one is used.
+    const last = await run(['check', 'material@3.0.2', '--file', 'missing.yaml', '--file', '.agents/team.yaml'], happy());
+    expect(last.code).toBe(0);
+    const first = await run(['check', 'material@3.0.2', '--file', '.agents/team.yaml', '--file', 'missing.yaml'], happy());
+    expect(first.code).toBe(64);
+    expect(first.io.err).toContain('no team file at missing.yaml');
+    expect(first.requested).toEqual([]);
+  });
+
+  test('--json as the value of --file is a path: only a --json that is not a value selects JSON', async () => {
+    const consumed = await run(['check', 'material@3.0.2', '--file', '--json'], happy());
+    expect(consumed.code).toBe(64);
+    expect(consumed.io.out).toBe('');
+    expect(consumed.io.err).toBe(`team release: ${join(project, '--json')}: no team file at --json\n`);
+    expect(consumed.requested).toEqual([]);
+
+    const marked = { error: { code: 'configuration', message: `${join(project, '--json')}: no team file at --json` } };
+    for (const argv of [
+      ['check', 'material@3.0.2', '--json', '--file', '--json'],
+      ['check', 'material@3.0.2', '--file', '--json', '--json'],
+    ]) {
+      const { code, io, requested } = await run(argv, happy());
+      expect({ argv, code }).toEqual({ argv, code: 64 });
+      expect(io.err).toBe('');
+      expect(JSON.parse(io.out)).toEqual(marked);
+      expect(requested).toEqual([]);
+    }
+  });
+
+  test('in a linked worktree, the default is the main checkout\'s file and --file reads the named one', async () => {
+    execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'Start'], { cwd: project, stdio: ['ignore', 'ignore', 'ignore'] });
+    const worktree = join(project, 'wt');
+    execFileSync('git', ['worktree', 'add', '--quiet', '-b', 'side', worktree], { cwd: project, stdio: ['ignore', 'ignore', 'ignore'] });
+    mkdirSync(join(worktree, '.agents'), { recursive: true });
+    writeFileSync(join(worktree, '.agents', 'team.yaml'), TEAM.replace(/^releases:\n(?:  .*\n)+/m, 'releases:\n  - package: gadgets\n    github: floor/material\n'));
+
+    // No --file: the main checkout's file, found through the common directory — material is declared.
+    const byDefault = await run(['check', 'material@3.0.2'], happy(), undefined, worktree);
+    expect(byDefault.code).toBe(0);
+
+    // The named file is the one read: the worktree's declares no material.
+    const named = await run(['check', 'material@3.0.2', '--file', '.agents/team.yaml', '--json'], happy(), undefined, worktree);
+    expect(named.code).toBe(64);
+    expect(named.io.err).toBe('');
+    expect(JSON.parse(named.io.out)).toEqual({ error: { code: 'usage', message: 'material is not declared in the team file\'s releases' } });
+    expect(named.requested).toEqual([]);
+
+    // The same option can name the main checkout's file from the worktree.
+    const mainFile = await run(['check', 'material@3.0.2', '--file', join(project, '.agents', 'team.yaml')], happy(), undefined, worktree);
+    expect(mainFile.code).toBe(0);
+  });
+
+  test('the precedence holds with --file: an invalid argument is usage even when the file is invalid', async () => {
+    writeFileSync(join(project, 'invalid.yaml'), 'format: 2\n');
+    const both = await run(['check', 'material@v3.0.2', '--file', 'invalid.yaml', '--json'], happy());
+    expect(both.code).toBe(64);
+    expect(JSON.parse(both.io.out)).toEqual({ error: { code: 'usage', message: 'the version "v3.0.2" is not a Semantic Versioning 2.0.0 version' } });
+    expect(both.requested).toEqual([]);
+
+    const undeclared = await run(['check', 'other@3.0.2', '--file', 'missing.yaml', '--json'], happy());
+    expect(undeclared.code).toBe(64);
+    const parsed = JSON.parse(undeclared.io.out) as { error: { code: string; message: string } };
+    expect(parsed.error.code).toBe('configuration');
+    expect(parsed.error.message).toContain('no team file at missing.yaml');
+    expect(undeclared.requested).toEqual([]);
+  });
+
+  test('no misuse reads a key or opens a transport: both seams throw if called', async () => {
+    writeFileSync(join(project, 'invalid.yaml'), 'format: 2\n');
+    writeFileSync(join(project, 'empty.yaml'), '');
+    const cases: string[][] = [
+      ['check', 'material@3.0.2', '--file'],
+      ['check', 'material@3.0.2', '--json', '--file'],
+      ['check', 'material@3.0.2', '--file='],
+      ['check', 'material@3.0.2', '--file', ''],
+      ['check', 'material@3.0.2', '--file', 'missing.yaml'],
+      ['check', 'material@3.0.2', '--file', 'invalid.yaml'],
+      ['check', 'material@3.0.2', '--file', 'empty.yaml'],
+      ['check', 'material@3.0.2', '--file', '--json'],
+      ['check', 'other@3.0.2', '--file', '.agents/team.yaml'],
+      ['check', 'other@3.0.2', '--file', 'missing.yaml'],
+      ['check', 'material@v3.0.2', '--file', 'invalid.yaml'],
+      ['check', 'material@3.0.2', 'extra', '--file', '.agents/team.yaml'],
+    ];
+    for (const argv of cases) {
+      const io = testIo(project);
+      const transport = (): never => {
+        throw new Error('the transport was called');
+      };
+      const reader = (): never => {
+        throw new Error('the key was read');
+      };
+      const code = await runRelease(argv, io, transport, reader);
+      expect({ argv, code }).toEqual({ argv, code: 64 });
+    }
   });
 });
