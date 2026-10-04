@@ -1,0 +1,37 @@
+# Cursor's screen. "To resume this session:" is unknown, and the core reads
+# unknown before trust. The braille range is written as characters: \u is refused.
+format: 1
+cli: cursor
+screen:
+  unknown:
+    - any: ['To resume this session:']
+  trust:
+    - all:
+        - 'Do you trust the contents of this'
+        - 'directory\?'
+        - '\[a\] Trust this workspace'
+        - '\[q\] Quit'
+      none_after:
+        anchor: 'Use arrow keys to navigate, Enter to'
+        patterns:
+          - '^\s*→'
+          - '^\s+Grok\s+[0-9]'
+  working:
+    - any:
+        - 'ctrl\+c to stop'
+        - '^\s*[⠀-⣿]+\s+(Working|Thinking)\b'
+  composer:
+    mode: status-then-one
+    status_line: '^\s+Grok\s+[0-9]'
+    prompt: '^\s*→'
+    strip_suffix: '\s*ctrl\+c to stop\s*$'
+    placeholders:
+      - equals: ''
+      - equals: Plan, search, build anything
+      - equals: Add a follow-up
+    fallback:
+      - all:
+          - match: '^\s*→\s+\S'
+            except: ['\sExit\s*$']
+          - '^\s*→?\s*/\S+\s+Exit\s*$'
+        kind: unsent

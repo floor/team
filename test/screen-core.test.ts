@@ -1,13 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { antigravityComposer } from '../src/profiles/antigravity-screen.ts';
-import { codexComposer } from '../src/profiles/codex-screen.ts';
-import { cursorComposer } from '../src/profiles/cursor-screen.ts';
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { Screen } from '../src/watch/screen.ts';
 import { classify, classifyComposer, readScreen } from '../src/watch/screen.ts';
 import { DialectError, compilePattern } from '../src/watch/dialect.ts';
-import { classifyLines, composeLines } from '../src/watch/screen-core.ts';
-import type { ScreenData } from '../src/watch/screen-data.ts';
+import { classifyLines } from '../src/watch/screen-core.ts';
 import { loadScreen } from '../src/watch/screen-file.ts';
 import { YamlError } from '../src/yaml.ts';
 
@@ -75,77 +72,147 @@ describe('claude-code through the screen core', () => {
   });
 });
 
-const codexData = loadScreen(`
-format: 1
-cli: codex
-screen:
-  composer:
-    mode: status-last
-    status_line: '^\\s+GPT-[0-9][\\w.-]*\\s+[^·]*·'
-    prompt: '^\\s*›(?:\\s|$)'
-    placeholders:
-      - equals: Ask Codex to do anything
-`);
+// The classifiers codex, cursor and antigravity had on main, copied here so the
+// table proves the new path agrees with them. The production files are gone.
+function mainCodex(lines: string[]): Screen['kind'] {
+  if (lines.some((line) => /\bmodel:\s+loading\b/.test(line))) return 'unknown';
+  const composer = codexBox(lines);
+  if (composer === 'permission' || composer === 'trust' || composer === 'question') return composer;
+  if (lines.some((line) => /esc to interrupt/.test(line))) return 'working';
+  return composer;
+}
 
-const cursorData = loadScreen(`
-format: 1
-cli: cursor
-screen:
-  composer:
-    mode: status-then-one
-    status_line: '^\\s+Grok\\s+[0-9]'
-    prompt: '^\\s*→'
-    strip_suffix: '\\s*ctrl\\+c to stop\\s*$'
-    placeholders:
-      - equals: Plan, search, build anything
-      - equals: Add a follow-up
-    fallback:
-      - all:
-          - match: '^\\s*→\\s+\\S'
-            except: ['\\sExit\\s*$']
-          - '^\\s*→?\\s*/\\S+\\s+Exit\\s*$'
-        kind: unsent
-`);
+function codexBox(lines: string[]): Screen['kind'] {
+  const text = lines.join('\n');
+  const last = lines.filter((line) => line.trim()).at(-1)?.trim() ?? '';
+  if (last === 'Press enter to confirm or esc to cancel'
+    && /^\s*Would you like to run the following command\?\s*$/m.test(text)
+    && /^\s*›?\s*1\. Yes, proceed \(y\)\s*$/m.test(text)
+    && /^\s*›?\s*2\. No, and tell Codex what to do differently \(esc\)\s*$/m.test(text)) return 'permission';
+  if (last === 'enter continue · esc quit' && /Trust this folder\?/.test(text)
+    && /^\s*›?\s*1\. Trust and continue\s*$/m.test(text)) return 'trust';
+  if (last === 'enter continue · esc skip' && /Update available ·/.test(text)
+    && /^\s*›?\s*1\. Update now\b/m.test(text)) return 'question';
+  const footer = lines.findLastIndex((line) => /^\s+GPT-\d[\w.-]*\s+[^·]*·/.test(line));
+  if (footer < 0 || lines.slice(footer + 1).some((line) => line.trim())) return 'unknown';
+  let prompt = footer - 1;
+  while (prompt >= 0 && !/^\s*›(?:\s|$)/.test(lines[prompt] as string)) prompt--;
+  if (prompt < 0) return 'unknown';
+  const typed = (lines[prompt] as string).replace(/^\s*›/, '').trim();
+  if (lines.slice(prompt + 1, footer).some((line) => line.trim())) return 'unsent';
+  return typed === '' || typed === 'Ask Codex to do anything' ? 'idle' : 'unsent';
+}
 
-const agyData = loadScreen(`
-format: 1
-cli: antigravity
-screen:
-  chrome:
-    - '^\\s*↑/↓ Navigate.*$'
-    - '^esc to cancel\\s+Gemini\\s+[0-9].*$'
-  composer:
-    mode: two-rules-footer-below
-    ignore_case: true
-    prompt: '^\\s*>\\s*'
-    rule: '^\\s*[─━]{8,}\\s*$'
-    footers:
-      - '\\? for shortcuts'
-      - 'Gemini\\s+[0-9]'
-      - 'esc to cancel'
-      - '>\\s*/exit\\s+Exit'
-    placeholders:
-      - equals: ''
-`);
+function mainCursor(lines: string[]): Screen['kind'] {
+  const composer = cursorBox(lines);
+  if (composer === 'trust') return composer;
+  if (lines.some((line) => /ctrl\+c to stop/.test(line) || /^\s*[\u2800-\u28FF]+\s+(Working|Thinking)\b/.test(line))) return 'working';
+  return composer;
+}
 
-function window(text: string): string[] {
+function cursorBox(lines: string[]): Screen['kind'] {
+  if (cursorTrust(lines)) return 'trust';
+  if (lines.some((line) => /To resume this session:/.test(line))) return 'unknown';
+  const footer = lines.findLastIndex((line) => /^\s+Grok\s+\d/.test(line));
+  if (footer < 0) return cursorSlash(lines);
+  const trailing = lines.slice(footer + 1).filter((line) => line.trim());
+  if (trailing.length > 1 || trailing.some((line) => /^\s*→/.test(line))) return 'unknown';
+  let prompt = footer - 1;
+  while (prompt >= 0 && !/^\s*→/.test(lines[prompt] ?? '')) prompt--;
+  if (prompt < 0) return 'unknown';
+  const typed = (lines[prompt] ?? '').replace(/^\s*→/, '').replace(/\s*ctrl\+c to stop\s*$/, '').trim();
+  if (lines.slice(prompt + 1, footer).some((line) => line.trim())) return 'unsent';
+  return typed === '' || typed === 'Plan, search, build anything' || typed === 'Add a follow-up' ? 'idle' : 'unsent';
+}
+
+function cursorTrust(lines: string[]): boolean {
+  const text = lines.join('\n');
+  if (!/Do you trust the contents of this/.test(text) || !/directory\?/.test(text)) return false;
+  if (!/\[a\] Trust this workspace/.test(text) || !/\[q\] Quit/.test(text)) return false;
+  const nav = lines.findLastIndex((line) => /Use arrow keys to navigate, Enter to/.test(line));
+  if (nav < 0) return false;
+  return !lines.slice(nav + 1).some((line) => /^\s*→/.test(line) || /^\s+Grok\s+\d/.test(line));
+}
+
+function cursorSlash(lines: string[]): Screen['kind'] {
+  const typed = lines.findIndex((line) => /^\s*→\s+\S/.test(line) && !/\sExit\s*$/.test(line));
+  const menu = lines.some((line) => /^\s*→?\s*\/\S+\s+Exit\s*$/.test(line));
+  return typed >= 0 && menu ? 'unsent' : 'unknown';
+}
+
+function mainAntigravity(lines: string[]): Screen['kind'] {
+  const composer = agyBox(lines);
+  if (composer === 'trust' || composer === 'permission') return composer;
+  if (lines.some((line) => /\bGenerating\.\.\./.test(line))) return 'working';
+  return composer;
+}
+
+function agyBox(lines: string[]): Screen['kind'] {
+  const text = lines.join('\n');
+  const hasTrustQuestion = /Do you trust the contents of this project\?/i.test(text);
+  const hasTrustChoice = />\s*Yes, I trust this folder/i.test(text);
+  const hasConfirmFooter = lines.some((line) => /enter Confirm/i.test(line));
+  if (hasTrustQuestion && hasTrustChoice && hasConfirmFooter) {
+    const lastRule = lines.findLastIndex((line) => /^\s*[─━]{8,}\s*$/.test(line));
+    const confirmIdx = lines.findLastIndex((line) => /enter Confirm/i.test(line));
+    if (confirmIdx > lastRule) return 'trust';
+  }
+  const hasPermissionReq = /Requesting permission for:/i.test(text);
+  const hasPermissionChoice = lines.some((line) => /^\s*>\s*[0-9]\.\s+Yes\b/i.test(line));
+  const hasPermissionNav = lines.some((line) => /↑\/↓ Navigate/i.test(line));
+  if (hasPermissionReq && hasPermissionChoice && hasPermissionNav) {
+    const lastRule = lines.findLastIndex((line) => /^\s*[─━]{8,}\s*$/.test(line));
+    const navIdx = lines.findLastIndex((line) => /↑\/↓ Navigate/i.test(line));
+    if (navIdx > lastRule) return 'permission';
+  }
+  let bottomBorder = -1;
+  let topBorder = -1;
+  let prompt = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i] as string;
+    if (/^\s*[─━]{8,}\s*$/.test(line)) {
+      if (bottomBorder === -1) bottomBorder = i;
+      else if (topBorder === -1 && prompt !== -1) { topBorder = i; break; }
+    } else if (bottomBorder !== -1 && prompt === -1 && /^\s*>\s*/.test(line)) prompt = i;
+  }
+  if (topBorder < 0 || bottomBorder < 0 || prompt <= topBorder || prompt >= bottomBorder) return 'unknown';
+  const belowBottom = lines.slice(bottomBorder + 1);
+  const validFooter = belowBottom.some((line) => /(\? for shortcuts|Gemini\s+\d|esc to cancel|>\s*\/exit\s+Exit)/i.test(line));
+  if (!validFooter) return 'unknown';
+  const typed = (lines[prompt] as string).replace(/^\s*>\s*/, '').trim();
+  if (lines.slice(prompt + 1, bottomBorder).some((line) => line.trim() !== '')) return 'unsent';
+  return typed === '' ? 'idle' : 'unsent';
+}
+
+function windowOf(text: string): string[] {
   return text.split('\n').map((line) => line.trimEnd()).slice(-20);
 }
 
-function sameComposer(name: string, data: ScreenData, read: (lines: string[]) => Screen, dir: string, version: string, files: string[]): void {
-  for (const file of files) {
-    const lines = window(readFileSync(new URL(`./fixtures/${dir}/${version}/${file}.txt`, import.meta.url), 'utf8'));
-    const before = read(lines).kind;
-    if (before === 'trust' || before === 'permission' || before === 'question') continue;
-    expect(`${name} ${file}: ${composeLines(data, lines).kind}`).toBe(`${name} ${file}: ${before}`);
-  }
-}
+const captured: [string, string, (lines: string[]) => Screen['kind']][] = [
+  ['codex', '0.157.0', mainCodex],
+  ['cursor', '2026.10.01', mainCursor],
+  ['antigravity', '1.2.16', mainAntigravity],
+];
 
-describe('the other three composer modes', () => {
-  test('they agree with the code they will replace, on screens that are not dialogs', () => {
-    sameComposer('codex', codexData, codexComposer, 'codex', '0.157.0', ['idle', 'unsent', 'exit', 'exit-typed', 'working', 'startup', 'rules-accepted']);
-    sameComposer('cursor', cursorData, cursorComposer, 'cursor', '2026.10.01', ['idle', 'unsent', 'exit-typed', 'working', 'thinking', 'startup', 'rules-accepted']);
-    sameComposer('antigravity', agyData, antigravityComposer, 'antigravity', '1.2.16', ['idle', 'unsent', 'exit', 'exit-typed', 'working', 'rules-accepted']);
+describe('codex, cursor and antigravity through the screen core', () => {
+  test('every captured screen matches the classifier main had', () => {
+    for (const [cli, version, read] of captured) {
+      const dir = fileURLToPath(new URL(`./fixtures/${cli}/${version}/`, import.meta.url));
+      for (const name of readdirSync(dir)) {
+        if (!name.endsWith('.txt')) continue;
+        const text = readFileSync(new URL(`./fixtures/${cli}/${version}/${name}`, import.meta.url), 'utf8');
+        const before = read(windowOf(text));
+        const after = readScreen(cli, text).kind;
+        expect(`${cli} ${name}: ${after}`).toBe(`${cli} ${name}: ${before}`);
+      }
+    }
+  });
+
+  test('the one difference: cursor reads a resume line before a trust dialog', () => {
+    const trust = readFileSync(new URL('./fixtures/cursor/2026.10.01/trust.txt', import.meta.url), 'utf8');
+    const both = `${trust}\nTo resume this session:\n`;
+    expect(mainCursor(windowOf(both))).toBe('trust');
+    expect(readScreen('cursor', both).kind).toBe('unknown');
   });
 });
 
