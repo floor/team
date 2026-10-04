@@ -33,12 +33,12 @@
         "undocumented": 0
       },
       "permission": {
-        "real": 0,
+        "real": 3,
         "constructed": 2,
         "undocumented": 0
       },
       "question": {
-        "real": 0,
+        "real": 2,
         "constructed": 0,
         "undocumented": 0
       },
@@ -166,10 +166,7 @@
     }
   },
   "notProduced": {
-    "antigravity": {
-      "permission": "behind the trust dialog",
-      "question": "behind the trust dialog"
-    },
+    "antigravity": {},
     "claude-code": {},
     "codex": {},
     "cursor": {}
@@ -200,16 +197,46 @@
       "provenance": "capture"
     },
     {
+      "file": "antigravity/1.2.16/permission-command-54.txt",
+      "cli": "antigravity",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
       "file": "antigravity/1.2.16/permission-cut.txt",
       "cli": "antigravity",
       "kind": "permission",
       "provenance": "constructed"
     },
     {
+      "file": "antigravity/1.2.16/permission-edit-54.txt",
+      "cli": "antigravity",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/permission-write-54.txt",
+      "cli": "antigravity",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
       "file": "antigravity/1.2.16/permission.txt",
       "cli": "antigravity",
       "kind": "permission",
       "provenance": "constructed"
+    },
+    {
+      "file": "antigravity/1.2.16/question-54.txt",
+      "cli": "antigravity",
+      "kind": "question",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/question-unsent-54.txt",
+      "cli": "antigravity",
+      "kind": "question",
+      "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/rules-accepted.txt",

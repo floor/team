@@ -29,6 +29,13 @@
       "provenance": "capture"
     },
     {
+      "file": "antigravity/1.2.16/permission-command-54.txt",
+      "cli": "antigravity",
+      "classify": "permission",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
       "file": "antigravity/1.2.16/permission-cut.txt",
       "cli": "antigravity",
       "classify": "permission",
@@ -36,11 +43,39 @@
       "provenance": "constructed"
     },
     {
+      "file": "antigravity/1.2.16/permission-edit-54.txt",
+      "cli": "antigravity",
+      "classify": "permission",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/permission-write-54.txt",
+      "cli": "antigravity",
+      "classify": "permission",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
       "file": "antigravity/1.2.16/permission.txt",
       "cli": "antigravity",
       "classify": "permission",
       "composer": "unknown",
       "provenance": "constructed"
+    },
+    {
+      "file": "antigravity/1.2.16/question-54.txt",
+      "cli": "antigravity",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/question-unsent-54.txt",
+      "cli": "antigravity",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/rules-accepted.txt",
