@@ -144,20 +144,20 @@ describe('a pass with checks turned off', () => {
   const APPROVED: string[] = [];
 
   test('a disabled check reports nothing; the others report as usual', () => {
-    expect(texts(pass(teamFile(), emptySession(), live(), tight, 0, newMemory(), APPROVED))).toEqual([
+    expect(texts(pass({ team: teamFile(), state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval: APPROVED }))).toEqual([
       'the load is 6.5 per core, above 6',
       'free memory is 10%, below 15%',
       'free disk is 5.0 GB, below 10.0 GB',
       'free swap is 0.3 GB, below 2.0 GB',
     ]);
     const off = teamFile('  checks:\n    disk: off\n');
-    expect(texts(pass(off, emptySession(), live(), tight, 0, newMemory(), APPROVED))).toEqual([
+    expect(texts(pass({ team: off, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval: APPROVED }))).toEqual([
       'the load is 6.5 per core, above 6',
       'free memory is 10%, below 15%',
       'free swap is 0.3 GB, below 2.0 GB',
     ]);
     const both = teamFile('  checks:\n    disk: off\n    memory: off\n');
-    expect(texts(pass(both, emptySession(), live(), tight, 0, newMemory(), APPROVED))).toEqual([
+    expect(texts(pass({ team: both, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval: APPROVED }))).toEqual([
       'the load is 6.5 per core, above 6',
       'free swap is 0.3 GB, below 2.0 GB',
     ]);
@@ -165,7 +165,7 @@ describe('a pass with checks turned off', () => {
 
   test('nothing is turned off until the owner approves the edit', () => {
     const off = teamFile('  checks:\n    disk: off\n');
-    const reported = (approval: string[] | null) => texts(pass(off, emptySession(), live(), tight, 0, newMemory(), approval));
+    const reported = (approval: string[] | null) => texts(pass({ team: off, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory(), approval }));
     // The edit is a difference: the check it would turn off keeps running, and the difference is
     // the owner's to answer.
     expect(reported([WATCH_CHECKS_CHANGED])).toContain('free disk is 5.0 GB, below 10.0 GB');
@@ -182,10 +182,18 @@ describe('a pass with checks turned off', () => {
   test('a check turned off and back on reports again: its condition cleared while it was off', () => {
     const memory = newMemory();
     const off = teamFile('  checks:\n    disk: off\n');
-    expect(texts(pass(off, emptySession(), live(), tight, 0, memory, APPROVED))).not.toContain('free disk is 5.0 GB, below 10.0 GB');
-    expect(texts(pass(teamFile(), emptySession(), live(), tight, 60_000, memory, APPROVED))).toContain('free disk is 5.0 GB, below 10.0 GB');
-    expect(texts(pass(off, emptySession(), live(), tight, 2 * 60_000, memory, APPROVED))).not.toContain('free disk is 5.0 GB, below 10.0 GB');
-    expect(texts(pass(teamFile(), emptySession(), live(), tight, 3 * 60_000, memory, APPROVED))).toContain('free disk is 5.0 GB, below 10.0 GB');
+    expect(texts(pass({
+      team: off, state: emptySession(), live: live(), machine: tight, now: 0, memory, approval: APPROVED,
+    }))).not.toContain('free disk is 5.0 GB, below 10.0 GB');
+    expect(texts(pass({
+      team: teamFile(), state: emptySession(), live: live(), machine: tight, now: 60_000, memory, approval: APPROVED,
+    }))).toContain('free disk is 5.0 GB, below 10.0 GB');
+    expect(texts(pass({
+      team: off, state: emptySession(), live: live(), machine: tight, now: 2 * 60_000, memory, approval: APPROVED,
+    }))).not.toContain('free disk is 5.0 GB, below 10.0 GB');
+    expect(texts(pass({
+      team: teamFile(), state: emptySession(), live: live(), machine: tight, now: 3 * 60_000, memory, approval: APPROVED,
+    }))).toContain('free disk is 5.0 GB, below 10.0 GB');
   });
 
   test('the four always-on checks run for a file that lists them anyway', () => {
@@ -196,7 +204,7 @@ describe('a pass with checks turned off', () => {
     const now = live({ 'deepseek-acme': { status: 'idle', screen: permission } });
     now.agents = now.agents.filter((one) => one.name !== 'deepseek-acme-2');
     now.screens['w1:p1'] = busy.replace('Opus 5.5', 'Fable 5.1');
-    const reported = texts(pass(smuggled, emptySession(), now, fine, 0, newMemory(), ['`rules` changed']));
+    const reported = texts(pass({ team: smuggled, state: emptySession(), live: now, machine: fine, now: 0, memory: newMemory(), approval: ['`rules` changed'] }));
     expect(reported).toContain('deepseek-acme-2 is in the file and is not running');
     expect(reported).toContain('claude-coordinator-acme runs Claude Fable 5.1; the file says Claude Opus 5.5: it signs with the wrong model');
     expect(reported).toContain("deepseek-acme waits at a permission prompt: its owner's to answer");

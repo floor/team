@@ -92,17 +92,39 @@ function attentionOf(screen: Screen, status: string, quiet: boolean): Attention 
   return null;
 }
 
+// What one pass is handed: the file, the session, the observed world, the clock, the watch's
+// memory, and what the caller knows that the world does not. `approval` is how the file differs
+// from the approved one: [] when it doesn't, null when it was never approved, undefined when that
+// wasn't looked at. `watch` and `budgets` are the sections in force — the approved ones, or the
+// defaults while the file's own are not approved — and the checks read those, never the file's.
+// `outcomes` is what the accounts' check commands read outside the pass, when the watch last ran
+// them.
+export type PassInput = {
+  team: TeamFile;
+  state: SessionState;
+  live: Live;
+  machine: Machine;
+  now: number;
+  memory: Memory;
+  approval?: string[] | null;
+  watch?: TeamFile['watch'];
+  outcomes?: readonly CheckOutcome[];
+  budgets?: TeamFile['budgets'];
+};
+
 // One pass of the watch. Pure: it reads what it is handed and changes only `memory`.
-// `approval` is how the file differs from the approved one: [] when it doesn't, null when it was
-// never approved, undefined when that wasn't looked at. `watch` and `budgets` are the sections in
-// force — the approved ones, or the defaults while the file's own are not approved — and the
-// checks read those, never the file's. `outcomes` is what the accounts' check commands read
-// outside the pass, when the watch last ran them.
-export function pass(
-  team: TeamFile, state: SessionState, live: Live, machine: Machine, now: number, memory: Memory,
-  approval?: string[] | null, watch: TeamFile['watch'] = team.watch,
-  outcomes: readonly CheckOutcome[] = [], budgets: TeamFile['budgets'] = team.budgets,
-): PassResult {
+export function pass({
+  team,
+  state,
+  live,
+  machine,
+  now,
+  memory,
+  approval,
+  watch = team.watch,
+  outcomes = [],
+  budgets = team.budgets,
+}: PassInput): PassResult {
   const reports: Report[] = [];
   const current = new Set<string>();
   // Reported when it starts, and again only after it has cleared.

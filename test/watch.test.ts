@@ -172,13 +172,15 @@ function live(over: Partial<Record<string, { status?: string; screen?: string }>
 
 describe('a pass of the watch', () => {
   test('a working team reports nothing', () => {
-    expect(pass(team(), emptySession(), live(), fine, 0, newMemory())).toEqual({ reports: [], nudge: null, fallback: null, readings: [] });
+    expect(pass({
+      team: team(), state: emptySession(), live: live(), machine: fine, now: 0, memory: newMemory(),
+    })).toEqual({ reports: [], nudge: null, fallback: null, readings: [] });
   });
 
   test('an idle seat is reported after idle_first, and again every idle_repeat', () => {
     const memory = newMemory();
     const quiet = live({ 'deepseek-acme': { status: 'done', screen: idle } });
-    const at = (minute: number) => pass(team(), emptySession(), quiet, fine, minute * MIN, memory).reports.map((report) => report.text);
+    const at = (minute: number) => pass({ team: team(), state: emptySession(), live: quiet, machine: fine, now: minute * MIN, memory }).reports.map((report) => report.text);
     expect(at(0)).toEqual([]);
     expect(at(9)).toEqual([]);
     // Never seen working: the report says so instead of inventing a duration.
@@ -191,21 +193,21 @@ describe('a pass of the watch', () => {
   test('work resets the idle timer', () => {
     const memory = newMemory();
     const quiet = live({ 'deepseek-acme': { status: 'idle', screen: idle } });
-    pass(team(), emptySession(), quiet, fine, 0, memory);
-    pass(team(), emptySession(), live(), fine, 9 * MIN, memory);
-    expect(pass(team(), emptySession(), quiet, fine, 10 * MIN, memory).reports).toEqual([]);
+    pass({ team: team(), state: emptySession(), live: quiet, machine: fine, now: 0, memory });
+    pass({ team: team(), state: emptySession(), live: live(), machine: fine, now: 9 * MIN, memory });
+    expect(pass({ team: team(), state: emptySession(), live: quiet, machine: fine, now: 10 * MIN, memory }).reports).toEqual([]);
   });
 
   test('a parked seat idle for an hour is not reported idle, while its unparked neighbour is', () => {
     const memory = newMemory();
     const quiet = live({ 'codex-acme': { status: 'idle' }, 'deepseek-acme': { status: 'idle', screen: idle } });
-    expect(pass(team(), emptySession(), quiet, fine, 0, memory).reports).toEqual([]);
+    expect(pass({ team: team(), state: emptySession(), live: quiet, machine: fine, now: 0, memory }).reports).toEqual([]);
     // Ten minutes in, the unparked seat's report lands: the shelf works, the parked seat is off it.
-    expect(pass(team(), emptySession(), quiet, fine, 10 * MIN, memory).reports.map((report) => report.text))
+    expect(pass({ team: team(), state: emptySession(), live: quiet, machine: fine, now: 10 * MIN, memory }).reports.map((report) => report.text))
       .toEqual(['deepseek-acme has been idle since the watch started']);
     // An hour in, the neighbour reports again on the idle_repeat cadence; the parked seat is
     // still absent from every report.
-    expect(pass(team(), emptySession(), quiet, fine, 60 * MIN, memory).reports.map((report) => report.text))
+    expect(pass({ team: team(), state: emptySession(), live: quiet, machine: fine, now: 60 * MIN, memory }).reports.map((report) => report.text))
       .toEqual(['deepseek-acme has been idle since the watch started']);
   });
 
@@ -216,8 +218,8 @@ describe('a pass of the watch', () => {
     const screen = readFileSync(new URL('./fixtures/codex/0.157.0/unsent.txt', import.meta.url), 'utf8')
       .replaceAll('GPT-5.6-Terra', 'GPT-6-Sol');
     const holding = live({ 'codex-acme': { status: 'idle', screen } });
-    expect(pass(team(), emptySession(), holding, fine, 0, memory).reports).toEqual([]);
-    expect(pass(team(), emptySession(), holding, fine, MIN, memory).reports.map((report) => report.text))
+    expect(pass({ team: team(), state: emptySession(), live: holding, machine: fine, now: 0, memory }).reports).toEqual([]);
+    expect(pass({ team: team(), state: emptySession(), live: holding, machine: fine, now: MIN, memory }).reports.map((report) => report.text))
       .toEqual(['codex-acme holds text in its input box that was never sent']);
   });
 
@@ -230,27 +232,27 @@ describe('a pass of the watch', () => {
     // The file says unsent_after is a minute; the values in force say an hour — what the owner
     // approved, or the defaults — and the check waits for the hour.
     const inForce = { ...file.watch, unsentAfter: 60 * 60 };
-    expect(pass(file, emptySession(), holding, fine, 0, memory, [], inForce).reports).toEqual([]);
-    expect(pass(file, emptySession(), holding, fine, 60 * MIN, memory, [], inForce).reports.map((report) => report.text))
+    expect(pass({ team: file, state: emptySession(), live: holding, machine: fine, now: 0, memory, approval: [], watch: inForce }).reports).toEqual([]);
+    expect(pass({ team: file, state: emptySession(), live: holding, machine: fine, now: 60 * MIN, memory, approval: [], watch: inForce }).reports.map((report) => report.text))
       .toEqual(['codex-acme holds text in its input box that was never sent']);
     // With the file's own values, the minute is enough.
     const own = newMemory();
-    pass(file, emptySession(), holding, fine, 0, own, []);
-    expect(pass(file, emptySession(), holding, fine, MIN, own, []).reports.map((report) => report.text))
+    pass({ team: file, state: emptySession(), live: holding, machine: fine, now: 0, memory: own, approval: [] });
+    expect(pass({ team: file, state: emptySession(), live: holding, machine: fine, now: MIN, memory: own, approval: [] }).reports.map((report) => report.text))
       .toEqual(['codex-acme holds text in its input box that was never sent']);
   });
 
   test('a parked seat runs the wrong model: model drift is reported too', () => {
     const screen = readFileSync(new URL('./fixtures/codex/0.157.0/working.txt', import.meta.url), 'utf8');
     const drift = live({ 'codex-acme': { status: 'working', screen } });
-    const texts = pass(team(), emptySession(), drift, fine, 0, newMemory()).reports.map((report) => report.text);
+    const texts = pass({ team: team(), state: emptySession(), live: drift, machine: fine, now: 0, memory: newMemory() }).reports.map((report) => report.text);
     expect(texts).toEqual(['codex-acme runs GPT Terra 5.6; the file says GPT Sol 6: it signs with the wrong model']);
   });
 
   test('a stopped seat that runs is watched like a parked one: its permission prompt is reported', () => {
     const screen = readFileSync(new URL('./fixtures/codex/0.157.0/permission.txt', import.meta.url), 'utf8');
     const stuck = live({ 'codex-acme': { status: 'idle', screen } });
-    expect(pass(stoppedTeam(), emptySession(), stuck, fine, 0, newMemory()).reports).toEqual([
+    expect(pass({ team: stoppedTeam(), state: emptySession(), live: stuck, machine: fine, now: 0, memory: newMemory() }).reports).toEqual([
       { key: 'blocked:codex-acme', text: "codex-acme waits at a permission prompt: its owner's to answer", to: 'owner' },
     ]);
   });
@@ -262,8 +264,8 @@ describe('a pass of the watch', () => {
     const screen = readFileSync(new URL('./fixtures/codex/0.157.0/unsent.txt', import.meta.url), 'utf8')
       .replaceAll('GPT-5.6-Terra', 'GPT-6-Sol');
     const holding = live({ 'codex-acme': { status: 'idle', screen } });
-    expect(pass(stoppedTeam(), emptySession(), holding, fine, 0, memory).reports).toEqual([]);
-    expect(pass(stoppedTeam(), emptySession(), holding, fine, MIN, memory).reports.map((report) => report.text))
+    expect(pass({ team: stoppedTeam(), state: emptySession(), live: holding, machine: fine, now: 0, memory }).reports).toEqual([]);
+    expect(pass({ team: stoppedTeam(), state: emptySession(), live: holding, machine: fine, now: MIN, memory }).reports.map((report) => report.text))
       .toEqual(['codex-acme holds text in its input box that was never sent']);
   });
 
@@ -272,56 +274,56 @@ describe('a pass of the watch', () => {
     const quiet = live({ 'deepseek-acme': { status: 'idle', screen: idle } });
     quiet.agents.push(agent('grok-acme', 'w5', 'idle', 'grok'));
     quiet.workspaces.push({ id: 'w5', label: 'grok-acme' });
-    expect(pass(team(), emptySession(), quiet, fine, 0, memory).reports).toEqual([]);
+    expect(pass({ team: team(), state: emptySession(), live: quiet, machine: fine, now: 0, memory }).reports).toEqual([]);
     // Ten minutes in, the unparked neighbour's report lands: the shelf works, the stopped seat is
     // off it.
-    expect(pass(team(), emptySession(), quiet, fine, 10 * MIN, memory).reports.map((report) => report.text))
+    expect(pass({ team: team(), state: emptySession(), live: quiet, machine: fine, now: 10 * MIN, memory }).reports.map((report) => report.text))
       .toEqual(['deepseek-acme has been idle since the watch started']);
     // An hour in, the neighbour reports again on the idle_repeat cadence; the stopped seat is still
     // absent from every report.
-    expect(pass(team(), emptySession(), quiet, fine, 60 * MIN, memory).reports.map((report) => report.text))
+    expect(pass({ team: team(), state: emptySession(), live: quiet, machine: fine, now: 60 * MIN, memory }).reports.map((report) => report.text))
       .toEqual(['deepseek-acme has been idle since the watch started']);
   });
 
   test('a permission prompt that herdr calls idle is the owner\'s, and is never an idle seat', () => {
     const memory = newMemory();
     const stuck = live({ 'deepseek-acme': { status: 'idle', screen: permission } });
-    const first = pass(team(), emptySession(), stuck, fine, 0, memory);
+    const first = pass({ team: team(), state: emptySession(), live: stuck, machine: fine, now: 0, memory });
     expect(first.reports).toEqual([{ key: 'blocked:deepseek-acme', text: 'deepseek-acme waits at a permission prompt: its owner\'s to answer', to: 'owner' }]);
     expect(first.nudge).toBeNull();
-    expect(pass(team(), emptySession(), stuck, fine, 30 * MIN, memory).reports).toEqual([]);
+    expect(pass({ team: team(), state: emptySession(), live: stuck, machine: fine, now: 30 * MIN, memory }).reports).toEqual([]);
   });
 
   test.each(['idle', 'working'])('a captured Codex permission goes to its owner when herdr says %s', (status) => {
     const screen = readFileSync(new URL('./fixtures/codex/0.157.0/permission.txt', import.meta.url), 'utf8');
     const memory = newMemory();
     const stuck = live({ 'codex-acme': { status, screen } });
-    const first = pass(team(), emptySession(), stuck, fine, 0, memory);
+    const first = pass({ team: team(), state: emptySession(), live: stuck, machine: fine, now: 0, memory });
     expect(first.reports).toEqual([{ key: 'blocked:codex-acme', text: "codex-acme waits at a permission prompt: its owner's to answer", to: 'owner' }]);
     expect(first.nudge).toBeNull();
-    expect(pass(team(), emptySession(), stuck, fine, 30 * MIN, memory).reports).toEqual([]);
+    expect(pass({ team: team(), state: emptySession(), live: stuck, machine: fine, now: 30 * MIN, memory }).reports).toEqual([]);
   });
 
   test('a question is the operator\'s', () => {
     const asked = live({ 'deepseek-acme-2': { status: 'blocked', screen: question } });
-    const result = pass(team(), emptySession(), asked, fine, 0, newMemory());
+    const result = pass({ team: team(), state: emptySession(), live: asked, machine: fine, now: 0, memory: newMemory() });
     expect(result.reports).toEqual([{ key: 'question:deepseek-acme-2', text: 'deepseek-acme-2 asked a question: the operator\'s to act on', to: 'operator' }]);
   });
 
   test('a condition is reported once, and again only after it has cleared', () => {
     const memory = newMemory();
     const stuck = live({ 'deepseek-acme': { status: 'idle', screen: permission } });
-    expect(pass(team(), emptySession(), stuck, fine, 0, memory).reports.length).toBe(1);
-    expect(pass(team(), emptySession(), stuck, fine, MIN, memory).reports.length).toBe(0);
-    expect(pass(team(), emptySession(), live(), fine, 2 * MIN, memory).reports.length).toBe(0);
-    expect(pass(team(), emptySession(), stuck, fine, 3 * MIN, memory).reports.length).toBe(1);
+    expect(pass({ team: team(), state: emptySession(), live: stuck, machine: fine, now: 0, memory }).reports.length).toBe(1);
+    expect(pass({ team: team(), state: emptySession(), live: stuck, machine: fine, now: MIN, memory }).reports.length).toBe(0);
+    expect(pass({ team: team(), state: emptySession(), live: live(), machine: fine, now: 2 * MIN, memory }).reports.length).toBe(0);
+    expect(pass({ team: team(), state: emptySession(), live: stuck, machine: fine, now: 3 * MIN, memory }).reports.length).toBe(1);
   });
 
   test('unsent input is its own condition, after unsent_after, for the coordinator too', () => {
     const memory = newMemory();
     const typed = live({ 'claude-coordinator-acme': { status: 'idle', screen: unsent } });
-    expect(pass(team(), emptySession(), typed, fine, 0, memory).reports).toEqual([]);
-    expect(pass(team(), emptySession(), typed, fine, MIN, memory).reports.map((report) => report.text)).toEqual([
+    expect(pass({ team: team(), state: emptySession(), live: typed, machine: fine, now: 0, memory }).reports).toEqual([]);
+    expect(pass({ team: team(), state: emptySession(), live: typed, machine: fine, now: MIN, memory }).reports.map((report) => report.text)).toEqual([
       'claude-coordinator-acme holds text in its input box that was never sent',
     ]);
   });
@@ -333,10 +335,12 @@ describe('a pass of the watch', () => {
       'deepseek-acme-2': { status: 'done', screen: idle },
     });
     // codex-acme is parked and the leads don't count: the two DeepSeek seats are the team.
-    expect(pass(team(), emptySession(), all, fine, 0, memory).reports).toEqual([]);
-    const texts = pass(team(), emptySession(), all, fine, 10 * MIN, memory).reports.map((report) => report.text);
+    expect(pass({ team: team(), state: emptySession(), live: all, machine: fine, now: 0, memory }).reports).toEqual([]);
+    const texts = pass({
+      team: team(), state: emptySession(), live: all, machine: fine, now: 10 * MIN, memory,
+    }).reports.map((report) => report.text);
     expect(texts).toContain('every agent is idle');
-    expect(pass(team(), emptySession(), all, fine, 15 * MIN, memory).reports.map((report) => report.text)).not.toContain('every agent is idle');
+    expect(pass({ team: team(), state: emptySession(), live: all, machine: fine, now: 15 * MIN, memory }).reports.map((report) => report.text)).not.toContain('every agent is idle');
   });
 
   test('a missing seat, an agent the file doesn\'t hold, and a wrong model', () => {
@@ -344,7 +348,7 @@ describe('a pass of the watch', () => {
     now.agents = now.agents.filter((one) => one.name !== 'deepseek-acme-2');
     now.agents.push(agent('stranger', 'w8', 'working'), agent(null, 'w9', 'working'));
     now.workspaces.push({ id: 'w8', label: 'x' }, { id: 'w9', label: 'watchdog' });
-    const texts = pass(team(), emptySession(), now, fine, 0, newMemory()).reports.map((report) => report.text);
+    const texts = pass({ team: team(), state: emptySession(), live: now, machine: fine, now: 0, memory: newMemory() }).reports.map((report) => report.text);
     expect(texts).toEqual([
       'claude-coordinator-acme runs Claude Fable 5.1; the file says Claude Opus 5.5: it signs with the wrong model',
       'deepseek-acme-2 is in the file and is not running',
@@ -357,18 +361,18 @@ describe('a pass of the watch', () => {
     const now = live();
     now.agents.push(agent('deepseek-acme-tmp-1', 'w7', 'idle'));
     now.screens['w7:p1'] = permission;
-    const texts = pass(team(), state, now, fine, 0, newMemory()).reports.map((report) => report.text);
+    const texts = pass({ team: team(), state, live: now, machine: fine, now: 0, memory: newMemory() }).reports.map((report) => report.text);
     expect(texts).toEqual(['deepseek-acme-tmp-1 waits at a permission prompt: its owner\'s to answer']);
   });
 
   test('a seat that runs another maker\'s model through Claude Code is unread, never wrong', () => {
     // The DeepSeek seats show Claude Code\'s status line; it names no model of theirs.
-    expect(pass(team(), emptySession(), live(), fine, 0, newMemory()).reports).toEqual([]);
+    expect(pass({ team: team(), state: emptySession(), live: live(), machine: fine, now: 0, memory: newMemory() }).reports).toEqual([]);
   });
 
   test('the machine: load per core, memory, disk and free swap, each against its threshold', () => {
     const tight: Machine = { loadPerCore: 6.5, memoryFree: 10, diskFree: 5e9, swapFree: 0.3e9, swapUsed: 23e9 };
-    const reports = pass(team(), emptySession(), live(), tight, 0, newMemory()).reports;
+    const reports = pass({ team: team(), state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory() }).reports;
     expect(reports.map((report) => report.text)).toEqual([
       'the load is 6.5 per core, above 6',
       'free memory is 10%, below 15%',
@@ -381,28 +385,30 @@ describe('a pass of the watch', () => {
   test('swap that grows fast is pressure even while free swap is high', () => {
     const memory = newMemory();
     const at = (minute: number, used: number) =>
-      pass(team(), emptySession(), live(), { ...fine, swapUsed: used }, minute * MIN, memory).reports.map((report) => report.text);
+      pass({ team: team(), state: emptySession(), live: live(), machine: { ...fine, swapUsed: used }, now: minute * MIN, memory }).reports.map((report) => report.text);
     expect(at(0, 1e9)).toEqual([]);
     expect(at(5, 1.8e9)).toEqual([]);
     expect(at(8, 2.4e9)).toEqual(['swap grew by 1.4 GB in 10 minutes, above 1.0 GB']);
     // The same growth an hour apart is not pressure.
     const slow = newMemory();
-    pass(team(), emptySession(), live(), { ...fine, swapUsed: 1e9 }, 0, slow);
-    expect(pass(team(), emptySession(), live(), { ...fine, swapUsed: 2.4e9 }, 60 * MIN, slow).reports).toEqual([]);
+    pass({ team: team(), state: emptySession(), live: live(), machine: { ...fine, swapUsed: 1e9 }, now: 0, memory: slow });
+    expect(pass({ team: team(), state: emptySession(), live: live(), machine: { ...fine, swapUsed: 2.4e9 }, now: 60 * MIN, memory: slow }).reports).toEqual([]);
   });
 
   test('a file that differs from the approved one is the owner\'s, reported once', () => {
     const memory = newMemory();
-    const first = pass(team(), emptySession(), live(), fine, 0, memory, ['`rules` changed']);
+    const first = pass({ team: team(), state: emptySession(), live: live(), machine: fine, now: 0, memory, approval: ['`rules` changed'] });
     expect(first.reports).toEqual([{ key: 'approval', text: 'the file differs from the approved one: `rules` changed', to: 'owner' }]);
-    expect(pass(team(), emptySession(), live(), fine, MIN, memory, ['`rules` changed']).reports).toEqual([]);
-    expect(pass(team(), emptySession(), live(), fine, 0, newMemory(), null).reports[0]?.text).toBe('the file was never approved on this machine');
-    expect(pass(team(), emptySession(), live(), fine, 0, newMemory(), []).reports).toEqual([]);
+    expect(pass({
+      team: team(), state: emptySession(), live: live(), machine: fine, now: MIN, memory, approval: ['`rules` changed'],
+    }).reports).toEqual([]);
+    expect(pass({ team: team(), state: emptySession(), live: live(), machine: fine, now: 0, memory: newMemory(), approval: null }).reports[0]?.text).toBe('the file was never approved on this machine');
+    expect(pass({ team: team(), state: emptySession(), live: live(), machine: fine, now: 0, memory: newMemory(), approval: [] }).reports).toEqual([]);
   });
 
   test('a figure that can\'t be read is never reported', () => {
     const blind: Machine = { loadPerCore: null, memoryFree: null, diskFree: null, swapFree: null, swapUsed: null };
-    expect(pass(team(), emptySession(), live(), blind, 0, newMemory()).reports).toEqual([]);
+    expect(pass({ team: team(), state: emptySession(), live: live(), machine: blind, now: 0, memory: newMemory() }).reports).toEqual([]);
   });
 });
 
@@ -485,7 +491,7 @@ describe('the idle anchor', () => {
   ] as const;
 
   const reportAt = (memory: ReturnType<typeof newMemory>, minute: number, over: Record<string, { status?: string; screen?: string }> = {}) =>
-    pass(anchorTeam(), emptySession(), anchorScene(over), fine, minute * MIN, memory).reports.map((report) => report.text);
+    pass({ team: anchorTeam(), state: emptySession(), live: anchorScene(over), machine: fine, now: minute * MIN, memory }).reports.map((report) => report.text);
 
   test.each(workers)('%s: the duration counts from the last "working" observation', (name, workingScreen, idleScreen) => {
     const memory = newMemory();
@@ -518,7 +524,7 @@ describe('the nudge', () => {
     live({ 'deepseek-acme-2': { status: 'blocked', screen: question }, 'claude-operator-acme': operator });
 
   test('is typed only for an operator at an empty idle prompt', () => {
-    const result = pass(team(), emptySession(), asked({}), fine, 0, newMemory());
+    const result = pass({ team: team(), state: emptySession(), live: asked({}), machine: fine, now: 0, memory: newMemory() });
     expect(result.nudge).toEqual({
       pane: 'w0:p1',
       text: NUDGE_TEXT,
@@ -527,10 +533,10 @@ describe('the nudge', () => {
   });
 
   test('is one constant line: no report text, no digit, nothing a dialog could take as an answer', () => {
-    const first = pass(team(), emptySession(), asked({}), fine, 0, newMemory()).nudge;
+    const first = pass({ team: team(), state: emptySession(), live: asked({}), machine: fine, now: 0, memory: newMemory() }).nudge;
     const gone = live();
     gone.agents = gone.agents.filter((one) => one.name !== 'deepseek-acme-2');
-    const second = pass(team(), emptySession(), gone, fine, 0, newMemory()).nudge;
+    const second = pass({ team: team(), state: emptySession(), live: gone, machine: fine, now: 0, memory: newMemory() }).nudge;
     // The same line whatever the reports: the report text never travels in the nudge.
     expect(first?.text).toBe(NUDGE_TEXT);
     expect(second?.text).toBe(NUDGE_TEXT);
@@ -548,9 +554,9 @@ describe('the nudge', () => {
   })) {
     test(`waits for an operator ${name}, and is never dropped`, () => {
       const memory = newMemory();
-      expect(pass(team(), emptySession(), asked(operator), fine, 0, memory).nudge).toBeNull();
+      expect(pass({ team: team(), state: emptySession(), live: asked(operator), machine: fine, now: 0, memory }).nudge).toBeNull();
       expect(memory.pending.length).toBe(1);
-      const later = pass(team(), emptySession(), asked({}), fine, 5 * MIN, memory);
+      const later = pass({ team: team(), state: emptySession(), live: asked({}), machine: fine, now: 5 * MIN, memory });
       expect(later.nudge?.text).toBe(NUDGE_TEXT);
       expect(later.nudge?.pending).toEqual(['deepseek-acme-2 asked a question: the operator\'s to act on']);
       expect(memory.pending).toEqual([]);
@@ -560,9 +566,9 @@ describe('the nudge', () => {
   test('becomes a notification after nudge_wait', () => {
     const memory = newMemory();
     const stuck = asked({ status: 'working', screen: busy });
-    expect(pass(team(), emptySession(), stuck, fine, 0, memory).fallback).toBeNull();
-    expect(pass(team(), emptySession(), stuck, fine, 9 * MIN, memory).fallback).toBeNull();
-    const result = pass(team(), emptySession(), stuck, fine, 10 * MIN, memory);
+    expect(pass({ team: team(), state: emptySession(), live: stuck, machine: fine, now: 0, memory }).fallback).toBeNull();
+    expect(pass({ team: team(), state: emptySession(), live: stuck, machine: fine, now: 9 * MIN, memory }).fallback).toBeNull();
+    const result = pass({ team: team(), state: emptySession(), live: stuck, machine: fine, now: 10 * MIN, memory });
     expect(result.nudge).toBeNull();
     expect(result.fallback).toBe('the operator could not be nudged for 10 minutes; 1 report(s) wait: deepseek-acme-2 asked a question: the operator\'s to act on');
     expect(memory.pending).toEqual([]);
@@ -570,7 +576,7 @@ describe('the nudge', () => {
 
   test('carries no report that is the owner\'s to answer', () => {
     const stuck = live({ 'deepseek-acme': { status: 'idle', screen: permission } });
-    expect(pass(team(), emptySession(), stuck, fine, 0, newMemory()).nudge).toBeNull();
+    expect(pass({ team: team(), state: emptySession(), live: stuck, machine: fine, now: 0, memory: newMemory() }).nudge).toBeNull();
   });
 });
 
