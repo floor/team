@@ -44,6 +44,7 @@ const DEFAULT_COMPOSER: Composer = {
   rule: /(?!)/,
   footers: [],
   placeholders: [],
+  frameRows: 0,
 };
 
 export function loadScreen(text: string, baseDir?: string, profileFile?: string): ScreenData {
