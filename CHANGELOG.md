@@ -9,48 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Codex's profile reads a weekly quota from its status line: `weekly N% left`, for the OpenAI account.
-  A line cut short of the number is not a figure.
-- `budgets` is an owner section: marks, freshness, and each account's reserve or floor. A `check`
-  command is resolved and hashed at `team approve`. `watch.quota_marks` is still read, with a warning.
-  After upgrading, the owner runs `team approve` once. A changed check file leaves that account
-  unknown; it does not refuse the rest of the file.
-- A quota figure is kept per seat in the state file. The newest confirmed change counts. A first
-  sight does not replace it, and a reading from before its reset is dropped.
-- `team status` prints a budgets table, and the same rows in `--json`, when an account is named or
-  a reading is stored. Unknown and stale are shown as such. A row inside its reserve says so even
-  when the figure is still fresh.
-- `team watch` reports a budget: each mark a window crosses, an account inside its reserve or floor
-  (to the owner), and an account that reads unknown while seats run on it (to the operator). The
-  accounts' check commands run in the watch loop, outside the pass: at most every `budgets.check_every`,
-  ten seconds, an empty environment, and only when the approval covers them — their output is never
-  logged. The core parses each seat's quota line, and a reading the pass saw is saved, so `status`,
-  `up` and `add` count it. `watch.checks: { budget: off }` turns the report off.
 - A spend account's `floor` refuses a launch: the watch keeps the money each spend check reads in the
   state, and `up` and `add` refuse a seat whose account is at or below its floor. A reading that is
   missing, stale or in another currency than the floor's reads unknown, is said, and never refuses.
-
-### Changed
-
-- The whole `watch` section is an owner section, its timings included: an edit to `interval`,
-  `idle_first`, `idle_repeat`, `team_idle`, `nudge_wait` or `unsent_after` needs a new approval, and
-  until the owner approves it the watch runs with the values of the approved copy — or with the
-  defaults when nothing was approved. `watch.checks` keeps its own finer line inside the section.
-  An approval recorded before this change stays valid while the section is unchanged; a timing a
-  seat changed without an approval shows its difference at the next pass, for the owner to settle.
-  A never-approved team now runs on the defaults whatever its file says.
-- The whole `budgets` section is an owner section too, its accounts and marks included: an edit to
-  a reserve, a floor, `stale_after`, `check_every` or the accounts needs a new approval, and until
-  the owner approves it every reader — the watch's reports and its check cadence, the check
-  commands' own run, `up`'s and `add`'s launch gate, and `status`'s table — runs with the values of
-  the approved copy, or with the defaults (no accounts) when nothing was approved. A file never
-  approved runs no check at all. An unapproved edit silences nothing and unblocks nothing.
-
-### Fixed
-
-- Claude Code's permission stage is the dialog itself: the question with its "Esc to cancel · Tab to amend"
-  footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
-  stays idle.
 
 ## [0.1.0] - 2026-10-04
 
@@ -100,6 +61,37 @@ The first release: set up, change and watch a project's team of AI agents from o
   remove its folder; a failed setup is kept and recorded, and the branch is never deleted. (#15)
 - A README that covers the file by example and every command with who may run it. (#9)
 - A page per command in `docs/commands`, every example run in CI. (#31)
+- Codex's profile reads a weekly quota from its status line: `weekly N% left`, for the OpenAI account.
+  A line cut short of the number is not a figure.
+- `budgets` is an owner section: marks, freshness, and each account's reserve or floor. A `check`
+  command is resolved and hashed at `team approve`. `watch.quota_marks` is read, with a warning.
+  A changed check file leaves that account unknown; it does not refuse the rest of the file.
+- A quota figure is kept per seat in the state file. The newest confirmed change counts. A first
+  sight does not replace it, and a reading from before its reset is dropped.
+- `team status` prints a budgets table, and the same rows in `--json`, when an account is named or
+  a reading is stored. Unknown and stale are shown as such. A row inside its reserve says so even
+  when the figure is still fresh.
+- `team watch` reports a budget: each mark a window crosses, an account inside its reserve or floor
+  (to the owner), and an account that reads unknown while seats run on it (to the operator). The
+  accounts' check commands run in the watch loop, outside the pass: at most every `budgets.check_every`,
+  ten seconds, an empty environment, and only when the approval covers them — their output is never
+  logged. The core parses each seat's quota line, and a reading the pass saw is saved, so `status`,
+  `up` and `add` count it. `watch.checks: { budget: off }` turns the report off.
+
+### Changed
+
+- The whole `watch` section is an owner section, its timings included: an edit to `interval`,
+  `idle_first`, `idle_repeat`, `team_idle`, `nudge_wait` or `unsent_after` needs a new approval, and
+  until the owner approves it the watch runs with the values of the approved copy — or with the
+  defaults when nothing was approved. `watch.checks` keeps its own finer line inside the section.
+  A timing a seat changed without an approval shows its difference at the next pass, for the owner
+  to settle. A never-approved team runs on the defaults, whatever its file says.
+- The whole `budgets` section is an owner section too, its accounts and marks included: an edit to
+  a reserve, a floor, `stale_after`, `check_every` or the accounts needs a new approval, and until
+  the owner approves it every reader — the watch's reports and its check cadence, the check
+  commands' own run, `up`'s and `add`'s launch gate, and `status`'s table — runs with the values of
+  the approved copy, or with the defaults (no accounts) when nothing was approved. A file never
+  approved runs no check at all. An unapproved edit silences nothing and unblocks nothing.
 
 ### Fixed
 
@@ -108,5 +100,8 @@ The first release: set up, change and watch a project's team of AI agents from o
   checkout — never the project root, which holds the owner's uncommitted work; `up` and `add` make
   it once, refuse a lobby outside `trust` or inside a protected checkout, and refuse a seat the file
   aims at one. (#35)
+- Claude Code's permission stage is the dialog itself: the question with its "Esc to cancel · Tab to amend"
+  footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
+  stays idle.
 
 [0.1.0]: https://github.com/floor/team/releases/tag/v0.1.0

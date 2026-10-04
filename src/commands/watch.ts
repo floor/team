@@ -189,7 +189,10 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
               : `the check for ${outcome.account} is unapproved; that account reads unknown`, false);
           }
         }
-        const result = pass(team, state, live, sources.machine(root), now, memory, sources.approval(team, root), inForce, outcomes, budget);
+        const result = pass({
+          team, state, live, machine: sources.machine(root), now, memory,
+          approval: sources.approval(team, root), watch: inForce, outcomes, budgets: budget,
+        });
         for (const report of result.reports) say(report.text, true);
         saveReadings(dir, session, result.readings, now);
         if (result.nudge) {
