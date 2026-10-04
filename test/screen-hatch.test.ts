@@ -1,5 +1,6 @@
-import { describe, expect, test, beforeEach } from 'bun:test';
-import { readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, statSync, mkdirSync, existsSync } from 'node:fs';
+import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
+import { readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, statSync, mkdirSync, existsSync, copyFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -14,7 +15,36 @@ import { validateTeamFile } from '../src/file/validate.ts';
 
 const fixtureDir = fileURLToPath(new URL('./fixtures/hatch', import.meta.url));
 
+let tempBuildDir: string | null = null;
+let builtScreenFileModule: any = null;
+
+async function getBuiltScreenFile(): Promise<any> {
+  if (builtScreenFileModule) return builtScreenFileModule;
+  tempBuildDir = mkdtempSync(resolve(tmpdir(), 'hatch-built-'));
+  const tsc = spawnSync('bun', ['run', 'tsc', '-p', 'tsconfig.build.json', '--outDir', tempBuildDir]);
+  if (tsc.status !== 0) {
+    throw new Error(`Failed to compile to temp directory: ${tsc.stderr?.toString() || tsc.stdout?.toString()}`);
+  }
+  mkdirSync(resolve(tempBuildDir, 'profiles'), { recursive: true });
+  for (const name of readdirSync(resolve(process.cwd(), 'src/profiles'))) {
+    if (name.endsWith('.yaml')) {
+      copyFileSync(resolve(process.cwd(), 'src/profiles', name), resolve(tempBuildDir, 'profiles', name));
+    }
+  }
+  const builtPath = resolve(tempBuildDir, 'watch/screen-file.js');
+  if (!existsSync(builtPath)) {
+    throw new Error(`Built file not found at ${builtPath}`);
+  }
+  builtScreenFileModule = await import(builtPath);
+  return builtScreenFileModule;
+}
+
 describe('Slice C: ScreenProfile escape hatch', () => {
+  afterAll(() => {
+    if (tempBuildDir) {
+      rmSync(tempBuildDir, { recursive: true, force: true });
+    }
+  });
   beforeEach(() => {
     resetCalls();
   });
@@ -701,17 +731,14 @@ screen:
         );
       }
 
-      // Against built CLI:
-      const distPath = resolve(process.cwd(), 'dist/watch/screen-file.js');
-      if (existsSync(distPath)) {
-        const dist = await import(distPath);
-        for (const cli of clis) {
-          const rawYaml = readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8');
-          const withHatch = `${rawYaml}\nscreen_module: "composer-hatch.cjs"\n`;
-          expect(() => dist.loadScreen(withHatch, tempDir, `${cli}.yaml`)).toThrow(
-            new RegExp(`profile "${cli}\\.yaml": profile has a data composer and screen_module exports a composer`),
-          );
-        }
+      // Against built CLI (compiled into temp directory; fails if missing, never skips):
+      const dist = await getBuiltScreenFile();
+      for (const cli of clis) {
+        const rawYaml = readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8');
+        const withHatch = `${rawYaml}\nscreen_module: "composer-hatch.cjs"\n`;
+        expect(() => dist.loadScreen(withHatch, tempDir, `${cli}.yaml`)).toThrow(
+          new RegExp(`profile "${cli}\\.yaml": profile has a data composer and screen_module exports a composer`),
+        );
       }
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
@@ -764,24 +791,24 @@ screen:
     const lines = ['some line'];
     const content = 'some line';
 
-    // 1. Getters that throw on profile object
-    const throwingGettersProfile: ScreenProfile = {
-      get unknown(): any { throw new Error('unknown getter'); },
-      get trust(): any { throw new Error('trust getter'); },
-      get permission(): any { throw new Error('permission getter'); },
-      get question(): any { throw new Error('question getter'); },
-      get working(): any { throw new Error('working getter'); },
-      get composer(): any { throw new Error('composer getter'); },
-    };
-    const dataWithThrowingGetters: ScreenData = {
-      ...base,
-      profile: throwingGettersProfile,
-    };
+    // 1. Getters that throw on profile object, tested one property at a time for every property readers touch
+    const profileProperties = ['unknown', 'trust', 'permission', 'question', 'working', 'composer'] as const;
+    for (const prop of profileProperties) {
+      const throwingPropProfile: ScreenProfile = {
+        get [prop](): any {
+          throw new Error(`${prop} getter boom`);
+        },
+      };
+      const dataWithThrowingProp: ScreenData = {
+        ...base,
+        profile: throwingPropProfile,
+      };
 
-    expect(classifyLines(dataWithThrowingGetters, lines).kind).toBe('unknown');
-    expect(readScreen(dataWithThrowingGetters, content).kind).toBe('unknown');
-    expect(composeLines(dataWithThrowingGetters, lines).kind).toBe('unknown');
-    expect(classifyComposer(dataWithThrowingGetters, lines).kind).toBe('unknown');
+      expect(classifyLines(dataWithThrowingProp, lines).kind).toBe('unknown');
+      expect(readScreen(dataWithThrowingProp, content).kind).toBe('unknown');
+      expect(composeLines(dataWithThrowingProp, lines).kind).toBe('unknown');
+      expect(classifyComposer(dataWithThrowingProp, lines).kind).toBe('unknown');
+    }
 
     // 2. Proxy throwing on every get
     const throwingProxy = new Proxy({}, {
@@ -864,6 +891,163 @@ seats:
       expect(() => loadScreen(yaml, tempDir, 'fake.yaml')).toThrow(
         /profile "fake\.yaml": "screen_module" must have a script extension \(\.ts, \.js, \.cjs, \.mjs\): "good\.CJS"/,
       );
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('round 8: stateful composer getter is refused at load on all four shipped profiles in source and built code (b)', async () => {
+    const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-stateful-composer-'));
+    // A stateful getter returning a function on odd reads (first read) and undefined on even reads:
+    writeFileSync(
+      resolve(tempDir, 'stateful-composer.cjs'),
+      `let reads = 0;
+Object.defineProperty(module.exports, "composer", {
+  get() {
+    reads++;
+    return reads % 2 === 1 ? () => ({ kind: "idle" }) : undefined;
+  },
+});`,
+    );
+
+    // Also a stateful getter returning undefined on read 1 and function on read 2:
+    writeFileSync(
+      resolve(tempDir, 'stateful-composer-delayed.cjs'),
+      `let reads = 0;
+Object.defineProperty(module.exports, "composer", {
+  get() {
+    reads++;
+    return reads === 1 ? undefined : () => ({ kind: "idle" });
+  },
+});`,
+    );
+
+    try {
+      const clis = ['claude-code', 'codex', 'cursor', 'antigravity'];
+      const dist = await getBuiltScreenFile();
+
+      for (const cli of clis) {
+        const rawYaml = readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8');
+
+        // First read returns function -> must be refused at load (cannot bypass exclusivity check)
+        const withHatch1 = `${rawYaml}\nscreen_module: "stateful-composer.cjs"\n`;
+        expect(() => loadScreen(withHatch1, tempDir, `${cli}.yaml`)).toThrow(
+          new RegExp(`profile "${cli}\\.yaml": profile has a data composer and screen_module exports a composer`),
+        );
+        expect(() => dist.loadScreen(withHatch1, tempDir, `${cli}.yaml`)).toThrow(
+          new RegExp(`profile "${cli}\\.yaml": profile has a data composer and screen_module exports a composer`),
+        );
+
+        // Delayed getter: read 1 snapshots undefined, so profile gets snapshot with composer: undefined.
+        // It must NOT receive a hatch composer later via subsequent reads.
+        const withHatch2 = `${rawYaml}\nscreen_module: "stateful-composer-delayed.cjs"\n`;
+        const dataSrc = loadScreen(withHatch2, tempDir, `${cli}.yaml`);
+        expect(typeof dataSrc.profile?.composer).toBe('undefined');
+        const dataBuilt = dist.loadScreen(withHatch2, tempDir, `${cli}.yaml`);
+        expect(typeof dataBuilt.profile?.composer).toBe('undefined');
+      }
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('round 8: stateful getter on predicate export runs snapshot value and reads export only once (b)', () => {
+    const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-stateful-predicate-'));
+    writeFileSync(
+      resolve(tempDir, 'stateful-predicate.cjs'),
+      `let reads = 0;
+const p1 = () => false;
+const p2 = () => true;
+Object.defineProperty(module.exports, "working", {
+  get() {
+    reads++;
+    return reads === 1 ? p1 : p2;
+  },
+});
+module.exports.getReads = () => reads;`,
+    );
+
+    try {
+      const yaml = `format: 1\ncli: fake\nscreen_module: "stateful-predicate.cjs"\nscreen:\n  composer:\n    mode: status-last\n    status_line: "^status$"\n    prompt: "^>"\n    placeholders: [{ equals: "" }]\n`;
+      const data = loadScreen(yaml, tempDir, 'fake.yaml');
+      expect(data.profile?.working).toBeDefined();
+
+      // The export was read during snapshot creation; only one read happened on load
+      const mod = require(resolve(tempDir, 'stateful-predicate.cjs'));
+      expect(mod.getReads()).toBe(1);
+
+      // When predicate is called, it runs p1 (which returns false), NOT p2 (which returns true)
+      expect(data.profile?.working?.(['any line'])).toBe(false);
+      expect(data.profile?.working?.(['any line'])).toBe(false);
+      // Property on module was not read again
+      expect(mod.getReads()).toBe(1);
+
+      // classifyLines evaluates working predicate
+      const lines = ['HATCH_NO_MATCH'];
+      const res = classifyLines(data, lines);
+      // Working returns false (p1), so result is idle, not working
+      expect(res.kind).toBe('idle');
+      expect(mod.getReads()).toBe(1);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('round 8: prototype export, default export, and Proxy module refuse hatch composer on shipped profiles (b)', async () => {
+    const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-module-variants-'));
+    // 1. Module whose composer is defined on its prototype
+    writeFileSync(
+      resolve(tempDir, 'proto-composer.cjs'),
+      `const proto = { composer: () => ({ kind: "idle" }) };
+module.exports = Object.create(proto);`,
+    );
+
+    // 2. Module with default export holding the functions
+    writeFileSync(
+      resolve(tempDir, 'default-composer.cjs'),
+      `module.exports = {
+  default: {
+    composer: () => ({ kind: "idle" }),
+  },
+};`,
+    );
+
+    // 3. Module using a Proxy
+    writeFileSync(
+      resolve(tempDir, 'proxy-composer.cjs'),
+      `module.exports = new Proxy({}, {
+  get(_target, prop) {
+    if (prop === 'composer') return () => ({ kind: 'idle' });
+    return undefined;
+  },
+});`,
+    );
+
+    try {
+      const clis = ['claude-code', 'codex', 'cursor', 'antigravity'];
+      const variants = [
+        { file: 'proto-composer.cjs', desc: 'prototype export' },
+        { file: 'default-composer.cjs', desc: 'default export' },
+        { file: 'proxy-composer.cjs', desc: 'Proxy module' },
+      ];
+      const dist = await getBuiltScreenFile();
+
+      for (const { file } of variants) {
+        for (const cli of clis) {
+          const rawYaml = readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8');
+          const withHatch = `${rawYaml}\nscreen_module: "${file}"\n`;
+
+          // In source:
+          expect(() => loadScreen(withHatch, tempDir, `${cli}.yaml`)).toThrow(
+            new RegExp(`profile "${cli}\\.yaml": profile has a data composer and screen_module exports a composer`),
+          );
+
+          // In built loader:
+          expect(() => dist.loadScreen(withHatch, tempDir, `${cli}.yaml`)).toThrow(
+            new RegExp(`profile "${cli}\\.yaml": profile has a data composer and screen_module exports a composer`),
+          );
+        }
+      }
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
