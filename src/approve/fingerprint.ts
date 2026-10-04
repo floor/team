@@ -16,6 +16,7 @@ export const OWNER_SECTIONS = [
   'session',
   'visibility',
   'tools',
+  'budgets',
 ] as const;
 
 /**

@@ -1,4 +1,5 @@
 import { homedir } from 'node:os';
+import type { ApprovedCheck } from '../budgets/checks.ts';
 import type { TeamFile } from '../file/types.ts';
 import { readApproval, storePath, type Approval, type Ceilings } from '../store/store.ts';
 import { compare, describe, fingerprints } from './fingerprint.ts';
@@ -9,13 +10,19 @@ export function ceilingsOf(team: TeamFile): Ceilings {
 }
 
 /** The record an approval of this file writes. */
-export function approvalOf(team: TeamFile, root: string, now: Date = new Date()): Approval {
+export function approvalOf(
+  team: TeamFile,
+  root: string,
+  now: Date = new Date(),
+  checks: Record<string, ApprovedCheck> = {},
+): Approval {
   return {
     format: 1,
     approvedAt: now.toISOString(),
     root,
     fingerprints: fingerprints(team),
     ceilings: ceilingsOf(team),
+    checks,
   };
 }
 

@@ -3,6 +3,20 @@ export type Problem = { line: number; message: string };
 export type Position = 'last-line' | 'trailer' | 'anywhere';
 export type Mode = 'worktree' | 'shared';
 
+export type BudgetSource = 'check' | 'status_line';
+
+export type BudgetAccount = {
+  kind: 'subscription' | 'spend';
+  shared: boolean;
+  /** Percent left that is held back. Null on a spend account. */
+  reserve: number | null;
+  /** Money still required on a spend account. Null on a subscription. */
+  floor: { amount: number; currency: string } | null;
+  sources: BudgetSource[];
+  /** The command `check` names, or null when the account has no check. */
+  check: string | null;
+};
+
 export type Seat = {
   role: string;
   name: string;
@@ -64,6 +78,12 @@ export type TeamFile = {
     nudgeWait: number;
     unsentAfter: number;
     quotaMarks: number[];
+  };
+  budgets: {
+    staleAfter: number;
+    checkEvery: number;
+    marks: number[];
+    accounts: Record<string, BudgetAccount>;
   };
   // Load per core, memory in percent free, disk and swap in bytes, the window in seconds.
   machine: {
