@@ -7,6 +7,131 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-04
+
+A feature release: the budgets table falls back per window and names the source each figure was
+counted from; `team doctor` runs each account's approved budget check; `overrides.yaml` teaches a
+shipped profile new dialog and quota patterns without waiting for a release; and every typing path
+reads the composer from the captures, pressing Enter only on a box that read back as exactly the
+typed text. Upgrade: a seat with no label is titled with its model and version, and `team down`
+now clears the session it stopped.
+
+### Security
+
+- **In 0.1.2, a quota figure could be read off a pane the seat's CLI had already left.** herdr
+  keeps a pane listed after the CLI exits, and a shell's last row is a last row by position, not a
+  status row, so a status-shaped line under the recorded exit screen folded a figure into the
+  readings and the watch saved it. A figure now reads only off a pane whose foreground processes
+  still hold the seat's `cli`; a pane herdr can't list keeps its figure — not knowing is not proof
+  the seat left.
+- **In 0.1.2, a shell line containing a middot under a rule passed for Claude Code's status
+  footer**, so a shell prompt could read as an idle composer when the box's top rule was out of the
+  window. The footer rows are now anchored to Claude Code's own status rows, declared by the
+  profile.
+- **In 0.1.2, one indented line shaped like Claude Code's status row, or its mode row, under a rule
+  below a shell prompt read as an idle composer.** A box whose top rule is out of the window is now
+  recognised only by both rows, in order.
+- **In 0.1.2, a Cursor seat with its follow-up queue on screen read idle or as holding unsent
+  text**, so `down` could type `/exit` into a running seat and `remove` refused it as unsent. The
+  queue's hint row under the empty composer belongs to the running turn; the profile now reads any
+  spinner verb and that row (with nothing but chrome under it), so `down --wait` waits and `remove`
+  says the seat is working.
+- **In 0.1.2, delivery pressed Enter as soon as the composer read as unsent text, whatever the box
+  actually held** — a fold marker whose hidden-row count could not be right, a box still holding a
+  person's own text, and the typed text with one character changed all got the Enter, so text that
+  was not the rules could be submitted as if `team` had sent it; the watch's nudge and the exit
+  typed by `down` and `remove` pressed Enter on an unread box the same way. Every Enter now waits
+  until the box reads back as exactly the text typed — folded or not, row for row — and a box whose
+  wrap the profile's data cannot model gets no Enter at all: the wait ends in a refusal that reports
+  the rules were not delivered, never an Enter on trust.
+- **In 0.1.2 the composer's input row was the last row whose content began with a prompt glyph, and
+  the fold frame ended on the first rule-looking row** — pre-existing holes, present in every
+  release before this one too. A box holding a person's text and then a continuation row with only
+  the CLI's prompt glyph read idle, the read-back held, and the Enter submitted the person's text
+  with the team's; a rule row after the true tail still got the Enter. The input row is now the
+  capture's own: the box's first row under its opening rule, its prompt at the pane's captured
+  column, and a prompt glyph on a continuation row is content — the person's text above it stays in
+  the box, and no Enter is pressed on a box that shows it. The box's fold is read the same way: its
+  closing rule is the window's last rule row at the opening rule's own width, a rule-looking row
+  anywhere else is a row of the box, and where the frame cannot be told the read fails closed and
+  nothing is entered.
+- **In 0.1.2 a two-rule frame was read without comparing its rules' widths** — also pre-existing.
+  The composer's frame is read only when its two rules are one width, as every capture draws them:
+  where a window's rules differ — a closing rule that is not the opening rule's own width — the box
+  cannot be established, the read is unknown, and nothing is entered.
+
+### Added
+
+- `team doctor` runs each account's approved budget check once, for the owner only, and reports its
+  reading, a broken output contract, a failure or a timeout; a check edited since approval is not
+  run and is reported as changed. It also lists accounts no pattern or check can read. The check's
+  raw output is never printed.
+- `overrides.yaml`, beside the approval in `~/.config/team/<project>-<hash>`, may add dialog
+  patterns and quota patterns to a shipped profile. `team approve` records it. Until then the
+  approved copy stays in force, and `doctor` and `status` name the change.
+- `schema/team.schema.json` describes the team file (draft 2020-12), assembled from the same
+  section modules that validate it, with `schema:check` in CI keeping it current. The schema ships
+  in the package, and a file `team init` writes now opens with a
+  `# yaml-language-server: $schema=…` line pointing at this version's copy.
+- `docs/reference/cli.md` is a generated CLI reference — every command, flag and positional, from
+  the command definitions themselves — kept current by `contract:check`, with the same snapshot as
+  data in `contract/cli.json`. Help text is unchanged.
+- `bun run conformance` checks an implementation of screen reading and the YAML subset against the
+  shared fixtures. `team conformance-adapter` is the TypeScript implementation of that protocol. It
+  is not listed in `team --help`.
+
+### Changed
+
+- A seat with no label is titled with its model and version in lowercase (`claude opus 5.5`). A
+  label written in the file is kept. Two seats may share a label — names are the only key — and an
+  approval recorded by 0.1.1 or 0.1.2 stays valid while the file is unchanged since that approval.
+- `team doctor` warns when a seat's name or label repeats the project or the session. The warning
+  does not refuse the file.
+- The budgets table names the source each figure was counted from and marks it `(fallback)` when
+  that is not the first source the account names — `status line (fallback)` — and `status --json`
+  carries the same `fallback` field on each budget row. The fallback is per window, not per
+  account: a check that reported one window leaves the other window to the next source the account
+  names.
+- A stale figure with no known reset time reads unknown only while it could still matter: inside
+  its reserve, or within the reserve again outside it. Beyond that it still counts, its row saying
+  `last seen <age>` — the room the figure last held. It never refuses a launch.
+- **`team down` now clears the herdr session it has itself just stopped**, its line reading
+  `stopped and cleared`, so `up` after `down` starts the team again instead of refusing on the
+  stopped session herdr keeps listed; where the clear does not happen the line names
+  `herdr session delete <session>`. `up` never deletes a session: one it did not stop keeps the
+  refusal.
+
+### Fixed
+
+- Claude Code's folder-trust dialog with unnumbered choices is read as a trust prompt, not a
+  question.
+- `team down` now stops a seat the file renamed after `up` launched it: the state records the CLI
+  each seat was launched with, and `down` resolves the file's name first and the state's second,
+  falling back to the seat a temporary seat is like. A state too old to say leaves the seat to its
+  owner, named per seat with the command that closes it without typing.
+- **A pattern's astral code point wrote five hex digits.** U+1F600 compiled as `ὠ` and a `0`, so an
+  emoji or an astral range matched the wrong text; they now compile to the `\u{…}` form.
+- **A `chrome` pattern could hide the unmarked second choice of a dialog.** The guard tested six
+  sample lines, all of the first choice; it now tests the drawn shape — every mark or the indent,
+  both numbered lines the safety floor reads, and the labels the profiles name.
+- **A check's CRLF output read unknown.** `weekly 39% used\r\n` broke the contract on its line
+  ending; each line now loses the trailing CR of a CRLF ending, and a CR anywhere else still breaks
+  the contract.
+- **A class mixing a complement shorthand with members was silently rewritten.** `[\D0-9]`
+  compiled to `[\s\S]`; the positive class is now refused with the reason when the profile loads.
+  `[^\S\n]` and a shorthand alone are unchanged.
+- A temporary seat now follows the drift of the seat it is like, folding no figures until
+  unapproved edits to the like-seat are approved.
+- **An Antigravity seat's rules are delivered when agy folds the paste.** A long paste folds to
+  `↑ N more lines` and the tail; the box is now read as folded, and Enter is pressed only when the
+  visible tail rows and the hidden-row count are the ones the typed text renders to. A fold that
+  doesn't match stays unsent.
+- **A spend refusal rounded the figure it printed, into a contradiction with itself.** A reading of
+  `4.996 USD` against a `5 USD` floor printed "5.00 USD, at or below its 5.00 USD floor"; the
+  figure now prints as read — up to four decimals, the trailing zeros beyond the cents dropped,
+  never fewer than two — in the refusal and the dry-run lines that reuse it, and a floor prints as
+  the file wrote it.
+
 ## [0.1.2] - 2026-10-04
 
 A safety release: 0.1.1 could type a nudge or an exit into the shell left after Claude Code exited,
@@ -204,6 +329,7 @@ The first release: set up, change and watch a project's team of AI agents from o
   footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
   stays idle.
 
+[0.2.0]: https://github.com/floor/team/releases/tag/v0.2.0
 [0.1.2]: https://github.com/floor/team/releases/tag/v0.1.2
 [0.1.1]: https://github.com/floor/team/releases/tag/v0.1.1
 [0.1.0]: https://github.com/floor/team/releases/tag/v0.1.0
