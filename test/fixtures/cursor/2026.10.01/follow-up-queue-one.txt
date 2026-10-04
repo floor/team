@@ -1,0 +1,23 @@
+❯ cursor-agent --force --sandbox disabled
+
+
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Type ? in the prompt bar to show in-app
+  hints.
+
+
+ ┌─ follow-ups ──────────────────────────────────────────────────────────────────────────────────────┐
+ │ ○ One queued message.                                                                             │
+ │ enter steer · ↑ select/edit · esc cancel                                                          │
+ └───────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+ ⠠⠛ Reading  58.66k tokens
+    Tip: Hit shift+tab to enable Plan Mode for large or complex changes.
+
+
+  → Add a follow-up
+
+
+  Grok 4.7 256K High · 93.1% · 15 files edited
+  <workspace> 

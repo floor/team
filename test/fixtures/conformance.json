@@ -283,6 +283,30 @@
       "composer": "unknown"
     },
     {
+      "file": "cursor/2026.10.01/follow-up-queue-hint.txt",
+      "cli": "cursor",
+      "classify": "working",
+      "composer": "idle"
+    },
+    {
+      "file": "cursor/2026.10.01/follow-up-queue-one.txt",
+      "cli": "cursor",
+      "classify": "working",
+      "composer": "idle"
+    },
+    {
+      "file": "cursor/2026.10.01/follow-up-queue-two.txt",
+      "cli": "cursor",
+      "classify": "working",
+      "composer": "idle"
+    },
+    {
+      "file": "cursor/2026.10.01/follow-up-queue-typed.txt",
+      "cli": "cursor",
+      "classify": "working",
+      "composer": "unsent"
+    },
+    {
       "file": "cursor/2026.10.01/idle.txt",
       "cli": "cursor",
       "classify": "idle",
