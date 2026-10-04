@@ -114,13 +114,22 @@ export function approvalDifferences(team: TeamFile, root: string, home: string =
  * only once the owner has approved it: a file never approved runs with the defaults, and a file
  * whose `watch` section differs from the approved one runs with the values of the approved copy.
  * An edit to a threshold changes nothing until `approve`.
+ *
+ * `watch.checks` is the finer line inside that section. Whenever its digest differs, the checks
+ * in force are the approved copy's — or none, when that copy can't be read — even when the
+ * timings themselves are unchanged and the rest of the section is the file's.
  */
 export function watchInForce(team: TeamFile, root: string, home: string = homedir()): TeamFile['watch'] {
   const record = readApproval(storePath(team.project, root, home));
   if (record === null) return defaultWatch();
-  if (approvedFingerprints(record).sections['watch'] === fingerprints(team).sections['watch']) return team.watch;
+  const differences = compare(approvedFingerprints(record), fingerprints(team));
+  const timingsDiffer = differences.some((difference) => difference.kind === 'section' && difference.name === 'watch');
+  const checksDiffer = differences.some((difference) => difference.kind === 'section' && difference.name === 'watch.checks');
+  if (!timingsDiffer && !checksDiffer) return team.watch;
   const copy = validateTeamFile(record.file);
-  return copy.ok ? copy.team.watch : defaultWatch();
+  const approved = copy.ok ? copy.team.watch : defaultWatch();
+  if (!timingsDiffer) return { ...team.watch, checks: approved.checks };
+  return approved;
 }
 
 /**
