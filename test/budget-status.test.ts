@@ -68,4 +68,25 @@ describe('the budgets table', () => {
   test('a named account with no reading is its own unknown row', () => {
     expect(budgetLine(budgetTable(team(10).budgets, [], now)[0]!)).toBe('openai  unknown');
   });
+
+  // The fallback is per window, not per account: a check that filled one window does not hide
+  // the status line's figure for the window it never reported.
+  test('the status line fills the window the check did not report', () => {
+    const budgets = {
+      staleAfter: 30 * 60,
+      checkEvery: 600,
+      marks: [50, 75, 90],
+      accounts: {
+        openai: { kind: 'subscription', shared: false, reserve: 20, floor: null, sources: ['check', 'status_line'], check: 'openai-usage' },
+      },
+    } as unknown as TeamFile['budgets'];
+    const rows = budgetTable(budgets, [
+      reading({ window: 'session', seat: null, source: 'check' }),
+      reading({ window: 'weekly', left: 5, used: 95 }),
+    ], now);
+    expect(rows.map((row) => budgetLine(row))).toEqual([
+      'openai  session  left 40%  used 60%  resets in 44m  -  read 1m ago  check  fresh',
+      'openai  weekly  left 5%  used 95%  resets in 44m  one  changed 1m ago  status line  fresh, inside reserve 20%',
+    ]);
+  });
 });
