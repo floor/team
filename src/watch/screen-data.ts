@@ -1,4 +1,5 @@
 // The shape of a profile's screen, after the dialect has compiled its patterns.
+import type { ScreenProfile } from './screen-profile.ts';
 import type { Screen } from './screen.ts';
 
 export type LinePattern = { match: RegExp; except: RegExp[] };
@@ -85,4 +86,5 @@ export type ScreenData = {
   question?: Stage;
   working?: Stage;
   composer: Composer;
+  profile?: ScreenProfile;
 };

@@ -517,3 +517,34 @@ describe('Cursor rules delivery', () => {
     expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(true);
   });
 });
+
+describe('the prompt-glyph continuation row (Cursor)', () => {
+  // The person's box holds their own text, then a continuation row at the text column carrying
+  // only the prompt glyph. The input row is the row carrying the prompt at the captures' own
+  // column — unsent.txt draws `→` at the pane's second column and continuations at the fourth
+  // — never the last row whose content begins with a glyph.
+  const GLYPH = '→';
+
+  test('the box reads unsent, never idle: the person\'s text is in it', () => {
+    expect(readScreen('cursor', boxed(`person text\n${GLYPH}`)).kind).toBe('unsent');
+  });
+
+  test('the read-back after typing refuses: the box holds the person\'s row too', () => {
+    // The pane appends the typed text after the glyph: `person text` / `→ Rules.`.
+    expect(boxHoldsText('cursor', 'Rules.', boxed(`person text\n${GLYPH} Rules.`))).toBe(false);
+  });
+
+  test('a full delivery records no Enter', async () => {
+    const d = delivery();
+    d.showText(boxed(`person text\n${GLYPH}`));
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed(`person text\n${GLYPH} ${text}`)); return true; };
+    expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+  });
+
+  test('a glyph row with text after it and two glyph rows all leave the text above them in the box', () => {
+    expect(boxHoldsText('cursor', 'quoted', boxed(`person text\n${GLYPH} quoted`))).toBe(false);
+    expect(readScreen('cursor', boxed(`person text\n${GLYPH}\n${GLYPH}`)).kind).toBe('unsent');
+    expect(boxHoldsText('cursor', 'Rules.', boxed(`person text\n${GLYPH}\n${GLYPH} Rules.`))).toBe(false);
+  });
+});

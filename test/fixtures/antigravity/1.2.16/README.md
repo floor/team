@@ -20,6 +20,14 @@ the default session had nine agents before and after. Config and auth hashes wer
   with the composer empty again. The model response was `RULES_RECEIVED`.
 - `exit-typed.txt`, `exit.txt`: `/exit` typed at idle, read back, then submitted.
   Herdr subsequently listed zero agents and the foreground process was `zsh`.
+
+Paths, user email, plan, and conversation UUID are replaced with placeholders. Shell launch scrollback
+before Antigravity's header banner is removed. All other visible text is retained, including the
+box borders, prompts, and model footer (`Gemini 3.8 Flash · high`). Unknown screens permit no input.
+No vendor configuration in `~/.gemini` was edited.
+
+## Constructed
+
 - `permission.txt`: reconstructed from an operator's quote of a real pane, not a capture
   (the line widths are approximate). A command permission prompt (`Requesting permission for:`
   with numbered options, navigation footer, and model statusline).
@@ -32,11 +40,6 @@ the default session had nine agents before and after. Config and auth hashes wer
   names, hard-wrapped at 54 columns (a line longer than the width split into width-sized chunks,
   no word wrapping): 24 rows, 21 hidden. The tail is the worktree line's last row and the closing
   line, which the rules text gained in 0.1.2. The header block is copied from `unsent.txt`.
-
-Paths, user email, plan, and conversation UUID are replaced with placeholders. Shell launch scrollback
-before Antigravity's header banner is removed. All other visible text is retained, including the
-box borders, prompts, and model footer (`Gemini 3.8 Flash · high`). Unknown screens permit no input.
-No vendor configuration in `~/.gemini` was edited.
 
 ## Not produced
 
@@ -63,3 +66,18 @@ of its own inside the box either — `idle.txt`'s composer is the bare `>` row a
 `unsent.txt`'s rows sit directly between the rules — so the profile counts none
 (`frame_rows` omitted, zero) and every trailing empty row is read as a row the text does
 not have.
+
+The round-6 fold tests insert one more row the fold read must not drop: a rule-looking row
+(a 54-column run of `─`, one of `━`, two of them, or an indented one at the content column)
+between the true tail and the box's closing rule, and, in the other shape, a rule-looking
+row between the opening rule and the marker. The frame the read trusts is the capture's:
+the opening rule directly above the marker and the closing rule the window's last rule row
+at the opening rule's own width; a rule-looking row anywhere else is a row of the box, so
+the box is not the typed text and nothing is entered.
+
+The round-7 tests redraw one of `idle.txt`'s two rules at another width — the closing rule
+one column shorter (52) or longer (54) than the opening, or the opening one shorter instead —
+with the typed text, where the test types, drawn in the box as `unsent.txt` draws it. The
+captures draw the box's two rules at one width (53 columns in `idle.txt`; 54 in
+`folded-rules.txt`), so a window whose rules differ is not the frame they draw: the read
+fails closed and nothing is entered.

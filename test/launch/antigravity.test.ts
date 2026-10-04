@@ -11,7 +11,7 @@ import { pass, newMemory } from '../../src/watch/pass.ts';
 import { emptySession } from '../../src/state.ts';
 import { stateOf } from '../../src/commands/down.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
-import { wordWrap } from '../helpers.ts';
+import { agyMismatchedFrame, wordWrap } from '../helpers.ts';
 
 const fixture = (name: string) => readFileSync(new URL(`../fixtures/antigravity/1.2.16/${name}.txt`, import.meta.url), 'utf8');
 
@@ -360,6 +360,43 @@ describe('Antigravity folded rules paste', () => {
     expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
     expect(d.calls).toEqual([RULES]);
   });
+
+  test('a rule-looking row after the true tail gets no Enter', async () => {
+    // The pane holds one row the fold read does not cover. Before the frame was read this
+    // way, the first rule-looking row under the marker ended the fold, so the row — and
+    // everything between it and the box's real bottom rule — was dropped from the read.
+    const d = foldedPane((screen) => screen.replace('wait for your brief.\n', `wait for your brief.\n${'─'.repeat(54)}\n`));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('two rule-looking rows after the true tail get no Enter', async () => {
+    const d = foldedPane((screen) => screen.replace('wait for your brief.\n', `wait for your brief.\n${'─'.repeat(54)}\n${'─'.repeat(54)}\n`));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('a heavy rule-looking row after the true tail gets no Enter', async () => {
+    const d = foldedPane((screen) => screen.replace('wait for your brief.\n', `wait for your brief.\n${'━'.repeat(54)}\n`));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('an indented rule-looking row after the true tail counts as content', async () => {
+    // Drawn at the content column it is no rule at all: it is a row of the tail the typed
+    // text does not have, so the box is not the text and there is no Enter.
+    const d = foldedPane((screen) => screen.replace('wait for your brief.\n', `wait for your brief.\n  ${'─'.repeat(54)}\n`));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('a rule-looking row between the opening rule and the marker gets no Enter', async () => {
+    // Two rule rows stacked with the marker under the lower one: no capture shows that, and
+    // the read cannot tell which rule opens the box, so it fails closed.
+    const d = foldedPane((screen) => screen.replace('↑ 21 more lines', `${'─'.repeat(54)}\n↑ 21 more lines`));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
 });
 
 describe('Antigravity permission prompt in watch and down', () => {
@@ -433,5 +470,57 @@ seats:
       text: 'gemini: is blocked at a prompt, which `team` never answers; left running',
     });
     expect(plan.some((step) => step.do?.do === 'type')).toBe(false);
+  });
+});
+
+describe('the prompt-glyph continuation row (Antigravity)', () => {
+  // The person's box holds their own text, then a continuation row at the content column
+  // carrying only the prompt glyph. The input row is the box's first row under its opening
+  // rule — unsent.txt draws `>` there, at the pane's first column — never the last row whose
+  // content begins with a glyph.
+  const GLYPH = '>';
+
+  test('the box reads unsent, never idle: the person\'s text is in it', () => {
+    expect(readScreen('antigravity', boxed(`person text\n${GLYPH}`)).kind).toBe('unsent');
+  });
+
+  test('the read-back after typing refuses: the box holds the person\'s row too', () => {
+    // The pane appends the typed text after the glyph: `person text` / `> Rules.`.
+    expect(boxHoldsText('antigravity', 'Rules.', boxed(`person text\n${GLYPH} Rules.`))).toBe(false);
+  });
+
+  test('a full delivery records no Enter', async () => {
+    const d = delivery();
+    d.showText(boxed(`person text\n${GLYPH}`));
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed(`person text\n${GLYPH} ${text}`)); return true; };
+    expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+  });
+
+  test('a glyph row with text after it and two glyph rows all leave the text above them in the box', () => {
+    expect(boxHoldsText('antigravity', 'quoted', boxed(`person text\n${GLYPH} quoted`))).toBe(false);
+    expect(readScreen('antigravity', boxed(`person text\n${GLYPH}\n${GLYPH}`)).kind).toBe('unsent');
+    expect(boxHoldsText('antigravity', 'Rules.', boxed(`person text\n${GLYPH}\n${GLYPH} Rules.`))).toBe(false);
+  });
+});
+
+describe('the two-rule frame whose rules differ in width (Antigravity)', () => {
+  // The captures draw the box's two rules at one width — idle.txt draws both at 53 columns,
+  // folded-rules.txt at 54 — so a window whose rules differ is not that frame: the box the
+  // read-back compares against the typed text cannot be established, and the read fails
+  // closed. The closing rule is redrawn one column shorter (52) or longer (54) than the
+  // opening, and the opening rule one shorter instead.
+  test.each(['close-short', 'close-long', 'open-short'] as const)('%s: the screen reads unknown, bare or holding the typed text', (shape) => {
+    expect(readScreen('antigravity', agyMismatchedFrame(shape)).kind).toBe('unknown');
+    expect(readScreen('antigravity', agyMismatchedFrame(shape, 'Rules.')).kind).toBe('unknown');
+    expect(boxHoldsText('antigravity', 'Rules.', agyMismatchedFrame(shape, 'Rules.'))).toBe(false);
+  });
+
+  test.each(['close-short', 'close-long', 'open-short'] as const)('%s: a full delivery types nothing and sends nothing', async (shape) => {
+    const d = delivery();
+    d.showText(agyMismatchedFrame(shape));
+    d.io.type = (text) => { d.calls.push(text); d.showText(agyMismatchedFrame(shape, text)); return true; };
+    expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
   });
 });

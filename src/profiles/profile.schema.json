@@ -53,9 +53,28 @@
     "models": { "$ref": "#/$defs/models" },
     "status_model": { "type": "array", "items": { "$ref": "#/$defs/modelRule" }, "minItems": 1 },
     "quota": { "type": "array", "items": { "$ref": "#/$defs/quota" }, "minItems": 1 },
-    "screen": { "$ref": "#/$defs/screen" }
+    "screen": { "$ref": "#/$defs/screen" },
+    "screen_module": { "$ref": "#/$defs/screenModule" }
   },
+  "anyOf": [
+    { "required": ["screen_module"] },
+    {
+      "properties": {
+        "screen": {
+          "anyOf": [
+            { "required": ["composer"] },
+            { "required": ["screen_module"] }
+          ]
+        }
+      }
+    }
+  ],
   "$defs": {
+    "screenModule": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!(?:\\.[\\/\\\\])*(?:node_modules|test|src|dist|scripts|examples|worktrees|\\.github)(?:[\\/\\\\]|$))(?!.*(?:^|[\\/\\\\])\\.\\.(?:[\\/\\\\]|$))(?!.*%2[eE]%2[eE])[^/~\\\\:][^:]*\\.(?:ts|js|cjs|mjs)$"
+    },
     "quota": {
       "type": "object",
       "additionalProperties": false,
@@ -73,7 +92,6 @@
     "screen": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["composer"],
       "properties": {
         "chrome": { "type": "array", "items": { "type": "string", "maxLength": 200 } },
         "unknown": { "$ref": "#/$defs/stage" },
@@ -81,7 +99,8 @@
         "permission": { "$ref": "#/$defs/stage" },
         "question": { "$ref": "#/$defs/stage" },
         "working": { "$ref": "#/$defs/stage" },
-        "composer": { "$ref": "#/$defs/composer" }
+        "composer": { "$ref": "#/$defs/composer" },
+        "screen_module": { "$ref": "#/$defs/screenModule" }
       }
     },
     "stage": {
