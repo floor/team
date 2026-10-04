@@ -69,6 +69,16 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('unknown');
   });
 
+  test('the three constructed shell prompt fixtures still read unknown with a footer pattern added under them', () => {
+    for (const name of ['shell-prompt.txt', 'rule-above.txt', 'output-under-rule.txt']) {
+      const text = readFileSync(new URL(`./fixtures/claude-code/${name}`, import.meta.url), 'utf8');
+      for (const footer of ['? for shortcuts', '  main · Opus 5.5', '  bypass permissions']) {
+        const screen = `${text.trimEnd()}\n${footer}\n`;
+        expect(readScreen('claude-code', screen).kind).toBe('unknown');
+      }
+    }
+  });
+
   test('every fixture matches the classifier main had', () => {
     for (const [name, text] of fixtures) {
       if (name === 'quoted permission') continue;
