@@ -14,6 +14,8 @@ export type BudgetRow = {
   seat: string | null;
   age: string | null;
   source: ReadingSource | null;
+  /** True when the counted figure did not come from the first source the account names (§ 3). */
+  fallback: boolean;
   state: BudgetState;
   /** True when a subscription's left figure is at or inside its reserve. */
   inside: boolean;
@@ -41,10 +43,11 @@ export function budgetTable(budgets: TeamFile['budgets'], list: readonly Seen[],
     named.add(account);
     const reserve = reserveOf(budgets, account);
     // The window's reading from the sources the account names, in order (§ 3, § 5).
-    const result = countedFor(sourcesOf(budgets, account), screenOf(group), checkOf(group), now, staleAfterMs, reserve);
+    const sources = sourcesOf(budgets, account);
+    const result = countedFor(sources, screenOf(group), checkOf(group), now, staleAfterMs, reserve);
     rows.push(result.kind === 'unknown'
       ? { ...blank(account, reserve), window }
-      : rowOf(result, now, staleAfterMs, reserve));
+      : rowOf(result, now, staleAfterMs, reserve, result.reading.source !== sources[0]));
   }
   for (const account of Object.keys(budgets.accounts)) {
     if (!named.has(account)) rows.push(blank(account, reserveOf(budgets, account)));
@@ -64,9 +67,10 @@ export function budgetLine(row: BudgetRow): string {
   }
   const reset = row.resetsIn === null ? 'resets unknown' : `resets in ${row.resetsIn}`;
   const from = row.source === 'status_line' ? 'status line' : row.source === 'check' ? 'check' : 'unknown source';
+  const source = row.fallback ? `${from} (fallback)` : from;
   const when = row.source === 'check' ? 'read' : 'changed';
   const state = row.inside && row.reserve !== null ? `${row.state}, inside reserve ${row.reserve}%` : row.state;
-  return `${row.account}  ${row.window}  left ${row.left}%  used ${row.used}%  ${reset}  ${row.seat ?? '-'}  ${when} ${row.age} ago  ${from}  ${state}`;
+  return `${row.account}  ${row.window}  left ${row.left}%  used ${row.used}%  ${reset}  ${row.seat ?? '-'}  ${when} ${row.age} ago  ${source}  ${state}`;
 }
 
 /** The sources the account's figures are read from, in order: a status line when the file is silent. */
@@ -79,6 +83,7 @@ function rowOf(
   now: number,
   staleAfterMs: number,
   reserve: number | null,
+  fallback: boolean,
 ): BudgetRow {
   const reading = result.reading;
   const inside = reserve !== null && reading.left <= reserve;
@@ -96,6 +101,7 @@ function rowOf(
     seat: reading.seat,
     age: span(now - reading.changedAt),
     source: reading.source,
+    fallback,
     state,
     inside,
     reserve,
@@ -112,6 +118,7 @@ function blank(account: string, reserve: number | null): BudgetRow {
     seat: null,
     age: null,
     source: null,
+    fallback: false,
     state: 'unknown',
     inside: false,
     reserve,

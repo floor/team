@@ -48,10 +48,12 @@ The model is the seat's `display` when the running model matches the file, and
 
 When the file names an account, or a reading is stored in the state, a `budgets:` table follows
 the seats. One row per account and window: what is left and used, when it resets, which seat the
-figure came from, how long since it changed, and whether it is fresh, unconfirmed, stale, refusing,
-or unknown. A row's account is the seat's own: its `account:` when the file names one, its `vendor`
-when it doesn't, so one vendor's two accounts are two rows. A figure inside its reserve says so on
-that row, including when it is still fresh.
+figure came from, how long since it changed, the source it was counted from, and whether it is
+fresh, unconfirmed, stale, refusing, or unknown. A row's account is the seat's own: its `account:`
+when the file names one, its `vendor` when it doesn't, so one vendor's two accounts are two rows.
+A figure inside its reserve says so on that row, including when it is still fresh.
+When the counted figure did not come from the first source the account names, the row names the
+source it did come from and marks it: `status line (fallback)`.
 A named account with no reading is unknown. The table is left out when there is nothing
 to show. `status` still writes nothing; the watch is what records a reading.
 
@@ -106,9 +108,10 @@ CODEX_HOME=/path/to/codex exec /path/to/codex-quota
 `rows`, `notes` and `differences` hold what the table, the notes and the repairs hold; `notice` is
 the line a normal run prints above the table, or null when there is none. `budgets` is present only
 when the budgets table would be printed, one object per row (`account`, `window`, `left`, `used`,
-`resetsIn`, `seat`, `age`, `source`, `state`, `inside`, `reserve`). `inside` is true when a
-subscription's left figure is at or inside its reserve, and `reserve` is the reserve that row was
-read against — the same figure the table's line names, null when the account has none. The exit
+`resetsIn`, `seat`, `age`, `source`, `fallback`, `state`, `inside`, `reserve`). `inside` is true
+when a subscription's left figure is at or inside its reserve, `fallback` when the figure did not
+come from the first source the account names, and `reserve` the reserve that row was read against —
+the same figure the table's line names, null when the account has none. The exit
 code is the same as without `--json`, and the file's warnings still go to stderr.
 
 ## Refusals
@@ -157,21 +160,58 @@ seats:
     model: Claude Opus
     version: "5.5"
     launch: claude --model claude-opus-5-5
+
+budgets:
+  accounts:
+    openai:
+      kind: subscription
+      reserve: 20%
+      sources: [check, status_line]
+      check: examples/checks/codex-quota
 ```
 
 ```fixture
+checks: [examples/checks/codex-quota]
 agents: [claude-beacon]
 screens:
   claude-beacon: working
+state:
+  budgets:
+    openai/session:
+      account: openai
+      window: session
+      left: 40
+      used: 60
+      changedAt: "2026-10-04T08:58:00Z"
+      resetsAt: "2026-10-04T09:44:00Z"
+      seat: null
+      source: check
+      confirmed: true
+    openai/weekly/claude-beacon:
+      account: openai
+      window: weekly
+      left: 5
+      used: 95
+      changedAt: "2026-10-04T08:58:00Z"
+      resetsAt: "2026-10-04T09:44:00Z"
+      seat: claude-beacon
+      source: status_line
+      confirmed: true
 ```
 
-Only the implementer is up, so the coordinator's seat is a difference with its repair:
+Only the implementer is up, so the coordinator's seat is a difference with its repair. The state
+also holds the watch's last readings for the `openai` account the file names: a check's `session`
+window, and a `weekly` one the check never reported — that one is counted from the status line, so
+the row marks it a fallback:
 
 ```console
 $ team status ; echo "exit $?"
 team beacon, session "beacon"
   claude-keeper  missing  Claude Opus 5.5  -
   claude-beacon  working  Claude Opus 5.5  w1:p1
+budgets:
+  openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh
+  openai  weekly  left 5%  used 95%  resets in 44m  claude-beacon  changed 2m ago  status line (fallback)  fresh, inside reserve 20%
 difference: claude-keeper is in the file and is not running
   repair: team add claude-keeper
 1 difference(s)
@@ -207,7 +247,37 @@ $ team status --json ; echo "exit $?"
       "repair": "team add claude-keeper"
     }
   ],
-  "notice": null
+  "notice": null,
+  "budgets": [
+    {
+      "account": "openai",
+      "window": "session",
+      "left": 40,
+      "used": 60,
+      "resetsIn": "44m",
+      "seat": null,
+      "age": "2m",
+      "source": "check",
+      "fallback": false,
+      "state": "fresh",
+      "inside": false,
+      "reserve": 20
+    },
+    {
+      "account": "openai",
+      "window": "weekly",
+      "left": 5,
+      "used": 95,
+      "resetsIn": "44m",
+      "seat": "claude-beacon",
+      "age": "2m",
+      "source": "status_line",
+      "fallback": true,
+      "state": "fresh",
+      "inside": true,
+      "reserve": 20
+    }
+  ]
 }
 exit 1
 ```
@@ -226,6 +296,9 @@ $ team status ; echo "exit $?"
 team beacon, session "beacon"
   claude-keeper  idle     Claude Opus 5.5  w2:p1
   claude-beacon  working  Claude Opus 5.5  w1:p1
+budgets:
+  openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh
+  openai  weekly  left 5%  used 95%  resets in 44m  claude-beacon  changed 2m ago  status line (fallback)  fresh, inside reserve 20%
 0 difference(s)
 exit 0
 ```

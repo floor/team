@@ -15,6 +15,8 @@
 //     claude-code: fine
 //   state:                   merged into the session's record in .agents/team.state.json
 //     seats: {claude-keeper: {stage: named}}
+//   checks:                  repo files symlinked into the fixture, for a check the page names:
+//     - examples/checks/codex-quota  `team approve` resolves and hashes the repo's own script
 import { parseYaml, toValue, type YamlValue } from '../../src/yaml.ts';
 import type { Block } from './blocks.ts';
 
@@ -33,6 +35,7 @@ export type Spec = {
   watch: 'alive' | 'none' | 'stale';
   tools: Record<string, ToolState>;
   state: Record<string, unknown>;
+  checks: string[];
 };
 
 export const DEFAULT_SPEC: Spec = {
@@ -47,6 +50,7 @@ export const DEFAULT_SPEC: Spec = {
   watch: 'alive',
   tools: {},
   state: {},
+  checks: [],
 };
 
 const SCREENS: readonly ScreenKind[] = ['idle', 'working', 'permission', 'trust', 'question', 'unsent', 'unknown'];
@@ -91,6 +95,12 @@ function mapped<T extends string>(value: YamlValue | undefined, allowed: readonl
   return out;
 }
 
+function paths(value: YamlValue | undefined, key: string): string[] {
+  if (value === undefined) return [];
+  if (Array.isArray(value) && value.every((one) => typeof one === 'string')) return value as string[];
+  throw new Error(`fixture: ${key} must be a list of paths`);
+}
+
 function object(value: YamlValue | undefined, key: string): Record<string, unknown> {
   if (value === undefined) return {};
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`fixture: ${key} must be a mapping`);
@@ -123,5 +133,6 @@ export function specOf(block: Block | undefined): Spec {
     watch: oneOf(map.watch, ['alive', 'none', 'stale'] as const, DEFAULT_SPEC.watch, 'watch'),
     tools: mapped(map.tools, TOOLS, 'tools'),
     state: object(map.state, 'state'),
+    checks: paths(map.checks, 'checks'),
   };
 }
