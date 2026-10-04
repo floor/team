@@ -1,0 +1,23 @@
+
+[0m[38;2;153;153;153m✻[0m [0m[38;2;153;153;153mChurned for 3s · done 3:54 PM[0m
+
+[0m[38;2;153;153;153m[48;2;55;55;55m❯ [0m[38;2;255;255;255m[48;2;55;55;55mAsk me, with your question tool, which of two [0m[48;2;55;55;55m     [0m
+[0m[48;2;55;55;55m  [0m[38;2;255;255;255m[48;2;55;55;55mnames to use for a file, before doing anything.[0m[48;2;55;55;55m    [0m
+
+  [0m[38;2;153;153;153mThought for [0m[1m[38;2;153;153;153m2s[0m[38;2;153;153;153m [0m
+[0m[38;2;153;153;153m─────────────────────────────────────────────────────[0m
+[0m[38;2;0;0;0m[48;2;177;185;249m ☐ Filename [0m
+
+[0m[1m[38;2;255;255;255mWhich filename should I use for the file?[0m
+
+[0m[38;2;177;185;249m❯ [0m[38;2;153;153;153m1. [0m[38;2;177;185;249mnotes.txt[0m
+     [0m[38;2;153;153;153mPlural — a new file, matching your earlier [0m
+     [0m[38;2;153;153;153mrequest.[0m
+  [0m[38;2;153;153;153m2. [0mnote.txt
+     [0m[38;2;153;153;153mSingular — the existing file already in the [0m
+     [0m[38;2;153;153;153mdirectory.[0m
+  [0m[38;2;153;153;153m3. Type something.[0m
+[0m[38;2;153;153;153m─────────────────────────────────────────────────────[0m
+  4. Chat about this
+
+[0m[38;2;153;153;153mEnter to select · ↑/↓ to navigate · Esc to cancel[0m
