@@ -52,9 +52,13 @@ function readOf(readme: string): { constructed: Set<string>; mentioned: Set<stri
     const marker = MARKERS.exec(text);
     let subjects: string[] = [];
     if (marker) {
-      // Only the names before the sentence that says the file was built: a marker bullet can
-      // name the capture it was built from, and that capture stays real.
-      subjects = backticked(text.slice(0, marker.index));
+      // Only the names inside the marker's own sentence, before the marker: a block can name
+      // the captures a test builds from in one sentence and say the built screens are
+      // constructed in another, and those captures stay real.
+      const before = text.slice(0, marker.index);
+      const ends = [...before.matchAll(/[.?!](?=\s)/g)];
+      const sentenceStart = ends.length === 0 ? 0 : (ends[ends.length - 1]?.index ?? 0) + 1;
+      subjects = backticked(before.slice(sentenceStart));
     } else if (inConstructed && bullet) {
       // Under a Constructed heading the bullets need no marker of their own; their subject is
       // the names they lead with, or the first name when the bullet has no colon.
