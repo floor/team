@@ -34,6 +34,7 @@ yourself.
 A documented subset of YAML, read by the library's own parser: maps, lists, one-line `{ }` and
 `[ ]`, plain and quoted values, comments. Anchors, aliases, tags, block scalars, several documents
 in one file and duplicate keys are refused, with the line number. The file starts with `format: 1`.
+The package ships the JSON Schema at `schema/team.schema.json`, and `team init` writes a `# yaml-language-server: $schema=…` line at the top of the file so editors validate it.
 By example:
 
 ```yaml
