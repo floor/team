@@ -223,6 +223,13 @@ const captured: [string, string, (lines: string[]) => Screen['kind']][] = [
 ];
 
 describe('codex, cursor and antigravity through the screen core', () => {
+  test('typed text ending in ctrl+c to stop is unsent, not a running turn', () => {
+    // Constructed, not a capture. The suffix is the composer's chrome on an idle box too.
+    const text = '→ ship the fix   ctrl+c to stop\n  Grok 4.7 medium\n';
+    expect(classifyComposer('cursor', text.split('\n')).kind).toBe('unsent');
+    expect(classify('cursor', text.split('\n')).kind).toBe('unsent');
+  });
+
   test('every captured screen matches the classifier main had', () => {
     for (const [cli, version, read] of captured) {
       const dir = fileURLToPath(new URL(`./fixtures/${cli}/${version}/`, import.meta.url));

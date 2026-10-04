@@ -48,8 +48,9 @@ screen:
           - '^\s*→'
           - '^\s+Grok\s+[0-9]'
   working:
+    # The braille spinner is the running turn. "ctrl+c to stop" is also painted
+    # on an idle box, beside whatever the seat typed, so it is not a turn.
     - any:
-        - 'ctrl\+c to stop'
         - '^\s*[⠀-⣿]+\s+(Working|Thinking)\b'
   composer:
     mode: status-then-one
