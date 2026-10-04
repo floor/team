@@ -1,0 +1,25 @@
+{
+  "process_info": {
+    "foreground_process_group_id": 1409,
+    "foreground_processes": [
+      {
+        "argv": [
+          "cursor-agent",
+          "<arg withheld>",
+          "<arg withheld>",
+          "<arg withheld>",
+          "<arg withheld>",
+          "<arg withheld>"
+        ],
+        "argv0": "cursor-agent",
+        "cmdline": "<withheld: may carry secrets>",
+        "cwd": "/home/owner/project",
+        "name": "node",
+        "pid": 1409
+      }
+    ],
+    "pane_id": "w0:p1",
+    "shell_pid": 8535
+  },
+  "type": "pane_process_info"
+}

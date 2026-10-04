@@ -602,6 +602,7 @@ describe('team watch', () => {
       readChecks: () => [],
       screen: () => screenNow,
       status: () => statusNow,
+      foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); return true; },
       pressEnter: (pane) => { typed.push(`${pane} <enter>`); return true; },
       notify: (text) => { notified.push(text); },
@@ -677,6 +678,25 @@ describe('team watch', () => {
     let calls = 0;
     await runWatch(['--file', file], testIo(dir), sources(2, { screen: () => (calls++ === 0 ? permission : idle) }));
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+  });
+
+  test('a pane with no live agent is not typed into', async () => {
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(2, { foreground: () => ['zsh'] }));
+    expect(typed).toEqual([]);
+    const line = 'a nudge was not typed: no live agent in the operator\'s pane';
+    expect(io.out.split(line).length - 1).toBe(1);
+  });
+
+  test('an agent that exits between the text and the Enter is not sent the Enter', async () => {
+    let live = true;
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      foreground: () => (live ? ['claude'] : ['zsh']),
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); live = false; return true; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was not typed: no live agent in the operator\'s pane');
   });
 
   test('an operator that started working since the pass is not typed into', async () => {

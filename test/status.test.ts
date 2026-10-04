@@ -14,7 +14,7 @@ import { testIo } from './helpers.ts';
 const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url), 'utf8');
 const NOW = new Date('2026-10-03T14:10:00Z');
 
-const claudeScreen = (model: string) => `❯ \n────\n  main · …/acme · ${model} · S: $1.2 · W: 12%\n  ⏵⏵ bypass permissions on\n`;
+const claudeScreen = (model: string) => `❯ \n${'─'.repeat(40)}\n  main · …/acme · ${model} · S: $1.2 · W: 12%\n  ⏵⏵ bypass permissions on\n`;
 const codexScreen = (name: string) => readFileSync(new URL(`./fixtures/codex/0.157.0/${name}.txt`, import.meta.url), 'utf8');
 
 function agent(name: string | null, workspace: string, status = 'idle', kind = 'claude'): HerdrAgent {
@@ -370,7 +370,7 @@ describe('team status', () => {
 
 describe('the status line of Claude Code', () => {
   test('is read from a real screen', () => {
-    const screen = '❯\n────\n  main · …/floor/docs · Opus 5.5 · S: $5.8 ⣿⣄⣀⣀⣀ 24% · L: 20% (2h6m) · W: 12% (+13.3%) (125h26m)\n  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents\n';
+    const screen = `❯\n${'─'.repeat(40)}\n  main · …/floor/docs · Opus 5.5 · S: $5.8 ⣿⣄⣀⣀⣀ 24% · L: 20% (2h6m) · W: 12% (+13.3%) (125h26m)\n  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents\n`;
     expect(runningModel('claude-code', screen)).toEqual({ model: 'Claude Opus', version: '5.5' });
   });
   test('is unread when the screen doesn\'t show it, and for a CLI without a normalisation', () => {

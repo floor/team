@@ -76,6 +76,7 @@ function sources(over: Partial<WatchSources> = {}): WatchSources {
     readChecks: () => [],
     screen: () => idle,
     status: () => 'idle',
+    foreground: () => ['claude'],
     typeText: () => true,
     pressEnter: () => true,
     notify: () => {},

@@ -12,6 +12,7 @@ import {
   agentList,
   agentStatus,
   agentRename,
+  paneForeground,
   paneRead,
   paneRun,
   typeText,
@@ -73,6 +74,8 @@ export type Launch = {
   typeText?(session: string, pane: string, text: string): boolean;
   pressEnter?(session: string, pane: string): boolean;
   agentStatus?(session: string, pane: string): string | null;
+  /** Foreground argv0 names, or null when the pane can't be read. */
+  foreground(session: string, pane: string): string[] | null;
   sleep(ms: number): Promise<void>;
   now(): Date;
 };
@@ -105,6 +108,7 @@ const realLaunch: Launch = {
   typeText: (session, pane, text) => typeText(pane, text, aim(session)),
   pressEnter: (session, pane) => pressEnter(pane, aim(session)),
   agentStatus: (session, pane) => agentStatus(pane, aim(session)),
+  foreground: (session, pane) => paneForeground(pane, aim(session)),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now: () => new Date(),
 };
@@ -368,13 +372,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     paneRun: launch.paneRun,
     typeLine: () => false,
     deliverRules: (session, pane, cli, text, seconds) => deliverRules(cli, text, seconds, {
-      screen: () => launch.paneText(session, pane) ?? undefined,
-      status: () => launch.agentStatus?.(session, pane) ?? null,
-      type: (value) => launch.typeText?.(session, pane, value) ?? false,
-      enter: () => launch.pressEnter?.(session, pane) ?? false,
-      now: () => now().getTime(),
-      sleep: sources.sleep ?? launch.sleep,
-    }),
+        screen: () => launch.paneText(session, pane) ?? undefined,
+        status: () => launch.agentStatus?.(session, pane) ?? null,
+        type: (value) => launch.typeText?.(session, pane, value) ?? false,
+        enter: () => launch.pressEnter?.(session, pane) ?? false,
+        foreground: () => launch.foreground(session, pane),
+        now: () => now().getTime(),
+        sleep: sources.sleep ?? launch.sleep,
+      }),
     renameAgent: launch.renameAgent,
     closeWorkspace: launch.closeWorkspace,
     stopSession: () => false,
