@@ -107,7 +107,10 @@ seats:
 - `launch` is the plain command, without approval flags: the profile adds them. `count: 2` makes the
   numbered names; `parked` keeps a seat out of idle reports, `stopped` keeps it out of `up`.
 - `workspace.mode` is `shared` (every seat in the project) or `worktree` (each task in its own
-  checkout, with `path`, `base` and `setup`).
+  checkout, with `path`, `base` and `setup`). Under `worktree`, a seat that isn't `mode: shared`
+  starts in the lobby — the parent of `workspace.path` with `.lobby` beside the worktrees, inside
+  `trust` and outside every protected checkout — never in the project root; `up` and `add` refuse a
+  seat whose folder, lobby included, would be protected or untrusted.
 
 The Codex profile is tested with CLI 0.157.0. It adds `-a never -s danger-full-access`
 for unattended execution, plus `--no-daemon --no-alt-screen` for the captured pane mode,

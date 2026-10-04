@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { approvalDifferences } from '../approve/approval.ts';
@@ -25,6 +25,7 @@ import { emptySession, readState, updateState, withLock, type SeatState, type Se
 import { approvedCopy, readApproval, recordLedger, storePath, type Ceilings } from '../store/store.ts';
 import { launchLimit, readMachine, type Machine, type SwapSample } from '../watch/machine.ts';
 import { readScreen } from '../watch/screen.ts';
+import { seatStart, type SeatStart } from '../worktree/place.ts';
 
 export type AddSources = {
   home: string;
@@ -184,6 +185,12 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     io.stderr(`team add: ${problem.message}\n`);
     return 1;
   }
+  // Where the seat waits: its own folder, the lobby, or a refusal — before the file is edited.
+  const start: SeatStart = seatStart(prepared.team, built.seat, root);
+  if ('problem' in start) {
+    io.stderr(`team add: ${start.problem}\n`);
+    return 1;
+  }
   const doctorTeam = built.temporary
     ? { ...prepared.team, seats: prepared.team.seats.map((item) => item.name === built.temporary?.like ? { ...item, stopped: false } : item) }
     : prepared.team;
@@ -232,8 +239,8 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
 
   const stray = unnamedIn(built.seat.label, agents, workspaces);
   const planned = stray
-    ? { ...seatPlan(prepared.team, built.seat), stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
-    : seatPlan(prepared.team, built.seat);
+    ? { ...seatPlan(prepared.team, built.seat, start), stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
+    : seatPlan(prepared.team, built.seat, start);
   const plan = upPlan({ root, session, sessionRunning: live === 'running', seats: [planned], watchAlive: true });
   const who = describeCaller(caller);
   const host = hostOf({
@@ -315,15 +322,16 @@ function parseUntil(value: string): Until | null {
   return null;
 }
 
-function seatPlan(team: TeamFile, seat: Seat): UpSeat {
+function seatPlan(team: TeamFile, seat: Seat, start: { cwd: string; lobby?: true }): UpSeat {
   return {
     name: seat.name,
     cli: seat.cli,
     launch: seat.launch,
-    cwd: seat.cwd,
+    cwd: start.cwd,
     label: seat.label,
     stopped: false,
     rules: rulesOf(team, seat),
+    ...(start.lobby ? { lobby: true } : {}),
   };
 }
 
@@ -375,6 +383,14 @@ function hostOf(input: {
   return {
     startServer: launch.startServer,
     sessionUp: launch.sessionUp,
+    makeDir(path) {
+      try {
+        mkdirSync(path, { recursive: true });
+        return true;
+      } catch {
+        return false;
+      }
+    },
     createWorkspace: launch.createWorkspace,
     paneRun: launch.paneRun,
     typeLine: () => false,

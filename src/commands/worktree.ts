@@ -11,7 +11,7 @@ import type { TeamFile } from '../file/types.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, withLock, writeAtomic, STATE_FILE, type State } from '../state.ts';
-import { fillPattern, publicNameHit, taskProblem } from '../worktree/place.ts';
+import { fillPattern, publicNameHit, realLanding, taskProblem } from '../worktree/place.ts';
 
 // What the command reads from outside the process, so a test can point the approval store elsewhere.
 export type WorktreeSources = {
@@ -378,21 +378,6 @@ function runSetup(cwd: string, commands: string[]): { ok: true } | { ok: false; 
     if ((result.status ?? 1) !== 0) return { ok: false, at: i + 1 };
   }
   return { ok: true };
-}
-
-// Where the folder will really land. `logical` is the path the pattern names; `real` follows a
-// symlink in an ancestor that already exists.
-function realLanding(root: string, folder: string): { logical: string; real: string } {
-  const logical = resolve(root, folder);
-  const tail: string[] = [];
-  let current = logical;
-  while (!existsSync(current)) {
-    const parent = dirname(current);
-    if (parent === current) return { logical, real: logical };
-    tail.push(basename(current));
-    current = parent;
-  }
-  return { logical, real: join(realpathSync(current), ...tail.reverse()) };
 }
 
 function publishedBranch(root: string, branch: string): string | null {

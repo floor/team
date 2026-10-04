@@ -9,6 +9,7 @@ import { launchCommand, shellQuote } from '../profiles/profile.ts';
 export type Op =
   | { do: 'server'; session: string }
   | { do: 'wait-session'; session: string; seconds: number }
+  | { do: 'lobby'; path: string }
   | { do: 'create'; seat?: string; label: string; cwd: string }
   | { do: 'launch'; seat: string; label: string; command: string; pane?: string }
   | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; pane?: string; workspace?: string }
@@ -47,6 +48,8 @@ export interface UpSeat {
   workspace?: string;
   /** Herdr already lists an agent in the recorded pane. */
   agentLive?: boolean;
+  /** The seat works in worktrees: it waits in the lobby until a brief names its worktree. */
+  lobby?: boolean;
 }
 
 export interface UpInput {
@@ -94,6 +97,7 @@ export function upPlan(input: UpInput): Step[] {
     });
   }
 
+  const lobbies = new Set<string>();
   for (const seat of input.seats) {
     if (seat.stopped) {
       steps.push({ kind: 'skip', text: `${seat.name}: stopped in the file; start it with \`team add ${seat.name}\`` });
@@ -115,6 +119,16 @@ export function upPlan(input: UpInput): Step[] {
     const cwd = join(input.root, seat.cwd);
     const fresh = seat.stage === undefined || !seat.pane;
     if (fresh) {
+      // The lobby is one folder for the team, made before the first seat waits in it.
+      if (seat.lobby && !lobbies.has(cwd)) {
+        lobbies.add(cwd);
+        steps.push({
+          kind: 'run',
+          argv: ['mkdir', '-p', cwd],
+          note: 'the lobby: where a seat that works in worktrees waits, outside every protected checkout',
+          do: { do: 'lobby', path: cwd },
+        });
+      }
       steps.push({
         kind: 'run',
         argv: herdr(session, 'workspace', 'create', '--cwd', cwd, '--label', seat.label, '--no-focus'),

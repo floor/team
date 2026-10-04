@@ -5,6 +5,12 @@ the others — or a temporary seat beside the team, which the file does not decl
 seat the file marks `stopped: true`, or that `team remove` took out, is put back from the approved
 copy first. It never touches the seats that are already running.
 
+The one seat starts where `up` would start it: a seat that isn't `mode: shared` and works in
+worktrees waits in the lobby — the parent of `workspace.path` with `.lobby` beside the worktrees,
+inside `trust` and outside every protected checkout — unless the file gives it a `cwd` of its own,
+or `--worktree` names the worktree it works in. `add` makes the lobby when it needs it, and refuses
+the same folders `up` refuses, before it writes anything.
+
 ## Synopsis
 
     team add <name> [--session <name>] [--file <path>]
@@ -77,6 +83,8 @@ without input and the seat left out`, and the rest of the table on the [team up]
 | `team add: workspace.base is required to read a merged end` / `team add: branch <branch> doesn't exist` | 1 |
 | `team add: no worktree named "<task>" is recorded` | 1 |
 | `team add: worktree <task> has a failed setup; team worktree remove <task>` | 1 |
+| ``team add: the lobby ../worktrees/beacon/.lobby matches no trust pattern (., ../worktrees/beacon/task): add one that covers it and run `team approve` `` | 1 |
+| ``team add: seat beacon-qa would start in live, inside the protected checkout live; a seat that isn't `mode: shared` never starts in one`` | 1 |
 | `team add: the file changed while add was checking; nothing was written` | 1 |
 | `team add: the load is <n> per core, above <n>` / `team add: free memory is <n>%, below <n>%` | 1 |
 | a `MISS` finding from [team doctor](doctor.md) | 1 |
