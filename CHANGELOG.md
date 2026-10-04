@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Claude Code's permission stage is the dialog itself: the question with its "Esc to cancel · Tab to amend"
+  footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
+  stays idle.
+
 ## [0.1.0] - 2026-10-04
 
 The first release: set up, change and watch a project's team of AI agents from one file,

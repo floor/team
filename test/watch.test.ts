@@ -62,6 +62,8 @@ describe('reading a screen of Claude Code', () => {
   });
   test('a permission prompt is told apart from a question', () => {
     expect(readScreen('claude-code', permission).kind).toBe('permission');
+    const quotedPermission = `The last answer asks: Do you want to proceed?\n1. Yes, if the tests pass\n2. No\n\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
+    expect(readScreen('claude-code', quotedPermission).kind).toBe('idle');
     const agyPermission = readFileSync(new URL('./fixtures/antigravity/1.2.16/permission.txt', import.meta.url), 'utf8');
     expect(readScreen('antigravity', agyPermission).kind).toBe('permission');
     expect(readScreen('claude-code', `Do you trust this folder?\n❯ 1. Yes, proceed\n  2. No, exit\n\nEnter to confirm · Esc to cancel`).kind).toBe('trust');
