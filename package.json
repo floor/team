@@ -28,7 +28,9 @@
     "coverage": "bun scripts/coverage.ts",
     "coverage:check": "bun scripts/coverage.ts --check",
     "schema:check": "bun scripts/schema.ts",
-    "ci": "bun run typecheck && bun test && bun run build && node dist/cli.js --version && bun run conformance && bun run schema:check && bun run coverage:check"
+    "contract": "bun scripts/contract.ts",
+    "contract:check": "bun scripts/contract.ts --check",
+    "ci": "bun run typecheck && bun test && bun run build && node dist/cli.js --version && bun run conformance && bun run schema:check && bun run contract:check && bun run coverage:check"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",

@@ -34,6 +34,7 @@ jobs:
       # The team schema is generated from the section modules; this fails when one moved
       # without the other. It rides in `bun run ci` too.
       - run: bun run schema:check
+      - run: bun run contract:check
 
       # The coverage matrix is generated; fail if the checked-in copy is not current.
       - run: bun run coverage:check
