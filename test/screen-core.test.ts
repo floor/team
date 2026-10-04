@@ -249,6 +249,27 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', live).kind).toBe('trust');
   });
 
+  test('the trust question reads in every case, and its choice stays as drawn', () => {
+    for (const question of ['Do you trust this folder?', 'DO YOU TRUST THIS FOLDER?', 'Do YoU tRuSt ThE fOlDeR?', 'One you trust?', 'ONE YOU TRUST?']) {
+      expect(readScreen('claude-code', `${question}\n❯ 1. Yes\n`).kind).toBe('trust');
+    }
+    // Only the question carries the flag: "1. yes" is not the drawn choice.
+    expect(readScreen('claude-code', 'Do you trust this folder?\n❯ 1. yes\n').kind).not.toBe('trust');
+  });
+
+  test('the trust question folds ASCII case only, as its hand-spelled classes did', () => {
+    // The flag replaced the letter classes, not the fold they had: the engine's Unicode
+    // case folding would let `ſ` (U+017F) match the `s` of "trust", which the classes
+    // never did. Every ASCII case still reads as itself.
+    const question = (text: string) => readScreen('claude-code', `${text}\n❯ 1. Yes\n`).kind;
+    for (const ascii of ['Do you trust this folder?', 'DO YOU TRUST THIS FOLDER?', 'Do YoU tRuSt ThE fOlDeR?', 'One you trust?', 'ONE YOU TRUST?']) {
+      expect(question(ascii)).toBe('trust');
+    }
+    for (const longS of ['Do you truſt this folder?', 'Do you truſt the folder?', 'One you truſt?']) {
+      expect(question(longS)).not.toBe('trust');
+    }
+  });
+
   test('permission and question fixtures still read as before', () => {
     const permission = `Bash command\n\n  chmod +x run.sh\n\nDo you want to proceed?\n❯ 1. Yes\n  2. No, and tell Claude what to do differently\n\nEsc to cancel · Tab to amend\n`;
     expect(readScreen('claude-code', permission).kind).toBe('permission');
@@ -733,6 +754,139 @@ screen:
 `);
     const lines = ['> ', '--------', 'status'];
     expect(classifyLines(data, lines).kind).toBe('idle');
+  });
+
+  test('a dialog pattern may opt into ignore_case beside itself', () => {
+    // The claude-code trust question spells both cases out letter class by letter class.
+    // A dialog pattern may instead carry the flag beside it: the pattern's own
+    // `ignore_case` is read with the stage's, so one screen can be matched in any case
+    // while the choice line next to it stays as case-sensitive as it is drawn.
+    const text = `
+format: 1
+cli: sample
+screen:
+  trust:
+    - all:
+        - match: '^do you trust (?:this|the) folder\\?$'
+          ignore_case: true
+        - '^1\\. yes$'
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    placeholders:
+      - equals: ''
+`;
+    const data = loadScreen(text);
+    expect(classifyLines(data, ['DO YOU TRUST THIS FOLDER?', '1. yes']).kind).toBe('trust');
+    expect(classifyLines(data, ['Do YoU tRuSt ThE fOlDeR?', '1. yes']).kind).toBe('trust');
+    // The pattern next to it carries no flag: the choice is read as it is drawn.
+    expect(classifyLines(data, ['DO YOU TRUST THIS FOLDER?', '1. YES']).kind).not.toBe('trust');
+    // Without the flag the same pattern is as case-sensitive as every other.
+    const plain = loadScreen(text.replace('          ignore_case: true\n', ''));
+    expect(classifyLines(plain, ['DO YOU TRUST THIS FOLDER?', '1. yes']).kind).not.toBe('trust');
+    expect(classifyLines(plain, ['do you trust this folder?', '1. yes']).kind).toBe('trust');
+    // The entry's flag is the whole entry's: its exceptions are read on the same lines
+    // the match is, so an exception written in one case still excepts them all.
+    const excepted = loadScreen(`
+format: 1
+cli: sample
+screen:
+  trust:
+    - all:
+        - match: '^do you trust (?:this|the) folder\\?$'
+          ignore_case: true
+          except: ['^do you trust this folder\\?$']
+        - '^1\\. yes$'
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    placeholders:
+      - equals: ''
+`);
+    expect(classifyLines(excepted, ['DO YOU TRUST THIS FOLDER?', '1. yes']).kind).not.toBe('trust');
+    expect(classifyLines(excepted, ['Do YoU tRuSt ThE fOlDeR?', '1. yes']).kind).toBe('trust');
+  });
+
+  test('a composer pattern cannot ignore case, and the load says so', () => {
+    // The flag belongs beside a dialog pattern. A composer's own patterns — its prompt,
+    // its rule, its footers, its status line, its suffix — take a plain string, and the
+    // dialog shape with its flag is refused in words that name the key.
+    const snippet = (composer: string) => `
+format: 1
+cli: sample
+screen:
+  composer:
+${composer}
+    placeholders:
+      - equals: ''
+`;
+    const refuse = (composer: string, key: string) =>
+      expect(() => loadScreen(snippet(composer))).toThrow(`"${key}" cannot ignore case: only a dialog pattern may`);
+    refuse(`    mode: box-to-rule
+    prompt:
+      match: '^>'
+      ignore_case: true
+    rule: '^-{8}'`, 'prompt');
+    refuse(`    mode: box-to-rule
+    prompt: '^>'
+    rule:
+      match: '^-{8}'
+      ignore_case: true`, 'rule');
+    refuse(`    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    footers:
+      - match: '^status$'
+        ignore_case: true`, 'footers');
+    refuse(`    mode: status-last
+    status_line:
+      match: '^status$'
+      ignore_case: true
+    prompt: '^>'`, 'status_line');
+    refuse(`    mode: status-then-one
+    status_line: '^status$'
+    prompt: '^>'
+    strip_suffix:
+      match: '\\(esc\\)$'
+      ignore_case: true
+    fallback:
+      - all: ['^done$']
+        kind: idle`, 'strip_suffix');
+    // The composer's fallback rules are dialog patterns: the flag is theirs to carry.
+    expect(() => loadScreen(snippet(`    mode: status-then-one
+    status_line: '^status$'
+    prompt: '^>'
+    fallback:
+      - all:
+          - match: '^done\\.$'
+            ignore_case: true
+        kind: idle`))).not.toThrow();
+  });
+
+  test('ignore_case folds ASCII letters only, as the hand-spelled classes did', () => {
+    // The flag is the fold the classes had: every ASCII letter matches in either case,
+    // and none of the engine's wider Unicode folding. The fold lives in the pattern's own
+    // text — each letter becomes its two-letter class — so the same source means the same
+    // thing under either engine, and the compiled pattern carries the plain "u" flag.
+    const trust = compilePattern('(?:Do you trust (?:this|the) folder\\?|One you trust\\?)', true);
+    expect(trust.flags).toBe('u');
+    for (const ascii of ['Do you trust this folder?', 'DO YOU TRUST THIS FOLDER?', 'Do YoU tRuSt ThE fOlDeR?', 'One you trust?', 'ONE YOU TRUST?']) {
+      expect(trust.test(ascii)).toBe(true);
+    }
+    for (const longS of ['Do you truſt this folder?', 'Do you truſt the folder?', 'One you truſt?']) {
+      expect(trust.test(longS)).toBe(false);
+    }
+    // K (U+212A, the Kelvin sign) folds to k in Unicode; ı (U+0131) and İ (U+0130) sit
+    // beside i. Each reads as itself, wherever the pattern has its letter.
+    const kick = compilePattern('kick', true);
+    expect(kick.test('KiCk')).toBe(true);
+    expect(kick.test('Kick')).toBe(false);
+    const win = compilePattern('win', true);
+    expect(win.test('WIN')).toBe(true);
+    expect(win.test('wın')).toBe(false);
+    expect(win.test('wİn')).toBe(false);
   });
 });
 
