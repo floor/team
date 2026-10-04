@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { saveReadings } from '../src/budgets/readings.ts';
 import { runStatus } from '../src/commands/status.ts';
 import type { StatusSources } from '../src/commands/status.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
@@ -227,6 +228,43 @@ describe('team status', () => {
     const { code, err } = await status();
     expect(err).toContain('team.yaml line 1: format must be 1');
     expect(code).toBe(2);
+  });
+
+  test('a named account with no reading is unknown, and a stored reading is a row', async () => {
+    writeFileSync(file, example.replace(
+      '  marks: [50, 75, 90]          # percent used, per account and window\n',
+      `  marks: [50, 75, 90]
+  accounts:
+    openai: { kind: subscription, reserve: 10%, sources: [status_line] }
+    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }
+`,
+    ));
+    saveReadings(join(dir, '.agents'), 'acme-web', [{
+      account: 'openai',
+      window: 'weekly',
+      left: 39,
+      used: 61,
+      changedAt: NOW.getTime() - 2 * 60 * 1000,
+      resetsAt: NOW.getTime() + 44 * 60 * 1000,
+      seat: 'codex-acme',
+      confirmed: true,
+    }], NOW.getTime());
+    const { code, out } = await status();
+    expect(code).toBe(0);
+    expect(out).toContain('openai  weekly  left 39%  used 61%  resets in 44m  codex-acme  changed 2m ago  status line  fresh');
+    expect(out).toContain('deepseek  unknown');
+    const doc = JSON.parse((await status('--json')).out);
+    expect(doc.budgets).toEqual([
+      { account: 'deepseek', window: null, left: null, used: null, resetsIn: null, seat: null, age: null, source: null, state: 'unknown', inside: false },
+      { account: 'openai', window: 'weekly', left: 39, used: 61, resetsIn: '44m', seat: 'codex-acme', age: '2m', source: 'status_line', state: 'fresh', inside: false },
+    ]);
+  });
+
+  test('no budgets table when the file names no account and nothing is stored', async () => {
+    const { out } = await status();
+    const json = JSON.parse((await status('--json')).out);
+    expect(out).not.toContain('budgets:');
+    expect(json.budgets).toBeUndefined();
   });
 
   test('herdr that doesn\'t answer, and a bad option', async () => {

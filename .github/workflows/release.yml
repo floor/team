@@ -64,9 +64,23 @@ jobs:
       - run: bun run ci
 
       # Packed once, here, with the npm the Node 22 above ships; this exact file
-      # is what publish uploads and npm gets.
+      # is what publish uploads and npm gets. The filename comes from npm's own
+      # --json report, never a glob over whatever tarballs happen to be around.
       - name: Pack the tarball
-        run: npm pack
+        id: pack
+        run: |
+          filename="$(npm pack --json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8"))[0].filename')"
+          test -f "$filename" || { echo "npm pack reported '$filename', which is not a file" >&2; exit 1; }
+          echo "tarball=$filename" >> "$GITHUB_OUTPUT"
+
+      # A tarball is public the moment it is published, so nothing in it may
+      # carry an internal ticket reference. The script reads every member and
+      # names the file, never the reference, so a failure does not leak one;
+      # an extraction or read error fails the step too (exit 2).
+      - name: No internal ticket references in the tarball
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: bun scripts/check-pack.ts "$TARBALL"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
