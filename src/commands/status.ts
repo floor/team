@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { relative, resolve } from 'node:path';
-import { approvalDifferences } from '../approve/approval.ts';
+import { approvalDifferences, watchInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { budgetLine, budgetTable, type BudgetRow } from '../budgets/table.ts';
 import { recall } from '../budgets/readings.ts';
@@ -18,6 +18,8 @@ export type StatusSources = {
   branch(path: string): string | null;
   // How the file differs from the approved one: [] when it doesn't, null when it was never approved.
   approval(team: TeamFile, root: string): string[] | null;
+  // The watch values in force, which the file's own `watch` section only is once approved.
+  watchInForce(team: TeamFile, root: string): TeamFile['watch'];
   now(): Date;
 };
 
@@ -45,6 +47,7 @@ export const realSources: StatusSources = {
     }
   },
   approval: (team, root) => approvalDifferences(team, root),
+  watchInForce: (team, root) => watchInForce(team, root),
   now: () => new Date(),
 };
 
@@ -101,7 +104,7 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
   }
   const state = readState(dir).sessions[session] ?? emptySession();
   const budgets = budgetTable(team, recall(state.budgets), sources.now().getTime());
-  const comparison = compare(team, session, state, live, sources.now());
+  const comparison = compare(team, session, state, live, sources.now(), sources.watchInForce(team, root));
   if (!live.running) comparison.notes.unshift(`the herdr session "${session}" is not running`);
   comparison.differences.push(...protectedCheckouts(team, root, sources), ...approvalDrift(sources.approval(team, root)));
 

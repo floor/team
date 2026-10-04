@@ -213,6 +213,25 @@ describe('a pass of the watch', () => {
       .toEqual(['codex-acme holds text in its input box that was never sent']);
   });
 
+  test('the checks read the watch values in force, not the file\'s', () => {
+    const memory = newMemory();
+    const screen = readFileSync(new URL('./fixtures/codex/0.157.0/unsent.txt', import.meta.url), 'utf8')
+      .replaceAll('GPT-5.6-Terra', 'GPT-6-Sol');
+    const holding = live({ 'codex-acme': { status: 'idle', screen } });
+    const file = team();
+    // The file says unsent_after is a minute; the values in force say an hour — what the owner
+    // approved, or the defaults — and the check waits for the hour.
+    const inForce = { ...file.watch, unsentAfter: 60 * 60 };
+    expect(pass(file, emptySession(), holding, fine, 0, memory, [], inForce).reports).toEqual([]);
+    expect(pass(file, emptySession(), holding, fine, 60 * MIN, memory, [], inForce).reports.map((report) => report.text))
+      .toEqual(['codex-acme holds text in its input box that was never sent']);
+    // With the file's own values, the minute is enough.
+    const own = newMemory();
+    pass(file, emptySession(), holding, fine, 0, own, []);
+    expect(pass(file, emptySession(), holding, fine, MIN, own, []).reports.map((report) => report.text))
+      .toEqual(['codex-acme holds text in its input box that was never sent']);
+  });
+
   test('a parked seat runs the wrong model: model drift is reported too', () => {
     const screen = readFileSync(new URL('./fixtures/codex/0.157.0/working.txt', import.meta.url), 'utf8');
     const drift = live({ 'codex-acme': { status: 'working', screen } });
@@ -563,6 +582,7 @@ describe('team watch', () => {
       live: () => scene,
       machine: () => fine,
       approval: () => [],
+      watchInForce: (team) => team.watch,
       screen: () => screenNow,
       status: () => statusNow,
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); return true; },
@@ -606,6 +626,21 @@ describe('team watch', () => {
     const log = readFileSync(join(dir, '.agents', 'team.log'), 'utf8');
     expect(log).toContain('watch [watch] deepseek-acme-2 asked a question');
     expect(log).toContain('watch [watch] nudged the operator');
+  });
+
+  test('the values in force are what runs: the pass, the announced line and the wait read them', async () => {
+    const io = testIo(dir);
+    const waits: number[] = [];
+    const code = await runWatch(['--file', file], io, sources(1, {
+      approval: () => ['`watch` changed'],
+      watchInForce: () => ({ ...team().watch, interval: 5 }),
+      wait: async (seconds) => { waits.push(seconds); return false; },
+    }));
+    expect(code).toBe(0);
+    // The file says 120s; the values in force say 5s, and the wait between passes is theirs.
+    expect(io.out).toContain('watching the session "acme-web" every 5s');
+    expect(waits).toEqual([5]);
+    expect(io.out).toContain('the file differs from the approved one: `watch` changed');
   });
 
   test('when it stops, its record is cleared and that is notified', async () => {

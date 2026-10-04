@@ -302,6 +302,31 @@ describe('team doctor', () => {
     expect(stale.code).toBe(1);
   });
 
+  test('an unapproved interval edit leaves the heartbeat verdict on the approved value', async () => {
+    await approve([], OWNER);
+    const state = (heartbeat: string) =>
+      writeFileSync(
+        join(root, '.agents/team.state.json'),
+        JSON.stringify({
+          format: 1,
+          sessions: { 'acme-web': { seats: {}, worktrees: {}, watch: { pid: 1, heartbeat } } },
+        }),
+      );
+    // Stretching the file's interval to a thousand hours is unapproved, so the approved two
+    // minutes still decide: a twelve-minute-old heartbeat is stale, not hidden by the edit.
+    edit((text) => text.replace(/^  interval: .*$/m, '  interval: 1000h'));
+    state('2026-10-03T13:50:00Z');
+    const stretched = await doctor({ sessionRunning: () => true });
+    expect(stretched.out).toContain(
+      "MISS  the watch's heartbeat is 12 min old (two intervals are 4 min): start `team watch`\n",
+    );
+    // And a shrink is no better: three minutes are inside the approved two intervals, whoever
+    // wrote ten seconds in the file.
+    edit((text) => text.replace(/^  interval: .*$/m, '  interval: 10s'));
+    state('2026-10-03T13:59:00Z');
+    expect((await doctor({ sessionRunning: () => true })).out).toContain('ok    the watch is running\n');
+  });
+
   test('--session names another session', async () => {
     await approve([], OWNER);
     expect((await doctor({}, ['--session', 'team-test'])).out).toContain('--    session team-test is not running\n');

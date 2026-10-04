@@ -3,7 +3,7 @@
 // or the owner's home. Modelled on the fakes of test/commands/live.test.ts, widened to all the
 // commands the reference documents.
 import { join } from 'node:path';
-import { approvalDifferences } from '../../src/approve/approval.ts';
+import { approvalDifferences, watchInForce } from '../../src/approve/approval.ts';
 import { emptySession, updateState } from '../../src/state.ts';
 import type { AddSources } from '../../src/commands/add.ts';
 import type { DoctorSources } from '../../src/commands/doctor.ts';
@@ -366,6 +366,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         live: () => live(),
         branch: () => 'main',
         approval: (team, at) => approvalDifferences(team, at, home),
+        watchInForce: (team, at) => watchInForce(team, at, home),
         now,
       };
     },
@@ -374,6 +375,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         live: () => live(),
         machine,
         approval: (team, at) => approvalDifferences(team, at, home),
+        watchInForce: (team, at) => watchInForce(team, at, home),
         screen: (pane) => action.paneText('', pane),
         status: (_pane) => agentOf(_pane)?.status ?? null,
         typeText: action.typeText,

@@ -45,7 +45,13 @@ let live: Live | null;
 let branch: string | null;
 
 let approval: string[] | null;
-const sources: StatusSources = { live: () => live, branch: () => branch, approval: () => approval, now: () => NOW };
+const sources: StatusSources = {
+  live: () => live,
+  branch: () => branch,
+  approval: () => approval,
+  watchInForce: (team) => team.watch,
+  now: () => NOW,
+};
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'team-status-'));

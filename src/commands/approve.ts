@@ -2,7 +2,7 @@ import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline/promises';
-import { approvalOf, ceilingsOf } from '../approve/approval.ts';
+import { approvedFingerprints, approvalOf, ceilingsOf } from '../approve/approval.ts';
 import { checkDrift, resolveChecks } from '../budgets/checks.ts';
 import { formatDiff } from '../approve/diff.ts';
 import { compare, describe, fingerprints } from '../approve/fingerprint.ts';
@@ -127,7 +127,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     );
   } else {
     const changes = [
-      ...compare(previous.approval.fingerprints, fingerprints(team)).map(describe),
+      ...compare(approvedFingerprints(previous), fingerprints(team)).map(describe),
       ...checkDrift(previous.approval.checks, resolved.checks),
     ];
     const lines = formatDiff(previous.file, text);

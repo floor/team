@@ -87,10 +87,12 @@ function attentionOf(screen: Screen, status: string, quiet: boolean): Attention 
 
 // One pass of the watch. Pure: it reads what it is handed and changes only `memory`.
 // `approval` is how the file differs from the approved one: [] when it doesn't, null when it was
-// never approved, undefined when that wasn't looked at.
+// never approved, undefined when that wasn't looked at. `watch` is the values in force — the
+// approved ones, or the defaults while the file's own are not approved — and the checks read
+// those, never the file's.
 export function pass(
   team: TeamFile, state: SessionState, live: Live, machine: Machine, now: number, memory: Memory,
-  approval?: string[] | null,
+  approval?: string[] | null, watch: TeamFile['watch'] = team.watch,
 ): PassResult {
   const reports: Report[] = [];
   const current = new Set<string>();
@@ -203,7 +205,7 @@ export function pass(
 
   const ctx: CheckContext = {
     now,
-    watch: team.watch,
+    watch,
     once,
     memory: <T>(kind: string, start: () => T): T => {
       if (!Object.hasOwn(memory.slots, kind)) memory.slots[kind] = start();
@@ -240,7 +242,7 @@ export function pass(
       && readScreen(cli, live.screens[operator.pane]).kind === 'idle';
     if (operator && free) {
       nudge = { pane: operator.pane, text: NUDGE_TEXT, pending: memory.pending.slice() };
-    } else if (now - memory.pendingSince >= team.watch.nudgeWait * 1000) {
+    } else if (now - memory.pendingSince >= watch.nudgeWait * 1000) {
       fallback = `the operator could not be nudged for ${minutes(now - memory.pendingSince)} minutes; ${memory.pending.length} report(s) wait: ${memory.pending.join('; ')}`;
     }
     if (nudge || fallback) {
