@@ -51,6 +51,13 @@ permit no input.
 
 No trust, login, or settings dialog was answered, and no vendor configuration was edited.
 
+## Not produced
+
+In an untrusted directory the CLI opens on its trust dialog; the capture rule allows no answer that grants anything; Escape returns to the shell.
+
+- permission: not produced: behind the trust dialog
+- question: not produced: behind the trust dialog
+
 ## Constructed: delivery-verification boxes
 
 Not captures. `test/launch/cursor.test.ts` builds the post-paste box from `idle.txt`:
