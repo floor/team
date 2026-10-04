@@ -238,9 +238,9 @@ function boxToRule(lines: string[], styled: string[], composer: Extract<ScreenDa
   let footer = false;
   for (let j = close + 1; j < lines.length; j++) {
     if (tick()) return { kind: 'stop' };
-    const line = (lines[j] ?? '').trim();
-    if (!line) continue;
-    if (composer.footers.some((pattern) => pattern.test(line))) {
+    const raw = lines[j] ?? '';
+    if (!raw.trim()) continue;
+    if (composer.footers.some((pattern) => pattern.test(raw))) {
       footer = true;
     } else {
       footer = false;
