@@ -18,7 +18,7 @@ Node 22 or later runs the built command.
 
 ```sh
 npm install -g team       # or run it without installing: npx team
-team --version            # 0.1.2
+team --version            # 0.2.0
 ```
 
 ## The file is private to each clone
@@ -275,7 +275,7 @@ cd team
 bun install
 bun run build
 npm install -g .          # puts `team` on the PATH
-team --version            # 0.1.2
+team --version            # 0.2.0
 ```
 
 Bun builds and tests the sources:
