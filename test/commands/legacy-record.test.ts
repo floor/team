@@ -16,7 +16,7 @@ import { runDown } from '../../src/commands/down.ts';
 import { runInit } from '../../src/commands/init.ts';
 import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
 import { approvalSource, runStatus, type StatusSources } from '../../src/commands/status.ts';
-import { runUp } from '../../src/commands/up.ts';
+import { runUp, type Launch } from '../../src/commands/up.ts';
 import { runWatch, type WatchSources } from '../../src/commands/watch.ts';
 import { runWorktree } from '../../src/commands/worktree.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
@@ -117,19 +117,19 @@ describe('a legacy record, with the team\'s seats running', () => {
     legacy();
     runningState();
     const io = testIo(root, OWNER);
-    const code = await runUp(FILE, io, { sessionRunning: () => true, agents: () => RUNNING.map(agent), home });
+    const code = await runUp(FILE, io, { sessionRunning: () => true, agents: () => RUNNING.map((name) => agent(name)), home });
     expect(code).toBe(1);
     expect(io.err).toBe(`team up: ${LINE}\n`);
     expect(io.out).toBe('');
 
     const dry = testIo(root, OWNER);
-    expect(await runUp(['--dry-run', ...FILE], dry, { sessionRunning: () => true, agents: () => RUNNING.map(agent), home })).toBe(0);
+    expect(await runUp(['--dry-run', ...FILE], dry, { sessionRunning: () => true, agents: () => RUNNING.map((name) => agent(name)), home })).toBe(0);
     expect(dry.out).toContain(`! up would refuse: ${LINE}\n`);
   });
 
   test('add refuses with the one-line repair', async () => {
     legacy();
-    const launch = {
+    const launch: Launch = {
       sessionState: () => 'running',
       startServer: () => true,
       sessionUp: () => true,
@@ -147,7 +147,7 @@ describe('a legacy record, with the team\'s seats running', () => {
     const code = await runAdd(['codex-acme'], io, {
       home,
       sessionState: () => 'running',
-      agents: () => RUNNING.map(agent),
+      agents: () => RUNNING.map((name) => agent(name)),
       workspaces: () => [],
       doctor: doctorSources(),
       now: () => NOW,
@@ -289,7 +289,7 @@ describe('a record the verification refused, through the same commands', () => {
     tamper();
     runningState();
     const up = testIo(root, OWNER);
-    expect(await runUp(FILE, up, { sessionRunning: () => true, agents: () => RUNNING.map(agent), home })).toBe(1);
+    expect(await runUp(FILE, up, { sessionRunning: () => true, agents: () => RUNNING.map((name) => agent(name)), home })).toBe(1);
     expect(up.err).toBe(`team up: ${WHY}\n`);
 
     const io = testIo(root, OWNER);
