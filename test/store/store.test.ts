@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
+import { legacySeatDigests } from '../../src/approve/fingerprint.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
 import {
   approvedCopy,
@@ -191,13 +192,29 @@ describe('a file against its approval', () => {
     ]);
   });
 
-  test('parking or stopping a seat needs no new approval', () => {
+  test('parking or stopping a seat is drift', () => {
     approve(home);
     const edited = text
       .replace('    stopped: true', '    stopped: false')
       .replace('    parked: true', '    parked: false');
     expect(edited).not.toBe(text);
-    expect(approvalDifferences(team(edited), home, home)).toEqual([]);
+    expect(approvalDifferences(team(edited), home, home)).toEqual([
+      'seat codex-acme changed',
+      'seat grok-acme changed',
+    ]);
+  });
+
+  test('an approval recorded before parked and stopped were fingerprinted still matches the same file', () => {
+    approve(home);
+    const file = team(text);
+    const store = storePath(file.project, home, home);
+    const record = readApproval(store);
+    if (!record) throw new Error('missing approval');
+    record.approval.fingerprints.seats = legacySeatDigests(file);
+    writeApproval(store, record, []);
+    expect(approvalDifferences(file, home, home)).toEqual([]);
+    const parked = text.replace('    parked: true', '    parked: false');
+    expect(approvalDifferences(team(parked), home, home)).toEqual(['seat codex-acme changed']);
   });
 
   test('taking one instance out of a count entry needs no new approval', () => {

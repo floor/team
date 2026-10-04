@@ -39,11 +39,16 @@ function sectionOf(team: Approvable, name: string): unknown {
 }
 
 /**
- * Seat fields that change without a new approval: what `remove --keep` and
- * `add` set, where the seat sits in the file, and how its entry is written
- * (`count: 3` becoming `count: 2`, or explicit seats, when one is taken out).
+ * Seat fields that change without a new approval: where the seat sits in the
+ * file, and how its entry is written (`count: 3` becoming `count: 2`, or
+ * explicit seats, when one is taken out). `parked` and `stopped` stay in the
+ * digest: a seat that can edit the file must not silence itself. `remove --keep`
+ * and `add` record the new digest with the edit.
  */
-const SEAT_FREE_FIELDS = new Set(['parked', 'stopped', 'line', 'declared', 'count', 'instance']);
+const SEAT_FREE_FIELDS = new Set(['line', 'declared', 'count', 'instance']);
+
+/** The free set from before `parked` and `stopped` joined the digest. */
+const LEGACY_SEAT_FREE_FIELDS = new Set(['parked', 'stopped', 'line', 'declared', 'count', 'instance']);
 
 /** A validated team file, as far as an approval reads it. */
 export type Approvable = Record<string, unknown> & {
@@ -78,11 +83,23 @@ export function fingerprints(team: Approvable): Fingerprints {
   for (const section of OWNER_SECTIONS) sections[section] = digest(sectionOf(team, section));
 
   const seats: Record<string, string> = {};
-  for (const seat of team.seats) {
-    const fields = Object.fromEntries(Object.entries(seat).filter(([key]) => !SEAT_FREE_FIELDS.has(key)));
-    seats[seat.name] = digest(fields);
-  }
+  for (const seat of team.seats) seats[seat.name] = seatDigest(seat, SEAT_FREE_FIELDS);
   return { sections, seats };
+}
+
+/**
+ * Seat digests as a record written before `parked` and `stopped` were part of
+ * them. An approval from then still matches a file that has not changed.
+ */
+export function legacySeatDigests(team: Approvable): Record<string, string> {
+  const seats: Record<string, string> = {};
+  for (const seat of team.seats) seats[seat.name] = seatDigest(seat, LEGACY_SEAT_FREE_FIELDS);
+  return seats;
+}
+
+function seatDigest(seat: Record<string, unknown>, free: Set<string>): string {
+  const fields = Object.fromEntries(Object.entries(seat).filter(([key]) => !free.has(key)));
+  return digest(fields);
 }
 
 export type Difference =
@@ -91,7 +108,7 @@ export type Difference =
 /**
  * What in the file the owner has not approved. The file passes when every
  * section matches and every seat in it matches an approved seat: a seat taken
- * out, parked or stopped needs no new approval.
+ * out needs no new approval. Parking or stopping one does.
  */
 export function compare(approved: Fingerprints, current: Fingerprints): Difference[] {
   const differences: Difference[] = [];

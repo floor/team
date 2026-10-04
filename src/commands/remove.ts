@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname } from 'node:path';
+import { recordSeatDigest } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
@@ -20,6 +22,8 @@ import { paneStillRunning, realSources as downSources, stateOf, type DownSources
 export type RemoveSources = DownSources & {
   /** Foreground process names in the pane, or null when the pane can't be read. */
   foreground(session: string, pane: string): string[] | null;
+  /** Approval store home. The real command uses the owner's home. */
+  home?: string;
 };
 
 function aim(session: string): string | undefined {
@@ -73,7 +77,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     io.stderr(`team remove: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(caller)}\n`);
     return 1;
   }
-  const { team, path } = loaded;
+  const { team, path, root } = loaded;
   const session = args.values.session ?? team.session;
   if (session === 'default') {
     io.stderr('team remove: session can\'t be "default", herdr\'s own session\n');
@@ -150,13 +154,16 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     if (!stopped) return 1;
   }
 
+  let kept: string | null = null;
   if (!temporary) {
     const refused = withLock(dir, () => {
       const text = readFileSync(path, 'utf8');
       const next = args.flags.has('keep') ? markStopped(text, name) : takeOut(text, name);
       if (next === text) return null;
       const wrote = writeTeamFile(path, next);
-      return wrote.ok ? null : wrote.errors;
+      if (!wrote.ok) return wrote.errors;
+      if (args.flags.has('keep')) kept = next;
+      return null;
     });
     if (refused) {
       for (const problem of refused) {
@@ -164,6 +171,10 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
       }
       return 2;
     }
+  }
+  if (kept !== null) {
+    const parsed = validateTeamFile(kept);
+    if (parsed.ok) recordSeatDigest(parsed.team, root, name, sources.home ?? homedir());
   }
   if (!agent && recorded) {
     updateState(dir, (file) => {

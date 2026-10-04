@@ -109,14 +109,15 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
 }
 
 function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => boolean): boolean | 'stop' {
+  const where = rule.onFooter ? [footerLine(data, lines)] : lines;
   if (rule.any) {
-    const hit = anyLine(lines, rule.any, tick);
+    const hit = anyLine(where, rule.any, tick);
     if (hit === 'stop') return 'stop';
     if (!hit) return false;
   }
   if (rule.all) {
     for (const pattern of rule.all) {
-      const hit = lineSomewhere(lines, pattern, tick);
+      const hit = lineSomewhere(where, pattern, tick);
       if (hit === 'stop') return 'stop';
       if (!hit) return false;
     }
@@ -124,11 +125,16 @@ function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => 
   if (rule.footer !== undefined) {
     if (footerLine(data, lines) !== rule.footer) return false;
   }
+  if (rule.withoutRule) {
+    if (tick()) return 'stop';
+    if (findLast(lines, (line) => RULE_LINE.test(line)) >= 0) return false;
+  }
   if (rule.belowLastRule) {
     if (tick()) return 'stop';
-    // No rule line counts as below one: today's check is `index > lastIndex`, and
-    // lastIndex is -1 when the window has no rule. A later rule still hides a quoted dialog.
+    // A pattern sits below a composer rule. A window with no rule line is not
+    // below one: a dialog that fills the pane says so with `without_rule`.
     const ruleAt = findLast(lines, (line) => RULE_LINE.test(line));
+    if (ruleAt < 0) return false;
     const at = findLast(lines, (line) => rule.belowLastRule?.test(line) ?? false);
     if (at < 0 || at <= ruleAt) return false;
   }

@@ -52,18 +52,22 @@ function stageOf(node: YamlNode): Stage {
 
 function ruleOf(node: YamlNode, ignoreCase: boolean): Rule {
   const entries = mapping(node, 'a rule');
-  only(entries, ['any', 'all', 'footer', 'below_last_rule', 'none_after']);
+  only(entries, ['any', 'all', 'footer', 'on_footer', 'below_last_rule', 'without_rule', 'none_after']);
   if (entries.length === 0) fail(node.line, 'a rule has no primitive');
   const rule: Rule = {};
   const any = optional(entries, 'any');
   const all = optional(entries, 'all');
   const footer = optional(entries, 'footer');
+  const onFooter = optional(entries, 'on_footer');
   const below = optional(entries, 'below_last_rule');
+  const withoutRule = optional(entries, 'without_rule');
   const noneAfter = optional(entries, 'none_after');
   if (any) rule.any = patternsOf(any.value, 'any', ignoreCase);
   if (all) rule.all = patternsOf(all.value, 'all', ignoreCase);
   if (footer) rule.footer = stringOf(footer.value) ?? fail(footer.line, '"footer" must be a string');
+  if (onFooter) rule.onFooter = boolOf(onFooter.value, 'on_footer');
   if (below) rule.belowLastRule = patternOf(stringOf(below.value) ?? fail(below.line, '"below_last_rule" must be a string'), ignoreCase, below.line);
+  if (withoutRule) rule.withoutRule = boolOf(withoutRule.value, 'without_rule');
   if (noneAfter) rule.noneAfter = noneAfterOf(noneAfter.value, ignoreCase);
   return rule;
 }

@@ -120,10 +120,14 @@ describe('an approved file', () => {
     ).toEqual([{ kind: 'seat-new', name: 'grok-acme' }]);
   });
 
-  test('a seat taken out, parked or stopped needs none', () => {
+  test('a seat taken out needs none; parking or stopping it is drift', () => {
     expect(changed((file) => (file.seats as unknown[]).pop())).toEqual([]);
-    expect(changed((file) => (seat(file).parked = true))).toEqual([]);
-    expect(changed((file) => (seat(file).stopped = true))).toEqual([]);
+    expect(changed((file) => (seat(file).parked = true))).toEqual([
+      { kind: 'seat-changed', name: 'deepseek-acme' },
+    ]);
+    expect(changed((file) => (seat(file).stopped = true))).toEqual([
+      { kind: 'seat-changed', name: 'deepseek-acme' },
+    ]);
   });
 
   test('a seat named like an object method is still new', () => {

@@ -50,12 +50,38 @@ screen:
       footer: 'Esc to cancel · Tab to amend'
       below_last_rule: 'Esc to cancel · Tab to amend'
     - below_last_rule: '^\s*❯?\s*[0-9]\. (Yes|No)\b'
+    # A pane with no composer rule whose choice is the dialog, including the
+    # unmarked "1. Yes" while up is running. A choice quoted above an empty
+    # prompt is a transcript: the empty prompt comes after it.
+    - all:
+        - '^\s*❯?\s*[0-9]\. (Yes|No)\b'
+      without_rule: true
+      none_after:
+        anchor: '^\s*❯?\s*[0-9]\. (Yes|No)\b'
+        patterns:
+          - '^\s*[❯›>]\s*$'
   question:
+    # The phrase is the dialog's last line, as a permission footer is. Prose
+    # above the box is not a question.
     - any:
         - 'Enter to select'
         - '↑/↓ to navigate'
         - 'Enter to confirm'
         - 'Esc to cancel'
+      on_footer: true
+    - below_last_rule: 'Enter to select|↑/↓ to navigate|Enter to confirm|Esc to cancel'
+    # The footer has a status line under it and the rule is out of the window.
+    # A phrase quoted above an empty prompt is a transcript.
+    - any:
+        - 'Enter to select'
+        - '↑/↓ to navigate'
+        - 'Enter to confirm'
+        - 'Esc to cancel'
+      without_rule: true
+      none_after:
+        anchor: 'Enter to select|↑/↓ to navigate|Enter to confirm|Esc to cancel'
+        patterns:
+          - '^\s*[❯›>]\s*$'
   working:
     - any:
         - '\besc to interrupt\b'
