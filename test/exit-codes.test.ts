@@ -1941,6 +1941,26 @@ const unreadForms: { name: string; files: Map<string, string>; needle: string; e
       needle: `reviewShadow: ${UNREADABLE}`,
     },
     {
+      name: 'nested var',
+      ...shadowedImport("  if (argv[0] === '--review-nested-var') {\n    {\n      var reviewShadow = () => 17;\n    }\n    return reviewShadow();\n  }\n"),
+      needle: "reviewShadow: the exit-code gate doesn't model var scoping; use let or const",
+    },
+    {
+      name: 'top-level var',
+      files: withDoctor('', 'var reviewShadow = () => 1;\n'),
+      needle: "reviewShadow: the exit-code gate doesn't model var scoping; use let or const",
+    },
+    {
+      name: 'var in a for head',
+      files: withDoctor('  for (var reviewShadow = () => 17; false;) {}\n'),
+      needle: "reviewShadow: the exit-code gate doesn't model var scoping; use let or const",
+    },
+    {
+      name: 'function declared in an if',
+      ...shadowedImport("  if (argv[0] === '--review-block-fn') {\n    function reviewShadow(): number {\n      return 17;\n    }\n  }\n  if (argv[0] === '--review-block-call') return reviewShadow();\n"),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
+    {
       name: 'local reportFailure',
       files: withDoctor(
         "  if (argv[0] === '--gate-probe') process.exitCode = reportFailure();\n",

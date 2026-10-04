@@ -33,6 +33,8 @@
 // - `process.exit` and plain `process.exitCode =` of a marked numeric literal
 // - the two publishes of a code already returned: `process.exitCode = code` on `main(...).then`, and
 //   `process.exitCode = reportFailure(...)` only when that call is the `reportFailure` declared in `src/cli.ts`
+// - no `var`: a declaration fails the check, with the file, the line and the name: the exit-code gate doesn't model var scoping; use let or const
+// - a function declaration inside a block, other than the top of a function body or a module, fails when a returned call would resolve to it
 //
 // A `break` or `continue` nested inside a `switch` or a loop means that statement does not always
 // complete, except a `break` or `continue` that is itself a statement of a `case`. A write to
@@ -508,6 +510,43 @@ function hitsInNode(node: ts.Node, name: string): ChainHit[] {
   return hits;
 }
 
+/** A `var` list has none of the block-scoped flags. `using` and `await using` are not `var`. */
+function isVarList(list: ts.VariableDeclarationList): boolean {
+  const scoped = ts.NodeFlags.Let | ts.NodeFlags.Const | ts.NodeFlags.Using;
+  return (list.flags & scoped) === 0;
+}
+
+/** Directly in a module, or the body block of a function. A declaration in an `if` or nested block is not. */
+function isBodyLevelFunction(decl: ts.FunctionDeclaration): boolean {
+  const parent = decl.parent;
+  if (ts.isSourceFile(parent) || ts.isModuleBlock(parent)) return true;
+  if (!ts.isBlock(parent)) return false;
+  const owner = parent.parent;
+  return !!owner && ts.isFunctionLike(owner) && owner.body === parent;
+}
+
+/**
+ * A function declaration of `name` inside a nested block of the function that holds `at`.
+ * The walk does not model hoisting, so a returned call of that name is refused.
+ */
+function nestedBlockFunction(name: string, at: ts.Node): boolean {
+  let owner: ts.Node | undefined = at.parent;
+  while (owner && !ts.isFunctionLike(owner)) owner = owner.parent;
+  const root = owner ?? at.getSourceFile();
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name && !isBodyLevelFunction(node)) {
+      found = true;
+      return;
+    }
+    if (node !== root && isFunc(node)) return;
+    ts.forEachChild(node, visit);
+  };
+  visit(root);
+  return found;
+}
+
 function chainHits(name: string, at: ts.Node): ChainHit[] {
   const hits: ChainHit[] = [];
   let current: ts.Node | undefined = at.parent;
@@ -754,6 +793,7 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
     const called = unwrap(call.expression);
     if (!ts.isIdentifier(called)) return null;
     const name = called.text;
+    if (nestedBlockFunction(name, call)) return { unreadable: name };
     const hits: (ChainHit | { kind: 'import'; file: string; exportName: string })[] = chainHits(name, call);
     const imported = moduleBindings(source, file).get(name);
     if (imported) hits.push({ kind: 'import', file: imported.file, exportName: imported.exportName });
@@ -1011,7 +1051,24 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
     const at = source ? exportedFunction(source, 'default') ?? source : source;
     unreadable.push(`${file}:${source && at ? lineOf(source, at) : 1}: a walked file that is in no table entry`);
   }
-  for (const file of filesUnderSrc(files)) scanExits(file);
+  for (const file of filesUnderSrc(files)) {
+    scanExits(file);
+    const source = load(file);
+    if (!source) continue;
+    const visit = (node: ts.Node): void => {
+      if (ts.isVariableDeclarationList(node) && isVarList(node)) {
+        for (const decl of node.declarations) {
+          for (const name of bindingNames(decl.name)) {
+            unreadable.push(
+              `${file}:${lineOf(source, decl)}: ${name}: the exit-code gate doesn't model var scoping; use let or const`,
+            );
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
 
   coveredThrows.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
   return { sites, unreadable, coveredThrows };
