@@ -1,0 +1,502 @@
+{
+  "kind": "capture-coverage",
+  "clis": [
+    "antigravity",
+    "claude-code",
+    "codex",
+    "cursor"
+  ],
+  "kinds": [
+    "idle",
+    "working",
+    "unsent",
+    "permission",
+    "question",
+    "trust",
+    "unknown"
+  ],
+  "cells": {
+    "antigravity": {
+      "idle": {
+        "real": 2,
+        "constructed": 0
+      },
+      "working": {
+        "real": 1,
+        "constructed": 0
+      },
+      "unsent": {
+        "real": 2,
+        "constructed": 0
+      },
+      "permission": {
+        "real": 0,
+        "constructed": 2
+      },
+      "question": {
+        "real": 0,
+        "constructed": 0
+      },
+      "trust": {
+        "real": 1,
+        "constructed": 0
+      },
+      "unknown": {
+        "real": 1,
+        "constructed": 1
+      }
+    },
+    "claude-code": {
+      "idle": {
+        "real": 2,
+        "constructed": 2
+      },
+      "working": {
+        "real": 1,
+        "constructed": 0
+      },
+      "unsent": {
+        "real": 3,
+        "constructed": 2
+      },
+      "permission": {
+        "real": 0,
+        "constructed": 0
+      },
+      "question": {
+        "real": 0,
+        "constructed": 0
+      },
+      "trust": {
+        "real": 1,
+        "constructed": 1
+      },
+      "unknown": {
+        "real": 1,
+        "constructed": 11
+      }
+    },
+    "codex": {
+      "idle": {
+        "real": 2,
+        "constructed": 1
+      },
+      "working": {
+        "real": 1,
+        "constructed": 0
+      },
+      "unsent": {
+        "real": 2,
+        "constructed": 0
+      },
+      "permission": {
+        "real": 1,
+        "constructed": 1
+      },
+      "question": {
+        "real": 1,
+        "constructed": 0
+      },
+      "trust": {
+        "real": 1,
+        "constructed": 0
+      },
+      "unknown": {
+        "real": 2,
+        "constructed": 0
+      }
+    },
+    "cursor": {
+      "idle": {
+        "real": 3,
+        "constructed": 0
+      },
+      "working": {
+        "real": 2,
+        "constructed": 5
+      },
+      "unsent": {
+        "real": 2,
+        "constructed": 0
+      },
+      "permission": {
+        "real": 0,
+        "constructed": 0
+      },
+      "question": {
+        "real": 0,
+        "constructed": 0
+      },
+      "trust": {
+        "real": 1,
+        "constructed": 0
+      },
+      "unknown": {
+        "real": 1,
+        "constructed": 0
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "file": "antigravity/1.2.16/exit-typed.txt",
+      "cli": "antigravity",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/exit.txt",
+      "cli": "antigravity",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/folded-rules.txt",
+      "cli": "antigravity",
+      "kind": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "antigravity/1.2.16/idle.txt",
+      "cli": "antigravity",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/permission-cut.txt",
+      "cli": "antigravity",
+      "kind": "permission",
+      "provenance": "constructed"
+    },
+    {
+      "file": "antigravity/1.2.16/permission.txt",
+      "cli": "antigravity",
+      "kind": "permission",
+      "provenance": "constructed"
+    },
+    {
+      "file": "antigravity/1.2.16/rules-accepted.txt",
+      "cli": "antigravity",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/trust.txt",
+      "cli": "antigravity",
+      "kind": "trust",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/unsent.txt",
+      "cli": "antigravity",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/working.txt",
+      "cli": "antigravity",
+      "kind": "working",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/bash-mode-ansi.txt",
+      "cli": "claude-code",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/idle-suggestion-ansi.txt",
+      "cli": "claude-code",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/idle-suggestion-other-ansi.txt",
+      "cli": "claude-code",
+      "kind": "idle",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/2.1.289/idle-suggestion-other-plain.txt",
+      "cli": "claude-code",
+      "kind": "unsent",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/2.1.289/idle-suggestion-plain.txt",
+      "cli": "claude-code",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/trust-ansi.txt",
+      "cli": "claude-code",
+      "kind": "trust",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/unsent-faint-first-ansi.txt",
+      "cli": "claude-code",
+      "kind": "unsent",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/2.1.289/unsent-paste-ansi.txt",
+      "cli": "claude-code",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/unsent-slash-ansi.txt",
+      "cli": "claude-code",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/unsent-typed-ansi.txt",
+      "cli": "claude-code",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.289/unsent-typing-while-running-ansi.txt",
+      "cli": "claude-code",
+      "kind": "working",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/leftover-box.txt",
+      "cli": "claude-code",
+      "kind": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/output-under-rule.txt",
+      "cli": "claude-code",
+      "kind": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/quoted-dialog.txt",
+      "cli": "claude-code",
+      "kind": "idle",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/rule-above.txt",
+      "cli": "claude-code",
+      "kind": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/scrolled-shortcuts.txt",
+      "cli": "claude-code",
+      "kind": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/shell-bypass-only.txt",
+      "cli": "claude-code",
+      "kind": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/shell-git-log.txt",
+      "cli": "claude-code",
+      "kind": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/shell-prompt.txt",
+      "cli": "claude-code",
+      "kind": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/shell-right-prompt.txt",
+      "cli": "claude-code",
+      "kind": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/shell-shortcuts-indented.txt",
+      "cli": "claude-code",
+      "kind": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/shell-shortcuts.txt",
+      "cli": "claude-code",
+      "kind": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/shell-status-only.txt",
+      "cli": "claude-code",
+      "kind": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "claude-code/trust-unnumbered.txt",
+      "cli": "claude-code",
+      "kind": "trust",
+      "provenance": "constructed"
+    },
+    {
+      "file": "codex/0.157.0/exit-typed.txt",
+      "cli": "codex",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/exit.txt",
+      "cli": "codex",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/idle.txt",
+      "cli": "codex",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/owner-status.txt",
+      "cli": "codex",
+      "kind": "idle",
+      "provenance": "constructed"
+    },
+    {
+      "file": "codex/0.157.0/permission-pinned.txt",
+      "cli": "codex",
+      "kind": "permission",
+      "provenance": "constructed"
+    },
+    {
+      "file": "codex/0.157.0/permission.txt",
+      "cli": "codex",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/rules-accepted.txt",
+      "cli": "codex",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/startup-loading.txt",
+      "cli": "codex",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/startup.txt",
+      "cli": "codex",
+      "kind": "question",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/trust.txt",
+      "cli": "codex",
+      "kind": "trust",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/unsent.txt",
+      "cli": "codex",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/working.txt",
+      "cli": "codex",
+      "kind": "working",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/exit-typed.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/exit.txt",
+      "cli": "cursor",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/follow-up-queue-hint.txt",
+      "cli": "cursor",
+      "kind": "working",
+      "provenance": "constructed"
+    },
+    {
+      "file": "cursor/2026.10.01/follow-up-queue-one.txt",
+      "cli": "cursor",
+      "kind": "working",
+      "provenance": "constructed"
+    },
+    {
+      "file": "cursor/2026.10.01/follow-up-queue-two.txt",
+      "cli": "cursor",
+      "kind": "working",
+      "provenance": "constructed"
+    },
+    {
+      "file": "cursor/2026.10.01/follow-up-queue-typed.txt",
+      "cli": "cursor",
+      "kind": "working",
+      "provenance": "constructed"
+    },
+    {
+      "file": "cursor/2026.10.01/idle.txt",
+      "cli": "cursor",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-accepted.txt",
+      "cli": "cursor",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/startup.txt",
+      "cli": "cursor",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/thinking.txt",
+      "cli": "cursor",
+      "kind": "working",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/trust.txt",
+      "cli": "cursor",
+      "kind": "trust",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/unsent.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/working-no-spinner.txt",
+      "cli": "cursor",
+      "kind": "working",
+      "provenance": "constructed"
+    },
+    {
+      "file": "cursor/2026.10.01/working.txt",
+      "cli": "cursor",
+      "kind": "working",
+      "provenance": "capture"
+    }
+  ]
+}

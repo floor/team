@@ -31,6 +31,8 @@ jobs:
       - run: bun install --frozen-lockfile
       # The live-herdr tests skip themselves: TEAM_LIVE_UP is not set here.
       - run: bun run ci
+      # The coverage matrix is generated; fail if the checked-in copy is not current.
+      - run: bun run coverage:check
 
       # The release's tarball guard, on every pull request, so the real path is
       # exercised before any tag. The filename comes from npm's own --json
