@@ -6,6 +6,8 @@ export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question
 export type Host = {
   startServer(session: string): boolean;
   sessionUp(session: string): boolean | null;
+  /** Makes a folder and the parents it needs. Present on `up` and `add`, whose plans carry a lobby. */
+  makeDir?(path: string): boolean;
   createWorkspace(session: string, cwd: string, label: string): { pane: string; workspace: string } | null;
   paneRun(session: string, pane: string, command: string): boolean;
   typeLine(session: string, pane: string, text: string): boolean;
@@ -58,6 +60,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
   const places = new Map<string, Place>();
   const dropped = new Set<string>();
   const logged = new Set<string>();
+  const failedDirs = new Set<string>();
   let serverFailed = false;
   let watchFailed = false;
   let held = false;
@@ -112,12 +115,22 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         }
         break;
       }
+      case 'lobby': {
+        // A seat whose lobby folder could not be made is left out at its create step.
+        if (!host.makeDir?.(op.path)) failedDirs.add(op.path);
+        break;
+      }
       case 'create': {
         if (op.seat) {
           const why = host.allow(op.seat);
           if (why) {
             dropped.add(op.seat);
             finish(op.seat, why);
+            break;
+          }
+          if (failedDirs.has(op.cwd)) {
+            dropped.add(op.seat);
+            finish(op.seat, 'its lobby folder was not created; left out');
             break;
           }
           host.record(op.seat, { stage: 'launched' });

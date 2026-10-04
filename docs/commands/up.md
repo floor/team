@@ -5,6 +5,14 @@ declares and this machine can run, and the watchdog pane that runs `team watch`.
 are left as they are; a seat stopped in the file is left out until `team add` starts it. `--dry-run`
 prints the plan and runs nothing.
 
+A seat that isn't `mode: shared` and works in worktrees (`workspace.mode: worktree` is the default)
+starts in the lobby, never in the project root, which holds the owner's uncommitted work. The lobby
+is the folder that holds the worktrees with `.lobby` beside them — the parent of `workspace.path` —
+so it lies in the same `trust` as the worktrees and outside every protected checkout. `up` makes it
+once, before the first such seat waits in it, and refuses when it would fall outside `trust` or
+inside a protected checkout. A `mode: shared` seat, and a seat the file gives a `cwd` of its own
+outside every protected checkout, starts where the file says.
+
 ## Synopsis
 
     team up [--dry-run] [--session <name>] [--file <path>]
@@ -15,8 +23,8 @@ Reads the team file (or the one `--file` names), this machine's approval store, 
 (`.agents/team.state.json`), herdr (whether the session is up, its agents and workspaces), the
 doctor's findings, and the machine's load, free memory, free disk and free swap. Writes
 `.agents/team.state.json` (each seat's stage, pane and workspace; the watch's pid and heartbeat),
-`.agents/team.log`, and, through herdr: the server, one workspace per seat and one for the watchdog,
-each seat's launch, and the watch.
+`.agents/team.log`, the lobby folder a seat that works in worktrees waits in, and, through herdr:
+the server, one workspace per seat and one for the watchdog, each seat's launch, and the watch.
 
 ## Who may run it
 
@@ -52,6 +60,7 @@ A seat that doesn't get there is printed once with what stopped it, and `up` exi
 | `<seat>: was not in the agent list in time; left at launched` | herdr listed no agent in the pane to name |
 | `<seat>: its rules were not delivered; left at named` | the rules did not reach an empty idle prompt |
 | `<seat>: its workspace was not created; left at launched` | herdr made no workspace for it |
+| `<seat>: its lobby folder was not created; left out` | the folder a seat that works in worktrees waits in could not be made |
 | `<seat>: its launch command did not run; left at launched` | the pane took no command |
 | `<seat>: the approval allows 3 seats; 4 would be running` | the approval's ceiling, from the record, not the file |
 
@@ -74,6 +83,8 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | `herdr doesn't answer` |
 | ``session beacon is stopped; clear it with `herdr session delete beacon` `` |
 | ``session beacon has 2 agents this file's state doesn't record: `up` never touches a running team`` |
+| ``the lobby ../worktrees/beacon/.lobby matches no trust pattern (., ../worktrees/beacon/task): add one that covers it and run `team approve` `` |
+| ``seat beacon-qa would start in live, inside the protected checkout live; a seat that isn't `mode: shared` never starts in one`` — the folder the file gives it, or its lobby, is a protected checkout |
 
 A watch that has not run, or whose heartbeat is old, is not a reason to refuse: `up` starts the
 watch itself.

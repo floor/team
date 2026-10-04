@@ -54,4 +54,12 @@ The first release: set up, change and watch a project's team of AI agents from o
 - A README that covers the file by example and every command with who may run it. (#9)
 - A page per command in `docs/commands`, every example run in CI. (#31)
 
+### Fixed
+
+- A seat that isn't `mode: shared` and works in worktrees starts in the lobby — the parent of
+  `workspace.path` with `.lobby` beside the worktrees, inside `trust` and outside every protected
+  checkout — never the project root, which holds the owner's uncommitted work; `up` and `add` make
+  it once, refuse a lobby outside `trust` or inside a protected checkout, and refuse a seat the file
+  aims at one. (#?)
+
 [0.1.0]: https://github.com/floor/team/releases/tag/v0.1.0

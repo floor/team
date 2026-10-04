@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +39,7 @@ import { emptySession, readState, updateState, type SeatState } from '../state.t
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from './doctor.ts';
 import { launchLimit, readMachine, type Machine, type SwapSample } from '../watch/machine.ts';
 import { readScreen } from '../watch/screen.ts';
+import { seatStart } from '../worktree/place.ts';
 
 // What `up` reads from outside the file, so tests can stand in for it.
 export type UpSources = {
@@ -266,9 +268,28 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
 
   const recorded = readState(dir).sessions[session];
   const workspaces = sources.workspaces?.(session) ?? null;
-  const seats = team.seats.map((seat) =>
-    seatPlan(team, seat, recorded?.seats[seat.name], agents ?? [], workspaces, state === 'running'),
-  );
+  const seats: UpSeat[] = [];
+  const refused = new Set<string>();
+  for (const seat of team.seats) {
+    const planned = seatPlan(team, seat, recorded?.seats[seat.name], agents ?? [], workspaces, state === 'running');
+    // Only a seat this run creates a workspace for is placed, so only its folder can refuse the
+    // team: a stopped seat, one without a profile, one already ready, and one resumed into a live
+    // workspace start nowhere new.
+    const placed = planned.stage === undefined || !planned.pane;
+    if (planned.stopped || !profileFor(seat.cli) || planned.stage === 'ready' || !placed) {
+      seats.push(planned);
+      continue;
+    }
+    const start = seatStart(team, seat);
+    if ('problem' in start) {
+      if (!start.once || !refused.has(start.problem)) {
+        refused.add(start.problem);
+        refusals.push(start.problem);
+      }
+      continue;
+    }
+    seats.push({ ...planned, cwd: start.cwd, ...(start.lobby ? { lobby: true } : {}) });
+  }
   const watch = recorded?.watch;
   const plan = upPlan({
     root,
@@ -313,6 +334,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const host: Host = {
     startServer: launch.startServer,
     sessionUp: launch.sessionUp,
+    makeDir(path) {
+      try {
+        mkdirSync(path, { recursive: true });
+        return true;
+      } catch {
+        return false;
+      }
+    },
     createWorkspace: launch.createWorkspace,
     paneRun: launch.paneRun,
     typeLine: () => false,

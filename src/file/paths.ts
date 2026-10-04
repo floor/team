@@ -45,6 +45,21 @@ export function fixedFolder(pattern: string): string {
   return segments.join('/') || '.';
 }
 
+// The protected checkout `path` is in, or null. A checkout named "." is the project root, so every
+// path inside the project is inside it; every other entry names that folder and what lies under it.
+export function protectedBy(path: string, checkouts: readonly string[]): string | null {
+  const target = normalize(path);
+  for (const checkout of checkouts) {
+    const folder = normalize(checkout);
+    if (folder === '.') {
+      if (insideProject(target)) return checkout;
+      continue;
+    }
+    if (target === folder || target.startsWith(`${folder}/`)) return checkout;
+  }
+  return null;
+}
+
 // True when `path` is a trusted folder or lies under one.
 export function insideTrust(path: string, patterns: string[]): boolean {
   const target = normalize(path).split('/');
