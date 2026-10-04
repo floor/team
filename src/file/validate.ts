@@ -319,7 +319,7 @@ function readSeats(entry: YamlEntry | undefined, check: Check, trust: string[], 
   const seats: DraftSeat[] = [];
   for (const item of entry.value.items) {
     const fields = check.fields(item, 'a seat', [
-      'role', 'name', 'cli', 'vendor', 'model', 'version', 'display', 'launch', 'cwd', 'label', 'mode',
+      'role', 'name', 'cli', 'vendor', 'account', 'model', 'version', 'display', 'launch', 'cwd', 'label', 'mode',
       'parked', 'stopped', 'count',
     ]);
     if (item.kind !== 'map') continue;
@@ -333,6 +333,10 @@ function readSeats(entry: YamlEntry | undefined, check: Check, trust: string[], 
     if (!fields.get('cli')) check.fail(line, `${at}: cli is required`);
     const cli = check.oneOf(fields.get('cli'), `${at}: cli`, CLIS);
     const vendor = check.required(fields.get('vendor'), `${at}: vendor`, line);
+    // The account whose budget the seat spends, when the vendor's name is not it (§ 3b). Optional:
+    // absent, the seat spends its vendor, and the fingerprint of every file written so far is
+    // unchanged.
+    const account = check.text(fields.get('account'), `${at}: account`);
     const model = check.required(fields.get('model'), `${at}: model`, line);
     const version = readVersion(fields.get('version'), at, line, check);
     const launch = check.required(fields.get('launch'), `${at}: launch`, line);
@@ -359,6 +363,7 @@ function readSeats(entry: YamlEntry | undefined, check: Check, trust: string[], 
         declared: name,
         count,
         instance,
+        ...(account ? { account } : {}),
         ...(mode ? { mode } : {}),
       });
     }

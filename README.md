@@ -67,6 +67,7 @@ seats:
     name: codex-hello
     cli: codex
     vendor: openai
+    account: openai-hello     # the seat's account, when one vendor has two; absent, its vendor
     model: GPT Sol
     version: "6"
     display: GPT-6 Sol        # the vendor's spelling, for the signature
@@ -104,6 +105,8 @@ seats:
   and session links are always refused.
 - `seats[*].cli` picks the launch profile; `claude-code`, `codex`, `cursor` and `antigravity` are available, and `team
   doctor` says what the others still need. `vendor`, `model` and `version` spell one seat's model.
+  `account` names the budget account the seat spends when one vendor has two; without it, the seat
+  spends its `vendor`, and changing either is an edit the owner re-approves.
 - `launch` is the plain command, without approval flags: the profile adds them. `count: 2` makes the
   numbered names; `parked` keeps a seat out of idle reports, `stopped` keeps it out of `up`.
 - `workspace.mode` is `shared` (every seat in the project) or `worktree` (each task in its own
@@ -134,7 +137,9 @@ under ~/.cursor/projects for that folder; team writes no trust (.workspace-trust
 config.
 
 `budgets` is the owner's: marks (percent used), how long a figure stays fresh, and each
-account's reserve or floor. A `check` command is resolved to a file and hashed when the
+account's reserve or floor. A seat spends its own `account:` when the file names one, its `vendor`
+when it doesn't, so one vendor's two accounts are two buckets; a pattern names the account it
+measures, not the seat's. A `check` command is resolved to a file and hashed when the
 owner approves. A change to that file leaves that account's check unapproved: it is
 not run, and the account reads unknown, until the owner approves again. The rest of
 the file still runs. `watch.quota_marks` is still read, with a warning, until you move it to

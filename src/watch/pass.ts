@@ -158,6 +158,7 @@ export function pass({
       name: seat.name,
       cli: seat.cli,
       vendor: seat.vendor,
+      account: seat.account ?? seat.vendor,
       parked: seat.parked || seat.stopped,
       stopped: seat.stopped,
       seat,
@@ -165,11 +166,19 @@ export function pass({
     ...Object.entries(state.seats).filter(([, recorded]) => recorded.temporary).map(([name, recorded]) => {
       // A temporary seat signs like the seat it is like: its CLI, and its account.
       const like = team.seats.find((seat) => seat.name === recorded.temporary?.like);
-      return { name, cli: like?.cli ?? '', vendor: like?.vendor ?? '', parked: false, stopped: false, seat: undefined };
+      return {
+        name,
+        cli: like?.cli ?? '',
+        vendor: like?.vendor ?? '',
+        account: like?.account ?? like?.vendor ?? '',
+        parked: false,
+        stopped: false,
+        seat: undefined,
+      };
     }),
   ];
 
-  for (const { name, cli, vendor, parked, stopped, seat } of seats) {
+  for (const { name, cli, vendor, account, parked, stopped, seat } of seats) {
     const agent = live.agents.find((candidate) => candidate.name === name);
     const lead = name === team.coordinator || name === team.operator;
     if (!agent) {
@@ -182,6 +191,7 @@ export function pass({
         screen: { kind: 'unknown' },
         cli,
         vendor,
+        account,
         quota: [],
         running: false,
         quiet: false,
@@ -224,6 +234,7 @@ export function pass({
       screen,
       cli,
       vendor,
+      account,
       quota: quotaOf(cli, screen, pane),
       running: true,
       quiet,
@@ -240,13 +251,18 @@ export function pass({
 
   // The figures this pass saw, folded into the readings the project keeps (§ 4.3, § 4.4). Only an
   // account whose `sources` name `status_line` takes a screen reading: a check-only account never
-  // records one here, and neither does an account the budgets in force don't name (#50).
+  // records one here, and neither does an account the budgets in force don't name (#50). A figure
+  // names the account its pattern measures (§ 3b): one that measures this seat's vendor is this
+  // seat's account — its own `account:` when the file names one, so two accounts of one vendor
+  // keep two buckets — while a figure on another account (a launcher showing the vendor it really
+  // runs on) stays that account's, whichever seat's screen showed it.
   let readings = stored.slice();
   for (const seat of observations) {
     if (!seat.running) continue;
     for (const figure of seat.quota) {
-      if (budgets.accounts[figure.account]?.sources.includes('status_line')) {
-        readings = observe(readings, figure, seat.name, now);
+      const account = figure.account === seat.vendor ? seat.account : figure.account;
+      if (budgets.accounts[account]?.sources.includes('status_line')) {
+        readings = observe(readings, { ...figure, account }, seat.name, now);
       }
     }
   }

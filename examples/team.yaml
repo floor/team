@@ -49,6 +49,7 @@ seats:
     label: codex
     cli: codex
     vendor: openai
+    account: openai-team       # the seat's account, when one vendor has two; absent, its vendor
     model: GPT Comet
     version: "3"
     display: GPT-3 Comet       # the vendor's spelling, for the signature
