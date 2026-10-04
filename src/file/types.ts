@@ -78,6 +78,8 @@ export type TeamFile = {
     nudgeWait: number;
     unsentAfter: number;
     quotaMarks: number[];
+    // The checks this file turns off, by name. The four that can't be turned off never appear.
+    checks: string[];
   };
   budgets: {
     staleAfter: number;

@@ -17,7 +17,16 @@ export const OWNER_SECTIONS = [
   'visibility',
   'tools',
   'budgets',
+  // Turning a watch check off is the owner's, and only theirs: the file's checks are digested
+  // where they stand, under `watch`, so a section of their own.
+  'watch.checks',
 ] as const;
+
+/** One owner section, read from the file; `watch.checks` sits inside `watch`, not at the top. */
+function sectionOf(team: Approvable, name: string): unknown {
+  if (name === 'watch.checks') return (team.watch as { checks?: unknown } | undefined)?.checks ?? [];
+  return team[name];
+}
 
 /**
  * Seat fields that change without a new approval: what `remove --keep` and
@@ -56,7 +65,7 @@ function digest(value: unknown): string {
 /** A fingerprint of each owner-only section and of each seat. */
 export function fingerprints(team: Approvable): Fingerprints {
   const sections: Record<string, string> = {};
-  for (const section of OWNER_SECTIONS) sections[section] = digest(team[section]);
+  for (const section of OWNER_SECTIONS) sections[section] = digest(sectionOf(team, section));
 
   const seats: Record<string, string> = {};
   for (const seat of team.seats) {
@@ -77,7 +86,10 @@ export type Difference =
 export function compare(approved: Fingerprints, current: Fingerprints): Difference[] {
   const differences: Difference[] = [];
   for (const name of OWNER_SECTIONS) {
-    if (approved.sections[name] !== current.sections[name]) differences.push({ kind: 'section', name });
+    // An approval recorded before `watch.checks` existed approved a file that turned nothing off:
+    // read it that way, so the section's arrival alone is not a difference.
+    const before = approved.sections[name] ?? (name === 'watch.checks' ? digest([]) : undefined);
+    if (before !== current.sections[name]) differences.push({ kind: 'section', name });
   }
   for (const [name, fingerprint] of Object.entries(current.seats)) {
     if (!Object.hasOwn(approved.seats, name)) differences.push({ kind: 'seat-new', name });
@@ -85,6 +97,13 @@ export function compare(approved: Fingerprints, current: Fingerprints): Differen
   }
   return differences;
 }
+
+/**
+ * The line `describe` prints when `watch.checks` itself is the difference. `pass` reads it to
+ * keep the checks running until the owner approves an edit that would turn one off: nothing is
+ * turned off until the owner approves (RFC 0002 § 4.2).
+ */
+export const WATCH_CHECKS_CHANGED = '`watch.checks` changed';
 
 /** One line per difference, as `status`, `doctor` and the refusals print it. */
 export function describe(difference: Difference): string {

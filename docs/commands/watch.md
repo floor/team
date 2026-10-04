@@ -251,11 +251,21 @@ $ team watch ; echo "exit $?"
 exit 0
 ```
 
+A check the team doesn't want is turned off in `watch.checks` — a section only the owner changes,
+so it is approved like the rest of them. The machine below sits at 8% free memory, and this file
+turns that one report off — but the edit is not approved yet, so nothing is turned off: the report
+still comes, with the difference beside it.
+
 ```yaml file=.agents/team.yaml
 format: 1
 project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
+
+watch:
+  interval: 120s
+  checks:
+    memory: off
 
 workspace:
   mode: shared
@@ -280,6 +290,43 @@ seats:
     launch: claude --model claude-opus-5-5
 ```
 
+```console machine=tight
+$ team watch ; echo "exit $?"
+2026-10-04T09:00:00.000Z watching the session "beacon" every 120s
+2026-10-04T09:00:00.000Z the file differs from the approved one: `watch.checks` changed
+2026-10-04T09:00:00.000Z free memory is 8%, below 15%
+2026-10-04T09:00:00.000Z the watch of "beacon" stopped
+exit 0
+```
+
+The owner approves it, and the next pass runs without the check:
+
+```console
+$ team approve ; echo "exit $?"
+./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
+
+  + 6: watch:
+  + 7:   interval: 120s
+  + 8:   checks:
+  + 9:     memory: off
+  + 10: 
+
+Needs a new approval: `watch.checks` changed.
+Ceilings this approval fixes: 4 seats at most, 2 temporary.
+Seats: 2 (claude-keeper, claude-beacon).
+
+Type the number of seats (2) to approve this file, and its commands and rules, to run: 2
+Approved. The record is in ~/.config/team/beacon-<hash>; check the rest with `team doctor`.
+exit 0
+```
+
+```console machine=tight
+$ team watch ; echo "exit $?"
+2026-10-04T09:00:00.000Z watching the session "beacon" every 120s
+2026-10-04T09:00:00.000Z the watch of "beacon" stopped
+exit 0
+```
+
 `up` leaves a watch running in its own pane, so a second one refuses rather than reading the same
 session twice:
 
@@ -292,4 +339,51 @@ exit 0
 $ team watch ; echo "exit $?"
 team watch: a watch already runs for the session "beacon" (pid 4242)
 exit 1
+```
+
+The four that can't be turned off — `attention`, `missing`, `model-drift` and `approval` — are
+refused by the schema itself, with the line, and so is a name that is no check. `team approve`
+refuses such a file the same way, and the watch keeps the last copy that validated, with the
+checks as the owner approved them.
+
+```yaml file=.agents/team.yaml
+format: 1
+project: beacon
+coordinator: claude-keeper
+operator: claude-keeper
+
+watch:
+  interval: 120s
+  checks:
+    attention: off
+    disks: off
+
+workspace:
+  mode: shared
+
+seats:
+  - role: coordinator
+    name: claude-keeper
+    label: coordinator
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+
+  - role: implementer
+    name: claude-beacon
+    label: implementer
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+```
+
+```console
+$ team approve ; echo "exit $?"
+team approve: line 9: watch.checks can't turn off attention: attention, missing, model-drift, approval always run
+team approve: line 10: unknown check "disks" in watch.checks: the checks are missing, model-drift, attention, unsent, idle, extra, team-idle, approval, load, memory, disk, swap-free, swap-growth
+exit 2
 ```
