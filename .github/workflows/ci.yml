@@ -10,7 +10,13 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # The two systems the watch reads: Linux answers from /proc, macOS from its own commands.
+    # Both run the same `bun run ci`, so neither path rots unseen.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -23,11 +29,8 @@ jobs:
         with:
           node-version: 22
       - run: bun install --frozen-lockfile
-      - run: bun run typecheck
-      - run: bun test
-      - run: bun run build
-      - name: The built command runs on Node
-        run: node dist/cli.js --version
+      # The live-herdr tests skip themselves: TEAM_LIVE_UP is not set here.
+      - run: bun run ci
       - name: Every commit and the pull request body are signed
         env:
           EVENT: ${{ github.event_name }}
