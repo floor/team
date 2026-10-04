@@ -360,6 +360,43 @@ describe('Antigravity folded rules paste', () => {
     expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
     expect(d.calls).toEqual([RULES]);
   });
+
+  test('a rule-looking row after the true tail gets no Enter', async () => {
+    // The pane holds one row the fold read does not cover. Before the frame was read this
+    // way, the first rule-looking row under the marker ended the fold, so the row — and
+    // everything between it and the box's real bottom rule — was dropped from the read.
+    const d = foldedPane((screen) => screen.replace('wait for your brief.\n', `wait for your brief.\n${'─'.repeat(54)}\n`));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('two rule-looking rows after the true tail get no Enter', async () => {
+    const d = foldedPane((screen) => screen.replace('wait for your brief.\n', `wait for your brief.\n${'─'.repeat(54)}\n${'─'.repeat(54)}\n`));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('a heavy rule-looking row after the true tail gets no Enter', async () => {
+    const d = foldedPane((screen) => screen.replace('wait for your brief.\n', `wait for your brief.\n${'━'.repeat(54)}\n`));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('an indented rule-looking row after the true tail counts as content', async () => {
+    // Drawn at the content column it is no rule at all: it is a row of the tail the typed
+    // text does not have, so the box is not the text and there is no Enter.
+    const d = foldedPane((screen) => screen.replace('wait for your brief.\n', `wait for your brief.\n  ${'─'.repeat(54)}\n`));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
+
+  test('a rule-looking row between the opening rule and the marker gets no Enter', async () => {
+    // Two rule rows stacked with the marker under the lower one: no capture shows that, and
+    // the read cannot tell which rule opens the box, so it fails closed.
+    const d = foldedPane((screen) => screen.replace('↑ 21 more lines', `${'─'.repeat(54)}\n↑ 21 more lines`));
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+  });
 });
 
 describe('Antigravity permission prompt in watch and down', () => {
