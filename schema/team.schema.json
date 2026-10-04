@@ -512,6 +512,22 @@
           },
           "trusted_publishing": {
             "type": "boolean"
+          },
+          "linear_project": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "linear_keychain_service": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "activity_file": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "activity_marker": {
+            "type": "string",
+            "maxLength": 200
           }
         },
         "required": [
@@ -519,7 +535,7 @@
           "github"
         ]
       },
-      "$comment": "the packages `team release check` verifies; the validator also refuses a package named twice and a non-boolean trusted_publishing"
+      "$comment": "the packages `team release check` verifies; the validator also refuses a package named twice, a non-boolean trusted_publishing, half of the linear or activity pair, and a malformed project, service, file or marker"
     }
   }
 }

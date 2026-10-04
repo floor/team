@@ -6,18 +6,30 @@
 // them unknown, then missing, then pass. A read an upstream missing makes unformable is not
 // required and is not requested; one an upstream unknown makes unformable is unknown.
 import { hasPrerelease } from './grammar.ts';
-import type { Attempt, Fetch } from './http.ts';
+import type { Attempt, Fetch, RequestOptions } from './http.ts';
+import type { KeyReader } from './keychain.ts';
 import type { ReleaseDecl } from '../file/sections/releases.ts';
 
 export type Status = 'pass' | 'missing' | 'unknown';
 export type Outcome = { status: Status; detail: string };
-export type ReleaseResult = { npm: Outcome; tag: Outcome; github: Outcome; changelog: Outcome };
+export type ReleaseResult = {
+  npm: Outcome;
+  tag: Outcome;
+  github: Outcome;
+  changelog: Outcome;
+  /** Present exactly when the file configures the pair. */
+  linear?: Outcome;
+  activity?: Outcome;
+};
 
-/** One command's budget: at most eleven endpoint reads and twenty-two HTTP attempts, retries included. */
-export const READ_CAP = 11;
-export const ATTEMPT_CAP = 22;
+/** One command's budget: at most thirteen endpoint reads and twenty-six HTTP attempts, retries included. */
+export const READ_CAP = 13;
+export const ATTEMPT_CAP = 26;
 
 export type Caps = { reads: number; attempts: number };
+
+/** What one run is wired with beyond the network: the Keychain reader, and caps for tests. */
+export type CheckDeps = { keyReader?: KeyReader; caps?: Caps };
 
 const PROVENANCE = 'https://slsa.dev/provenance/v1';
 
