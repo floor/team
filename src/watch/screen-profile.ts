@@ -11,6 +11,7 @@ export type ComposerReading = {
 /**
  * Every hatch predicate is monotone toward caution, running alongside the data stage for unknown, trust, permission, question, and working so a hatch can only add caution, never remove it.
  * A composer comes from data or from the hatch, never both, and a profile that has a data composer while its screen_module exports a composer is refused at load.
+ * The guarantees cover what a hatch returns and what load accepts; a hatch is trusted package code, not a sandbox.
  */
 export interface ScreenProfile {
   unknown?: (lines: string[]) => boolean;
