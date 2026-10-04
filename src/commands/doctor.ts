@@ -1,16 +1,19 @@
 import { spawnSync } from 'node:child_process';
-import { accessSync, constants } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { approvalDifferences, budgetsInForce, watchInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { checkReadings } from '../budgets/checks.ts';
+import { callerOf, isOwner, type Caller } from '../caller.ts';
+import { checkCommands, type ApprovedCheck } from '../budgets/checks.ts';
+import { parseOutput, runCommand, type CheckReading } from '../budgets/run.ts';
 import { loadTeamFile } from '../file/load.ts';
-import type { Seat, TeamFile } from '../file/types.ts';
+import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
 import { HERDR_TESTED, herdrVersion, sessionRunning } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { profileFor } from '../profiles/index.ts';
-import { versionVerdict, type Profile } from '../profiles/profile.ts';
+import { quotaFor, versionVerdict, type Profile } from '../profiles/profile.ts';
 import { readState } from '../state.ts';
 import { readApproval, storePath } from '../store/store.ts';
 
@@ -26,6 +29,9 @@ export type DoctorSources = {
   sessionRunning(session: string): boolean | null;
   now(): Date;
   home: string;
+  // One approved check's raw stdout, or null when it failed or timed out. Absent: the real
+  // runner, the same one the watch uses. The raw bytes are parsed and dropped, never returned.
+  runCheck?(path: string): string | null;
 };
 
 export type CommandRunner = (binary: string, args: string[]) => { status: number | null; stdout: string } | null;
@@ -67,6 +73,7 @@ export const realSources: DoctorSources = {
   sessionRunning,
   now: () => new Date(),
   home: homedir(),
+  runCheck: (path) => runCommand(path),
 };
 
 export const USAGE = 'Usage: team doctor [--session <name>] [--file <path>] [--login]\n';
@@ -104,14 +111,90 @@ function launchBinary(launch: string): string | null {
   );
 }
 
+// The approved bytes rule, as the watch applies it (budgets/checks.ts): a check whose file no
+// longer hashes to the approval is not the approved check, and is not run.
+function changedSinceApproval(check: ApprovedCheck): boolean {
+  try {
+    if (!statSync(check.path).isFile()) return true;
+    return createHash('sha256').update(readFileSync(check.path)).digest('hex') !== check.hash;
+  } catch {
+    return true;
+  }
+}
+
 function checkFindings(team: TeamFile, root: string, home: string): Finding[] {
   const record = readApproval(storePath(team.project, root, home));
   if (!record) return [];
-  return checkReadings(budgetsInForce(team, root, home), record.approval.checks).flatMap((reading) =>
-    reading.state === 'unknown'
-      ? [{ level: 'warn' as const, text: `the check for ${reading.account} is unapproved; that account reads unknown` }]
-      : [],
-  );
+  const approved = record.approval.checks;
+  return checkCommands(budgetsInForce(team, root, home)).flatMap(({ account }) => {
+    const known = approved?.[account];
+    if (!known) {
+      return [{ level: 'warn' as const, text: `the check for ${account} is unapproved; that account reads unknown` }];
+    }
+    if (changedSinceApproval(known)) {
+      return [{ level: 'warn' as const, text: `the check for ${account} changed after approval and was not run; that account reads unknown` }];
+    }
+    return [];
+  });
+}
+
+// The CLIs of the seats that spend an account: its own `account:` when the file names one, its
+// vendor otherwise — the gate's resolution.
+function clisOf(team: TeamFile, account: string): string[] {
+  return team.seats.filter((seat) => (seat.account ?? seat.vendor) === account).map((seat) => seat.cli);
+}
+
+function figureOf(reading: CheckReading): string {
+  if (reading.kind === 'spend') return `${reading.amount.toFixed(2)} ${reading.currency}`;
+  return reading.windows.map((one) => `${one.window} ${one.used}% used`).join(', ');
+}
+
+/**
+ * The budget checks, one line per account, plus the accounts nothing can read. The checks run
+ * the way the watch runs them (RFC 0003 § 5): the approved command's file, hashed again before
+ * it runs, in a clean environment with the watch's timeout. The raw output is parsed and
+ * dropped — never printed, never logged, never written anywhere. Only the owner's `doctor` runs
+ * a check, for the same reason the watch is the owner's: a check reads a vendor home. Any other
+ * caller gets the same report without the readings, and the one line that says so.
+ */
+export function budgetCheckFindings(team: TeamFile, root: string, sources: DoctorSources, caller: Caller): Finding[] {
+  const budgets = budgetsInForce(team, root, sources.home);
+  const findings: Finding[] = [];
+  // An account nothing can read: its sources name the status line but no seat of its CLIs
+  // ships a quota pattern for it, or they name a check with no command. A file that names a
+  // `check` source without a command is refused on read; the guard is for the type, not the file.
+  for (const [name, account] of Object.entries(budgets.accounts)) {
+    const noPattern = account.sources.includes('status_line') && !clisOf(team, name).some((cli) => quotaFor(cli).some((one) => one.account === name));
+    const noCommand = account.sources.includes('check') && account.check === null;
+    if (noPattern || noCommand) findings.push({ level: 'warn', text: `${name}: no pattern can read this account` });
+  }
+  const commands = checkCommands(budgets);
+  if (!isOwner(caller)) {
+    if (commands.length) findings.push({ level: 'note', text: 'the budget checks were not run: only the owner runs them' });
+    return findings;
+  }
+  const record = readApproval(storePath(team.project, root, sources.home));
+  if (!record) return findings;
+  const run = sources.runCheck ?? runCommand;
+  const now = sources.now().getTime();
+  for (const { account } of commands) {
+    const known = record.approval.checks?.[account];
+    const entry: BudgetAccount | undefined = budgets.accounts[account];
+    // Unapproved and changed checks are said above, and never run.
+    if (!known || !entry || changedSinceApproval(known)) continue;
+    const text = run(known.path);
+    if (text === null) {
+      findings.push({ level: 'warn', text: `the check for ${account} failed or timed out; that account reads unknown` });
+      continue;
+    }
+    const reading = parseOutput(entry, text, now);
+    findings.push(
+      reading
+        ? { level: 'ok', text: `the check for ${account} reads ${figureOf(reading)}` }
+        : { level: 'warn', text: `the check for ${account} broke its output contract; that account reads unknown` },
+    );
+  }
+  return findings;
 }
 
 function approvalFindings(team: TeamFile, root: string, home: string): Finding[] {
@@ -179,6 +262,30 @@ function watchFindings(watch: TeamFile['watch'], dir: string, session: string, r
   return [{ level: 'ok', text: 'the watch is running' }];
 }
 
+// The session already carries the project, so a seat whose name or label repeats either is a
+// warning, never a refusal. One line per seat, naming the field.
+export function seatNameFindings(team: TeamFile, session: string): Finding[] {
+  const needles = [...new Set([team.project, session].filter((value) => value !== ''))];
+  const findings: Finding[] = [];
+  for (const seat of team.seats) {
+    const hits = (['name', 'label'] as const).map((field) => ({
+      field,
+      found: needles.filter((needle) => seat[field].toLowerCase().includes(needle.toLowerCase())),
+    })).filter((hit) => hit.found.length > 0);
+    if (hits.length === 0) continue;
+    const same = hits.length === 2 && hits[0]?.found.join('\0') === hits[1]?.found.join('\0');
+    const which = same
+      ? `its name and its label repeat ${quoted(hits[0]?.found ?? [])}`
+      : hits.map((hit) => `its ${hit.field} repeats ${quoted(hit.found)}`).join(' and ');
+    findings.push({ level: 'warn', text: `${seat.name}: ${which}; the session already carries it` });
+  }
+  return findings;
+}
+
+function quoted(values: string[]): string {
+  return values.map((value) => `"${value}"`).join(' and ');
+}
+
 export function doctorFindings(
   team: TeamFile,
   root: string,
@@ -188,13 +295,16 @@ export function doctorFindings(
   warnings: { line: number; message: string }[],
   /** The file as approved. `add` hands the team about to run, whose `stopped` mark is already cleared. */
   approved: TeamFile = team,
+  /** The budget-check lines, which only the report runs: `up` and `add` scan, they never run a check. */
+  budgetChecks: Finding[] = [],
 ): Finding[] {
   const findings: Finding[] = warnings.map((warning) => ({
     level: 'warn',
     text: `the file, line ${warning.line}: ${warning.message}`,
   }));
+  findings.push(...seatNameFindings(team, session));
 
-  findings.push(...approvalFindings(approved, root, sources.home), ...checkFindings(team, root, sources.home));
+  findings.push(...approvalFindings(approved, root, sources.home), ...checkFindings(team, root, sources.home), ...budgetChecks);
 
   const herdr = sources.herdrVersion();
   const running = herdr === null ? null : sources.sessionRunning(session);
@@ -264,7 +374,16 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
   const session = args.values.session ?? team.session;
   const findings = args.flags.has('login')
     ? doctorLoginFindings(team, sources)
-    : doctorFindings(team, root, dirname(loaded.path), session, sources, loaded.warnings);
+    : doctorFindings(
+        team,
+        root,
+        dirname(loaded.path),
+        session,
+        sources,
+        loaded.warnings,
+        undefined,
+        budgetCheckFindings(team, root, sources, callerOf(io)),
+      );
 
   const label: Record<Level, string> = { ok: 'ok  ', warn: 'warn', miss: 'MISS', note: '--  ' };
   io.stdout(findings.map((finding) => `${label[finding.level]}  ${finding.text}\n`).join(''));

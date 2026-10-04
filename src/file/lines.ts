@@ -1,5 +1,6 @@
 // Edits the team file by the line. Comments, order and every other seat stay as written.
 // Nothing here re-serialises the file.
+import { defaultLabel } from './validate.ts';
 
 export type SeatBlock = {
   start: number;
@@ -107,13 +108,23 @@ export function rewriteCount(text: string, declared: string): string | null {
   if (!block) return null;
   const lines = body(text, block);
   const label = field(lines, 'label');
+  const model = field(lines, 'model');
+  const version = field(lines, 'version');
+  // A counted seat with no label is titled with the model. Later instances need that title
+  // written out, or they collide with the first on the same default.
+  const implied = label === null && model !== null && version !== null ? defaultLabel(model, version) : null;
   const copies: string[] = [];
   for (let instance = 1; instance <= block.count; instance++) {
     const suffix = instance === 1 ? '' : `-${instance}`;
     copies.push(...lines.flatMap((line) => {
       if (/^\s*count:/.test(line)) return [];
       if (instance === 1) return [line];
-      if (/^\s*(?:-\s+)?name:/.test(line)) return [setValue(line, `${declared}${suffix}`)];
+      if (/^\s*(?:-\s+)?name:/.test(line)) {
+        const renamed = [setValue(line, `${declared}${suffix}`)];
+        if (implied === null) return renamed;
+        const pad = /^(\s*)/.exec(line)?.[1] ?? '';
+        return [...renamed, `${pad}label: ${implied}${suffix}`];
+      }
       if (label !== null && /^\s*label:/.test(line)) return [setValue(line, `${label}${suffix}`)];
       return [line];
     }));
