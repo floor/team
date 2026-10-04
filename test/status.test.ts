@@ -32,8 +32,8 @@ function built(): Live {
       agent('deepseek-acme-2', 'w4'),
     ],
     workspaces: [
-      { id: 'w1', label: 'claude-coordinator-acme' }, { id: 'w2', label: 'codex-acme' },
-      { id: 'w3', label: 'deepseek-acme' }, { id: 'w4', label: 'deepseek-acme-2' }, { id: 'w9', label: 'watchdog' },
+      { id: 'w1', label: 'claude opus 5.5' }, { id: 'w2', label: 'gpt sol 6' },
+      { id: 'w3', label: 'deepseek flash v4.1' }, { id: 'w4', label: 'deepseek flash v4.1-2' }, { id: 'w9', label: 'watchdog' },
     ],
     screens: { 'w1:p1': claudeScreen('Opus 5.5') },
   };
@@ -115,8 +115,8 @@ describe('team status', () => {
     const agents = built().agents.map((one) => (one.name === 'deepseek-acme' ? { ...one, name: null } : one.name === 'codex-acme' ? { ...one, name: 'codex-old' } : one));
     live = { ...built(), agents };
     const { out } = await status();
-    expect(out).toContain('deepseek-acme: the agent in its workspace "deepseek-acme" is unnamed\n  repair: herdr --session acme-web agent rename w3:p1 deepseek-acme');
-    expect(out).toContain('codex-acme: the agent in its workspace "codex-acme" is named "codex-old"');
+    expect(out).toContain('deepseek-acme: the agent in its workspace "deepseek flash v4.1" is unnamed\n  repair: herdr --session acme-web agent rename w3:p1 deepseek-acme');
+    expect(out).toContain('codex-acme: the agent in its workspace "gpt sol 6" is named "codex-old"');
     expect(out).toContain('2 difference(s)');
   });
 

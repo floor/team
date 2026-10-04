@@ -33,6 +33,7 @@ workspace:
 seats:
   - role: coordinator
     name: lead
+    label: lead
     cli: claude-code
     vendor: anthropic
     model: Claude Opus
@@ -40,6 +41,7 @@ seats:
     launch: claude --model claude-opus-5-5
   - role: implementer
     name: worker
+    label: worker
     cli: claude-code
     vendor: anthropic
     model: Claude Opus

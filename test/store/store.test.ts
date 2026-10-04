@@ -229,7 +229,10 @@ describe('a file against its approval', () => {
     const entry =
       /  - role: implementer\n    name: deepseek-acme\n[\s\S]*?\n    count: 2[^\n]*\n/.exec(text)?.[0] ?? '';
     const one = entry.replace(/    count: 2[^\n]*\n/, '');
-    const explicit = text.replace(entry, `${one}\n${one.replace('name: deepseek-acme', 'name: deepseek-acme-2')}`);
+    const second = one
+      .replace('name: deepseek-acme', 'name: deepseek-acme-2')
+      .replace('    name: deepseek-acme-2\n', '    name: deepseek-acme-2\n    label: deepseek flash v4.1-2\n');
+    const explicit = text.replace(entry, `${one}\n${second}`);
     expect(explicit).not.toBe(text);
     expect(team(explicit).seats.map((seat) => seat.name)).toEqual(team(text).seats.map((seat) => seat.name));
     expect(approvalDifferences(team(explicit), home, home)).toEqual([]);

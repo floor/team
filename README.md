@@ -39,8 +39,8 @@ By example:
 ```yaml
 format: 1                     # the only format this version reads
 project: hello
-coordinator: claude-coord     # the seat that dispatches work
-operator: claude-coord        # the seat the watch reports to
+coordinator: coordinator      # the seat that dispatches work
+operator: coordinator         # the seat the watch reports to
 
 identity:
   signature:
@@ -59,7 +59,7 @@ workspace:
 
 seats:
   - role: coordinator
-    name: claude-coord
+    name: coordinator
     cli: claude-code          # the launch profile
     vendor: anthropic         # the model's maker
     model: Claude Opus        # the model's name, without its version
@@ -67,7 +67,7 @@ seats:
     launch: claude --model claude-opus-5-5   # no approval flags: the profile adds them
 
   - role: implementer
-    name: codex-hello
+    name: implementer
     cli: codex
     vendor: openai
     account: openai-hello     # the seat's account, when one vendor has two; absent, its vendor
@@ -78,17 +78,17 @@ seats:
     parked: true              # running, and not reported while idle
 
   - role: implementer
-    name: deepseek-hello
+    name: implementer-deepseek
     cli: claude-code          # DeepSeek's model, run by Claude Code
     vendor: deepseek
     model: DeepSeek Flash
     version: "V4.1"
     display: DeepSeek V4.1 Flash
     launch: team-deepseek     # a launcher on the PATH, holding the account's key and endpoint
-    count: 2                  # deepseek-hello and deepseek-hello-2
+    count: 2                  # implementer-deepseek and implementer-deepseek-2
 
   - role: reviewer
-    name: grok-hello
+    name: reviewer
     cli: grok
     vendor: xai
     model: Grok
@@ -98,7 +98,7 @@ seats:
 
 budgets:                      # the owner's: reserve or floor per account, marks, freshness
   accounts:
-    openai-hello:             # the account codex-hello spends
+    openai-hello:             # the account implementer spends
       kind: subscription
       reserve: 10%            # refuse a launch on a figure inside it
       sources: [status_line]  # the figure comes off Codex's status line
@@ -124,6 +124,15 @@ budgets:                      # the owner's: reserve or floor per account, marks
   starts in the lobby — the parent of `workspace.path` with `.lobby` beside the worktrees, inside
   `trust` and outside every protected checkout — never in the project root; `up` and `add` refuse a
   seat whose folder, lobby included, would be protected or untrusted.
+
+### Naming seats
+
+The herdr session carries the project, so a seat's name is its role: `coordinator`, `implementer`,
+`reviewer`. When a role is used twice, the model is added: `implementer-deepseek`. The label is the
+herdr workspace title. Left out of the file, it is the model and version in lowercase
+(`claude opus 5.5`), taken from that seat's own fields, so a model change retitles the pane. A
+label written in the file is kept. `team doctor` warns, and does not refuse the file, when a name
+or a label repeats the project or the session.
 
 The Codex profile is tested with CLI 0.157.0. Its status line is read for a weekly figure
 (`weekly N% left`) when the pane is wide enough to show the number; a cut line is not a figure.

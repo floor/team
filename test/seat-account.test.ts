@@ -43,6 +43,7 @@ seats:
     launch: claude --model claude-opus-5-5
   - role: implementer
     name: codex-work
+    label: codex-work
     cli: codex
     vendor: openai
     account: openai-work
@@ -51,6 +52,7 @@ seats:
     launch: codex
   - role: implementer
     name: codex-home
+    label: codex-home
     cli: codex
     vendor: openai
     account: openai-home
