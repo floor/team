@@ -19,121 +19,149 @@
     "antigravity": {
       "idle": {
         "real": 2,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "working": {
         "real": 1,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "unsent": {
         "real": 2,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "permission": {
         "real": 0,
-        "constructed": 2
+        "constructed": 2,
+        "undocumented": 0
       },
       "question": {
         "real": 0,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "trust": {
         "real": 1,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "unknown": {
         "real": 1,
-        "constructed": 1
+        "constructed": 1,
+        "undocumented": 0
       }
     },
     "claude-code": {
       "idle": {
         "real": 2,
-        "constructed": 2
+        "constructed": 2,
+        "undocumented": 0
       },
       "working": {
         "real": 1,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "unsent": {
         "real": 3,
-        "constructed": 2
+        "constructed": 2,
+        "undocumented": 0
       },
       "permission": {
         "real": 0,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "question": {
         "real": 0,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "trust": {
         "real": 1,
-        "constructed": 1
+        "constructed": 1,
+        "undocumented": 0
       },
       "unknown": {
         "real": 1,
-        "constructed": 11
+        "constructed": 11,
+        "undocumented": 0
       }
     },
     "codex": {
       "idle": {
         "real": 2,
-        "constructed": 1
+        "constructed": 1,
+        "undocumented": 0
       },
       "working": {
         "real": 1,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "unsent": {
         "real": 2,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "permission": {
         "real": 1,
-        "constructed": 1
+        "constructed": 1,
+        "undocumented": 0
       },
       "question": {
         "real": 1,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "trust": {
         "real": 1,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "unknown": {
         "real": 2,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       }
     },
     "cursor": {
       "idle": {
         "real": 3,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "working": {
         "real": 2,
-        "constructed": 5
+        "constructed": 5,
+        "undocumented": 0
       },
       "unsent": {
         "real": 2,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "permission": {
         "real": 0,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "question": {
         "real": 0,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "trust": {
         "real": 1,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       },
       "unknown": {
         "real": 1,
-        "constructed": 0
+        "constructed": 0,
+        "undocumented": 0
       }
     }
   },

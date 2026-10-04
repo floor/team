@@ -1,12 +1,14 @@
 // The capture coverage matrix: for each CLI and screen kind, how many conformance fixtures are
-// real captures and how many are constructed. Provenance is the fixture folders' READMEs — a
-// bullet or paragraph whose own subject says the file was built, transcribed or not captured
-// marks that subject constructed; under a Constructed heading the bullets need no marker. Every
-// other manifest fixture is a real capture.
+// real captures, how many are constructed, and how many no README mentions. Provenance is the
+// fixture folders' READMEs — a bullet or paragraph whose own subject says the file was built,
+// transcribed or not captured marks that subject constructed; under a Constructed heading the
+// bullets need no marker. A fixture its README never names is undocumented, not real: the
+// matrix decides which real captures get taken, so an unproven file must never count as one.
 //
 //   bun run coverage           prints the matrix
 //   bun run coverage --json    writes contract/capture-coverage.json
-//   bun run coverage --check   regenerates that file and fails on any difference
+//   bun run coverage --check   regenerates that file and fails on any difference, and fails
+//                              while any manifest fixture is undocumented
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,15 +38,17 @@ function backticked(text: string): string[] {
   return names;
 }
 
-/** The names one README marks as constructed. */
-function constructedOf(readme: string): Set<string> {
+/** What one README says: the names it marks constructed, and every name it mentions. */
+function readOf(readme: string): { constructed: Set<string>; mentioned: Set<string> } {
   const constructed = new Set<string>();
+  const mentioned = new Set<string>();
   let inConstructed = false;
   let bullet = false;
   let block: string[] = [];
   const flush = () => {
     if (block.length === 0) return;
     const text = block.join(' ');
+    for (const name of backticked(text)) mentioned.add(name);
     const marker = MARKERS.exec(text);
     let subjects: string[] = [];
     if (marker) {
@@ -53,9 +57,10 @@ function constructedOf(readme: string): Set<string> {
       subjects = backticked(text.slice(0, marker.index));
     } else if (inConstructed && bullet) {
       // Under a Constructed heading the bullets need no marker of their own; their subject is
-      // the names they lead with.
+      // the names they lead with, or the first name when the bullet has no colon.
       const colon = text.indexOf(':');
-      subjects = colon === -1 ? [] : backticked(text.slice(0, colon));
+      const names = backticked(text);
+      subjects = colon === -1 ? names.slice(0, 1) : backticked(text.slice(0, colon));
     }
     for (const name of subjects) constructed.add(name);
     block = [];
@@ -64,9 +69,13 @@ function constructedOf(readme: string): Set<string> {
     const heading = /^#{1,6}\s+(.*)$/.exec(line);
     if (heading) {
       flush();
-      inConstructed = /constructed/i.test(heading[1] ?? '');
+      const title = heading[1] ?? '';
+      inConstructed = /constructed/i.test(title);
       // A heading can name its own subject, as "Constructed: `permission-pinned.txt`".
-      if (inConstructed) for (const name of backticked(heading[1] ?? '')) constructed.add(name);
+      for (const name of backticked(title)) {
+        mentioned.add(name);
+        if (inConstructed) constructed.add(name);
+      }
       continue;
     }
     if (/^[-*]\s/.test(line)) {
@@ -83,7 +92,7 @@ function constructedOf(readme: string): Set<string> {
     block.push(line);
   }
   flush();
-  return constructed;
+  return { constructed, mentioned };
 }
 
 /** The deepest README governing a fixture: its own folder's, or the CLI's above it. */
@@ -96,20 +105,22 @@ function readmeOf(file: string): string {
   throw new Error(`${file}: no README in its folder, so its provenance cannot be read`);
 }
 
-const cache = new Map<string, Set<string>>();
-/** Whether the manifest names this fixture as constructed, by its folder's README. */
-function isConstructed(file: string): boolean {
+const cache = new Map<string, { constructed: Set<string>; mentioned: Set<string> }>();
+/** Constructed, real, or undocumented — by the fixture's folder's README. */
+function provenanceOf(file: string): Provenance {
   const readme = readmeOf(file);
-  let names = cache.get(readme);
-  if (!names) {
-    names = constructedOf(readFileSync(readme, 'utf8'));
-    cache.set(readme, names);
+  let read = cache.get(readme);
+  if (!read) {
+    read = readOf(readFileSync(readme, 'utf8'));
+    cache.set(readme, read);
   }
-  return names.has(file.split('/').at(-1) ?? '');
+  const name = file.split('/').at(-1) ?? '';
+  if (read.constructed.has(name)) return 'constructed';
+  return read.mentioned.has(name) ? 'capture' : 'undocumented';
 }
 
-type Provenance = 'capture' | 'constructed';
-type Cell = { real: number; constructed: number };
+type Provenance = 'capture' | 'constructed' | 'undocumented';
+type Cell = { real: number; constructed: number; undocumented: number };
 
 /** The whole matrix, from the manifest and the READMEs. */
 function matrix(): {
@@ -121,7 +132,7 @@ function matrix(): {
   const clis = [...new Set(manifest.screens.map((screen) => screen.cli))].sort();
   const cells: Record<string, Record<Kind, Cell>> = {};
   for (const cli of clis) {
-    cells[cli] = Object.fromEntries(KINDS.map((kind) => [kind, { real: 0, constructed: 0 }])) as Record<Kind, Cell>;
+    cells[cli] = Object.fromEntries(KINDS.map((kind) => [kind, { real: 0, constructed: 0, undocumented: 0 }])) as Record<Kind, Cell>;
   }
   const cellOf = (cli: string, kind: Kind): Cell => {
     const cell = cells[cli]?.[kind];
@@ -132,8 +143,8 @@ function matrix(): {
   for (const screen of manifest.screens) {
     const kind = screen.classify as Kind;
     if (!KINDS.includes(kind)) throw new Error(`${screen.file}: classify says "${screen.classify}"`);
-    const provenance: Provenance = isConstructed(screen.file) ? 'constructed' : 'capture';
-    cellOf(screen.cli, kind)[provenance === 'capture' ? 'real' : 'constructed']++;
+    const provenance = provenanceOf(screen.file);
+    cellOf(screen.cli, kind)[provenance === 'capture' ? 'real' : provenance]++;
     listed.push({ file: screen.file, cli: screen.cli, kind, provenance });
   }
   const byFile = (a: { file: string }, b: { file: string }) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0);
@@ -154,19 +165,26 @@ function table(): string {
     if (cell === undefined) throw new Error(`${cli} ${kind}: no cell, which cannot happen here`);
     return cell;
   };
-  const head = ['cli', 'kind', 'real', 'constructed'];
+  const head = ['cli', 'kind', 'real', 'constructed', 'undocumented'];
   const rows: string[][] = [];
   const empty: string[] = [];
   for (const cli of clis) {
     for (const kind of KINDS) {
       const cell = cellOf(cli, kind);
-      rows.push([cli, kind, String(cell.real), String(cell.constructed)]);
-      if (cell.real === 0) empty.push(`${cli} ${kind}${cell.constructed === 0 ? ' (no fixtures)' : ' (constructed only)'}`);
+      rows.push([cli, kind, String(cell.real), String(cell.constructed), String(cell.undocumented)]);
+      if (cell.real === 0) empty.push(`${cli} ${kind}${cell.constructed + cell.undocumented === 0 ? ' (no fixtures)' : cell.constructed === 0 ? ' (undocumented only)' : ' (constructed only)'}`);
     }
   }
   const widths = head.map((_, column) => Math.max(head[column]?.length ?? 0, ...rows.map((row) => row[column]?.length ?? 0)));
   const line = (row: string[]) => row.map((cell, at) => (cell ?? '').padEnd(widths[at] ?? 0)).join('  ').trimEnd();
   return `${[line(head), ...rows.map(line), '', `cells with no real capture: ${empty.length === 0 ? 'none' : empty.join(', ')}`].join('\n')}\n`;
+}
+
+/** The manifest fixtures no README names, by name, in manifest order. */
+function undocumented(): string[] {
+  return matrix()
+    .fixtures.filter((fixture) => fixture.provenance === 'undocumented')
+    .map((fixture) => fixture.file);
 }
 
 const mode = process.argv[2];
@@ -175,7 +193,11 @@ if (mode === '--json') {
   writeFileSync(outputFile, document());
   console.log('wrote contract/capture-coverage.json');
 } else if (mode === '--check') {
-  if (!existsSync(outputFile)) {
+  const stray = undocumented();
+  if (stray.length > 0) {
+    console.error(`no README mentions: ${stray.join(', ')}; name each fixture in its folder's README or remove it from the manifest`);
+    process.exitCode = 1;
+  } else if (!existsSync(outputFile)) {
     console.error('contract/capture-coverage.json is missing; run `bun run coverage --json`');
     process.exitCode = 1;
   } else if (document() !== readFileSync(outputFile, 'utf8')) {
@@ -185,7 +207,9 @@ if (mode === '--json') {
     console.log('contract/capture-coverage.json is current');
   }
 } else if (mode === undefined) {
+  const stray = undocumented();
   process.stdout.write(table());
+  if (stray.length > 0) process.stdout.write(`no README mentions: ${stray.join(', ')}\n`);
 } else {
   console.error('Usage: bun scripts/coverage.ts [--json | --check]');
   process.exitCode = 2;
