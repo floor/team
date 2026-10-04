@@ -99,7 +99,7 @@ export const realSources: DownSources = {
 /** How long `--wait` gives a working seat, in seconds. */
 export const WAIT_SECONDS = 120;
 
-const USAGE = 'Usage: team down [--dry-run] [--wait] [--abandon] [--session <name>] [--file <path>]\n';
+export const USAGE = 'Usage: team down [--dry-run] [--wait] [--abandon] [--session <name>] [--file <path>]\n';
 
 export const down: Command = (argv, io) => runDown(argv, io, realSources);
 export default down;

@@ -129,7 +129,7 @@ export const realSources: UpSources = {
   launch: realLaunch,
 };
 
-const USAGE = 'Usage: team up [--dry-run] [--session <name>] [--file <path>]\n';
+export const USAGE = 'Usage: team up [--dry-run] [--session <name>] [--file <path>]\n';
 
 export const up: Command = (argv, io) => runUp(argv, io, realSources);
 export default up;

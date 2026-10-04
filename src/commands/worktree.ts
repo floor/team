@@ -26,7 +26,7 @@ export const realSources: WorktreeSources = {
 
 type Run = { code: number; stdout: string; stderr: string };
 
-const USAGE = `Usage: team worktree new <task> [--kind <kind>] [--seat <name>] [--session <name>] [--file <path>]
+export const USAGE = `Usage: team worktree new <task> [--kind <kind>] [--seat <name>] [--session <name>] [--file <path>]
        team worktree remove <task> [--session <name>] [--file <path>]
 Ignored files in the worktree are deleted with it.
 `;

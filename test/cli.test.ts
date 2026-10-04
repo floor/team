@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { main, version } from '../src/cli.ts';
+import { commands, main, version } from '../src/cli.ts';
 import type { Io } from '../src/io.ts';
 
 function io(): Io & { out: string; err: string } {
@@ -42,4 +42,19 @@ test('check is a command of this build', async () => {
   const help = io();
   await main(['--help'], help);
   expect(help.out).toContain('\n  check\n');
+});
+
+test('every command of the table takes --help and -h, and prints its usage', async () => {
+  const table = Object.entries(commands);
+  expect(table.length).toBeGreaterThan(0);
+  for (const [name, load] of table) {
+    const usage = (await load()).USAGE;
+    for (const flag of ['--help', '-h']) {
+      const run = io();
+      expect(await main([name, flag], run)).toBe(0);
+      expect(run.out).toBe(usage);
+      const first = run.out.split('\n')[0] ?? '';
+      expect(first).toMatch(new RegExp(`^[Uu]sage: team ${name}\\b`));
+    }
+  }
 });

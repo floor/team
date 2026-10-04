@@ -27,6 +27,7 @@ Anyone, in any terminal. It needs no approval of its own — reporting on the ap
 | `--session <name>` | the herdr session to report on, instead of `team.session` |
 | `--file <path>` | the team file, instead of `.agents/team.yaml` |
 | `--login` | read the seats' CLIs' logins alone, one line per CLI, instead of the whole report; herdr, the session and the machine are not read |
+| `--help`, `-h` | the usage, and exit 0 |
 
 ## What it prints
 

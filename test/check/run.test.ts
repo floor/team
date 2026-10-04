@@ -358,12 +358,6 @@ describe('the command', () => {
     expect((await run(['main', '--since'])).stderr).toStartWith('team check: --since needs a value');
   });
 
-  test('prints the usage for --help', async () => {
-    const result = await run(['--help']);
-    expect(result.code).toBe(0);
-    expect(result.stdout).toStartWith('usage: team check <ref>');
-  });
-
   test('reads the team file of the repository, and its since', async () => {
     const file = [
       'format: 1',

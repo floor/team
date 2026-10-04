@@ -40,6 +40,7 @@ terminal outside herdr.
 | `--seat <name>` | records a declared seat in the worktree's record |
 | `--session <name>` | the session whose state is read and written, instead of `team.session` |
 | `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone |
+| `--help`, `-h` | the usage, and exit 0 |
 
 `remove` takes no `--kind` and no `--seat`.
 
