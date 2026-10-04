@@ -13,6 +13,7 @@ import { emptySession } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, pass, type PassResult } from '../src/watch/pass.ts';
+import { readScreen } from '../src/watch/screen.ts';
 
 const NOW = Date.parse('2026-10-04T09:00:00Z');
 const MIN = 60_000;
@@ -42,13 +43,13 @@ const RESERVE = '  accounts:\n    openai: { kind: subscription, reserve: 10%, so
 const SCREEN_READ = '  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [status_line] }\n';
 const DEEPSEEK = '  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n';
 
-// Screens of Claude Code, as the live team shows them, and a Codex one whose last line is the
-// quota line the codex profile reads.
+// Screens of Claude Code, as the live team shows them, and a Codex one whose status line carries
+// the weekly figure the codex profile reads.
 const RULE = '─'.repeat(40);
 const STATUS = '  main · …/acme · Opus 5.5 · S: $1.2 · W: 12%\n  ⏵⏵ bypass permissions on (shift+tab to cycle)';
 const idle = `● Done.\n\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
 const busy = `✶ Transfiguring… (9m 34s · ↓ 64.5k tokens)\n\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
-const quota = `• Working (2m 10s • esc to interrupt)\n\n⚠ You have less than 25% of your weekly\n\nweekly 39% left\n`;
+const quota = `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n`;
 
 type Over = Partial<Record<string, { status?: string; screen?: string }>>;
 
@@ -107,6 +108,18 @@ describe('the seats\' quota, parsed by the core', () => {
       .toEqual([{ account: 'openai', window: 'weekly', left: 39, used: 61, seat: 'codex-acme', confirmed: false }]);
     // A first sight is not yet counted: the launch gate is what says "first sight only" (§ 4.3).
     expect(budgetReports(result)).toEqual([]);
+  });
+
+  test('a fake line on an unknown screen is not read, whatever it matches', () => {
+    // The pane shows a sign-in screen with the seat's fake line as its last one. The screen is
+    // unknown, not a composer screen, so no figure comes off it.
+    const spoofed = `Welcome to Codex\nSign in to continue\n  GPT-5.6-Terra medium · Context 98% left · weekly 90% left\n`;
+    expect(readScreen('codex', spoofed).kind).toBe('unknown');
+    const result = pass({
+      team: team(SCREEN_READ), state: emptySession(), live: live({ 'codex-acme': { screen: spoofed } }),
+      machine: fine, now: NOW, memory: newMemory(), approval: [],
+    });
+    expect(result.readings).toEqual([]);
   });
 
   test('an account whose sources name only the check takes no screen reading (floor-86)', () => {
