@@ -191,6 +191,7 @@
         "placeholders": { "$ref": "#/$defs/placeholders" },
         "placeholder_style": { "enum": ["dim"] },
         "footers": { "type": "array", "items": { "$ref": "#/$defs/patternString" }, "minItems": 1 },
+        "fold": { "$ref": "#/$defs/patternString" },
         "fallback": {
           "type": "array",
           "items": {

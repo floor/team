@@ -234,16 +234,18 @@ function composerOf(node: YamlNode): Composer {
     };
   }
   if (name === 'two-rules-footer-below') {
-    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style']);
+    only(entries, ['mode', 'ignore_case', 'prompt', 'rule', 'footers', 'placeholders', 'fold', 'placeholder_style']);
     const flag = optional(entries, 'ignore_case');
     const ignoreCase = flag ? boolOf(flag.value, 'ignore_case') : false;
     const footers = required(entries, 'footers', node.line);
+    const fold = optional(entries, 'fold');
     return {
       mode: name,
       prompt: regexField(entries, 'prompt', node.line, ignoreCase),
       rule: regexField(entries, 'rule', node.line, ignoreCase),
       footers: footersOf(footers, ignoreCase),
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
+      fold: fold ? patternOf(stringOf(fold.value) ?? fail(fold.line, '"fold" must be a string'), ignoreCase, fold.line) : null,
       placeholderStyle,
     };
   }
