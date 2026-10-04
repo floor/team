@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { expect, test } from 'bun:test';
 import { commands, main } from '../src/cli.ts';
 import type { Io } from '../src/io.ts';
+import { run } from '../scripts/conformance.ts';
 
 function io(): Io & { out: string } {
   const state = {
@@ -54,4 +55,13 @@ test('the adapter answers one JSON line per request', async () => {
     '{"ok":false}',
     '',
   ].join('\n'));
+});
+
+test('the runner accepts the TypeScript adapter and rejects a command that does not answer', async () => {
+  const passed = await run('bun src/cli.ts conformance-adapter');
+  expect(passed.code).toBe(0);
+  expect(passed.report.endsWith('conformance: 191 pass, 0 fail')).toBe(true);
+  const failed = await run('true');
+  expect(failed.code).toBe(1);
+  expect(failed.report).toContain('fail  impl');
 });

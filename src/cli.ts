@@ -50,6 +50,11 @@ export async function main(argv: string[], io: Io): Promise<number> {
     io.stdout(`${version()}\n`);
     return 0;
   }
+  // Hidden: a port speaks this protocol. It is not a command in the help text.
+  if (name === 'conformance-adapter') {
+    const { default: run } = await import('./conformance/adapter.ts');
+    return run(rest, io);
+  }
   const load = commands[name];
   if (!load) {
     io.stderr(`team: unknown command "${name}"\n\n${usage}`);
