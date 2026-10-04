@@ -11,6 +11,7 @@ import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
 import { paneForeground } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
+import { reportedLiveAgent } from '../launch/agent.ts';
 import { executePlan } from '../launch/execute.ts';
 import type { Host } from '../launch/execute.ts';
 import { downPlan, type DownSeat } from '../launch/plan.ts';
@@ -222,6 +223,9 @@ export async function stopRunning(input: {
     createWorkspace: () => null,
     paneRun: () => false,
     typeLine(sessionName, pane, text) {
+      const names = profileFor(seat.cli)?.processNames ?? [];
+      const live = () => reportedLiveAgent(sources.foreground(sessionName, pane), names);
+      if (!live()) return 'no-agent';
       const look = () => sources.screen(sessionName, pane, seat.cli).kind;
       const resting = () => {
         const status = sources.status(sessionName, pane);
@@ -229,6 +233,7 @@ export async function stopRunning(input: {
       };
       if (!resting() || look() !== 'idle') return false;
       if (!launch.typeText(sessionName, pane, text)) return false;
+      if (!live()) return 'no-agent';
       const after = look();
       if (!resting() || (after !== 'idle' && after !== 'unsent')) return false;
       return launch.pressEnter(sessionName, pane);

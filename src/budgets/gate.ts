@@ -15,10 +15,11 @@ export type LaunchDecision =
 const RANK: Record<WindowName, number> = { session: 0, daily: 1, weekly: 2 };
 
 /**
- * The seat's account is its vendor. There is no separate account field on a seat. `budgets` is
- * the section in force: an unapproved edit to a reserve refuses no one until it is approved,
- * and an account only the unapproved edit names is not an account at all. `spend` holds the
- * stored spend check readings; a subscription account never looks at them.
+ * The seat's account is its own `account:` when the file names one — one vendor with two accounts
+ * is two buckets (§ 3b) — and its vendor otherwise. `budgets` is the section in force: an
+ * unapproved edit to a reserve refuses no one until it is approved, and an account only the
+ * unapproved edit names is not an account at all. `spend` holds the stored spend check readings;
+ * a subscription account never looks at them.
  */
 export function seatBudget(
   budgets: TeamFile['budgets'],
@@ -27,7 +28,7 @@ export function seatBudget(
   now: number,
   spend: readonly SpendReading[] = [],
 ): LaunchDecision {
-  const name = seat.vendor;
+  const name = seat.account ?? seat.vendor;
   const account = budgets.accounts[name];
   if (!account) return { kind: 'clear' };
   if (account.kind === 'spend') {

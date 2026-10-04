@@ -442,6 +442,7 @@ async function down(argv: string[], caller: Caller, overrides: Partial<DownSourc
     alive: () => true,
     screen: () => ({ kind: 'idle' }),
     status: () => 'idle',
+    foreground: () => ['claude'],
     now: () => NOW,
     ...overrides,
   });

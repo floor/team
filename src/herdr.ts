@@ -48,16 +48,19 @@ export function paneRootPid(pane: string, session?: string): number | null {
   }
 }
 
-// argv0 of each foreground process, or null when the pane can't be read. After a CLI exits,
-// herdr keeps the pane and the foreground process is the shell.
+// argv0 of each foreground process, in herdr's order, or null when the pane can't be
+// read. `name` is not the process: a Claude entry's name is its version. After a CLI
+// exits, herdr keeps the pane and the foreground process is the shell.
+export function foregroundArgv0(result: unknown): string[] | null {
+  const list = (result as { process_info?: { foreground_processes?: { argv0?: unknown }[] } } | null)
+    ?.process_info?.foreground_processes;
+  if (!Array.isArray(list)) return null;
+  return list.map((proc) => (typeof proc?.argv0 === 'string' ? proc.argv0 : ''));
+}
+
 export function paneForeground(pane: string, session?: string): string[] | null {
   try {
-    const result = run(['pane', 'process-info', '--pane', pane], session) as {
-      process_info?: { foreground_processes?: { argv0?: unknown }[] };
-    };
-    const list = result.process_info?.foreground_processes;
-    if (!Array.isArray(list)) return null;
-    return list.map((proc) => (typeof proc.argv0 === 'string' ? proc.argv0 : ''));
+    return foregroundArgv0(run(['pane', 'process-info', '--pane', pane], session));
   } catch {
     return null;
   }
@@ -199,14 +202,42 @@ export function sessionStop(name: string): boolean {
   return body === null || body.type !== 'error';
 }
 
+// The process call behind paneRead, injectable for tests: it returns the call's stdout and
+// throws when herdr refuses an option or the call times out. The real one shells out.
+export type PaneExec = (args: string[]) => string;
+const shellPaneExec: PaneExec = (args) =>
+  execFileSync('herdr', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
+let paneExec: PaneExec = shellPaneExec;
+
+/** Swaps the process call paneRead makes; null restores the real one. */
+export function setPaneExec(exec: PaneExec | null): void {
+  paneExec = exec ?? shellPaneExec;
+}
+
 // The visible lines of a pane, or null. `session` undefined reaches the caller's own server.
+// The lines keep their ANSI styling, CRLF folded to LF: a greyed suggestion and typed text
+// read the same as plain text, and only their styling tells them apart, so the readers that
+// want plain text strip it (`stripSgr`). An herdr without the `--format` option refuses the
+// styled call and is read by the exact call main makes today — no flag at all — where
+// unstyled text can never read as dim and the placeholder list alone decides. A herdr that
+// hangs is not asked twice: one timeout reads null.
 export function paneRead(pane: string, lines: number, session?: string): string | null {
+  const full = [...(session ? ['--session', session] : []), 'pane', 'read', pane, '--source', 'visible', '--lines', String(lines)];
+  let styled: string;
   try {
-    const full = [...(session ? ['--session', session] : []), 'pane', 'read', pane, '--source', 'visible', '--lines', String(lines)];
-    return execFileSync('herdr', full, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
-  } catch {
-    return null;
+    styled = paneExec([...full, '--format', 'ansi']);
+  } catch (error) {
+    if (!(error instanceof Error)) return null;
+    // execFileSync reports its own timeout as an Error with code ETIMEDOUT — signal SIGTERM,
+    // status null, and no killed field. Observed under Bun, from a run, not from memory.
+    if ((error as { code?: unknown }).code === 'ETIMEDOUT') return null;
+    try {
+      return paneExec(full);
+    } catch {
+      return null;
+    }
   }
+  return styled.replace(/\r\n/g, '\n').replace(/\r$/, '');
 }
 
 // The words to type for a herdr command, for a repair line.

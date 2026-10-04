@@ -600,9 +600,9 @@ describe('team watch', () => {
       watchInForce: (team) => team.watch,
       budgetsInForce: (team) => team.budgets,
       readChecks: () => [],
-      foreground: () => null,
       screen: () => screenNow,
       status: () => statusNow,
+      foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); return true; },
       pressEnter: (pane) => { typed.push(`${pane} <enter>`); return true; },
       notify: (text) => { notified.push(text); },
@@ -678,6 +678,25 @@ describe('team watch', () => {
     let calls = 0;
     await runWatch(['--file', file], testIo(dir), sources(2, { screen: () => (calls++ === 0 ? permission : idle) }));
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+  });
+
+  test('a pane with no live agent is not typed into', async () => {
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(2, { foreground: () => ['zsh'] }));
+    expect(typed).toEqual([]);
+    const line = 'a nudge was not typed: no live agent in the operator\'s pane';
+    expect(io.out.split(line).length - 1).toBe(1);
+  });
+
+  test('an agent that exits between the text and the Enter is not sent the Enter', async () => {
+    let live = true;
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      foreground: () => (live ? ['claude'] : ['zsh']),
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); live = false; return true; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was not typed: no live agent in the operator\'s pane');
   });
 
   test('an operator that started working since the pass is not typed into', async () => {
@@ -886,6 +905,33 @@ describe('team watch', () => {
       account: 'openai', window: 'weekly', left: 5, used: 95,
       changedAt: Date.parse('2026-10-03T14:00:00Z'), resetsAt: null, seat: null, source: 'check', confirmed: true,
     }]);
+  });
+
+  test('a watch on a session that is not the file\'s saves no reading, and says so once', async () => {
+    writeFileSync(file, withAccounts(
+      '  accounts:\n'
+      + '    openai: { kind: subscription, reserve: 3%, sources: [status_line, check], check: openai-usage }\n'
+      + '    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n',
+    ));
+    scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n` } });
+    const checks: WatchSources['readChecks'] = (_team, _root, at) => [
+      { account: 'openai', state: 'read', reading: { kind: 'subscription', windows: [{ window: 'weekly', left: 5, used: 95, at, resetsAt: null }] } },
+      { account: 'deepseek', state: 'read', reading: { kind: 'spend', amount: 4.2, currency: 'USD', at } },
+    ];
+    // Anyone may watch another session; only the file's own session's watch is the cache that
+    // `up` and `add` count (§ 4.4).
+    const io = testIo(dir);
+    expect(await runWatch(['--file', file, '--session', 'team-test'], io, sources(2, { readChecks: checks }))).toBe(0);
+    expect(loadReadings(join(dir, '.agents'))).toEqual([]);
+    expect(loadSpendReadings(join(dir, '.agents'))).toEqual([]);
+    expect(io.out.match(/is not this file's "acme-web"/g)?.length).toBe(1);
+
+    // The file's own session saves the same figures.
+    scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n` } });
+    expect(await runWatch(['--file', file], testIo(dir), sources(1, { readChecks: checks }))).toBe(0);
+    expect(loadReadings(join(dir, '.agents')).map(({ account, source }) => `${account}/${source}`).sort())
+      .toEqual(['openai/check', 'openai/status_line']);
+    expect(loadSpendReadings(join(dir, '.agents')).map(({ account, amount }) => [account, amount])).toEqual([['deepseek', 4.2]]);
   });
 
   test('a file that never validated, and a bad option', async () => {

@@ -16,8 +16,9 @@ import {
 import type { Command, Io } from '../io.ts';
 import type { Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
+import { reportedLiveAgent } from '../launch/agent.ts';
 import { downPlan, formatPlan, type DownSeat } from '../launch/plan.ts';
-import { cliRuns } from '../profiles/profile.ts';
+import { profileFor } from '../profiles/index.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
 import { readScreen, type Screen } from '../watch/screen.ts';
@@ -31,8 +32,8 @@ export type DownSources = {
   screen(session: string, pane: string, cli: string): Screen;
   /** Herdr's own status for the pane. The Enter waits for idle or done. */
   status(session: string, pane: string): string | null;
-  /** Foreground process names in the pane, or null when the pane can't be read. */
-  foreground?(session: string, pane: string): string[] | null;
+  /** Foreground argv0 names, or null when the pane can't be read. */
+  foreground(session: string, pane: string): string[] | null;
   now(): Date;
   sleep?(ms: number): Promise<void>;
   // Present on the shipped command. A dry run never calls it.
@@ -106,6 +107,13 @@ export default down;
 
 // Free only when herdr says idle or done and the screen is an empty idle prompt. A permission
 // prompt is idle to herdr, and typing `/exit` there would answer it.
+// Herdr keeps a pane after the CLI exits, so the pane id staying listed is not "still there".
+// The seat has left when no foreground process is its CLI. An unreadable list keeps the wait.
+export function paneStillRunning(foreground: readonly string[] | null, processNames: readonly string[]): boolean {
+  if (!foreground) return true;
+  return foreground.some((name) => processNames.includes(name));
+}
+
 export function stateOf(status: string, screen: Screen): DownSeat['state'] {
   if (screen.kind === 'unsent') return 'unsent';
   if (screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question') return 'blocked';
@@ -240,6 +248,9 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       // status is asked both times; Enter waits until it is idle or done and the screen is idle
       // or holding unsent text.
       const cli = seats.find((seat) => seat.pane === pane)?.cli ?? '';
+      const names = profileFor(cli)?.processNames ?? [];
+      const live = () => reportedLiveAgent(sources.foreground(sessionName, pane), names);
+      if (!live()) return 'no-agent';
       const look = () => sources.screen(sessionName, pane, cli).kind;
       const resting = () => {
         const status = sources.status(sessionName, pane);
@@ -247,6 +258,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       };
       if (!resting() || look() !== 'idle') return false;
       if (!launch.typeText(sessionName, pane, text)) return false;
+      if (!live()) return 'no-agent';
       const after = look();
       if (!resting() || (after !== 'idle' && after !== 'unsent')) return false;
       return launch.pressEnter(sessionName, pane);
@@ -261,7 +273,9 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       // A pane back at its shell is no longer the seat. `gone` then finishes and the workspace closes.
       return listed.filter((pane) => {
         const cli = seats.find((seat) => seat.pane === pane)?.cli;
-        return cliRuns(cli, sources.foreground?.(sessionName, pane) ?? paneForeground(pane, aim(sessionName)));
+        const names = cli ? profileFor(cli)?.processNames : undefined;
+        if (!names) return true;
+        return paneStillRunning(sources.foreground(sessionName, pane), names);
       });
     },
     classify: () => 'unknown',

@@ -51,6 +51,15 @@ seats:
     launch: claude-deepseek
 
   - role: implementer
+    name: glm-implementer
+    cli: claude-code
+    vendor: zai
+    model: GLM
+    version: "5.3"
+    display: GLM 5.3
+    launch: claude-glm
+
+  - role: implementer
     name: grok-implementer
     cli: cursor
     vendor: xai

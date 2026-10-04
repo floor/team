@@ -1,7 +1,7 @@
 import { readArgs } from '../args.ts';
 import { budgetsInForce, watchInForce } from '../approve/approval.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
-import { loadReadings, saveReadings, saveSpendReadings, type SpendReading } from '../budgets/readings.ts';
+import { loadReadings, saveSpendReadings, updateReadings, type Seen, type SpendReading } from '../budgets/readings.ts';
 import { runChecks, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -18,10 +18,12 @@ import { newMemory, pass } from '../watch/pass.ts';
 import { readScreen } from '../watch/screen.ts';
 import { judgeTemporary, judgeWorktree } from '../watch/close.ts';
 import { readEnd, type EndView } from '../watch/end.ts';
+import { reportedLiveAgent } from '../launch/agent.ts';
 import type { DownSeat } from '../launch/plan.ts';
 import { stopRunning, realSources as removeSources } from './remove.ts';
 import { removeWorktree } from './worktree.ts';
 import { stateOf } from './down.ts';
+import { profileFor } from '../profiles/index.ts';
 import { realSources } from './status.ts';
 
 // What the watch reads and does outside its own process, so tests can stand in for it.
@@ -37,14 +39,12 @@ export type WatchSources = {
   // What each checked account reads this pass (RFC 0003 § 5). Runs outside the pass, like the
   // machine figures: a command's raw output never leaves this call, and a failure reads unknown.
   readChecks(team: TeamFile, root: string, now: number): CheckOutcome[];
-  // The foreground process names in a pane, or null where herdr can't be read. The pass folds a
-  // figure only while the seat's CLI runs in the pane: herdr keeps a pane listed after the CLI
-  // exits, and a shell's last row is a last row by position, not a status row.
-  foreground(pane: string, session: string): string[] | null;
   // The operator's screen, read again just before a nudge is typed.
   screen(pane: string, session: string): string | null;
   // The operator's status, asked again with its screen.
   status(pane: string, session: string): string | null;
+  /** Foreground argv0 names, or null when the pane can't be read. */
+  foreground(pane: string, session: string): string[] | null;
   typeText(pane: string, text: string, session: string): boolean;
   pressEnter(pane: string, session: string): boolean;
   notify(text: string): void;
@@ -171,6 +171,16 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         if (problem) tell(problem, true);
       }
 
+      // Only the watch of the file's own session saves readings. A watch on another session —
+      // anyone may run one, from any terminal — reads and reports, but the figures it sees are
+      // not the project's cache that `up` and `add` count (§ 4.4): it says so once and writes
+      // none, budget or spend.
+      const foreign = session !== team.session;
+      if (foreign && !told.has('foreign-session')) {
+        told.add('foreign-session');
+        say(`the session "${session}" is not this file's "${team.session}": its readings are not saved`, false);
+      }
+
       // The values in force, read with the file: until the owner approves an edit to `watch`,
       // the watch keeps running with what was approved, or with the defaults.
       const inForce = sources.watchInForce(team, root);
@@ -195,7 +205,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
           // The money a spend check counted is kept, like the pass's screen readings: the launch
           // gate of `up` and `add` reads it later, and one that is stale by then reads unknown
           // (§ 5). An account whose check did not run keeps its stored reading.
-          saveSpendReadings(dir, spendOf(outcomes));
+          if (!foreign) saveSpendReadings(dir, spendOf(outcomes));
           for (const outcome of outcomes) {
             const key = `check:${outcome.account}`;
             if (outcome.state === 'read') {
@@ -213,16 +223,24 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         // where the seat's CLI still runs. A pane herdr can't list reads null and keeps its figure.
         const foreground: Record<string, string[] | null> = {};
         for (const agent of live.agents) foreground[agent.pane] = sources.foreground(agent.pane, session);
-        const result = pass({
+        const run = (stored: readonly Seen[]) => pass({
           team, state, live, machine: sources.machine(root), now, memory,
           approval: sources.approval(team, root), watch: inForce, outcomes, budgets: budget,
-          readings: loadReadings(dir), foreground,
+          readings: stored, foreground,
         });
+        // The pass folds its figures where the state is held: two watches of the project fold one
+        // after the other, not over each other. A watch on a foreign session still folds, for its
+        // reports, and saves nothing.
+        const result = foreign
+          ? run(loadReadings(dir))
+          : updateReadings(dir, now, (stored) => {
+            const folded = run(stored);
+            return { readings: folded.readings, value: folded };
+          });
         for (const report of result.reports) tell(report.text, report.to === 'owner' || !args.flags.has('no-notify'));
-        saveReadings(dir, result.readings, now);
         if (result.nudge) {
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);
-          else deliver(result.nudge, team, session, sources, memory, say, tell);
+          else deliver(result.nudge, team, session, sources, memory, say, tell, told);
         }
         if (result.fallback) tell(result.fallback, true);
         await closeEnded({ team, root, dir, session, live, sources, say, io, told });
@@ -260,7 +278,7 @@ function spendOf(outcomes: readonly CheckOutcome[]): SpendReading[] {
 function deliver(
   nudge: { pane: string; text: string; pending: string[] }, team: TeamFile, session: string, sources: WatchSources,
   memory: ReturnType<typeof newMemory>, say: (text: string, desktop: boolean) => void,
-  tell: (text: string, notify: boolean) => void,
+  tell: (text: string, notify: boolean) => void, told: Set<string>,
 ): void {
   const cli = team.seats.find((seat) => seat.name === team.operator)?.cli ?? '';
   const look = () => readScreen(cli, sources.screen(nudge.pane, session) ?? undefined).kind;
@@ -271,12 +289,26 @@ function deliver(
     memory.pending.push(...nudge.pending);
     memory.pendingSince ??= sources.now().getTime();
   };
+  const names = profileFor(cli)?.processNames ?? [];
+  const live = () => reportedLiveAgent(sources.foreground(nudge.pane, session), names);
+  const noAgent = 'nudge:no-agent';
+  if (!live()) {
+    tellOnce(told, noAgent, 'a nudge was not typed: no live agent in the operator\'s pane', tell);
+    keep();
+    return;
+  }
+  told.delete(noAgent);
   if ((status !== 'idle' && status !== 'done') || look() !== 'idle' || !sources.typeText(nudge.pane, nudge.text, session)) {
     keep();
     return;
   }
-  // The text is in the box. A dialog that opened meanwhile must not get the Enter: the text
-  // then stays unsent, which the next passes report, and the nudge is kept.
+  // The text is in the box. The agent is read again before Enter: it may have exited
+  // since the text was typed, and an unframed line is not a box to send.
+  if (!live()) {
+    tellOnce(told, noAgent, 'a nudge was not typed: no live agent in the operator\'s pane', tell);
+    keep();
+    return;
+  }
   const after = look();
   if (after !== 'idle' && after !== 'unsent') {
     tell('a nudge was typed and not sent: the operator\'s screen changed before the Enter', true);
@@ -285,6 +317,12 @@ function deliver(
   }
   if (sources.pressEnter(nudge.pane, session)) say(`nudged the operator: ${nudge.text}`, false);
   else keep();
+}
+
+function tellOnce(told: Set<string>, key: string, text: string, tell: (text: string, notify: boolean) => void): void {
+  if (told.has(key)) return;
+  told.add(key);
+  tell(text, true);
 }
 
 function noteWorked(dir: string, session: string, live: Live): void {

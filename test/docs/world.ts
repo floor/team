@@ -16,6 +16,7 @@ import type { Seat, TeamFile } from '../../src/file/types.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import type { Live } from '../../src/status/compare.ts';
 import type { Machine } from '../../src/watch/machine.ts';
+import { profileFor } from '../../src/profiles/index.ts';
 import { readScreen } from '../../src/watch/screen.ts';
 import type { ScreenKind, Spec, ToolState } from './spec.ts';
 
@@ -250,13 +251,21 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     typeText: action.typeText,
     pressEnter: action.pressEnter,
     agentStatus: action.agentStatus,
+    foreground: (_session, pane) => {
+      const cli = agentOf(pane)?.cli ?? 'claude-code';
+      return [profileFor(cli)?.processNames[0] ?? 'claude'];
+    },
     sleep,
     now,
   };
 
+  const shelled = new Set<string>();
   const downLaunch: DownLaunch = {
     typeText: action.typeText,
-    pressEnter: action.pressEnter,
+    pressEnter(session, pane) {
+      shelled.add(pane);
+      return action.pressEnter();
+    },
     agentPanes: action.agentPanes,
     closeWorkspace: action.closeWorkspace,
     stopSession(_session: string) {
@@ -307,8 +316,12 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     alive: (pid) => watchPid !== null && pid === watchPid,
     screen: (_session, pane) => readScreen(agentOf(pane)?.cli ?? '', action.paneText('', pane)),
     status: (_session, pane) => agentOf(pane)?.status ?? null,
-    // A seat `down` or `remove` got to is free: its CLI has exited, the pane is back at its shell.
-    foreground: () => ['zsh'],
+    // The CLI is the foreground until its exit is typed; the pane is then back at its shell.
+    foreground: (_session, pane) => {
+      if (shelled.has(pane)) return ['zsh'];
+      const cli = agentOf(pane)?.cli ?? 'claude-code';
+      return [profileFor(cli)?.processNames[0] ?? 'claude'];
+    },
     now,
     sleep,
     launch: downLaunch,
@@ -347,7 +360,12 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     },
     downSources,
     removeSources(): RemoveSources {
-      return { ...downSources(), foreground: () => ['zsh'], home };
+      const down = downSources();
+      return {
+        ...down,
+        home,
+        foreground: (session, pane) => down.foreground?.(session, pane) ?? ['zsh'],
+      };
     },
     addSources(): AddSources {
       return {
@@ -380,10 +398,12 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         budgetsInForce: (team, at) => budgetsInForce(team, at, home),
         // A page's world runs no real check commands: every account reads what the pass saw.
         readChecks: () => [],
-        // No process list either: a page's pane keeps its figure, the departure is never invented.
-        foreground: () => null,
         screen: (pane) => action.paneText('', pane),
         status: (_pane) => agentOf(_pane)?.status ?? null,
+        foreground: (pane) => {
+          const cli = agentOf(pane)?.cli ?? 'claude-code';
+          return [profileFor(cli)?.processNames[0] ?? 'claude'];
+        },
         typeText: action.typeText,
         pressEnter: action.pressEnter,
         notify: (text) => did.notified.push(text),

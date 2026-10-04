@@ -93,6 +93,7 @@ function delivery(initial = 'idle') {
     screen: () => fixture(shown), status: () => status,
     type(text) { calls.push(text); shown = 'unsent'; return true; },
     enter() { calls.push('Enter'); shown = 'working'; status = 'working'; return true; },
+    foreground: () => ['codex'],
     now: () => clock, sleep: async (ms) => { clock += ms; },
   };
   return { io, calls, show: (name: string) => { shown = name; }, status: (value: string) => { status = value; } };

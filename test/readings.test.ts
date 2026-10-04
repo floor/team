@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { countedFor, loadReadings, loadSpendReadings, observe, observeCheck, recall, saveReadings, saveSpendReadings, verdict, type Seen, type StoredReading } from '../src/budgets/readings.ts';
+import { countedFor, loadReadings, loadSpendReadings, observe, observeCheck, recall, saveReadings, saveSpendReadings, updateReadings, verdict, type Seen, type StoredReading } from '../src/budgets/readings.ts';
 import type { QuotaFigure } from '../src/profiles/quota.ts';
 import { readState, STATE_FILE, updateState } from '../src/state.ts';
 
@@ -355,6 +355,52 @@ describe('the project keeps the readings, not a session', () => {
       const after = JSON.parse(readFileSync(join(dir, STATE_FILE), 'utf8'));
       expect(after.spend.openai.amount).toBe(12.4);
       expect(after.sessions['acme-web'].spend).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the watch\'s fold', () => {
+  test('runs where the state is held: a second fold is handed the first\'s reading', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
+    try {
+      const at = 1_700_000_000_000;
+      updateReadings(dir, at, (stored) => ({ readings: observe(stored, figure(39), 'one', at), value: null }));
+      // A second watch of the same project, on another session, folds its own seat's figure. It
+      // read nothing before the first wrote; its fold is handed the readings the state holds.
+      let seen: number[] = [];
+      updateReadings(dir, at, (stored) => {
+        seen = stored.map((item) => item.left);
+        return { readings: observe(stored, figure(20), 'two', at), value: null };
+      });
+      expect(seen).toEqual([39]);
+      expect(loadReadings(dir).map(({ seat, left }) => [seat, left])).toEqual([['one', 39], ['two', 20]]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('two watches folding at once lose nothing', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'team-readings-race-'));
+    try {
+      const at = 1_700_000_000_000;
+      const module = new URL('../src/budgets/readings.ts', import.meta.url).pathname;
+      const child = (seat: string, left: number) => `
+        import { observe, updateReadings } from ${JSON.stringify(module)};
+        updateReadings(${JSON.stringify(dir)}, ${at}, (stored) => {
+          // Hold the lock while folding, so both watches overlap.
+          Bun.sleepSync(200);
+          return {
+            readings: observe(stored, { account: 'openai', window: 'weekly', left: ${left}, used: ${100 - left}, resets: null }, ${JSON.stringify(seat)}, ${at}),
+            value: null,
+          };
+        });
+      `;
+      const one = Bun.spawn(['bun', '-e', child('one', 39)], { stdout: 'ignore', stderr: 'ignore' });
+      const two = Bun.spawn(['bun', '-e', child('two', 20)], { stdout: 'ignore', stderr: 'ignore' });
+      expect(await Promise.all([one.exited, two.exited])).toEqual([0, 0]);
+      expect(loadReadings(dir).map(({ seat, left }) => [seat, left]).sort()).toEqual([['one', 39], ['two', 20]]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
