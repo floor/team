@@ -69,8 +69,10 @@ describe('the override file', () => {
     ['footers', '      footers: ["^x$"]\n', 'unknown key "footers"'],
     ['a code module', '      code: "screens.ts"\n', 'unknown key "code"'],
     ['a launch line', '    binary: claude\n', 'unknown key "binary"'],
+    ['screen_module on profile', '    screen_module: "hatch.ts"\n', 'unknown key "screen_module"'],
+    ['screen_module in screen', '      screen_module: "hatch.ts"\n', 'unknown key "screen_module"'],
   ])('refuses %s, with the line', (_name, body, message) => {
-    const text = body.startsWith('    binary')
+    const text = body.startsWith('    binary') || body.startsWith('    screen_module')
       ? `format: 1\nprofiles:\n  claude-code:\n${body}`
       : `format: 1\nprofiles:\n  claude-code:\n    screen:\n${body}      permission:\n        - any: ['x']\n`;
     const parsed = parseOverrides(text);
