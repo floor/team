@@ -67,10 +67,11 @@ export class Reader {
 }
 
 // A timeout, a transport failure, or a 408, 429 or 5xx is retried exactly once; nothing else is.
-// An oversized body keeps its response's status, so a retryable status counts even then.
-function retried(attempt: Attempt): boolean {
+// Every kind that comes from a response carries its status, so the decision reads only that
+// status and the two no-response kinds — whatever the body could or could not be decoded into.
+export function retried(attempt: Attempt): boolean {
   if (attempt.kind === 'timeout' || attempt.kind === 'transport') return true;
-  const status = attempt.kind === 'http' || attempt.kind === 'too-large' ? attempt.status : 0;
+  const { status } = attempt;
   return status === 408 || status === 429 || (status >= 500 && status <= 599);
 }
 
