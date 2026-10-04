@@ -134,19 +134,25 @@ describe('Cursor launch and captured screens', () => {
     expect(classifyComposer('cursor', quiet.split('\n')).kind).toBe('idle');
   });
 
-  test('a typed row below a queue box is unsent, not a running turn', () => {
+  test('a typed row below a queue box is unknown, never a running turn and never typed into', () => {
     // No spinner and no `ctrl+c to stop`, an empty composer row and the
     // placeholder row, then a typed row below both: only the box's row above the
     // composer is what says a queue frame, so a typed row under the box must
     // defeat the rule. The earlier rule took the rows in either order and
     // dropped every `→` row from the after-check, so this read working.
+    //
+    // Three rows at the prompt column in one box is a shape no capture draws:
+    // Cursor indents every row of a person's text to the content column. Since
+    // 0.2.1 the box fails closed on it — the input row is the box's first prompt
+    // row, and a later row still at the prompt column is neither text nor frame —
+    // so it reads unknown, never working, and nothing is typed into it or sent.
     const frame = fixture('follow-up-queue-one')
       .split('\n')
       .filter((line) => !/^\s*[⠀-⣿]/.test(line))
       .map((line) => line.replace(/^(\s*)→\s*Add a follow-up\s*$/, '$1→\n$1→ Add a follow-up\n$1→ Reply with exactly RULES_RECEIVED. Do not use'))
       .join('\n');
-    expect(readScreen('cursor', frame).kind).toBe('unsent');
-    expect(classifyComposer('cursor', frame.split('\n')).kind).toBe('unsent');
+    expect(readScreen('cursor', frame).kind).toBe('unknown');
+    expect(classifyComposer('cursor', frame.split('\n')).kind).toBe('unknown');
   });
 
   test('prose that looks like the queue box leaves an idle prompt idle', () => {
@@ -157,13 +163,20 @@ describe('Cursor launch and captured screens', () => {
     const boxRow = '  │ ○ First queued message.              │';
     const boxEnd = '  └──────────────────────────────────────┘';
     const hintRow = '  │ enter steer · ↑ select/edit · esc cancel │';
-    const quoted = [...idleLines.slice(0, at), boxTop, boxRow, boxEnd, '  the box lists the messages already sent.', ...idleLines.slice(at)].join('\n');
+    // The lookalike sits in the transcript, above the blank frame rows every capture draws
+    // against the input row (idle.txt's rows 5-8): it is then read as nothing.
+    const quoted = [...idleLines.slice(0, at), boxTop, boxRow, boxEnd, '  the box lists the messages already sent.', '', ...idleLines.slice(at)].join('\n');
     expect(readScreen('cursor', quoted).kind).toBe('idle');
     // Even a paste that reproduces the overlay's own hint line leaves idle when
     // more prose follows it: the box is then not directly above the prompt area.
-    const pasted = [...idleLines.slice(0, at), boxTop, boxRow, hintRow, boxEnd, '  and nothing had been typed.', ...idleLines.slice(at)].join('\n');
+    const pasted = [...idleLines.slice(0, at), boxTop, boxRow, hintRow, boxEnd, '  and nothing had been typed.', '', ...idleLines.slice(at)].join('\n');
     expect(readScreen('cursor', pasted).kind).toBe('idle');
     expect(classifyComposer('cursor', pasted.split('\n')).kind).toBe('idle');
+    // Pressed against the prompt with no frame row between, the same prose is a shape no
+    // capture draws — the transcript's last row sits above the gap, never against the
+    // prompt — so the read fails closed rather than take the prompt for an input row.
+    const against = [...idleLines.slice(0, at), boxTop, boxRow, boxEnd, '  the box lists the messages already sent.', ...idleLines.slice(at)].join('\n');
+    expect(readScreen('cursor', against).kind).toBe('unknown');
   });
 
   test('unknown, shell and unobserved dialogs never count as idle', () => {
@@ -546,5 +559,167 @@ describe('the prompt-glyph continuation row (Cursor)', () => {
     expect(boxHoldsText('cursor', 'quoted', boxed(`person text\n${GLYPH} quoted`))).toBe(false);
     expect(readScreen('cursor', boxed(`person text\n${GLYPH}\n${GLYPH}`)).kind).toBe('unsent');
     expect(boxHoldsText('cursor', 'Rules.', boxed(`person text\n${GLYPH}\n${GLYPH} Rules.`))).toBe(false);
+  });
+
+  test('a second glyph row at the prompt column fails closed: never idle, never entered', async () => {
+    // The Cursor twin of the Codex boundary: the person's text on the input row and a second
+    // row carrying `→` at that same column (the pane's second, where the captures draw the
+    // input). The captures show the CLI continuing a person's line at the fourth column in
+    // every case — including a second line that itself begins with `→`
+    // (typed-glyph-second.txt) — so a person's glyph at the prompt column is a shape no
+    // capture explains, and the read is `unknown`: nothing is typed into it and no Enter is
+    // sent. Read by its lowest row the box was idle, the paste went after the second glyph,
+    // the read-back held only the typed text, and the Enter submitted both.
+    const at = (typed = '') => fixture('idle')
+      .replace('  → Plan, search, build anything', `  → person text\n  →${typed === '' ? '' : ` ${typed}`}`);
+    expect(readScreen('cursor', at()).kind).toBe('unknown');
+    expect(classify('cursor', at().split('\n')).kind).toBe('unknown');
+    expect(classifyComposer('cursor', at().split('\n')).kind).toBe('unknown');
+    expect(boxHoldsText('cursor', 'Rules.', at('Rules.'))).toBe(false);
+    const d = delivery();
+    d.showText(at());
+    d.io.type = (text) => { d.calls.push(text); d.showText(at(text)); return true; };
+    expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+  });
+});
+
+describe('the box\'s top frame (Cursor)', () => {
+  // The Cursor twin of the Codex frame: every capture draws blank rows directly above the
+  // input row — four in idle.txt (rows 5-8 above the input at 9), unsent.txt and the typed
+  // captures alike — and above them the transcript's or the pane's last row
+  // (idle.txt's `  hints.`, rules-accepted.txt's `  RULES_RECEIVED`, the queue fixtures'
+  // spinner). typed-blank-middle.txt draws a blank row inside a person's box as its third
+  // line at the content column (four), never at the prompt column (two): a second glyph at
+  // the prompt column after a blank is the transcript's echo of a sent message — working.txt
+  // and rules-accepted.txt draw sent text at the content column without the glyph,
+  // follow-up-queue-typed.txt shows the glyph only on queued text — not a row of a person's
+  // box, so the empty input row under the frame reads `idle`, exactly as main reads it. No
+  // shipped capture shows the direct echo layout; the constructed screens below stand in.
+  const shaped = (body: string) => fixture('idle').replace('  → Plan, search, build anything', body);
+
+  test('the transcript\'s echo over the gap leaves the empty box idle, and the typed text reads back exactly', async () => {
+    // The routine post-send layout, settled by typed-blank-middle.txt: the person's sent
+    // message echoed at the prompt column, the captured blank frame, the empty input row. It
+    // reads `idle` on every reader and rules delivery types and enters; the read-back holds
+    // exactly the typed text.
+    const at = (typed = '') => shaped(`  → person text\n\n  →${typed === '' ? '' : ` ${typed}`}`);
+    expect(readScreen('cursor', at()).kind).toBe('idle');
+    expect(classify('cursor', at().split('\n')).kind).toBe('idle');
+    expect(classifyComposer('cursor', at().split('\n')).kind).toBe('idle');
+    expect(readScreen('cursor', at('Rules.')).kind).toBe('unsent');
+    expect(boxHoldsText('cursor', 'Rules.', at('Rules.'))).toBe(true);
+    const d = delivery();
+    d.showText(at());
+    d.io.type = (text) => { d.calls.push(text); d.showText(at(text)); return true; };
+    expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(true);
+    expect(d.calls).toEqual(['Rules.', 'Enter']);
+  });
+
+  test('two and three blank rows above the input read the same', () => {
+    for (const gap of ['\n\n\n', '\n\n\n\n']) {
+      expect(readScreen('cursor', shaped(`  → person text${gap}  →`)).kind).toBe('idle');
+    }
+  });
+
+  test('agent output between the echo and the frame reads idle', () => {
+    // rules-accepted.txt in full: the sent text at the content column, `  RULES_RECEIVED` and
+    // the timestamp between it and the frame, the empty input row last. The real capture, read
+    // as it always was, with the new rule taking nothing from it.
+    expect(readScreen('cursor', fixture('rules-accepted')).kind).toBe('idle');
+  });
+
+  test('a second prompt row pressed against the one above it fails closed', async () => {
+    // Round 1's must-fix, Cursor's twin, unchanged: no blank row separates the person's row
+    // from the later prompt, so the row above the lowest prompt is not the frame and the input
+    // row cannot be shown to be the box's top. Nothing is typed and Enter is not sent.
+    const at = (typed = '') => shaped(`  → person text\n  →${typed === '' ? '' : ` ${typed}`}`);
+    expect(readScreen('cursor', at()).kind).toBe('unknown');
+    expect(classify('cursor', at().split('\n')).kind).toBe('unknown');
+    expect(classifyComposer('cursor', at().split('\n')).kind).toBe('unknown');
+    expect(boxHoldsText('cursor', 'Rules.', at('Rules.'))).toBe(false);
+    const d = delivery();
+    d.showText(at());
+    d.io.type = (text) => { d.calls.push(text); d.showText(at(text)); return true; };
+    expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+  });
+
+  test('a blank row, a continuation row, then a prompt fails closed', () => {
+    const at = shaped('  → person text\n\n    more of theirs\n  →');
+    expect(readScreen('cursor', at).kind).toBe('unknown');
+    expect(classifyComposer('cursor', at.split('\n')).kind).toBe('unknown');
+    expect(boxHoldsText('cursor', 'Rules.', shaped('  → person text\n\n    more of theirs\n  → Rules.'))).toBe(false);
+  });
+
+  test('a window starting inside the box fails closed', async () => {
+    const at = (typed = '') => shaped(`    person-owned visible continuation\n  →${typed === '' ? '' : ` ${typed}`}`);
+    expect(readScreen('cursor', at()).kind).toBe('unknown');
+    expect(classify('cursor', at().split('\n')).kind).toBe('unknown');
+    expect(classifyComposer('cursor', at().split('\n')).kind).toBe('unknown');
+    expect(boxHoldsText('cursor', 'Rules.', at('Rules.'))).toBe(false);
+    const d = delivery();
+    d.showText(at());
+    d.io.type = (text) => { d.calls.push(text); d.showText(at(text)); return true; };
+    expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+  });
+
+  test('a window whose top frame scrolled off reads unknown', () => {
+    const lines = fixture('idle').split('\n');
+    const at = lines.findIndex((line) => line === '  → Plan, search, build anything');
+    const only = lines.slice(at).join('\n');
+    expect(readScreen('cursor', only).kind).toBe('unknown');
+    const held = only.replace('  → Plan, search, build anything', '  → Rules.');
+    expect(readScreen('cursor', held).kind).toBe('unknown');
+    expect(boxHoldsText('cursor', 'Rules.', held)).toBe(false);
+  });
+});
+
+describe('the person\'s own box, captured (Cursor)', () => {
+  // The round-2 fixtures (see the fixtures README): a person's text typed into Cursor's own box
+  // and never sent. Each box reads back as exactly its own text, and as nothing else.
+  const CAPTURES: [string, string][] = [
+    ['typed-two-line', 'alpha typed line one\nbeta typed line two'],
+    ['pasted-two-line', 'gamma pasted first\ndelta pasted second'],
+    ['typed-glyph-second', 'epsilon first line\n→ zeta glyph second'],
+    ['typed-gt-second', 'eta first line\n> theta gt second'],
+    ['typed-wrap', 'iota long line that wraps at the pane width through several words to show the continuation column of a wrapped row on this screen'],
+    ['typed-blank-middle', 'kappa first line\n\nlambda third line'],
+  ];
+
+  test.each(CAPTURES)('%s reads unsent and holds exactly its text', (name, text) => {
+    const screen = fixture(name);
+    expect(readScreen('cursor', screen).kind).toBe('unsent');
+    expect(classifyComposer('cursor', screen.split('\n')).kind).toBe('unsent');
+    expect(boxHoldsText('cursor', text, screen)).toBe(true);
+  });
+
+  test.each(CAPTURES)('%s is refused for any other text', (name, text) => {
+    const screen = fixture(name);
+    expect(boxHoldsText('cursor', `${text}.`, screen)).toBe(false);
+    expect(boxHoldsText('cursor', `${text}\nand one more`, screen)).toBe(false);
+    expect(boxHoldsText('cursor', CAPTURED_WRAP, screen)).toBe(false);
+    expect(boxHoldsText('cursor', NUDGE_TEXT, screen)).toBe(false);
+  });
+
+  test('no capture holds another capture\'s text', () => {
+    for (const [name, text] of CAPTURES) {
+      for (const [other] of CAPTURES) {
+        if (other !== name) expect(boxHoldsText('cursor', text, fixture(other))).toBe(false);
+      }
+    }
+  });
+
+  test('the glyph second line is drawn at the content column, never at the prompt column', () => {
+    // The capture's own proof, tied to the twin test above: the person's second line begins
+    // with `→` and the CLI draws it at the fourth column — the continuation indent — not at
+    // the prompt's second.
+    expect(readBox('cursor', fixture('typed-glyph-second'))).toEqual({
+      first: 'epsilon first line',
+      indent: 4,
+      rows: ['    → zeta glyph second'],
+      wrap: { continuation: 'text-column', kind: 'word' },
+    });
   });
 });

@@ -38,6 +38,50 @@ permit no input.
 
 No trust, login, or settings dialog was answered, and no vendor configuration was edited.
 
+## Round 2: the person's own box, typed and never sent
+
+Captured from the same installed CLI on 2026-10-04 with herdr 0.7.1,
+`pane read --source visible --lines 80` (plain and ansi), in the scratch session
+`team-test-pc-cursor`; the pane was 53 columns by 23 rows. One Cursor seat at a
+time; it was launched as a seat is launched:
+
+`AGENT_UNATTENDED=1 cursor-agent --model grok-4.7-high --force --sandbox disabled`
+
+`--model grok-4.7-high` was passed so the composer's status row reads as a model
+the shipped profile recognizes; the owner's CLI default that day was a different
+model, and a capture under it read `unknown`. The flag is capture-only; the
+profile is unchanged. Text was typed into the CLI's own box and never sent: each
+capture is one box, the box was cleared afterwards with ctrl+c (once clears the
+whole box; it is the CLI's own key), and the session was stopped and deleted.
+
+- `typed-two-line.txt`: `alpha typed line one` / `beta typed line two`, the second
+  line typed with the CLI's newline key (ctrl+j).
+- `pasted-two-line.txt`: the same shape pasted in one piece (the newline inside
+  one `pane send-text`): `gamma pasted first` / `delta pasted second`. The pane
+  draws it exactly as the typed one.
+- `typed-glyph-second.txt`: `epsilon first line` / `→ zeta glyph second` — the
+  second line begins with the CLI's own prompt glyph.
+- `typed-gt-second.txt`: `eta first line` / `> theta gt second`.
+- `typed-wrap.txt`: one line longer than the pane, wrapped by the CLI onto two
+  more rows.
+- `typed-blank-middle.txt`: `kappa first line`, a blank line, `lambda third line`.
+
+What they prove: the CLI continues a person's line at the fourth column — the
+content column, the prompt's own width — in every case, including a second line
+that itself begins with `→` (which lands at the fourth column as content) and a
+wrapped line. No capture draws a person's own glyph at the prompt column (the
+second); only the CLI draws `  →` there, on its input row. A later row at the
+prompt column is therefore a shape the captures do not show for a person's text,
+and the reader fails closed on it rather than take it for the input row.
+
+Sanitised as the captures above: the shell launch scrollback before Cursor Agent's
+header is removed, and the workspace path is `<workspace>`. All other visible text
+is retained. The ansi reads keep the box's painted padding — rows of trailing
+spaces, trimmed to empty by the plain reads and by the readers' own line trim —
+and otherwise read as the plain captures do.
+
+No trust, login, or settings dialog was answered, and no vendor configuration was edited.
+
 ## Constructed
 
 - `working-no-spinner.txt`: constructed from `working.txt` by removing the braille spinner line. Not a capture. That line sits several lines above the prompt, so a longer tool transcript pushes it out of the 20-line window. The prompt still ends in `ctrl+c to stop`.

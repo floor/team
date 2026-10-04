@@ -519,6 +519,13 @@
       "provenance": "capture"
     },
     {
+      "file": "cursor/2026.10.01/pasted-two-line.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "cursor/2026.10.01/rules-accepted.txt",
       "cli": "cursor",
       "classify": "idle",
@@ -551,6 +558,41 @@
       "cli": "cursor",
       "classify": "trust",
       "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-blank-middle.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-glyph-second.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-gt-second.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-two-line.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-wrap.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
       "provenance": "capture"
     },
     {
