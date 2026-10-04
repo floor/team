@@ -10,6 +10,12 @@ the default session had eight agents before and after. Config and auth hashes we
 - `trust.txt`: the same command with the invocation-only
   `-c check_for_update_on_startup=false`, in an untrusted worktree. The workspace
   was closed without answering the trust question.
+- `trust-folder.txt`: plain `codex --no-daemon` with no other flag, on 2026-10-04,
+  herdr 0.7.1, `pane read --source visible --lines 80` (plain and ansi) of a pane
+  created in a scratch session; the pane was 54 columns by 23 rows, working
+  directory the untrusted sandbox folder `capture-sandbox/codex`, which is not
+  inside a Git project. The workspace trust question came before any composer;
+  Escape returned to the shell and the workspace was closed without answering it.
 - `idle.txt`, `unsent.txt`, `working.txt`, `rules-accepted.txt`: the second command
   in an already-trusted folder. The rules message was pasted, read back, and submitted.
   `working.txt` coincided with herdr reporting `working`; the composer was empty.
@@ -62,6 +68,34 @@ row at column 0, continuations at column 2 (`unsent.txt`), and transcript rows
 (`exit-typed.txt` draws its menu row at 0 with a blank between it and the typed
 input row). A later row at the prompt column with no capture to explain it is a
 shape the reader fails closed on rather than guesses about.
+
+## Round 4: plain `codex --no-daemon` — the folder trust question again
+
+The note for this run said the sandbox folder no longer shows a trust question under
+plain `codex --no-daemon`. It did. The run on 2026-10-04 in scratch session
+`team-test-codex-ml` used exactly `codex --no-daemon`, no other flag, as the pane
+command (`herdr --session team-test-codex-ml pane run w1:p1 "codex --no-daemon"`),
+working directory `capture-sandbox/codex`, pane 54 columns by 23 rows. Codex first
+drew its update notice; Escape skipped it without updating, and the capture matches
+the shipped `startup.txt` notice, so it is not kept as a second fixture. The
+workspace trust question then drew before any composer.
+
+The question is the folder variant: `capture-sandbox/codex` is not inside a Git
+project, so the subdirectory note the older `trust.txt` shows is absent, and the
+path is drawn wrapped over two rows. The parent path is replaced by
+`<untrusted-scratch-directory-placeholder-sandbox>`, the same 49 characters, so the
+wrap stays put; the throwaway folder name `/codex` is retained; nothing else is
+changed. The ansi read shows `Folder access` bold, the path rows dim, the selected
+option bold and reversed, and the footer's `enter` and `esc` bold.
+
+Escape quit the question, the workspace was closed, and the scratch session was
+stopped and deleted. No box was typed into, nothing was sent, and no question was
+answered. So there is still no capture of a person's own multi-line box for Codex:
+the typed-newline shapes — a second line typed with the CLI's newline key, a pasted
+second line, a second line beginning with `›` or `>`, a wrapped line, and a blank
+middle line — were not produced, because the trust question stands in front of the
+composer in this folder. The fix's comment about Codex therefore still says its
+continuation column is not yet proven by a typed-newline capture.
 
 ## Constructed
 
