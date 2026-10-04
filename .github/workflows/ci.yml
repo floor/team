@@ -35,6 +35,7 @@ jobs:
       # The team schema is generated from the section modules; this fails when one moved
       # without the other. It rides in `bun run ci` too.
       - run: bun run schema:check
+      - run: bun run contract:check
 
       # The release's tarball guard, on every pull request, so the real path is
       # exercised before any tag. The filename comes from npm's own --json
