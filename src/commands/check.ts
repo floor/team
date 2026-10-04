@@ -79,10 +79,6 @@ function place(problem: Problem, path?: string): string {
 }
 
 export async function check(argv: string[], io: Io, load: LoadConfig = loadConfig): Promise<number> {
-  if (argv.includes('--help') || argv.includes('-h')) {
-    io.stdout(USAGE);
-    return 0;
-  }
   const args = parse(argv);
   if (typeof args === 'string') {
     io.stderr(`team check: ${args}\n\n${USAGE}`);

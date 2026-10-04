@@ -26,6 +26,7 @@ it, `status` can't say anything and exits 2.
 | `--session <name>` | the herdr session to read, instead of `team.session` |
 | `--file <path>` | the team file, instead of `.agents/team.yaml` |
 | `--json` | print the same reading as one JSON document instead of the table, the notes and the repairs |
+| `--help`, `-h` | the usage, and exit 0 |
 
 ## Rows
 

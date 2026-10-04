@@ -36,6 +36,7 @@ terminal outside herdr.
 | `--abandon` | the owner's: close the workspace of a seat that can't be asked, typing nothing into it |
 | `--session <name>` | the herdr session, instead of `team.session` |
 | `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone |
+| `--help`, `-h` | the usage, and exit 0 |
 
 ## What it prints
 

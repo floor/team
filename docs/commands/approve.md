@@ -27,6 +27,7 @@ The owner, from a terminal outside herdr: no seat approves a file, not even the 
 | --- | --- |
 | `--show` | print the comparison, ceilings and seats, and stop; change nothing |
 | `--file <path>` | the team file, instead of `.agents/team.yaml` |
+| `--help`, `-h` | the usage, and exit 0 |
 
 ## What it prints
 

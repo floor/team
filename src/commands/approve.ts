@@ -37,7 +37,7 @@ export const realSources: ApproveSources = {
   home: homedir(),
 };
 
-const USAGE = 'Usage: team approve [--show] [--file <path>]\n';
+export const USAGE = 'Usage: team approve [--show] [--file <path>]\n';
 
 export const approve: Command = (argv, io) => runApprove(argv, io, realSources);
 export default approve;

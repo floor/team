@@ -89,11 +89,13 @@ export function exclude(root: string): string[] {
 export const init: Command = (argv, io) => runInit(argv, io);
 export default init;
 
+export const USAGE = 'Usage: team init [--restore]\n';
+
 // `home` is where the user-level store is looked for; tests hand in a temporary one.
 export async function runInit(argv: string[], io: Io, home?: string): Promise<number> {
   const args = readArgs(argv, [], ['restore']);
   if (args.error || args.rest.length) {
-    io.stderr(`team init: ${args.error ?? `unexpected "${args.rest[0]}"`}\nUsage: team init [--restore]\n`);
+    io.stderr(`team init: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
     return 2;
   }
   const caller = callerOf(io);

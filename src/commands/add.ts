@@ -73,7 +73,7 @@ export const realSources: AddSources = {
   launch: realLaunch,
 };
 
-const USAGE = `Usage: team add <name> [--session <name>] [--file <path>]
+export const USAGE = `Usage: team add <name> [--session <name>] [--file <path>]
        team add --temporary --like <seat> --until <result:path|merged:branch> [--worktree <task>] [--session <name>] [--file <path>]
 `;
 
