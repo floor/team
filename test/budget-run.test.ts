@@ -141,6 +141,15 @@ describe('running a check command', () => {
     expect(Date.now() - started).toBeLessThan(4000);
   });
 
+  test('a command that traps TERM is killed at the timeout, not waited out', () => {
+    const trapped = script('trap "" TERM\nsleep 6\necho "12.40 USD"');
+    const started = Date.now();
+    expect(readCheck(spendAccount(), trapped, NOW, 200)).toBeNull();
+    // The kill signal is SIGKILL: under the default SIGTERM the trap would swallow it and the
+    // call would block for the whole sleep, well past twice the timeout.
+    expect(Date.now() - started).toBeLessThan(400);
+  });
+
   test('it gets an empty environment with only PATH and HOME', () => {
     const look = script('if [ -n "$TEAM_CHECK_SECRET" ]; then echo "$TEAM_CHECK_SECRET"; else echo "5 USD"; fi');
     process.env.TEAM_CHECK_SECRET = 'synthetic-not-a-secret';

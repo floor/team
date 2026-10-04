@@ -81,7 +81,9 @@ export function parseOutput(account: BudgetAccount, text: string, now: number): 
 /**
  * Runs one approved command and returns its output, or null: § 5 gives it an
  * empty environment with PATH and HOME, a timeout, and exit 0; stderr is dropped.
- * The command's bytes are the owner's, so they are returned to the parser only.
+ * The timeout kills (SIGKILL: a command that traps TERM would otherwise run on,
+ * and `spawnSync` blocks the whole watch loop while it does). The command's bytes
+ * are the owner's, so they are returned to the parser only.
  */
 export function runCommand(path: string, timeoutMs = 10_000): string | null {
   try {
@@ -89,6 +91,7 @@ export function runCommand(path: string, timeoutMs = 10_000): string | null {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: timeoutMs,
+      killSignal: 'SIGKILL',
       env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '' },
     });
     if (result.error || result.status !== 0) return null;
