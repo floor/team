@@ -92,6 +92,8 @@ export async function executePlan(steps: readonly Step[], session: string, host:
       if (op?.do === 'ready' && op.seat) {
         host.record(op.seat, { stage: 'ready', rules: op.rules });
         finish(op.seat, 'ready');
+      } else if (op?.do === 'refuse') {
+        finish(op.seat, op.why);
       } else host.say(`  skip ${step.text}\n`);
       continue;
     }
@@ -121,6 +123,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'create': {
+        if (op.seat && op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         if (op.seat) {
           const why = host.allow(op.seat);
           if (why) {
@@ -155,6 +158,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'launch': {
+        if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         const why = host.allow(op.seat);
         if (why) {
           dropped.add(op.seat);

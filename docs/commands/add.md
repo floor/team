@@ -13,16 +13,16 @@ the same folders `up` refuses, before it writes anything.
 
 ## Synopsis
 
-    team add <name> [--session <name>] [--file <path>]
+    team add <name> [--dry-run] [--session <name>] [--file <path>]
     team add --temporary --like <seat> --until <result:path|merged:branch> [--worktree <task>]
-             [--session <name>] [--file <path>]
+             [--dry-run] [--session <name>] [--file <path>]
 
 ## What it reads and writes
 
 Reads the team file (or the one `--file` names), this machine's approval store (the record, and the
-approved copy the seat is put back from), the session's state (`.agents/team.state.json`), herdr (the
-session's state, its agents and their workspaces), and, like `up`: the doctor's findings and the
-machine's load, free memory, free disk and free swap.
+approved copy the seat is put back from), the session's state (`.agents/team.state.json`, including
+stored budget readings), herdr (the session's state, its agents and their workspaces), and, like
+`up`: the doctor's findings and the machine's load, free memory, free disk and free swap.
 
 Writes the team file when the seat has to be put back into it, `.agents/team.state.json` (the seat's
 stage, pane and workspace; a temporary seat's entry), `.agents/team.log`, the store's ledger of
@@ -44,6 +44,7 @@ here too, for the one seat being started.
 | `--until <end>` | what the temporary seat works for: `result:<path>` (a file it writes, relative to the project) or `merged:<branch>` (a branch merged into the base) |
 | `--worktree <task>` | the worktree the temporary seat is started in, instead of the seat's own `cwd` |
 | `--session <name>` | the herdr session, instead of `team.session` |
+| `--dry-run` | print whether this seat would launch or be refused, and exit 0; nothing is written |
 | `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone |
 | `--help`, `-h` | the usage, and exit 0 |
 
@@ -75,6 +76,7 @@ without input and the seat left out`, and the rest of the table on the [team up]
 | `team add: <name> is already running` | 1 |
 | `team add: no launch profile for \`<cli>\` in this version` | 1 |
 | `team add: the approval allows <n> seats; <m> would be running` / `… <n> temporary seats; …` / `… <n> <vendor> seats; …` | 1 |
+| `team add: <account> <window> left <n>%, changed <age> ago; room: <accounts>` | 1 |
 | `team add: session can't be "default", herdr's own session` | 1 |
 | `team add: herdr doesn't answer` | 1 |
 | ``team add: session <session> is stopped; clear it with `herdr session delete <session>` `` | 1 |
@@ -204,7 +206,7 @@ team add: --like, --until and --worktree are for --temporary
 exit 2
 $ team add ; echo "exit $?"
 team add: a seat name is required
-Usage: team add <name> [--session <name>] [--file <path>]
-       team add --temporary --like <seat> --until <result:path|merged:branch> [--worktree <task>] [--session <name>] [--file <path>]
+Usage: team add <name> [--dry-run] [--session <name>] [--file <path>]
+       team add --temporary --like <seat> --until <result:path|merged:branch> [--worktree <task>] [--dry-run] [--session <name>] [--file <path>]
 exit 2
 ```

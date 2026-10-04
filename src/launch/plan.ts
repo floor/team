@@ -10,8 +10,9 @@ export type Op =
   | { do: 'server'; session: string }
   | { do: 'wait-session'; session: string; seconds: number }
   | { do: 'lobby'; path: string }
-  | { do: 'create'; seat?: string; label: string; cwd: string }
-  | { do: 'launch'; seat: string; label: string; command: string; pane?: string }
+  | { do: 'create'; seat?: string; label: string; cwd: string; notice?: string }
+  | { do: 'launch'; seat: string; label: string; command: string; pane?: string; notice?: string }
+  | { do: 'refuse'; seat: string; why: string }
   | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; pane?: string; workspace?: string }
   | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
   | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; seconds: number; pane?: string }
@@ -50,6 +51,8 @@ export interface UpSeat {
   agentLive?: boolean;
   /** The seat works in worktrees: it waits in the lobby until a brief names its worktree. */
   lobby?: boolean;
+  /** Set when this launch is refused, or the account's figure is unknown. */
+  budget?: { kind: 'refuse'; why: string } | { kind: 'unknown'; account: string };
 }
 
 export interface UpInput {
@@ -115,7 +118,21 @@ export function upPlan(input: UpInput): Step[] {
       steps.push({ kind: 'skip', text: `${seat.name}: already ready; left as it is` });
       continue;
     }
+    if (seat.budget?.kind === 'refuse') {
+      steps.push({
+        kind: 'skip',
+        text: `${seat.name}: would refuse: ${seat.budget.why}`,
+        do: { do: 'refuse', seat: seat.name, why: seat.budget.why },
+      });
+      continue;
+    }
     const pane = seat.pane ?? paneOf(seat.label);
+    let notice = seat.budget?.kind === 'unknown' ? `${seat.budget.account} is unknown` : undefined;
+    const takeNotice = (): string | undefined => {
+      const text = notice;
+      notice = undefined;
+      return text;
+    };
     const cwd = join(input.root, seat.cwd);
     const fresh = seat.stage === undefined || !seat.pane;
     if (fresh) {
@@ -129,18 +146,22 @@ export function upPlan(input: UpInput): Step[] {
           do: { do: 'lobby', path: cwd },
         });
       }
+      const said = takeNotice();
       steps.push({
         kind: 'run',
         argv: herdr(session, 'workspace', 'create', '--cwd', cwd, '--label', seat.label, '--no-focus'),
-        do: { do: 'create', seat: seat.name, label: seat.label, cwd },
+        ...(said ? { note: `${said}; would launch` } : {}),
+        do: { do: 'create', seat: seat.name, label: seat.label, cwd, ...(said ? { notice: said } : {}) },
       });
     }
     const command = launchCommand(profile, seat.launch, seat.rules);
     if (fresh || (seat.stage === 'launched' && !seat.agentLive)) {
+      const said = takeNotice();
       steps.push({
         kind: 'run',
         argv: herdr(session, 'pane', 'run', pane, command),
-        do: { do: 'launch', seat: seat.name, label: seat.label, command, pane: seat.pane },
+        ...(said ? { note: `${said}; would launch` } : {}),
+        do: { do: 'launch', seat: seat.name, label: seat.label, command, pane: seat.pane, ...(said ? { notice: said } : {}) },
       });
     }
     const rules = profile.rulesOption === null ? 'message' : 'option';
