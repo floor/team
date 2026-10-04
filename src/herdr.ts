@@ -224,8 +224,10 @@ export function paneRead(pane: string, lines: number, session?: string): string 
   try {
     styled = paneExec([...full, '--format', 'ansi']);
   } catch (error) {
-    // `killed` is how execFileSync reports its own timeout; the type does not carry it.
-    if (!(error instanceof Error) || ('killed' in error && error.killed === true)) return null;
+    if (!(error instanceof Error)) return null;
+    // execFileSync reports its own timeout as an Error with code ETIMEDOUT — signal SIGTERM,
+    // status null, and no killed field. Observed under Bun, from a run, not from memory.
+    if ((error as { code?: unknown }).code === 'ETIMEDOUT') return null;
     try {
       return paneExec(full);
     } catch {

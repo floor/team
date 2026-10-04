@@ -3,7 +3,8 @@ import { paneRead, setPaneExec } from '../src/herdr.ts';
 
 // paneRead's process call is injectable, so these tests ask what it requests, what it falls
 // back to and when it gives up — without a live herdr. The timeout error it must recognise
-// is the one execFileSync throws: an Error with `killed` set.
+// is the one execFileSync really throws: an Error with code ETIMEDOUT, signal SIGTERM and
+// status null — and no killed field.
 describe('paneRead', () => {
   afterEach(() => setPaneExec(null));
 
@@ -43,7 +44,7 @@ describe('paneRead', () => {
     const calls: string[][] = [];
     setPaneExec((args) => {
       calls.push(args);
-      throw Object.assign(new Error('spawnSync ETIMEDOUT'), { killed: true });
+      throw Object.assign(new Error('spawnSync herdr ETIMEDOUT'), { code: 'ETIMEDOUT', signal: 'SIGTERM', status: null });
     });
     expect(paneRead('%1', 8)).toBeNull();
     expect(calls.length).toBe(1);
