@@ -79,8 +79,10 @@ or a machine that stays full, is said once, not every pass.
 | `<account> is unknown while <seat> runs on it` | nothing counts for an account whose seats are running |
 
 Each report is addressed to the owner or to the operator. The operator's is what the nudge stands
-for, and `--no-notify` can drop its desktop notification. The owner's — a permission prompt, a
-machine figure, an account inside its reserve or at its floor — is notified anyway. Neither flag
+for, and `--no-notify` can drop its desktop notification. The owner's — a permission prompt, an approval difference, a
+machine figure, an account inside its reserve or at its floor — is notified anyway, and so are the
+watch's own notices: the file can't be read, herdr doesn't answer, the operator could not be nudged,
+a typed nudge was not sent, and the watch stopped. Neither flag
 removes the log line, and neither reaches `team status`: a reserve still shows on the budgets
 table, and an approval difference is still a difference.
 

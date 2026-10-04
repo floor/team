@@ -163,7 +163,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
       const problem = current.ok ? current.notice : `team.yaml can't be read (${current.errors[0]?.message ?? 'unknown'}); watching with the team as it was`;
       if (problem !== notice) {
         notice = problem;
-        if (problem) say(problem, true);
+        if (problem) tell(problem, true);
       }
 
       // The values in force, read with the file: until the owner approves an edit to `watch`,
@@ -174,7 +174,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
       const budget = sources.budgetsInForce(team, root);
       const live = sources.live(session, team);
       if (!live) {
-        if (!silent) say('herdr doesn\'t answer; the watch keeps trying', true);
+        if (!silent) tell('herdr doesn\'t answer; the watch keeps trying', true);
         silent = true;
       } else {
         silent = false;
@@ -212,9 +212,9 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         saveReadings(dir, session, result.readings, now);
         if (result.nudge) {
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);
-          else deliver(result.nudge, team, session, sources, memory, say);
+          else deliver(result.nudge, team, session, sources, memory, say, tell);
         }
-        if (result.fallback) say(result.fallback, true);
+        if (result.fallback) tell(result.fallback, true);
         await closeEnded({ team, root, dir, session, live, sources, say, io, told });
       }
       beat();
@@ -225,7 +225,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
       const record = state.sessions[session];
       if (record?.watch?.pid === sources.pid) delete record.watch;
     });
-    say(`the watch of "${session}" stopped`, true);
+    tell(`the watch of "${session}" stopped`, true);
   }
   return 0;
 }
@@ -250,6 +250,7 @@ function spendOf(outcomes: readonly CheckOutcome[]): SpendReading[] {
 function deliver(
   nudge: { pane: string; text: string; pending: string[] }, team: TeamFile, session: string, sources: WatchSources,
   memory: ReturnType<typeof newMemory>, say: (text: string, desktop: boolean) => void,
+  tell: (text: string, notify: boolean) => void,
 ): void {
   const cli = team.seats.find((seat) => seat.name === team.operator)?.cli ?? '';
   const look = () => readScreen(cli, sources.screen(nudge.pane, session) ?? undefined).kind;
@@ -268,7 +269,7 @@ function deliver(
   // then stays unsent, which the next passes report, and the nudge is kept.
   const after = look();
   if (after !== 'idle' && after !== 'unsent') {
-    say('a nudge was typed and not sent: the operator\'s screen changed before the Enter', true);
+    tell('a nudge was typed and not sent: the operator\'s screen changed before the Enter', true);
     keep();
     return;
   }

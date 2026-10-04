@@ -699,6 +699,17 @@ describe('team watch', () => {
     expect(typed[1]).toBe('w0:p1 <enter>');
   });
 
+  test('--no-notify still notifies the fallback when the operator never frees up', async () => {
+    scene = live({
+      'deepseek-acme-2': { status: 'blocked', screen: question },
+      'claude-operator-acme': { status: 'working', screen: busy },
+    });
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file, '--no-notify'], io, sources(6));
+    expect(notified.some((line) => line.startsWith('the operator could not be nudged'))).toBe(true);
+    expect(notified).not.toContain('deepseek-acme-2 asked a question: the operator\'s to act on');
+  });
+
   test('--no-notify still delivers a floor report, and the log keeps it', async () => {
     writeFileSync(file, withAccounts(`  accounts:
     openai: { kind: subscription, reserve: 3%, sources: [status_line] }
@@ -746,7 +757,8 @@ describe('team watch', () => {
     const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file, '--no-nudge', '--no-notify'], io, sources(1));
     expect(typed).toEqual([]);
-    expect(notified).toEqual([]);
+    expect(notified).toEqual(['the watch of "acme-web" stopped']);
+    expect(notified).not.toContain('deepseek-acme-2 asked a question: the operator\'s to act on');
     expect(io.out).toContain(`nudge not typed (--no-nudge): ${NUDGE_TEXT}`);
     expect(readFileSync(join(dir, '.agents', 'team.log'), 'utf8')).toContain('deepseek-acme-2 asked a question');
   });
