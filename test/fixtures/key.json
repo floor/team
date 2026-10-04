@@ -1,0 +1,5 @@
+{
+  "format": 1,
+  "algorithm": "ed25519",
+  "private": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIP2t3F+NpX9XmrMDDr5JB0/d7RL0XiVJlcZg7dMUQaYB\n-----END PRIVATE KEY-----\n"
+}

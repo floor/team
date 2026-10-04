@@ -105,6 +105,8 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | --- |
 | ``only the owner runs `up`, from a terminal outside herdr; this call is <caller>`` |
 | ``the file was never approved on this machine: run `team approve` `` |
+| ``approved before records were signed: run `team approve` once`` — the record was written by an earlier `team` |
+| ``the record <case>: run `team approve` once`` — a signed record that does not verify |
 | ``the file is not the approved one (<differences>): run `team approve` `` |
 | a `MISS` finding from [team doctor](doctor.md) — herdr or a CLI not installed, a CLI not logged in, a launch naming another model than the file |
 | `the load is 1.2 per core, above 1` / `free memory is 8%, below 25%` / `free disk is 3.0 GB, below 10.0 GB` / `free swap is 1.0 GB, below 2.0 GB` |

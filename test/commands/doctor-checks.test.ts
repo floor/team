@@ -95,6 +95,7 @@ function approve(text: string): void {
     storePath(loaded.team.project, loaded.root, home),
     { approval: approvalOf(loaded.team, loaded.root, NOW, resolved.checks), file: text },
     loaded.team.seats,
+    home,
   );
 }
 

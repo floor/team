@@ -7,7 +7,7 @@ import { fingerprints } from '../src/approve/fingerprint.ts';
 import { checkDrift, checkReadings, resolveCheck, resolveChecks } from '../src/budgets/checks.ts';
 import { blocksLaunch, doctorFindings, type DoctorSources } from '../src/commands/doctor.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
-import { storePath, writeApproval } from '../src/store/store.ts';
+import { approvalStanding, storePath, writeApproval } from '../src/store/store.ts';
 
 const minimal = `format: 1
 project: acme
@@ -114,7 +114,7 @@ describe('budgets', () => {
       writeApproval(storePath(team.project, dir, home), {
         approval: approvalOf(team, dir, new Date('2026-10-04T00:00:00Z'), first.checks),
         file: 'format: 1\n',
-      }, []);
+      }, [], home);
       expect(approvalDifferences(team, dir, home)).toEqual([]);
       writeFileSync(command, '#!/bin/sh\necho other\n');
       const second = resolveChecks(team, dir, '');
@@ -133,7 +133,7 @@ describe('budgets', () => {
         now: () => new Date('2026-10-04T00:00:00Z'),
         home,
       };
-      const findings = doctorFindings(team, dir, dir, team.session, sources, []);
+      const findings = doctorFindings(team, dir, dir, team.session, sources, [], approvalStanding(dir, home));
       const finding = findings.find((item) => item.text.includes('deepseek'));
       expect(finding).toEqual({ level: 'warn', text: 'the check for deepseek changed after approval and was not run; that account reads unknown' });
       expect(blocksLaunch(finding!)).toBe(false);

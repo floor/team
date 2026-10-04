@@ -84,6 +84,9 @@ export type TeamObservation = {
   workers: { idle: boolean }[];
   // How the file differs from the approved one: [] none, null never approved, undefined unlooked.
   approval: string[] | null | undefined;
+  // The one-line case when no verified approval is in force and the record says why — a legacy
+  // record, or one the verification refused. The watch itself has said it; the check stays silent.
+  approvalReason: string | null | undefined;
   // The readings that count this pass (§ 4.3): the state's, with the seats' figures folded in.
   readings: Seen[];
   // What each checked account's command read this pass, or why it has none (§ 5).

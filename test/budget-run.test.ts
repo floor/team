@@ -244,7 +244,7 @@ describe('runChecks, end to end', () => {
     const approve = (checks: Record<string, ApprovedCheck>) => writeApproval(storePath(file.project, dir, home), {
       approval: approvalOf(file, dir, new Date(NOW), checks),
       file: 'format: 1\n',
-    }, []);
+    }, [], home);
 
     // Two lines for a spend account break the contract; the account is unreadable, and the
     // second line — whatever it is — is nowhere in what comes back.
@@ -274,7 +274,7 @@ describe('runChecks, end to end', () => {
     writeApproval(storePath(file.project, dir, home), {
       approval: approvalOf(file, dir, new Date(NOW), resolved.checks),
       file: 'format: 1\n',
-    }, []);
+    }, [], home);
     writeFileSync(command, '#!/bin/sh\necho "9.90 USD"\n', { mode: 0o755 });
     expect(runChecks(file, dir, NOW, home)).toEqual([{ account: 'deepseek', state: 'unapproved' }]);
     // A file never approved on this machine runs no check and reads no account: the budgets

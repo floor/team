@@ -76,10 +76,10 @@ describe('team init', () => {
 
       const home = join(base, 'home');
       mkdirSync(home);
-      writeApproval(storePath(resWithout.team.project, project, home), { approval: approvalOf(resWithout.team, project), file: withoutLine }, resWithout.team.seats);
+      writeApproval(storePath(resWithout.team.project, project, home), { approval: approvalOf(resWithout.team, project), file: withoutLine }, resWithout.team.seats, home);
       expect(approvalDifferences(resWith.team, project, home)).toEqual([]);
 
-      writeApproval(storePath(resWith.team.project, project, home), { approval: approvalOf(resWith.team, project), file: withLine }, resWith.team.seats);
+      writeApproval(storePath(resWith.team.project, project, home), { approval: approvalOf(resWith.team, project), file: withLine }, resWith.team.seats, home);
       expect(approvalDifferences(resWithout.team, project, home)).toEqual([]);
     }
   });
@@ -152,7 +152,7 @@ describe('team init', () => {
     const text = readFileSync(new URL('./fixtures/example.yaml', import.meta.url), 'utf8');
     const result = validateTeamFile(text);
     if (!result.ok) throw new Error('the example does not validate');
-    writeApproval(storePath(result.team.project, project, home), { approval: approvalOf(result.team, project), file: text }, []);
+    writeApproval(storePath(result.team.project, project, home), { approval: approvalOf(result.team, project), file: text }, [], home);
     const io = testIo(project, owner);
     expect(await runInit(['--restore'], io, home)).toBe(0);
     expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).toBe(text);

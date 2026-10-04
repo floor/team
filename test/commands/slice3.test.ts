@@ -9,6 +9,7 @@ import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
 import { paneStillRunning, runDown, type DownSources } from '../../src/commands/down.ts';
 import { runUp, type UpSources } from '../../src/commands/up.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
+import { installKey } from '../../src/store/keys.ts';
 import { readApproval, readLedger, storePath } from '../../src/store/store.ts';
 import { readScreen } from '../../src/watch/screen.ts';
 import { testIo } from '../helpers.ts';
@@ -30,6 +31,9 @@ beforeEach(() => {
   home = join(base, 'home');
   mkdirSync(join(root, '.agents'), { recursive: true });
   mkdirSync(home);
+  // Every approval in this file signs with the fixed fixture key, so the fingerprint the
+  // commands print is the same on every run.
+  installKey(home, JSON.parse(readFileSync(join(import.meta.dir, '../fixtures/key.json'), 'utf8')));
   writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE);
 });
 
@@ -211,7 +215,7 @@ describe('team doctor', () => {
     expect(run.err).toBe('');
     expect(run.out).toBe(
       [
-        'ok    the file is the one the owner approved',
+        'ok    the file is the one the owner approved (approval #1, 2026-10-03, key fe21ef6293de)',
         'ok    herdr 0.7.1',
         '--    session acme-web is not running',
         'ok    claude 2.1.288 (Claude Code)',

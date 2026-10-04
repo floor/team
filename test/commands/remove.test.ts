@@ -334,7 +334,7 @@ describe('team remove', () => {
     writeApproval(storePath(parsed.team.project, dir, dir), {
       approval: approvalOf(parsed.team, dir),
       file: FILE,
-    }, parsed.team.seats);
+    }, parsed.team.seats, dir);
     const edited = FILE.replace('launch: claude --model claude-opus-5-5', 'launch: claude --model claude-opus-5-5 --yolo');
     writeFileSync(file, edited);
     const made = world();
@@ -353,7 +353,7 @@ describe('team remove', () => {
     writeApproval(storePath(parsed.team.project, dir, dir), {
       approval: approvalOf(parsed.team, dir),
       file: FILE,
-    }, parsed.team.seats);
+    }, parsed.team.seats, dir);
     writeFileSync(file, FILE.replace('    name: worker', '    name: worker\n    parked: true'));
     const made = world();
     made.sources.home = dir;
@@ -370,7 +370,7 @@ describe('team remove', () => {
     writeApproval(storePath(parsed.team.project, dir, dir), {
       approval: approvalOf(parsed.team, dir),
       file: FILE,
-    }, parsed.team.seats);
+    }, parsed.team.seats, dir);
     const parked = FILE.replace('    name: worker', '    name: worker\n    parked: true');
     const hand = validateTeamFile(parked);
     if (!hand.ok) throw new Error('parked fixture');
