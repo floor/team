@@ -28,22 +28,10 @@ const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url)
     mode: shared
 `).replace('  seats: 6', '  seats: 8');
 
-// The example's codex-acme is parked. The neutral scene unparks it, so the parked rules (and
-// their notice) are in play only where a test asks for them with parkedTeam.
-const unparked = example.replace('    parked: true\n', '');
-
-function parse(source: string): TeamFile {
-  const result = validateTeamFile(source);
+function team(): TeamFile {
+  const result = validateTeamFile(example);
   if (!result.ok) throw new Error(JSON.stringify(result.errors));
   return result.team;
-}
-
-function team(): TeamFile {
-  return parse(unparked);
-}
-
-function parkedTeam(): TeamFile {
-  return parse(example);
 }
 
 // Screens of Claude Code, as the live team shows them.
@@ -55,10 +43,6 @@ const unsent = `${RULE}\n❯ Brief: take the next task from the queue\n${RULE}\n
 const permission = `Bash command\n\n  chmod +x run.sh\n\nDo you want to proceed?\n❯ 1. Yes\n  2. No, and tell Claude what to do differently\n\nEsc to cancel · Tab to amend\n`;
 const question = `Which branch should this start from?\n\n❯ 1. main\n  2. next\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n`;
 const busy = `✶ Transfiguring… (9m 34s · ↓ 64.5k tokens)\n\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
-// The captured screen names Terra; the example's codex-acme is GPT Sol 6. Read with the seat's own
-// id, this screen is here for its unsent composer alone, with no model mismatch of its own.
-const codexUnsent = readFileSync(new URL('./fixtures/codex/0.157.0/unsent.txt', import.meta.url), 'utf8')
-  .replaceAll('GPT-5.6-Terra', 'GPT-6-Sol');
 
 describe('reading a screen of Claude Code', () => {
   test('an empty idle prompt, with or without a greyed suggestion', () => {
@@ -178,46 +162,13 @@ describe('a pass of the watch', () => {
     expect(pass(team(), emptySession(), quiet, fine, 10 * MIN, memory).reports).toEqual([]);
   });
 
-  test('a parked seat found running is reported once, then watched like any running seat', () => {
+  test('a parked seat is not reported while idle, and still is when blocked or holding unsent text', () => {
     const memory = newMemory();
-    const at = (scene: Live, minute: number) =>
-      pass(parkedTeam(), emptySession(), scene, fine, minute * MIN, memory).reports.map((report) => report.text);
-    // Parked in the file and running in herdr: said once, while that run lasts.
-    expect(at(live(), 0)).toEqual(['codex-acme is parked in the file but running']);
-    expect(at(live(), 5)).toEqual([]);
-    // Watched like any running seat: the idle anchor counts from its last work.
-    expect(at(live({ 'codex-acme': { status: 'done' } }), 15)).toEqual(['codex-acme has been idle for 10 minutes']);
-    // Its unsent text is reported after unsent_after, as for any running seat.
-    const holding = live({ 'codex-acme': { status: 'idle', screen: codexUnsent } });
-    expect(at(holding, 17)).toEqual([]);
-    expect(at(holding, 18)).toEqual(['codex-acme holds text in its input box that was never sent']);
-    expect(at(live({ 'codex-acme': { status: 'blocked' } }), 19))
-      .toEqual(['codex-acme is blocked, and its screen is not one the watch recognises']);
-  });
-
-  test('a parked seat that is not running stays silent, and is told again on its next run', () => {
-    const memory = newMemory();
-    const at = (scene: Live, minute: number) =>
-      pass(parkedTeam(), emptySession(), scene, fine, minute * MIN, memory).reports.map((report) => report.text);
-    expect(at(live(), 0)).toEqual(['codex-acme is parked in the file but running']);
-    // Gone from herdr: silent — a parked seat is only news while it is running.
-    const gone = live();
-    gone.agents = gone.agents.filter((one) => one.name !== 'codex-acme');
-    expect(at(gone, 10)).toEqual([]);
-    // Running again is a new run: told again.
-    expect(at(live(), 20)).toEqual(['codex-acme is parked in the file but running']);
-  });
-
-  test('a seat unparked in the file behaves as before', () => {
-    const memory = newMemory();
-    const at = (scene: Live, minute: number) =>
-      pass(team(), emptySession(), scene, fine, minute * MIN, memory).reports.map((report) => report.text);
-    // Unparked: no notice while it runs.
-    expect(at(live(), 0)).toEqual([]);
-    // Gone from herdr it is reported as any other seat.
-    const gone = live();
-    gone.agents = gone.agents.filter((one) => one.name !== 'codex-acme');
-    expect(at(gone, 10)).toEqual(['codex-acme is in the file and is not running']);
+    const parked = live({ 'codex-acme': { status: 'idle' } });
+    expect(pass(team(), emptySession(), parked, fine, 0, memory).reports).toEqual([]);
+    expect(pass(team(), emptySession(), parked, fine, 60 * MIN, memory).reports).toEqual([]);
+    const blocked = pass(team(), emptySession(), live({ 'codex-acme': { status: 'blocked' } }), fine, 61 * MIN, memory).reports;
+    expect(blocked.map((report) => report.text)).toEqual(['codex-acme is blocked, and its screen is not one the watch recognises']);
   });
 
   test('a permission prompt that herdr calls idle is the owner\'s, and is never an idle seat', () => {
@@ -270,11 +221,10 @@ describe('a pass of the watch', () => {
       'deepseek-acme-2': { status: 'done', screen: idle },
     });
     // codex-acme is parked and the leads don't count: the two DeepSeek seats are the team.
-    expect(pass(parkedTeam(), emptySession(), all, fine, 0, memory).reports.map((report) => report.text))
-      .toEqual(['codex-acme is parked in the file but running']);
-    const texts = pass(parkedTeam(), emptySession(), all, fine, 10 * MIN, memory).reports.map((report) => report.text);
+    expect(pass(team(), emptySession(), all, fine, 0, memory).reports).toEqual([]);
+    const texts = pass(team(), emptySession(), all, fine, 10 * MIN, memory).reports.map((report) => report.text);
     expect(texts).toContain('every agent is idle');
-    expect(pass(parkedTeam(), emptySession(), all, fine, 15 * MIN, memory).reports.map((report) => report.text)).not.toContain('every agent is idle');
+    expect(pass(team(), emptySession(), all, fine, 15 * MIN, memory).reports.map((report) => report.text)).not.toContain('every agent is idle');
   });
 
   test('a missing seat, an agent the file doesn\'t hold, and a wrong model', () => {
@@ -545,7 +495,7 @@ describe('team watch', () => {
     dir = mkdtempSync(join(tmpdir(), 'team-watch-'));
     mkdirSync(join(dir, '.agents'));
     file = join(dir, '.agents', 'team.yaml');
-    writeFileSync(file, unparked);
+    writeFileSync(file, example);
     typed = [];
     notified = [];
     screenNow = idle;
