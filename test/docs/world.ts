@@ -1,0 +1,385 @@
+// The world a page's examples run in: a herdr session of fake agents and panes, a machine with
+// fixed figures, and the sources every command takes, so nothing reaches a real herdr, a real CLI,
+// or the owner's home. Modelled on the fakes of test/commands/live.test.ts, widened to all the
+// commands the reference documents.
+import { join } from 'node:path';
+import { approvalDifferences } from '../../src/approve/approval.ts';
+import { emptySession, updateState } from '../../src/state.ts';
+import type { AddSources } from '../../src/commands/add.ts';
+import type { DoctorSources } from '../../src/commands/doctor.ts';
+import type { DownLaunch, DownSources } from '../../src/commands/down.ts';
+import type { RemoveSources } from '../../src/commands/remove.ts';
+import type { StatusSources } from '../../src/commands/status.ts';
+import type { Launch, UpSources } from '../../src/commands/up.ts';
+import type { WatchSources } from '../../src/commands/watch.ts';
+import type { Seat, TeamFile } from '../../src/file/types.ts';
+import type { HerdrAgent } from '../../src/herdr.ts';
+import type { Live } from '../../src/status/compare.ts';
+import type { Machine } from '../../src/watch/machine.ts';
+import { readScreen } from '../../src/watch/screen.ts';
+import type { ScreenKind, Spec } from './spec.ts';
+
+/** The pid the fixture's state records for a watch that is alive. */
+export const WATCH_PID = 4242;
+
+/** The pid a `team watch` run in a page has: never the recorded one, as a person's is not. */
+export const RUN_WATCH_PID = 9001;
+
+/** One live agent, or a workspace herdr made before its agent started. */
+type Slot = {
+  name: string | null;
+  agent: boolean;
+  pane: string;
+  workspace: string;
+  label: string;
+  cli: string;
+  status: string;
+  screen: ScreenKind;
+  seat?: Seat;
+};
+
+const TOOL_TESTED: Record<string, { binary: string; version: string; old: string; login: string }> = {
+  'claude-code': { binary: 'claude', version: '2.1.288', old: '2.1.200', login: 'claude-code' },
+  codex: { binary: 'codex', version: '0.157.0', old: '0.150.0', login: 'codex' },
+  cursor: { binary: 'cursor-agent', version: '2026.10.01', old: '2026.09.01', login: 'cursor' },
+  antigravity: { binary: 'agy', version: '1.2.16', old: '1.1.0', login: 'antigravity' },
+};
+
+/** What one seat's pane shows, in the shapes its CLI really prints. */
+export function screenText(cli: string, kind: ScreenKind, seat?: Seat): string {
+  if (cli !== 'claude-code') {
+    throw new Error(`the docs fake knows no screens for \`${cli}\`: use a claude-code seat, or teach screenText its shapes`);
+  }
+  const family = seat?.model.replace(/^Claude\s+/, '') ?? 'Opus';
+  const version = seat?.version ?? '5.5';
+  const rule = '─'.repeat(24);
+  const status = `  main · …/beacon · ${family} ${version} · S: $1.2 · W: 12%\n  ⏵⏵ bypass permissions on\n`;
+  switch (kind) {
+    case 'idle':
+      return `❯ \n${rule}\n${status}`;
+    case 'working':
+      return `✻ Working… (12s)\n❯ \n${rule}\n${status}`;
+    case 'permission':
+      return `Do you want to proceed?\n❯ 1. Yes\n  2. No\n`;
+    case 'trust':
+      return `Is this a project you created or one you trust?\n❯ 1. Yes\n  2. No\n`;
+    case 'question':
+      return `Which change should I make?\nEnter to select\n`;
+    case 'unsent':
+      return `❯ half a sentence\n${rule}\n${status}`;
+    default:
+      return `sh: no such file or directory\n`;
+  }
+}
+
+/** What herdr's own status says of a pane showing this screen: down.ts reads a dialog as blocked. */
+function statusOf(kind: ScreenKind): string {
+  if (kind === 'working') return 'working';
+  if (kind === 'permission' || kind === 'trust' || kind === 'question') return 'blocked';
+  return 'idle';
+}
+
+export type World = {
+  /** What `status` and the watch see, or null when herdr doesn't answer. */
+  live(session: string): Live | null;
+  upSources(): UpSources;
+  downSources(): DownSources;
+  removeSources(): RemoveSources;
+  addSources(): AddSources;
+  statusSources(): StatusSources;
+  watchSources(): WatchSources;
+  doctorSources(): DoctorSources;
+  setScreen(seat: string, kind: ScreenKind): void;
+  setMachine(kind: Spec['machine']): void;
+  readonly did: {
+    starts: number;
+    runs: string[];
+    typed: string[];
+    closed: string[];
+    stopped: number;
+    killed: number[];
+    notified: string[];
+  };
+};
+
+export function createWorld(input: { team: TeamFile | null; spec: Spec; root: string; home: string }): World {
+  const { team, spec, root, home } = input;
+  const dir = join(root, '.agents');
+  const session = team?.session ?? 'beacon';
+  let clock = Date.parse(spec.now);
+  let herdr = spec.herdr;
+  // A watch that is already alive, or one the plan starts: `up` must not start a second.
+  let watchPid: number | null = spec.watch === 'alive' || spec.watch === 'stale' ? WATCH_PID : null;
+  let made = 0;
+  const slots: Slot[] = [];
+  const did: World['did'] = { starts: 0, runs: [], typed: [], closed: [], stopped: 0, killed: [], notified: [] };
+  const now = () => new Date(clock);
+  const sleep = async (ms: number) => {
+    clock += ms;
+  };
+
+  const chosen = (seat: Seat): boolean => spec.agents === 'all' || spec.agents.includes(seat.name);
+  if (team) {
+    for (const seat of team.seats) {
+      if (!chosen(seat)) continue;
+      made++;
+      const screen = spec.screens[seat.name] ?? 'idle';
+      slots.push({
+        name: seat.name,
+        agent: true,
+        pane: `w${made}:p1`,
+        workspace: `w${made}`,
+        label: seat.label,
+        cli: seat.cli,
+        status: statusOf(screen),
+        screen,
+        seat,
+      });
+    }
+  }
+
+  const agentOf = (pane: string) => slots.find((slot) => slot.pane === pane);
+  const agents = (): HerdrAgent[] =>
+    slots
+      .filter((slot) => slot.agent)
+      .map((slot) => ({
+        name: slot.name,
+        agent: slot.cli,
+        pane: slot.pane,
+        workspace: slot.workspace,
+        status: slot.status,
+        cwd: root,
+      }));
+  const texts = (): Record<string, string> => {
+    const screens: Record<string, string> = {};
+    for (const slot of slots) if (slot.agent) screens[slot.pane] = screenText(slot.cli, slot.screen, slot.seat);
+    return screens;
+  };
+  const workspaces = () => slots.map((slot) => ({ id: slot.workspace, label: slot.label }));
+  const sessionState = (): 'absent' | 'running' | 'stopped' => (herdr === 'running' ? 'running' : herdr === 'stopped' ? 'stopped' : 'absent');
+
+  // A page may change the machine for one example (`machine=` on a console fence); the fixture's
+  // own machine is back for the next one.
+  let machineKind = spec.machine;
+  const machine = (): Machine =>
+    machineKind === 'calm'
+      ? { loadPerCore: 0.4, memoryFree: 62, diskFree: 120e9, swapFree: 8e9, swapUsed: 0 }
+      : { loadPerCore: 1.2, memoryFree: 8, diskFree: 120e9, swapFree: 8e9, swapUsed: 0 };
+
+  const action = {
+    sessionState: () => (herdr === 'none' ? null : sessionState()),
+    startServer() {
+      did.starts++;
+      herdr = 'running';
+      return true;
+    },
+    sessionUp: () => herdr === 'running',
+    createWorkspace(_session: string, cwd: string, label: string) {
+      const seat = team?.seats.find((candidate) => candidate.label === label);
+      made++;
+      const pane = `w${made}:p1`;
+      const screen = seat ? (spec.screens[seat.name] ?? 'idle') : 'idle';
+      slots.push({
+        name: null,
+        agent: false,
+        pane,
+        workspace: `w${made}`,
+        label,
+        cli: seat?.cli ?? 'claude-code',
+        status: statusOf(screen),
+        screen,
+        seat,
+      });
+      return { pane, workspace: `w${made}` };
+    },
+    paneRun(_session: string, pane: string, command: string) {
+      did.runs.push(command);
+      const slot = agentOf(pane);
+      // The watchdog pane runs a shell command, not an agent: herdr lists no agent in it.
+      const watch = /\bteam watch\b/.test(command);
+      if (slot && !watch) slot.agent = true;
+      // A started watch records itself, and its heartbeat, exactly as the real one does.
+      if (watch) {
+        watchPid = WATCH_PID;
+        updateState(dir, (state) => {
+          const record = (state.sessions[session] ??= emptySession());
+          record.watch = { pid: WATCH_PID, heartbeat: now().toISOString() };
+        });
+      }
+      return true;
+    },
+    renameAgent(_session: string, pane: string, name: string) {
+      const slot = agentOf(pane);
+      if (slot) slot.name = name;
+      return true;
+    },
+    closeWorkspace(_session: string, workspace: string) {
+      did.closed.push(workspace);
+      const at = slots.findIndex((slot) => slot.workspace === workspace);
+      if (at >= 0) slots.splice(at, 1);
+      return true;
+    },
+    agentPanes: () => slots.filter((slot) => slot.agent).map((slot) => slot.pane),
+    paneText: (_session: string, pane: string) => {
+      const slot = agentOf(pane);
+      return slot ? screenText(slot.cli, slot.screen, slot.seat) : '';
+    },
+    typeText: (_session: string, _pane: string, text: string) => {
+      did.typed.push(text);
+      return true;
+    },
+    pressEnter: () => true,
+    agentStatus: (_session: string, pane: string) => agentOf(pane)?.status ?? null,
+    sleep,
+    now,
+  };
+
+  const launch: Launch = {
+    sessionState: action.sessionState,
+    startServer: action.startServer,
+    sessionUp: action.sessionUp,
+    createWorkspace: action.createWorkspace,
+    paneRun: action.paneRun,
+    renameAgent: action.renameAgent,
+    closeWorkspace: action.closeWorkspace,
+    agentPanes: action.agentPanes,
+    paneText: action.paneText,
+    typeText: action.typeText,
+    pressEnter: action.pressEnter,
+    agentStatus: action.agentStatus,
+    sleep,
+    now,
+  };
+
+  const downLaunch: DownLaunch = {
+    typeText: action.typeText,
+    pressEnter: action.pressEnter,
+    agentPanes: action.agentPanes,
+    closeWorkspace: action.closeWorkspace,
+    stopSession(_session: string) {
+      did.stopped++;
+      herdr = 'absent';
+      return true;
+    },
+    kill(pid: number) {
+      did.killed.push(pid);
+      return true;
+    },
+    sleep,
+    now,
+  };
+
+  const live = (): Live | null => {
+    if (herdr === 'none') return null;
+    if (herdr !== 'running') return { running: false, agents: [], workspaces: [], screens: {} };
+    return { running: true, agents: agents(), workspaces: workspaces(), screens: texts() };
+  };
+
+  const doctorSources = (): DoctorSources => ({
+    version(binary) {
+      for (const [cli, tool] of Object.entries(TOOL_TESTED)) {
+        if (tool.binary !== binary) continue;
+        const state = spec.tools[cli] ?? 'fine';
+        if (state === 'missing') return null;
+        if (state === 'old') return tool.old;
+        return tool.version;
+      }
+      return null;
+    },
+    onPath: () => true,
+    loggedIn(profile) {
+      const state = spec.tools[profile.cli] ?? 'fine';
+      if (profile.loginCheck === null) return null;
+      return state === 'logged-out' ? false : true;
+    },
+    herdrVersion: () => (herdr === 'none' ? null : '0.7.1'),
+    sessionRunning: () => (herdr === 'none' ? null : herdr === 'running'),
+    now,
+    home,
+  });
+
+  const downSources = (): DownSources => ({
+    sessionRunning: () => (herdr === 'none' ? null : herdr === 'running'),
+    agents: () => (herdr === 'running' ? agents() : []),
+    alive: (pid) => watchPid !== null && pid === watchPid,
+    screen: (_session, pane) => readScreen(agentOf(pane)?.cli ?? '', action.paneText('', pane)),
+    status: (_session, pane) => agentOf(pane)?.status ?? null,
+    // A seat `down` or `remove` got to is free: its CLI has exited, the pane is back at its shell.
+    foreground: () => ['zsh'],
+    now,
+    sleep,
+    launch: downLaunch,
+  });
+
+  return {
+    live,
+    did,
+    setScreen(seat, kind) {
+      const slot = slots.find((candidate) => candidate.name === seat);
+      if (!slot) throw new Error(`the fixture has no running seat "${seat}"`);
+      slot.screen = kind;
+      slot.status = statusOf(kind);
+    },
+    setMachine(kind) {
+      machineKind = kind;
+    },
+    upSources(): UpSources {
+      return {
+        sessionRunning: () => (herdr === 'none' ? null : herdr === 'running'),
+        sessionState: action.sessionState,
+        agents: () => (herdr === 'running' ? agents() : []),
+        workspaces: () => (herdr === 'running' ? workspaces() : []),
+        home,
+        doctor: doctorSources(),
+        machine,
+        now,
+        sleep,
+        alive: (pid) => watchPid !== null && pid === watchPid,
+        watchCommand: (session) => (session === 'default' ? 'team watch' : `team watch --session ${session}`),
+        launch,
+      };
+    },
+    downSources,
+    removeSources(): RemoveSources {
+      return { ...downSources(), foreground: () => ['zsh'] };
+    },
+    addSources(): AddSources {
+      return {
+        home,
+        sessionState: () => (herdr === 'none' ? null : sessionState()),
+        agents: () => (herdr === 'running' ? agents() : []),
+        workspaces: () => (herdr === 'running' ? workspaces() : []),
+        doctor: doctorSources(),
+        machine,
+        now,
+        launch,
+      };
+    },
+    statusSources(): StatusSources {
+      return {
+        live: () => live(),
+        branch: () => 'main',
+        approval: (team, at) => approvalDifferences(team, at, home),
+        now,
+      };
+    },
+    watchSources(): WatchSources {
+      return {
+        live: () => live(),
+        machine,
+        approval: (team, at) => approvalDifferences(team, at, home),
+        screen: (pane) => action.paneText('', pane),
+        status: (_pane) => agentOf(_pane)?.status ?? null,
+        typeText: action.typeText,
+        pressEnter: action.pressEnter,
+        notify: (text) => did.notified.push(text),
+        now,
+        // One pass, then the loop ends: a page shows a pass, not a watch that runs forever.
+        wait: async () => false,
+        alive: (pid) => watchPid !== null && pid === watchPid,
+        pid: RUN_WATCH_PID,
+      };
+    },
+    doctorSources,
+  };
+}
