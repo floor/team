@@ -26,7 +26,7 @@ import type { HerdrAgent } from '../src/herdr.ts';
 import { overridesPath } from '../src/profiles/overrides.ts';
 import { emptySession, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
-import { storePath, writeApproval, type Standing } from '../src/store/store.ts';
+import { approvalStanding, storePath, writeApproval, type Standing } from '../src/store/store.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { analyze, loadContract, problems, render, type ExitRow } from '../scripts/exit-codes.ts';
 import { claudeBox, testIo } from './helpers.ts';
@@ -176,6 +176,8 @@ function approve(place: Place, text: string): void {
     storePath(loaded.team.project, loaded.root, place.home),
     { approval: approvalOf(loaded.team, loaded.root, NOW), file: text },
     loaded.team.seats,
+    place.home,
+    NOW,
   );
 }
 
@@ -290,9 +292,7 @@ function watchSources(over: Partial<WatchSources> = {}): WatchSources {
   return {
     live: () => quiet,
     machine: () => fine,
-    approval: () => [],
-    watchInForce: (team) => team.watch,
-    budgetsInForce: (team) => team.budgets,
+    standing: () => ({ kind: 'none' }),
     readChecks: () => [],
     screen: () => null,
     status: () => null,
@@ -308,13 +308,11 @@ function watchSources(over: Partial<WatchSources> = {}): WatchSources {
   };
 }
 
-function statusSources(live: Live | null, approval: string[] | null): StatusSources {
+function statusSources(live: Live | null, standing: Standing = { kind: 'none' }): StatusSources {
   return {
     live: () => live,
     branch: () => 'main',
-    approval: () => approval,
-    watchInForce: (team) => team.watch,
-    budgetsInForce: (team) => team.budgets,
+    standing: () => standing,
     now: () => NOW,
   };
 }
@@ -469,8 +467,10 @@ scene('add.differs', async (place) => {
 });
 scene('add.approved-copy', async (place) => {
   approve(place, TWO);
-  editApproval(place, (record) => { record.file = 'nope: [[['; });
-  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), "approved copy can't be read");
+  const standing = approvalStanding(place.root, place.home);
+  if (standing.kind !== 'verified') throw new Error(standing.kind);
+  const broken = { ...standing, record: { ...standing.record, file: 'nope: [[[' } };
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { standing: () => broken })), "approved copy can't be read");
 });
 scene('add.herdr', async (place) => {
   approve(place, TWO);
@@ -487,7 +487,7 @@ scene('add.agents', async (place) => {
 scene('add.ceilings', async (place) => {
   approve(place, TWO);
   editApproval(place, (record) => { delete record.ceilings; });
-  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'never approved');
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'no "ceilings"');
 });
 scene('add.no-seat', async (place) => {
   approve(place, TWO);
@@ -573,11 +573,11 @@ scene('add.machine-again', async (place) => {
 });
 scene('add.ceiling', async (place) => {
   approve(place, TWO);
-  editApproval(place, (record) => {
-    const ceilings = record.ceilings as { seats: number };
-    ceilings.seats = 0;
-  });
-  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'allows 0 seats');
+  const standing = approvalStanding(place.root, place.home);
+  if (standing.kind !== 'verified') throw new Error(standing.kind);
+  const approval = { ...standing.record.approval, ceilings: { ...standing.record.approval.ceilings, seats: 0 } };
+  const capped = { ...standing, record: { ...standing.record, approval } };
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { standing: () => capped })), 'allows 0 seats');
 });
 scene('add.dry-budget', async (place) => {
   approve(place, BUDGET);
@@ -1067,16 +1067,16 @@ async function status(place: Place, argv: string[], sources: StatusSources): Pro
   return { code: await runStatus(argv, io, sources), out: io.out, err: io.err };
 }
 
-scene('status.invocation', async (place) => show(await status(place, ['extra'], statusSources(quiet, [])), 'unexpected'));
-scene('status.not-a-repo', async (place) => show(await status(place, [], statusSources(quiet, [])), 'not inside a git repository'), false);
-scene('status.file', async (place) => show(await status(place, ['--file', 'missing.yaml'], statusSources(quiet, [])), 'no team file'));
+scene('status.invocation', async (place) => show(await status(place, ['extra'], statusSources(quiet)), 'unexpected'));
+scene('status.not-a-repo', async (place) => show(await status(place, [], statusSources(quiet)), 'not inside a git repository'), false);
+scene('status.file', async (place) => show(await status(place, ['--file', 'missing.yaml'], statusSources(quiet)), 'no team file'));
 scene('status.file-invalid', async (place) => {
   invalid(place);
-  return show(await status(place, ['--file', 'team.yaml'], statusSources(quiet, [])), 'line');
+  return show(await status(place, ['--file', 'team.yaml'], statusSources(quiet)), 'line');
 });
 scene('status.herdr', async (place) => {
   write(place, TEAM);
-  return show(await status(place, [], statusSources(null, [])), "doesn't answer");
+  return show(await status(place, [], statusSources(null)), "doesn't answer");
 });
 scene('status.agrees', async (place) => {
   write(place, TEAM);
@@ -1091,11 +1091,13 @@ scene('status.agrees', async (place) => {
     workspaces: [{ id: 'w1', label: 'lead' }],
     screens: {},
   };
-  return show(await status(place, [], statusSources(matched, [])), '0 difference');
+  approve(place, TEAM);
+  const standing = approvalStanding(place.root, place.home);
+  return show(await status(place, [], statusSources(matched, standing)), '0 difference');
 });
 scene('status.difference', async (place) => {
   write(place, TEAM);
-  return show(await status(place, [], statusSources(quiet, [])), 'is in the file and is not running');
+  return show(await status(place, [], statusSources(quiet)), 'is in the file and is not running');
 });
 
 async function up(place: Place, argv: string[], caller: Caller, sources: UpSources): Promise<Ran> {
@@ -1695,6 +1697,59 @@ test('a table key that is not the module name fails the check', () => {
   expect(found.some((line) => line.includes('medic loads src/commands/doctor.ts'))).toBe(true);
 });
 
+function withCli(snippet: string): Map<string, string> {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  return new Map([['src/cli.ts', `${snippet}\n${text}`]]);
+}
+
+function sharedProbe(): { files: Map<string, string>; rows: ExitRow[] } {
+  const before = "import { sharedExitProbe } from '../review-shared.ts';\n";
+  const body = "  if (argv[0] === '--review-shared') return sharedExitProbe();\n";
+  const doctor = withDoctor(body, before);
+  const statusText = readFileSync(new URL('../src/commands/status.ts', import.meta.url), 'utf8');
+  const status = `${before}${statusText.replace(
+    'export async function runStatus(argv: string[], io: Io, sources: StatusSources): Promise<number> {\n',
+    `export async function runStatus(argv: string[], io: Io, sources: StatusSources): Promise<number> {\n${body}`,
+  )}`;
+  return {
+    files: new Map([
+      ['src/review-shared.ts', 'export function sharedExitProbe(): number {\n  // exit: doctor.review-shared\n  return 1;\n}\n'],
+      ['src/commands/doctor.ts', doctor.get('src/commands/doctor.ts') ?? ''],
+      ['src/commands/status.ts', status],
+    ]),
+    rows: [{ code: 1, command: 'doctor', id: 'doctor.review-shared', meaning: 'a shared helper', trigger: 'team doctor' }],
+  };
+}
+
+function shadowedDispatcher(): Map<string, string> {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const next = text.replace(
+    '  const command = await load();\n',
+    '  const command = { default: () => 1 };\n  {\n    const command = await load();\n  }\n',
+  );
+  return new Map([['src/cli.ts', next]]);
+}
+
+function fileWideLookup(): Map<string, string> {
+  const files = withDoctor(
+    "  if (argv[0] === '--review-shadow') return reviewShadow();\n",
+    "import { reviewShadow } from '../review-shadow.ts';\nfunction holder(): void {\n  function reviewShadow(): number {\n    return 1;\n  }\n}\n",
+  );
+  files.set('src/review-shadow.ts', 'export function reviewShadow(): number {\n  return 17;\n}\n');
+  return files;
+}
+
+function failureMoved(): Map<string, string> {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const next = text
+    .replace(
+      'export function reportFailure(error: unknown, stderr: (text: string) => void): number {\n',
+      'function threwCode(): number {\n  return 2;\n}\n\nexport function reportFailure(error: unknown, stderr: (text: string) => void): number {\n',
+    )
+    .replace('return 1; // exit: team.command-threw', 'return threwCode(); // exit: team.command-threw');
+  return new Map([['src/cli.ts', next]]);
+}
+
 test('every form the gate does not read fails the check', () => {
   const form = "a commands-table entry the contract can't read";
   const cli = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
@@ -1707,7 +1762,7 @@ test('every form the gate does not read fails the check', () => {
     'return command.default(rest, io);',
     "if (argv[0] === '--gate-probe') return ({ default: () => 17 }).default();\n  return command.default(rest, io);",
   );
-  const rows: { name: string; files: Map<string, string>; needle: string }[] = [
+  const rows: { name: string; files: Map<string, string>; needle: string; extra?: ExitRow[] }[] = [
     { name: 'shorthand', files: withTable('shorthand,'), needle: `shorthand: ${form}` },
     { name: 'method', files: withTable("method() { return import('./commands/doctor.ts'); },"), needle: `method: ${form}` },
     { name: 'spread', files: withTable("...{ probe: () => import('./commands/doctor.ts') },"), needle: `spread: ${form}` },
@@ -1746,16 +1801,54 @@ test('every form the gate does not read fails the check', () => {
         "  function probeShadow(): number { return 17; }\n  if (argv[0] === '--gate-probe') return probeShadow();\n",
         'function probeShadow(): number { return runDoctor(); }\n',
       ),
-      needle: UNREADABLE,
+      needle: 'probeShadow is ambiguous',
     },
     {
       name: 'helper with no return',
       files: withDoctor("  if (argv[0] === '--gate-probe') return noReturn() as never;\n", 'function noReturn(): never {}\n'),
       needle: UNREADABLE,
     },
+    {
+      name: 'shared helper row missing for the other command',
+      files: sharedProbe().files,
+      extra: sharedProbe().rows,
+      needle: 'marked on status',
+    },
+    {
+      name: 'conditional break',
+      files: withDoctor(
+        "  if (argv[0] === '--review-conditional') return reviewConditionalBreak(true)!;\n",
+        'function reviewConditionalBreak(flag: boolean): number | undefined {\n  switch (flag) {\n    default:\n      if (flag) break;\n      return 1;\n  }\n}\n',
+      ),
+      needle: UNREADABLE,
+    },
+    { name: 'exitCode ||=', files: withCli('process.exitCode ||= 1;'), needle: UNREADABLE },
+    { name: 'exitCode ??=', files: withCli('process.exitCode ??= 1;'), needle: UNREADABLE },
+    { name: 'exitCode &&=', files: withCli('process.exitCode &&= 1;'), needle: UNREADABLE },
+    { name: 'exitCode +=', files: withCli('process.exitCode += 1;'), needle: UNREADABLE },
+    { name: 'exitCode ++', files: withCli('process.exitCode++;'), needle: UNREADABLE },
+    { name: 'exitCode --', files: withCli('process.exitCode--;'), needle: UNREADABLE },
+    { name: 'exitCode destructuring target', files: withCli('({ exitCode: process.exitCode } = { exitCode: 1 });'), needle: UNREADABLE },
+    { name: 'Object.assign(process)', files: withCli('Object.assign(process, { exitCode: 1 });'), needle: UNREADABLE },
+    { name: "Reflect.set exitCode", files: withCli("Reflect.set(process, 'exitCode', 1);"), needle: UNREADABLE },
+    { name: 'Object.defineProperty exitCode', files: withCli("Object.defineProperty(process, 'exitCode', { value: 1 });"), needle: UNREADABLE },
+    { name: "process['exitCode']", files: withCli("process['exitCode'] = 1;"), needle: UNREADABLE },
+    { name: 'shadowed dispatcher', files: shadowedDispatcher(), needle: UNREADABLE },
+    { name: 'imported name also declared in the file', files: fileWideLookup(), needle: 'reviewShadow is ambiguous' },
+    {
+      name: 'local reportFailure',
+      files: withDoctor(
+        "  if (argv[0] === '--gate-probe') process.exitCode = reportFailure();\n",
+        'function reportFailure(): number { return 17; }\n',
+      ),
+      needle: UNREADABLE,
+    },
+    { name: 'reportFailure returns a helper', files: failureMoved(), needle: 'says code 1, the site returns 2' },
   ];
   for (const row of rows) {
-    const found = problems({ files: row.files });
+    const found = problems(row.extra
+      ? { files: row.files, contractText: canon([...contract.rows, ...row.extra]), page: render([...contract.rows, ...row.extra]) }
+      : { files: row.files });
     expect(found.some((line) => line.includes(row.needle)), row.name).toBe(true);
   }
 });
