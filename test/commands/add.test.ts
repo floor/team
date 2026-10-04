@@ -290,7 +290,7 @@ describe('team add', () => {
     const code = await runAdd(['lead'], io, sources(made, {
       sessionState: () => 'running',
       agents: () => [agent],
-      workspaces: () => [{ id: 'w9', label: 'lead' }],
+      workspaces: () => [{ id: 'w9' }],
     }));
     expect(code).toBe(0);
     expect(made.creates).toEqual([]);

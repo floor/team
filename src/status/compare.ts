@@ -70,7 +70,7 @@ export function compare(
       claimed.add(stray.pane);
       rows.push({ name: seat.name, state: 'wrong name', model: seat.display, pane: stray.pane });
       differences.push({
-        what: `${seat.name}: the agent in its workspace "${seat.label}" is ${stray.name ? `named "${stray.name}"` : 'unnamed'}`,
+        what: `${seat.name}: the agent in ${stray.pane} is ${stray.name ? `named "${stray.name}"` : 'unnamed'}`,
         repair: herdrCommand(session, 'agent', 'rename', stray.pane, seat.name),
       });
       continue;

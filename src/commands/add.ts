@@ -33,7 +33,7 @@ export type AddSources = {
   home: string;
   sessionState(session: string): 'absent' | 'running' | 'stopped' | null;
   agents(session: string): HerdrAgent[] | null;
-  workspaces(session: string): { id: string; label: string }[] | null;
+  workspaces(session: string): { id: string }[] | null;
   doctor: DoctorSources;
   machine?: (root: string) => Machine;
   now(): Date;
@@ -68,7 +68,7 @@ export const realSources: AddSources = {
   agents: (session) => agentList(aim(session)),
   workspaces(session) {
     const listed = workspaceList(aim(session));
-    return listed === null ? null : listed.map((workspace) => ({ id: workspace.id, label: workspace.label }));
+    return listed === null ? null : listed.map((workspace) => ({ id: workspace.id }));
   },
   doctor: doctorSources,
   machine: readMachine,
@@ -149,6 +149,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 1;
   }
   const agents = live === 'running' ? sources.agents(session) : [];
+  // Read so a session whose workspace list can't be read is refused. The title is not a key.
   const workspaces = live === 'running' ? sources.workspaces(session) : [];
   if (agents === null || workspaces === null) {
     io.stderr(`team add: session ${session} runs, and its agents can't be read\n`);
