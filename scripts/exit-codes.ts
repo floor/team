@@ -1,16 +1,26 @@
 // The exit-code contract. `contract/exit-codes.json` lists every way a command ends.
 // `docs/reference/exit-codes.md` is generated from that list.
 //
-// An exit site is a `return` of a number in a function whose value becomes the process exit
-// code, a conditional whose branches are both numbers, or a `throw` that carries its own row.
-// The gate follows a returned call (including `await`) into that function and requires every
-// return there to be covered too. An identifier, an implicit arrow body, a call it cannot
-// resolve, or any other expression fails the check. A `throw` with no row of its own is covered
-// by `team.command-threw` when a run function reaches it outside a try that catches it.
+// The gate keeps that list complete against ordinary changes to the commands (a new return, a
+// new exit, a changed code). It reads the forms this codebase uses and refuses anything else.
+// It is not a proof against code written to deceive it (`eval`, a patched `process`, a dynamic
+// property name).
 //
-// `process.exitCode = code` publishes the number `main` already returned, so it is not a second
-// site. `process.exitCode = reportFailure(...)` publishes the number `reportFailure` returns;
-// that return is the site.
+// A returned expression is a numeric literal with a marker, a conditional whose branches are
+// both such, or an `await`/call of a function the gate has walked. That callee needs at least
+// one return, and every path through it must end in a return or a throw. Type assertions and
+// non-null assertions are looked through. A name declared as a function more than once in a
+// file is not followed. In `src/cli.ts` the only `.default()` that is not itself an exit is
+// `command.default`, where `command` is the awaited load from the `commands` table.
+//
+// Every `process.exit` and every write to `process.exitCode` under `src/` is scanned, including
+// module scope. A numeric literal is a site and needs a marker. `process.exit()` with no
+// argument, or a write that is not a literal, is an error. Two publishes are not sites:
+// `process.exitCode = code` in the `.then` callback of `main`, and `process.exitCode =
+// reportFailure(...)`.
+//
+// A `throw` with its own marker is a row. An unmarked `throw` a run function can reach outside
+// a try that catches it is covered by `team.command-threw`.
 //
 //   bun scripts/exit-codes.ts --check
 //   bun scripts/exit-codes.ts --write
@@ -217,6 +227,138 @@ function commandFor(file: string, inherited: string): string {
   return FILES.find((item) => item.file === file)?.command ?? inherited;
 }
 
+function filesUnderSrc(extra?: ReadonlyMap<string, string>): string[] {
+  const found = new Set<string>();
+  const walk = (rel: string): void => {
+    let entries;
+    try {
+      entries = readdirSync(join(root, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name === 'node_modules') continue;
+      const next = `${rel}/${entry.name}`;
+      if (entry.isDirectory()) walk(next);
+      else if (entry.name.endsWith('.ts')) found.add(next);
+    }
+  };
+  walk('src');
+  if (extra) {
+    for (const key of extra.keys()) {
+      if (key.startsWith('src/') && key.endsWith('.ts')) found.add(key);
+    }
+  }
+  return [...found].sort();
+}
+
+function bindingInit(fn: ts.Node, name: string): ts.Expression | null {
+  let found: ts.Expression | null = null;
+  visitOwn(fn, (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name && node.initializer) {
+      found = node.initializer;
+    }
+  });
+  return found;
+}
+
+/** `command.default` only when `command` is the awaited load from the commands table. */
+function isCommandDispatcher(expr: ts.Expression, fn: ts.Node): boolean {
+  if (!ts.isCallExpression(expr)) return false;
+  const called = unwrap(expr.expression);
+  if (!ts.isPropertyAccessExpression(called) || called.name.text !== 'default') return false;
+  const recv = unwrap(called.expression);
+  if (!ts.isIdentifier(recv)) return false;
+  const loaded = bindingInit(fn, recv.text);
+  if (!loaded) return false;
+  const awaited = unwrapExit(loaded);
+  if (!ts.isCallExpression(awaited)) return false;
+  const callee = unwrap(awaited.expression);
+  if (!ts.isIdentifier(callee)) return false;
+  const loader = bindingInit(fn, callee.text);
+  if (!loader) return false;
+  const access = unwrap(loader);
+  if (!ts.isElementAccessExpression(access)) return false;
+  const table = unwrap(access.expression);
+  return ts.isIdentifier(table) && table.text === 'commands';
+}
+
+/** The `.then` of `main` forwarding its code, or the call that publishes `reportFailure`. */
+function isPublishedExitCode(expr: ts.BinaryExpression): boolean {
+  if (callName(expr.right) === 'reportFailure') return true;
+  const right = unwrap(expr.right);
+  if (!ts.isIdentifier(right)) return false;
+  let fn: ts.Node | undefined = expr.parent;
+  while (fn && !isFunc(fn)) fn = fn.parent;
+  if (!fn || !isFunc(fn)) return false;
+  const param = fn.parameters[0];
+  if (!param || !ts.isIdentifier(param.name) || param.name.text !== right.text) return false;
+  const call = fn.parent;
+  if (!call || !ts.isCallExpression(call) || call.arguments[0] !== fn) return false;
+  const callee = unwrap(call.expression);
+  if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'then') return false;
+  const recv = unwrap(callee.expression);
+  if (!ts.isCallExpression(recv)) return false;
+  const called = unwrap(recv.expression);
+  return ts.isIdentifier(called) && called.text === 'main';
+}
+
+function alwaysCompletes(node: ts.Node): boolean {
+  if (ts.isFunctionLike(node)) return false;
+  if (ts.isBlock(node)) {
+    for (const stmt of node.statements) if (alwaysCompletes(stmt)) return true;
+    return false;
+  }
+  if (ts.isReturnStatement(node) || ts.isThrowStatement(node)) return true;
+  if (ts.isIfStatement(node)) {
+    if (!node.elseStatement) return false;
+    return alwaysCompletes(node.thenStatement) && alwaysCompletes(node.elseStatement);
+  }
+  if (ts.isTryStatement(node)) {
+    if (node.finallyBlock && alwaysCompletes(node.finallyBlock)) return true;
+    if (!alwaysCompletes(node.tryBlock)) return false;
+    return node.catchClause ? alwaysCompletes(node.catchClause.block) : true;
+  }
+  if (ts.isSwitchStatement(node)) return switchCompletes(node);
+  if (ts.isLabeledStatement(node)) return alwaysCompletes(node.statement);
+  return false;
+}
+
+function switchCompletes(sw: ts.SwitchStatement): boolean {
+  const clauses = sw.caseBlock.clauses;
+  if (!clauses.some((clause) => ts.isDefaultClause(clause))) return false;
+  let fallsInto = false;
+  const exits: boolean[] = [];
+  for (let i = clauses.length - 1; i >= 0; i--) {
+    const clause = clauses[i];
+    if (!clause) continue;
+    let kind: 'exit' | 'break' | 'fall' = 'fall';
+    for (const stmt of clause.statements) {
+      if (ts.isBreakStatement(stmt) || ts.isContinueStatement(stmt)) {
+        kind = 'break';
+        break;
+      }
+      if (ts.isReturnStatement(stmt) || ts.isThrowStatement(stmt) || alwaysCompletes(stmt)) {
+        kind = 'exit';
+        break;
+      }
+    }
+    const exitsHere: boolean = kind === 'exit' || (kind === 'fall' && fallsInto);
+    exits[i] = exitsHere;
+    fallsInto = kind === 'break' ? false : exitsHere;
+  }
+  return exits.every(Boolean);
+}
+
+/** A followed callee has a return, and no path falls off its end. */
+function returnsCovered(func: ExitFunc): boolean {
+  if (ts.isArrowFunction(func) && func.body && !ts.isBlock(func.body)) return true;
+  const body = func.body;
+  if (!body || !ts.isBlock(body)) return false;
+  if (ownReturns(func).length === 0) return false;
+  return alwaysCompletes(body);
+}
+
 /** Codes `reportFailure` returns. A throw ends as one of those. */
 function failureCodes(texts: ReadonlyMap<string, string>): number[] {
   const cli = texts.get('src/cli.ts');
@@ -262,6 +404,7 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
   const coveredThrows: CoveredThrow[] = [];
   const returnSeen = new Set<string>();
   const throwSeen = new Set<string>();
+  const counted = new Map<string, Map<string, number>>();
 
   function load(file: string): ts.SourceFile | null {
     const hit = parsed.get(file);
@@ -355,9 +498,29 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
     return func ? { file, func } : null;
   }
 
+  function declarationCounts(source: ts.SourceFile): Map<string, number> {
+    const hit = counted.get(source.fileName);
+    if (hit) return hit;
+    const counts = new Map<string, number>();
+    const bump = (name: string): void => {
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    };
+    const visit = (node: ts.Node): void => {
+      if (ts.isFunctionDeclaration(node) && node.name) bump(node.name.text);
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isFunc(unwrap(node.initializer))) {
+        bump(node.name.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    counted.set(source.fileName, counts);
+    return counts;
+  }
+
   function resolveCall(call: ts.CallExpression, file: string, source: ts.SourceFile, fn: ts.Node): { file: string; func: ExitFunc } | null {
     const called = unwrap(call.expression);
     if (!ts.isIdentifier(called)) return null;
+    if ((declarationCounts(source).get(called.text) ?? 0) > 1) return null;
     const local = functionsIn(source).get(called.text);
     if (local) return { file, func: local };
     const binding = moduleBindings(source, file).get(called.text) ?? dynamicBindings(fn, file).get(called.text);
@@ -385,7 +548,7 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
       return;
     }
     if (ts.isCallExpression(unwrapped)) {
-      if (file === 'src/cli.ts' && isDispatcher(unwrapped)) return;
+      if (file === 'src/cli.ts' && isCommandDispatcher(unwrapped, fn)) return;
       const resolved = resolveCall(unwrapped, file, source, fn);
       if (!resolved) {
         reject(file, source, at);
@@ -403,6 +566,7 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
     const key = `${file}:${func.getStart(source)}`;
     if (returnSeen.has(key)) return;
     returnSeen.add(key);
+    if (!returnsCovered(func)) reject(file, source, func);
     if (ts.isArrowFunction(func) && !ts.isBlock(func.body)) classify(func.body, file, func, func.body, command, true);
     for (const ret of ownReturns(func)) {
       if (!ret.expression) {
@@ -411,26 +575,38 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
       }
       classify(ret.expression, file, func, ret, command, false);
     }
-    visitOwn(func, (node) => {
-      if (!ts.isExpressionStatement(node)) return;
-      const expr = unwrap(node.expression);
-      if (ts.isCallExpression(expr) && isProcess(expr.expression, 'exit')) {
-        const arg = expr.arguments[0];
+  }
+
+  function scanExits(file: string): void {
+    const source = load(file);
+    if (!source) return;
+    const command = commandFor(file, 'team');
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && isProcess(node.expression, 'exit')) {
+        const arg = node.arguments[0];
         const code = arg ? numericArgument(arg) : null;
-        if (code !== null) sites.push({ command, file, line: lineOf(source, node), codes: [code], ids: attachedIds(source, node) });
-        else if (arg) reject(file, source, node);
-      }
-      if (
-        ts.isBinaryExpression(expr) &&
-        expr.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-        isProcess(expr.left, 'exitCode')
-      ) {
-        const code = numericArgument(expr.right);
-        if (code !== null && callName(expr.right) === null) {
+        if (arg && code !== null) {
           sites.push({ command, file, line: lineOf(source, node), codes: [code], ids: attachedIds(source, node) });
+        } else {
+          reject(file, source, node);
         }
       }
-    });
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        isProcess(node.left, 'exitCode') &&
+        !isPublishedExitCode(node)
+      ) {
+        const code = numericArgument(node.right);
+        if (code !== null && callName(node.right) === null) {
+          sites.push({ command, file, line: lineOf(source, node), codes: [code], ids: attachedIds(source, node) });
+        } else {
+          reject(file, source, node);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
   }
 
   function walkThrows(file: string, func: ExitFunc, command: string): void {
@@ -476,6 +652,7 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
       walkThrows(item.file, func, item.command);
     }
   }
+  for (const file of filesUnderSrc(files)) scanExits(file);
 
   coveredThrows.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
   return { sites, unreadable, coveredThrows };
@@ -487,12 +664,6 @@ function ownReturns(fn: ts.Node): ts.ReturnStatement[] {
     if (ts.isReturnStatement(node)) out.push(node);
   });
   return out;
-}
-
-function isDispatcher(expr: ts.Expression): boolean {
-  if (!ts.isCallExpression(expr)) return false;
-  const called = unwrap(expr.expression);
-  return ts.isPropertyAccessExpression(called) && called.name.text === 'default';
 }
 
 export function exitSites(files?: ReadonlyMap<string, string>): ExitSite[] {
@@ -509,6 +680,8 @@ export function render(rows: readonly ExitRow[]): string {
     '# Exit codes',
     '',
     'Each row is one way a command ends. `0` means the work finished, `1` means the command refused or a step failed, and `2` means the invocation or a file could not be read. One `return` can be several rows when several different failures leave through it. A thrown error ends as `1`.',
+    '',
+    'The check keeps this list complete against ordinary changes to the commands (a new return, a new exit, a changed code); it reads the forms this codebase uses and refuses anything else; it is not a proof against code written to deceive it (`eval`, a patched `process`, a dynamic property name).',
     '',
     '| Id | Command | Code | Meaning | Example |',
     '| --- | --- | --- | --- | --- |',

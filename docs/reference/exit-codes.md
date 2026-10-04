@@ -2,6 +2,8 @@
 
 Each row is one way a command ends. `0` means the work finished, `1` means the command refused or a step failed, and `2` means the invocation or a file could not be read. One `return` can be several rows when several different failures leave through it. A thrown error ends as `1`.
 
+The check keeps this list complete against ordinary changes to the commands (a new return, a new exit, a changed code); it reads the forms this codebase uses and refuses anything else; it is not a proof against code written to deceive it (`eval`, a patched `process`, a dynamic property name).
+
 | Id | Command | Code | Meaning | Example |
 | --- | --- | --- | --- | --- |
 | `add.dry-budget` | `add` | 0 | a dry run would refuse the budget | `team add worker --dry-run` |

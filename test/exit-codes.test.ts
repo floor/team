@@ -1569,3 +1569,43 @@ test('return void 0 ?? 1 fails the check', () => {
   const files = withDoctor("  if (argv[0] === '--gate-probe') return void 0 ?? 1;\n");
   expect(rejects(files)).toBe(true);
 });
+
+function namesLine(files: Map<string, string>, file: string): boolean {
+  return problems({ files }).some((line) => new RegExp(`${file}:\\d+:`).test(line));
+}
+
+test('process.exit with no argument fails the check', () => {
+  const files = withDoctor("  if (argv[0] === '--gate-probe') process.exit();\n");
+  expect(namesLine(files, 'src/commands/doctor.ts')).toBe(true);
+});
+
+test('a module-level process.exit fails the check', () => {
+  const files = withDoctor('', "if (process.env.GATE_PROBE === '1') process.exit(17);\n");
+  expect(namesLine(files, 'src/commands/doctor.ts')).toBe(true);
+});
+
+test('a default call that is not the command table fails the check', () => {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const next = text.replace(
+    'return command.default(rest, io);',
+    "if (argv[0] === '--gate-probe') return ({ default: () => 17 }).default();\n  return command.default(rest, io);",
+  );
+  const files = new Map([['src/cli.ts', next]]);
+  expect(namesLine(files, 'src/cli.ts')).toBe(true);
+});
+
+test('a function name declared twice fails the check', () => {
+  const files = withDoctor(
+    "  function probeShadow(): number { return 17; }\n  if (argv[0] === '--gate-probe') return probeShadow();\n",
+    'function probeShadow(): number { return runDoctor(); }\n',
+  );
+  expect(namesLine(files, 'src/commands/doctor.ts')).toBe(true);
+});
+
+test('a followed helper with no return fails the check', () => {
+  const files = withDoctor(
+    "  if (argv[0] === '--gate-probe') return noReturn() as never;\n",
+    'function noReturn(): never {}\n',
+  );
+  expect(namesLine(files, 'src/commands/doctor.ts')).toBe(true);
+});
