@@ -20,6 +20,13 @@
 // module's basename, no two keys load one file, and every file has one key. The contract's
 // command names are those keys. A mismatch names the key and the file.
 //
+// Accepted, and anything else is refused:
+// - a commands-table entry `name: () => import('./commands/<name>.ts')`, where `name` is an identifier
+// - a command's default export that is a function declared in that file
+// - `return` of a marked numeric literal, a conditional of those, or a call the gate has walked
+// - `process.exit` and `process.exitCode =` of a marked numeric literal
+// - the two publishes of a code already returned: `process.exitCode = code` on `main(...).then`, and `process.exitCode = reportFailure(...)`
+//
 // Every `process.exit` and every write to `process.exitCode` under `src/` is scanned, including
 // module scope. A numeric literal is a site and needs a marker. `process.exit()` with no
 // argument, or a write that is not a literal, is an error. Two publishes are not sites:
@@ -62,6 +69,7 @@ export type ExitSite = {
 const ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 const MARKER = /\/\/\s*exit:\s*([a-z0-9]+(?:[.-][a-z0-9]+)*)\s*$/;
 const UNROOTED = "a command file whose default export the contract can't read";
+const TABLE_FORM = "a commands-table entry the contract can't read";
 
 type CommandFile = { command: string; file: string };
 type TableEntry = { key: string; line: number; spec: string };
@@ -229,35 +237,69 @@ function commandFor(list: readonly CommandFile[], file: string, inherited: strin
   return list.find((item) => item.file === file)?.command ?? inherited;
 }
 
-function importSpecOf(expr: ts.Expression): string | null {
+/** `() => import('<literal>')` only. Parentheses and assertions around it are looked through. */
+function plainImport(expr: ts.Expression): string | null {
   const arrow = unwrap(expr);
-  if (!ts.isArrowFunction(arrow) || ts.isBlock(arrow.body)) return null;
+  if (!ts.isArrowFunction(arrow)) return null;
+  if (arrow.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.AsyncKeyword)) return null;
+  if (ts.isBlock(arrow.body)) return null;
   const call = unwrap(arrow.body);
   if (!ts.isCallExpression(call) || call.expression.kind !== ts.SyntaxKind.ImportKeyword) return null;
+  if (call.arguments.length !== 1) return null;
   const spec = call.arguments[0];
   if (!spec || !ts.isStringLiteral(spec)) return null;
   return spec.text;
 }
 
-/** The `commands` table in `src/cli.ts`: each entry's import specifier, or empty when it has none. */
-function commandTable(text: string): TableEntry[] {
+function tableMemberName(prop: ts.ObjectLiteralElementLike): string {
+  if (ts.isSpreadAssignment(prop)) return 'spread';
+  if (ts.isShorthandPropertyAssignment(prop)) return prop.name.text;
+  const name = prop.name;
+  if (ts.isIdentifier(name)) return name.text;
+  if (ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
+  if (ts.isComputedPropertyName(name)) return 'computed';
+  return 'entry';
+}
+
+/**
+ * The exported `commands` object. Only `name: () => import('<literal>')` is an entry.
+ * Every other member is a problem, named at its line.
+ */
+function commandTable(text: string): { entries: TableEntry[]; problems: string[] } {
   const source = sourceOf('src/cli.ts', text);
-  const out: TableEntry[] = [];
+  const entries: TableEntry[] = [];
+  const problems: string[] = [];
+  let found = false;
   for (const stmt of source.statements) {
     if (!ts.isVariableStatement(stmt)) continue;
     if (!stmt.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.ExportKeyword)) continue;
     for (const decl of stmt.declarationList.declarations) {
-      if (!ts.isIdentifier(decl.name) || decl.name.text !== 'commands' || !decl.initializer) continue;
+      if (!ts.isIdentifier(decl.name) || decl.name.text !== 'commands') continue;
+      found = true;
+      if (!decl.initializer) {
+        problems.push(`src/cli.ts:${lineOf(source, decl)}: commands: ${TABLE_FORM}`);
+        continue;
+      }
       const obj = unwrap(decl.initializer);
-      if (!ts.isObjectLiteralExpression(obj)) continue;
+      if (!ts.isObjectLiteralExpression(obj)) {
+        problems.push(`src/cli.ts:${lineOf(source, decl.initializer)}: commands: ${TABLE_FORM}`);
+        continue;
+      }
       for (const prop of obj.properties) {
-        if (!ts.isPropertyAssignment(prop)) continue;
-        const key = ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name) ? prop.name.text : '';
-        out.push({ key, spec: importSpecOf(prop.initializer) ?? '', line: lineOf(source, prop) });
+        const line = lineOf(source, prop);
+        if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
+          const spec = plainImport(prop.initializer);
+          if (spec !== null) {
+            entries.push({ key: prop.name.text, spec, line });
+            continue;
+          }
+        }
+        problems.push(`src/cli.ts:${line}: ${tableMemberName(prop)}: ${TABLE_FORM}`);
       }
     }
   }
-  return out;
+  if (!found) problems.push(`src/cli.ts:1: commands: ${TABLE_FORM}`);
+  return { entries, problems };
 }
 
 function moduleBase(file: string): string {
@@ -271,7 +313,7 @@ function commandFiles(extra?: ReadonlyMap<string, string>): CommandFile[] {
     readdirSync(join(root, 'src', 'commands')).filter((name) => name.endsWith('.ts')),
   );
   const keysByName = new Map<string, string[]>();
-  for (const entry of commandTable(textOf('src/cli.ts', extra))) {
+  for (const entry of commandTable(textOf('src/cli.ts', extra)).entries) {
     const target = resolveSpec('src/cli.ts', entry.spec);
     if (!target?.startsWith('src/commands/') || !target.endsWith('.ts')) continue;
     const name = target.slice('src/commands/'.length);
@@ -483,6 +525,13 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
   const throwSeen = new Set<string>();
   const counted = new Map<string, Map<string, number>>();
 
+  const unreadFiles = new Set<string>();
+  function unread(file: string): void {
+    if (unreadFiles.has(file)) return;
+    unreadFiles.add(file);
+    unreadable.push(`${file}:1: the contract can't read this file`);
+  }
+
   function load(file: string): ts.SourceFile | null {
     const hit = parsed.get(file);
     if (hit) return hit;
@@ -490,6 +539,7 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
     try {
       text = textOf(file, files);
     } catch {
+      unread(file);
       return null;
     }
     const source = sourceOf(file, text);
@@ -722,8 +772,12 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
     const source = load(item.file);
     if (!source) continue;
     if (item.file === 'src/cli.ts') {
-      for (const func of [functionsIn(source).get('main'), functionsIn(source).get('reportFailure')]) {
-        if (!func) continue;
+      for (const name of ['main', 'reportFailure']) {
+        const func = functionsIn(source).get(name);
+        if (!func) {
+          unreadable.push(`src/cli.ts:1: ${name} is not a function the contract can read`);
+          continue;
+        }
         walkReturns(item.file, func, item.command);
         walkThrows(item.file, func, item.command);
       }
@@ -731,9 +785,7 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
     }
     const func = exportedFunction(source, 'default');
     if (!func) {
-      if (item.file.startsWith('src/commands/')) {
-        unreadable.push(`${item.file}:${lineOf(source, defaultExportAt(source))}: ${UNROOTED}`);
-      }
+      unreadable.push(`${item.file}:${lineOf(source, defaultExportAt(source))}: ${UNROOTED}`);
       continue;
     }
     if (item.file.startsWith('src/commands/')) walked.add(item.file);
@@ -742,7 +794,9 @@ export function analyze(files?: ReadonlyMap<string, string>): Analysis {
   }
   const discovered = new Set(list.filter((item) => item.file.startsWith('src/commands/')).map((item) => item.file));
   const byFile = new Map<string, TableEntry[]>();
-  for (const entry of commandTable(textOf('src/cli.ts', files))) {
+  const table = commandTable(textOf('src/cli.ts', files));
+  for (const problem of table.problems) unreadable.push(problem);
+  for (const entry of table.entries) {
     const target = resolveSpec('src/cli.ts', entry.spec);
     if (!target || !discovered.has(target)) {
       const shown = target || entry.spec || 'an unreadable module';
@@ -894,7 +948,7 @@ export function problems(input: CheckInput = {}): string[] {
   if (render(contract.rows) !== page) out.push('docs/reference/exit-codes.md: differs from the contract');
 
   const known = new Set<string>(['team', 'conformance-adapter']);
-  for (const entry of commandTable(textOf('src/cli.ts', input.files))) {
+  for (const entry of commandTable(textOf('src/cli.ts', input.files)).entries) {
     if (entry.key) known.add(entry.key);
   }
   for (const row of contract.rows) {

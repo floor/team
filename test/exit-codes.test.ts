@@ -1673,3 +1673,68 @@ test('a table key that is not the module name fails the check', () => {
   const found = problems({ files: new Map([['src/cli.ts', next]]) });
   expect(found.some((line) => line.includes('medic loads src/commands/doctor.ts'))).toBe(true);
 });
+
+test('every form the gate does not read fails the check', () => {
+  const form = "a commands-table entry the contract can't read";
+  const cli = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const medic = cli.replace(
+    "  doctor: () => import('./commands/doctor.ts'),\n",
+    "  medic: () => import('./commands/doctor.ts'),\n",
+  );
+  const noAdd = cli.replace("  add: () => import('./commands/add.ts'),\n", '');
+  const notDispatcher = cli.replace(
+    'return command.default(rest, io);',
+    "if (argv[0] === '--gate-probe') return ({ default: () => 17 }).default();\n  return command.default(rest, io);",
+  );
+  const rows: { name: string; files: Map<string, string>; needle: string }[] = [
+    { name: 'shorthand', files: withTable('shorthand,'), needle: `shorthand: ${form}` },
+    { name: 'method', files: withTable("method() { return import('./commands/doctor.ts'); },"), needle: `method: ${form}` },
+    { name: 'spread', files: withTable("...{ probe: () => import('./commands/doctor.ts') },"), needle: `spread: ${form}` },
+    { name: 'computed key', files: withTable("['computed']: () => import('./commands/doctor.ts'),"), needle: `computed: ${form}` },
+    { name: 'getter', files: withTable("get getter() { return import('./commands/doctor.ts'); },"), needle: `getter: ${form}` },
+    { name: 'setter', files: withTable('set setter(_) {},'), needle: `setter: ${form}` },
+    { name: 'quoted key', files: withTable("'quoted': () => import('./commands/doctor.ts'),"), needle: `quoted: ${form}` },
+    { name: 'block arrow', files: withTable("block: () => { return import('./commands/doctor.ts'); },"), needle: `block: ${form}` },
+    { name: 'async arrow', files: withTable("asyncArrow: async () => import('./commands/doctor.ts'),"), needle: `asyncArrow: ${form}` },
+    { name: 'value is not an import arrow', files: withTable("bare: import('./commands/doctor.ts'),"), needle: `bare: ${form}` },
+    {
+      name: 're-exported default',
+      files: withTable("probe: () => import('./commands/probe.ts'),", [['src/commands/probe.ts', "export { default, USAGE } from './doctor.ts';\n"]]),
+      needle: 'src/commands/probe.ts',
+    },
+    {
+      name: 'no default export',
+      files: withTable("probeEmpty: () => import('./commands/probe-empty.ts'),", [['src/commands/probe-empty.ts', "export const USAGE = 'probe';\n"]]),
+      needle: 'src/commands/probe-empty.ts',
+    },
+    { name: 'import outside src/commands', files: withTable("probe: () => import('./outside.ts'),"), needle: "whose module the gate didn't walk" },
+    {
+      name: 'default is an import',
+      files: withTable("probeAlias: () => import('./commands/probe-alias.ts'),", [['src/commands/probe-alias.ts', "import run from './doctor.ts';\nexport default run;\n"]]),
+      needle: 'src/commands/probe-alias.ts',
+    },
+    { name: 'file with no key', files: new Map([['src/cli.ts', noAdd]]), needle: 'a walked file that is in no table entry' },
+    { name: 'two keys one file', files: withTable("probe: () => import('./commands/doctor.ts'),"), needle: 'doctor and probe load src/commands/doctor.ts' },
+    { name: 'key is not the module name', files: new Map([['src/cli.ts', medic]]), needle: 'medic loads src/commands/doctor.ts' },
+    { name: 'process.exit with no argument', files: withDoctor("  if (argv[0] === '--gate-probe') process.exit();\n"), needle: UNREADABLE },
+    { name: 'module-level process.exit', files: withDoctor('', "if (process.env.GATE_PROBE === '1') process.exit(17);\n"), needle: 'exit site has no row' },
+    { name: 'default call that is not the command table', files: new Map([['src/cli.ts', notDispatcher]]), needle: UNREADABLE },
+    {
+      name: 'function name declared twice',
+      files: withDoctor(
+        "  function probeShadow(): number { return 17; }\n  if (argv[0] === '--gate-probe') return probeShadow();\n",
+        'function probeShadow(): number { return runDoctor(); }\n',
+      ),
+      needle: UNREADABLE,
+    },
+    {
+      name: 'helper with no return',
+      files: withDoctor("  if (argv[0] === '--gate-probe') return noReturn() as never;\n", 'function noReturn(): never {}\n'),
+      needle: UNREADABLE,
+    },
+  ];
+  for (const row of rows) {
+    const found = problems({ files: row.files });
+    expect(found.some((line) => line.includes(row.needle)), row.name).toBe(true);
+  }
+});
