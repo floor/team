@@ -238,83 +238,124 @@ describe('Slice C: ScreenProfile escape hatch', () => {
     }
   });
 
-  test('a hatch cannot crash the watch: throwing predicates and composer or invalid returns are guarded', () => {
+  test('a hatch result that is not a boolean must fail closed (whole screen reads unknown)', async () => {
     const yaml = readFileSync(resolve(fixtureDir, 'fake-cli.yaml'), 'utf8');
     const baseData = loadScreen(yaml, fixtureDir);
     const lines = ['some regular terminal line'];
+    const screenText = lines.join('\n');
 
-    // 1. Predicates throwing are treated as misses (do not crash)
-    for (const stage of ['unknown', 'trust', 'permission', 'question', 'working'] as const) {
-      const throwingData = {
-        ...baseData,
-        profile: {
-          ...baseData.profile,
-          [stage]: () => {
-            throw new Error(`${stage} boom`);
+    const badValues: [name: string, factory: () => any][] = [
+      ['sync throw', () => { throw new Error('boom'); }],
+      ['rejected Promise', () => Promise.reject(new Error('boom'))],
+      ['resolved Promise', () => Promise.resolve(true)],
+      ['pending Promise', () => new Promise(() => {})],
+      ['null', () => null],
+      ['undefined', () => undefined],
+      ['string "yes"', () => 'yes'],
+      ['number 1', () => 1],
+      ['number 0', () => 0],
+      ['empty object', () => ({})],
+      ['array', () => []],
+      ['function', () => (() => {})],
+    ];
+
+    const stages = ['unknown', 'trust', 'permission', 'question', 'working'] as const;
+
+    // 1. Each bad value for each of the five predicates must fail closed (whole screen reads unknown)
+    for (const stage of stages) {
+      for (const [name, badFn] of badValues) {
+        const badData: any = {
+          ...baseData,
+          profile: {
+            composer: () => ({ kind: 'idle' }),
+            [stage]: badFn,
           },
-        },
-      };
-      // classifyLines carries on and does not throw
-      expect(() => classifyLines(throwingData, lines)).not.toThrow();
-      // If unknown throws in composeLines, it also carries on without throwing
-      if (stage === 'unknown') {
-        expect(() => composeLines(throwingData, lines)).not.toThrow();
+        };
+
+        const resClassifyLines = classifyLines(badData, lines);
+        expect(resClassifyLines.kind).toBe('unknown');
+
+        const resReadScreen = readScreen(badData, screenText);
+        expect(resReadScreen.kind).toBe('unknown');
+
+        const resClassify = classify(badData, lines);
+        expect(resClassify.kind).toBe('unknown');
+
+        if (stage === 'unknown') {
+          const resComposeLines = composeLines(badData, lines);
+          expect(resComposeLines.kind).toBe('unknown');
+
+          const resClassifyComposer = classifyComposer(badData, lines);
+          expect(resClassifyComposer.kind).toBe('unknown');
+        }
       }
     }
 
-    // 2. Predicates returning non-boolean (truthy strings, numbers, objects) are misses
-    for (const badValue of ['yes', 1, {}, [], () => {}]) {
-      const badPredicateData = {
+    // 2. Each bad value for composer must fail closed (whole screen reads unknown)
+    const badComposerValues: [name: string, factory: () => any][] = [
+      ['sync throw', () => { throw new Error('composer boom'); }],
+      ['rejected Promise', () => Promise.reject(new Error('composer boom'))],
+      ['resolved Promise', () => Promise.resolve({ kind: 'idle' })],
+      ['pending Promise', () => new Promise(() => {})],
+      ['null', () => null],
+      ['undefined', () => undefined],
+      ['string "idle"', () => 'idle'],
+      ['number 1', () => 1],
+      ['empty object', () => ({})],
+      ['invalid kind number', () => ({ kind: 1 })],
+      ['invalid kind string', () => ({ kind: 'invalid_kind' })],
+      ['null kind', () => ({ kind: null })],
+    ];
+
+    for (const [name, badFn] of badComposerValues) {
+      const badData: any = {
         ...baseData,
         profile: {
-          unknown: () => badValue as any,
-          trust: () => badValue as any,
-          permission: () => badValue as any,
-          question: () => badValue as any,
-          working: () => badValue as any,
-          composer: () => ({ kind: 'idle' as const }),
+          composer: badFn,
         },
       };
-      const res = classifyLines(badPredicateData, lines);
-      // None of the stages match because they did not return strictly true
-      // So it falls through to composer (which returns idle)
-      expect(res.kind).toBe('idle');
+
+      const resClassifyLines = classifyLines(badData, lines);
+      expect(resClassifyLines.kind).toBe('unknown');
+
+      const resComposeLines = composeLines(badData, lines);
+      expect(resComposeLines.kind).toBe('unknown');
+
+      const resReadScreen = readScreen(badData, screenText);
+      expect(resReadScreen.kind).toBe('unknown');
+
+      const resClassify = classify(badData, lines);
+      expect(resClassify.kind).toBe('unknown');
+
+      const resClassifyComposer = classifyComposer(badData, lines);
+      expect(resClassifyComposer.kind).toBe('unknown');
     }
 
-    // 3. Composer throwing returns unknown, does not crash
-    const throwingComposerData = {
-      ...baseData,
-      profile: {
-        ...baseData.profile,
-        composer: () => {
-          throw new Error('composer boom');
-        },
-      },
-    };
-    expect(classifyLines(throwingComposerData, lines).kind).toBe('unknown');
-    expect(composeLines(throwingComposerData, lines).kind).toBe('unknown');
-
-    // 4. Composer returning null, undefined, wrong types, or invalid kinds reads unknown
-    const badComposerReturns: any[] = [
-      null,
-      undefined,
-      'idle',
-      { kind: 1 },
-      { kind: 'invalid_kind' },
-      { kind: 'not-a-screen-kind' },
-      {},
-      { kind: null },
-    ];
-    for (const badReturn of badComposerReturns) {
-      const badData = {
+    // 3. Exactly true matches the stage; exactly false misses the stage
+    for (const stage of stages) {
+      // True matches
+      const trueData: any = {
         ...baseData,
         profile: {
-          ...baseData.profile,
-          composer: () => badReturn,
+          composer: () => ({ kind: 'idle' }),
+          [stage]: () => true,
         },
       };
-      expect(classifyLines(badData, lines).kind).toBe('unknown');
-      expect(composeLines(badData, lines).kind).toBe('unknown');
+      expect(classifyLines(trueData, lines).kind).toBe(stage);
+      expect(classify(trueData, lines).kind).toBe(stage);
+      expect(readScreen(trueData, screenText).kind).toBe(stage);
+
+      // False misses (falls through to composer which returns idle)
+      const falseData: any = {
+        ...baseData,
+        profile: {
+          composer: () => ({ kind: 'idle' }),
+          [stage]: () => false,
+        },
+      };
+      expect(classifyLines(falseData, lines).kind).toBe('idle');
+      expect(classify(falseData, lines).kind).toBe('idle');
+      expect(readScreen(falseData, screenText).kind).toBe('idle');
     }
   });
 
