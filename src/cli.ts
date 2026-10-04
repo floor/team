@@ -33,10 +33,8 @@ Options:
 The team is declared in <project>/.agents/team.yaml.
 `;
 
-export function version(): string {
-  const text = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
-  return (JSON.parse(text) as { version: string }).version;
-}
+import { version } from './version.ts';
+export { version };
 
 export async function main(argv: string[], io: Io): Promise<number> {
   const [name, ...rest] = argv;

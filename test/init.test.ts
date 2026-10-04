@@ -54,9 +54,11 @@ describe('team init', () => {
     expect(firstLine).toBe(expected);
   });
 
-  test('a team file with and without the schema line produces identical approval fingerprints', () => {
-    const withoutLine = skeleton('my-proj', null);
-    const withLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/floor/team/v${version()}/schema/team.schema.json\n${withoutLine}`;
+  test('a team file with and without the schema line produces identical approval fingerprints and zero drift', () => {
+    const withLine = skeleton('my-proj', null);
+    const withoutLine = withLine.replace(/^# yaml-language-server: [^\n]+\n/, '');
+    expect(withLine).not.toBe(withoutLine);
+    expect(withoutLine.startsWith('# The team of')).toBe(true);
 
     const resWithout = validateTeamFile(withoutLine);
     const resWith = validateTeamFile(withLine);
@@ -68,6 +70,9 @@ describe('team init', () => {
       const fpWith = fingerprints(resWith.team);
       expect(fpWith.sections).toEqual(fpWithout.sections);
       expect(fpWith.seats).toEqual(fpWithout.seats);
+
+      const fixedDate = new Date(1700000000000);
+      expect(approvalOf(resWith.team, project, fixedDate)).toEqual(approvalOf(resWithout.team, project, fixedDate));
     }
   });
 
