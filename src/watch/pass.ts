@@ -68,23 +68,35 @@ export function pass(
   const known = new Set<string>();
   const workers: { idle: boolean }[] = [];
 
+  // A stopped seat is kept in the file and not started; should its owner start one by hand, herdr
+  // shows it running, and the watch gives it a parked seat's treatment: attention (permission,
+  // trust, question, blocked) and unsent text are reported, idle is not — and it is never an agent
+  // the file doesn't hold. A stopped seat that is not running is the normal state, and draws nothing.
   const seats = [
-    ...team.seats.filter((seat) => !seat.stopped).map((seat) => ({ name: seat.name, cli: seat.cli, parked: seat.parked, seat })),
+    ...team.seats.map((seat) => ({
+      name: seat.name,
+      cli: seat.cli,
+      parked: seat.parked || seat.stopped,
+      stopped: seat.stopped,
+      seat,
+    })),
     ...Object.entries(state.seats).filter(([, recorded]) => recorded.temporary).map(([name, recorded]) => ({
       name,
       cli: team.seats.find((seat) => seat.name === recorded.temporary?.like)?.cli ?? '',
       parked: false,
+      stopped: false,
       seat: undefined,
     })),
   ];
 
-  for (const { name, cli, parked, seat } of seats) {
+  for (const { name, cli, parked, stopped, seat } of seats) {
     const agent = live.agents.find((candidate) => candidate.name === name);
     if (!agent) {
       delete memory.idleSince[name];
       delete memory.lastWorking[name];
       delete memory.unsentSince[name];
-      if (live.running) once(`missing:${name}`, `${name} is in the file and is not running`);
+      // A stopped seat is not started: absent from herdr is its normal state, not a missing seat.
+      if (live.running && !stopped) once(`missing:${name}`, `${name} is in the file and is not running`);
       continue;
     }
     known.add(agent.pane);
@@ -151,15 +163,6 @@ export function pass(
         to: 'operator',
       });
     }
-  }
-
-  // A stopped seat is kept in the file and not started: herdr may still show one running (the
-  // owner started it by hand). `status` names that difference; the watch stays silent about it,
-  // and above all must not call it an agent the file doesn't hold.
-  for (const seat of team.seats) {
-    if (!seat.stopped) continue;
-    const agent = live.agents.find((candidate) => candidate.name === seat.name);
-    if (agent) known.add(agent.pane);
   }
 
   for (const agent of live.agents) {
