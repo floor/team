@@ -4,7 +4,7 @@
 //
 //   bun scripts/conformance.ts --impl "node dist/cli.js conformance-adapter"
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -76,17 +76,70 @@ function nonAscii(text: string): boolean {
   return [...text].some((char) => (char.codePointAt(0) ?? 0) > 127);
 }
 
-export async function run(impl: string): Promise<{ code: number; report: string }> {
-  const manifest = JSON.parse(readFileSync(join(fixtures, 'conformance.json'), 'utf8')) as Manifest;
+// Folders under test/fixtures that are not conformance input. Every other top-level folder is a
+// CLI folder whose `.txt` files, at any depth, are screen captures the manifest must list; `yaml`
+// holds the YAML cases the same way. An unlisted folder is not exempt: its `.txt` files are named.
+const EXEMPT = new Map<string, string>([
+  ['herdr', 'JSON shapes herdr itself prints, read by the herdr tests'],
+  ['linux', 'a fake /proc tree for the load and memory readers'],
+]);
+
+type Problem = { file: string; detail: string };
+
+function filesUnder(dir: string): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      for (const child of filesUnder(join(dir, entry.name))) found.push(`${entry.name}/${child}`);
+    } else if (entry.isFile()) {
+      found.push(entry.name);
+    }
+  }
+  return found;
+}
+
+/** Names every fixture on disk the manifest does not list, and every manifest entry with no file. */
+function fixtureProblems(fixturesDir: string, manifest: Manifest): Problem[] {
+  const listed = new Set([...manifest.screens.map((one) => one.file), ...manifest.yaml.map((one) => one.file)]);
+  const problems: Problem[] = [];
+  for (const entry of readdirSync(fixturesDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || EXEMPT.has(entry.name)) continue;
+    const suffix = entry.name === 'yaml' ? '.yaml' : '.txt';
+    for (const child of filesUnder(join(fixturesDir, entry.name))) {
+      const file = `${entry.name}/${child}`;
+      if (file.endsWith(suffix) && !listed.has(file)) problems.push({ file, detail: 'not in the conformance manifest' });
+    }
+  }
+  for (const file of listed) {
+    if (!existsSync(join(fixturesDir, file))) problems.push({ file, detail: 'in the conformance manifest but not on disk' });
+  }
+  return problems.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+}
+
+function reportOf(rows: Row[]): { code: number; report: string } {
+  const failed = rows.filter((row) => !row.pass).length;
+  const report = [
+    ...rows.map((row) => `${row.pass ? 'pass' : 'fail'}  ${row.part}  ${row.file}  ${row.detail}`),
+    `conformance: ${rows.length - failed} pass, ${failed} fail`,
+  ].join('\n');
+  return { code: failed === 0 ? 0 : 1, report };
+}
+
+export async function run(impl: string, fixturesDir: string = fixtures): Promise<{ code: number; report: string }> {
+  const manifest = JSON.parse(readFileSync(join(fixturesDir, 'conformance.json'), 'utf8')) as Manifest;
+  const problems = fixtureProblems(fixturesDir, manifest);
+  if (problems.length > 0) {
+    return reportOf(problems.map((problem) => ({ pass: false, part: 'manifest', ...problem })));
+  }
   const requests: string[] = [];
   for (const screen of manifest.screens) {
-    const lines = readFileSync(join(fixtures, screen.file), 'utf8').split('\n');
+    const lines = readFileSync(join(fixturesDir, screen.file), 'utf8').split('\n');
     requests.push(JSON.stringify({ op: 'classify', cli: screen.cli, lines }));
     requests.push(JSON.stringify({ op: 'composer', cli: screen.cli, lines }));
   }
   const screenRequests = requests.length;
   for (const yaml of manifest.yaml) {
-    requests.push(JSON.stringify({ op: 'yaml', text: readFileSync(join(fixtures, yaml.file), 'utf8') }));
+    requests.push(JSON.stringify({ op: 'yaml', text: readFileSync(join(fixturesDir, yaml.file), 'utf8') }));
   }
   const replied = await ask(impl, `${requests.join('\n')}\n`);
   const got = answersOf(replied.out);
@@ -112,7 +165,7 @@ export async function run(impl: string): Promise<{ code: number; report: string 
         file: screen.file,
         detail: composed === screen.composer ? screen.composer : `expected ${screen.composer}, got ${composed ?? 'no kind'}`,
       });
-      const text = readFileSync(join(fixtures, screen.file), 'utf8');
+      const text = readFileSync(join(fixturesDir, screen.file), 'utf8');
       if (nonAscii(text)) {
         const pass = classified === screen.classify && composed === screen.composer;
         rows.push({
@@ -139,12 +192,7 @@ export async function run(impl: string): Promise<{ code: number; report: string 
       rows.push({ pass: false, part: 'impl', file: impl, detail: 'the answers were not paired with the requests' });
     }
   }
-  const failed = rows.filter((row) => !row.pass).length;
-  const report = [
-    ...rows.map((row) => `${row.pass ? 'pass' : 'fail'}  ${row.part}  ${row.file}  ${row.detail}`),
-    `conformance: ${rows.length - failed} pass, ${failed} fail`,
-  ].join('\n');
-  return { code: failed === 0 ? 0 : 1, report };
+  return reportOf(rows);
 }
 
 if (import.meta.main) {

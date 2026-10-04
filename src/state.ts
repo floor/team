@@ -8,6 +8,8 @@ import type { StoredReading, StoredSpend } from './budgets/readings.ts';
 
 export type SeatState = {
   stage: 'launched' | 'named' | 'ready';
+  /** The CLI the seat was launched with: `down` stops it under it when the file renamed it. */
+  cli?: string;
   pane?: string;
   /** The herdr workspace, so a later command can close it without listing agents. */
   workspace?: string;

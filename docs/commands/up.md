@@ -5,6 +5,10 @@ declares and this machine can run, and the watchdog pane that runs `team watch`.
 are left as they are; a seat stopped in the file is left out until `team add` starts it. `--dry-run`
 prints the plan and runs nothing.
 
+A session stopped in herdr is refused until its owner clears it — `up` never deletes a session. A
+session `team down` stopped needs no such step: `down` clears the one it stopped in the same run, so
+the next `up` starts from the beginning.
+
 A seat that isn't `mode: shared` and works in worktrees (`workspace.mode: worktree` is the default)
 starts in the lobby, never in the project root, which holds the owner's uncommitted work. The lobby
 is the folder that holds the worktrees with `.lobby` beside them — the parent of `workspace.path` —
@@ -26,11 +30,12 @@ as they trusted the worktrees. Then it starts.
 ## What it reads and writes
 
 Reads the team file (or the one `--file` names), this machine's approval store, the session's state
-(`.agents/team.state.json`), herdr (whether the session is up, its agents and workspaces), the
-doctor's findings, and the machine's load, free memory, free disk and free swap. Writes
-`.agents/team.state.json` (each seat's stage, pane and workspace; the watch's pid and heartbeat),
-`.agents/team.log`, the lobby folder a seat that works in worktrees waits in, and, through herdr:
-the server, one workspace per seat and one for the watchdog, each seat's launch, and the watch.
+(`.agents/team.state.json`, for each seat's stage), herdr (whether the session is up, its agents and
+workspaces), the doctor's findings, and the machine's load, free memory, free disk and free swap.
+Writes `.agents/team.state.json` (each seat's stage, pane, workspace and the CLI it was launched
+with; the watch's pid and heartbeat), `.agents/team.log`, the lobby folder a seat that works in
+worktrees waits in, and, through herdr: the server, one workspace per seat and one for the watchdog,
+each seat's launch, and the watch.
 
 ## Who may run it
 
@@ -199,6 +204,16 @@ A seat is not the owner, so it can read a plan but not start a team:
 ```console caller=claude-beacon
 $ team up ; echo "exit $?"
 team up: only the owner runs `up`, from a terminal outside herdr; this call is claude-beacon
+exit 1
+```
+
+A session stopped in herdr is never started over — `up` deletes nothing, and its refusal says the
+command to run by hand. A session `team down` stopped never gets here: `down` clears the one it
+stopped in the same run, so the next `up` finds no session and starts it from the beginning:
+
+```console herdr=stopped
+$ team up ; echo "exit $?"
+team up: session beacon is stopped; clear it with `herdr session delete beacon`
 exit 1
 ```
 

@@ -17,6 +17,18 @@ the default session had eight agents before and after.
   `ctrl+c to stop`. The only model response was `RULES_RECEIVED`. It was
   instructed to use no tools or files.
 - `working-no-spinner.txt`: constructed from `working.txt` by removing the braille spinner line. Not a capture. That line sits several lines above the prompt, so a longer tool transcript pushes it out of the 20-line window. The prompt still ends in `ctrl+c to stop`.
+- `follow-up-queue-two.txt`, `follow-up-queue-hint.txt`, `follow-up-queue-one.txt`,
+  `follow-up-queue-typed.txt`: transcribed by the operator on 2026-10-04 from plain
+  `herdr pane read` output of a working seat, with Cursor's follow-up queue open.
+  **Transcribed, not captured with styling** — no CLI was started for them. Message
+  text is replaced, widths are shortened and the box borders re-padded to one width,
+  and the workspace path is `<workspace>`. The three frames show a running turn (the
+  spinner verb differs: `Thinking` in the first two, `Reading` in the third) with one
+  or two messages queued behind it and the empty `→ Add a follow-up` placeholder on
+  the prompt row; frame 2 is frame 1 after one Enter, so its box top has scrolled out
+  of the read. `follow-up-queue-typed.txt` puts frame 3's one-message box (frame 1's
+  spinner and status rows) over the rules message typed on the prompt row, as
+  `unsent.txt` has it.
 - `exit-typed.txt`, `exit.txt`: `/exit` pasted at idle, read back, then submitted.
   The suggestion menu also listed `/quit`. Herdr subsequently listed zero agents
   and the foreground process was the shell.

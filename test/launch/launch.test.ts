@@ -231,6 +231,7 @@ describe('down --dry-run', () => {
         '+ kill 4242',
         '    (the watch)',
         '+ herdr session stop acme-web',
+        '    (stopped, then cleared: the session this run stopped, so a later `up` starts from the beginning)',
         'dry run: nothing was run',
         '',
       ].join('\n'),

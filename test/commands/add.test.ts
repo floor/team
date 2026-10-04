@@ -187,6 +187,7 @@ describe('team add', () => {
         agentPanes: () => [],
         closeWorkspace: () => true,
         stopSession: () => false,
+        deleteSession: () => false,
         kill: () => false,
         sleep: async () => {},
         now: () => NOW,

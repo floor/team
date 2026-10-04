@@ -66,6 +66,7 @@ function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
     agentPanes: () => agents.map((agent) => agent.pane),
     closeWorkspace: (_session, workspace) => { closed.push(workspace); return true; },
     stopSession: () => false,
+    deleteSession: () => false,
     kill: () => false,
     sleep: async (ms) => { clock += ms; },
     now: () => new Date(clock),
@@ -241,6 +242,23 @@ describe('team remove', () => {
       expect(made.typed).toEqual([]);
       expect(readFileSync(file, 'utf8')).toContain('name: worker');
     }
+  });
+
+  test('a Cursor queue screen is working: the seat is left and nothing is typed', async () => {
+    // The screen is a real queue fixture, read through the profile: a turn with
+    // follow-ups waiting on it is working, so its pane never gets the exit text.
+    const queued = readScreen(
+      'cursor',
+      readFileSync(new URL('../fixtures/cursor/2026.10.01/follow-up-queue-two.txt', import.meta.url), 'utf8'),
+    );
+    expect(queued.kind).toBe('working');
+    const made = world(queued, 'idle');
+    made.agents.push({ name: 'worker', agent: 'cursor', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    expect(io.err).toContain('is working');
+    expect(made.typed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
   test('a time-out leaves the seat and the file', async () => {
