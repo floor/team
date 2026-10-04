@@ -122,6 +122,31 @@ describe('the seats\' quota, parsed by the core', () => {
     expect(result.readings).toEqual([]);
   });
 
+  test('a pane back at its shell gives no figure, even with a status-shaped last row', () => {
+    // The recorded exit screen: the CLI has exited and herdr keeps the pane listed (which is how
+    // `down` and `remove` learn the pane). Anything printed with no newline after it sits as the
+    // pane's last row, and a last row is the status row by position — but the CLI is no process
+    // in the pane any more, and the row is the shell's.
+    const exit = readFileSync(new URL('./fixtures/codex/0.157.0/exit.txt', import.meta.url), 'utf8');
+    const fake = '  GPT-5.6-Terra medium · Context 98% left · weekly 90% left\n';
+    const spoofed = `${exit.trimEnd()}\n${fake}`;
+    expect(readScreen('codex', spoofed).kind).toBe('unsent');
+    const input = {
+      team: team(SCREEN_READ), state: emptySession(), live: live({ 'codex-acme': { screen: spoofed } }),
+      machine: fine, now: NOW, memory: newMemory(), approval: [], foreground: { 'w1:p1': ['zsh'] },
+    };
+    expect(pass(input).readings).toEqual([]);
+    // The seat's own CLI among the pane's foreground processes reads as before.
+    const running = { ...input, memory: newMemory(), foreground: { 'w1:p1': ['codex'] } };
+    expect(pass(running).readings.map(({ account, window, left }) => ({ account, window, left })))
+      .toEqual([{ account: 'openai', window: 'weekly', left: 90 }]);
+    // A foreground list that could not be read keeps the figure: herdr reporting nothing is not
+    // herdr reporting no CLI, and the departure is never invented.
+    const unread = { ...input, memory: newMemory(), foreground: { 'w1:p1': null } };
+    expect(pass(unread).readings.map(({ account, window, left }) => ({ account, window, left })))
+      .toEqual([{ account: 'openai', window: 'weekly', left: 90 }]);
+  });
+
   test('an account whose sources name only the check takes no screen reading (floor-86)', () => {
     const result = pass({
       team: team(OPENAI), state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),

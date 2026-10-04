@@ -792,6 +792,19 @@ describe('team watch', () => {
       .toEqual([{ account: 'openai', window: 'weekly', left: 39, used: 61, seat: 'codex-acme' }]);
   });
 
+  test('a reading is not saved from a pane back at its shell', async () => {
+    writeFileSync(file, withAccounts('  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [status_line] }\n'));
+    // The pane after the CLI exited: the recorded exit screen, and a status-shaped line printed
+    // with no newline after it. herdr still lists the agent; its foreground process is the shell.
+    const exit = readFileSync(new URL('./fixtures/codex/0.157.0/exit.txt', import.meta.url), 'utf8');
+    const fake = '  GPT-5.6-Terra medium · Context 98% left · weekly 90% left\n';
+    scene = live({ 'codex-acme': { screen: `${exit.trimEnd()}\n${fake}` } });
+    const fore = { foreground: () => ['zsh'] };
+    const code = await runWatch(['--file', file], testIo(dir), sources(1, fore));
+    expect(code).toBe(0);
+    expect(loadReadings(join(dir, '.agents'))).toEqual([]);
+  });
+
   test('a spend check reading is kept, so `up` and `add` count the floor against it', async () => {
     writeFileSync(file, withAccounts('  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n'));
     const code = await runWatch(['--file', file], testIo(dir), sources(1, {
