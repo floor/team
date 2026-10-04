@@ -48,16 +48,19 @@ describe('the complete example of the RFC', () => {
     expect(team.visibility).toBe('public');
   });
 
-  test('count is expanded, names and labels numbered alike', () => {
+  test('count is expanded, and an omitted label is the model and version', () => {
     expect(team.seats.map((seat) => seat.name)).toEqual([
       'claude-coordinator-acme', 'codex-acme', 'deepseek-acme', 'deepseek-acme-2', 'grok-acme',
     ]);
-    expect(team.seats[3]).toMatchObject({ label: 'deepseek-acme-2', declared: 'deepseek-acme', instance: 2, count: 2 });
+    expect(team.seats.map((seat) => seat.label)).toEqual([
+      'claude opus 5.5', 'gpt sol 6', 'deepseek flash v4.1', 'deepseek flash v4.1-2', 'grok 4.7',
+    ]);
+    expect(team.seats[3]).toMatchObject({ label: 'deepseek flash v4.1-2', declared: 'deepseek-acme', instance: 2, count: 2 });
   });
 
   test('defaults are applied to seats', () => {
     const [lead, codex, , , grok] = team.seats;
-    expect(lead).toMatchObject({ display: 'Claude Opus 5.5', cwd: '.', mode: 'shared', label: 'claude-coordinator-acme', parked: false });
+    expect(lead).toMatchObject({ display: 'Claude Opus 5.5', cwd: '.', mode: 'shared', label: 'claude opus 5.5', parked: false });
     expect(codex).toMatchObject({ display: 'GPT-6 Sol', mode: 'worktree', parked: true });
     expect(grok).toMatchObject({ stopped: true, cli: 'grok', vendor: 'xai' });
   });
@@ -186,6 +189,7 @@ describe('names and labels after count is expanded', () => {
 `;
   const counted = `  - role: implementer
     name: worker
+    label: worker
     cli: codex
     vendor: openai
     model: GPT Sol
@@ -201,7 +205,10 @@ describe('names and labels after count is expanded', () => {
     expect(errors(text).join('\n')).toMatch(/two seats have the name "worker-2" .*after count is expanded/);
   });
   test('two seats with one label', () => {
-    expect(errors(`${minimal + second}    label: lead\n`).join('\n')).toMatch(/two seats have the label "lead"/);
+    const named = minimal.replace('    launch:', '    label: lead\n    launch:');
+    const team = valid(`${named + second}    label: lead\n`).team;
+    expect(team.seats.map((item) => item.name)).toEqual(['lead', 'lead-2']);
+    expect(team.seats.every((item) => item.label === 'lead')).toBe(true);
   });
   test('distinct seats pass, and every instance counts for the default ceiling', () => {
     expect(valid(minimal + counted + second).team.limits.seats).toBe(6);

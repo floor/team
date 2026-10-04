@@ -54,6 +54,8 @@ type TwoRules = {
   /** Any line below the closing rule matches any pattern in the list. */
   footers: RegExp[];
   placeholders: Placeholder[];
+  /** A row that stands for hidden rows of a folded paste; capture 1 is the hidden count. */
+  fold: RegExp | null;
   placeholderStyle?: PlaceholderStyle;
 };
 
