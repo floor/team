@@ -562,6 +562,27 @@ describe('team down', () => {
     expect((await down(['--dry-run'], OWNER, { agents: () => null })).code).toBe(2);
   });
 
+  test('a session every seat leaves is stopped and cleared in the same run, and the dry run says so', async () => {
+    const free = {
+      agents: () => [agent('claude-coordinator-acme'), agent('deepseek-acme'), agent('deepseek-acme-2')],
+    };
+    const dry = await down(['--dry-run'], OWNER, free);
+    expect(dry.code).toBe(0);
+    expect(dry.out).toEndWith(
+      [
+        '+ herdr session stop acme-web',
+        '    (stopped, then cleared: the session this run stopped, so a later `up` starts from the beginning)',
+        'dry run: nothing was run',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  test('a session herdr reports stopped before down acts is only reported, not stopped or cleared', async () => {
+    const run = await down([], OWNER, { sessionRunning: () => false });
+    expect(run).toMatchObject({ code: 0, out: 'session acme-web is not running: nothing to stop\n' });
+  });
+
   test('a pane back at its shell is not the seat any more', () => {
     expect(paneStillRunning(['claude'], ['claude'])).toBe(true);
     expect(paneStillRunning(['zsh'], ['claude'])).toBe(false);

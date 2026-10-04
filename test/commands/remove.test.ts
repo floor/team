@@ -66,6 +66,7 @@ function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
     agentPanes: () => agents.map((agent) => agent.pane),
     closeWorkspace: (_session, workspace) => { closed.push(workspace); return true; },
     stopSession: () => false,
+    deleteSession: () => false,
     kill: () => false,
     sleep: async (ms) => { clock += ms; },
     now: () => new Date(clock),

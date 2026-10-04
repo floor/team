@@ -1,6 +1,6 @@
-# Claude Code's screen. The questions are written out in both cases: the old
-# classifier ignored case on those two lines and not on the "1. Yes" choice, and
-# ignore_case would apply to the whole rule.
+# Claude Code's screen. The trust question carries ignore_case on its own pattern:
+# the old classifier ignored case on those lines and not on the "1. Yes" choice,
+# and a rule-wide or stage-wide flag would have reached the choice too.
 format: 1
 cli: claude-code
 binary: claude
@@ -39,7 +39,8 @@ status_model:
 screen:
   trust:
     - all:
-        - '(?:[Dd][Oo] [Yy][Oo][Uu] [Tt][Rr][Uu][Ss][Tt] (?:[Tt][Hh][Ii][Ss]|[Tt][Hh][Ee]) [Ff][Oo][Ll][Dd][Ee][Rr]\?|[Oo][Nn][Ee] [Yy][Oo][Uu] [Tt][Rr][Uu][Ss][Tt]\?)'
+        - match: '(?:Do you trust (?:this|the) folder\?|One you trust\?)'
+          ignore_case: true
         - '^\s*[❯›>]?\s*1\.\s+Yes\b'
     - all:
         - '^\s*[❯›>]?\s*Yes, I trust this folder\b'
