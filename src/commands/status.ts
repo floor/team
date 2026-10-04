@@ -49,10 +49,32 @@ export const realSources: StatusSources = {
 export const status: Command = (argv, io) => runStatus(argv, io, realSources);
 export default status;
 
+/**
+ * The JSON shape printed by `team status --json`.
+ * Format 1.
+ */
+export interface StatusJson {
+  format: 1;
+  project: string;
+  session: string;
+  rows: Array<{
+    name: string;
+    state: string;
+    model: string;
+    pane: string;
+  }>;
+  notes: string[];
+  differences: Array<{
+    what: string;
+    repair: string;
+  }>;
+  notice: string | null;
+}
+
 export async function runStatus(argv: string[], io: Io, sources: StatusSources): Promise<number> {
-  const args = readArgs(argv, ['session', 'file'], []);
+  const args = readArgs(argv, ['session', 'file'], ['json']);
   if (args.error || args.rest.length) {
-    io.stderr(`team status: ${args.error ?? `unexpected "${args.rest[0]}"`}\nUsage: team status [--session <name>] [--file <path>]\n`);
+    io.stderr(`team status: ${args.error ?? `unexpected "${args.rest[0]}"`}\nUsage: team status [--session <name>] [--file <path>] [--json]\n`);
     return 2;
   }
 
@@ -62,7 +84,7 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     return 2;
   }
   const { team, root, dir } = current;
-  if (current.notice) io.stdout(`${current.notice}\n`);
+  if (!args.flags.has('json') && current.notice) io.stdout(`${current.notice}\n`);
   for (const warning of current.warnings) io.stderr(`team status: warning, line ${warning.line}: ${warning.message}\n`);
 
   const session = args.values.session ?? team.session;
@@ -76,7 +98,20 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
   if (!live.running) comparison.notes.unshift(`the herdr session "${session}" is not running`);
   comparison.differences.push(...protectedCheckouts(team, root, sources), ...approvalDrift(sources.approval(team, root)));
 
-  io.stdout(render(team, session, comparison));
+  if (args.flags.has('json')) {
+    const doc: StatusJson = {
+      format: 1,
+      project: team.project,
+      session,
+      rows: comparison.rows,
+      notes: comparison.notes,
+      differences: comparison.differences,
+      notice: current.notice ?? null,
+    };
+    io.stdout(`${JSON.stringify(doc, null, 2)}\n`);
+  } else {
+    io.stdout(render(team, session, comparison));
+  }
   return comparison.differences.length ? 1 : 0;
 }
 
