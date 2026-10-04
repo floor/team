@@ -248,7 +248,7 @@ describe('team status', () => {
       resetsAt: NOW.getTime() + 44 * 60 * 1000,
       seat: 'codex-acme',
       confirmed: true,
-    }]);
+    }], NOW.getTime());
     const { code, out } = await status();
     expect(code).toBe(0);
     expect(out).toContain('openai  weekly  left 39%  used 61%  resets in 44m  codex-acme  changed 2m ago  status line  fresh');
