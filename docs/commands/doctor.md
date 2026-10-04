@@ -34,6 +34,7 @@ Anyone, in any terminal. It needs no approval of its own — reporting on the ap
 One line per finding, the level first, then two spaces:
 
     ok    the file is the one the owner approved
+    warn  claude-beacon: its name repeats "beacon"; the session already carries it
     warn  claude-beacon: the launch starts Claude Opus 5.5, the file says Claude Sonnet 5.5
     MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
     --    session beacon is running
@@ -45,7 +46,9 @@ One line per finding, the level first, then two spaces:
 | `MISS` | a reason to refuse: something has to be installed, logged in or approved first |
 | `--  ` | neither: a note, like whether the session is running |
 
-The findings come in order: the file's own warnings, the approval, each account whose `check`
+The findings come in order: the file's own warnings, one warning per seat whose name or label
+repeats the project or the session (the session already carries it; the warning never refuses the
+file), the approval, each account whose `check`
 command no longer matches the file hashed at approval (a warning: that account reads unknown, and
 `up` and `add` still run), herdr, one CLI at a time (its
 version, its login, then each of its seats' launchers and models), the watch, and the `trust` note.
@@ -115,13 +118,14 @@ Everything here is as it should be:
 
 ```console
 $ team doctor ; echo "exit $?"
+warn  claude-beacon: its name repeats "beacon"; the session already carries it
 ok    the file is the one the owner approved
 ok    herdr 0.7.1
 --    session beacon is running
 ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
-team doctor: nothing missing, 0 warnings
+team doctor: nothing missing, 1 warning
 exit 0
 ```
 
@@ -168,6 +172,7 @@ seats:
 
 ```console
 $ team doctor ; echo "exit $?"
+warn  claude-beacon: its name repeats "beacon"; the session already carries it
 MISS  run `team approve`: `limits` changed; seat codex-scribe is not in the approved file
 ok    herdr 0.7.1
 --    session beacon is running
@@ -175,7 +180,7 @@ ok    claude 2.1.288
 ok    claude-code: logged in
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
-team doctor: 2 missing, 0 warnings: `up` and `add` refuse until the missing ones are done
+team doctor: 2 missing, 1 warning: `up` and `add` refuse until the missing ones are done
 exit 1
 ```
 
@@ -222,6 +227,7 @@ seats:
 
 ```console
 $ team doctor ; echo "exit $?"
+warn  claude-beacon: its name repeats "beacon"; the session already carries it
 MISS  run `team approve`: `limits` changed; seat claude-beacon changed; seat codex-scribe is not in the approved file
 ok    herdr 0.7.1
 --    session beacon is running
@@ -230,7 +236,7 @@ ok    claude-code: logged in
 warn  claude-beacon: the launch starts Claude Opus 5.5, the file says Claude Sonnet 5.5
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
-team doctor: 2 missing, 1 warning: `up` and `add` refuse until the missing ones are done
+team doctor: 2 missing, 2 warnings: `up` and `add` refuse until the missing ones are done
 exit 1
 ```
 

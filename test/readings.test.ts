@@ -116,9 +116,24 @@ describe('which reading counts', () => {
     expect(verdict(list, stale, stale, 20).kind).toBe('refusing');
   });
 
-  test('a stale reading with no reset time is unknown', () => {
+  test('a stale reading inside its reserve with no reset time is unknown', () => {
     const list = [seen({ seat: 'one', confirmed: true, changedAt: 0, left: 10, used: 90, resetsAt: null })];
     expect(verdict(list, stale, stale, 20)).toEqual({ kind: 'unknown' });
+  });
+
+  test('a stale reading with no reset, well outside its reserve, is last seen', () => {
+    // Reserve 20: past twice it the figure is room the account may still hold, so it counts as
+    // last seen rather than unknown — and it is never a refusal.
+    const far = seen({ seat: 'one', confirmed: true, changedAt: 0, left: 70, used: 30, resetsAt: null });
+    expect(verdict([far], stale, stale, 20)).toEqual({ kind: 'last-seen', reading: far });
+    // At twice the reserve, the boundary included, it is still unknown.
+    const near = seen({ seat: 'one', confirmed: true, changedAt: 0, left: 40, used: 60, resetsAt: null });
+    expect(verdict([near], stale, stale, 20)).toEqual({ kind: 'unknown' });
+    // Inside its reserve it never turns into a refusal: with no reset it is unknown, as before.
+    const inside = seen({ seat: 'one', confirmed: true, changedAt: 0, left: 5, used: 95, resetsAt: null });
+    expect(verdict([inside], stale, stale, 20)).toEqual({ kind: 'unknown' });
+    // No reserve to measure against: unknown, as before.
+    expect(verdict([far], stale, stale, null)).toEqual({ kind: 'unknown' });
   });
 
   test('a stale reading outside the reserve stays stale', () => {
@@ -239,6 +254,35 @@ describe('the fallback among the sources', () => {
     // A stale check with room counts for nothing: with nothing below it, unknown.
     const roomy = seen({ ...check, left: 50, used: 50 });
     expect(countedFor(['check', 'status_line'], [], [roomy], at, stale, 10)).toEqual({ kind: 'unknown' });
+  });
+
+  test('a last-seen screen falls through to a fresh check below it', () => {
+    // The failure direction: a stale higher source must not hide a fresh lower one.
+    const screen = seen({ seat: 'one', confirmed: true, changedAt: at - 40 * minute, left: 70, used: 30, resetsAt: null });
+    const check = seen({ seat: null, source: 'check', confirmed: true, changedAt: at - minute, left: 60, used: 40 });
+    expect(countedFor(['status_line', 'check'], [screen], [check], at, stale, 20))
+      .toEqual({ kind: 'counted', reading: check });
+    // Nothing below it: the room the screen last showed is the answer.
+    expect(countedFor(['status_line', 'check'], [screen], [], at, stale, 20))
+      .toEqual({ kind: 'counted', reading: screen });
+  });
+
+  test('a last-seen reading below never clears a stale refusal above it', () => {
+    // The check's stale figure inside the reserve is the refusal (rule 4); the screen's
+    // last-seen room must not displace it — a depleted account must not launch on it.
+    const check = seen({ seat: null, source: 'check', confirmed: true, changedAt: at - 31 * minute, left: 5, used: 95, resetsAt: at + 100 * 3_600_000 });
+    const screen = seen({ seat: 'one', confirmed: true, changedAt: at - 40 * minute, left: 70, used: 30, resetsAt: null });
+    expect(countedFor(['check', 'status_line'], [screen], [check], at, stale, 20))
+      .toEqual({ kind: 'counted', reading: check });
+  });
+
+  test('a stale check with no reset and room is last seen, below a fresh lower source', () => {
+    const check = seen({ seat: null, source: 'check', confirmed: true, changedAt: at - 31 * minute, left: 70, used: 30, resetsAt: null });
+    expect(countedFor(['check', 'status_line'], [], [check], at, stale, 20))
+      .toEqual({ kind: 'counted', reading: check });
+    const fresh = seen({ seat: 'one', confirmed: true, changedAt: at - minute, left: 60, used: 40 });
+    expect(countedFor(['check', 'status_line'], [fresh], [check], at, stale, 20))
+      .toEqual({ kind: 'counted', reading: fresh });
   });
 
   test('an unconfirmed status line falls through to a fresh check below it', () => {

@@ -121,7 +121,7 @@ export function upPlan(input: UpInput): Step[] {
       steps.push({ kind: 'skip', text: `${seat.name}: already ready; left as it is` });
       continue;
     }
-    const pane = seat.pane ?? paneOf(seat.label);
+    const pane = seat.pane ?? paneOf(seat.name);
     const cwd = join(input.root, seat.cwd);
     const fresh = seat.stage === undefined || !seat.pane;
     // The same condition as the launch step below. A seat already running keeps

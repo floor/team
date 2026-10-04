@@ -4,9 +4,11 @@
 // runs on the plain form, and the styling tells a greyed suggestion from typed text.
 import { readFileSync } from 'node:fs';
 import { stripSgr } from '../ansi.ts';
-import { classifyLines, composeLines, statusRowOf } from './screen-core.ts';
+import { classifyLines, composeLines, foldOf, statusRowOf, type Fold } from './screen-core.ts';
 import type { ScreenData } from './screen-data.ts';
 import { loadScreen } from './screen-file.ts';
+
+export type { Fold };
 
 export type Screen =
   | { kind: 'idle' }                 // the idle prompt, with an empty input box
@@ -52,6 +54,14 @@ export function classifyComposer(cli: string, lines: string[]): Screen {
 export function readScreen(cli: string, screen: string | undefined): Screen {
   if (screen === undefined) return { kind: 'unknown' };
   return classify(cli, screen.split('\n'));
+}
+
+/** The folded form of a paste the pane's composer shows, or null. The shape only; the caller
+ *  verifies it holds the text it typed before trusting it. */
+export function readFold(cli: string, screen: string | undefined): Fold | null {
+  const data = DATA[cli];
+  if (data === undefined || screen === undefined) return null;
+  return foldOf(data, windowOf(screen.split('\n')));
 }
 
 /** The one line a quota figure may come from: the composer's own status row, in the pane's last

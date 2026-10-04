@@ -22,6 +22,7 @@ const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url)
   .replace('seats:\n', `seats:
   - role: operator
     name: claude-operator-acme
+    label: claude-operator-acme
     cli: claude-code
     vendor: anthropic
     model: Claude Opus
@@ -430,6 +431,7 @@ operator: claude-lead
 seats:
   - role: coordinator
     name: claude-lead
+    label: claude-lead
     cli: claude-code
     vendor: anthropic
     model: Claude Opus
@@ -437,6 +439,7 @@ seats:
     launch: claude --model claude-opus-5-5
   - role: implementer
     name: claude-worker
+    label: claude-worker
     cli: claude-code
     vendor: anthropic
     model: Claude Opus

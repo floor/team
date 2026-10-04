@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
-import { classifyComposer, readScreen } from '../../src/watch/screen.ts';
+import { classifyComposer, readFold, readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
 import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
 import { upPlan } from '../../src/launch/plan.ts';
@@ -180,6 +180,18 @@ describe('Cursor rules delivery', () => {
     const d = delivery();
     expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(true);
     expect(d.calls).toEqual(['Rules.', 'Enter']);
+  });
+
+  test('the captured long paste wraps inline, with no fold row to verify', async () => {
+    // unsent.txt is the capture of this message wrapped over two rows in Cursor's composer: a
+    // long paste stays an ordinary unsent box, and the profile declares no fold, so delivery
+    // reads it as before.
+    const message = 'Reply with exactly RULES_RECEIVED. Do not use tools. Do not read or write files.';
+    expect(readFold('cursor', fixture('unsent'))).toBeNull();
+    expect(readScreen('cursor', fixture('unsent')).kind).toBe('unsent');
+    const d = delivery();
+    expect(await deliverRules('cursor', message, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([message, 'Enter']);
   });
 
   test.each(['trust', 'unsent', 'exit', 'working', 'thinking'])('types nothing at %s', async (screen) => {

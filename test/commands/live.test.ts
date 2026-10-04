@@ -153,7 +153,7 @@ describe('team up, live', () => {
     writeFileSync(path, EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
-    const made = world((_pane, label) => (label === 'codex-acme' ? capture('idle') : IDLE));
+    const made = world((_pane, label) => (label === 'gpt sol 6' ? capture('idle') : IDLE));
     const sent: string[] = [];
     made.launch.agentStatus = () => 'idle';
     made.launch.foreground = () => ['zsh'];
@@ -171,7 +171,7 @@ describe('team up, live', () => {
     writeFileSync(path, EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
-    const made = world((_pane, label) => label === 'codex-acme'
+    const made = world((_pane, label) => label === 'gpt sol 6'
       ? capture(outcome === 'trust' || outcome === 'startup' ? outcome : 'idle') : IDLE);
     let codexPane = '';
     let status = 'idle';
@@ -224,7 +224,7 @@ describe('team up, live', () => {
     writeFileSync(path, EXAMPLE.replace(/  - role: implementer\n    name: codex-acme[\s\S]*?stopped: true\n/, `${gemini}\n`));
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/antigravity/1.2.16/${name}.txt`), 'utf8');
-    const made = world((_pane, label) => (label === 'gemini-acme'
+    const made = world((_pane, label) => (label === 'gemini flash 3.8'
       ? capture(outcome === 'trust' ? outcome : 'idle') : IDLE));
     let geminiPane = '';
     let status = 'idle';
@@ -269,9 +269,9 @@ describe('team up, live', () => {
     expect(code).toBe(0);
     expect(made.starts).toBe(1);
     expect(made.creates).toEqual([
-      'claude-coordinator-acme',
-      'deepseek-acme',
-      'deepseek-acme-2',
+      'claude opus 5.5',
+      'deepseek flash v4.1',
+      'deepseek flash v4.1-2',
       'watchdog',
     ]);
     expect(made.renames).toEqual(['claude-coordinator-acme', 'deepseek-acme', 'deepseek-acme-2']);
@@ -306,7 +306,7 @@ describe('team up, live', () => {
 
   test('a permission prompt closes that workspace and leaves the others', async () => {
     await approve();
-    const made = world((_pane, label) => (label === 'claude-coordinator-acme' ? PERMISSION : IDLE));
+    const made = world((_pane, label) => (label === 'claude opus 5.5' ? PERMISSION : IDLE));
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
@@ -322,7 +322,7 @@ describe('team up, live', () => {
   test('a trust dialog closes that workspace without an answer and leaves the seat out', async () => {
     await approve();
     const trust = 'Do you trust this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n';
-    const made = world((_pane, label) => (label === 'claude-coordinator-acme' ? trust : IDLE));
+    const made = world((_pane, label) => (label === 'claude opus 5.5' ? trust : IDLE));
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
@@ -367,7 +367,7 @@ describe('team up, live', () => {
     const io = testIo(root, { kind: 'owner' });
     await runUp(FILE, io, sources({ sessionState: () => 'running', workspaces: () => [] }, made));
     expect(made.starts).toBe(0);
-    expect(made.creates).toContain('claude-coordinator-acme');
+    expect(made.creates).toContain('claude opus 5.5');
     expect(made.runs.some((run) => run.pane === 'w9:p1')).toBe(false);
     expect(made.runs.some((run) => run.pane === 'w1:p1')).toBe(true);
   });
@@ -407,8 +407,8 @@ describe('team up, live', () => {
     );
     expect(code).toBe(0);
     expect(io.out).toContain('skip claude-coordinator-acme: already ready; left as it is');
-    expect(made.creates).not.toContain('claude-coordinator-acme');
-    expect(made.creates).not.toContain('deepseek-acme');
+    expect(made.creates).not.toContain('claude opus 5.5');
+    expect(made.creates).not.toContain('deepseek flash v4.1');
     expect(made.renames).toContain('deepseek-acme');
     expect(made.renames).not.toContain('claude-coordinator-acme');
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
@@ -671,7 +671,7 @@ describe('team up, live', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
-    expect(made.creates.filter((label) => label !== 'watchdog')).toEqual(['claude-coordinator-acme']);
+    expect(made.creates.filter((label) => label !== 'watchdog')).toEqual(['claude opus 5.5']);
     expect(io.out).toContain('the approval allows 1 seats; 2 would be running');
   });
 
@@ -725,8 +725,8 @@ describe('team up, live', () => {
       },
     }, made));
     expect(code).toBe(1);
-    expect(made.creates).toContain('claude-coordinator-acme');
-    expect(made.creates).not.toContain('deepseek-acme');
+    expect(made.creates).toContain('claude opus 5.5');
+    expect(made.creates).not.toContain('deepseek flash v4.1');
     expect(io.out).toContain('deepseek-acme: swap grew by 2.0 GB in 10 minutes, above 1.0 GB');
   });
 
@@ -735,7 +735,7 @@ describe('team up, live', () => {
     const made = world();
     const io = testIo(root, { kind: 'owner' });
     expect(await runUp(FILE, io, sources({ machine: () => fine }, made))).toBe(0);
-    expect(made.creates).toEqual(['claude-coordinator-acme', 'deepseek-acme', 'deepseek-acme-2', 'watchdog']);
+    expect(made.creates).toEqual(['claude opus 5.5', 'deepseek flash v4.1', 'deepseek flash v4.1-2', 'watchdog']);
   });
 
   test("a doctor miss refuses, and the watch's missing heartbeat does not", async () => {

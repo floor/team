@@ -3,7 +3,7 @@ import type { ApprovedCheck } from '../budgets/checks.ts';
 import type { TeamFile } from '../file/types.ts';
 import { defaultBudgets, defaultWatch, validateTeamFile } from '../file/validate.ts';
 import { readApproval, storePath, writeApproval, type Approval, type ApprovalRecord, type Ceilings } from '../store/store.ts';
-import { compare, describe, fingerprints, legacySeatDigests, OWNER_SECTIONS, type Fingerprints } from './fingerprint.ts';
+import { compare, describe, fingerprints, legacyLabelDigests, legacySeatDigests, OWNER_SECTIONS, type Fingerprints } from './fingerprint.ts';
 
 /** The ceilings an approval fixes: `up` and `add` read them from the record, never from the file. */
 export function ceilingsOf(team: TeamFile): Ceilings {
@@ -41,25 +41,31 @@ export function approvedFingerprints(record: ApprovalRecord): Fingerprints {
   if (!OWNER_SECTIONS.every((name) => stored.sections[name] !== undefined) && checked.ok) {
     sections = { ...fingerprints(checked.team).sections, ...stored.sections };
   }
-  const seats = checked.ok ? adoptFlagDigests(stored.seats, checked.team) : stored.seats;
+  const seats = checked.ok ? adoptLegacyDigests(stored.seats, checked.team) : stored.seats;
   if (sections === stored.sections && seats === stored.seats) return stored;
   return { sections, seats };
 }
 
 /**
- * A record from before `parked` and `stopped` were in the digest still names
- * the seat as it was approved, flags included, read from the stored copy. A
- * digest already in the new shape is left alone, so a later edit of the file
- * is not adopted from a stale copy. A copy that can't be read is left alone.
+ * A record from before `parked` and `stopped` were in the digest, or from when
+ * an omitted label was the seat's name, still names the seat as it was
+ * approved, read from the stored copy. A digest already in the new shape is
+ * left alone, so a later edit of the file is not adopted from a stale copy.
+ * A copy that can't be read is left alone.
  */
-function adoptFlagDigests(stored: Record<string, string>, team: TeamFile): Record<string, string> {
+function adoptLegacyDigests(stored: Record<string, string>, team: TeamFile): Record<string, string> {
   const current = fingerprints(team).seats;
-  const legacy = legacySeatDigests(team);
+  const legacyFlags = legacySeatDigests(team);
+  const legacyLabels = legacyLabelDigests(team);
   let changed = false;
   const next = { ...stored };
   for (const [name, previous] of Object.entries(stored)) {
     const adopted = current[name];
-    if (adopted !== undefined && previous === legacy[name] && previous !== adopted) {
+    const old =
+      previous === legacyFlags[name] ||
+      previous === legacyLabels.named[name] ||
+      previous === legacyLabels.namedWithoutFlags[name];
+    if (adopted !== undefined && old && previous !== adopted) {
       next[name] = adopted;
       changed = true;
     }

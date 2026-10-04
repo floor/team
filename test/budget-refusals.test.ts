@@ -10,6 +10,7 @@ import { runAdd, type AddSources } from '../src/commands/add.ts';
 import type { DoctorSources } from '../src/commands/doctor.ts';
 import { runUp, type Launch, type UpSources } from '../src/commands/up.ts';
 import { loadTeamFile } from '../src/file/load.ts';
+import type { Seat, TeamFile } from '../src/file/types.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import { storePath, writeApproval } from '../src/store/store.ts';
 import { emptySession, updateState } from '../src/state.ts';
@@ -33,6 +34,7 @@ workspace:
 seats:
   - role: coordinator
     name: lead
+    label: lead
     cli: claude-code
     vendor: anthropic
     model: Claude Opus
@@ -41,6 +43,7 @@ seats:
     mode: shared
   - role: implementer
     name: worker
+    label: worker
     cli: claude-code
     vendor: openai
     model: Claude Opus
@@ -274,6 +277,28 @@ describe('a stored reading refuses one seat', () => {
     expect(missing.out).not.toContain('would refuse');
     expect(missing.out).not.toContain('is unknown');
     expect(missing.out).toContain('--label worker');
+  });
+
+  test('a stale figure with no reset only counts well outside the reserve', async () => {
+    const loaded = loadTeamFile(root);
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+    const worker = loaded.team.seats.find((seat) => seat.name === 'worker');
+    if (!worker) throw new Error('worker');
+    const budgets = loaded.team.budgets;
+    const old = { changedAt: now - 31 * 60_000, resetsAt: null };
+    // Past twice the 10% reserve, the room the figure last held clears the launch...
+    store([reading('anthropic', 80), reading('openai', 70, old)]);
+    const far = await up(['--dry-run'], world());
+    expect(far.out).not.toContain('would refuse');
+    expect(far.out).not.toContain('is unknown');
+    expect(far.out).toContain('--label worker');
+    // ...at exactly twice it and inside it, a depleted figure is unknown — never a clearance.
+    expect(seatBudget(budgets, [reading('openai', 20, old)], worker, now))
+      .toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
+    expect(seatBudget(budgets, [reading('openai', 5, old)], worker, now))
+      .toEqual({ kind: 'unknown', account: 'openai', text: 'openai is unknown' });
+    // And a no-reset figure is never a refusal, wherever it sits.
+    expect(seatBudget(budgets, [reading('openai', 70, old)], worker, now)).toEqual({ kind: 'clear' });
   });
 
   test('the same reading refuses after a restart, with no seat running', async () => {
@@ -620,6 +645,36 @@ describe('a subscription check reading refuses one seat', () => {
   });
 });
 
+describe('the source fallback is per window', () => {
+  // § 3: a check that filled one window does not answer for a window it never reported. The
+  // status line below it in `sources` counts for that window — and its figure can refuse.
+  const budgets = {
+    staleAfter: 30 * 60,
+    checkEvery: 600,
+    marks: [50, 75, 90],
+    accounts: {
+      openai: { kind: 'subscription', shared: false, reserve: 20, floor: null, sources: ['check', 'status_line'], check: 'openai-usage' },
+    },
+  } as unknown as TeamFile['budgets'];
+  const worker = { name: 'worker', vendor: 'openai' } as Seat;
+
+  test('a session-only check leaves the status line\'s weekly figure to refuse', () => {
+    const list = [checkReading('openai', 80, { window: 'session' }), reading('openai', 5)];
+    expect(seatBudget(budgets, list, worker, now)).toEqual({
+      kind: 'refuse',
+      why: 'openai weekly left 5%, inside its 20% reserve, changed 1m ago; accounts with room: none',
+    });
+  });
+
+  test('the check still answers for the window it did fill', () => {
+    const list = [checkReading('openai', 5, { window: 'session' }), reading('openai', 80)];
+    expect(seatBudget(budgets, list, worker, now)).toEqual({
+      kind: 'refuse',
+      why: 'openai session left 5%, inside its 20% reserve, read 3m ago; accounts with room: none',
+    });
+  });
+});
+
 describe('team add', () => {
   test('refuses the seat before launching it, and --dry-run shows that', async () => {
     store([reading('anthropic', 80), reading('openai', 5)]);
@@ -648,6 +703,7 @@ workspace:
 seats:
   - role: coordinator
     name: lead
+    label: lead
     cli: claude-code
     vendor: anthropic
     model: Claude Opus
@@ -656,6 +712,7 @@ seats:
     mode: shared
   - role: implementer
     name: work
+    label: work
     cli: claude-code
     vendor: openai
     account: openai-work
@@ -665,6 +722,7 @@ seats:
     mode: shared
   - role: implementer
     name: home
+    label: home
     cli: claude-code
     vendor: openai
     account: openai-home
