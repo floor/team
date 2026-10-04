@@ -2,7 +2,7 @@
 // runs the registered checks in the order it owns, applies the report-once rule, and dials the
 // nudge. A check never reads herdr, a screen or the file itself — only the observation it is
 // handed (RFC 0002 § 4.2).
-import { WATCH_CHECKS_CHANGED } from '../approve/fingerprint.ts';
+import { seatNamed, WATCH_CHECKS_CHANGED } from '../approve/fingerprint.ts';
 import { observe, observeCheck, type Seen } from '../budgets/readings.ts';
 import type { CheckOutcome } from '../budgets/run.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -256,9 +256,17 @@ export function pass({
   // seat's account — its own `account:` when the file names one, so two accounts of one vendor
   // keep two buckets — while a figure on another account (a launcher showing the vendor it really
   // runs on) stays that account's, whichever seat's screen showed it.
+  //
+  // A seat the approval lists as changed — or as not in the approved file — is drift, and its
+  // figures are read as they are but none is folded: an unapproved edit to its `account:` must
+  // not move its figure into another account's bucket, where `up` and `add` would count it.
+  // Nothing is saved for that seat until the owner approves.
+  const drift = new Set(
+    (Array.isArray(approval) ? approval : []).map(seatNamed).filter((name): name is string => name !== null),
+  );
   let readings = stored.slice();
   for (const seat of observations) {
-    if (!seat.running) continue;
+    if (!seat.running || drift.has(seat.name)) continue;
     for (const figure of seat.quota) {
       const account = figure.account === seat.vendor ? seat.account : figure.account;
       if (budgets.accounts[account]?.sources.includes('status_line')) {

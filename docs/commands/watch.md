@@ -123,6 +123,12 @@ Until then the reports, the check cadence and the accounts are the approved copy
 defaults', with no account at all, when nothing was approved — and the difference is reported. The
 same values are what `status`'s table and `up`'s and `add`'s launch gate read.
 
+A seat's own edit is the same kind of drift. While the approval lists a seat as changed — or as
+not in the approved file — the figures off its screen are read and reported as they are, and none
+of them is written to the readings: an unapproved edit to its `account:` must not move its figure
+into another account's bucket, where `up` and `add` would count it. Once the owner approves the
+seat, its figures fold again, under the account the file then names.
+
 `budget` is a check like the others: `watch.checks` turns it off. It reports, and never refuses a
 seat: the launch gate of `up` and `add` is what refuses. An account whose figure nothing counts —
 a check that stopped reading, a stale status line — is reported while seats on it are running;

@@ -139,3 +139,13 @@ export function describe(difference: Difference): string {
   if (difference.kind === 'seat-new') return `seat ${difference.name} is not in the approved file`;
   return `seat ${difference.name} changed`;
 }
+
+/**
+ * The seat a difference line names, when it names one — the inverse of `describe`, kept beside it
+ * so the two can't drift. `pass` reads it to keep a seat the owner has not approved out of the
+ * readings fold; `null` for a section difference.
+ */
+export function seatNamed(line: string): string | null {
+  const match = /^seat (.+) (?:changed|is not in the approved file)$/.exec(line);
+  return match?.[1] ?? null;
+}
