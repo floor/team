@@ -285,7 +285,7 @@ export async function runPage(name: string, markdown: string, project = 'beacon'
       try {
         if (block.kind === 'yaml' || block.kind === 'file') {
           if (!block.attrs.file) throw new Error(`the ${block.kind} fence at line ${block.line} needs file=<path>`);
-          page.fixture.write(block.attrs.file, block.text.endsWith('\n') ? block.text : `${block.text}\n`);
+          page.fixture.write(block.attrs.file, block.text.endsWith('\n') ? block.text : `${block.text}\n`, block.kind === 'file' && block.attrs.exec === '1');
         } else if (block.kind === 'commit') {
           const message = block.text.endsWith('\n') ? block.text : `${block.text}\n`;
           page.fixture.commit(message, block.attrs.email ?? undefined);
