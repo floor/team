@@ -1800,19 +1800,18 @@ function failureMoved(): Map<string, string> {
   return new Map([['src/cli.ts', next]]);
 }
 
-test('every form the gate does not read fails the check', () => {
-  const form = "a commands-table entry the contract can't read";
-  const cli = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
-  const medic = cli.replace(
-    "  doctor: () => import('./commands/doctor.ts'),\n",
-    "  medic: () => import('./commands/doctor.ts'),\n",
-  );
-  const noAdd = cli.replace("  add: () => import('./commands/add.ts'),\n", '');
-  const notDispatcher = cli.replace(
-    'return command.default(rest, io);',
-    "if (argv[0] === '--gate-probe') return ({ default: () => 17 }).default();\n  return command.default(rest, io);",
-  );
-  const rows: { name: string; files: Map<string, string>; needle: string; extra?: ExitRow[] }[] = [
+const form = "a commands-table entry the contract can't read";
+const cli = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+const medic = cli.replace(
+  "  doctor: () => import('./commands/doctor.ts'),\n",
+  "  medic: () => import('./commands/doctor.ts'),\n",
+);
+const noAdd = cli.replace("  add: () => import('./commands/add.ts'),\n", '');
+const notDispatcher = cli.replace(
+  'return command.default(rest, io);',
+  "if (argv[0] === '--gate-probe') return ({ default: () => 17 }).default();\n  return command.default(rest, io);",
+);
+const unreadForms: { name: string; files: Map<string, string>; needle: string; extra?: ExitRow[] }[] = [
     { name: 'shorthand', files: withTable('shorthand,'), needle: `shorthand: ${form}` },
     { name: 'method', files: withTable("method() { return import('./commands/doctor.ts'); },"), needle: `method: ${form}` },
     { name: 'spread', files: withTable("...{ probe: () => import('./commands/doctor.ts') },"), needle: `spread: ${form}` },
@@ -1894,11 +1893,11 @@ test('every form the gate does not read fails the check', () => {
       needle: UNREADABLE,
     },
     { name: 'reportFailure returns a helper', files: failureMoved(), needle: 'says code 1, the site returns 2' },
-  ];
-  for (const row of rows) {
-    const found = problems(row.extra
-      ? { files: row.files, contractText: canon([...contract.rows, ...row.extra]), page: render([...contract.rows, ...row.extra]) }
-      : { files: row.files });
-    expect(found.some((line) => line.includes(row.needle)), row.name).toBe(true);
-  }
+];
+
+test.each(unreadForms)('$name fails the check', (row) => {
+  const found = problems(row.extra
+    ? { files: row.files, contractText: canon([...contract.rows, ...row.extra]), page: render([...contract.rows, ...row.extra]) }
+    : { files: row.files });
+  expect(found.some((line) => line.includes(row.needle)), row.name).toBe(true);
 });
