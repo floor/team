@@ -1,0 +1,32 @@
+# Claude Code's screen. The questions are written out in both cases: the old
+# classifier ignored case on those two lines and not on the "1. Yes" choice, and
+# ignore_case would apply to the whole rule.
+format: 1
+cli: claude-code
+screen:
+  trust:
+    - all:
+        - '(?:[Dd][Oo] [Yy][Oo][Uu] [Tt][Rr][Uu][Ss][Tt] (?:[Tt][Hh][Ii][Ss]|[Tt][Hh][Ee]) [Ff][Oo][Ll][Dd][Ee][Rr]\?|[Oo][Nn][Ee] [Yy][Oo][Uu] [Tt][Rr][Uu][Ss][Tt]\?)'
+        - '^\s*[❯›>]?\s*1\.\s+Yes\b'
+  permission:
+    - any:
+        - 'Do you want to (proceed|make this edit|create|allow)'
+        - '\bEsc to cancel\b.*\bTab to amend\b'
+        - '^\s*❯?\s*[0-9]\. (Yes|No)\b'
+  question:
+    - any:
+        - 'Enter to select'
+        - '↑/↓ to navigate'
+        - 'Enter to confirm'
+        - 'Esc to cancel'
+  working:
+    - any:
+        - '\besc to interrupt\b'
+        - '^[^\S\n]*[✢✳✶✻✼✽][^\n]*…\s*\(\s*\d'
+  composer:
+    mode: box-to-rule
+    prompt: '^\s*[❯›>]'
+    rule: '^\s*[─━]{8,}'
+    placeholders:
+      - equals: ''
+      - prefix: 'Try "'
