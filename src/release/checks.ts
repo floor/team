@@ -509,7 +509,8 @@ export function timestampOf(text: string): number | null {
   const match = RFC3339.exec(text);
   if (!match) return null;
   const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number) as [number, number, number, number, number, number];
-  if (day > daysInMonth(year, month)) return null;
+  // RFC 3339's day of month is 01-31: day 00 is not a date, and must not roll back into the month before.
+  if (day < 1 || day > daysInMonth(year, month)) return null;
   if (hour > 23 || minute > 59 || second > 59) return null;
   const zone = match[7] as string;
   let offset = 0;

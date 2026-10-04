@@ -76,12 +76,14 @@ describe('the Linear request', () => {
   });
 
   test('a retry replays the same request byte for byte, key in the one header again', async () => {
-    const answers = withAnswer(happyRecords(), URLS.linear, [json({}, 500), json(linearAnswer())]);
-    const { result, requests } = await run(answers);
-    const sent = linearRequests(requests);
-    expect(sent.length).toBe(2);
-    expect(sent[0]?.request).toEqual(sent[1]?.request);
-    expect(result.linear?.status).toBe('pass');
+    for (const status of [408, 429, 500]) {
+      const answers = withAnswer(happyRecords(), URLS.linear, [json({}, status), json(linearAnswer())]);
+      const { result, requests } = await run(answers);
+      const sent = linearRequests(requests);
+      expect(sent.length).toBe(2);
+      expect(sent[0]?.request).toEqual(sent[1]?.request);
+      expect(result.linear?.status).toBe('pass');
+    }
   });
 
   test('every other read of the run is a bare GET without headers', async () => {
@@ -124,6 +126,7 @@ describe('the key under test appears nowhere but the one header', () => {
       withAnswer(happyRecords(), URLS.linear, [json({}, 500), json({}, 500)]),
       withAnswer(happyRecords(), URLS.linear, { kind: 'timeout' }),
       withAnswer(happyRecords(), URLS.linear, { kind: 'http', status: 200, body: `{"data": ${KEY}` }),
+      withAnswer(happyRecords(), URLS.linear, { kind: 'undecodable', status: 200 }),
       withAnswer(happyRecords(), URLS.linear, json({ data: null, errors: [{ message: 'no such project' }] })),
       withAnswer(happyRecords(), URLS.linear, json({}, 302)),
     ];
@@ -205,6 +208,15 @@ describe('the linear check', () => {
     expect(two.result.linear).toEqual({ status: 'unknown', detail: 'multiple matching Linear milestones found' });
   });
 
+  test('a milestone the API returns participates even when its archivedAt is set', async () => {
+    // The read asks for the archived records (includeArchived: true); milestones are not
+    // excluded on archivedAt, so the one done match still satisfies the condition.
+    const archived = await run(
+      withAnswer(happyRecords(), URLS.linear, json(linearAnswer({ milestones: [{ name: '3.0.2', status: 'done', archivedAt: '2026-09-01T00:00:00Z' }] }))),
+    );
+    expect(archived.result.linear).toEqual({ status: 'pass', detail: 'Linear milestone is complete and a qualifying status update exists' });
+  });
+
   test('a milestone without a string name or status is an incomplete record, whatever the count', async () => {
     const noStatus = await run(withAnswer(happyRecords(), URLS.linear, json(linearAnswer({ milestones: [{ name: '3.0.2' }] }))));
     expect(noStatus.result.linear).toEqual({ status: 'unknown', detail: 'Linear record is incomplete' });
@@ -260,6 +272,9 @@ describe('the linear check', () => {
 
     const noCreated = await run(withAnswer(happyRecords(), URLS.linear, json(linearAnswer({ updates: [{ archivedAt: null }] }))));
     expect(noCreated.result.linear).toEqual({ status: 'unknown', detail: 'Linear record is incomplete' });
+
+    const noArchive = await run(withAnswer(happyRecords(), URLS.linear, json(linearAnswer({ updates: [{ createdAt: '2026-10-01T12:00:00Z' }] }))));
+    expect(noArchive.result.linear).toEqual({ status: 'unknown', detail: 'Linear record is incomplete' });
 
     const badArchive = await run(withAnswer(happyRecords(), URLS.linear, json(linearAnswer({ updates: [{ createdAt: '2026-10-01T12:00:00Z', archivedAt: 7 }] }))));
     expect(badArchive.result.linear).toEqual({ status: 'unknown', detail: 'Linear record is incomplete' });
@@ -331,6 +346,12 @@ describe('the activity check', () => {
 
     const badBase64 = await run(withAnswer(happyRecords(), URLS.activity, json({ ...activityFile('x'), content: '!!!' })));
     expect(badBase64.result.activity).toEqual({ status: 'unknown', detail: 'public activity file could not be read' });
+
+    // Valid base64 whose bytes are not valid UTF-8: never repaired into a replacement character.
+    const badUtf8 = await run(
+      withAnswer(happyRecords(), URLS.activity, json({ ...activityFile('x'), content: Buffer.from([0xff, 0xfe, 0xfd]).toString('base64') })),
+    );
+    expect(badUtf8.result.activity).toEqual({ status: 'unknown', detail: 'public activity file could not be read' });
 
     const failed = await run(withAnswer(happyRecords(), URLS.activity, [json({}, 500), json({}, 500)]));
     expect(failed.result.activity).toEqual({ status: 'unknown', detail: 'public activity file could not be read' });
@@ -476,6 +497,8 @@ describe('the timestamp grammar', () => {
       '2026-10-01T00:00:00.0000000001Z',
       '2026-10-01T00:00:60Z',
       '2026-02-30T00:00:00Z',
+      '2026-10-00T00:00:00Z', // day 00 is not a date; it must not roll back into September
+      '2026-00-01T00:00:00Z',
       '2026-10-01T24:00:00Z',
       ' 2026-10-01T00:00:00Z',
       0,

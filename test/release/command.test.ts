@@ -296,13 +296,31 @@ describe('the key appears nowhere but the one request header', () => {
     }
   });
 
-  test('the key reader fails: no request is formed, the key appears nowhere at all', async () => {
-    const failing: KeyReader = () => Promise.resolve({ ok: false, reason: 'the lookup failed' });
-    const { code, io, requests } = await run(['check', 'widgets@3.0.2'], widgetsAnswers(), failing);
-    expect(code).toBe(2);
-    expect(io.out).toContain('Keychain access was unavailable');
-    expect(requests.filter((record) => record.url === URLS.linear)).toEqual([]);
-    expect(searched(io, requests, undefined)).toBe(0);
+  test('the --json output is searched as well: exactly one header carries the key', async () => {
+    calls.length = 0;
+    const { code, io, requests } = await run(['check', 'widgets@3.0.2', '--json'], widgetsAnswers(), recording);
+    expect(code).toBe(0);
+    expect(io.out).toContain('"linear": { "status": "pass"');
+    expect(searched(io, requests, undefined)).toBe(1);
+  });
+
+  test('a key reader that fails, times out, or returns empty or illegal output: no request, no leak', async () => {
+    // The reader reports the deadline's outcome itself (the production seam terminates the lookup
+    // at five seconds); every not-ok answer is the same Keychain failure, and no request is formed.
+    const readers: KeyReader[] = [
+      () => Promise.resolve({ ok: false, reason: 'the lookup failed' }),
+      () => Promise.resolve({ ok: false, reason: 'the lookup timed out' }),
+      () => Promise.resolve({ ok: true, key: '' }),
+      () => Promise.resolve({ ok: true, key: 'not a legal key' }),
+    ];
+    for (const reader of readers) {
+      calls.length = 0;
+      const { code, io, requests } = await run(['check', 'widgets@3.0.2'], widgetsAnswers(), reader);
+      expect(code).toBe(2);
+      expect(io.out).toContain('Keychain access was unavailable');
+      expect(requests.filter((record) => record.url === URLS.linear)).toEqual([]);
+      expect(searched(io, requests, undefined)).toBe(0);
+    }
   });
 
   test('a response body that itself contains the key string is not echoed anywhere', async () => {
