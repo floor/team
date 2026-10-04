@@ -9,8 +9,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runRelease } from '../../src/commands/release.ts';
 import { realFetch, BODY_LIMIT } from '../../src/release/http.ts';
+import type { KeyReader } from '../../src/release/keychain.ts';
 import { testIo, type TestIo } from '../helpers.ts';
-import { URLS, fakeFetch, fixture, happy, json, type Answers } from './world.ts';
+import {
+  KEY, URLS, activityFile, fakeFetch, fixture, happy, happyRecords, json, linearAnswer, type Answers, type Recorded,
+} from './world.ts';
 
 const TEAM = `format: 1
 project: acme
@@ -24,6 +27,16 @@ releases:
     trusted_publishing: true
   - package: "@scope/tool"
     github: floor/tool
+  - package: widgets
+    github: floor/material
+    linear_project: 01234567-89ab-cdef-0123-456789abcdef
+    linear_keychain_service: team.linear.material
+    activity_file: activity/2026/material.md
+    activity_marker: "release: <package>@<version>"
+  - package: gadgets
+    github: floor/material
+    activity_file: activity/2026/material.md
+    activity_marker: "release: <package>@<version>"
 seats:
   - role: coordinator
     name: lead
@@ -70,10 +83,10 @@ beforeEach(() => {
 
 afterEach(() => rmSync(project, { recursive: true, force: true }));
 
-async function run(argv: string[], answers: Answers): Promise<{ code: number; io: TestIo; requested: string[] }> {
-  const { fetcher, requested } = fakeFetch(answers);
+async function run(argv: string[], answers: Answers, keyReader?: KeyReader): Promise<{ code: number; io: TestIo; requested: string[]; requests: Recorded[] }> {
+  const { fetcher, requested, requests } = fakeFetch(answers);
   const io = testIo(project);
-  return { code: await runRelease(argv, io, fetcher), io, requested };
+  return { code: await runRelease(argv, io, fetcher, keyReader), io, requested, requests };
 }
 
 function listing(dir: string): string[] {
@@ -128,6 +141,185 @@ describe('the output', () => {
   });
 });
 
+// The records run for widgets@3.0.2 (both pairs configured, no trusted publishing): the same
+// public records — the file points widgets at the same repository — plus the marker with the
+// requested literal values and the Linear answer.
+function widgetsAnswers(): Answers {
+  const answers = happyRecords();
+  answers.set('https://registry.npmjs.org/widgets/3.0.2', json({ ...fixture('npm-version.json'), name: 'widgets' }));
+  answers.set(URLS.activity, json(activityFile('# Activity\n\nrelease: widgets@3.0.2\n')));
+  return answers;
+}
+
+// gadgets configures the activity pair only.
+function gadgetsAnswers(): Answers {
+  const answers = happy(false);
+  answers.set('https://registry.npmjs.org/gadgets/3.0.2', json({ ...fixture('npm-version.json'), name: 'gadgets' }));
+  answers.set(URLS.activity, json(activityFile('release: gadgets@3.0.2\n')));
+  return answers;
+}
+
+const okKey: KeyReader = () => Promise.resolve({ ok: true, key: KEY });
+
+describe('the output with the records configured', () => {
+  const WIDGETS_TABLE = `check      status  detail
+npm        pass    exact version and checksums found
+tag        pass    tag resolves to a commit on the default branch
+github     pass    published release matches SemVer channel
+changelog  pass    changelog entry has a valid release date
+linear     pass    Linear milestone is complete and a qualifying status update exists
+activity   pass    public activity marker found
+`;
+
+  const WIDGETS_JSON = `{
+  "package": "widgets",
+  "version": "3.0.2",
+  "checks": {
+    "npm": { "status": "pass", "detail": "exact version and checksums found" },
+    "tag": { "status": "pass", "detail": "tag resolves to a commit on the default branch" },
+    "github": { "status": "pass", "detail": "published release matches SemVer channel" },
+    "changelog": { "status": "pass", "detail": "changelog entry has a valid release date" },
+    "linear": { "status": "pass", "detail": "Linear milestone is complete and a qualifying status update exists" },
+    "activity": { "status": "pass", "detail": "public activity marker found" }
+  }
+}
+`;
+
+  test('all six rows in the fixed order, exit 0', async () => {
+    const { code, io } = await run(['check', 'widgets@3.0.2'], widgetsAnswers(), okKey);
+    expect(code).toBe(0);
+    expect(io.out).toBe(WIDGETS_TABLE);
+    expect(io.err).toBe('');
+  });
+
+  test('the JSON object has exactly the six keys in the fixed order', async () => {
+    const { code, io } = await run(['check', 'widgets@3.0.2', '--json'], widgetsAnswers(), okKey);
+    expect(code).toBe(0);
+    expect(io.out).toBe(WIDGETS_JSON);
+    expect(io.err).toBe('');
+  });
+
+  test('a check that is not configured is absent: the activity pair alone adds one row', async () => {
+    const { code, io } = await run(['check', 'gadgets@3.0.2'], gadgetsAnswers());
+    expect(code).toBe(0);
+    expect(io.out).toContain('activity   pass    public activity marker found');
+    expect(io.out).not.toContain('linear');
+  });
+
+  test('the exit rule spans the present checks: a missing linear is 1, an unknown one is 2', async () => {
+    const missing = await run(
+      ['check', 'widgets@3.0.2'],
+      new Map([...widgetsAnswers(), [URLS.linear, json(linearAnswer({ milestones: [] }))]]),
+      okKey,
+    );
+    expect(missing.code).toBe(1);
+    expect(missing.io.out).toContain('no matching Linear milestone found');
+
+    const noKey: KeyReader = () => Promise.resolve({ ok: false, reason: 'the lookup failed' });
+    const unknown = await run(['check', 'widgets@3.0.2'], widgetsAnswers(), noKey);
+    expect(unknown.code).toBe(2);
+    expect(unknown.io.out).toContain('Keychain access was unavailable');
+  });
+
+  test('without an injected reader, the non-interactive default never invokes the facility', async () => {
+    // The default wiring reads io.stdinIsTTY — false here — and does not look up anything.
+    const { code, io, requested } = await run(['check', 'widgets@3.0.2'], widgetsAnswers());
+    expect(code).toBe(2);
+    expect(io.out).toContain('Keychain access was unavailable');
+    expect(requested).not.toContain(URLS.linear);
+  });
+});
+
+describe('the key appears nowhere but the one request header', () => {
+  // The key under test is the distinctive non-real string of world.ts. After each scenario,
+  // everything the command produced is searched: standard output, standard error, any thrown
+  // error's message and stack, the recorded requests (URLs, bodies, header names and values),
+  // the arguments the fake key reader saw, and the project's file listing.
+  const calls: string[] = [];
+  const recording: KeyReader = (service) => {
+    calls.push(service);
+    return Promise.resolve({ ok: true, key: KEY });
+  };
+
+  function searched(io: TestIo, requests: Recorded[], thrown: unknown): number {
+    const text = [io.out, io.err, thrown instanceof Error ? `${thrown.message}\n${thrown.stack ?? ''}` : String(thrown ?? '')].join('\n');
+    expect(text).not.toContain(KEY);
+    for (const service of calls) expect(service).toBe('team.linear.material');
+    let carried = 0;
+    for (const record of requests) {
+      expect(record.url).not.toContain(KEY);
+      expect(record.request?.body ?? '').not.toContain(KEY);
+      for (const [name, value] of Object.entries(record.request?.headers ?? {})) {
+        expect(name).not.toContain(KEY);
+        if (value.includes(KEY)) {
+          expect({ url: record.url, name }).toEqual({ url: URLS.linear, name: 'Authorization' });
+          carried++;
+        }
+      }
+    }
+    return carried;
+  }
+
+  async function attempt(answers: Answers): Promise<{ code: number; io: TestIo; requests: Recorded[]; thrown: unknown }> {
+    calls.length = 0;
+    try {
+      const { code, io, requests } = await run(['check', 'widgets@3.0.2'], answers, recording);
+      return { code, io, requests, thrown: undefined };
+    } catch (error) {
+      // A throw is itself a finding to search: nothing the error carries may hold the key.
+      return { code: -1, io: testIo(project), requests: [], thrown: error };
+    }
+  }
+
+  test('all pass: exactly one attempt, exactly one header carries the key, nothing else does', async () => {
+    const { code, io, requests, thrown } = await attempt(widgetsAnswers());
+    expect(code).toBe(0);
+    expect(searched(io, requests, thrown)).toBe(1);
+    expect(calls).toEqual(['team.linear.material']);
+  });
+
+  test('401, 403, 500 twice, a timeout, invalid JSON, a 200 with errors, a redirect', async () => {
+    const scenarios: [string, Answers, number][] = [
+      ['401', new Map([...widgetsAnswers(), [URLS.linear, json({}, 401)]]), 1],
+      ['403', new Map([...widgetsAnswers(), [URLS.linear, json({}, 403)]]), 1],
+      ['500 twice', new Map([...widgetsAnswers(), [URLS.linear, [json({}, 500), json({}, 500)]]]), 2],
+      ['a timeout', new Map([...widgetsAnswers(), [URLS.linear, { kind: 'timeout' }]]), 2],
+      ['invalid JSON', new Map([...widgetsAnswers(), [URLS.linear, { kind: 'http', status: 200, body: '{"data":' }]]), 1],
+      ['200 with errors', new Map([...widgetsAnswers(), [URLS.linear, json({ data: null, errors: [{ message: 'nope' }] })]]), 1],
+      ['a redirect', new Map([...widgetsAnswers(), [URLS.linear, json({}, 302)]]), 1],
+    ];
+    for (const [name, answers, attempts] of scenarios) {
+      const { code, io, requests, thrown } = await attempt(answers);
+      expect({ name, code }).toEqual({ name, code: 2 });
+      expect(io.out).toContain('Linear record could not be read');
+      expect(searched(io, requests, thrown)).toBe(attempts);
+    }
+  });
+
+  test('the key reader fails: no request is formed, the key appears nowhere at all', async () => {
+    const failing: KeyReader = () => Promise.resolve({ ok: false, reason: 'the lookup failed' });
+    const { code, io, requests } = await run(['check', 'widgets@3.0.2'], widgetsAnswers(), failing);
+    expect(code).toBe(2);
+    expect(io.out).toContain('Keychain access was unavailable');
+    expect(requests.filter((record) => record.url === URLS.linear)).toEqual([]);
+    expect(searched(io, requests, undefined)).toBe(0);
+  });
+
+  test('a response body that itself contains the key string is not echoed anywhere', async () => {
+    const answers = new Map([...widgetsAnswers(), [URLS.linear, json(linearAnswer({ milestones: [{ name: KEY, status: 'done' }] }))]]);
+    const { code, io, requests, thrown } = await attempt(answers);
+    expect(code).toBe(1);
+    expect(io.out).toContain('no matching Linear milestone found');
+    expect(searched(io, requests, thrown)).toBe(1);
+  });
+
+  test('the records run writes nothing: the project is byte-identical afterwards', async () => {
+    const before = listing(project);
+    await attempt(widgetsAnswers());
+    expect(listing(project)).toEqual(before);
+  });
+});
+
 describe('read-only by construction', () => {
   test('the run writes nothing: the project is byte-identical afterwards', async () => {
     const before = listing(project);
@@ -135,12 +327,13 @@ describe('read-only by construction', () => {
     expect(listing(project)).toEqual(before);
   });
 
-  test('its modules import no filesystem write and no process spawn', () => {
-    for (const module of ['commands/release.ts', 'release/checks.ts', 'release/http.ts', 'release/grammar.ts', 'file/sections/releases.ts']) {
+  test('its modules import no filesystem write and, but for the one Keychain seam, no process spawn', () => {
+    for (const module of ['commands/release.ts', 'release/checks.ts', 'release/http.ts', 'release/grammar.ts', 'release/keychain.ts', 'file/sections/releases.ts']) {
       const source = readFileSync(join(import.meta.dir, '..', '..', 'src', module), 'utf8');
       expect(source).not.toContain("from 'node:fs'");
-      expect(source).not.toContain('node:child_process');
       expect(source).not.toMatch(/writeFileSync|appendFileSync|createWriteStream|mkdirSync|rmSync|unlinkSync|renameSync/);
+      // The Keychain seam is the command's one sanctioned spawn; every test stands in for it.
+      if (module !== 'release/keychain.ts') expect(source).not.toContain('node:child_process');
     }
   });
 });

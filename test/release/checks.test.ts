@@ -17,7 +17,7 @@ async function run(
   caps?: { reads: number; attempts: number },
 ): Promise<{ result: ReleaseResult; requested: string[] }> {
   const { fetcher, requested } = fakeFetch(answers);
-  return { result: await runChecks(decl, version, fetcher, caps), requested };
+  return { result: await runChecks(decl, version, fetcher, { caps }), requested };
 }
 
 describe('the npm check', () => {

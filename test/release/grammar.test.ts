@@ -1,7 +1,10 @@
 // The grammars of the `releases:` section and the command's argument: Semantic Versioning 2.0.0,
 // the npm package name, and the GitHub owner/repo, accepted and refused cases.
 import { describe, expect, test } from 'bun:test';
-import { GITHUB_PATTERN, PACKAGE_PATTERN, SEMVER_PATTERN, hasPrerelease, packageProblem } from '../../src/release/grammar.ts';
+import {
+  GITHUB_PATTERN, LINEAR_PROJECT_PATTERN, PACKAGE_PATTERN, SEMVER_PATTERN, activityFileProblem, activityMarkerProblem,
+  hasPrerelease, keychainServiceProblem, packageProblem,
+} from '../../src/release/grammar.ts';
 
 describe('the SemVer 2.0.0 grammar', () => {
   const accepted = [
@@ -51,4 +54,71 @@ describe('the github grammar', () => {
   ];
   for (const repo of accepted) test(`accepts ${repo.length > 30 ? 'a 100-character owner' : repo}`, () => expect(GITHUB_PATTERN.test(repo)).toBe(true));
   for (const repo of refused) test(`refuses ${JSON.stringify(repo.length > 30 ? 'a 101-character owner' : repo)}`, () => expect(GITHUB_PATTERN.test(repo)).toBe(false));
+});
+
+describe('the Linear project grammar', () => {
+  const accepted = ['01234567-89ab-cdef-0123-456789abcdef', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', '00000000-0000-0000-0000-000000000000'];
+  const refused = [
+    '01234567-89AB-cdef-0123-456789abcdef', '01234567-89ab-cdef-0123-456789abcde', '01234567-89ab-cdef-0123-456789abcdef0',
+    '0123456789ab-cdef-0123-456789abcdef', 'g1234567-89ab-cdef-0123-456789abcdef', '01234567_89ab_cdef_0123_456789abcdef',
+    'not-a-uuid', '', ' 01234567-89ab-cdef-0123-456789abcdef',
+  ];
+  for (const id of accepted) test(`accepts ${id}`, () => expect(LINEAR_PROJECT_PATTERN.test(id)).toBe(true));
+  for (const id of refused) test(`refuses ${JSON.stringify(id)}`, () => expect(LINEAR_PROJECT_PATTERN.test(id)).toBe(false));
+});
+
+describe('the Keychain service grammar', () => {
+  test('accepts a service name, spaces and punctuation included, to 255 bytes', () => {
+    expect(keychainServiceProblem('team.linear.material')).toBeNull();
+    expect(keychainServiceProblem('team linear (material)')).toBeNull();
+    expect(keychainServiceProblem('s'.repeat(255))).toBeNull();
+    expect(keychainServiceProblem('é'.repeat(127))).toBeNull(); // 254 bytes
+  });
+
+  test('refuses an empty name, one over 255 bytes, or a control character', () => {
+    expect(keychainServiceProblem('')).not.toBeNull();
+    expect(keychainServiceProblem('s'.repeat(256))).not.toBeNull();
+    expect(keychainServiceProblem('é'.repeat(128))).not.toBeNull(); // 256 bytes
+    expect(keychainServiceProblem('a\tb')).not.toBeNull();
+    expect(keychainServiceProblem('a\nb')).not.toBeNull();
+    expect(keychainServiceProblem('a\x7fb')).not.toBeNull();
+    expect(keychainServiceProblem('a\u0085b')).not.toBeNull();
+  });
+});
+
+describe('the activity file grammar', () => {
+  test('accepts repository-relative paths of name segments', () => {
+    expect(activityFileProblem('activity/2026/material.md')).toBeNull();
+    expect(activityFileProblem('CHANGELOG.md')).toBeNull();
+    expect(activityFileProblem('a/b_c.d-e/f')).toBeNull();
+    expect(activityFileProblem(`a/${'s'.repeat(128)}`)).toBeNull(); // a 128-character segment
+    expect(activityFileProblem(`${'s'.repeat(128)}/${'s'.repeat(128)}/${'s'.repeat(128)}/${'s'.repeat(125)}`)).toBeNull(); // 512 bytes
+  });
+
+  test('refuses dot segments, empty segments, non-ASCII, control characters, too long', () => {
+    for (const file of ['.', '..', 'a/./b', 'a/../b', '/a', 'a/', 'a//b', 'a b/c', 'a/mâtériel.md', `a/${'s'.repeat(129)}`, `${'s'.repeat(128)}/${'s'.repeat(128)}/${'s'.repeat(128)}/${'s'.repeat(126)}`, 'a\tb']) {
+      expect(activityFileProblem(file)).not.toBeNull();
+    }
+  });
+});
+
+describe('the activity marker grammar', () => {
+  test('accepts a marker with exactly one package and one version slot', () => {
+    expect(activityMarkerProblem('release: <package>@<version>')).toBeNull();
+    expect(activityMarkerProblem('<package> <version>')).toBeNull();
+    expect(activityMarkerProblem('<version> then <package>')).toBeNull();
+  });
+
+  test('refuses a missing or doubled slot, empty, non-ASCII, a control character, too long', () => {
+    expect(activityMarkerProblem('release: <package>')).not.toBeNull();
+    expect(activityMarkerProblem('release: <version>')).not.toBeNull();
+    expect(activityMarkerProblem('<package>@<package>@<version>')).not.toBeNull();
+    expect(activityMarkerProblem('<package>@<version>@<version>')).not.toBeNull();
+    expect(activityMarkerProblem('no slots')).not.toBeNull();
+    expect(activityMarkerProblem('')).not.toBeNull();
+    expect(activityMarkerProblem('<package>@<version> é')).not.toBeNull();
+    expect(activityMarkerProblem('<package>@<version>\t')).not.toBeNull();
+    expect(activityMarkerProblem(`<package>@<version>${'x'.repeat(181)}`)).toBeNull(); // 200 bytes
+    expect(activityMarkerProblem(`<package>@<version>${'x'.repeat(182)}`)).not.toBeNull(); // 201
+  });
 });
