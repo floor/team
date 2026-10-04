@@ -214,27 +214,37 @@ function boxToRule(lines: string[], composer: Extract<ScreenData['composer'], { 
     if (composer.prompt.test(lines[i] ?? '')) { input = i; break; }
   }
   if (input < 0) return { kind: 'unknown' };
-  const from = boundaryBefore(lines, input, composer.rule);
+  // The frame is the box itself: a closing rule under this prompt. A rule anywhere
+  // above, or a rule with shell output under it, is not the box. A shell's last
+  // prompt never has that closing rule.
+  let close = -1;
   for (let i = input + 1; i < lines.length; i++) {
     if (tick()) return { kind: 'stop' };
-    if (composer.rule.test(lines[i] ?? '')) break;
+    if (composer.rule.test(lines[i] ?? '')) { close = i; break; }
+  }
+  if (close < 0) return { kind: 'unknown' };
+  const above = input > 0 && composer.rule.test(lines[input - 1] ?? '');
+  let footer = false;
+  for (let j = close + 1; j < lines.length; j++) {
+    if (tick()) return { kind: 'stop' };
+    if (statusFooter(lines[j] ?? '')) { footer = true; break; }
+  }
+  // The opening rule on the line directly above, or the status footer when that
+  // rule has scrolled out of the window.
+  if (!above && !footer) return { kind: 'unknown' };
+  const from = above ? input - 1 : input;
+  for (let i = input + 1; i < close; i++) {
     if ((lines[i] ?? '').trim()) return { kind: 'unsent', from, input };
   }
   const typed = (lines[input] ?? '').replace(composer.prompt, '').trim();
-  const kind = placeholder(typed, composer.placeholders) ? 'idle' : 'unsent';
-  // Idle is what a nudge and a first message are typed into. A bare prompt is not
-  // Claude's box: that needs the rule above it, or the status footer under it.
-  if (kind === 'idle' && !boxFrame(lines, input, from, composer.rule)) return { kind: 'unknown' };
-  return { kind, from, input };
+  return { kind: placeholder(typed, composer.placeholders) ? 'idle' : 'unsent', from, input };
 }
 
-function boxFrame(lines: string[], input: number, from: number, rule: RegExp): boolean {
-  if (from < input) return true;
-  for (let i = input + 1; i < lines.length; i++) {
-    if (!rule.test(lines[i] ?? '')) continue;
-    for (let j = i + 1; j < lines.length; j++) if ((lines[j] ?? '').trim()) return true;
-  }
-  return false;
+// The composer footer, not a line of shell output under a stray rule. The model
+// row uses a middot; the permissions line is the other footer.
+function statusFooter(line: string): boolean {
+  const text = line.trim();
+  return text.includes('·') || /bypass permissions/i.test(text);
 }
 
 function statusLast(
@@ -298,11 +308,6 @@ function twoRules(lines: string[], composer: Extract<ScreenData['composer'], { m
   if (lines.slice(input + 1, bottom).some((line) => line.trim())) return { kind: 'unsent', from: top, input };
   const typed = (lines[input] ?? '').replace(composer.prompt, '').trim();
   return { kind: placeholder(typed, composer.placeholders) ? 'idle' : 'unsent', from: top, input };
-}
-
-function boundaryBefore(lines: string[], input: number, rule: RegExp): number {
-  for (let i = input - 1; i >= 0; i--) if (rule.test(lines[i] ?? '')) return i;
-  return input;
 }
 
 function stripTyped(line: string, composer: { prompt: RegExp; stripSuffix?: RegExp | null }): string {

@@ -124,6 +124,7 @@ function world(text: string | ((pane: string, label: string) => string) = IDLE):
     paneText(_session, pane) {
       return panes.get(pane)?.text ?? '';
     },
+    foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
     sleep: async (ms) => {
       clock += ms;
     },
@@ -551,6 +552,7 @@ describe('team down, live', () => {
       alive: () => false,
       screen: () => screen,
       status: () => current,
+      foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
       now: () => new Date(clock),
       sleep: launch.sleep,
       launch,
@@ -572,6 +574,22 @@ describe('team down, live', () => {
       },
     };
   }
+
+  test('an agent that exits between the text and the Enter is not sent the Enter', async () => {
+    const run = harness({ kind: 'idle' });
+    let live = true;
+    run.launch.typeText = (_session, _pane, text) => {
+      run.typed.push(text);
+      live = false;
+      return true;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ foreground: () => (live ? ['claude'] : ['zsh']) }));
+    expect(code).toBe(1);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.entered).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: no live agent in its pane; its exit was not typed\n');
+  });
 
   test('a pane with no live agent is not typed into', async () => {
     const run = harness({ kind: 'idle' });

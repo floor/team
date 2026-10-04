@@ -15,7 +15,7 @@ import type { Problem, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
 import {
-  agentList, agentRename, paneRead, paneRun, sessionRunning, sessionState, startServer, workspaceClose, workspaceCreate,
+  agentList, agentRename, paneForeground, paneRead, paneRun, sessionRunning, sessionState, startServer, workspaceClose, workspaceCreate,
   workspaceList, type HerdrAgent,
 } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
@@ -53,6 +53,7 @@ const realLaunch: Launch = {
     return agents === null ? null : agents.map((agent) => agent.pane);
   },
   paneText: (session, pane) => paneRead(pane, 200, aim(session)),
+  foreground: (session, pane) => paneForeground(pane, aim(session)),
   sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
   now: () => new Date(),
 };

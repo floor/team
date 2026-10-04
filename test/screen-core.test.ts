@@ -64,6 +64,11 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('unknown');
   });
 
+  test.each(['rule-above.txt', 'leftover-box.txt', 'output-under-rule.txt'])('%s is not a box', (name) => {
+    const text = readFileSync(new URL(`./fixtures/claude-code/${name}`, import.meta.url), 'utf8');
+    expect(readScreen('claude-code', text).kind).toBe('unknown');
+  });
+
   test('every fixture matches the classifier main had', () => {
     for (const [name, text] of fixtures) {
       if (name === 'quoted permission') continue;
@@ -85,6 +90,10 @@ describe('claude-code through the screen core', () => {
     // No rule above the prompt and no status footer under it, so it is not Claude's box.
     const text = `1. Yes\n2. No\n❯ \n`;
     expect(readScreen('claude-code', text).kind).toBe('unknown');
+  });
+
+  test('typed text with no closing rule is unknown', () => {
+    expect(readScreen('claude-code', '❯ ship the fix\n').kind).toBe('unknown');
   });
 
   test('a box whose rule above has scrolled out stays idle when the status footer remains', () => {

@@ -48,16 +48,19 @@ export function paneRootPid(pane: string, session?: string): number | null {
   }
 }
 
-// argv0 of each foreground process, or null when the pane can't be read. After a CLI exits,
-// herdr keeps the pane and the foreground process is the shell.
+// argv0 of each foreground process, in herdr's order, or null when the pane can't be
+// read. `name` is not the process: a Claude entry's name is its version. After a CLI
+// exits, herdr keeps the pane and the foreground process is the shell.
+export function foregroundArgv0(result: unknown): string[] | null {
+  const list = (result as { process_info?: { foreground_processes?: { argv0?: unknown }[] } } | null)
+    ?.process_info?.foreground_processes;
+  if (!Array.isArray(list)) return null;
+  return list.map((proc) => (typeof proc?.argv0 === 'string' ? proc.argv0 : ''));
+}
+
 export function paneForeground(pane: string, session?: string): string[] | null {
   try {
-    const result = run(['pane', 'process-info', '--pane', pane], session) as {
-      process_info?: { foreground_processes?: { argv0?: unknown }[] };
-    };
-    const list = result.process_info?.foreground_processes;
-    if (!Array.isArray(list)) return null;
-    return list.map((proc) => (typeof proc.argv0 === 'string' ? proc.argv0 : ''));
+    return foregroundArgv0(run(['pane', 'process-info', '--pane', pane], session));
   } catch {
     return null;
   }

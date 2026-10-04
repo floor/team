@@ -108,6 +108,7 @@ function world(): { launch: Launch; creates: string[]; renames: string[]; sessio
     closeWorkspace: () => true,
     agentPanes: () => [...panes].filter(([, pane]) => pane.agent).map(([id]) => id),
     paneText: (_session, pane) => panes.get(pane)?.text ?? '',
+    foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
     sleep: async (ms) => {
       clock += ms;
     },

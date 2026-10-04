@@ -167,6 +167,7 @@ describe('the watch reads them', () => {
       },
       screen: () => idle,
       status: () => 'idle',
+      foreground: () => ['claude', 'codex'],
       typeText: () => true,
       pressEnter: () => true,
       notify: () => {},

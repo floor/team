@@ -167,6 +167,7 @@ function world() {
     closeWorkspace: () => true,
     agentPanes: () => [...panes].filter(([, pane]) => pane.agent).map(([id]) => id),
     paneText: (_session, pane) => panes.get(pane)?.text ?? '',
+    foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
     sleep: async () => {},
     now: () => NOW,
   };

@@ -223,7 +223,8 @@ export async function stopRunning(input: {
     paneRun: () => false,
     typeLine(sessionName, pane, text) {
       const names = profileFor(seat.cli)?.processNames ?? [];
-      if (!reportedLiveAgent(sources.foreground(sessionName, pane), names)) return 'no-agent';
+      const live = () => reportedLiveAgent(sources.foreground(sessionName, pane), names);
+      if (!live()) return 'no-agent';
       const look = () => sources.screen(sessionName, pane, seat.cli).kind;
       const resting = () => {
         const status = sources.status(sessionName, pane);
@@ -231,6 +232,7 @@ export async function stopRunning(input: {
       };
       if (!resting() || look() !== 'idle') return false;
       if (!launch.typeText(sessionName, pane, text)) return false;
+      if (!live()) return 'no-agent';
       const after = look();
       if (!resting() || (after !== 'idle' && after !== 'unsent')) return false;
       return launch.pressEnter(sessionName, pane);

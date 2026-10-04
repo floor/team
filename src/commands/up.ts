@@ -31,7 +31,6 @@ import type { Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { rulesText } from '../launch/rules.ts';
-import { reportedLiveAgent } from '../launch/agent.ts';
 import { deliverRules } from '../launch/deliver.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
@@ -75,8 +74,8 @@ export type Launch = {
   typeText?(session: string, pane: string, text: string): boolean;
   pressEnter?(session: string, pane: string): boolean;
   agentStatus?(session: string, pane: string): string | null;
-  /** Foreground process names, or null when the pane can't be read. */
-  foreground?(session: string, pane: string): string[] | null;
+  /** Foreground argv0 names, or null when the pane can't be read. */
+  foreground(session: string, pane: string): string[] | null;
   sleep(ms: number): Promise<void>;
   now(): Date;
 };
@@ -367,18 +366,15 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     createWorkspace: launch.createWorkspace,
     paneRun: launch.paneRun,
     typeLine: () => false,
-    deliverRules: (session, pane, cli, text, seconds) => {
-      const names = profileFor(cli)?.processNames ?? [];
-      if (launch.foreground && !reportedLiveAgent(launch.foreground(session, pane), names)) return Promise.resolve('no-agent' as const);
-      return deliverRules(cli, text, seconds, {
+    deliverRules: (session, pane, cli, text, seconds) => deliverRules(cli, text, seconds, {
         screen: () => launch.paneText(session, pane) ?? undefined,
         status: () => launch.agentStatus?.(session, pane) ?? null,
         type: (value) => launch.typeText?.(session, pane, value) ?? false,
         enter: () => launch.pressEnter?.(session, pane) ?? false,
+        foreground: () => launch.foreground(session, pane),
         now: () => now().getTime(),
         sleep: sources.sleep ?? launch.sleep,
-      });
-    },
+      }),
     renameAgent: launch.renameAgent,
     closeWorkspace: launch.closeWorkspace,
     stopSession: () => false,

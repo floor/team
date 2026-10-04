@@ -251,6 +251,10 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     typeText: action.typeText,
     pressEnter: action.pressEnter,
     agentStatus: action.agentStatus,
+    foreground: (_session, pane) => {
+      const cli = agentOf(pane)?.cli ?? 'claude-code';
+      return [profileFor(cli)?.processNames[0] ?? 'claude'];
+    },
     sleep,
     now,
   };
@@ -396,6 +400,10 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         readChecks: () => [],
         screen: (pane) => action.paneText('', pane),
         status: (_pane) => agentOf(_pane)?.status ?? null,
+        foreground: (pane) => {
+          const cli = agentOf(pane)?.cli ?? 'claude-code';
+          return [profileFor(cli)?.processNames[0] ?? 'claude'];
+        },
         typeText: action.typeText,
         pressEnter: action.pressEnter,
         notify: (text) => did.notified.push(text),

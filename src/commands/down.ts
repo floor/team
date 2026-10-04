@@ -32,8 +32,8 @@ export type DownSources = {
   screen(session: string, pane: string, cli: string): Screen;
   /** Herdr's own status for the pane. The Enter waits for idle or done. */
   status(session: string, pane: string): string | null;
-  /** Foreground process names in the pane, or null when the pane can't be read. */
-  foreground?(session: string, pane: string): string[] | null;
+  /** Foreground argv0 names, or null when the pane can't be read. */
+  foreground(session: string, pane: string): string[] | null;
   now(): Date;
   sleep?(ms: number): Promise<void>;
   // Present on the shipped command. A dry run never calls it.
@@ -249,7 +249,8 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       // or holding unsent text.
       const cli = seats.find((seat) => seat.pane === pane)?.cli ?? '';
       const names = profileFor(cli)?.processNames ?? [];
-      if (sources.foreground && !reportedLiveAgent(sources.foreground(sessionName, pane), names)) return 'no-agent';
+      const live = () => reportedLiveAgent(sources.foreground(sessionName, pane), names);
+      if (!live()) return 'no-agent';
       const look = () => sources.screen(sessionName, pane, cli).kind;
       const resting = () => {
         const status = sources.status(sessionName, pane);
@@ -257,6 +258,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       };
       if (!resting() || look() !== 'idle') return false;
       if (!launch.typeText(sessionName, pane, text)) return false;
+      if (!live()) return 'no-agent';
       const after = look();
       if (!resting() || (after !== 'idle' && after !== 'unsent')) return false;
       return launch.pressEnter(sessionName, pane);
@@ -273,7 +275,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
         const cli = seats.find((seat) => seat.pane === pane)?.cli;
         const names = cli ? profileFor(cli)?.processNames : undefined;
         if (!names) return true;
-        return paneStillRunning(sources.foreground?.(sessionName, pane) ?? paneForeground(pane, aim(sessionName)), names);
+        return paneStillRunning(sources.foreground(sessionName, pane), names);
       });
     },
     classify: () => 'unknown',
