@@ -69,6 +69,11 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('unknown');
   });
 
+  test.each(['shell-git-log.txt', 'shell-right-prompt.txt', 'shell-shortcuts.txt'])('%s reads unknown', (name) => {
+    const text = readFileSync(new URL(`./fixtures/claude-code/${name}`, import.meta.url), 'utf8');
+    expect(readScreen('claude-code', text).kind).toBe('unknown');
+  });
+
   test('the three constructed shell prompt fixtures still read unknown with a footer pattern added under them', () => {
     for (const name of ['shell-prompt.txt', 'rule-above.txt', 'output-under-rule.txt']) {
       const text = readFileSync(new URL(`./fixtures/claude-code/${name}`, import.meta.url), 'utf8');
