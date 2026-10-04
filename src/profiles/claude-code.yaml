@@ -70,6 +70,18 @@ screen:
         - 'Esc to cancel'
       on_footer: true
     - below_last_rule: 'Enter to select|↑/↓ to navigate|Enter to confirm|Esc to cancel'
+    # The footer has a status line under it and the rule is out of the window.
+    # A phrase quoted above an empty prompt is a transcript.
+    - any:
+        - 'Enter to select'
+        - '↑/↓ to navigate'
+        - 'Enter to confirm'
+        - 'Esc to cancel'
+      without_rule: true
+      none_after:
+        anchor: 'Enter to select|↑/↓ to navigate|Enter to confirm|Esc to cancel'
+        patterns:
+          - '^\s*[❯›>]\s*$'
   working:
     - any:
         - '\besc to interrupt\b'

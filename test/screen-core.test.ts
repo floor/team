@@ -79,6 +79,13 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('idle');
   });
 
+  test('a question dialog with a status line under it and no rule stays a question', () => {
+    const text = `Which branch should this start from?\n\n❯ 1. main\n  2. next\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n  main · Opus 5.5\n`;
+    const lines = text.split('\n').map((line) => line.trimEnd()).slice(-20);
+    expect(mainClaude(lines)).toBe('question');
+    expect(readScreen('claude-code', text).kind).toBe('question');
+  });
+
   test('a quoted permission question above an empty box is the one difference', () => {
     const text = fixtures.find(([name]) => name === 'quoted permission')?.[1] ?? '';
     const lines = text.split('\n').map((line) => line.trimEnd()).slice(-20);
@@ -233,6 +240,13 @@ describe('codex, cursor and antigravity through the screen core', () => {
         expect(`${cli} ${name}: ${named}`).toBe(`${cli} ${name}: ${before}`);
       }
     }
+  });
+
+  test('a permission dialog whose rule is out of the window stays permission', () => {
+    const text = readFileSync(new URL('./fixtures/antigravity/1.2.16/permission-cut.txt', import.meta.url), 'utf8');
+    expect(mainAntigravity(windowOf(text))).toBe('permission');
+    expect(readScreen('antigravity', text).kind).toBe('permission');
+    expect(classify('antigravity', text.split('\n')).kind).toBe('permission');
   });
 
   test('the constructed fixture differs on purpose: a permission dialog above the pinned status line', () => {
