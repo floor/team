@@ -102,7 +102,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 2,
+        "real": 8,
         "constructed": 0,
         "undocumented": 0
       },
@@ -117,7 +117,7 @@
         "undocumented": 0
       },
       "trust": {
-        "real": 1,
+        "real": 3,
         "constructed": 0,
         "undocumented": 0
       },
@@ -503,6 +503,12 @@
       "provenance": "constructed"
     },
     {
+      "file": "codex/0.157.0/blank-middle.txt",
+      "cli": "codex",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "codex/0.157.0/exit-typed.txt",
       "cli": "codex",
       "kind": "unsent",
@@ -527,6 +533,12 @@
       "provenance": "constructed"
     },
     {
+      "file": "codex/0.157.0/pasted-two-lines.txt",
+      "cli": "codex",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "codex/0.157.0/permission-pinned.txt",
       "cli": "codex",
       "kind": "permission",
@@ -545,6 +557,18 @@
       "provenance": "capture"
     },
     {
+      "file": "codex/0.157.0/second-line-glyph.txt",
+      "cli": "codex",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/second-line-gt.txt",
+      "cli": "codex",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "codex/0.157.0/startup-loading.txt",
       "cli": "codex",
       "kind": "unknown",
@@ -557,9 +581,27 @@
       "provenance": "capture"
     },
     {
+      "file": "codex/0.157.0/trust-folder-163.txt",
+      "cli": "codex",
+      "kind": "trust",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/trust-folder.txt",
+      "cli": "codex",
+      "kind": "trust",
+      "provenance": "capture"
+    },
+    {
       "file": "codex/0.157.0/trust.txt",
       "cli": "codex",
       "kind": "trust",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/typed-two-lines.txt",
+      "cli": "codex",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
@@ -572,6 +614,12 @@
       "file": "codex/0.157.0/working.txt",
       "cli": "codex",
       "kind": "working",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/wrapped-line.txt",
+      "cli": "codex",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
