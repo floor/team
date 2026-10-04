@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { relative, resolve } from 'node:path';
-import { approvalDifferences, budgetsInForce, watchInForce } from '../approve/approval.ts';
-import { overridesInForce, type OverrideForce } from '../profiles/overrides.ts';
+import { approvalCase, budgetsInForceOf, watchInForceOf } from '../approve/approval.ts';
+import { overridesInForceOf, type OverrideForce } from '../profiles/overrides.ts';
 import { readArgs } from '../args.ts';
 import { budgetLine, budgetTable, type BudgetRow } from '../budgets/table.ts';
 import { recall } from '../budgets/readings.ts';
@@ -11,6 +11,8 @@ import type { Problem, TeamFile } from '../file/types.ts';
 import { agentList, paneRead, sessionRunning, workspaceList } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { emptySession, readState } from '../state.ts';
+import { keyFingerprint, keyState } from '../store/keys.ts';
+import { approvalStanding, type Standing } from '../store/store.ts';
 import { compare } from '../status/compare.ts';
 import type { Comparison, Difference, Live } from '../status/compare.ts';
 
@@ -18,17 +20,22 @@ import type { Comparison, Difference, Live } from '../status/compare.ts';
 export type StatusSources = {
   live(session: string, team: TeamFile): Live | null;
   branch(path: string): string | null;
-  // How the file differs from the approved one: [] when it doesn't, null when it was never approved.
-  approval(team: TeamFile, root: string): string[] | null;
-  // The watch values in force, which the file's own `watch` section only is once approved.
-  watchInForce(team: TeamFile, root: string): TeamFile['watch'];
-  // And the budget values in force: the file's own `budgets` section only once approved, so an
-  // unapproved reserve can't move a row's marks or its `inside reserve` line.
-  budgetsInForce(team: TeamFile, root: string): TeamFile['budgets'];
+  // The approval store's one snapshot, read once for the whole report: the
+  // drift, the watch and budget values in force, and the overrides all derive
+  // from it, so no later read can disagree with the first.
+  standing(root: string): Standing;
   now(): Date;
-  /** The home whose store holds the override file. Absent in a test that does not set one. */
+  /** The home whose store holds the override file and the key. Absent in a test that does not set one. */
   home?: string;
 };
+
+/**
+ * The standing source against a home that is not the owner's real one — the
+ * shipped command's own, and what a test or a scratch home stands in for.
+ */
+export function standingSource(home: string): StatusSources['standing'] {
+  return (root) => approvalStanding(root, home);
+}
 
 export const realSources: StatusSources = {
   live(session, team) {
@@ -53,9 +60,7 @@ export const realSources: StatusSources = {
       return null;
     }
   },
-  approval: (team, root) => approvalDifferences(team, root),
-  watchInForce: (team, root) => watchInForce(team, root),
-  budgetsInForce: (team, root) => budgetsInForce(team, root),
+  standing: standingSource(homedir()),
   now: () => new Date(),
   home: homedir(),
 };
@@ -110,7 +115,9 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
   for (const warning of current.warnings) io.stderr(`team status: warning, line ${warning.line}: ${warning.message}\n`);
 
   const session = args.values.session ?? team.session;
-  const overrides = sources.home ? overridesInForce(team.project, root, sources.home) : emptyOverrides();
+  // The one read of the approval store: everything below derives from it.
+  const standing = sources.standing(root);
+  const overrides = sources.home ? overridesInForceOf(standing, team.project, root, sources.home) : emptyOverrides();
   for (const problem of overrides.problems) io.stderr(`team status: ${problem}\n`);
   const live = sources.live(session, team);
   if (!live) {
@@ -120,12 +127,17 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
   }
   const whole = readState(dir);
   const state = whole.sessions[session] ?? emptySession();
-  const budgets = budgetTable(sources.budgetsInForce(team, root), recall(whole.budgets), sources.now().getTime());
-  const comparison = compare(team, session, state, live, sources.now(), sources.watchInForce(team, root));
+  const budgets = budgetTable(budgetsInForceOf(standing, team), recall(whole.budgets), sources.now().getTime());
+  const comparison = compare(team, session, state, live, sources.now(), watchInForceOf(standing, team));
+  if (standing.kind === 'verified') {
+    const key = sources.home ? keyState(sources.home) : { kind: 'missing' as const };
+    const ofKey = key.kind === 'key' ? `, key ${keyFingerprint(key.key)}` : '';
+    comparison.notes.unshift(`approval #${standing.generation} (${standing.signedAt.slice(0, 10)})${ofKey}`);
+  }
   if (!live.running) comparison.notes.unshift(`the herdr session "${session}" is not running`);
   comparison.differences.push(
     ...protectedCheckouts(team, root, sources),
-    ...approvalDrift(sources.approval(team, root)),
+    ...approvalDrift(approvalCase(standing, team)),
     ...overrideDrift(overrides),
   );
 
@@ -164,9 +176,13 @@ function overrideDrift(report: OverrideForce): Difference[] {
 }
 
 // A file that was never approved, or was changed since, runs nothing until the owner approves it.
-export function approvalDrift(differences: string[] | null): Difference[] {
-  if (differences === null) return [{ what: 'the file was never approved on this machine', repair: 'the owner runs team approve' }];
-  return differences.map((line) => ({ what: `the file differs from the approved one: ${line}`, repair: 'the owner runs team approve' }));
+// A legacy or refused record is the whole case and its repair in one line of its own.
+export function approvalDrift(approval: { differences: string[] | null; reason: string | null }): Difference[] {
+  if (approval.reason !== null) return [{ what: approval.reason, repair: 'the owner runs team approve' }];
+  if (approval.differences === null) {
+    return [{ what: 'the file was never approved on this machine', repair: 'the owner runs team approve' }];
+  }
+  return approval.differences.map((line) => ({ what: `the file differs from the approved one: ${line}`, repair: 'the owner runs team approve' }));
 }
 
 function protectedCheckouts(team: TeamFile, root: string, sources: StatusSources): Difference[] {

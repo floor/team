@@ -340,6 +340,13 @@
     {
       "code": 1,
       "command": "approve",
+      "id": "approve.key",
+      "meaning": "the signing key can't be read",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
       "id": "approve.not-owner",
       "meaning": "a seat ran it",
       "trigger": "team approve"
@@ -683,6 +690,13 @@
     {
       "code": 1,
       "command": "init",
+      "id": "init.legacy",
+      "meaning": "the record predates signed records",
+      "trigger": "team init --restore"
+    },
+    {
+      "code": 1,
+      "command": "init",
       "id": "init.not-owner",
       "meaning": "not the owner",
       "trigger": "team init"
@@ -692,6 +706,13 @@
       "command": "init",
       "id": "init.nothing",
       "meaning": "there is nothing to restore",
+      "trigger": "team init --restore"
+    },
+    {
+      "code": 1,
+      "command": "init",
+      "id": "init.refused",
+      "meaning": "the stored record does not verify",
       "trigger": "team init --restore"
     },
     {

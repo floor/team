@@ -1,7 +1,7 @@
 // Runs one command reference page's examples. The commands are the real ones, in process: the
 // world, the home and the caller are handed in, so no example reaches herdr, a CLI, or the owner's
 // home. A `$ ` line is run, the lines under it must match byte for byte.
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAdd } from '../../src/commands/add.ts';
@@ -18,6 +18,7 @@ import { runWorktree } from '../../src/commands/worktree.ts';
 import type { Caller } from '../../src/caller.ts';
 import type { TeamFile } from '../../src/file/types.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
+import { installKey } from '../../src/store/keys.ts';
 import { storePath } from '../../src/store/store.ts';
 import type { Io } from '../../src/io.ts';
 import { emptySession, updateState } from '../../src/state.ts';
@@ -105,6 +106,10 @@ async function setup(page: Page): Promise<void> {
     mkdirSync(dirname(target), { recursive: true });
     symlinkSync(fileURLToPath(new URL(`../../${path}`, import.meta.url)), target);
   }
+
+  // Every approval a page records signs with one fixed key, so the fingerprint the commands
+  // print is the same on every run: the fixture key, in before the first approve.
+  installKey(fixture.home, JSON.parse(readFileSync(new URL('../fixtures/key.json', import.meta.url), 'utf8')));
 
   if (page.spec.approved && page.team) {
     const parts: string[] = [];

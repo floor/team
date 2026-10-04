@@ -26,7 +26,7 @@ import type { HerdrAgent } from '../src/herdr.ts';
 import { overridesPath } from '../src/profiles/overrides.ts';
 import { emptySession, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
-import { storePath, writeApproval } from '../src/store/store.ts';
+import { storePath, writeApproval, type Standing } from '../src/store/store.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { analyze, loadContract, problems, render, type ExitRow } from '../scripts/exit-codes.ts';
 import { claudeBox, testIo } from './helpers.ts';
@@ -636,6 +636,13 @@ scene('approve.check', async (place) => {
   write(place, CHECK_ACCOUNT);
   return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'cannot be resolved');
 });
+scene('approve.key', async (place) => {
+  write(place, TEAM);
+  const folder = join(place.home, '.config', 'team-key');
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, 'key.json'), '{');
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'signing key is not whole JSON');
+});
 scene('approve.show', async (place) => {
   write(place, TEAM);
   return show(await approved(place, ['--show', '--file', place.file], owner, approveSources(place, null)), 'Seats:');
@@ -841,10 +848,16 @@ scene('down.held', async (place) => {
   })), 'its exit was not typed');
 });
 
-async function initial(place: Place, argv: string[], caller: Caller = owner, home = place.home): Promise<Ran> {
+async function initial(
+  place: Place,
+  argv: string[],
+  caller: Caller = owner,
+  home = place.home,
+  readStanding?: (root: string) => Standing,
+): Promise<Ran> {
   const io = testIo(place.root, caller);
   try {
-    return { code: await runInit(argv, io, home), out: io.out, err: io.err };
+    return { code: await runInit(argv, io, home, readStanding), out: io.out, err: io.err };
   } catch (error) {
     return { code: reportFailure(error, (text) => io.stderr(text)), out: io.out, err: io.err };
   }
@@ -864,6 +877,14 @@ scene('init.exists', async (place) => {
   return show(await initial(place, []), 'exists already');
 });
 scene('init.nothing', async (place) => show(await initial(place, ['--restore']), 'nothing to restore'));
+scene('init.legacy', async (place) => show(
+  await initial(place, ['--restore'], owner, place.home, () => ({ kind: 'legacy' })),
+  'approved before records were signed',
+));
+scene('init.refused', async (place) => show(
+  await initial(place, ['--restore'], owner, place.home, () => ({ kind: 'refused', why: 'the stored record does not verify' })),
+  'does not verify',
+));
 scene('init.wrote', async (place) => show(await initial(place, []), 'Wrote'));
 scene('init.restored', async (place) => {
   approve(place, TEAM);

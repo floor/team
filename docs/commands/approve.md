@@ -15,7 +15,8 @@ Reads the team file (or the one `--file` names), its validation, and, when there
 copy this machine holds. It also reads `overrides.yaml` in that same store, when the owner has one.
 Writes the approval record — the team file and the override file, as approved — and the ledger of
 every seat the team has had here — both in the store, `~/.config/team/<project>-<hash>` — and one
-line in `.agents/team.log`. `--show` writes nothing.
+line in `.agents/team.log`. The record is signed, and signing moves this project's counter in
+`~/.config/team-key`, a folder of its own beside the store. `--show` writes nothing.
 
 ## Who may run it
 
@@ -47,7 +48,10 @@ Nothing at all changed is said plainly:
     Nothing in it needs a new approval.
 
 Then the ceilings the approval would fix — `3 seats at most, 2 temporary` — and the
-seat names, and then the question. The seat ceiling defaults to the seats the file declares plus the
+seat names, and then the question. After the seat names comes the signing's number for this
+project on this machine, with the date of the last one and the key's fingerprint: `approval #4
+for this project; the last one was on 2026-10-04; key fe21ef6293de.` The seat ceiling defaults
+to the seats the file declares plus the
 temporary ones, so adding a seat widens it, and that shows up as `limits` changed too. What needs a
 new approval is a change to an owner section
 (`trust`, `limits`, `machine`, `rules`, `identity`, `workspace`, `coordinator`, `operator`,
@@ -82,6 +86,58 @@ answer.
 - `1` — refused: a seat ran it, the store sits where seats work, or the answer was not the number of
   seats. Nothing is written.
 - `2` — the invocation, the team file or the file's validation is bad.
+
+## The signed record
+
+The record this command writes is signed. The key and one counter per project live outside the
+store, in a folder of their own — `~/.config/team-key` (the folder 700, its files 600) — created at
+the first approval on that machine. The signature covers the whole record: the approval, the stored
+copy of the file, the project root it approves, and the counter's number. Every reader — `up`,
+`add`, `worktree`, `watch`, `status`, `doctor`, `init --restore` — verifies the whole record through
+one snapshot; a record that was changed after approval, was signed for another root, or is older
+than the counter says is not an approval, and the command that needs one refuses, naming the case
+and the repair.
+
+The root the record names is the project folder's real path — symlinks resolved by the
+filesystem, a trailing slash gone — and the store's name carries its hash, so two spellings of
+one folder are one project. Nothing is normalised silently: two Unicode spellings the platform's
+own realpath keeps apart are two roots with two stores, and what the platform does with them is
+the platform's doing, not undone here.
+
+The record's shape is strict, and checked whole before anything is built from it: a field this
+version does not know is refused naming its path (`"fingerprints.<name>"`,
+`"checks.<account>"`), and so is a missing or wrongly-typed one. A record that is not whole
+JSON, or breaks its shape anywhere, is refused with a line that says what is wrong — never a
+crash. A record that carries a signature or a generation but says `format: 1` is refused as
+contradictory, not read as legacy; the `format` field sits inside the signed bytes, so it cannot
+be flipped outside the signature.
+
+The key is written whole or not at all: a temporary file of mode 600 in the same folder, then
+linked into place — `link` never overwrites, so the first writer wins, and two first approvals
+that race end with the one key both then use. A key file that is torn, empty or not a team key
+is never regenerated over: every command that needs it refuses with the repair — restore it
+from a copy — because a new key would orphan every record already signed.
+
+Each signing moves the project's counter, and the line after the seat names names it, with the
+signing key's short fingerprint: `approval #4 for this project; the last one was on 2026-10-04;
+key fe21ef6293de.` The fingerprint is the first twelve hex digits of the key's public half;
+`team doctor` and `team status` show the same three — the number, its date, the key. An
+amendment — `add` starting a stopped seat, `remove --keep` parking one — is a signing too, and
+moves the counter like an approval.
+
+Approvals guard against mistakes, not against a hostile process running as the owner. The
+signature refuses a record changed by something that does not use the key — a hand edit to the
+store, a record carried over from another project. A process that can read the key can re-sign
+any record at the number it already had, and nothing `team` shows will differ; the counter says
+what `team` wrote, never every signing that ever happened. What a *replaced* key does change is
+the fingerprint: an owner who noted it sees the swap. That is evidence, not prevention — `team`
+computes the fingerprint, and a seat can replace `team` itself.
+
+A record written by an earlier `team`, before records were signed, is not trusted. The commands
+that need an approval in force (`up`, `add`, `worktree`, `init --restore`) refuse with `approved
+before records were signed: run \`team approve\` once`, while the watch keeps watching, `status`
+keeps reporting and `down` and `remove` keep working. Approving once replaces it with a signed
+record.
 
 ## Examples
 
@@ -135,6 +191,7 @@ $ team approve --show ; echo "exit $?"
 
 Ceilings this approval fixes: 3 seats at most, 2 temporary.
 Seats: 1 (claude-keeper).
+approval #1 for this project; key fe21ef6293de.
 exit 0
 ```
 
@@ -164,9 +221,10 @@ $ team approve
 
 Ceilings this approval fixes: 3 seats at most, 2 temporary.
 Seats: 1 (claude-keeper).
+approval #1 for this project; key fe21ef6293de.
 
 Type the number of seats (1) to approve this file, and its commands and rules, to run: 1
-Approved. The record is in ~/.config/team/beacon-<hash>; check the rest with `team doctor`.
+Approved. The record is in ~/.config/team/beacon-<hash>; signed with key fe21ef6293de; check the rest with `team doctor`.
 ```
 
 A seat can read the comparison — even the coordinator's — but a seat is not the owner, and nothing is
@@ -179,6 +237,7 @@ $ team approve ; echo "exit $?"
 Nothing in it needs a new approval.
 Ceilings this approval fixes: 3 seats at most, 2 temporary.
 Seats: 1 (claude-keeper).
+approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 team approve: only the owner approves a team file, from a terminal outside herdr; this call is claude-keeper
 exit 1
 ```
@@ -217,6 +276,7 @@ $ team approve --show ; echo "exit $?"
 Needs a new approval: `trust` changed.
 Ceilings this approval fixes: 3 seats at most, 2 temporary.
 Seats: 1 (claude-keeper).
+approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 exit 0
 ```
 
@@ -273,6 +333,7 @@ Needs a new approval: `trust` changed; `limits` changed; seat claude-beacon is n
 Ceilings approved: 3 seats at most, 2 temporary.
 Ceilings this approval fixes: 4 seats at most, 2 temporary.
 Seats: 2 (claude-keeper, claude-beacon).
+approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 
 Type the number of seats (2) to approve this file, and its commands and rules, to run: 1
 team approve: not approved; nothing was written
@@ -300,9 +361,10 @@ Needs a new approval: `trust` changed; `limits` changed; seat claude-beacon is n
 Ceilings approved: 3 seats at most, 2 temporary.
 Ceilings this approval fixes: 4 seats at most, 2 temporary.
 Seats: 2 (claude-keeper, claude-beacon).
+approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 
 Type the number of seats (2) to approve this file, and its commands and rules, to run: 2
-Approved. The record is in ~/.config/team/beacon-<hash>; check the rest with `team doctor`.
+Approved. The record is in ~/.config/team/beacon-<hash>; signed with key fe21ef6293de; check the rest with `team doctor`.
 ```
 
 The same file again is the same text as the approved copy, and the approval stands:
@@ -314,6 +376,7 @@ $ team approve --show ; echo "exit $?"
 Nothing in it needs a new approval.
 Ceilings this approval fixes: 4 seats at most, 2 temporary.
 Seats: 2 (claude-keeper, claude-beacon).
+approval #3 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 exit 0
 ```
 
@@ -362,5 +425,6 @@ overrides.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 Needs a new approval: `overrides` changed.
 Ceilings this approval fixes: 4 seats at most, 2 temporary.
 Seats: 2 (claude-keeper, claude-beacon).
+approval #3 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 exit 0
 ```

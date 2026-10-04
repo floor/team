@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { verifiedOf } from '../src/approve/approval.ts';
 import { loadReadings, loadSpendReadings } from '../src/budgets/readings.ts';
 import { runStatus } from '../src/commands/status.ts';
 import { runWatch } from '../src/commands/watch.ts';
@@ -636,14 +637,27 @@ describe('team watch', () => {
   let scene: Live | null;
   let clock: number;
 
+  // The file as approved, with no drift: a synthetic verified standing over the file on disk, so
+  // the watch runs the same derivations a real store's snapshot drives. A test that rewrites the
+  // file gets the new text approved too; one that breaks it gets the none a refused read yields.
+  function approvedNow(): WatchSources['standing'] {
+    return (root) => {
+      try {
+        const text = readFileSync(file, 'utf8');
+        const parsed = validateTeamFile(text);
+        return parsed.ok ? verifiedOf(parsed.team, text, root) : { kind: 'none' };
+      } catch {
+        return { kind: 'none' };
+      }
+    };
+  }
+
   function sources(passes: number, over: Partial<WatchSources> = {}): WatchSources {
     let left = passes;
     return {
       live: () => scene,
       machine: () => fine,
-      approval: () => [],
-      watchInForce: (team) => team.watch,
-      budgetsInForce: (team) => team.budgets,
+      standing: approvedNow(),
       readChecks: () => [],
       screen: () => screenNow,
       status: () => statusNow,
@@ -695,8 +709,14 @@ describe('team watch', () => {
     const io = testIo(dir);
     const waits: number[] = [];
     const code = await runWatch(['--file', file], io, sources(1, {
-      approval: () => ['`watch` changed'],
-      watchInForce: () => ({ ...team().watch, interval: 5 }),
+      // What the owner approved: the same file with a five-second interval. The file on disk
+      // says 120s, so the section has drifted — and the approved values are what runs.
+      standing: (root) => {
+        const approvedText = example.replace('  interval: 120s', '  interval: 5s');
+        const parsed = validateTeamFile(approvedText);
+        if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));
+        return verifiedOf(parsed.team, approvedText, root);
+      },
       wait: async (seconds) => { waits.push(seconds); return false; },
     }));
     expect(code).toBe(0);
@@ -1042,9 +1062,7 @@ describe('team watch', () => {
     await runStatus(['--file', file], status, {
       live: () => scene,
       branch: () => 'main',
-      approval: () => [],
-      watchInForce: (team) => team.watch,
-      budgetsInForce: (team) => team.budgets,
+      standing: approvedNow(),
       now: () => new Date(clock),
     });
     expect(status.out).toContain('inside reserve 3%');

@@ -126,6 +126,9 @@ export type PassInput = {
   now: number;
   memory: Memory;
   approval?: string[] | null;
+  // The case in one line when no verified approval is in force and the record says why. The
+  // watch says it itself, once; the pass's approval check reads it and adds nothing.
+  approvalReason?: string | null;
   watch: TeamFile['watch'];
   outcomes?: readonly CheckOutcome[];
   budgets?: TeamFile['budgets'];
@@ -146,6 +149,7 @@ export function pass({
   now,
   memory,
   approval,
+  approvalReason,
   watch,
   outcomes = [],
   budgets = team.budgets,
@@ -315,6 +319,7 @@ export function pass({
     known,
     workers,
     approval,
+    approvalReason,
     readings,
     outcomes,
   };

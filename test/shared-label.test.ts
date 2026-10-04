@@ -293,7 +293,7 @@ seats:
     const home = join(root, 'home');
     mkdirSync(home);
     execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
-    writeApproval(storePath(team.project, root, home), { approval: approvalOf(team, root), file: text }, team.seats);
+    writeApproval(storePath(team.project, root, home), { approval: approvalOf(team, root), file: text }, team.seats, home);
     expect(approvalDifferences(team, root, home)).toEqual([]);
     rmSync(root, { recursive: true, force: true });
   });

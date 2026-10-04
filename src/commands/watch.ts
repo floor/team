@@ -1,8 +1,8 @@
 import { readArgs } from '../args.ts';
-import { budgetsInForce, watchInForce } from '../approve/approval.ts';
+import { approvalCase, budgetsInForceOf, watchInForceOf } from '../approve/approval.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadReadings, saveSpendReadings, updateReadings, type Seen, type SpendReading } from '../budgets/readings.ts';
-import { runChecks, type CheckOutcome } from '../budgets/run.ts';
+import { runChecksOf, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
 import { homedir } from 'node:os';
@@ -25,22 +25,21 @@ import { stopRunning, realSources as removeSources } from './remove.ts';
 import { removeWorktree } from './worktree.ts';
 import { stateOf } from './down.ts';
 import { profileFor } from '../profiles/index.ts';
-import { classifyWith, overridesInForce, quotaWith, type OverrideForce } from '../profiles/overrides.ts';
-import { realSources } from './status.ts';
+import { classifyWith, overridesInForceOf, quotaWith, type OverrideForce } from '../profiles/overrides.ts';
+import type { Standing } from '../store/store.ts';
+import { realSources, standingSource } from './status.ts';
 
 // What the watch reads and does outside its own process, so tests can stand in for it.
 export type WatchSources = {
   live(session: string, team: TeamFile): Live | null;
   machine(root: string): Machine;
-  approval(team: TeamFile, root: string): string[] | null;
-  // The watch values in force: the approved ones, or the defaults when nothing is approved.
-  watchInForce(team: TeamFile, root: string): TeamFile['watch'];
-  // And the budget values in force, for the same reason: the check cadence, the accounts folded
-  // from the seats' status lines, and the marks are the owner's approved ones.
-  budgetsInForce(team: TeamFile, root: string): TeamFile['budgets'];
+  // The approval store's one snapshot per pass: the drift line, the watch and
+  // budget values in force and the checks all derive from it, so no later read
+  // in the same pass can disagree with the first.
+  standing(root: string): Standing;
   // What each checked account reads this pass (RFC 0003 § 5). Runs outside the pass, like the
   // machine figures: a command's raw output never leaves this call, and a failure reads unknown.
-  readChecks(team: TeamFile, root: string, now: number): CheckOutcome[];
+  readChecks(standing: Standing, team: TeamFile, now: number): CheckOutcome[];
   // The operator's screen, read again just before a nudge is typed.
   screen(pane: string, session: string): string | null;
   // The operator's status, asked again with its screen.
@@ -84,10 +83,8 @@ function waitOrStop(seconds: number): Promise<boolean> {
 export const realWatchSources: WatchSources = {
   live: realSources.live,
   machine: readMachine,
-  approval: realSources.approval,
-  watchInForce: (team, root) => watchInForce(team, root),
-  budgetsInForce: (team, root) => budgetsInForce(team, root),
-  readChecks: (team, root, now) => runChecks(team, root, now),
+  standing: standingSource(homedir()),
+  readChecks: (standing, team, now) => runChecksOf(standing, team, now),
   screen: (pane, session) => paneRead(pane, 14, session),
   status: agentStatus,
   foreground: (pane, session) => paneForeground(pane, session),
@@ -170,16 +167,23 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
   let checksAt: number | null = null;
   let notice: string | undefined;
   let silent = false;
-  say(`watching the session "${session}" every ${sources.watchInForce(first.team, first.root).interval}s${args.flags.has('no-nudge') ? ', without nudges' : ''}`, false);
+  let announced = false;
   try {
     for (;;) {
       // The file is read again on every pass, so a seat parked or stopped since is seen.
       const current = currentTeam(io.cwd, args.values.file, sources.now());
       const team = current.ok ? current.team : first.team;
       const root = current.ok ? current.root : first.root;
+      // The one read of the approval store for the whole pass: the drift line, the
+      // values in force and the checks below all derive from it.
+      const standing = sources.standing(root);
       const overrides: OverrideForce = sources.home
-        ? overridesInForce(team.project, root, sources.home)
+        ? overridesInForceOf(standing, team.project, root, sources.home)
         : { profiles: [], differences: [], problems: [] };
+      if (!announced) {
+        announced = true;
+        say(`watching the session "${session}" every ${watchInForceOf(standing, team).interval}s${args.flags.has('no-nudge') ? ', without nudges' : ''}`, false);
+      }
       for (const line of [
         ...overrides.problems,
         ...overrides.differences.map((difference) => `the overrides differ from the approved copy: ${difference}`),
@@ -187,6 +191,14 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         if (told.has(line)) continue;
         told.add(line);
         say(line, false);
+      }
+      // A record that is not an approval in force — legacy, or one the verification refused —
+      // is said once, in its own words. The watch keeps watching either way: it never stops a
+      // seat over this, and the owner-only checks simply read unapproved.
+      const approval = approvalCase(standing, team);
+      if (approval.reason !== null && !told.has(`approval:${approval.reason}`)) {
+        told.add(`approval:${approval.reason}`);
+        say(approval.reason, false);
       }
       const problem = current.ok ? current.notice : `team.yaml can't be read (${current.errors[0]?.message ?? 'unknown'}); watching with the team as it was`;
       if (problem !== notice) {
@@ -204,12 +216,12 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         say(`the session "${session}" is not this file's "${team.session}": its readings are not saved`, false);
       }
 
-      // The values in force, read with the file: until the owner approves an edit to `watch`,
-      // the watch keeps running with what was approved, or with the defaults.
-      const inForce = sources.watchInForce(team, root);
-      // The budget values in force, read with the file like the watch's: an unapproved edit to the
-      // marks, the accounts or the cadence silences nothing here until the owner approves it.
-      const budget = sources.budgetsInForce(team, root);
+      // The values in force, from the pass's own snapshot: until the owner approves an edit to
+      // `watch`, the watch keeps running with what was approved, or with the defaults.
+      const inForce = watchInForceOf(standing, team);
+      // The budget values in force, from the same snapshot: an unapproved edit to the marks, the
+      // accounts or the cadence silences nothing here until the owner approves it.
+      const budget = budgetsInForceOf(standing, team);
       const live = sources.live(session, team);
       if (!live) {
         if (!silent) tell('herdr doesn\'t answer; the watch keeps trying', true);
@@ -224,7 +236,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         // contract failure or a timeout says `unreadable`, never a line of what they printed.
         if (checksAt === null || now - checksAt >= budget.checkEvery * 1000) {
           checksAt = now;
-          outcomes = sources.readChecks(team, root, now);
+          outcomes = sources.readChecks(standing, team, now);
           // The money a spend check counted is kept, like the pass's screen readings: the launch
           // gate of `up` and `add` reads it later, and one that is stale by then reads unknown
           // (§ 5). An account whose check did not run keeps its stored reading.
@@ -249,7 +261,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         for (const agent of live.agents) foreground[agent.pane] = sources.foreground(agent.pane, session);
         const run = (stored: readonly Seen[]) => pass({
           team, state, live, machine: sources.machine(root), now, memory,
-          approval: sources.approval(team, root), watch: inForce, outcomes, budgets: budget,
+          approval: approval.differences, approvalReason: approval.reason, watch: inForce, outcomes, budgets: budget,
           quotaFor: (cli) => quotaWith(cli, overrides.profiles),
           readScreen: (cli, pane) => classifyWith(cli, pane, overrides.profiles),
           readings: stored, foreground,

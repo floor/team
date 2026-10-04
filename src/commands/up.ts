@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { approvalDifferences, budgetsInForce } from '../approve/approval.ts';
+import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
@@ -35,7 +35,7 @@ import { deliverRules } from '../launch/deliver.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
 import { profileFor } from '../profiles/index.ts';
-import { readApproval, storePath, type Ceilings } from '../store/store.ts';
+import { approvalStanding, type Ceilings, type Standing } from '../store/store.ts';
 import { emptySession, readState, updateState, type SeatState } from '../state.ts';
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
@@ -57,6 +57,12 @@ export type UpSources = {
   sleep?(ms: number): Promise<void>;
   alive?(pid: number): boolean;
   watchCommand?(session: string): string;
+  // The approval store's one read, overridable so a test can count it or swap the record
+  // after the gate. Absent: the real read.
+  standing?(root: string): Standing;
+  // The budget gate, overridable so a test can count its calls. Absent: the real gate.
+  // A standing that is not verified refuses below before this is consulted at all.
+  seatBudget?: typeof seatBudget;
   // Present on the shipped command. A dry run never calls it.
   launch?: Launch;
 };
@@ -244,17 +250,23 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   if (!isOwner(caller)) {
     refusals.push(`only the owner runs \`up\`, from a terminal outside herdr; this call is ${describeCaller(caller)}`);
   }
-  const differences = approvalDifferences(team, root, sources.home);
-  if (differences === null) refusals.push('the file was never approved on this machine: run `team approve`');
-  else if (differences.length) {
-    refusals.push(`the file is not the approved one (${differences.join('; ')}): run \`team approve\``);
+  // One verified snapshot carries the whole command: the refusal when there is
+  // one, and the ceilings the launch holds. A legacy or refused record is not
+  // an approval in force, and says so in its own words.
+  const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
+  if (standing.kind !== 'verified') refusals.push(notInForce(standing));
+  else {
+    const differences = approvalDifferencesOf(standing, team);
+    if (differences.length) {
+      refusals.push(`the file is not the approved one (${differences.join('; ')}): run \`team approve\``);
+    }
   }
   // The budget readings the gate refuses on are the approved ones: an unapproved lower reserve
   // unblocks nothing, not even the seat a dry run would plan.
-  const budgets = budgetsInForce(team, root, sources.home);
+  const budgets = budgetsInForceOf(standing, team);
 
   if (sources.doctor) {
-    const findings = doctorFindings(team, root, dir, session, sources.doctor, loaded.warnings);
+    const findings = doctorFindings(team, root, dir, session, sources.doctor, loaded.warnings, standing);
     for (const finding of findings) if (blocksLaunch(finding)) refusals.push(finding.text);
   }
   const samples: SwapSample[] = [];
@@ -288,6 +300,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const workspaces = sources.workspaces?.(session) ?? null;
   const readings = loadReadings(dir);
   const spend = loadSpendReadings(dir);
+  // What makes a standing that is not verified safe is not the defaults' own values —
+  // `defaultBudgets` names no account, and `seatBudget` reads it `clear`: permissive as a
+  // value. It is the ordering: the refusal above is carried into every exit below, and this
+  // guard keeps the planning pass from consulting a budget at all, so an unapproved file
+  // buys nothing from the budget, not even a mark in a dry run's plan.
+  const budgetGate = sources.seatBudget ?? seatBudget;
+  const budgetOf = (seat: (typeof team.seats)[number]) =>
+    standing.kind === 'verified' ? budgetGate(budgets, readings, seat, readAt(), spend) : { kind: 'clear' as const };
   const seats: UpSeat[] = [];
   const refused = new Set<string>();
   for (const seat of team.seats) {
@@ -300,7 +320,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     }
     const placed = planned.stage === undefined || !planned.pane;
     if (!placed) {
-      const budget = seatBudget(budgets, readings, seat, readAt(), spend);
+      const budget = budgetOf(seat);
       seats.push({ ...planned, ...(budget.kind === 'clear' ? {} : { budget }) });
       continue;
     }
@@ -312,7 +332,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       }
       continue;
     }
-    const budget = seatBudget(budgets, readings, seat, readAt(), spend);
+    const budget = budgetOf(seat);
     seats.push({
       ...planned,
       cwd: start.cwd,
@@ -332,13 +352,15 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   });
 
   if (dry) {
-    for (const refusal of refusals) io.stdout(`! up would refuse: ${refusal}\n`);
+    // The same cause can reach the list twice — the gate and `doctor` both read the
+    // approval — so a refusal is said once.
+    for (const refusal of [...new Set(refusals)]) io.stdout(`! up would refuse: ${refusal}\n`);
     io.stdout(formatPlan(plan));
     // exit: up.dry-run
     return 0;
   }
   if (refusals.length) {
-    for (const refusal of refusals) io.stderr(`team up: ${refusal}\n`);
+    for (const refusal of [...new Set(refusals)]) io.stderr(`team up: ${refusal}\n`);
     // exit: up.not-owner
     // exit: up.never-approved
     // exit: up.differs
@@ -358,7 +380,8 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     return 1;
   }
 
-  const ceilings = readApproval(storePath(team.project, root, sources.home))?.approval.ceilings ?? null;
+  // The ceilings the launch holds are the verified record's own, fixed at approval.
+  const ceilings: Ceilings | null = standing.kind === 'verified' ? standing.record.approval.ceilings : null;
   const running: Running[] = [];
   if (agents) {
     const byName = new Map(team.seats.map((seat) => [seat.name, seat]));

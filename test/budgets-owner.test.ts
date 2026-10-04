@@ -11,7 +11,7 @@ import { approvalDifferences, approvalOf, budgetsInForce, watchInForce } from '.
 import { resolveChecks } from '../src/budgets/checks.ts';
 import { saveReadings, type Seen } from '../src/budgets/readings.ts';
 import { runChecks, type CheckOutcome } from '../src/budgets/run.ts';
-import { runStatus, type StatusSources } from '../src/commands/status.ts';
+import { standingSource, runStatus, type StatusSources } from '../src/commands/status.ts';
 import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import { loadTeamFile } from '../src/file/load.ts';
 import type { TeamFile } from '../src/file/types.ts';
@@ -59,6 +59,7 @@ function approve(text: string = source()): void {
     storePath(loaded.team.project, loaded.root, home),
     { approval: approvalOf(loaded.team, loaded.root, NOW), file: text },
     loaded.team.seats,
+    home,
   );
 }
 
@@ -118,6 +119,7 @@ describe('the check commands run from the budgets in force', () => {
       storePath(loaded.team.project, loaded.root, home),
       { approval: approvalOf(loaded.team, loaded.root, NOW, resolved.checks), file: text },
       loaded.team.seats,
+      home,
     );
 
     // The file's unapproved edit names no account at all; the approved copy's does, and its
@@ -158,9 +160,7 @@ describe('the watch reads them', () => {
     return {
       live: () => live(),
       machine: () => fine,
-      approval: (team, at) => approvalDifferences(team, at, home),
-      watchInForce: (team, at) => watchInForce(team, at, home),
-      budgetsInForce: (team, at) => budgetsInForce(team, at, home),
+      standing: standingSource(home),
       readChecks: (_team, _at, now) => {
         reads.push(now);
         return outcomes;
@@ -237,9 +237,7 @@ describe('status reads them', () => {
     const sources: StatusSources = {
       live: () => live(),
       branch: () => 'main',
-      approval: (team, at) => approvalDifferences(team, at, home),
-      watchInForce: (team, at) => watchInForce(team, at, home),
-      budgetsInForce: (team, at) => budgetsInForce(team, at, home),
+      standing: standingSource(home),
       now: () => NOW,
     };
     const status = async () => {

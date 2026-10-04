@@ -54,6 +54,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `approve.show` | `approve` | 0 | the comparison was printed | `team approve --show` |
 | `approve.answer` | `approve` | 1 | the answer was not the number of seats | `team approve` |
 | `approve.check` | `approve` | 1 | an approved check cannot be resolved | `team approve` |
+| `approve.key` | `approve` | 1 | the signing key can't be read | `team approve` |
 | `approve.not-owner` | `approve` | 1 | a seat ran it | `team approve` |
 | `approve.store` | `approve` | 1 | the approval store sits where seats work | `team approve` |
 | `approve.file` | `approve` | 2 | the team file can't be read | `team approve --file missing.yaml` |
@@ -103,8 +104,10 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `init.wrote` | `init` | 0 | a skeleton was written | `team init` |
 | `init.exists` | `init` | 1 | the team file already exists | `team init` |
 | `init.git-silent` | `init` | 1 | git doesn't answer for this folder | `team init` |
+| `init.legacy` | `init` | 1 | the record predates signed records | `team init --restore` |
 | `init.not-owner` | `init` | 1 | not the owner | `team init` |
 | `init.nothing` | `init` | 1 | there is nothing to restore | `team init --restore` |
+| `init.refused` | `init` | 1 | the stored record does not verify | `team init --restore` |
 | `init.skeleton` | `init` | 1 | the skeleton doesn't validate | `team init` |
 | `init.tracked` | `init` | 1 | the team file is tracked | `team init` |
 | `init.invocation` | `init` | 2 | the invocation can't be read | `team init extra` |
