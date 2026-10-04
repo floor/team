@@ -52,7 +52,9 @@ One line per finding, the level first, then two spaces:
 
 The findings come in order: the file's own warnings, one warning per seat whose name or label
 repeats the project or the session (the session already carries it; the warning never refuses the
-file), the approval, each account whose `check`
+file), the approval, the override file when it is not the approved copy or cannot be parsed (a
+missing line either way: `up` and `add` refuse, and the approved copy stays in force — or the
+shipped profiles, when nothing was approved), each account whose `check`
 command is unapproved, or no longer matches the file hashed at approval (a warning either way: that
 account reads unknown, and `up` and `add` still
 run), the budget checks, herdr, one CLI at a time (its

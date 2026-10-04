@@ -1,7 +1,7 @@
 // Runs one command reference page's examples. The commands are the real ones, in process: the
 // world, the home and the caller are handed in, so no example reaches herdr, a CLI, or the owner's
 // home. A `$ ` line is run, the lines under it must match byte for byte.
-import { mkdirSync, symlinkSync } from 'node:fs';
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAdd } from '../../src/commands/add.ts';
@@ -18,6 +18,7 @@ import { runWorktree } from '../../src/commands/worktree.ts';
 import type { Caller } from '../../src/caller.ts';
 import type { TeamFile } from '../../src/file/types.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
+import { storePath } from '../../src/store/store.ts';
 import type { Io } from '../../src/io.ts';
 import { emptySession, updateState } from '../../src/state.ts';
 import { blocksOf, EXIT_SUFFIX, transcript, type Block } from './blocks.ts';
@@ -273,6 +274,15 @@ async function consoleBlock(page: Page, block: Block, failures: Failure[]): Prom
   }
 }
 
+/** `file=overrides.yaml` is the approval store's file, not a path in the project. */
+function writeOverrides(page: Page, text: string, line: number): void {
+  const loaded = loadTeamFile(page.fixture.root, {});
+  if (!loaded.ok) throw new Error(`overrides.yaml at line ${line} needs a team file`);
+  const path = join(storePath(loaded.team.project, loaded.root, page.fixture.home), 'overrides.yaml');
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, text);
+}
+
 /** Every example of one page, run in order; the failures are the test's own. */
 export async function runPage(name: string, markdown: string, project = 'beacon'): Promise<Failure[]> {
   const failures: Failure[] = [];
@@ -293,7 +303,9 @@ export async function runPage(name: string, markdown: string, project = 'beacon'
       try {
         if (block.kind === 'yaml' || block.kind === 'file') {
           if (!block.attrs.file) throw new Error(`the ${block.kind} fence at line ${block.line} needs file=<path>`);
-          page.fixture.write(block.attrs.file, block.text.endsWith('\n') ? block.text : `${block.text}\n`, block.kind === 'file' && block.attrs.exec === '1');
+          const text = block.text.endsWith('\n') ? block.text : `${block.text}\n`;
+          if (block.attrs.file === 'overrides.yaml') writeOverrides(page, text, block.line);
+          else page.fixture.write(block.attrs.file, text, block.kind === 'file' && block.attrs.exec === '1');
         } else if (block.kind === 'commit') {
           const message = block.text.endsWith('\n') ? block.text : `${block.text}\n`;
           page.fixture.commit(message, block.attrs.email ?? undefined);
