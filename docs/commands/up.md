@@ -10,8 +10,14 @@ starts in the lobby, never in the project root, which holds the owner's uncommit
 is the folder that holds the worktrees with `.lobby` beside them — the parent of `workspace.path` —
 so it lies in the same `trust` as the worktrees and outside every protected checkout. `up` makes it
 once, before the first such seat waits in it, and refuses when it would fall outside `trust` or
-inside a protected checkout. A `mode: shared` seat, and a seat the file gives a `cwd` of its own
-outside every protected checkout, starts where the file says.
+inside a protected checkout; a folder is inside one when it is inside it on disk too, symlinks
+resolved. A `mode: shared` seat, and a seat the file gives a `cwd` of its own outside every
+protected checkout, starts where the file says.
+
+The lobby is a folder no CLI has seen before, and `up` reads a trust question and never answers one:
+the first `up` in worktree mode leaves each implementer out with `<seat>: left out: trust question` —
+its workspace closed without input, nothing run — until the owner trusts the lobby once in that CLI,
+as they trusted the worktrees. Then it starts.
 
 ## Synopsis
 
