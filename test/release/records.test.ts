@@ -3,7 +3,7 @@
 // is the answer map, the key reader is a fake, and the distinctive key under test is searched
 // for in everything the run produces.
 import { describe, expect, test } from 'bun:test';
-import { runChecks, timestampOf, type ReleaseResult } from '../../src/release/checks.ts';
+import { runChecks, timestampOf, type Outcome, type ReleaseResult } from '../../src/release/checks.ts';
 import { keychainReader, keyOf, type KeyReader } from '../../src/release/keychain.ts';
 import type { ReleaseDecl } from '../../src/file/sections/releases.ts';
 import type { RequestOptions } from '../../src/release/http.ts';
@@ -211,9 +211,9 @@ describe('the linear check', () => {
   test('the sibling sweep: no malformed shape of the answer can read as missing or pass', async () => {
     // Every field the Linear answer is read from, with wrong types, nulls, absent keys and empty
     // values — the two failure details are the only legal outcomes for these.
-    const record = { status: 'unknown', detail: 'Linear record is incomplete' };
-    const unread = { status: 'unknown', detail: 'Linear record could not be read' };
-    const cases: [string, unknown, { status: string; detail: string }][] = [
+    const record: Outcome = { status: 'unknown', detail: 'Linear record is incomplete' };
+    const unread: Outcome = { status: 'unknown', detail: 'Linear record could not be read' };
+    const cases: [string, unknown, Outcome][] = [
       ['no data object', {}, unread],
       ['a data that is not an object', { data: 7 }, unread],
       ['a data that is an array', { data: [] }, unread],
@@ -425,7 +425,7 @@ describe('the activity check', () => {
   test('the sibling sweep: no malformed contents shape can read as missing or pass', async () => {
     // Every field the activity answer is read from, with wrong types, absent keys and empty
     // values. An empty file is the one legal answer that is missing: it names no marker.
-    const unread = { status: 'unknown', detail: 'public activity file could not be read' };
+    const unread: Outcome = { status: 'unknown', detail: 'public activity file could not be read' };
     const cases: [string, unknown][] = [
       ['no type', { ...activityFile('x'), type: undefined }],
       ['a type that is not file', { ...activityFile('x'), type: 'blob' }],
