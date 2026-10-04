@@ -41,7 +41,7 @@ export function version(): string {
 /** What the process entry point does when a command throws: one line on stderr, exit code 1. */
 export function reportFailure(error: unknown, stderr: (text: string) => void): number {
   stderr(`team: ${error instanceof Error ? error.message : String(error)}\n`);
-  return 1;
+  return 1; // exit: team.command-threw
 }
 
 export async function main(argv: string[], io: Io): Promise<number> {
@@ -50,11 +50,13 @@ export async function main(argv: string[], io: Io): Promise<number> {
   const usage = USAGE.replace('{commands}', names.length ? names.map((n) => `  ${n}`).join('\n') : '  (none in this build)');
   if (!name || name === '--help' || name === '-h' || name === 'help') {
     io.stdout(usage);
+    // exit: team.help
+    // exit: team.no-command
     return name ? 0 : 2;
   }
   if (name === '--version' || name === '-V') {
     io.stdout(`${version()}\n`);
-    return 0;
+    return 0; // exit: team.version
   }
   // Hidden: a port speaks this protocol. It is not a command in the help text.
   if (name === 'conformance-adapter') {
@@ -64,14 +66,14 @@ export async function main(argv: string[], io: Io): Promise<number> {
   const load = commands[name];
   if (!load) {
     io.stderr(`team: unknown command "${name}"\n\n${usage}`);
-    return 2;
+    return 2; // exit: team.unknown
   }
   const command = await load();
   // The one path for every command's `--help`/`-h`: it prints the command's usage and stops,
   // before any option parsing, file reading, caller check or herdr call in the command itself.
   if (rest.includes('--help') || rest.includes('-h')) {
     io.stdout(command.USAGE);
-    return 0;
+    return 0; // exit: team.command-help
   }
   return command.default(rest, io);
 }

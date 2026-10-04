@@ -40,22 +40,27 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
   const task = args.rest[1];
   if (args.error) {
     io.stderr(`team worktree: ${args.error}\n${USAGE}`);
+    // exit: worktree.invocation
     return 2;
   }
   if (sub !== 'new' && sub !== 'remove') {
     io.stderr(`team worktree: ${sub ? `unknown subcommand "${sub}"` : 'a subcommand is required'}\n${USAGE}`);
+    // exit: worktree.subcommand
     return 2;
   }
   if (!task) {
     io.stderr(`team worktree: a task name is required\n${USAGE}`);
+    // exit: worktree.task-required
     return 2;
   }
   if (args.rest.length > 2) {
     io.stderr(`team worktree: unexpected "${args.rest[2]}"\n${USAGE}`);
+    // exit: worktree.extra
     return 2;
   }
   if (sub === 'remove' && (args.values.kind || args.values.seat)) {
     io.stderr(`team worktree: remove takes no --kind or --seat\n${USAGE}`);
+    // exit: worktree.remove-flags
     return 2;
   }
 
@@ -64,30 +69,38 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     for (const problem of loaded.errors) {
       io.stderr(`team worktree: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
     }
+    // exit: worktree.not-a-repo
+    // exit: worktree.file
+    // exit: worktree.file-invalid
     return 2;
   }
   const { team, root } = loaded;
   const caller = callerOf(io);
   if (args.values.file && !isOwner(caller)) {
     io.stderr(`team worktree: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
+    // exit: worktree.file-owner
     return 1;
   }
   if (!mayChangeTeam(caller, team)) {
     io.stderr(`team worktree: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(caller)}\n`);
+    // exit: worktree.caller
     return 1;
   }
   const session = args.values.session ?? team.session;
   if (session === 'default') {
     io.stderr('team worktree: session can\'t be "default", herdr\'s own session\n');
+    // exit: worktree.default-session
     return 1;
   }
   const differences = approvalDifferences(team, root, sources.home);
   if (differences === null) {
     io.stderr('team worktree: the file was never approved on this machine: run `team approve`\n');
+    // exit: worktree.never-approved
     return 1;
   }
   if (differences.length) {
     io.stderr(`team worktree: the file is not the approved one (${differences.join('; ')}): run \`team approve\`\n`);
+    // exit: worktree.differs
     return 1;
   }
 
@@ -104,48 +117,58 @@ function create(
   const named = taskProblem(task);
   if (named) {
     io.stderr(`team worktree: ${named}\n`);
+    // exit: worktree.task
     return 1;
   }
   if (kind !== undefined && taskProblem(kind)) {
     io.stderr(`team worktree: --kind: ${taskProblem(kind)}\n`);
+    // exit: worktree.kind
     return 1;
   }
   if (team.workspace.mode === 'shared') {
     io.stderr('team worktree: workspace.mode is shared: this team keeps one checkout, so there is no task worktree to create\n');
+    // exit: worktree.shared
     return 1;
   }
   const pathPattern = team.workspace.path;
   const base = team.workspace.base;
   if (!pathPattern || !base) {
     io.stderr('team worktree: workspace.path and workspace.base are required\n');
+    // exit: worktree.config
     return 1;
   }
   if (pathPattern.includes('{kind}')) {
     io.stderr('team worktree: workspace.path fills {repo} and {task} only\n');
+    // exit: worktree.path-kind
     return 1;
   }
   const branchPattern = team.workspace.branch;
   if (branchPattern.includes('{kind}') && kind === undefined) {
     io.stderr(`team worktree: --kind is required: the branch pattern is ${JSON.stringify(branchPattern)}\n`);
+    // exit: worktree.kind-required
     return 1;
   }
   if (!branchPattern.includes('{kind}') && kind !== undefined) {
     io.stderr(`team worktree: --kind has nowhere to go: the branch pattern is ${JSON.stringify(branchPattern)}\n`);
+    // exit: worktree.kind-nowhere
     return 1;
   }
   const branch = fillPattern(branchPattern, { kind, task });
   const folder = fillPattern(pathPattern, { repo: team.project, task });
   if (!branch || !folder) {
     io.stderr('team worktree: the branch or path pattern has a placeholder other than {kind}, {task} or {repo}\n');
+    // exit: worktree.placeholder
     return 1;
   }
   const hit = publicNameHit(team, [task, kind, branch, basename(folder)].filter((name): name is string => Boolean(name)));
   if (hit) {
     io.stderr(`team worktree: ${hit}; a public project refuses that name\n`);
+    // exit: worktree.forbidden
     return 1;
   }
   if (!insideTrust(folder, team.trust)) {
     io.stderr(`team worktree: ${folder} is outside the approved trust paths\n`);
+    // exit: worktree.trust
     return 1;
   }
   const landing = realLanding(root, folder);
@@ -153,11 +176,13 @@ function create(
     const rel = relative(realpathSync(root), landing.real).split(sep).join('/');
     if (!insideTrust(rel, team.trust)) {
       io.stderr(`team worktree: ${folder} follows a symlink to ${landing.real}, which is outside the approved trust paths\n`);
+      // exit: worktree.symlink
       return 1;
     }
   }
   if (seatName !== undefined && !team.seats.some((seat) => seat.name === seatName)) {
     io.stderr(`team worktree: --seat ${JSON.stringify(seatName)} names no declared seat\n`);
+    // exit: worktree.seat
     return 1;
   }
 
@@ -213,17 +238,30 @@ function create(
   });
   if (refused || !outcome) {
     io.stderr(`team worktree: ${refused ?? 'nothing was created'}\n`);
+    // exit: worktree.limit
+    // exit: worktree.recorded
+    // exit: worktree.recorded-elsewhere
+    // exit: worktree.exists
+    // exit: worktree.branch
+    // exit: worktree.published
+    // exit: worktree.branch-name
+    // exit: worktree.base
+    // exit: worktree.tracking
+    // exit: worktree.fetch
+    // exit: worktree.create-failed
     return 1;
   }
   if (!outcome.setup.ok) {
     logLine(dir, 'worktree new', who, `created ${task} at ${folder} on ${branch}; setup failed on command ${outcome.setup.at}`, sources.now());
     io.stderr(`team worktree: setup failed on command ${outcome.setup.at} of ${team.workspace.setup.length}; the worktree is kept and recorded as setup: failed\n`);
     io.stdout(`${folder}\n`);
+    // exit: worktree.setup
     return 1;
   }
   const note = outcome.start.note ? `; ${outcome.start.note}` : '';
   logLine(dir, 'worktree new', who, `created ${task} at ${folder} on ${branch}${note}`, sources.now());
   io.stdout(`${folder}\n`);
+  // exit: worktree.created
   return 0;
 }
 
@@ -233,6 +271,7 @@ export function removeWorktree(
   const named = taskProblem(task);
   if (named) {
     io.stderr(`team worktree: ${named}\n`);
+    // exit: worktree.remove-task
     return 1;
   }
   let refused: string | null = null;
@@ -286,15 +325,24 @@ export function removeWorktree(
   });
   if (refused || removed === false) {
     io.stderr(`team worktree: ${refused ?? 'nothing was removed'}\n`);
+    // exit: worktree.missing
+    // exit: worktree.elsewhere
+    // exit: worktree.occupied
+    // exit: worktree.unreadable
+    // exit: worktree.dirty
+    // exit: worktree.unpublished
+    // exit: worktree.remove-failed
     return 1;
   }
   if (removed === 'gone') {
     logLine(dir, 'worktree remove', who, `removed the record of ${task}; its folder was already gone`, sources.now());
     io.stdout(`removed the record of ${task}; its folder was already gone. No branch was deleted.\n`);
+    // exit: worktree.record-gone
     return 0;
   }
   logLine(dir, 'worktree remove', who, `removed ${task}; kept branch ${removed}`, sources.now());
   io.stdout(`removed ${task}; the branch ${removed} is kept\n`);
+  // exit: worktree.removed
   return 0;
 }
 

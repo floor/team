@@ -1,55 +1,46 @@
 // One run per row of contract/exit-codes.json. Each trigger is a temporary directory and the
 // injectable stand-ins the other command tests use: no herdr session, no user-level store.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'bun:test';
 import { approvalOf } from '../src/approve/approval.ts';
+import { saveReadings, type Seen } from '../src/budgets/readings.ts';
 import type { Caller } from '../src/caller.ts';
 import { runAdd, type AddSources } from '../src/commands/add.ts';
 import { runApprove, type ApproveSources } from '../src/commands/approve.ts';
 import { check, loadConfig, type LoadConfig } from '../src/commands/check.ts';
 import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
-import { runDown, type DownSources } from '../src/commands/down.ts';
+import { runDown, type DownLaunch, type DownSources } from '../src/commands/down.ts';
 import { runInit } from '../src/commands/init.ts';
 import { runRemove, type RemoveSources } from '../src/commands/remove.ts';
 import { runStatus, type StatusSources } from '../src/commands/status.ts';
 import { runUp, type Launch, type UpSources } from '../src/commands/up.ts';
 import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import { runWorktree, type WorktreeSources } from '../src/commands/worktree.ts';
-import { loadTeamFile } from '../src/file/load.ts';
 import { main, reportFailure, version } from '../src/cli.ts';
+import { loadTeamFile } from '../src/file/load.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import { overridesPath } from '../src/profiles/overrides.ts';
 import { emptySession, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
 import { storePath, writeApproval } from '../src/store/store.ts';
 import type { Machine } from '../src/watch/machine.ts';
-import { testIo } from './helpers.ts';
-import { codesOf, loadContract, problems, render, uncovered } from '../scripts/exit-codes.ts';
+import { loadContract, problems, render, type ExitRow } from '../scripts/exit-codes.ts';
+import { claudeBox, testIo } from './helpers.ts';
 
 const NOW = new Date('2026-10-04T09:00:00Z');
 const owner = { kind: 'owner' } as const;
 const other = { kind: 'seat', name: 'other', pane: 'w9:p1' } as const;
+const leadSeat = { kind: 'seat', name: 'lead', pane: 'w1:p1' } as const;
 const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
+const hot: Machine = { ...fine, loadPerCore: 9 };
 const quiet: Live = { running: false, agents: [], workspaces: [], screens: {} };
-const running: Live = {
-  running: true,
-  agents: [{ name: 'lead', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'working', cwd: null }],
-  workspaces: [{ id: 'w1', label: 'lead' }],
-  screens: { 'w1:p1': `❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n  ⏵⏵ bypass permissions on\n` },
-};
+const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
 
-const TEAM = `format: 1
-project: acme
-coordinator: lead
-operator: lead
-workspace:
-  mode: shared
-seats:
-  - role: coordinator
+const LEAD = `  - role: coordinator
     name: lead
     label: lead
     cli: claude-code
@@ -59,7 +50,7 @@ seats:
     launch: claude --model claude-opus-5-5
 `;
 
-const TWO = `${TEAM}  - role: implementer
+const WORKER = `  - role: implementer
     name: worker
     label: worker
     cli: claude-code
@@ -68,6 +59,50 @@ const TWO = `${TEAM}  - role: implementer
     version: "5.5"
     launch: claude --model claude-opus-5-5
     stopped: true
+`;
+
+const TEAM = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+workspace:
+  mode: shared
+seats:
+${LEAD}`;
+
+const TWO = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+workspace:
+  mode: shared
+seats:
+${LEAD}${WORKER}`;
+
+const GROK = TWO.replace('    name: worker\n    label: worker\n    cli: claude-code', '    name: worker\n    label: worker\n    cli: grok').replace(
+  'launch: claude --model claude-opus-5-5\n    stopped: true\n',
+  'launch: grok\n',
+);
+
+const BUDGET = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+workspace:
+  mode: shared
+seats:
+${LEAD}  - role: implementer
+    name: worker
+    label: worker
+    cli: claude-code
+    vendor: openai
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+budgets:
+  accounts:
+    anthropic: { kind: subscription, reserve: 20%, sources: [status_line] }
+    openai: { kind: subscription, reserve: 10%, sources: [status_line] }
 `;
 
 const CHECKED = `format: 1
@@ -79,42 +114,32 @@ identity:
 workspace:
   mode: shared
 seats:
-  - role: coordinator
-    name: lead
-    label: lead
-    cli: claude-code
-    vendor: anthropic
-    model: Claude Opus
-    version: "5.5"
-    launch: claude --model claude-opus-5-5
+${LEAD}`;
+
+const CHECK_ACCOUNT = `${TEAM}budgets:
+  accounts:
+    anthropic: { kind: subscription, reserve: 20%, sources: [check], check: team-exit-no-such-check }
 `;
 
-const WORKTREE = `format: 1
+const WITH_BASE = TEAM.replace('  mode: shared\n', '  mode: shared\n  base: main\n');
+
+const NARROW = `format: 1
 project: acme
-visibility: public
 coordinator: lead
 operator: lead
-identity:
-  forbidden_public:
-    - "\\\\bWEB-[0-9]+\\\\b"
 trust:
-  - ../worktrees/acme/*
+  - ../worktrees/acme/task
 workspace:
   mode: worktree
   path: ../worktrees/{repo}/{task}
   branch: "{kind}/{task}"
   base: main
 seats:
-  - role: coordinator
-    name: lead
-    cli: claude-code
-    vendor: anthropic
-    model: Claude Opus
-    version: "5.5"
-    launch: claude --model claude-opus-5-5
-`;
+${LEAD}${WORKER.replace('    stopped: true\n', '')}`;
 
 type Place = { base: string; root: string; home: string; file: string };
+type Ran = { code: number; out: string; err: string };
+type Scene = (place: Place) => Promise<Ran>;
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
@@ -139,15 +164,6 @@ function layout(repo: boolean): Place {
   return { base, root, home, file: join(root, '.agents', 'team.yaml') };
 }
 
-async function hold(repo: boolean, run: (place: Place) => Promise<number>): Promise<number> {
-  const place = layout(repo);
-  try {
-    return await run(place);
-  } finally {
-    rmSync(place.base, { recursive: true, force: true });
-  }
-}
-
 function write(place: Place, text: string): void {
   writeFileSync(place.file, text);
 }
@@ -163,7 +179,20 @@ function approve(place: Place, text: string): void {
   );
 }
 
-function doctor(home: string): DoctorSources {
+function approvalFile(place: Place): string {
+  const loaded = loadTeamFile(place.root, { file: place.file });
+  if (!loaded.ok) throw new Error('team file');
+  return join(storePath(loaded.team.project, loaded.root, place.home), 'approval.json');
+}
+
+function editApproval(place: Place, edit: (record: Record<string, unknown>) => void): void {
+  const path = approvalFile(place);
+  const record = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+  edit(record);
+  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+}
+
+function doctor(home: string, over: Partial<DoctorSources> = {}): DoctorSources {
   return {
     version: () => '2.1.288',
     onPath: () => true,
@@ -172,21 +201,39 @@ function doctor(home: string): DoctorSources {
     sessionRunning: () => false,
     now: () => NOW,
     home,
+    ...over,
   };
 }
 
-function launch(): Launch {
+function launching(text: string, paneOk: (command: string) => boolean = () => true, server = true): Launch {
+  let n = 0;
+  let session: 'absent' | 'running' = 'absent';
+  const panes = new Map<string, { text: string; agent: boolean }>();
   return {
-    sessionState: () => 'absent',
-    startServer: () => false,
-    sessionUp: () => false,
-    createWorkspace: () => null,
-    paneRun: () => false,
-    renameAgent: () => false,
-    closeWorkspace: () => false,
-    agentPanes: () => [],
-    paneText: () => '',
-    foreground: () => null,
+    sessionState: () => session,
+    startServer() {
+      if (!server) return false;
+      session = 'running';
+      return true;
+    },
+    sessionUp: () => session === 'running',
+    createWorkspace() {
+      n += 1;
+      const pane = `w${n}:p1`;
+      panes.set(pane, { text, agent: false });
+      return { pane, workspace: `w${n}` };
+    },
+    paneRun(_session, pane, command) {
+      if (!paneOk(command)) return false;
+      const known = panes.get(pane);
+      if (known) known.agent = true;
+      return true;
+    },
+    renameAgent: () => true,
+    closeWorkspace: () => true,
+    agentPanes: () => [...panes].filter(([, pane]) => pane.agent).map(([id]) => id),
+    paneText: (_session, pane) => panes.get(pane)?.text ?? '',
+    foreground: () => ['claude'],
     sleep: async () => {},
     now: () => NOW,
   };
@@ -200,7 +247,22 @@ function addSources(place: Place, over: Partial<AddSources> = {}): AddSources {
     workspaces: () => [],
     doctor: doctor(place.home),
     now: () => NOW,
-    launch: launch(),
+    launch: launching(IDLE),
+    ...over,
+  };
+}
+
+function downLaunch(over: Partial<DownLaunch> = {}): DownLaunch {
+  return {
+    typeText: () => true,
+    pressEnter: () => true,
+    agentPanes: () => [],
+    closeWorkspace: () => true,
+    stopSession: () => true,
+    deleteSession: () => true,
+    kill: () => true,
+    sleep: async () => {},
+    now: () => NOW,
     ...over,
   };
 }
@@ -213,26 +275,20 @@ function downSources(over: Partial<RemoveSources> = {}): RemoveSources {
     screen: () => ({ kind: 'idle' }),
     screenText: () => undefined,
     status: () => 'idle',
-    foreground: () => null,
+    foreground: () => ['claude'],
     now: () => NOW,
+    home: undefined,
     ...over,
-  } as RemoveSources;
+  };
 }
 
-function statusSources(live: Live | null, approval: string[] | null): StatusSources {
-  return {
-    live: () => live,
-    branch: () => 'main',
-    approval: () => approval,
-    watchInForce: (team) => team.watch,
-    budgetsInForce: (team) => team.budgets,
-    now: () => NOW,
-  };
+function upSources(place: Place, over: Partial<UpSources> = {}): UpSources {
+  return { sessionRunning: () => false, agents: () => [], home: place.home, now: () => NOW, ...over };
 }
 
 function watchSources(over: Partial<WatchSources> = {}): WatchSources {
   return {
-    live: () => null,
+    live: () => quiet,
     machine: () => fine,
     approval: () => [],
     watchInForce: (team) => team.watch,
@@ -252,697 +308,1205 @@ function watchSources(over: Partial<WatchSources> = {}): WatchSources {
   };
 }
 
-function upSources(place: Place): UpSources {
-  return { sessionRunning: () => false, agents: () => [], home: place.home, now: () => NOW };
-}
-
-function worktreeSources(place: Place): WorktreeSources {
-  return { home: place.home, now: () => NOW };
+function statusSources(live: Live | null, approval: string[] | null): StatusSources {
+  return {
+    live: () => live,
+    branch: () => 'main',
+    approval: () => approval,
+    watchInForce: (team) => team.watch,
+    budgetsInForce: (team) => team.budgets,
+    now: () => NOW,
+  };
 }
 
 function approveSources(place: Place, answer: string | null, home = place.home): ApproveSources {
   return { ask: async () => answer, now: () => NOW, home };
 }
 
+function worktreeSources(place: Place): WorktreeSources {
+  return { home: place.home, now: () => NOW };
+}
+
 function loader(place: Place): LoadConfig {
   return (cwd, file) => loadConfig(cwd, file, place.home);
 }
 
-const agent = (name: string, status = 'working'): HerdrAgent => ({
-  name,
-  agent: 'claude',
-  pane: 'w1:p1',
-  workspace: 'w1',
-  status,
-  cwd: null,
+const agent = (name: string, status = 'idle'): HerdrAgent => ({
+  name, agent: 'claude', pane: 'w1:p1', workspace: 'w1', status, cwd: null,
 });
 
-type Ran = { code: number; out: string; err: string };
+function show(value: Ran, needle: string): Ran {
+  expect(`${value.err}${value.out}`).toContain(needle);
+  return value;
+}
+
+async function entry(argv: string[], io: ReturnType<typeof testIo>): Promise<Ran> {
+  try {
+    return { code: await main(argv, io), out: io.out, err: io.err };
+  } catch (error) {
+    return { code: reportFailure(error, (text) => io.stderr(text)), out: io.out, err: io.err };
+  }
+}
 
 async function added(place: Place, argv: string[], caller: Caller, sources: AddSources): Promise<Ran> {
   const io = testIo(place.root, caller);
-  const code = await runAdd(argv, io, sources);
-  return { code, out: io.out, err: io.err };
+  return { code: await runAdd(argv, io, sources), out: io.out, err: io.err };
 }
 
-const triggers = new Map<string, () => Promise<number>>();
-
-function on(command: string, code: number, meaning: string, run: () => Promise<number>): void {
-  triggers.set(`${command}\t${code}\t${meaning}`, run);
+async function approved(place: Place, argv: string[], caller: Caller, sources: ApproveSources, cwd = place.root): Promise<Ran> {
+  const io = testIo(cwd, caller);
+  return { code: await runApprove(argv, io, sources), out: io.out, err: io.err };
 }
 
-on('add', 0, 'a dry run printed the plan', () => hold(true, async (place) => {
+function publish(place: Place): void {
+  const remote = join(place.base, 'remote.git');
+  git(place.base, 'init', '-q', '--bare', '-b', 'main', remote);
+  git(place.root, 'remote', 'add', 'origin', remote);
+  git(place.root, 'push', '-q', '-u', 'origin', 'main');
+}
+
+function worktreeText(patch: {
+  mode?: 'shared' | 'worktree';
+  path?: string | null;
+  branch?: string;
+  base?: string | null;
+  trust?: string;
+  limit?: number;
+  setup?: string;
+  sharedSeat?: boolean;
+} = {}): string {
+  const mode = patch.mode ?? 'worktree';
+  const trust = patch.trust ?? '../worktrees/acme/*';
+  const seat = patch.sharedSeat ? LEAD.replace('launch: claude --model claude-opus-5-5\n', 'launch: claude --model claude-opus-5-5\n    mode: shared\n') : LEAD;
+  if (mode === 'shared') {
+    return `format: 1
+project: acme
+visibility: public
+coordinator: lead
+operator: lead
+identity:
+  forbidden_public:
+    - "\\\\bWEB-[0-9]+\\\\b"
+trust:
+  - ${trust}
+workspace:
+  mode: shared
+seats:
+${seat}`;
+  }
+  const path = patch.path === undefined ? '../worktrees/{repo}/{task}' : patch.path;
+  const base = patch.base === undefined ? 'main' : patch.base;
+  const lines = ['workspace:', '  mode: worktree'];
+  if (path) lines.push(`  path: ${path}`);
+  lines.push(`  branch: ${JSON.stringify(patch.branch ?? '{kind}/{task}')}`);
+  if (base) lines.push(`  base: ${base}`);
+  if (patch.limit) lines.push(`  limit: ${patch.limit}`);
+  if (patch.setup) lines.push(patch.setup);
+  return `format: 1
+project: acme
+visibility: public
+coordinator: lead
+operator: lead
+identity:
+  forbidden_public:
+    - "\\\\bWEB-[0-9]+\\\\b"
+trust:
+  - ${trust}
+${lines.join('\n')}
+seats:
+${seat}`;
+}
+
+function spendReading(): Seen {
+  return {
+    account: 'openai', window: 'weekly', left: 5, used: 95,
+    changedAt: NOW.getTime() - 60_000, resetsAt: NOW.getTime() + 3_600_000,
+    seat: 'worker', source: 'status_line', confirmed: true,
+  };
+}
+
+const scenes = new Map<string, Scene>();
+const bare = new Set<string>();
+function scene(id: string, run: Scene, repo = true): void {
+  scenes.set(id, run);
+  if (!repo) bare.add(id);
+}
+
+function invalid(place: Place): void {
+  writeFileSync(join(place.root, 'team.yaml'), 'format: [\n');
+}
+
+scene('add.invocation', async (place) => show(await added(place, ['--nope'], owner, addSources(place)), 'unknown option'));
+scene('add.seat-name', async (place) => show(await added(place, [], owner, addSources(place)), 'a seat name is required'));
+scene('add.temporary-unexpected', async (place) => show(await added(place, ['extra', '--temporary'], owner, addSources(place)), 'unexpected'));
+scene('add.temporary-flags', async (place) => show(await added(place, ['worker', '--like', 'lead'], owner, addSources(place)), '--like, --until and --worktree'));
+scene('add.not-a-repo', async (place) => show(await added(place, ['worker'], owner, addSources(place)), 'not inside a git repository'), false);
+scene('add.file', async (place) => show(await added(place, ['worker', '--file', 'missing.yaml'], owner, addSources(place)), 'no team file'));
+scene('add.file-invalid', async (place) => {
+  invalid(place);
+  return show(await added(place, ['worker', '--file', 'team.yaml'], owner, addSources(place)), 'line');
+});
+scene('add.file-owner', async (place) => {
+  write(place, TWO);
+  return show(await added(place, ['worker', '--file', '.agents/team.yaml'], other, addSources(place)), "--file is the owner's");
+});
+scene('add.caller', async (place) => {
+  write(place, TWO);
+  return show(await added(place, ['worker'], other, addSources(place)), 'only the owner, the coordinator or the operator');
+});
+scene('add.default-session', async (place) => {
+  write(place, TWO);
+  return show(await added(place, ['worker', '--session', 'default', '--file', place.file], owner, addSources(place)), 'can\'t be "default"');
+});
+scene('add.never-approved', async (place) => {
+  write(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'never approved');
+});
+scene('add.differs', async (place) => {
   approve(place, TWO);
-  const ran = await added(place, ['worker', '--dry-run', '--file', place.file], owner, addSources(place));
-  expect(ran.out).toContain('dry run: nothing was run');
-  return ran.code;
-}));
-
-on('add', 1, "herdr doesn't answer", () => hold(true, async (place) => {
+  write(place, TWO.replace('label: worker', 'label: renamed'));
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'not the approved one');
+});
+scene('add.approved-copy', async (place) => {
   approve(place, TWO);
-  const ran = await added(place, ['worker', '--file', place.file], owner, addSources(place, { sessionState: () => null }));
-  expect(ran.err).toContain("herdr doesn't answer");
-  return ran.code;
-}));
+  editApproval(place, (record) => { record.file = 'nope: [[['; });
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), "approved copy can't be read");
+});
+scene('add.herdr', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { sessionState: () => null })), "doesn't answer");
+});
+scene('add.stopped', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { sessionState: () => 'stopped' })), 'is stopped');
+});
+scene('add.agents', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { sessionState: () => 'running', agents: () => null })), "can't be read");
+});
+scene('add.ceilings', async (place) => {
+  approve(place, TWO);
+  editApproval(place, (record) => { delete record.ceilings; });
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'never approved');
+});
+scene('add.no-seat', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['missing', '--file', place.file], owner, addSources(place)), 'no seat "missing"');
+});
+scene('add.no-like', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['--temporary', '--like', 'missing', '--until', 'result:out.md', '--file', place.file], owner, addSources(place)), 'no seat "missing"');
+});
+scene('add.until', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'nope', '--file', place.file], owner, addSources(place)), '--until is result');
+});
+scene('add.result-absolute', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'result:/tmp/out.md', '--file', place.file], owner, addSources(place)), 'relative to the project');
+});
+scene('add.result-exists', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'result:README.md', '--file', place.file], owner, addSources(place)), 'already exists');
+});
+scene('add.merged-base', async (place) => {
+  approve(place, TEAM);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'merged:topic', '--file', place.file], owner, addSources(place)), 'workspace.base is required');
+});
+scene('add.branch-missing', async (place) => {
+  approve(place, WITH_BASE);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'merged:missing', '--file', place.file], owner, addSources(place)), "doesn't exist");
+});
+scene('add.worktree-missing', async (place) => {
+  approve(place, TEAM);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'result:out.md', '--worktree', 'missing', '--file', place.file], owner, addSources(place)), 'no worktree named');
+});
+scene('add.worktree-failed', async (place) => {
+  approve(place, TEAM);
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.worktrees.task = { path: '../worktrees/acme/task', branch: 'fix/task', setup: 'failed' };
+  });
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'result:out.md', '--worktree', 'task', '--file', place.file], owner, addSources(place)), 'failed setup');
+});
+scene('add.already-running', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, {
+    sessionState: () => 'running', agents: () => [agent('worker')], workspaces: () => [{ id: 'w1' }],
+  })), 'already running');
+});
+scene('add.no-profile', async (place) => {
+  approve(place, GROK);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'no launch profile');
+});
+scene('add.placed', async (place) => {
+  const side = join(place.base, 'side');
+  mkdirSync(side);
+  const text = TWO.replace('workspace:', 'trust:\n  - ../side\nworkspace:');
+  approve(place, text);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, {
+    sessionState() {
+      rmSync(side, { recursive: true, force: true });
+      symlinkSync(place.base, side);
+      return 'absent';
+    },
+  })), "names the project's parent");
+});
+scene('add.start', async (place) => {
+  approve(place, NARROW);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'matches no trust');
+});
+scene('add.doctor', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { doctor: doctor(place.home, { version: () => null }) })), 'install');
+});
+scene('add.machine', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { machine: () => hot })), 'the load is 9.0');
+});
+scene('add.machine-again', async (place) => {
+  approve(place, TWO);
+  let calls = 0;
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, {
+    machine: () => (++calls === 1 ? fine : hot),
+  })), 'the load is 9.0');
+});
+scene('add.ceiling', async (place) => {
+  approve(place, TWO);
+  editApproval(place, (record) => {
+    const ceilings = record.ceilings as { seats: number };
+    ceilings.seats = 0;
+  });
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'allows 0 seats');
+});
+scene('add.dry-budget', async (place) => {
+  approve(place, BUDGET);
+  saveReadings(join(place.root, '.agents'), [spendReading()], NOW.getTime());
+  return show(await added(place, ['worker', '--dry-run', '--file', place.file], owner, addSources(place)), 'would refuse');
+});
+scene('add.dry-run', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--dry-run', '--file', place.file], owner, addSources(place)), 'dry run: nothing was run');
+});
+scene('add.budget', async (place) => {
+  approve(place, BUDGET);
+  saveReadings(join(place.root, '.agents'), [spendReading()], NOW.getTime());
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'refused:');
+});
+scene('add.changed', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, {
+    doctor: doctor(place.home, { version: () => { writeFileSync(place.file, `${readFileSync(place.file, 'utf8')}\n`); return '2.1.288'; } }),
+  })), 'changed while add');
+});
+scene('add.ready', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { launch: launching(IDLE) })), 'ready');
+});
+scene('add.not-ready', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { launch: launching('') })), 'timed out');
+});
+scene('add.server', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { launch: launching(IDLE, () => true, false) })), 'its server did not start');
+});
 
-on('add', 1, 'the caller may not change the team', () => hold(true, async (place) => {
-  write(place, TWO);
-  const ran = await added(place, ['worker'], other, addSources(place));
-  expect(ran.err).toContain('only the owner, the coordinator or the operator');
-  return ran.code;
-}));
-
-on('add', 1, 'the file was never approved', () => hold(true, async (place) => {
-  write(place, TWO);
-  const ran = await added(place, ['worker', '--file', place.file], owner, addSources(place));
-  expect(ran.err).toContain('never approved');
-  return ran.code;
-}));
-
-on('add', 1, 'the session can\'t be "default"', () => hold(true, async (place) => {
-  write(place, TWO);
-  const ran = await added(place, ['worker', '--session', 'default', '--file', place.file], owner, addSources(place));
-  expect(ran.err).toContain('can\'t be "default"');
-  return ran.code;
-}));
-
-on('add', 2, 'the invocation can\'t be read', () => hold(false, async (place) => {
-  const ran = await added(place, [], owner, addSources(place));
-  expect(ran.err).toContain('a seat name is required');
-  return ran.code;
-}));
-
-on('add', 2, 'the team file can\'t be read', () => hold(false, async (place) => {
-  const ran = await added(place, ['worker', '--file', 'missing.yaml'], owner, addSources(place));
-  expect(ran.err).toContain('no team file');
-  return ran.code;
-}));
-
-on('approve', 0, 'the comparison was printed', () => hold(true, async (place) => {
-  write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runApprove(['--show', '--file', place.file], io, approveSources(place, null));
-  expect(io.out).toContain('Seats: 1');
-  return code;
-}));
-
-on('approve', 0, 'the owner approved the file', () => hold(true, async (place) => {
-  write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runApprove(['--file', place.file], io, approveSources(place, '1'));
-  expect(io.out).toContain('Approved.');
-  return code;
-}));
-
-on('approve', 1, 'a seat ran it', () => hold(true, async (place) => {
-  write(place, TEAM);
-  const io = testIo(place.root, other);
-  const code = await runApprove(['--file', place.file], io, approveSources(place, '1'));
-  expect(io.err).toContain('only the owner approves');
-  return code;
-}));
-
-on('approve', 1, 'the answer was not the number of seats', () => hold(true, async (place) => {
-  write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runApprove(['--file', place.file], io, approveSources(place, '0'));
-  expect(io.err).toContain('not approved');
-  return code;
-}));
-
-on('approve', 1, 'the approval store sits where seats work', () => hold(true, async (place) => {
-  write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runApprove(['--file', place.file], io, approveSources(place, '1', place.root));
-  expect(io.err).toContain('where seats work');
-  return code;
-}));
-
-on('approve', 2, 'the invocation can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runApprove(['extra'], io, approveSources(place, null));
-  expect(io.err).toContain('unexpected "extra"');
-  return code;
-}));
-
-on('approve', 2, 'the overrides file can\'t be parsed', () => hold(true, async (place) => {
+scene('approve.invocation', async (place) => show(await approved(place, ['extra'], owner, approveSources(place, null)), 'unexpected'));
+scene('approve.not-a-repo', async (place) => show(await approved(place, [], owner, approveSources(place, null)), 'not inside a git repository'), false);
+scene('approve.file', async (place) => show(await approved(place, ['--file', 'missing.yaml'], owner, approveSources(place, null)), 'no team file'));
+scene('approve.file-invalid', async (place) => {
+  invalid(place);
+  return show(await approved(place, ['--file', 'team.yaml'], owner, approveSources(place, null)), 'line');
+});
+scene('approve.overrides', async (place) => {
   write(place, TEAM);
   const loaded = loadTeamFile(place.root, { file: place.file });
   if (!loaded.ok) throw new Error('team file');
   const path = overridesPath(loaded.team.project, loaded.root, place.home);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, 'format: [\n');
-  const io = testIo(place.root, owner);
-  const code = await runApprove(['--file', place.file], io, approveSources(place, '1'));
-  expect(io.err).toContain('line');
-  return code;
-}));
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'line');
+});
+scene('approve.store', async (place) => {
+  write(place, TEAM);
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1', place.root)), 'where seats work');
+});
+scene('approve.check', async (place) => {
+  write(place, CHECK_ACCOUNT);
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'cannot be resolved');
+});
+scene('approve.show', async (place) => {
+  write(place, TEAM);
+  return show(await approved(place, ['--show', '--file', place.file], owner, approveSources(place, null)), 'Seats:');
+});
+scene('approve.not-owner', async (place) => {
+  write(place, TEAM);
+  return show(await approved(place, ['--file', place.file], other, approveSources(place, '1')), 'only the owner approves');
+});
+scene('approve.answer', async (place) => {
+  write(place, TEAM);
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '0')), 'not approved');
+});
+scene('approve.approved', async (place) => {
+  write(place, TEAM);
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'Approved.');
+});
 
-on('approve', 2, 'the team file can\'t be read', () => hold(false, async (place) => {
+scene('check.invocation', async (place) => {
   const io = testIo(place.root, owner);
-  const code = await runApprove(['--file', 'missing.yaml'], io, approveSources(place, null));
-  expect(io.err).toContain('no team file');
-  return code;
-}));
-
-on('check', 0, 'every commit passed', () => hold(true, async (place) => {
+  return show({ code: await check([], io, loader(place)), out: io.out, err: io.err }, 'a <ref> is required');
+});
+scene('check.not-a-repo', async (place) => {
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD'], io, loader(place)), out: io.out, err: io.err }, 'not inside a git repository');
+}, false);
+scene('check.file', async (place) => {
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD'], io, loader(place)), out: io.out, err: io.err }, 'no team file');
+});
+scene('check.file-invalid', async (place) => {
+  invalid(place);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--file', 'team.yaml'], io, loader(place)), out: io.out, err: io.err }, 'line');
+});
+scene('check.ledger', async (place) => {
+  approve(place, CHECKED);
+  writeFileSync(join(dirname(approvalFile(place)), 'ledger.json'), '{');
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'ledger.json');
+});
+scene('check.pr-body', async (place) => {
   write(place, CHECKED);
   const io = testIo(place.root, owner);
-  const code = await check(['HEAD', '--file', place.file], io, loader(place));
-  expect(io.out).toContain('ok');
-  return code;
-}));
-
-on('check', 1, 'a commit was refused', () => hold(true, async (place) => {
+  return show({ code: await check(['HEAD', '--pr', 'missing.md', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, "can't read the pull request body");
+});
+scene('check.passed', async (place) => {
+  write(place, CHECKED);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'ok');
+});
+scene('check.refused', async (place) => {
   write(place, CHECKED);
   writeFileSync(join(place.root, 'note.txt'), 'note\n');
   git(place.root, 'add', 'note.txt');
   execFileSync('git', ['-c', 'user.name=Other', '-c', 'user.email=other@example.com', 'commit', '-q', '-m', 'fix: unsigned'], {
-    cwd: place.root,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: place.root, stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const sha = git(place.root, 'rev-parse', 'HEAD').trim();
   const io = testIo(place.root, owner);
-  const code = await check([sha, '--file', place.file], io, loader(place));
-  expect(io.out).toContain('refused');
-  return code;
-}));
-
-on('check', 2, 'the invocation can\'t be read', () => hold(false, async (place) => {
+  return show({ code: await check(['HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'refused');
+});
+scene('check.threw', async (place) => {
+  write(place, CHECKED);
+  const loaded = loadConfig(place.root, place.file, place.home);
+  if (!loaded.ok) throw new Error('team file');
+  const config = { ...loaded.config, forbidden: ['['] };
   const io = testIo(place.root, owner);
-  const code = await check([], io, loader(place));
-  expect(io.err).toContain('a <ref> is required');
-  return code;
-}));
-
-on('check', 2, 'the pull request body can\'t be read', () => hold(true, async (place) => {
+  try {
+    const code = await check(['HEAD', '--file', place.file], io, () => ({ ok: true, config, warnings: [] }));
+    return show({ code, out: io.out, err: io.err }, 'not a regular expression');
+  } catch (error) {
+    return show({ code: reportFailure(error, (text) => io.stderr(text)), out: io.out, err: io.err }, 'not a regular expression');
+  }
+});
+scene('check.outside', async (place) => {
+  writeFileSync(join(place.base, 'team.yaml'), CHECKED);
+  const io = testIo(place.base, owner);
+  return show({ code: await check(['HEAD', '--file', 'team.yaml'], io, loader(place)), out: io.out, err: io.err }, 'team check: not in a git repository\n');
+});
+scene('check.no-commit', async (place) => {
   write(place, CHECKED);
   const io = testIo(place.root, owner);
-  const code = await check(['HEAD', '--pr', 'missing.md', '--file', place.file], io, loader(place));
-  expect(io.err).toContain("can't read the pull request body");
-  return code;
-}));
-
-on('check', 2, 'the ref names nothing', () => hold(true, async (place) => {
+  return show({ code: await check(['not-a-ref', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, "doesn't name a commit");
+});
+scene('check.range', async (place) => {
   write(place, CHECKED);
   const io = testIo(place.root, owner);
-  const code = await check(['not-a-ref', '--file', place.file], io, loader(place));
-  expect(io.err).toContain('not-a-ref');
-  return code;
-}));
-
-on('check', 2, 'the team file can\'t be read', () => hold(true, async (place) => {
+  return show({ code: await check(['missing..also', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, "can't be resolved");
+});
+scene('check.empty-range', async (place) => {
+  write(place, CHECKED);
   const io = testIo(place.root, owner);
-  const code = await check(['HEAD'], io, loader(place));
-  expect(io.err).toContain('no team file');
-  return code;
-}));
+  return show({ code: await check(['HEAD..HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'holds no commit');
+});
+scene('check.since-missing', async (place) => {
+  write(place, CHECKED);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--since', 'missing', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'since "missing"');
+});
+scene('check.since-unreachable', async (place) => {
+  write(place, CHECKED);
+  const tree = git(place.root, 'rev-parse', 'HEAD^{tree}').trim();
+  const otherCommit = git(place.root, 'commit-tree', tree, '-m', 'other').trim();
+  git(place.root, 'update-ref', 'refs/heads/topic', otherCommit);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--since', 'topic', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'is not reachable');
+});
+scene('check.not-a-ref', async (place) => {
+  write(place, CHECKED);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--since', '--bad', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'is not a ref');
+});
 
-on('conformance-adapter', 0, 'the protocol finished', async () => {
+scene('conformance-adapter.finished', async () => {
   const repo = fileURLToPath(new URL('..', import.meta.url));
   const proc = Bun.spawn(['bun', 'src/cli.ts', 'conformance-adapter'], {
-    cwd: repo,
-    stdin: new Uint8Array(),
-    stdout: 'pipe',
-    stderr: 'pipe',
+    cwd: repo, stdin: new Uint8Array(), stdout: 'pipe', stderr: 'pipe',
   });
-  return proc.exited;
+  const code = await proc.exited;
+  const out = await new Response(proc.stdout).text();
+  return { code, out, err: await new Response(proc.stderr).text() };
 });
 
-on('doctor', 0, 'nothing is missing', () => hold(true, async (place) => {
+scene('doctor.invocation', async (place) => {
+  const io = testIo(place.root, owner);
+  return show({ code: await runDoctor(['extra'], io, doctor(place.home)), out: io.out, err: io.err }, 'unexpected');
+});
+scene('doctor.not-a-repo', async (place) => {
+  const io = testIo(place.root, owner);
+  return show({ code: await runDoctor([], io, doctor(place.home)), out: io.out, err: io.err }, 'not inside a git repository');
+}, false);
+scene('doctor.file', async (place) => {
+  const io = testIo(place.root, owner);
+  return show({ code: await runDoctor(['--file', 'missing.yaml'], io, doctor(place.home)), out: io.out, err: io.err }, 'no team file');
+});
+scene('doctor.file-invalid', async (place) => {
+  invalid(place);
+  const io = testIo(place.root, owner);
+  return show({ code: await runDoctor(['--file', 'team.yaml'], io, doctor(place.home)), out: io.out, err: io.err }, 'line');
+});
+scene('doctor.clear', async (place) => {
   approve(place, TEAM);
   const io = testIo(place.root, owner);
-  const code = await runDoctor(['--file', place.file], io, doctor(place.home));
-  expect(io.out).toContain('nothing missing');
-  return code;
-}));
+  return show({ code: await runDoctor(['--file', place.file], io, doctor(place.home)), out: io.out, err: io.err }, 'nothing missing');
+});
+scene('doctor.missing', async (place) => {
+  approve(place, TEAM);
+  const io = testIo(place.root, owner);
+  return show({ code: await runDoctor(['--file', place.file], io, doctor(place.home, { version: () => null })), out: io.out, err: io.err }, 'install');
+});
 
-on('doctor', 1, 'something is missing', () => hold(true, async (place) => {
+async function down(place: Place, argv: string[], caller: Caller, sources: RemoveSources): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runDown(argv, io, sources), out: io.out, err: io.err };
+}
+
+scene('down.invocation', async (place) => show(await down(place, ['extra'], owner, downSources()), 'unexpected'));
+scene('down.not-a-repo', async (place) => show(await down(place, [], owner, downSources()), 'not inside a git repository'), false);
+scene('down.file', async (place) => show(await down(place, ['--file', 'missing.yaml'], owner, downSources()), 'no team file'));
+scene('down.file-invalid', async (place) => {
+  invalid(place);
+  return show(await down(place, ['--file', 'team.yaml'], owner, downSources()), 'line');
+});
+scene('down.herdr', async (place) => {
   write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runDoctor(['--file', place.file], io, doctor(place.home));
-  expect(io.out).toContain('MISS');
-  return code;
-}));
-
-on('doctor', 2, 'the invocation can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runDoctor(['extra'], io, doctor(place.home));
-  expect(io.err).toContain('unexpected "extra"');
-  return code;
-}));
-
-on('doctor', 2, 'the team file can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runDoctor(['--file', 'missing.yaml'], io, doctor(place.home));
-  expect(io.err).toContain('no team file');
-  return code;
-}));
-
-on('down', 0, 'a dry run printed the plan', () => hold(true, async (place) => {
+  return show(await down(place, [], owner, downSources({ sessionRunning: () => null })), "doesn't answer");
+});
+scene('down.idle', async (place) => {
   write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runDown(['--dry-run', '--file', place.file], io, downSources({ sessionRunning: () => true }));
-  expect(io.out).toContain('dry run: nothing was run');
-  return code;
-}));
-
-on('down', 0, 'there was nothing to stop', () => hold(true, async (place) => {
+  return show(await down(place, [], owner, downSources()), 'nothing to stop');
+});
+scene('down.agents', async (place) => {
   write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runDown(['--file', place.file], io, downSources());
-  expect(io.out).toContain('nothing to stop');
-  return code;
-}));
-
-on('down', 1, 'the run was refused', () => hold(true, async (place) => {
+  return show(await down(place, [], owner, downSources({ sessionRunning: () => true, agents: () => null })), "can't be read");
+});
+scene('down.dry-run', async (place) => {
   write(place, TEAM);
-  const io = testIo(place.root, other);
-  const code = await runDown(['--file', place.file], io, downSources({ sessionRunning: () => true }) satisfies DownSources);
-  expect(io.err).toContain('only the owner, the coordinator or the operator');
-  return code;
-}));
-
-on('down', 1, 'this call has no way to reach herdr', () => hold(true, async (place) => {
+  return show(await down(place, ['--dry-run'], owner, downSources({ sessionRunning: () => true, agents: () => [] })), 'dry run: nothing was run');
+});
+scene('down.caller', async (place) => {
   write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runDown(['--file', place.file], io, downSources({ sessionRunning: () => true }));
-  expect(io.err).toContain('no way to reach herdr');
-  return code;
-}));
-
-on('down', 2, "herdr doesn't answer", () => hold(true, async (place) => {
+  return show(await down(place, [], other, downSources({ sessionRunning: () => true, agents: () => [] })), 'only the owner, the coordinator or the operator');
+});
+scene('down.abandon', async (place) => {
   write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runDown(['--file', place.file], io, downSources({ sessionRunning: () => null }));
-  expect(io.err).toContain("doesn't answer");
-  return code;
-}));
-
-on('down', 2, 'the agents can\'t be read', () => hold(true, async (place) => {
+  return show(await down(place, ['--abandon'], leadSeat, downSources({ sessionRunning: () => true, agents: () => [] })), 'only the owner abandons');
+});
+scene('down.no-launch', async (place) => {
   write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runDown(['--file', place.file], io, downSources({ sessionRunning: () => true, agents: () => null }));
-  expect(io.err).toContain("can't be read");
-  return code;
-}));
-
-on('down', 2, 'the invocation can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runDown(['extra'], io, downSources());
-  expect(io.err).toContain('unexpected "extra"');
-  return code;
-}));
-
-on('down', 2, 'the team file can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runDown(['--file', 'missing.yaml'], io, downSources());
-  expect(io.err).toContain('no team file');
-  return code;
-}));
-
-on('init', 0, 'a skeleton was written', () => hold(true, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runInit([], io, place.home);
-  expect(io.out).toContain('Wrote');
-  return code;
-}));
-
-on('init', 0, 'the approved copy was restored', () => hold(true, async (place) => {
-  const io = testIo(place.root, owner);
-  expect(await runInit([], io, place.home)).toBe(0);
-  const text = readFileSync(place.file, 'utf8');
-  const loaded = loadTeamFile(place.root);
-  if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
-  writeApproval(
-    storePath(loaded.team.project, loaded.root, place.home),
-    { approval: approvalOf(loaded.team, loaded.root, NOW), file: text },
-    loaded.team.seats,
-  );
-  rmSync(place.file);
-  const again = testIo(place.root, owner);
-  const code = await runInit(['--restore'], again, place.home);
-  expect(again.out).toContain('Restored');
-  return code;
-}));
-
-on('init', 1, 'not the owner', () => hold(true, async (place) => {
-  const io = testIo(place.root, other);
-  const code = await runInit([], io, place.home);
-  expect(io.err).toContain('only the owner runs init');
-  return code;
-}));
-
-on('init', 1, 'the team file already exists', () => hold(true, async (place) => {
+  return show(await down(place, [], owner, downSources({ sessionRunning: () => true, agents: () => [] })), 'no way to reach herdr');
+});
+scene('down.stopped', async (place) => {
   write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runInit([], io, place.home);
-  expect(io.err).toContain('exists already');
-  return code;
-}));
-
-on('init', 1, 'the team file is tracked', () => hold(true, async (place) => {
+  return show(await down(place, [], owner, downSources({
+    sessionRunning: () => true, agents: () => [], launch: downLaunch(),
+  })), 'stopped');
+});
+scene('down.held', async (place) => {
   write(place, TEAM);
-  git(place.root, 'add', '.agents/team.yaml');
+  return show(await down(place, [], owner, downSources({
+    sessionRunning: () => true,
+    agents: () => [agent('lead')],
+    launch: downLaunch({ typeText: () => false }),
+  })), 'its exit was not typed');
+});
+
+async function initial(place: Place, argv: string[], caller: Caller = owner, home = place.home): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  try {
+    return { code: await runInit(argv, io, home), out: io.out, err: io.err };
+  } catch (error) {
+    return { code: reportFailure(error, (text) => io.stderr(text)), out: io.out, err: io.err };
+  }
+}
+
+scene('init.invocation', async (place) => show(await initial(place, ['extra']), 'unexpected'));
+scene('init.not-owner', async (place) => show(await initial(place, [], other), 'only the owner'));
+scene('init.not-a-repo', async (place) => show(await initial(place, []), 'not inside a git repository'), false);
+scene('init.tracked', async (place) => {
+  write(place, TEAM);
+  git(place.root, 'add', '-f', '.agents/team.yaml');
   git(place.root, 'commit', '-q', '-m', 'track the team file');
-  const io = testIo(place.root, owner);
-  const code = await runInit([], io, place.home);
-  expect(io.err).toContain('tracked by git');
-  return code;
-}));
+  return show(await initial(place, []), 'tracked by git');
+});
+scene('init.exists', async (place) => {
+  write(place, TEAM);
+  return show(await initial(place, []), 'exists already');
+});
+scene('init.nothing', async (place) => show(await initial(place, ['--restore']), 'nothing to restore'));
+scene('init.wrote', async (place) => show(await initial(place, []), 'Wrote'));
+scene('init.restored', async (place) => {
+  approve(place, TEAM);
+  rmSync(place.file);
+  return show(await initial(place, ['--restore']), 'Restored');
+});
+scene('init.skeleton', async (place) => {
+  const root = join(place.base, 'a b');
+  mkdirSync(root);
+  git(root, 'init', '-q', '-b', 'main');
+  return show(await entry(['init'], testIo(root, owner)), "doesn't validate");
+});
+scene('init.git-silent', async (place) => {
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  const bin = join(place.base, 'bin');
+  mkdirSync(bin);
+  const saved = process.env.PATH ?? '';
+  writeFileSync(join(bin, 'git'), `#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = "-C" ]; then exit 1; fi
+done
+PATH=${JSON.stringify(saved)} exec git "$@"
+`);
+  chmodSync(join(bin, 'git'), 0o755);
+  const program = `
+    import { main, reportFailure } from ${JSON.stringify(join(repo, 'src/cli.ts'))};
+    let out = '', err = '';
+    const io = {
+      stdout(text) { out += text; }, stderr(text) { err += text; },
+      cwd: ${JSON.stringify(place.root)}, env: {}, stdinIsTTY: false, caller: { kind: 'owner' },
+    };
+    let code;
+    try { code = await main(['init'], io); }
+    catch (error) { code = reportFailure(error, (text) => { err += text; }); }
+    console.log(JSON.stringify({ code, out, err }));
+  `;
+  const proc = Bun.spawn(['bun', '-e', program], {
+    cwd: repo, env: { ...process.env, PATH: `${bin}:${saved}` }, stdout: 'pipe', stderr: 'pipe',
+  });
+  const code = await proc.exited;
+  const out = await new Response(proc.stdout).text();
+  if (code !== 0) throw new Error(await new Response(proc.stderr).text());
+  const parsed = JSON.parse(out) as Ran;
+  return show(parsed, "doesn't answer");
+});
 
-on('init', 1, 'there is nothing to restore', () => hold(true, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runInit(['--restore'], io, place.home);
-  expect(io.err).toContain('nothing to restore');
-  return code;
-}));
+async function removed(place: Place, argv: string[], caller: Caller, sources: RemoveSources): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runRemove(argv, io, sources), out: io.out, err: io.err };
+}
 
-on('init', 2, 'not inside a git repository', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runInit([], io, place.home);
-  expect(io.err).toContain('not inside a git repository');
-  return code;
-}));
-
-on('init', 2, 'the invocation can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runInit(['extra'], io, place.home);
-  expect(io.err).toContain('unexpected "extra"');
-  return code;
-}));
-
-on('remove', 0, 'the seat was removed', () => hold(true, async (place) => {
+scene('remove.invocation', async (place) => show(await removed(place, [], owner, downSources()), 'a seat name is required'));
+scene('remove.not-a-repo', async (place) => show(await removed(place, ['worker'], owner, downSources()), 'not inside a git repository'), false);
+scene('remove.file', async (place) => show(await removed(place, ['worker', '--file', 'missing.yaml'], owner, downSources()), 'no team file'));
+scene('remove.file-invalid', async (place) => {
+  invalid(place);
+  return show(await removed(place, ['worker', '--file', 'team.yaml'], owner, downSources()), 'line');
+});
+scene('remove.file-owner', async (place) => {
   write(place, TWO);
-  const io = testIo(place.root, owner);
-  const code = await runRemove(['worker'], io, downSources({ home: place.home }));
-  expect(io.out).toContain('removed worker');
-  return code;
-}));
-
-on('remove', 1, "herdr doesn't answer", () => hold(true, async (place) => {
+  return show(await removed(place, ['worker', '--file', '.agents/team.yaml'], other, downSources({ home: place.home })), "--file is the owner's");
+});
+scene('remove.caller', async (place) => {
   write(place, TWO);
-  const io = testIo(place.root, owner);
-  const code = await runRemove(['worker'], io, downSources({ sessionRunning: () => null, home: place.home }));
-  expect(io.err).toContain("doesn't answer");
-  return code;
-}));
-
-on('remove', 1, 'the caller may not change the team', () => hold(true, async (place) => {
+  return show(await removed(place, ['worker'], other, downSources({ home: place.home })), 'only the owner, the coordinator or the operator');
+});
+scene('remove.default-session', async (place) => {
   write(place, TWO);
-  const io = testIo(place.root, other);
-  const code = await runRemove(['worker'], io, downSources({ home: place.home }));
-  expect(io.err).toContain('only the owner, the coordinator or the operator');
-  return code;
-}));
-
-on('remove', 1, 'the seat is not free', () => hold(true, async (place) => {
+  return show(await removed(place, ['worker', '--session', 'default'], owner, downSources({ home: place.home })), 'can\'t be "default"');
+});
+scene('remove.abandon', async (place) => {
   write(place, TWO);
-  const io = testIo(place.root, owner);
-  const code = await runRemove(['worker'], io, downSources({
+  return show(await removed(place, ['worker', '--abandon'], leadSeat, downSources({ home: place.home })), 'only the owner abandons');
+});
+scene('remove.coordinator', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['lead'], leadSeat, downSources({ home: place.home })), 'only the owner removes the coordinator');
+});
+scene('remove.no-seat', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['missing'], owner, downSources({ home: place.home })), 'no seat "missing"');
+});
+scene('remove.keep-temporary', async (place) => {
+  write(place, TEAM);
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.seats.worker = { stage: 'ready', temporary: { like: 'lead', until: 'result:out.md' } };
+  });
+  return show(await removed(place, ['worker', '--keep'], owner, downSources({ home: place.home })), 'nothing to keep');
+});
+scene('remove.herdr', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker'], owner, downSources({ sessionRunning: () => null, home: place.home })), "doesn't answer");
+});
+scene('remove.agents', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker'], owner, downSources({ sessionRunning: () => true, agents: () => null, home: place.home })), "can't be read");
+});
+scene('remove.busy', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker'], owner, downSources({
+    sessionRunning: () => true, agents: () => [agent('worker', 'working')], screen: () => ({ kind: 'working' }), home: place.home,
+  })), 'is working');
+});
+scene('remove.no-profile', async (place) => {
+  write(place, GROK);
+  return show(await removed(place, ['worker'], owner, downSources({
+    sessionRunning: () => true, agents: () => [agent('worker')], home: place.home,
+  })), 'no launch profile');
+});
+scene('remove.edit', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['lead'], owner, downSources({ home: place.home })), 'coordinator "lead"');
+});
+scene('remove.no-launch', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker'], owner, downSources({
+    sessionRunning: () => true, agents: () => [agent('worker')], home: place.home,
+  })), 'no way to reach herdr');
+});
+scene('remove.stop-failed', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker'], owner, downSources({
     sessionRunning: () => true,
     agents: () => [agent('worker')],
-    screen: () => ({ kind: 'working' }),
     home: place.home,
-  }));
-  expect(io.err).toContain('is working');
-  return code;
-}));
-
-on('remove', 1, 'the team has no such seat', () => hold(true, async (place) => {
+    launch: downLaunch({ typeText: () => false }),
+  })), 'its exit was not typed');
+});
+scene('remove.locked', async (place) => {
   write(place, TWO);
-  const io = testIo(place.root, owner);
-  const code = await runRemove(['missing'], io, downSources({ home: place.home }));
-  expect(io.err).toContain('no seat');
-  return code;
-}));
-
-on('remove', 2, 'the edit would not validate', () => hold(true, async (place) => {
+  const swapped = `format: 1
+project: acme
+coordinator: worker
+operator: worker
+workspace:
+  mode: shared
+seats:
+  - role: coordinator
+    name: worker
+    label: worker
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+`;
+  return show(await removed(place, ['worker'], owner, downSources({
+    sessionRunning: () => true,
+    agents: () => [agent('worker')],
+    home: place.home,
+    screenText: () => claudeBox('/exit'),
+    launch: downLaunch({
+      typeText() {
+        writeFileSync(place.file, swapped);
+        return true;
+      },
+    }),
+  })), 'coordinator "worker"');
+});
+scene('remove.removed', async (place) => {
   write(place, TWO);
-  const io = testIo(place.root, owner);
-  const code = await runRemove(['lead'], io, downSources({ home: place.home }));
-  expect(io.err).toContain('coordinator');
-  return code;
-}));
-
-on('remove', 2, 'the invocation can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runRemove([], io, downSources());
-  expect(io.err).toContain('a seat name is required');
-  return code;
-}));
-
-on('remove', 2, 'the team file can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runRemove(['worker', '--file', 'missing.yaml'], io, downSources());
-  expect(io.err).toContain('no team file');
-  return code;
-}));
-
-on('status', 0, 'the file, the state and the session agree', () => hold(true, async (place) => {
+  return show(await removed(place, ['worker'], owner, downSources({ home: place.home })), 'removed worker');
+});
+scene('remove.kept', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker', '--keep'], owner, downSources({ home: place.home })), 'stopped worker');
+});
+scene('remove.temporary', async (place) => {
   write(place, TEAM);
   updateState(join(place.root, '.agents'), (state) => {
-    state.sessions.acme = { ...emptySession(), watch: { pid: 1, heartbeat: NOW.toISOString() } };
+    const session = (state.sessions.acme ??= emptySession());
+    session.seats.worker = { stage: 'ready', temporary: { like: 'lead', until: 'result:out.md' } };
   });
-  const io = testIo(place.root, owner);
-  const code = await runStatus(['--file', place.file], io, statusSources(running, []));
-  expect(io.out).toContain('0 difference');
-  return code;
-}));
-
-on('status', 1, 'there is a difference', () => hold(true, async (place) => {
-  write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runStatus(['--file', place.file], io, statusSources(running, null));
-  expect(io.out).toContain('never approved');
-  return code;
-}));
-
-on('status', 2, "herdr doesn't answer", () => hold(true, async (place) => {
-  write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runStatus(['--file', place.file], io, statusSources(null, []));
-  expect(io.err).toContain("doesn't answer");
-  return code;
-}));
-
-on('status', 2, 'the invocation can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runStatus(['extra'], io, statusSources(quiet, []));
-  expect(io.err).toContain('unexpected "extra"');
-  return code;
-}));
-
-on('status', 2, 'the team file can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runStatus(['--file', 'missing.yaml'], io, statusSources(quiet, []));
-  expect(io.err).toContain('no team file');
-  return code;
-}));
-
-on('team', 0, "a command's help was printed", async () => {
-  const io = testIo('.', owner);
-  const code = await main(['status', '--help'], io);
-  expect(io.out).toStartWith('Usage: team status');
-  return code;
+  return show(await removed(place, ['worker'], owner, downSources({ home: place.home })), 'removed temporary worker');
 });
 
-on('team', 0, 'help was printed', async () => {
-  const io = testIo('.', owner);
-  const code = await main(['--help'], io);
-  expect(io.out).toContain('Usage: team <command>');
-  return code;
-});
+async function status(place: Place, argv: string[], sources: StatusSources): Promise<Ran> {
+  const io = testIo(place.root, owner);
+  return { code: await runStatus(argv, io, sources), out: io.out, err: io.err };
+}
 
-on('team', 0, 'the version was printed', async () => {
-  const io = testIo('.', owner);
-  const code = await main(['--version'], io);
-  expect(io.out.trim()).toBe(version());
-  return code;
+scene('status.invocation', async (place) => show(await status(place, ['extra'], statusSources(quiet, [])), 'unexpected'));
+scene('status.not-a-repo', async (place) => show(await status(place, [], statusSources(quiet, [])), 'not inside a git repository'), false);
+scene('status.file', async (place) => show(await status(place, ['--file', 'missing.yaml'], statusSources(quiet, [])), 'no team file'));
+scene('status.file-invalid', async (place) => {
+  invalid(place);
+  return show(await status(place, ['--file', 'team.yaml'], statusSources(quiet, [])), 'line');
 });
-
-on('team', 1, 'a command threw', async () => {
-  let err = '';
-  const code = reportFailure(new Error('boom'), (text) => {
-    err += text;
-  });
-  expect(err).toBe('team: boom\n');
-  return code;
-});
-
-on('team', 2, 'no command was given', async () => {
-  const io = testIo('.', owner);
-  const code = await main([], io);
-  expect(io.out).toContain('Usage: team <command>');
-  return code;
-});
-
-on('team', 2, 'the command is unknown', async () => {
-  const io = testIo('.', owner);
-  const code = await main(['nosuch'], io);
-  expect(io.err).toContain('unknown command "nosuch"');
-  return code;
-});
-
-on('up', 0, 'a dry run printed the plan', () => hold(true, async (place) => {
+scene('status.herdr', async (place) => {
   write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runUp(['--dry-run', '--file', place.file], io, upSources(place));
-  expect(io.out).toContain('dry run: nothing was run');
-  return code;
-}));
-
-on('up', 1, 'the run was refused', () => hold(true, async (place) => {
-  write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runUp(['--file', place.file], io, upSources(place));
-  expect(io.err).toContain('never approved');
-  return code;
-}));
-
-on('up', 1, 'this call has no way to reach herdr', () => hold(true, async (place) => {
-  approve(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runUp(['--file', place.file], io, upSources(place));
-  expect(io.err).toContain('no way to reach herdr');
-  return code;
-}));
-
-on('up', 2, 'the invocation can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runUp(['extra'], io, upSources(place));
-  expect(io.err).toContain('unexpected "extra"');
-  return code;
-}));
-
-on('up', 2, 'the team file can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runUp(['--file', 'missing.yaml'], io, upSources(place));
-  expect(io.err).toContain('no team file');
-  return code;
-}));
-
-on('watch', 0, 'the watch ran and stopped', () => hold(true, async (place) => {
-  write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runWatch(['--file', place.file], io, watchSources());
-  expect(io.out).toContain('stopped');
-  return code;
-}));
-
-on('watch', 1, 'a seat passed --no-nudge', () => hold(true, async (place) => {
-  write(place, TEAM);
-  const io = testIo(place.root, other);
-  const code = await runWatch(['--no-nudge', '--file', place.file], io, watchSources());
-  expect(io.err).toContain("--no-nudge and --no-notify are the owner's");
-  return code;
-}));
-
-on('watch', 1, 'a watch already runs', () => hold(true, async (place) => {
+  return show(await status(place, [], statusSources(null, [])), "doesn't answer");
+});
+scene('status.agrees', async (place) => {
   write(place, TEAM);
   updateState(join(place.root, '.agents'), (state) => {
-    state.sessions.acme = { ...emptySession(), watch: { pid: 99, heartbeat: NOW.toISOString() } };
+    const session = (state.sessions.acme ??= emptySession());
+    session.watch = { pid: 1, heartbeat: NOW.toISOString() };
+    session.seats.lead = { stage: 'ready', pane: 'w1:p1', workspace: 'w1' };
   });
-  const io = testIo(place.root, owner);
-  const code = await runWatch(['--file', place.file], io, watchSources({ alive: (pid) => pid === 99 }));
-  expect(io.err).toContain('already runs');
-  return code;
-}));
-
-on('watch', 2, 'the invocation can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runWatch(['extra'], io, watchSources());
-  expect(io.err).toContain('unexpected "extra"');
-  return code;
-}));
-
-on('watch', 2, 'the team file can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runWatch(['--file', 'missing.yaml'], io, watchSources());
-  expect(io.err).toContain('no team file');
-  return code;
-}));
-
-on('worktree', 0, 'the worktree was created', () => hold(false, async (place) => {
-  const remote = join(place.base, 'remote.git');
-  git(place.base, 'init', '-q', '--bare', '-b', 'main', remote);
-  git(place.root, 'init', '-q', '-b', 'main');
-  git(place.root, 'config', 'user.name', 'Test');
-  git(place.root, 'config', 'user.email', 'test@example.com');
-  writeFileSync(join(place.root, 'README.md'), 'acme\n');
-  git(place.root, 'add', 'README.md');
-  git(place.root, 'commit', '-q', '-m', 'first');
-  git(place.root, 'remote', 'add', 'origin', remote);
-  git(place.root, 'push', '-q', '-u', 'origin', 'main');
-  approve(place, WORKTREE);
-  const io = testIo(place.root, owner);
-  const code = await runWorktree(['new', 'select-width', '--kind', 'fix'], io, worktreeSources(place));
-  expect(io.out).toContain('select-width');
-  return code;
-}));
-
-on('worktree', 1, 'the caller may not change the team', () => hold(true, async (place) => {
+  const matched: Live = {
+    running: true,
+    agents: [agent('lead')],
+    workspaces: [{ id: 'w1', label: 'lead' }],
+    screens: {},
+  };
+  return show(await status(place, [], statusSources(matched, [])), '0 difference');
+});
+scene('status.difference', async (place) => {
   write(place, TEAM);
-  const io = testIo(place.root, other);
-  const code = await runWorktree(['new', 'task'], io, worktreeSources(place));
-  expect(io.err).toContain('only the owner, the coordinator or the operator');
-  return code;
-}));
+  return show(await status(place, [], statusSources(quiet, [])), 'is in the file and is not running');
+});
 
-on('worktree', 1, 'the file was never approved', () => hold(true, async (place) => {
-  write(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runWorktree(['new', 'task'], io, worktreeSources(place));
-  expect(io.err).toContain('never approved');
-  return code;
-}));
+async function up(place: Place, argv: string[], caller: Caller, sources: UpSources): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runUp(argv, io, sources), out: io.out, err: io.err };
+}
 
-on('worktree', 1, 'the workspace is shared', () => hold(true, async (place) => {
+scene('up.invocation', async (place) => show(await up(place, ['extra'], owner, upSources(place)), 'unexpected'));
+scene('up.not-a-repo', async (place) => show(await up(place, [], owner, upSources(place)), 'not inside a git repository'), false);
+scene('up.file', async (place) => show(await up(place, ['--file', 'missing.yaml'], owner, upSources(place)), 'no team file'));
+scene('up.file-invalid', async (place) => {
+  invalid(place);
+  return show(await up(place, ['--file', 'team.yaml'], owner, upSources(place)), 'line');
+});
+scene('up.dry-run', async (place) => {
   approve(place, TEAM);
-  const io = testIo(place.root, owner);
-  const code = await runWorktree(['new', 'task'], io, worktreeSources(place));
-  expect(io.err).toContain('shared');
-  return code;
-}));
+  return show(await up(place, ['--dry-run', '--file', place.file], owner, upSources(place)), 'dry run: nothing was run');
+});
+scene('up.not-owner', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], other, upSources(place)), 'only the owner runs');
+});
+scene('up.never-approved', async (place) => {
+  write(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place)), 'never approved');
+});
+scene('up.differs', async (place) => {
+  approve(place, TEAM);
+  write(place, TEAM.replace('label: lead', 'label: renamed'));
+  return show(await up(place, ['--file', place.file], owner, upSources(place)), 'not the approved one');
+});
+scene('up.doctor', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { doctor: doctor(place.home, { version: () => null }) })), 'install');
+});
+scene('up.machine', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { machine: () => hot })), 'the load is 9.0');
+});
+scene('up.herdr', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { sessionRunning: () => null })), "doesn't answer");
+});
+scene('up.stopped', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { sessionState: () => 'stopped' })), 'is stopped');
+});
+scene('up.agents', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { sessionState: () => 'running', agents: () => null })), "can't be read");
+});
+scene('up.unknown', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, {
+    sessionState: () => 'running', agents: () => [agent('stranger')],
+  })), "doesn't record");
+});
+scene('up.placement', async (place) => {
+  approve(place, NARROW);
+  return show(await up(place, ['--file', place.file], owner, upSources(place)), 'matches no trust');
+});
+scene('up.no-launch', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place)), 'no way to reach herdr');
+});
+scene('up.ready', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching(IDLE) })), 'ready');
+});
+scene('up.pending', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching('') })), 'timed out');
+});
+scene('up.server', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching(IDLE, () => true, false) })), 'its server did not start');
+});
+scene('up.watch', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, {
+    launch: launching(IDLE, (command) => !command.includes(' watch')),
+  })), 'watch: it did not start');
+});
 
-on('worktree', 2, 'the invocation can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runWorktree([], io, worktreeSources(place));
-  expect(io.err).toContain('a subcommand is required');
-  return code;
-}));
+async function watched(place: Place, argv: string[], caller: Caller, sources: WatchSources = watchSources()): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runWatch(argv, io, sources), out: io.out, err: io.err };
+}
 
-on('worktree', 2, 'the team file can\'t be read', () => hold(false, async (place) => {
-  const io = testIo(place.root, owner);
-  const code = await runWorktree(['new', 'task', '--file', 'missing.yaml'], io, worktreeSources(place));
-  expect(io.err).toContain('no team file');
-  return code;
-}));
+scene('watch.invocation', async (place) => show(await watched(place, ['extra'], owner), 'unexpected'));
+scene('watch.not-a-repo', async (place) => show(await watched(place, [], owner), 'not inside a git repository'), false);
+scene('watch.file', async (place) => show(await watched(place, ['--file', 'missing.yaml'], owner), 'no team file'));
+scene('watch.file-invalid', async (place) => {
+  invalid(place);
+  return show(await watched(place, ['--file', 'team.yaml'], owner), 'line');
+});
+scene('watch.no-nudge', async (place) => {
+  write(place, TEAM);
+  return show(await watched(place, ['--no-nudge'], other), '--no-nudge');
+});
+scene('watch.no-notify', async (place) => {
+  write(place, TEAM);
+  return show(await watched(place, ['--no-notify'], other), '--no-notify');
+});
+scene('watch.already', async (place) => {
+  write(place, TEAM);
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.watch = { pid: 99, heartbeat: NOW.toISOString() };
+  });
+  return show(await watched(place, [], owner, watchSources({ alive: (pid) => pid === 99 })), 'already runs');
+});
+scene('watch.stopped', async (place) => {
+  write(place, TEAM);
+  return show(await watched(place, [], owner), 'stopped');
+});
+
+async function worktree(place: Place, argv: string[], caller: Caller = owner): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runWorktree(argv, io, worktreeSources(place)), out: io.out, err: io.err };
+}
+
+scene('worktree.invocation', async (place) => show(await worktree(place, ['--nope']), 'unknown option'));
+scene('worktree.subcommand', async (place) => show(await worktree(place, []), 'a subcommand is required'));
+scene('worktree.task-required', async (place) => show(await worktree(place, ['new']), 'a task name is required'));
+scene('worktree.extra', async (place) => show(await worktree(place, ['new', 'task', 'extra']), 'unexpected'));
+scene('worktree.remove-flags', async (place) => show(await worktree(place, ['remove', 'task', '--kind', 'fix']), 'remove takes no'));
+scene('worktree.not-a-repo', async (place) => show(await worktree(place, ['new', 'task']), 'not inside a git repository'), false);
+scene('worktree.file', async (place) => show(await worktree(place, ['new', 'task', '--file', 'missing.yaml']), 'no team file'));
+scene('worktree.file-invalid', async (place) => {
+  invalid(place);
+  return show(await worktree(place, ['new', 'task', '--file', 'team.yaml']), 'line');
+});
+scene('worktree.file-owner', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task', '--file', '.agents/team.yaml'], other), "--file is the owner's");
+});
+scene('worktree.caller', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task'], other), 'only the owner, the coordinator or the operator');
+});
+scene('worktree.default-session', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task', '--session', 'default']), 'can\'t be "default"');
+});
+scene('worktree.never-approved', async (place) => {
+  write(place, worktreeText());
+  return show(await worktree(place, ['new', 'task']), 'never approved');
+});
+scene('worktree.differs', async (place) => {
+  approve(place, worktreeText());
+  write(place, worktreeText({ limit: 4 }));
+  return show(await worktree(place, ['new', 'task']), 'not the approved one');
+});
+scene('worktree.task', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', '../task']), 'one segment');
+});
+scene('worktree.kind', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task', '--kind', '../fix']), '--kind:');
+});
+scene('worktree.shared', async (place) => {
+  approve(place, worktreeText({ mode: 'shared' }));
+  return show(await worktree(place, ['new', 'task']), 'workspace.mode is shared');
+});
+scene('worktree.config', async (place) => {
+  approve(place, worktreeText({ path: null, base: null, sharedSeat: true }));
+  return show(await worktree(place, ['new', 'task']), 'workspace.path and workspace.base are required');
+});
+scene('worktree.path-kind', async (place) => {
+  approve(place, worktreeText({ path: '../worktrees/{repo}/{kind}/{task}' }));
+  return show(await worktree(place, ['new', 'task']), 'fills {repo} and {task} only');
+});
+scene('worktree.kind-required', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task']), '--kind is required');
+});
+scene('worktree.kind-nowhere', async (place) => {
+  approve(place, worktreeText({ branch: '{task}' }));
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'nowhere to go');
+});
+scene('worktree.placeholder', async (place) => {
+  approve(place, worktreeText({ branch: '{nope}' }));
+  return show(await worktree(place, ['new', 'task']), 'placeholder');
+});
+scene('worktree.forbidden', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'WEB-1', '--kind', 'fix']), 'forbidden_public');
+});
+scene('worktree.trust', async (place) => {
+  approve(place, worktreeText({ trust: '../worktrees/acme/task' }));
+  return show(await worktree(place, ['new', 'select-width', '--kind', 'fix']), 'outside the approved trust');
+});
+scene('worktree.symlink', async (place) => {
+  approve(place, worktreeText());
+  const escaped = join(place.base, 'escaped');
+  mkdirSync(escaped);
+  symlinkSync(escaped, join(place.base, 'worktrees'));
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'symlink');
+});
+scene('worktree.seat', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix', '--seat', 'missing']), 'names no declared seat');
+});
+scene('worktree.limit', async (place) => {
+  approve(place, worktreeText({ limit: 1 }));
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.worktrees.other = { path: '../worktrees/acme/other', branch: 'fix/other', setup: 'ok' };
+  });
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'worktree limit is 1');
+});
+scene('worktree.recorded', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'already recorded');
+});
+scene('worktree.recorded-elsewhere', async (place) => {
+  approve(place, worktreeText());
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.other ??= emptySession());
+    session.worktrees.task = { path: '../worktrees/acme/task', branch: 'fix/task', setup: 'ok' };
+  });
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'already recorded in session');
+});
+scene('worktree.exists', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  mkdirSync(join(place.base, 'worktrees', 'acme', 'task'), { recursive: true });
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'already exists');
+});
+scene('worktree.branch', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  git(place.root, 'branch', 'fix/task', 'main');
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'branch fix/task already exists');
+});
+scene('worktree.published', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  git(place.root, 'push', '-q', 'origin', 'main:fix/task');
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'already exists');
+});
+scene('worktree.branch-name', async (place) => {
+  publish(place);
+  approve(place, worktreeText({ branch: '{kind}/{task}.lock' }));
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'is not a branch name');
+});
+scene('worktree.base', async (place) => {
+  publish(place);
+  approve(place, worktreeText({ base: 'nosuch' }));
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'is not a branch here');
+});
+scene('worktree.tracking', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  git(place.root, 'branch', 'side', 'main');
+  git(place.root, 'branch', '--set-upstream-to', 'side', 'main');
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), "isn't a remote branch");
+});
+scene('worktree.fetch', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  git(place.root, 'remote', 'set-url', 'origin', join(place.base, 'missing.git'));
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), "couldn't fetch");
+});
+scene('worktree.create-failed', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  const parent = join(place.base, 'worktrees', 'acme');
+  mkdirSync(parent, { recursive: true });
+  chmodSync(parent, 0o555);
+  try {
+    return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'was not created');
+  } finally {
+    chmodSync(parent, 0o755);
+  }
+});
+scene('worktree.setup', async (place) => {
+  publish(place);
+  approve(place, worktreeText({ setup: '  setup:\n    - "false"\n' }));
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'setup failed');
+});
+scene('worktree.created', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), '../worktrees/acme/task');
+});
+scene('worktree.remove-task', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['remove', '../task']), 'one segment');
+});
+scene('worktree.missing', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['remove', 'task']), 'no worktree named');
+});
+scene('worktree.elsewhere', async (place) => {
+  approve(place, worktreeText());
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.other ??= emptySession());
+    session.worktrees.task = { path: '../worktrees/acme/task', branch: 'fix/task', setup: 'ok' };
+  });
+  return show(await worktree(place, ['remove', 'task']), 'not in acme');
+});
+scene('worktree.occupied', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.seats['lead-tmp-1'] = { stage: 'ready', temporary: { like: 'lead', until: 'merged:fix/task', task: 'task' } };
+  });
+  return show(await worktree(place, ['remove', 'task']), 'lead-tmp-1');
+});
+scene('worktree.unreadable', async (place) => {
+  approve(place, worktreeText());
+  const plain = join(place.base, 'plain');
+  mkdirSync(plain);
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.worktrees.task = { path: '../plain', branch: 'fix/task', setup: 'ok' };
+  });
+  return show(await worktree(place, ['remove', 'task']), "couldn't read");
+});
+scene('worktree.dirty', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  writeFileSync(join(place.base, 'worktrees', 'acme', 'task', 'README.md'), 'changed\n');
+  return show(await worktree(place, ['remove', 'task']), 'README.md');
+});
+scene('worktree.unpublished', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  const folder = join(place.base, 'worktrees', 'acme', 'task');
+  writeFileSync(join(folder, 'README.md'), 'committed\n');
+  git(folder, 'add', 'README.md');
+  git(folder, 'commit', '-q', '-m', 'local only');
+  return show(await worktree(place, ['remove', 'task']), 'local only');
+});
+scene('worktree.remove-failed', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  const folder = join(place.base, 'worktrees', 'acme', 'task');
+  git(place.root, 'worktree', 'lock', folder);
+  return show(await worktree(place, ['remove', 'task']), 'was not removed');
+});
+scene('worktree.record-gone', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  rmSync(join(place.base, 'worktrees', 'acme', 'task'), { recursive: true, force: true });
+  return show(await worktree(place, ['remove', 'task']), 'already gone');
+});
+scene('worktree.removed', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  return show(await worktree(place, ['remove', 'task']), 'the branch fix/task is kept');
+});
+
+scene('team.help', async (place) => show(await entry(['--help'], testIo(place.root, owner)), 'Usage:'));
+scene('team.no-command', async (place) => show(await entry([], testIo(place.root, owner)), 'Usage:'));
+scene('team.version', async (place) => show(await entry(['--version'], testIo(place.root, owner)), version()));
+scene('team.unknown', async (place) => show(await entry(['nosuch'], testIo(place.root, owner)), 'unknown command'));
+scene('team.command-help', async (place) => show(await entry(['status', '--help'], testIo(place.root, owner)), 'Usage: team status'));
+scene('team.command-threw', async (place) => {
+  const root = join(place.base, 'a b');
+  mkdirSync(root);
+  git(root, 'init', '-q', '-b', 'main');
+  return show(await entry(['init'], testIo(root, owner)), 'team:');
+});
+
+// These returns are reached when a second validation disagrees with the first. The stand-in is
+// the same idea as a fake herdr: the command runs, and only that later check is made to fail.
+const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed']);
 
 const contract = loadContract();
+for (const row of contract.rows) {
+  if (defensive.has(row.id)) continue;
+  test(row.id, async () => {
+    const run = scenes.get(row.id);
+    expect(run, row.id).toBeDefined();
+    const place = layout(!bare.has(row.id));
+    try {
+      const result = await run!(place);
+      expect(result.code).toBe(row.code);
+    } finally {
+      rmSync(place.base, { recursive: true, force: true });
+    }
+  });
+}
 
-test('the exit-code contract matches the commands and the page', () => {
+test('every listed outcome has a run', () => {
+  const ids = contract.rows.map((row) => row.id);
+  expect(ids.filter((id) => !scenes.has(id) && !defensive.has(id))).toEqual([]);
+  expect(scenes.size + defensive.size).toBe(ids.length);
+});
+
+test('the exit-code check is clean', () => {
   expect(problems()).toEqual([]);
 });
 
-test('a return the contract does not list fails the check', () => {
-  const source = readFileSync(new URL('../src/commands/doctor.ts', import.meta.url), 'utf8');
-  expect(uncovered('doctor', source, contract.rows)).toEqual([]);
-  expect(codesOf(`${source}\nexport function added(): number {\n  return 9;\n}\n`)).toContain(9);
-  expect(uncovered('doctor', `${source}\nexport function added(): number {\n  return 9;\n}\n`, contract.rows)).toEqual([9]);
+test('a new return that reuses a code fails the check', () => {
+  const text = readFileSync(new URL('../src/commands/doctor.ts', import.meta.url), 'utf8');
+  const next = text.replace('return missing ? 1 : 0;\n}', 'return missing ? 1 : 0;\n  return 1;\n}');
+  const found = problems({ files: new Map([['src/commands/doctor.ts', next]]) });
+  expect(found.some((line) => line.includes('src/commands/doctor.ts') && line.includes('exit site has no row'))).toBe(true);
 });
 
-test('the page is generated from the contract', () => {
-  const page = readFileSync(new URL('../docs/reference/exit-codes.md', import.meta.url), 'utf8');
-  expect(render(contract.rows)).toBe(page);
-  const changed = contract.rows.map((row, index) => (index === 0 ? { ...row, meaning: 'changed on purpose' } : row));
-  expect(render(changed)).not.toBe(page);
-});
-
-for (const row of contract.rows) {
-  test(`${row.command} exits ${row.code}: ${row.meaning}`, async () => {
-    const run = triggers.get(`${row.command}\t${row.code}\t${row.meaning}`);
-    expect(run, `${row.command} ${row.code} ${row.meaning}`).toBeFunction();
-    expect(await run!()).toBe(row.code);
-  });
+function canon(rows: readonly ExitRow[]): string {
+  const sorted = [...rows].sort((a, b) => a.command.localeCompare(b.command) || a.code - b.code || a.id.localeCompare(b.id));
+  return `${JSON.stringify({
+    format: 1,
+    rows: sorted.map((row) => ({ code: row.code, command: row.command, id: row.id, meaning: row.meaning, trigger: row.trigger })),
+  }, null, 2)}\n`;
 }
+
+test('removing a row fails the check', () => {
+  const rows = contract.rows.filter((row) => row.id !== 'doctor.clear');
+  const found = problems({ contractText: canon(rows), page: render(rows) });
+  expect(found.some((line) => line.includes('doctor.clear') && line.includes('no contract row'))).toBe(true);
+});
+
+test('changing a returned code fails the check', () => {
+  const text = readFileSync(new URL('../src/commands/doctor.ts', import.meta.url), 'utf8');
+  const next = text.replace('return missing ? 1 : 0;', 'return missing ? 3 : 0;');
+  const found = problems({ files: new Map([['src/commands/doctor.ts', next]]) });
+  expect(found.some((line) => line.includes('src/commands/doctor.ts') && line.includes('3'))).toBe(true);
+});
