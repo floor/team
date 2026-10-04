@@ -1,0 +1,467 @@
+{
+  "format": 1,
+  "rows": [
+    {
+      "code": 0,
+      "command": "add",
+      "meaning": "a dry run printed the plan",
+      "trigger": "team add worker --dry-run"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "meaning": "herdr doesn't answer",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "meaning": "the caller may not change the team",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "meaning": "the file was never approved",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "meaning": "the session can't be \"default\"",
+      "trigger": "team add worker --session default"
+    },
+    {
+      "code": 2,
+      "command": "add",
+      "meaning": "the invocation can't be read",
+      "trigger": "team add"
+    },
+    {
+      "code": 2,
+      "command": "add",
+      "meaning": "the team file can't be read",
+      "trigger": "team add worker --file missing.yaml"
+    },
+    {
+      "code": 0,
+      "command": "approve",
+      "meaning": "the comparison was printed",
+      "trigger": "team approve --show"
+    },
+    {
+      "code": 0,
+      "command": "approve",
+      "meaning": "the owner approved the file",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "meaning": "a seat ran it",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "meaning": "the answer was not the number of seats",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "meaning": "the approval store sits where seats work",
+      "trigger": "team approve"
+    },
+    {
+      "code": 2,
+      "command": "approve",
+      "meaning": "the invocation can't be read",
+      "trigger": "team approve extra"
+    },
+    {
+      "code": 2,
+      "command": "approve",
+      "meaning": "the overrides file can't be parsed",
+      "trigger": "team approve"
+    },
+    {
+      "code": 2,
+      "command": "approve",
+      "meaning": "the team file can't be read",
+      "trigger": "team approve --file missing.yaml"
+    },
+    {
+      "code": 0,
+      "command": "check",
+      "meaning": "every commit passed",
+      "trigger": "team check HEAD"
+    },
+    {
+      "code": 1,
+      "command": "check",
+      "meaning": "a commit was refused",
+      "trigger": "team check HEAD"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "meaning": "the invocation can't be read",
+      "trigger": "team check"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "meaning": "the pull request body can't be read",
+      "trigger": "team check HEAD --pr missing.md"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "meaning": "the ref names nothing",
+      "trigger": "team check not-a-ref"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "meaning": "the team file can't be read",
+      "trigger": "team check HEAD"
+    },
+    {
+      "code": 0,
+      "command": "conformance-adapter",
+      "meaning": "the protocol finished",
+      "trigger": "team conformance-adapter"
+    },
+    {
+      "code": 0,
+      "command": "doctor",
+      "meaning": "nothing is missing",
+      "trigger": "team doctor"
+    },
+    {
+      "code": 1,
+      "command": "doctor",
+      "meaning": "something is missing",
+      "trigger": "team doctor"
+    },
+    {
+      "code": 2,
+      "command": "doctor",
+      "meaning": "the invocation can't be read",
+      "trigger": "team doctor extra"
+    },
+    {
+      "code": 2,
+      "command": "doctor",
+      "meaning": "the team file can't be read",
+      "trigger": "team doctor --file missing.yaml"
+    },
+    {
+      "code": 0,
+      "command": "down",
+      "meaning": "a dry run printed the plan",
+      "trigger": "team down --dry-run"
+    },
+    {
+      "code": 0,
+      "command": "down",
+      "meaning": "there was nothing to stop",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "meaning": "the run was refused",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "meaning": "this call has no way to reach herdr",
+      "trigger": "team down"
+    },
+    {
+      "code": 2,
+      "command": "down",
+      "meaning": "herdr doesn't answer",
+      "trigger": "team down"
+    },
+    {
+      "code": 2,
+      "command": "down",
+      "meaning": "the agents can't be read",
+      "trigger": "team down"
+    },
+    {
+      "code": 2,
+      "command": "down",
+      "meaning": "the invocation can't be read",
+      "trigger": "team down extra"
+    },
+    {
+      "code": 2,
+      "command": "down",
+      "meaning": "the team file can't be read",
+      "trigger": "team down --file missing.yaml"
+    },
+    {
+      "code": 0,
+      "command": "init",
+      "meaning": "a skeleton was written",
+      "trigger": "team init"
+    },
+    {
+      "code": 0,
+      "command": "init",
+      "meaning": "the approved copy was restored",
+      "trigger": "team init --restore"
+    },
+    {
+      "code": 1,
+      "command": "init",
+      "meaning": "not the owner",
+      "trigger": "team init"
+    },
+    {
+      "code": 1,
+      "command": "init",
+      "meaning": "the team file already exists",
+      "trigger": "team init"
+    },
+    {
+      "code": 1,
+      "command": "init",
+      "meaning": "the team file is tracked",
+      "trigger": "team init"
+    },
+    {
+      "code": 1,
+      "command": "init",
+      "meaning": "there is nothing to restore",
+      "trigger": "team init --restore"
+    },
+    {
+      "code": 2,
+      "command": "init",
+      "meaning": "not inside a git repository",
+      "trigger": "team init"
+    },
+    {
+      "code": 2,
+      "command": "init",
+      "meaning": "the invocation can't be read",
+      "trigger": "team init extra"
+    },
+    {
+      "code": 0,
+      "command": "remove",
+      "meaning": "the seat was removed",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "meaning": "herdr doesn't answer",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "meaning": "the caller may not change the team",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "meaning": "the seat is not free",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "meaning": "the team has no such seat",
+      "trigger": "team remove missing"
+    },
+    {
+      "code": 2,
+      "command": "remove",
+      "meaning": "the edit would not validate",
+      "trigger": "team remove lead"
+    },
+    {
+      "code": 2,
+      "command": "remove",
+      "meaning": "the invocation can't be read",
+      "trigger": "team remove"
+    },
+    {
+      "code": 2,
+      "command": "remove",
+      "meaning": "the team file can't be read",
+      "trigger": "team remove worker --file missing.yaml"
+    },
+    {
+      "code": 0,
+      "command": "status",
+      "meaning": "the file, the state and the session agree",
+      "trigger": "team status"
+    },
+    {
+      "code": 1,
+      "command": "status",
+      "meaning": "there is a difference",
+      "trigger": "team status"
+    },
+    {
+      "code": 2,
+      "command": "status",
+      "meaning": "herdr doesn't answer",
+      "trigger": "team status"
+    },
+    {
+      "code": 2,
+      "command": "status",
+      "meaning": "the invocation can't be read",
+      "trigger": "team status extra"
+    },
+    {
+      "code": 2,
+      "command": "status",
+      "meaning": "the team file can't be read",
+      "trigger": "team status --file missing.yaml"
+    },
+    {
+      "code": 0,
+      "command": "team",
+      "meaning": "a command's help was printed",
+      "trigger": "team status --help"
+    },
+    {
+      "code": 0,
+      "command": "team",
+      "meaning": "help was printed",
+      "trigger": "team --help"
+    },
+    {
+      "code": 0,
+      "command": "team",
+      "meaning": "the version was printed",
+      "trigger": "team --version"
+    },
+    {
+      "code": 1,
+      "command": "team",
+      "meaning": "a command threw",
+      "trigger": "team"
+    },
+    {
+      "code": 2,
+      "command": "team",
+      "meaning": "no command was given",
+      "trigger": "team"
+    },
+    {
+      "code": 2,
+      "command": "team",
+      "meaning": "the command is unknown",
+      "trigger": "team nosuch"
+    },
+    {
+      "code": 0,
+      "command": "up",
+      "meaning": "a dry run printed the plan",
+      "trigger": "team up --dry-run"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "meaning": "the run was refused",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "meaning": "this call has no way to reach herdr",
+      "trigger": "team up"
+    },
+    {
+      "code": 2,
+      "command": "up",
+      "meaning": "the invocation can't be read",
+      "trigger": "team up extra"
+    },
+    {
+      "code": 2,
+      "command": "up",
+      "meaning": "the team file can't be read",
+      "trigger": "team up --file missing.yaml"
+    },
+    {
+      "code": 0,
+      "command": "watch",
+      "meaning": "the watch ran and stopped",
+      "trigger": "team watch"
+    },
+    {
+      "code": 1,
+      "command": "watch",
+      "meaning": "a seat passed --no-nudge",
+      "trigger": "team watch --no-nudge"
+    },
+    {
+      "code": 1,
+      "command": "watch",
+      "meaning": "a watch already runs",
+      "trigger": "team watch"
+    },
+    {
+      "code": 2,
+      "command": "watch",
+      "meaning": "the invocation can't be read",
+      "trigger": "team watch extra"
+    },
+    {
+      "code": 2,
+      "command": "watch",
+      "meaning": "the team file can't be read",
+      "trigger": "team watch --file missing.yaml"
+    },
+    {
+      "code": 0,
+      "command": "worktree",
+      "meaning": "the worktree was created",
+      "trigger": "team worktree new select-width --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "meaning": "the caller may not change the team",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "meaning": "the file was never approved",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "meaning": "the workspace is shared",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 2,
+      "command": "worktree",
+      "meaning": "the invocation can't be read",
+      "trigger": "team worktree"
+    },
+    {
+      "code": 2,
+      "command": "worktree",
+      "meaning": "the team file can't be read",
+      "trigger": "team worktree new task --file missing.yaml"
+    }
+  ]
+}

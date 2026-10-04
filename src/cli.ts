@@ -38,6 +38,12 @@ export function version(): string {
   return (JSON.parse(text) as { version: string }).version;
 }
 
+/** What the process entry point does when a command throws: one line on stderr, exit code 1. */
+export function reportFailure(error: unknown, stderr: (text: string) => void): number {
+  stderr(`team: ${error instanceof Error ? error.message : String(error)}\n`);
+  return 1;
+}
+
 export async function main(argv: string[], io: Io): Promise<number> {
   const [name, ...rest] = argv;
   const names = Object.keys(commands);
@@ -84,8 +90,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
   main(process.argv.slice(2), processIo()).then(
     (code) => { process.exitCode = code; },
     (error: unknown) => {
-      process.stderr.write(`team: ${error instanceof Error ? error.message : String(error)}\n`);
-      process.exitCode = 1;
+      process.exitCode = reportFailure(error, (text) => {
+        process.stderr.write(text);
+      });
     },
   );
 }
