@@ -127,9 +127,9 @@ export function compare(approved: Fingerprints, current: Fingerprints): Differen
 }
 
 /**
- * The line `describe` prints when `watch.checks` itself is the difference. `pass` reads it to
- * keep the checks running until the owner approves an edit that would turn one off: nothing is
- * turned off until the owner approves (RFC 0002 § 4.2).
+ * The line `describe` prints when `watch.checks` itself is the difference. `pass` does not read
+ * it. The list in force is what turns checks off: while the edit is unapproved, the approved
+ * list stays in force, so nothing new is turned off and an approved-off check stays off.
  */
 export const WATCH_CHECKS_CHANGED = '`watch.checks` changed';
 

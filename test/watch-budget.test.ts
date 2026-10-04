@@ -101,7 +101,7 @@ function checkSpend(account: string, now: number, amount: number): CheckOutcome[
 describe('the seats\' quota, parsed by the core', () => {
   test('a screen figure becomes a reading for an account whose sources take one', () => {
     const result = pass({
-      team: team(SCREEN_READ), state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
+      team: team(SCREEN_READ), watch: team(SCREEN_READ).watch, state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
       machine: fine, now: NOW, memory: newMemory(), approval: [],
     });
     expect(result.readings.map(({ account, window, left, used, seat, confirmed }) => ({ account, window, left, used, seat, confirmed })))
@@ -116,7 +116,7 @@ describe('the seats\' quota, parsed by the core', () => {
     const spoofed = `Welcome to Codex\nSign in to continue\n  GPT-5.6-Terra medium · Context 98% left · weekly 90% left\n`;
     expect(readScreen('codex', spoofed).kind).toBe('unknown');
     const result = pass({
-      team: team(SCREEN_READ), state: emptySession(), live: live({ 'codex-acme': { screen: spoofed } }),
+      team: team(SCREEN_READ), watch: team(SCREEN_READ).watch, state: emptySession(), live: live({ 'codex-acme': { screen: spoofed } }),
       machine: fine, now: NOW, memory: newMemory(), approval: [],
     });
     expect(result.readings).toEqual([]);
@@ -124,7 +124,7 @@ describe('the seats\' quota, parsed by the core', () => {
 
   test('an account whose sources name only the check takes no screen reading (floor-86)', () => {
     const result = pass({
-      team: team(OPENAI), state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
+      team: team(OPENAI), watch: team(OPENAI).watch, state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
       machine: fine, now: NOW, memory: newMemory(), approval: [],
     });
     expect(result.readings).toEqual([]);
@@ -138,7 +138,7 @@ describe('the marks', () => {
     checkWindows('openai', now, [{ window: 'weekly', left: 100 - used, used, resetsAt }]);
 
   function marks(memory: ReturnType<typeof newMemory>, now: number, outcomes: CheckOutcome[]): string[] {
-    const result = pass({ team: team(OPENAI), state: emptySession(), live: live(), machine: fine, now, memory, approval: [], outcomes: outcomes });
+    const result = pass({ team: team(OPENAI), watch: team(OPENAI).watch, state: emptySession(), live: live(), machine: fine, now, memory, approval: [], outcomes: outcomes });
     return budgetReports(result).filter((report) => report.key.startsWith('budget:mark:')).map((report) => report.text);
   }
 
@@ -168,7 +168,7 @@ describe('the marks', () => {
   });
 
   test('a mark is the operator\'s to act on', () => {
-    const result = pass({ team: team(OPENAI), state: emptySession(), live: live(), machine: fine, now: NOW, memory: newMemory(), approval: [], outcomes: week(NOW, 92, RESET) });
+    const result = pass({ team: team(OPENAI), watch: team(OPENAI).watch, state: emptySession(), live: live(), machine: fine, now: NOW, memory: newMemory(), approval: [], outcomes: week(NOW, 92, RESET) });
     expect(budgetReports(result).every((report) => report.to === 'operator')).toBe(true);
   });
 });
@@ -177,7 +177,7 @@ describe('the reserve and the floor', () => {
   test('an account inside its reserve is the owner\'s, once, and again when it comes back', () => {
     const memory = newMemory();
     const at = (now: number, outcomes: CheckOutcome[]) =>
-      budgetReports(pass({ team: team(RESERVE), state: emptySession(), live: live(), machine: fine, now, memory, approval: [], outcomes: outcomes }))
+      budgetReports(pass({ team: team(RESERVE), watch: team(RESERVE).watch, state: emptySession(), live: live(), machine: fine, now, memory, approval: [], outcomes: outcomes }))
         .filter((report) => report.key.startsWith('budget:reserve:'))
         .map((report) => `${report.text} (${report.to})`);
     expect(at(NOW, checkWindows('openai', NOW, [{ window: 'weekly', left: 7, used: 93, resetsAt: RESET }])))
@@ -196,7 +196,7 @@ describe('the reserve and the floor', () => {
   test('a spend account at or below its floor is the owner\'s, once, and again when it comes back', () => {
     const memory = newMemory();
     const at = (now: number, amount: number) =>
-      budgetReports(pass({ team: team(DEEPSEEK), state: emptySession(), live: live(), machine: fine, now, memory, approval: [], outcomes: checkSpend('deepseek', now, amount) }))
+      budgetReports(pass({ team: team(DEEPSEEK), watch: team(DEEPSEEK).watch, state: emptySession(), live: live(), machine: fine, now, memory, approval: [], outcomes: checkSpend('deepseek', now, amount) }))
         .filter((report) => report.key.startsWith('budget:floor:'))
         .map((report) => `${report.text} (${report.to})`);
     expect(at(NOW, 4.2)).toEqual(['deepseek 4.2 USD left, at its 5 USD floor (owner)']);
@@ -207,7 +207,7 @@ describe('the reserve and the floor', () => {
 
   test('a spend account crosses no marks', () => {
     const result = pass({
-      team: team(DEEPSEEK), state: emptySession(), live: live(), machine: fine, now: NOW, memory: newMemory(),
+      team: team(DEEPSEEK), watch: team(DEEPSEEK).watch, state: emptySession(), live: live(), machine: fine, now: NOW, memory: newMemory(),
       approval: [], outcomes: checkSpend('deepseek', NOW, 4.2),
     });
     expect(budgetReports(result).filter((report) => report.key.startsWith('budget:mark:'))).toEqual([]);
@@ -220,7 +220,7 @@ describe('an account that reads unknown', () => {
   test('is reported to the operator while seats run on it', () => {
     const memory = newMemory();
     const at = (now: number, outcomes: CheckOutcome[], scene = live()) =>
-      budgetReports(pass({ team: team(RESERVE), state: emptySession(), live: scene, machine: fine, now, memory, approval: [], outcomes: outcomes }))
+      budgetReports(pass({ team: team(RESERVE), watch: team(RESERVE).watch, state: emptySession(), live: scene, machine: fine, now, memory, approval: [], outcomes: outcomes }))
         .filter((report) => report.key === 'budget:unknown:openai')
         .map((report) => `${report.text} (${report.to})`);
     expect(at(NOW, unreadable)).toEqual(['openai is unknown while codex-acme runs on it (operator)']);
@@ -233,7 +233,7 @@ describe('an account that reads unknown', () => {
 
   test('is quiet when no running seat spends it', () => {
     const result = pass({
-      team: team(RESERVE), state: emptySession(), live: live({}, ['codex-acme']), machine: fine, now: NOW, memory: newMemory(),
+      team: team(RESERVE), watch: team(RESERVE).watch, state: emptySession(), live: live({}, ['codex-acme']), machine: fine, now: NOW, memory: newMemory(),
       approval: [], outcomes: unreadable,
     });
     expect(budgetReports(result)).toEqual([]);
@@ -241,7 +241,7 @@ describe('an account that reads unknown', () => {
 
   test('is not what a first sight is called', () => {
     const result = pass({
-      team: team(SCREEN_READ), state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
+      team: team(SCREEN_READ), watch: team(SCREEN_READ).watch, state: emptySession(), live: live({ 'codex-acme': { screen: quota } }),
       machine: fine, now: NOW, memory: newMemory(), approval: [], outcomes: [],
     });
     expect(budgetReports(result)).toEqual([]);
@@ -252,9 +252,10 @@ describe('watch.checks', () => {
   test('turns the budget check off, once the owner approved the change', () => {
     const crossed = checkWindows('openai', NOW, [{ window: 'weekly', left: 8, used: 92, resetsAt: RESET }]);
     const off = team(OPENAI, '  checks:\n    budget: off\n');
-    expect(budgetReports(pass({ team: off, state: emptySession(), live: live(), machine: fine, now: NOW, memory: newMemory(), approval: [], outcomes: crossed }))).toEqual([]);
-    // The same file with the change not approved yet: the off is not in effect, and marks run.
-    const waiting = pass({ team: off, state: emptySession(), live: live(), machine: fine, now: NOW, memory: newMemory(), approval: [WATCH_CHECKS_CHANGED], outcomes: crossed });
+    expect(budgetReports(pass({ team: off, watch: off.watch, state: emptySession(), live: live(), machine: fine, now: NOW, memory: newMemory(), approval: [], outcomes: crossed }))).toEqual([]);
+    // The section in force is still the approved list, which leaves budget on, so the marks run.
+    const approved = { ...off.watch, checks: [] };
+    const waiting = pass({ team: off, watch: approved, state: emptySession(), live: live(), machine: fine, now: NOW, memory: newMemory(), approval: [WATCH_CHECKS_CHANGED], outcomes: crossed });
     expect(budgetReports(waiting).filter((report) => report.key.startsWith('budget:mark:'))).toHaveLength(3);
   });
 });

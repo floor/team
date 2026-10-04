@@ -32,7 +32,8 @@ may run — reads and reports, says so once, and saves no reading, budget or spe
 Anyone, in any terminal. `up` starts one for the session in a pane of its own, and this is the one
 `team status` and `team doctor` look for. A person may run one by hand: it prints the same lines,
 and Ctrl-C stops it and exits 0. Two watches must not fight over the same session, so a second one
-refuses.
+refuses. `--no-nudge` and `--no-notify` are the owner's: a seat that passed either would be holding
+the session's only watch with the operator's nudge, or the operator's notices, turned off.
 
 ## Flags
 
@@ -40,8 +41,8 @@ refuses.
 | --- | --- |
 | `--session <name>` | the herdr session to watch, instead of `team.session` |
 | `--file <path>` | the team file, instead of `.agents/team.yaml` |
-| `--no-nudge` | never type into the operator's pane; the reports still go to the log and the desktop |
-| `--no-notify` | no desktop notifications; the nudge is still typed and the log still written |
+| `--no-nudge` | the owner's. Never type into the operator's pane; the reports still go to the log, and a report for the owner is still a desktop notification |
+| `--no-notify` | the owner's. No desktop notification for a report addressed to the operator. A report addressed to the owner is still notified, still written to the log, and still visible in `team status` |
 | `--help`, `-h` | the usage, and exit 0 |
 
 ## What it prints
@@ -80,6 +81,14 @@ or a machine that stays full, is said once, not every pass.
 | `<account> <window> left <n>%, inside its <n>% reserve` | a subscription account at or inside its `reserve` |
 | `<account> <n> <currency> left, at its <n> <currency> floor` | a spend account at or below its `floor` |
 | `<account> is unknown while <seat> runs on it` | nothing counts for an account whose seats are running |
+
+Each report is addressed to the owner or to the operator. The operator's is what the nudge stands
+for, and `--no-notify` can drop its desktop notification. The owner's — a permission prompt, an approval difference, a
+machine figure, an account inside its reserve or at its floor — is notified anyway, and so are the
+watch's own notices: the file can't be read, herdr doesn't answer, the operator could not be nudged,
+a typed nudge was not sent, and the watch stopped. Neither flag
+removes the log line, and neither reaches `team status`: a reserve still shows on the budgets
+table, and an approval difference is still a difference.
 
 A report that is the operator's to act on is also what the nudge stands for. The lines around it:
 
@@ -304,9 +313,10 @@ nothing until the owner approves it — the passes keep running with the values 
 or with the defaults when nothing was approved, and the difference is reported.
 
 A check the team doesn't want is turned off in `watch.checks` — a section only the owner changes,
-so it is approved like the rest of them. The machine below sits at 8% free memory, and this file
-turns that one report off — but the edit is not approved yet, so nothing is turned off: the report
-still comes, with the difference beside it.
+so it is approved like the rest of them. While that edit is unapproved, the approved list stays
+in force: nothing new is turned off, and a check the approved file turned off stays off. The
+machine below sits at 8% free memory, and this file turns that report off. The approved list left
+it on, so the report still comes, with the difference beside it.
 
 ```yaml file=.agents/team.yaml
 format: 1

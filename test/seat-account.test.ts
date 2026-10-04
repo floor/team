@@ -206,6 +206,7 @@ describe('the watch reads a seat\'s figures onto its own account', () => {
   test('a screen figure is kept under the seat\'s account, and the status table shows both rows', () => {
     const result = pass({
       team: team(),
+      watch: team().watch,
       state: emptySession(),
       live: live({ 'codex-work': CODEX(39), 'codex-home': CODEX(20) }),
       machine: fine,
@@ -227,6 +228,7 @@ describe('the watch reads a seat\'s figures onto its own account', () => {
   test('the unknown report names the seats on the account, not the vendor\'s others', () => {
     const result = pass({
       team: team(),
+      watch: team().watch,
       state: emptySession(),
       live: live({ 'codex-work': CODEX(39), 'codex-home': 'Welcome to Codex\n' }),
       machine: fine,
@@ -243,6 +245,7 @@ describe('the watch reads a seat\'s figures onto its own account', () => {
     state.seats['codex-temp'] = { stage: 'ready', temporary: { like: 'codex-work', until: 'result:briefs/x.result.md' } };
     const result = pass({
       team: team(),
+      watch: team().watch,
       state,
       live: live({ 'codex-work': CODEX(39), 'codex-temp': CODEX(12) }),
       machine: fine,

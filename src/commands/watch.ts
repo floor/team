@@ -1,5 +1,6 @@
 import { readArgs } from '../args.ts';
 import { budgetsInForce, watchInForce } from '../approve/approval.ts';
+import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadReadings, saveSpendReadings, updateReadings, type Seen, type SpendReading } from '../budgets/readings.ts';
 import { runChecks, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
@@ -116,17 +117,31 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
   const session = args.values.session ?? first.team.session;
   const { dir } = first;
 
+  // A seat that starts the session's only watch must not be able to drop the operator's nudge
+  // or the operator's desktop notices. The owner's own `--no-notify` still cannot silence a
+  // report addressed to the owner: those are routed below.
+  if (args.flags.has('no-nudge') || args.flags.has('no-notify')) {
+    const caller = callerOf(io, session);
+    if (!isOwner(caller)) {
+      io.stderr(`team watch: --no-nudge and --no-notify are the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
+      return 1;
+    }
+  }
+
   const other = readState(dir).sessions[session]?.watch;
   if (other && other.pid !== sources.pid && sources.alive(other.pid)) {
     io.stderr(`team watch: a watch already runs for the session "${session}" (pid ${other.pid})\n`);
     return 1;
   }
 
-  const say = (text: string, desktop: boolean) => {
+  // The log line is written for every report. `--no-notify` never removes it, and it never
+  // removes a desktop notice addressed to the owner. It does silence every other notice.
+  const tell = (text: string, notify: boolean) => {
     io.stdout(`${sources.now().toISOString()} ${text}\n`);
     logLine(dir, 'watch', 'watch', text, sources.now());
-    if (desktop && !args.flags.has('no-notify')) sources.notify(text);
+    if (notify) sources.notify(text);
   };
+  const say = (text: string, desktop: boolean) => tell(text, desktop && !args.flags.has('no-notify'));
   const beat = () => updateState(dir, (state) => {
     const record = (state.sessions[session] ??= emptySession());
     record.watch = { pid: sources.pid, heartbeat: sources.now().toISOString() };
@@ -148,7 +163,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
       const problem = current.ok ? current.notice : `team.yaml can't be read (${current.errors[0]?.message ?? 'unknown'}); watching with the team as it was`;
       if (problem !== notice) {
         notice = problem;
-        if (problem) say(problem, true);
+        if (problem) tell(problem, true);
       }
 
       // Only the watch of the file's own session saves readings. A watch on another session —
@@ -169,7 +184,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
       const budget = sources.budgetsInForce(team, root);
       const live = sources.live(session, team);
       if (!live) {
-        if (!silent) say('herdr doesn\'t answer; the watch keeps trying', true);
+        if (!silent) tell('herdr doesn\'t answer; the watch keeps trying', true);
         silent = true;
       } else {
         silent = false;
@@ -213,12 +228,12 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
             const folded = run(stored);
             return { readings: folded.readings, value: folded };
           });
-        for (const report of result.reports) say(report.text, true);
+        for (const report of result.reports) tell(report.text, report.to === 'owner' || !args.flags.has('no-notify'));
         if (result.nudge) {
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);
-          else deliver(result.nudge, team, session, sources, memory, say);
+          else deliver(result.nudge, team, session, sources, memory, say, tell);
         }
-        if (result.fallback) say(result.fallback, true);
+        if (result.fallback) tell(result.fallback, true);
         await closeEnded({ team, root, dir, session, live, sources, say, io, told });
       }
       beat();
@@ -229,7 +244,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
       const record = state.sessions[session];
       if (record?.watch?.pid === sources.pid) delete record.watch;
     });
-    say(`the watch of "${session}" stopped`, true);
+    tell(`the watch of "${session}" stopped`, true);
   }
   return 0;
 }
@@ -254,6 +269,7 @@ function spendOf(outcomes: readonly CheckOutcome[]): SpendReading[] {
 function deliver(
   nudge: { pane: string; text: string; pending: string[] }, team: TeamFile, session: string, sources: WatchSources,
   memory: ReturnType<typeof newMemory>, say: (text: string, desktop: boolean) => void,
+  tell: (text: string, notify: boolean) => void,
 ): void {
   const cli = team.seats.find((seat) => seat.name === team.operator)?.cli ?? '';
   const look = () => readScreen(cli, sources.screen(nudge.pane, session) ?? undefined).kind;
@@ -272,7 +288,7 @@ function deliver(
   // then stays unsent, which the next passes report, and the nudge is kept.
   const after = look();
   if (after !== 'idle' && after !== 'unsent') {
-    say('a nudge was typed and not sent: the operator\'s screen changed before the Enter', true);
+    tell('a nudge was typed and not sent: the operator\'s screen changed before the Enter', true);
     keep();
     return;
   }
