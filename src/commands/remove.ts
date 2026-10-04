@@ -66,36 +66,45 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   const args = readArgs(argv, ['session', 'file'], ['keep', 'abandon']);
   if (args.error || args.rest.length !== 1) {
     io.stderr(`team remove: ${args.error ?? (args.rest.length ? `unexpected "${args.rest[0]}"` : 'a seat name is required')}\n${USAGE}`);
+    // exit: remove.invocation
     return 2;
   }
   const name = args.rest[0] ?? '';
   const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
   if (!loaded.ok) {
     for (const problem of loaded.errors) io.stderr(`team remove: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
+    // exit: remove.not-a-repo
+    // exit: remove.file
+    // exit: remove.file-invalid
     return 2;
   }
   const caller = callerOf(io);
   if (args.values.file && !isOwner(caller)) {
     io.stderr(`team remove: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
+    // exit: remove.file-owner
     return 1;
   }
   if (!mayChangeTeam(caller, loaded.team)) {
     io.stderr(`team remove: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(caller)}\n`);
+    // exit: remove.caller
     return 1;
   }
   const { team, path, root } = loaded;
   const session = args.values.session ?? team.session;
   if (session === 'default') {
     io.stderr('team remove: session can\'t be "default", herdr\'s own session\n');
+    // exit: remove.default-session
     return 1;
   }
   const abandon = args.flags.has('abandon');
   if (abandon && caller.kind !== 'owner') {
     io.stderr('team remove: only the owner abandons a seat, from a terminal outside herdr\n');
+    // exit: remove.abandon
     return 1;
   }
   if ((name === team.coordinator || name === team.operator) && caller.kind !== 'owner') {
     io.stderr(`team remove: only the owner removes the coordinator's or the operator's seat; this call is ${describeCaller(caller)}\n`);
+    // exit: remove.coordinator
     return 1;
   }
 
@@ -104,22 +113,26 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   const declared = team.seats.find((seat) => seat.name === name);
   if (!declared && !recorded) {
     io.stderr(`team remove: the team has no seat ${JSON.stringify(name)}\n`);
+    // exit: remove.no-seat
     return 1;
   }
   const temporary = recorded?.temporary;
   if (args.flags.has('keep') && temporary) {
     io.stderr('team remove: a temporary seat is not in the file; there is nothing to keep\n');
+    // exit: remove.keep-temporary
     return 1;
   }
 
   const live = sources.sessionRunning(session);
   if (live === null) {
     io.stderr('team remove: herdr doesn\'t answer; nothing was changed\n');
+    // exit: remove.herdr
     return 1;
   }
   const agents = live ? sources.agents(session) : [];
   if (agents === null) {
     io.stderr(`team remove: session ${session} runs, and its agents can't be read; nothing was changed\n`);
+    // exit: remove.agents
     return 1;
   }
   const agent = agents.find((item) => item.name === name);
@@ -129,10 +142,12 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     const where = stateOf(agent.status, screen);
     if (where !== 'free' && !abandon) {
       io.stderr(`team remove: ${name} ${LEFT[where]}\n`);
+      // exit: remove.busy
       return 1;
     }
     if (!profileFor(cli) && !abandon) {
       io.stderr(`team remove: no launch profile for \`${cli}\`; left as it is\n`);
+      // exit: remove.no-profile
       return 1;
     }
   }
@@ -145,6 +160,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
       for (const problem of ahead) {
         io.stderr(`team remove: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
       }
+      // exit: remove.edit
       return 2;
     }
   }
@@ -157,6 +173,8 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
       seat: { name, cli, pane: agent.pane, workspace: agent.workspace, state: where === 'free' ? 'free' : where },
       abandon: abandon && where !== 'free',
     });
+    // exit: remove.no-launch
+    // exit: remove.stop-failed
     if (!stopped) return 1;
   }
 
@@ -175,6 +193,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
       for (const problem of refused) {
         io.stderr(`team remove: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
       }
+      // exit: remove.locked
       return 2;
     }
   }
@@ -195,6 +214,9 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   const what = temporary ? `removed temporary ${name}` : args.flags.has('keep') ? `stopped ${name}` : `removed ${name}`;
   logLine(dir, 'remove', who, what, sources.now());
   io.stdout(`${what}\n`);
+  // exit: remove.removed
+  // exit: remove.kept
+  // exit: remove.temporary
   return 0;
 }
 

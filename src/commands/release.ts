@@ -52,6 +52,8 @@ export async function runRelease(argv: string[], io: Io, fetcher: Fetch, keyRead
   const fail = (code: 'usage' | 'configuration', message: string): number => {
     if (json) io.stdout(`${JSON.stringify({ error: { code, message } })}\n`);
     else io.stderr(`team release: ${message}\n`);
+    // exit: release.configuration
+    // exit: release.usage
     return 64;
   };
 
@@ -96,7 +98,10 @@ export async function runRelease(argv: string[], io: Io, fetcher: Fetch, keyRead
     io.stdout(table(result));
   }
   const statuses = present(result).map((check) => (result[check] as Outcome).status);
+  // exit: release.passed
   if (statuses.every((status) => status === 'pass')) return 0;
+  // exit: release.missing
+  // exit: release.unknown
   return statuses.includes('unknown') ? 2 : 1;
 }
 

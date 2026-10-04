@@ -138,6 +138,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   const args = readArgs(argv, ['session', 'file'], ['dry-run', 'wait', 'abandon']);
   if (args.error || args.rest.length) {
     io.stderr(`team down: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
+    // exit: down.invocation
     return 2;
   }
   const dry = args.flags.has('dry-run');
@@ -146,6 +147,9 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     for (const problem of current.errors) {
       io.stderr(`team down: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
     }
+    // exit: down.not-a-repo
+    // exit: down.file
+    // exit: down.file-invalid
     return 2;
   }
   if (current.notice) io.stdout(`${current.notice}\n`);
@@ -155,15 +159,18 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   const running = sources.sessionRunning(session);
   if (running === null) {
     io.stderr("team down: herdr doesn't answer; is it installed and running?\n");
+    // exit: down.herdr
     return 2;
   }
   if (!running) {
     io.stdout(`session ${session} is not running: nothing to stop${dry ? '\ndry run: nothing was run' : ''}\n`);
+    // exit: down.idle
     return 0;
   }
   let agents = sources.agents(session);
   if (agents === null) {
     io.stderr(`team down: the agents of session ${session} can't be read\n`);
+    // exit: down.agents
     return 2;
   }
 
@@ -240,15 +247,19 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   if (dry) {
     for (const refusal of refusals) io.stdout(`! down would refuse: ${refusal}\n`);
     io.stdout(formatPlan(plan));
+    // exit: down.dry-run
     return 0;
   }
   if (refusals.length) {
     for (const refusal of refusals) io.stderr(`team down: ${refusal}\n`);
+    // exit: down.caller
+    // exit: down.abandon
     return 1;
   }
   const launch = sources.launch;
   if (!launch) {
     io.stderr('team down: this call has no way to reach herdr\n');
+    // exit: down.no-launch
     return 1;
   }
 
@@ -319,6 +330,8 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     log: (who, what) => logLine(dir, 'down', describeCaller(caller), `${who}: ${what}`, now()),
   };
   const report = await executePlan(plan, session, host);
+  // exit: down.stopped
+  // exit: down.held
   return report.held ? 1 : 0;
 }
 

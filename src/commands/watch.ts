@@ -114,11 +114,15 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
   const args = readArgs(argv, ['session', 'file'], ['no-nudge', 'no-notify']);
   if (args.error || args.rest.length) {
     io.stderr(`team watch: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
+    // exit: watch.invocation
     return 2;
   }
   const first = currentTeam(io.cwd, args.values.file, sources.now());
   if (!first.ok) {
     for (const problem of first.errors) io.stderr(`team watch: ${problem.line ? `team.yaml line ${problem.line}: ` : ''}${problem.message}\n`);
+    // exit: watch.not-a-repo
+    // exit: watch.file
+    // exit: watch.file-invalid
     return 2;
   }
   const session = args.values.session ?? first.team.session;
@@ -131,6 +135,8 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
     const caller = callerOf(io, session);
     if (!isOwner(caller)) {
       io.stderr(`team watch: --no-nudge and --no-notify are the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
+      // exit: watch.no-nudge
+      // exit: watch.no-notify
       return 1;
     }
   }
@@ -138,6 +144,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
   const other = readState(dir).sessions[session]?.watch;
   if (other && other.pid !== sources.pid && sources.alive(other.pid)) {
     io.stderr(`team watch: a watch already runs for the session "${session}" (pid ${other.pid})\n`);
+    // exit: watch.already
     return 1;
   }
 
@@ -286,6 +293,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
     });
     tell(`the watch of "${session}" stopped`, true);
   }
+  // exit: watch.stopped
   return 0;
 }
 

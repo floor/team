@@ -1,0 +1,1979 @@
+// One run per row of contract/exit-codes.json. Each trigger is a temporary directory and the
+// injectable stand-ins the other command tests use: no herdr session, no user-level store.
+import { execFileSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { expect, test } from 'bun:test';
+import { approvalOf } from '../src/approve/approval.ts';
+import { saveReadings, type Seen } from '../src/budgets/readings.ts';
+import type { Caller } from '../src/caller.ts';
+import { runAdd, type AddSources } from '../src/commands/add.ts';
+import { runApprove, type ApproveSources } from '../src/commands/approve.ts';
+import { check, loadConfig, type LoadConfig } from '../src/commands/check.ts';
+import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
+import { runDown, type DownLaunch, type DownSources } from '../src/commands/down.ts';
+import { runInit } from '../src/commands/init.ts';
+import { runRemove, type RemoveSources } from '../src/commands/remove.ts';
+import { runStatus, type StatusSources } from '../src/commands/status.ts';
+import { runUp, type Launch, type UpSources } from '../src/commands/up.ts';
+import { runWatch, type WatchSources } from '../src/commands/watch.ts';
+import { runWorktree, type WorktreeSources } from '../src/commands/worktree.ts';
+import { main, reportFailure, version } from '../src/cli.ts';
+import { loadTeamFile } from '../src/file/load.ts';
+import type { HerdrAgent } from '../src/herdr.ts';
+import { overridesPath } from '../src/profiles/overrides.ts';
+import { emptySession, updateState } from '../src/state.ts';
+import type { Live } from '../src/status/compare.ts';
+import { approvalStanding, storePath, writeApproval, type Standing } from '../src/store/store.ts';
+import type { Machine } from '../src/watch/machine.ts';
+import { analyze, loadContract, problems, render, type ExitRow } from '../scripts/exit-codes.ts';
+import { runRelease } from '../src/commands/release.ts';
+import { fakeFetch, fixture, happy, json, URLS, type Answers } from './release/world.ts';
+import { claudeBox, testIo } from './helpers.ts';
+
+const NOW = new Date('2026-10-04T09:00:00Z');
+const owner = { kind: 'owner' } as const;
+const other = { kind: 'seat', name: 'other', pane: 'w9:p1' } as const;
+const leadSeat = { kind: 'seat', name: 'lead', pane: 'w1:p1' } as const;
+const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
+const hot: Machine = { ...fine, loadPerCore: 9 };
+const quiet: Live = { running: false, agents: [], workspaces: [], screens: {} };
+const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
+
+const LEAD = `  - role: coordinator
+    name: lead
+    label: lead
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+`;
+
+const WORKER = `  - role: implementer
+    name: worker
+    label: worker
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+    stopped: true
+`;
+
+const TEAM = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+workspace:
+  mode: shared
+seats:
+${LEAD}`;
+
+const TWO = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+workspace:
+  mode: shared
+seats:
+${LEAD}${WORKER}`;
+
+const GROK = TWO.replace('    name: worker\n    label: worker\n    cli: claude-code', '    name: worker\n    label: worker\n    cli: grok').replace(
+  'launch: claude --model claude-opus-5-5\n    stopped: true\n',
+  'launch: grok\n',
+);
+
+const BUDGET = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+workspace:
+  mode: shared
+seats:
+${LEAD}  - role: implementer
+    name: worker
+    label: worker
+    cli: claude-code
+    vendor: openai
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+budgets:
+  accounts:
+    anthropic: { kind: subscription, reserve: 20%, sources: [status_line] }
+    openai: { kind: subscription, reserve: 10%, sources: [status_line] }
+`;
+
+const CHECKED = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+identity:
+  humans: [test@example.com]
+workspace:
+  mode: shared
+seats:
+${LEAD}`;
+
+const CHECK_ACCOUNT = `${TEAM}budgets:
+  accounts:
+    anthropic: { kind: subscription, reserve: 20%, sources: [check], check: team-exit-no-such-check }
+`;
+
+const WITH_BASE = TEAM.replace('  mode: shared\n', '  mode: shared\n  base: main\n');
+
+const NARROW = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+trust:
+  - ../worktrees/acme/task
+workspace:
+  mode: worktree
+  path: ../worktrees/{repo}/{task}
+  branch: "{kind}/{task}"
+  base: main
+seats:
+${LEAD}${WORKER.replace('    stopped: true\n', '')}`;
+
+type Place = { base: string; root: string; home: string; file: string };
+type Ran = { code: number; out: string; err: string };
+type Scene = (place: Place) => Promise<Ran>;
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function layout(repo: boolean): Place {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'team-exit-')));
+  const root = join(base, 'acme');
+  const home = join(base, 'home');
+  mkdirSync(join(root, '.agents'), { recursive: true });
+  mkdirSync(home);
+  if (repo) {
+    git(root, 'init', '-q', '-b', 'main');
+    writeFileSync(join(root, 'README.md'), 'acme\n');
+    git(root, 'add', 'README.md');
+    git(root, 'commit', '-q', '-m', 'first');
+  }
+  return { base, root, home, file: join(root, '.agents', 'team.yaml') };
+}
+
+function write(place: Place, text: string): void {
+  writeFileSync(place.file, text);
+}
+
+function approve(place: Place, text: string): void {
+  write(place, text);
+  const loaded = loadTeamFile(place.root, { file: place.file });
+  if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+  writeApproval(
+    storePath(loaded.team.project, loaded.root, place.home),
+    { approval: approvalOf(loaded.team, loaded.root, NOW), file: text },
+    loaded.team.seats,
+    place.home,
+    NOW,
+  );
+}
+
+function approvalFile(place: Place): string {
+  const loaded = loadTeamFile(place.root, { file: place.file });
+  if (!loaded.ok) throw new Error('team file');
+  return join(storePath(loaded.team.project, loaded.root, place.home), 'approval.json');
+}
+
+function editApproval(place: Place, edit: (record: Record<string, unknown>) => void): void {
+  const path = approvalFile(place);
+  const record = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+  edit(record);
+  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+}
+
+function doctor(home: string, over: Partial<DoctorSources> = {}): DoctorSources {
+  return {
+    version: () => '2.1.288',
+    onPath: () => true,
+    loggedIn: () => true,
+    herdrVersion: () => '0.7.1',
+    sessionRunning: () => false,
+    now: () => NOW,
+    home,
+    ...over,
+  };
+}
+
+function launching(text: string, paneOk: (command: string) => boolean = () => true, server = true): Launch {
+  let n = 0;
+  let session: 'absent' | 'running' = 'absent';
+  const panes = new Map<string, { text: string; agent: boolean }>();
+  return {
+    sessionState: () => session,
+    startServer() {
+      if (!server) return false;
+      session = 'running';
+      return true;
+    },
+    sessionUp: () => session === 'running',
+    createWorkspace() {
+      n += 1;
+      const pane = `w${n}:p1`;
+      panes.set(pane, { text, agent: false });
+      return { pane, workspace: `w${n}` };
+    },
+    paneRun(_session, pane, command) {
+      if (!paneOk(command)) return false;
+      const known = panes.get(pane);
+      if (known) known.agent = true;
+      return true;
+    },
+    renameAgent: () => true,
+    closeWorkspace: () => true,
+    agentPanes: () => [...panes].filter(([, pane]) => pane.agent).map(([id]) => id),
+    paneText: (_session, pane) => panes.get(pane)?.text ?? '',
+    foreground: () => ['claude'],
+    sleep: async () => {},
+    now: () => NOW,
+  };
+}
+
+function addSources(place: Place, over: Partial<AddSources> = {}): AddSources {
+  return {
+    home: place.home,
+    sessionState: () => 'absent',
+    agents: () => [],
+    workspaces: () => [],
+    doctor: doctor(place.home),
+    now: () => NOW,
+    launch: launching(IDLE),
+    ...over,
+  };
+}
+
+function downLaunch(over: Partial<DownLaunch> = {}): DownLaunch {
+  return {
+    typeText: () => true,
+    pressEnter: () => true,
+    agentPanes: () => [],
+    closeWorkspace: () => true,
+    stopSession: () => true,
+    deleteSession: () => true,
+    kill: () => true,
+    sleep: async () => {},
+    now: () => NOW,
+    ...over,
+  };
+}
+
+function downSources(over: Partial<RemoveSources> = {}): RemoveSources {
+  return {
+    sessionRunning: () => false,
+    agents: () => [],
+    alive: () => false,
+    screen: () => ({ kind: 'idle' }),
+    screenText: () => undefined,
+    status: () => 'idle',
+    foreground: () => ['claude'],
+    now: () => NOW,
+    home: undefined,
+    ...over,
+  };
+}
+
+function upSources(place: Place, over: Partial<UpSources> = {}): UpSources {
+  return { sessionRunning: () => false, agents: () => [], home: place.home, now: () => NOW, ...over };
+}
+
+function watchSources(over: Partial<WatchSources> = {}): WatchSources {
+  return {
+    live: () => quiet,
+    machine: () => fine,
+    standing: () => ({ kind: 'none' }),
+    readChecks: () => [],
+    screen: () => null,
+    status: () => null,
+    foreground: () => null,
+    typeText: () => false,
+    pressEnter: () => false,
+    notify: () => {},
+    now: () => NOW,
+    wait: async () => false,
+    alive: () => false,
+    pid: 1,
+    ...over,
+  };
+}
+
+function statusSources(live: Live | null, standing: Standing = { kind: 'none' }): StatusSources {
+  return {
+    live: () => live,
+    branch: () => 'main',
+    standing: () => standing,
+    now: () => NOW,
+  };
+}
+
+function approveSources(place: Place, answer: string | null, home = place.home): ApproveSources {
+  return { ask: async () => answer, now: () => NOW, home };
+}
+
+function worktreeSources(place: Place): WorktreeSources {
+  return { home: place.home, now: () => NOW };
+}
+
+function loader(place: Place): LoadConfig {
+  return (cwd, file) => loadConfig(cwd, file, place.home);
+}
+
+const agent = (name: string, status = 'idle'): HerdrAgent => ({
+  name, agent: 'claude', pane: 'w1:p1', workspace: 'w1', status, cwd: null,
+});
+
+function show(value: Ran, needle: string): Ran {
+  expect(`${value.err}${value.out}`).toContain(needle);
+  return value;
+}
+
+async function entry(argv: string[], io: ReturnType<typeof testIo>): Promise<Ran> {
+  try {
+    return { code: await main(argv, io), out: io.out, err: io.err };
+  } catch (error) {
+    return { code: reportFailure(error, (text) => io.stderr(text)), out: io.out, err: io.err };
+  }
+}
+
+async function added(place: Place, argv: string[], caller: Caller, sources: AddSources): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runAdd(argv, io, sources), out: io.out, err: io.err };
+}
+
+async function approved(place: Place, argv: string[], caller: Caller, sources: ApproveSources, cwd = place.root): Promise<Ran> {
+  const io = testIo(cwd, caller);
+  return { code: await runApprove(argv, io, sources), out: io.out, err: io.err };
+}
+
+function publish(place: Place): void {
+  const remote = join(place.base, 'remote.git');
+  git(place.base, 'init', '-q', '--bare', '-b', 'main', remote);
+  git(place.root, 'remote', 'add', 'origin', remote);
+  git(place.root, 'push', '-q', '-u', 'origin', 'main');
+}
+
+function worktreeText(patch: {
+  mode?: 'shared' | 'worktree';
+  path?: string | null;
+  branch?: string;
+  base?: string | null;
+  trust?: string;
+  limit?: number;
+  setup?: string;
+  sharedSeat?: boolean;
+} = {}): string {
+  const mode = patch.mode ?? 'worktree';
+  const trust = patch.trust ?? '../worktrees/acme/*';
+  const seat = patch.sharedSeat ? LEAD.replace('launch: claude --model claude-opus-5-5\n', 'launch: claude --model claude-opus-5-5\n    mode: shared\n') : LEAD;
+  if (mode === 'shared') {
+    return `format: 1
+project: acme
+visibility: public
+coordinator: lead
+operator: lead
+identity:
+  forbidden_public:
+    - "\\\\bWEB-[0-9]+\\\\b"
+trust:
+  - ${trust}
+workspace:
+  mode: shared
+seats:
+${seat}`;
+  }
+  const path = patch.path === undefined ? '../worktrees/{repo}/{task}' : patch.path;
+  const base = patch.base === undefined ? 'main' : patch.base;
+  const lines = ['workspace:', '  mode: worktree'];
+  if (path) lines.push(`  path: ${path}`);
+  lines.push(`  branch: ${JSON.stringify(patch.branch ?? '{kind}/{task}')}`);
+  if (base) lines.push(`  base: ${base}`);
+  if (patch.limit) lines.push(`  limit: ${patch.limit}`);
+  if (patch.setup) lines.push(patch.setup);
+  return `format: 1
+project: acme
+visibility: public
+coordinator: lead
+operator: lead
+identity:
+  forbidden_public:
+    - "\\\\bWEB-[0-9]+\\\\b"
+trust:
+  - ${trust}
+${lines.join('\n')}
+seats:
+${seat}`;
+}
+
+function spendReading(): Seen {
+  return {
+    account: 'openai', window: 'weekly', left: 5, used: 95,
+    changedAt: NOW.getTime() - 60_000, resetsAt: NOW.getTime() + 3_600_000,
+    seat: 'worker', source: 'status_line', confirmed: true,
+  };
+}
+
+const scenes = new Map<string, Scene>();
+const bare = new Set<string>();
+function scene(id: string, run: Scene, repo = true): void {
+  scenes.set(id, run);
+  if (!repo) bare.add(id);
+}
+
+function invalid(place: Place): void {
+  writeFileSync(join(place.root, 'team.yaml'), 'format: [\n');
+}
+
+scene('add.invocation', async (place) => show(await added(place, ['--nope'], owner, addSources(place)), 'unknown option'));
+scene('add.seat-name', async (place) => show(await added(place, [], owner, addSources(place)), 'a seat name is required'));
+scene('add.temporary-unexpected', async (place) => show(await added(place, ['extra', '--temporary'], owner, addSources(place)), 'unexpected'));
+scene('add.temporary-flags', async (place) => show(await added(place, ['worker', '--like', 'lead'], owner, addSources(place)), '--like, --until and --worktree'));
+scene('add.not-a-repo', async (place) => show(await added(place, ['worker'], owner, addSources(place)), 'not inside a git repository'), false);
+scene('add.file', async (place) => show(await added(place, ['worker', '--file', 'missing.yaml'], owner, addSources(place)), 'no team file'));
+scene('add.file-invalid', async (place) => {
+  invalid(place);
+  return show(await added(place, ['worker', '--file', 'team.yaml'], owner, addSources(place)), 'line');
+});
+scene('add.file-owner', async (place) => {
+  write(place, TWO);
+  return show(await added(place, ['worker', '--file', '.agents/team.yaml'], other, addSources(place)), "--file is the owner's");
+});
+scene('add.caller', async (place) => {
+  write(place, TWO);
+  return show(await added(place, ['worker'], other, addSources(place)), 'only the owner, the coordinator or the operator');
+});
+scene('add.default-session', async (place) => {
+  write(place, TWO);
+  return show(await added(place, ['worker', '--session', 'default', '--file', place.file], owner, addSources(place)), 'can\'t be "default"');
+});
+scene('add.never-approved', async (place) => {
+  write(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'never approved');
+});
+scene('add.differs', async (place) => {
+  approve(place, TWO);
+  write(place, TWO.replace('label: worker', 'label: renamed'));
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'not the approved one');
+});
+scene('add.approved-copy', async (place) => {
+  approve(place, TWO);
+  const standing = approvalStanding(place.root, place.home);
+  if (standing.kind !== 'verified') throw new Error(standing.kind);
+  const broken = { ...standing, record: { ...standing.record, file: 'nope: [[[' } };
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { standing: () => broken })), "approved copy can't be read");
+});
+scene('add.herdr', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { sessionState: () => null })), "doesn't answer");
+});
+scene('add.stopped', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { sessionState: () => 'stopped' })), 'is stopped');
+});
+scene('add.agents', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { sessionState: () => 'running', agents: () => null })), "can't be read");
+});
+scene('add.ceilings', async (place) => {
+  approve(place, TWO);
+  editApproval(place, (record) => { delete record.ceilings; });
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'no "ceilings"');
+});
+scene('add.no-seat', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['missing', '--file', place.file], owner, addSources(place)), 'no seat "missing"');
+});
+scene('add.no-like', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['--temporary', '--like', 'missing', '--until', 'result:out.md', '--file', place.file], owner, addSources(place)), 'no seat "missing"');
+});
+scene('add.until', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'nope', '--file', place.file], owner, addSources(place)), '--until is result');
+});
+scene('add.result-absolute', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'result:/tmp/out.md', '--file', place.file], owner, addSources(place)), 'relative to the project');
+});
+scene('add.result-exists', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'result:README.md', '--file', place.file], owner, addSources(place)), 'already exists');
+});
+scene('add.merged-base', async (place) => {
+  approve(place, TEAM);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'merged:topic', '--file', place.file], owner, addSources(place)), 'workspace.base is required');
+});
+scene('add.branch-missing', async (place) => {
+  approve(place, WITH_BASE);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'merged:missing', '--file', place.file], owner, addSources(place)), "doesn't exist");
+});
+scene('add.worktree-missing', async (place) => {
+  approve(place, TEAM);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'result:out.md', '--worktree', 'missing', '--file', place.file], owner, addSources(place)), 'no worktree named');
+});
+scene('add.worktree-failed', async (place) => {
+  approve(place, TEAM);
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.worktrees.task = { path: '../worktrees/acme/task', branch: 'fix/task', setup: 'failed' };
+  });
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'result:out.md', '--worktree', 'task', '--file', place.file], owner, addSources(place)), 'failed setup');
+});
+scene('add.already-running', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, {
+    sessionState: () => 'running', agents: () => [agent('worker')], workspaces: () => [{ id: 'w1' }],
+  })), 'already running');
+});
+scene('add.no-profile', async (place) => {
+  approve(place, GROK);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'no launch profile');
+});
+scene('add.placed', async (place) => {
+  const side = join(place.base, 'side');
+  mkdirSync(side);
+  const text = TWO.replace('workspace:', 'trust:\n  - ../side\nworkspace:');
+  approve(place, text);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, {
+    sessionState() {
+      rmSync(side, { recursive: true, force: true });
+      symlinkSync(place.base, side);
+      return 'absent';
+    },
+  })), "names the project's parent");
+});
+scene('add.start', async (place) => {
+  approve(place, NARROW);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'matches no trust');
+});
+scene('add.doctor', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { doctor: doctor(place.home, { version: () => null }) })), 'install');
+});
+scene('add.machine', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { machine: () => hot })), 'the load is 9.0');
+});
+scene('add.machine-again', async (place) => {
+  approve(place, TWO);
+  let calls = 0;
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, {
+    machine: () => (++calls === 1 ? fine : hot),
+  })), 'the load is 9.0');
+});
+scene('add.ceiling', async (place) => {
+  approve(place, TWO);
+  const standing = approvalStanding(place.root, place.home);
+  if (standing.kind !== 'verified') throw new Error(standing.kind);
+  const approval = { ...standing.record.approval, ceilings: { ...standing.record.approval.ceilings, seats: 0 } };
+  const capped = { ...standing, record: { ...standing.record, approval } };
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { standing: () => capped })), 'allows 0 seats');
+});
+scene('add.dry-budget', async (place) => {
+  approve(place, BUDGET);
+  saveReadings(join(place.root, '.agents'), [spendReading()], NOW.getTime());
+  return show(await added(place, ['worker', '--dry-run', '--file', place.file], owner, addSources(place)), 'would refuse');
+});
+scene('add.dry-run', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--dry-run', '--file', place.file], owner, addSources(place)), 'dry run: nothing was run');
+});
+scene('add.budget', async (place) => {
+  approve(place, BUDGET);
+  saveReadings(join(place.root, '.agents'), [spendReading()], NOW.getTime());
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'refused:');
+});
+scene('add.changed', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, {
+    doctor: doctor(place.home, { version: () => { writeFileSync(place.file, `${readFileSync(place.file, 'utf8')}\n`); return '2.1.288'; } }),
+  })), 'changed while add');
+});
+scene('add.ready', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { launch: launching(IDLE) })), 'ready');
+});
+scene('add.not-ready', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { launch: launching('') })), 'timed out');
+});
+scene('add.server', async (place) => {
+  approve(place, TWO);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { launch: launching(IDLE, () => true, false) })), 'its server did not start');
+});
+
+scene('approve.invocation', async (place) => show(await approved(place, ['extra'], owner, approveSources(place, null)), 'unexpected'));
+scene('approve.not-a-repo', async (place) => show(await approved(place, [], owner, approveSources(place, null)), 'not inside a git repository'), false);
+scene('approve.file', async (place) => show(await approved(place, ['--file', 'missing.yaml'], owner, approveSources(place, null)), 'no team file'));
+scene('approve.file-invalid', async (place) => {
+  invalid(place);
+  return show(await approved(place, ['--file', 'team.yaml'], owner, approveSources(place, null)), 'line');
+});
+scene('approve.overrides', async (place) => {
+  write(place, TEAM);
+  const loaded = loadTeamFile(place.root, { file: place.file });
+  if (!loaded.ok) throw new Error('team file');
+  const path = overridesPath(loaded.team.project, loaded.root, place.home);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, 'format: [\n');
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'line');
+});
+scene('approve.store', async (place) => {
+  write(place, TEAM);
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1', place.root)), 'where seats work');
+});
+scene('approve.check', async (place) => {
+  write(place, CHECK_ACCOUNT);
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'cannot be resolved');
+});
+scene('approve.key', async (place) => {
+  write(place, TEAM);
+  const folder = join(place.home, '.config', 'team-key');
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, 'key.json'), '{');
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'signing key is not whole JSON');
+});
+scene('approve.show', async (place) => {
+  write(place, TEAM);
+  return show(await approved(place, ['--show', '--file', place.file], owner, approveSources(place, null)), 'Seats:');
+});
+scene('approve.not-owner', async (place) => {
+  write(place, TEAM);
+  return show(await approved(place, ['--file', place.file], other, approveSources(place, '1')), 'only the owner approves');
+});
+scene('approve.answer', async (place) => {
+  write(place, TEAM);
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '0')), 'not approved');
+});
+scene('approve.approved', async (place) => {
+  write(place, TEAM);
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'Approved.');
+});
+
+scene('check.invocation', async (place) => {
+  const io = testIo(place.root, owner);
+  return show({ code: await check([], io, loader(place)), out: io.out, err: io.err }, 'a <ref> is required');
+});
+scene('check.not-a-repo', async (place) => {
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD'], io, loader(place)), out: io.out, err: io.err }, 'not inside a git repository');
+}, false);
+scene('check.file', async (place) => {
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD'], io, loader(place)), out: io.out, err: io.err }, 'no team file');
+});
+scene('check.file-invalid', async (place) => {
+  invalid(place);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--file', 'team.yaml'], io, loader(place)), out: io.out, err: io.err }, 'line');
+});
+scene('check.ledger', async (place) => {
+  approve(place, CHECKED);
+  writeFileSync(join(dirname(approvalFile(place)), 'ledger.json'), '{');
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'ledger.json');
+});
+scene('check.pr-body', async (place) => {
+  write(place, CHECKED);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--pr', 'missing.md', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, "can't read the pull request body");
+});
+scene('check.passed', async (place) => {
+  write(place, CHECKED);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'ok');
+});
+scene('check.refused', async (place) => {
+  write(place, CHECKED);
+  writeFileSync(join(place.root, 'note.txt'), 'note\n');
+  git(place.root, 'add', 'note.txt');
+  execFileSync('git', ['-c', 'user.name=Other', '-c', 'user.email=other@example.com', 'commit', '-q', '-m', 'fix: unsigned'], {
+    cwd: place.root, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'refused');
+});
+scene('check.threw', async (place) => {
+  write(place, CHECKED);
+  const loaded = loadConfig(place.root, place.file, place.home);
+  if (!loaded.ok) throw new Error('team file');
+  const config = { ...loaded.config, forbidden: ['['] };
+  const io = testIo(place.root, owner);
+  try {
+    const code = await check(['HEAD', '--file', place.file], io, () => ({ ok: true, config, warnings: [] }));
+    return show({ code, out: io.out, err: io.err }, 'not a regular expression');
+  } catch (error) {
+    return show({ code: reportFailure(error, (text) => io.stderr(text)), out: io.out, err: io.err }, 'not a regular expression');
+  }
+});
+scene('check.outside', async (place) => {
+  writeFileSync(join(place.base, 'team.yaml'), CHECKED);
+  const io = testIo(place.base, owner);
+  return show({ code: await check(['HEAD', '--file', 'team.yaml'], io, loader(place)), out: io.out, err: io.err }, 'team check: not in a git repository\n');
+});
+scene('check.no-commit', async (place) => {
+  write(place, CHECKED);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['not-a-ref', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, "doesn't name a commit");
+});
+scene('check.range', async (place) => {
+  write(place, CHECKED);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['missing..also', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, "can't be resolved");
+});
+scene('check.empty-range', async (place) => {
+  write(place, CHECKED);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD..HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'holds no commit');
+});
+scene('check.since-missing', async (place) => {
+  write(place, CHECKED);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--since', 'missing', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'since "missing"');
+});
+scene('check.since-unreachable', async (place) => {
+  write(place, CHECKED);
+  const tree = git(place.root, 'rev-parse', 'HEAD^{tree}').trim();
+  const otherCommit = git(place.root, 'commit-tree', tree, '-m', 'other').trim();
+  git(place.root, 'update-ref', 'refs/heads/topic', otherCommit);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--since', 'topic', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'is not reachable');
+});
+scene('check.not-a-ref', async (place) => {
+  write(place, CHECKED);
+  const io = testIo(place.root, owner);
+  return show({ code: await check(['HEAD', '--since', '--bad', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'is not a ref');
+});
+
+scene('conformance-adapter.finished', async () => {
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  const proc = Bun.spawn(['bun', 'src/cli.ts', 'conformance-adapter'], {
+    cwd: repo, stdin: new TextEncoder().encode('not json\n'), stdout: 'pipe', stderr: 'pipe',
+  });
+  const code = await proc.exited;
+  const out = await new Response(proc.stdout).text();
+  return show({ code, out, err: await new Response(proc.stderr).text() }, 'the line is not JSON');
+});
+
+scene('doctor.invocation', async (place) => {
+  const io = testIo(place.root, owner);
+  return show({ code: await runDoctor(['extra'], io, doctor(place.home)), out: io.out, err: io.err }, 'unexpected');
+});
+scene('doctor.not-a-repo', async (place) => {
+  const io = testIo(place.root, owner);
+  return show({ code: await runDoctor([], io, doctor(place.home)), out: io.out, err: io.err }, 'not inside a git repository');
+}, false);
+scene('doctor.file', async (place) => {
+  const io = testIo(place.root, owner);
+  return show({ code: await runDoctor(['--file', 'missing.yaml'], io, doctor(place.home)), out: io.out, err: io.err }, 'no team file');
+});
+scene('doctor.file-invalid', async (place) => {
+  invalid(place);
+  const io = testIo(place.root, owner);
+  return show({ code: await runDoctor(['--file', 'team.yaml'], io, doctor(place.home)), out: io.out, err: io.err }, 'line');
+});
+scene('doctor.clear', async (place) => {
+  approve(place, TEAM);
+  const io = testIo(place.root, owner);
+  return show({ code: await runDoctor(['--file', place.file], io, doctor(place.home)), out: io.out, err: io.err }, 'nothing missing');
+});
+scene('doctor.missing', async (place) => {
+  approve(place, TEAM);
+  const io = testIo(place.root, owner);
+  return show({ code: await runDoctor(['--file', place.file], io, doctor(place.home, { version: () => null })), out: io.out, err: io.err }, 'install');
+});
+
+async function down(place: Place, argv: string[], caller: Caller, sources: RemoveSources): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runDown(argv, io, sources), out: io.out, err: io.err };
+}
+
+scene('down.invocation', async (place) => show(await down(place, ['extra'], owner, downSources()), 'unexpected'));
+scene('down.not-a-repo', async (place) => show(await down(place, [], owner, downSources()), 'not inside a git repository'), false);
+scene('down.file', async (place) => show(await down(place, ['--file', 'missing.yaml'], owner, downSources()), 'no team file'));
+scene('down.file-invalid', async (place) => {
+  invalid(place);
+  return show(await down(place, ['--file', 'team.yaml'], owner, downSources()), 'line');
+});
+scene('down.herdr', async (place) => {
+  write(place, TEAM);
+  return show(await down(place, [], owner, downSources({ sessionRunning: () => null })), "doesn't answer");
+});
+scene('down.idle', async (place) => {
+  write(place, TEAM);
+  return show(await down(place, [], owner, downSources()), 'nothing to stop');
+});
+scene('down.agents', async (place) => {
+  write(place, TEAM);
+  return show(await down(place, [], owner, downSources({ sessionRunning: () => true, agents: () => null })), "can't be read");
+});
+scene('down.dry-run', async (place) => {
+  write(place, TEAM);
+  return show(await down(place, ['--dry-run'], owner, downSources({ sessionRunning: () => true, agents: () => [] })), 'dry run: nothing was run');
+});
+scene('down.caller', async (place) => {
+  write(place, TEAM);
+  return show(await down(place, [], other, downSources({ sessionRunning: () => true, agents: () => [] })), 'only the owner, the coordinator or the operator');
+});
+scene('down.abandon', async (place) => {
+  write(place, TEAM);
+  return show(await down(place, ['--abandon'], leadSeat, downSources({ sessionRunning: () => true, agents: () => [] })), 'only the owner abandons');
+});
+scene('down.no-launch', async (place) => {
+  write(place, TEAM);
+  return show(await down(place, [], owner, downSources({ sessionRunning: () => true, agents: () => [] })), 'no way to reach herdr');
+});
+scene('down.stopped', async (place) => {
+  write(place, TEAM);
+  return show(await down(place, [], owner, downSources({
+    sessionRunning: () => true, agents: () => [], launch: downLaunch(),
+  })), 'stopped');
+});
+scene('down.held', async (place) => {
+  write(place, TEAM);
+  return show(await down(place, [], owner, downSources({
+    sessionRunning: () => true,
+    agents: () => [agent('lead')],
+    launch: downLaunch({ typeText: () => false }),
+  })), 'its exit was not typed');
+});
+
+async function initial(
+  place: Place,
+  argv: string[],
+  caller: Caller = owner,
+  home = place.home,
+  readStanding?: (root: string) => Standing,
+): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  try {
+    return { code: await runInit(argv, io, home, readStanding), out: io.out, err: io.err };
+  } catch (error) {
+    return { code: reportFailure(error, (text) => io.stderr(text)), out: io.out, err: io.err };
+  }
+}
+
+scene('init.invocation', async (place) => show(await initial(place, ['extra']), 'unexpected'));
+scene('init.not-owner', async (place) => show(await initial(place, [], other), 'only the owner'));
+scene('init.not-a-repo', async (place) => show(await initial(place, []), 'not inside a git repository'), false);
+scene('init.tracked', async (place) => {
+  write(place, TEAM);
+  git(place.root, 'add', '-f', '.agents/team.yaml');
+  git(place.root, 'commit', '-q', '-m', 'track the team file');
+  return show(await initial(place, []), 'tracked by git');
+});
+scene('init.exists', async (place) => {
+  write(place, TEAM);
+  return show(await initial(place, []), 'exists already');
+});
+scene('init.nothing', async (place) => show(await initial(place, ['--restore']), 'nothing to restore'));
+scene('init.legacy', async (place) => show(
+  await initial(place, ['--restore'], owner, place.home, () => ({ kind: 'legacy' })),
+  'approved before records were signed',
+));
+scene('init.refused', async (place) => show(
+  await initial(place, ['--restore'], owner, place.home, () => ({ kind: 'refused', why: 'the stored record does not verify' })),
+  'does not verify',
+));
+scene('init.wrote', async (place) => show(await initial(place, []), 'Wrote'));
+scene('init.restored', async (place) => {
+  approve(place, TEAM);
+  rmSync(place.file);
+  return show(await initial(place, ['--restore']), 'Restored');
+});
+scene('init.skeleton', async (place) => {
+  const root = join(place.base, 'a b');
+  mkdirSync(root);
+  git(root, 'init', '-q', '-b', 'main');
+  return show(await entry(['init'], testIo(root, owner)), "doesn't validate");
+});
+scene('init.git-silent', async (place) => {
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  const bin = join(place.base, 'bin');
+  mkdirSync(bin);
+  const saved = process.env.PATH ?? '';
+  writeFileSync(join(bin, 'git'), `#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = "-C" ]; then exit 1; fi
+done
+PATH=${JSON.stringify(saved)} exec git "$@"
+`);
+  chmodSync(join(bin, 'git'), 0o755);
+  const program = `
+    import { main, reportFailure } from ${JSON.stringify(join(repo, 'src/cli.ts'))};
+    let out = '', err = '';
+    const io = {
+      stdout(text) { out += text; }, stderr(text) { err += text; },
+      cwd: ${JSON.stringify(place.root)}, env: {}, stdinIsTTY: false, caller: { kind: 'owner' },
+    };
+    let code;
+    try { code = await main(['init'], io); }
+    catch (error) { code = reportFailure(error, (text) => { err += text; }); }
+    console.log(JSON.stringify({ code, out, err }));
+  `;
+  const proc = Bun.spawn(['bun', '-e', program], {
+    cwd: repo, env: { ...process.env, PATH: `${bin}:${saved}` }, stdout: 'pipe', stderr: 'pipe',
+  });
+  const code = await proc.exited;
+  const out = await new Response(proc.stdout).text();
+  if (code !== 0) throw new Error(await new Response(proc.stderr).text());
+  const parsed = JSON.parse(out) as Ran;
+  return show(parsed, "doesn't answer");
+});
+
+async function removed(place: Place, argv: string[], caller: Caller, sources: RemoveSources): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runRemove(argv, io, sources), out: io.out, err: io.err };
+}
+
+scene('remove.invocation', async (place) => show(await removed(place, [], owner, downSources()), 'a seat name is required'));
+scene('remove.not-a-repo', async (place) => show(await removed(place, ['worker'], owner, downSources()), 'not inside a git repository'), false);
+scene('remove.file', async (place) => show(await removed(place, ['worker', '--file', 'missing.yaml'], owner, downSources()), 'no team file'));
+scene('remove.file-invalid', async (place) => {
+  invalid(place);
+  return show(await removed(place, ['worker', '--file', 'team.yaml'], owner, downSources()), 'line');
+});
+scene('remove.file-owner', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker', '--file', '.agents/team.yaml'], other, downSources({ home: place.home })), "--file is the owner's");
+});
+scene('remove.caller', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker'], other, downSources({ home: place.home })), 'only the owner, the coordinator or the operator');
+});
+scene('remove.default-session', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker', '--session', 'default'], owner, downSources({ home: place.home })), 'can\'t be "default"');
+});
+scene('remove.abandon', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker', '--abandon'], leadSeat, downSources({ home: place.home })), 'only the owner abandons');
+});
+scene('remove.coordinator', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['lead'], leadSeat, downSources({ home: place.home })), 'only the owner removes the coordinator');
+});
+scene('remove.no-seat', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['missing'], owner, downSources({ home: place.home })), 'no seat "missing"');
+});
+scene('remove.keep-temporary', async (place) => {
+  write(place, TEAM);
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.seats.worker = { stage: 'ready', temporary: { like: 'lead', until: 'result:out.md' } };
+  });
+  return show(await removed(place, ['worker', '--keep'], owner, downSources({ home: place.home })), 'nothing to keep');
+});
+scene('remove.herdr', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker'], owner, downSources({ sessionRunning: () => null, home: place.home })), "doesn't answer");
+});
+scene('remove.agents', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker'], owner, downSources({ sessionRunning: () => true, agents: () => null, home: place.home })), "can't be read");
+});
+scene('remove.busy', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker'], owner, downSources({
+    sessionRunning: () => true, agents: () => [agent('worker', 'working')], screen: () => ({ kind: 'working' }), home: place.home,
+  })), 'is working');
+});
+scene('remove.no-profile', async (place) => {
+  write(place, GROK);
+  return show(await removed(place, ['worker'], owner, downSources({
+    sessionRunning: () => true, agents: () => [agent('worker')], home: place.home,
+  })), 'no launch profile');
+});
+scene('remove.edit', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['lead'], owner, downSources({ home: place.home })), 'coordinator "lead"');
+});
+scene('remove.no-launch', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker'], owner, downSources({
+    sessionRunning: () => true, agents: () => [agent('worker')], home: place.home,
+  })), 'no way to reach herdr');
+});
+scene('remove.stop-failed', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker'], owner, downSources({
+    sessionRunning: () => true,
+    agents: () => [agent('worker')],
+    home: place.home,
+    launch: downLaunch({ typeText: () => false }),
+  })), 'its exit was not typed');
+});
+scene('remove.locked', async (place) => {
+  write(place, TWO);
+  const swapped = `format: 1
+project: acme
+coordinator: worker
+operator: worker
+workspace:
+  mode: shared
+seats:
+  - role: coordinator
+    name: worker
+    label: worker
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+`;
+  return show(await removed(place, ['worker'], owner, downSources({
+    sessionRunning: () => true,
+    agents: () => [agent('worker')],
+    home: place.home,
+    screenText: () => claudeBox('/exit'),
+    launch: downLaunch({
+      typeText() {
+        writeFileSync(place.file, swapped);
+        return true;
+      },
+    }),
+  })), 'coordinator "worker"');
+});
+scene('remove.removed', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker'], owner, downSources({ home: place.home })), 'removed worker');
+});
+scene('remove.kept', async (place) => {
+  write(place, TWO);
+  return show(await removed(place, ['worker', '--keep'], owner, downSources({ home: place.home })), 'stopped worker');
+});
+scene('remove.temporary', async (place) => {
+  write(place, TEAM);
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.seats.worker = { stage: 'ready', temporary: { like: 'lead', until: 'result:out.md' } };
+  });
+  return show(await removed(place, ['worker'], owner, downSources({ home: place.home })), 'removed temporary worker');
+});
+
+const RELEASE_TEAM = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+workspace:
+  mode: shared
+releases:
+  - package: material
+    github: floor/material
+    trusted_publishing: true
+seats:
+  - role: coordinator
+    name: lead
+    label: lead
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+`;
+
+async function released(place: Place, argv: string[], answers: Answers): Promise<Ran> {
+  const io = testIo(place.root, owner);
+  const { fetcher } = fakeFetch(answers);
+  return { code: await runRelease(argv, io, fetcher), out: io.out, err: io.err };
+}
+
+scene('release.passed', async (place) => {
+  write(place, RELEASE_TEAM);
+  return show(await released(place, ['check', 'material@3.0.2'], happy()), 'pass');
+});
+scene('release.missing', async (place) => {
+  write(place, RELEASE_TEAM);
+  const answers = happy();
+  answers.set(URLS.compare, json({ ...fixture('github-compare.json'), status: 'behind' }));
+  return show(await released(place, ['check', 'material@3.0.2'], answers), 'missing');
+});
+scene('release.unknown', async (place) => {
+  write(place, RELEASE_TEAM);
+  const answers = happy();
+  answers.set(URLS.npm, [json({}, 500), json({}, 500)]);
+  return show(await released(place, ['check', 'material@3.0.2'], answers), 'unknown');
+});
+scene('release.configuration', async (place) => {
+  write(place, 'format: [\n');
+  return show(await released(place, ['check', 'material@3.0.2'], new Map()), 'line');
+});
+scene('release.usage', async (place) => show(await released(place, [], new Map()), 'a subcommand is required'));
+
+async function status(place: Place, argv: string[], sources: StatusSources): Promise<Ran> {
+  const io = testIo(place.root, owner);
+  return { code: await runStatus(argv, io, sources), out: io.out, err: io.err };
+}
+
+scene('status.invocation', async (place) => show(await status(place, ['extra'], statusSources(quiet)), 'unexpected'));
+scene('status.not-a-repo', async (place) => show(await status(place, [], statusSources(quiet)), 'not inside a git repository'), false);
+scene('status.file', async (place) => show(await status(place, ['--file', 'missing.yaml'], statusSources(quiet)), 'no team file'));
+scene('status.file-invalid', async (place) => {
+  invalid(place);
+  return show(await status(place, ['--file', 'team.yaml'], statusSources(quiet)), 'line');
+});
+scene('status.herdr', async (place) => {
+  write(place, TEAM);
+  return show(await status(place, [], statusSources(null)), "doesn't answer");
+});
+scene('status.agrees', async (place) => {
+  write(place, TEAM);
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.watch = { pid: 1, heartbeat: NOW.toISOString() };
+    session.seats.lead = { stage: 'ready', pane: 'w1:p1', workspace: 'w1' };
+  });
+  const matched: Live = {
+    running: true,
+    agents: [agent('lead')],
+    workspaces: [{ id: 'w1', label: 'lead' }],
+    screens: {},
+  };
+  approve(place, TEAM);
+  const standing = approvalStanding(place.root, place.home);
+  return show(await status(place, [], statusSources(matched, standing)), '0 difference');
+});
+scene('status.difference', async (place) => {
+  write(place, TEAM);
+  return show(await status(place, [], statusSources(quiet)), 'is in the file and is not running');
+});
+
+async function up(place: Place, argv: string[], caller: Caller, sources: UpSources): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runUp(argv, io, sources), out: io.out, err: io.err };
+}
+
+scene('up.invocation', async (place) => show(await up(place, ['extra'], owner, upSources(place)), 'unexpected'));
+scene('up.not-a-repo', async (place) => show(await up(place, [], owner, upSources(place)), 'not inside a git repository'), false);
+scene('up.file', async (place) => show(await up(place, ['--file', 'missing.yaml'], owner, upSources(place)), 'no team file'));
+scene('up.file-invalid', async (place) => {
+  invalid(place);
+  return show(await up(place, ['--file', 'team.yaml'], owner, upSources(place)), 'line');
+});
+scene('up.dry-run', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--dry-run', '--file', place.file], owner, upSources(place)), 'dry run: nothing was run');
+});
+scene('up.not-owner', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], other, upSources(place)), 'only the owner runs');
+});
+scene('up.never-approved', async (place) => {
+  write(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place)), 'never approved');
+});
+scene('up.differs', async (place) => {
+  approve(place, TEAM);
+  write(place, TEAM.replace('label: lead', 'label: renamed'));
+  return show(await up(place, ['--file', place.file], owner, upSources(place)), 'not the approved one');
+});
+scene('up.doctor', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { doctor: doctor(place.home, { version: () => null }) })), 'install');
+});
+scene('up.machine', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { machine: () => hot })), 'the load is 9.0');
+});
+scene('up.herdr', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { sessionRunning: () => null })), "doesn't answer");
+});
+scene('up.stopped', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { sessionState: () => 'stopped' })), 'is stopped');
+});
+scene('up.agents', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { sessionState: () => 'running', agents: () => null })), "can't be read");
+});
+scene('up.unknown', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, {
+    sessionState: () => 'running', agents: () => [agent('stranger')],
+  })), "doesn't record");
+});
+scene('up.placement', async (place) => {
+  approve(place, NARROW);
+  return show(await up(place, ['--file', place.file], owner, upSources(place)), 'matches no trust');
+});
+scene('up.no-launch', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place)), 'no way to reach herdr');
+});
+scene('up.ready', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching(IDLE) })), 'ready');
+});
+scene('up.pending', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching('') })), 'timed out');
+});
+scene('up.server', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching(IDLE, () => true, false) })), 'its server did not start');
+});
+scene('up.watch', async (place) => {
+  approve(place, TEAM);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, {
+    launch: launching(IDLE, (command) => !command.includes(' watch')),
+  })), 'watch: it did not start');
+});
+
+async function watched(place: Place, argv: string[], caller: Caller, sources: WatchSources = watchSources()): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runWatch(argv, io, sources), out: io.out, err: io.err };
+}
+
+scene('watch.invocation', async (place) => show(await watched(place, ['extra'], owner), 'unexpected'));
+scene('watch.not-a-repo', async (place) => show(await watched(place, [], owner), 'not inside a git repository'), false);
+scene('watch.file', async (place) => show(await watched(place, ['--file', 'missing.yaml'], owner), 'no team file'));
+scene('watch.file-invalid', async (place) => {
+  invalid(place);
+  return show(await watched(place, ['--file', 'team.yaml'], owner), 'line');
+});
+scene('watch.no-nudge', async (place) => {
+  write(place, TEAM);
+  return show(await watched(place, ['--no-nudge'], other), '--no-nudge');
+});
+scene('watch.no-notify', async (place) => {
+  write(place, TEAM);
+  return show(await watched(place, ['--no-notify'], other), '--no-notify');
+});
+scene('watch.already', async (place) => {
+  write(place, TEAM);
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.watch = { pid: 99, heartbeat: NOW.toISOString() };
+  });
+  return show(await watched(place, [], owner, watchSources({ alive: (pid) => pid === 99 })), 'already runs');
+});
+scene('watch.stopped', async (place) => {
+  write(place, TEAM);
+  return show(await watched(place, [], owner), 'stopped');
+});
+
+async function worktree(place: Place, argv: string[], caller: Caller = owner): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runWorktree(argv, io, worktreeSources(place)), out: io.out, err: io.err };
+}
+
+scene('worktree.invocation', async (place) => show(await worktree(place, ['--nope']), 'unknown option'));
+scene('worktree.subcommand', async (place) => show(await worktree(place, []), 'a subcommand is required'));
+scene('worktree.task-required', async (place) => show(await worktree(place, ['new']), 'a task name is required'));
+scene('worktree.extra', async (place) => show(await worktree(place, ['new', 'task', 'extra']), 'unexpected'));
+scene('worktree.remove-flags', async (place) => show(await worktree(place, ['remove', 'task', '--kind', 'fix']), 'remove takes no'));
+scene('worktree.not-a-repo', async (place) => show(await worktree(place, ['new', 'task']), 'not inside a git repository'), false);
+scene('worktree.file', async (place) => show(await worktree(place, ['new', 'task', '--file', 'missing.yaml']), 'no team file'));
+scene('worktree.file-invalid', async (place) => {
+  invalid(place);
+  return show(await worktree(place, ['new', 'task', '--file', 'team.yaml']), 'line');
+});
+scene('worktree.file-owner', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task', '--file', '.agents/team.yaml'], other), "--file is the owner's");
+});
+scene('worktree.caller', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task'], other), 'only the owner, the coordinator or the operator');
+});
+scene('worktree.default-session', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task', '--session', 'default']), 'can\'t be "default"');
+});
+scene('worktree.never-approved', async (place) => {
+  write(place, worktreeText());
+  return show(await worktree(place, ['new', 'task']), 'never approved');
+});
+scene('worktree.differs', async (place) => {
+  approve(place, worktreeText());
+  write(place, worktreeText({ limit: 4 }));
+  return show(await worktree(place, ['new', 'task']), 'not the approved one');
+});
+scene('worktree.task', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', '../task']), 'one segment');
+});
+scene('worktree.kind', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task', '--kind', '../fix']), '--kind:');
+});
+scene('worktree.shared', async (place) => {
+  approve(place, worktreeText({ mode: 'shared' }));
+  return show(await worktree(place, ['new', 'task']), 'workspace.mode is shared');
+});
+scene('worktree.config', async (place) => {
+  approve(place, worktreeText({ path: null, base: null, sharedSeat: true }));
+  return show(await worktree(place, ['new', 'task']), 'workspace.path and workspace.base are required');
+});
+scene('worktree.path-kind', async (place) => {
+  approve(place, worktreeText({ path: '../worktrees/{repo}/{kind}/{task}' }));
+  return show(await worktree(place, ['new', 'task']), 'fills {repo} and {task} only');
+});
+scene('worktree.kind-required', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task']), '--kind is required');
+});
+scene('worktree.kind-nowhere', async (place) => {
+  approve(place, worktreeText({ branch: '{task}' }));
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'nowhere to go');
+});
+scene('worktree.placeholder', async (place) => {
+  approve(place, worktreeText({ branch: '{nope}' }));
+  return show(await worktree(place, ['new', 'task']), 'placeholder');
+});
+scene('worktree.forbidden', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'WEB-1', '--kind', 'fix']), 'forbidden_public');
+});
+scene('worktree.trust', async (place) => {
+  approve(place, worktreeText({ trust: '../worktrees/acme/task' }));
+  return show(await worktree(place, ['new', 'select-width', '--kind', 'fix']), 'outside the approved trust');
+});
+scene('worktree.symlink', async (place) => {
+  approve(place, worktreeText());
+  const escaped = join(place.base, 'escaped');
+  mkdirSync(escaped);
+  symlinkSync(escaped, join(place.base, 'worktrees'));
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'symlink');
+});
+scene('worktree.seat', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix', '--seat', 'missing']), 'names no declared seat');
+});
+scene('worktree.limit', async (place) => {
+  approve(place, worktreeText({ limit: 1 }));
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.worktrees.other = { path: '../worktrees/acme/other', branch: 'fix/other', setup: 'ok' };
+  });
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'worktree limit is 1');
+});
+scene('worktree.recorded', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'already recorded');
+});
+scene('worktree.recorded-elsewhere', async (place) => {
+  approve(place, worktreeText());
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.other ??= emptySession());
+    session.worktrees.task = { path: '../worktrees/acme/task', branch: 'fix/task', setup: 'ok' };
+  });
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'already recorded in session');
+});
+scene('worktree.exists', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  mkdirSync(join(place.base, 'worktrees', 'acme', 'task'), { recursive: true });
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'already exists');
+});
+scene('worktree.branch', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  git(place.root, 'branch', 'fix/task', 'main');
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'branch fix/task already exists');
+});
+scene('worktree.published', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  git(place.root, 'push', '-q', 'origin', 'main:fix/task');
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'already exists');
+});
+scene('worktree.branch-name', async (place) => {
+  publish(place);
+  approve(place, worktreeText({ branch: '{kind}/{task}.lock' }));
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'is not a branch name');
+});
+scene('worktree.base', async (place) => {
+  publish(place);
+  approve(place, worktreeText({ base: 'nosuch' }));
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'is not a branch here');
+});
+scene('worktree.tracking', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  git(place.root, 'branch', 'side', 'main');
+  git(place.root, 'branch', '--set-upstream-to', 'side', 'main');
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), "isn't a remote branch");
+});
+scene('worktree.fetch', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  git(place.root, 'remote', 'set-url', 'origin', join(place.base, 'missing.git'));
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), "couldn't fetch");
+});
+scene('worktree.create-failed', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  const parent = join(place.base, 'worktrees', 'acme');
+  mkdirSync(parent, { recursive: true });
+  chmodSync(parent, 0o555);
+  try {
+    return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'was not created');
+  } finally {
+    chmodSync(parent, 0o755);
+  }
+});
+scene('worktree.setup', async (place) => {
+  publish(place);
+  approve(place, worktreeText({ setup: '  setup:\n    - "false"\n' }));
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), 'setup failed');
+});
+scene('worktree.created', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix']), '../worktrees/acme/task');
+});
+scene('worktree.remove-task', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['remove', '../task']), 'one segment');
+});
+scene('worktree.missing', async (place) => {
+  approve(place, worktreeText());
+  return show(await worktree(place, ['remove', 'task']), 'no worktree named');
+});
+scene('worktree.elsewhere', async (place) => {
+  approve(place, worktreeText());
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.other ??= emptySession());
+    session.worktrees.task = { path: '../worktrees/acme/task', branch: 'fix/task', setup: 'ok' };
+  });
+  return show(await worktree(place, ['remove', 'task']), 'not in acme');
+});
+scene('worktree.occupied', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.seats['lead-tmp-1'] = { stage: 'ready', temporary: { like: 'lead', until: 'merged:fix/task', task: 'task' } };
+  });
+  return show(await worktree(place, ['remove', 'task']), 'lead-tmp-1');
+});
+scene('worktree.unreadable', async (place) => {
+  approve(place, worktreeText());
+  const plain = join(place.base, 'plain');
+  mkdirSync(plain);
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.worktrees.task = { path: '../plain', branch: 'fix/task', setup: 'ok' };
+  });
+  return show(await worktree(place, ['remove', 'task']), "couldn't read");
+});
+scene('worktree.dirty', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  writeFileSync(join(place.base, 'worktrees', 'acme', 'task', 'README.md'), 'changed\n');
+  return show(await worktree(place, ['remove', 'task']), 'README.md');
+});
+scene('worktree.unpublished', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  const folder = join(place.base, 'worktrees', 'acme', 'task');
+  writeFileSync(join(folder, 'README.md'), 'committed\n');
+  git(folder, 'add', 'README.md');
+  git(folder, 'commit', '-q', '-m', 'local only');
+  return show(await worktree(place, ['remove', 'task']), 'local only');
+});
+scene('worktree.remove-failed', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  const folder = join(place.base, 'worktrees', 'acme', 'task');
+  git(place.root, 'worktree', 'lock', folder);
+  return show(await worktree(place, ['remove', 'task']), 'was not removed');
+});
+scene('worktree.record-gone', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  rmSync(join(place.base, 'worktrees', 'acme', 'task'), { recursive: true, force: true });
+  return show(await worktree(place, ['remove', 'task']), 'already gone');
+});
+scene('worktree.removed', async (place) => {
+  publish(place);
+  approve(place, worktreeText());
+  expect((await worktree(place, ['new', 'task', '--kind', 'fix'])).code).toBe(0);
+  return show(await worktree(place, ['remove', 'task']), 'the branch fix/task is kept');
+});
+
+scene('team.help', async (place) => show(await entry(['--help'], testIo(place.root, owner)), 'Usage:'));
+scene('team.no-command', async (place) => show(await entry([], testIo(place.root, owner)), 'Usage:'));
+scene('team.version', async (place) => show(await entry(['--version'], testIo(place.root, owner)), version()));
+scene('team.unknown', async (place) => show(await entry(['nosuch'], testIo(place.root, owner)), 'unknown command'));
+scene('team.command-help', async (place) => show(await entry(['status', '--help'], testIo(place.root, owner)), 'Usage: team status'));
+scene('team.command-threw', async (place) => {
+  const root = join(place.base, 'a b');
+  mkdirSync(root);
+  git(root, 'init', '-q', '-b', 'main');
+  return show(await entry(['init'], testIo(root, owner)), 'team:');
+});
+
+// These returns are reached when a second validation disagrees with the first. The stand-in is
+// the same idea as a fake herdr: the command runs, and only that later check is made to fail.
+const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed']);
+
+const contract = loadContract();
+for (const row of contract.rows) {
+  if (defensive.has(row.id)) continue;
+  test(row.id, async () => {
+    const run = scenes.get(row.id);
+    expect(run, row.id).toBeDefined();
+    const place = layout(!bare.has(row.id));
+    try {
+      const result = await run!(place);
+      expect(result.code).toBe(row.code);
+    } finally {
+      rmSync(place.base, { recursive: true, force: true });
+    }
+  });
+}
+
+test('every listed outcome has a run', () => {
+  const ids = contract.rows.map((row) => row.id);
+  expect(ids.filter((id) => !scenes.has(id) && !defensive.has(id))).toEqual([]);
+  expect(scenes.size + defensive.size).toBe(ids.length);
+});
+
+test('the exit-code check is clean', () => {
+  expect(problems()).toEqual([]);
+});
+
+test('a new return that reuses a code fails the check', () => {
+  const text = readFileSync(new URL('../src/commands/doctor.ts', import.meta.url), 'utf8');
+  const next = text.replace('return missing ? 1 : 0;\n}', 'return missing ? 1 : 0;\n  return 1;\n}');
+  const found = problems({ files: new Map([['src/commands/doctor.ts', next]]) });
+  expect(found.some((line) => line.includes('src/commands/doctor.ts') && line.includes('exit site has no row'))).toBe(true);
+});
+
+function canon(rows: readonly ExitRow[]): string {
+  const sorted = [...rows].sort((a, b) => a.command.localeCompare(b.command) || a.code - b.code || a.id.localeCompare(b.id));
+  return `${JSON.stringify({
+    format: 1,
+    rows: sorted.map((row) => ({ code: row.code, command: row.command, id: row.id, meaning: row.meaning, trigger: row.trigger })),
+  }, null, 2)}\n`;
+}
+
+test('removing a row fails the check', () => {
+  const rows = contract.rows.filter((row) => row.id !== 'doctor.clear');
+  const found = problems({ contractText: canon(rows), page: render(rows) });
+  expect(found.some((line) => line.includes('doctor.clear') && line.includes('no contract row'))).toBe(true);
+});
+
+test('changing a returned code fails the check', () => {
+  const text = readFileSync(new URL('../src/commands/doctor.ts', import.meta.url), 'utf8');
+  const next = text.replace('return missing ? 1 : 0;', 'return missing ? 3 : 0;');
+  const found = problems({ files: new Map([['src/commands/doctor.ts', next]]) });
+  expect(found.some((line) => line.includes('src/commands/doctor.ts') && line.includes('3'))).toBe(true);
+});
+
+const UNREADABLE = "exit expression the contract can't read: return a marked literal or a covered call";
+
+function withDoctor(body: string, before = ''): Map<string, string> {
+  const text = readFileSync(new URL('../src/commands/doctor.ts', import.meta.url), 'utf8');
+  const signature = 'export async function runDoctor(argv: string[], io: Io, sources: DoctorSources): Promise<number> {\n';
+  return new Map([['src/commands/doctor.ts', `${before}${text.replace(signature, `${signature}${body}`)}`]]);
+}
+
+function rejects(files: Map<string, string>): boolean {
+  return problems({ files }).some((line) => line.includes('src/commands/doctor.ts') && line.includes(UNREADABLE));
+}
+
+test('an implicit arrow return fails the check', () => {
+  const files = withDoctor("  const reviewGateProbe = (): 1 => 1;\n  if (argv[0] === '--gate-probe') return reviewGateProbe();\n");
+  expect(rejects(files)).toBe(true);
+});
+
+test('an identifier return fails the check', () => {
+  const files = withDoctor("  const probeCode = 1;\n  if (argv[0] === '--gate-probe') return probeCode;\n");
+  expect(rejects(files)).toBe(true);
+});
+
+test('a throw in an imported helper is covered by team.command-threw', () => {
+  const files = withDoctor("  if (argv[0] === '--gate-probe') gateThrow();\n", "import { gateThrow } from './gate-throw.ts';\n");
+  files.set('src/commands/gate-throw.ts', "export function gateThrow(): void {\n  throw new Error('gate');\n}\n");
+  expect(problems({ files })).toEqual([]);
+  expect(analyze(files).coveredThrows.some((item) => item.file === 'src/commands/gate-throw.ts' && item.id === 'team.command-threw')).toBe(true);
+});
+
+test('a default-parameter call fails the check', () => {
+  const files = withDoctor(
+    "  if (argv[0] === '--gate-probe') return probeDefault();\n",
+    'function hidden(): number { return 1; }\nfunction probeDefault(code = hidden()): number { return code; }\n',
+  );
+  expect(rejects(files)).toBe(true);
+});
+
+test('an awaited helper return fails the check', () => {
+  const files = withDoctor(
+    "  if (argv[0] === '--gate-probe') return await later();\n",
+    'async function later(): Promise<number> { return 1; }\n',
+  );
+  const found = problems({ files });
+  expect(found.some((line) => line.includes('exit site has no row'))).toBe(true);
+});
+
+test('a switch that falls through fails the check', () => {
+  const files = withDoctor(
+    "  if (argv[0] === '--gate-probe') return switched(argv[0] ?? '');\n",
+    "function switched(flag: string): number {\n  let value = 1;\n  switch (flag) {\n    case 'a':\n      value = 1;\n    default:\n      return value;\n  }\n}\n",
+  );
+  expect(rejects(files)).toBe(true);
+});
+
+test('return void 0 ?? 1 fails the check', () => {
+  const files = withDoctor("  if (argv[0] === '--gate-probe') return void 0 ?? 1;\n");
+  expect(rejects(files)).toBe(true);
+});
+
+function namesLine(files: Map<string, string>, file: string): boolean {
+  return problems({ files }).some((line) => new RegExp(`${file}:\\d+:`).test(line));
+}
+
+test('process.exit with no argument fails the check', () => {
+  const files = withDoctor("  if (argv[0] === '--gate-probe') process.exit();\n");
+  expect(namesLine(files, 'src/commands/doctor.ts')).toBe(true);
+});
+
+test('a module-level process.exit fails the check', () => {
+  const files = withDoctor('', "if (process.env.GATE_PROBE === '1') process.exit(17);\n");
+  expect(namesLine(files, 'src/commands/doctor.ts')).toBe(true);
+});
+
+test('a default call that is not the command table fails the check', () => {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const next = text.replace(
+    'return command.default(rest, io);',
+    "if (argv[0] === '--gate-probe') return ({ default: () => 17 }).default();\n  return command.default(rest, io);",
+  );
+  const files = new Map([['src/cli.ts', next]]);
+  expect(namesLine(files, 'src/cli.ts')).toBe(true);
+});
+
+test('a function name declared twice fails the check', () => {
+  const files = withDoctor(
+    "  function probeShadow(): number { return 17; }\n  if (argv[0] === '--gate-probe') return probeShadow();\n",
+    'function probeShadow(): number { return runDoctor(); }\n',
+  );
+  expect(namesLine(files, 'src/commands/doctor.ts')).toBe(true);
+});
+
+test('a followed helper with no return fails the check', () => {
+  const files = withDoctor(
+    "  if (argv[0] === '--gate-probe') return noReturn() as never;\n",
+    'function noReturn(): never {}\n',
+  );
+  expect(namesLine(files, 'src/commands/doctor.ts')).toBe(true);
+});
+
+const UNROOTED = "a command file whose default export the contract can't read";
+
+function withTable(line: string, added: readonly (readonly [string, string])[] = []): Map<string, string> {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const start = text.indexOf('export const commands');
+  const close = text.indexOf('\n};', start);
+  const next = `${text.slice(0, close)}\n  ${line}${text.slice(close)}`;
+  return new Map([['src/cli.ts', next], ...added]);
+}
+
+test('a re-exported command fails the check', () => {
+  const files = withTable(
+    "probe: () => import('./commands/probe.ts'),",
+    [['src/commands/probe.ts', "export { default, USAGE } from './doctor.ts';\n"]],
+  );
+  expect(problems({ files }).some((line) => line.includes('src/commands/probe.ts') && line.includes(UNROOTED))).toBe(true);
+});
+
+test('a command file with no default export fails the check', () => {
+  const files = withTable(
+    "probeEmpty: () => import('./commands/probe-empty.ts'),",
+    [['src/commands/probe-empty.ts', "export const USAGE = 'probe';\n"]],
+  );
+  expect(problems({ files }).some((line) => line.includes('src/commands/probe-empty.ts') && line.includes(UNROOTED))).toBe(true);
+});
+
+test('a table entry outside src/commands fails the check', () => {
+  const files = withTable("probe: () => import('./outside.ts'),");
+  const found = problems({ files });
+  expect(found.some((line) => line.includes('probe') && line.includes('src/outside.ts') && line.includes("an entry in the commands table whose module the gate didn't walk"))).toBe(true);
+});
+
+test('a default export imported from another file fails the check', () => {
+  const files = withTable(
+    "probeAlias: () => import('./commands/probe-alias.ts'),",
+    [['src/commands/probe-alias.ts', "import run from './doctor.ts';\nexport default run;\n"]],
+  );
+  expect(problems({ files }).some((line) => line.includes('src/commands/probe-alias.ts') && line.includes(UNROOTED))).toBe(true);
+});
+
+test('a walked command file missing from the table fails the check', () => {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const next = text.replace("  add: () => import('./commands/add.ts'),\n", '');
+  const found = problems({ files: new Map([['src/cli.ts', next]]) });
+  expect(found.some((line) => line.includes('src/commands/add.ts') && line.includes('a walked file that is in no table entry'))).toBe(true);
+});
+
+test('a second table key for one file fails the check', () => {
+  const files = withTable("probe: () => import('./commands/doctor.ts'),");
+  const found = problems({ files });
+  expect(found.some((line) => line.includes('doctor and probe load src/commands/doctor.ts'))).toBe(true);
+});
+
+test('a table key that is not the module name fails the check', () => {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const next = text.replace(
+    "  doctor: () => import('./commands/doctor.ts'),\n",
+    "  medic: () => import('./commands/doctor.ts'),\n",
+  );
+  const found = problems({ files: new Map([['src/cli.ts', next]]) });
+  expect(found.some((line) => line.includes('medic loads src/commands/doctor.ts'))).toBe(true);
+});
+
+function withCli(snippet: string): Map<string, string> {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  return new Map([['src/cli.ts', `${snippet}\n${text}`]]);
+}
+
+function sharedProbe(): { files: Map<string, string>; rows: ExitRow[] } {
+  const before = "import { sharedExitProbe } from '../review-shared.ts';\n";
+  const body = "  if (argv[0] === '--review-shared') return sharedExitProbe();\n";
+  const doctor = withDoctor(body, before);
+  const statusText = readFileSync(new URL('../src/commands/status.ts', import.meta.url), 'utf8');
+  const status = `${before}${statusText.replace(
+    'export async function runStatus(argv: string[], io: Io, sources: StatusSources): Promise<number> {\n',
+    `export async function runStatus(argv: string[], io: Io, sources: StatusSources): Promise<number> {\n${body}`,
+  )}`;
+  return {
+    files: new Map([
+      ['src/review-shared.ts', 'export function sharedExitProbe(): number {\n  // exit: doctor.review-shared\n  return 1;\n}\n'],
+      ['src/commands/doctor.ts', doctor.get('src/commands/doctor.ts') ?? ''],
+      ['src/commands/status.ts', status],
+    ]),
+    rows: [{ code: 1, command: 'doctor', id: 'doctor.review-shared', meaning: 'a shared helper', trigger: 'team doctor' }],
+  };
+}
+
+function shadowedDispatcher(): Map<string, string> {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const next = text.replace(
+    '  const command = await load();\n',
+    '  const command = { default: () => 1 };\n  {\n    const command = await load();\n  }\n',
+  );
+  return new Map([['src/cli.ts', next]]);
+}
+
+function fileWideLookup(): { files: Map<string, string>; rows: ExitRow[] } {
+  const files = withDoctor(
+    "  if (argv[0] === '--review-shadow') return reviewShadow();\n",
+    "import { reviewShadow } from '../review-shadow.ts';\nfunction holder(): void {\n  function reviewShadow(): number {\n    // exit: doctor.review-hidden\n    return 1;\n  }\n}\n",
+  );
+  files.set('src/review-shadow.ts', 'export function reviewShadow(): number {\n  return 17;\n}\n');
+  return {
+    files,
+    rows: [{ code: 1, command: 'doctor', id: 'doctor.review-hidden', meaning: 'the hidden helper', trigger: 'team doctor --review-shadow' }],
+  };
+}
+
+function shadowedImport(body: string, before = ''): { files: Map<string, string>; extra: ExitRow[] } {
+  const files = withDoctor(body, `import { reviewShadow } from '../review-shadow.ts';\n${before}`);
+  files.set('src/review-shadow.ts', 'export function reviewShadow(): number {\n  // exit: doctor.review-shadow\n  return 1;\n}\n');
+  return {
+    files,
+    extra: [{ code: 1, command: 'doctor', id: 'doctor.review-shadow', meaning: 'the imported helper', trigger: 'team doctor --review-shadow' }],
+  };
+}
+
+function failureMoved(): Map<string, string> {
+  const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const next = text
+    .replace(
+      'export function reportFailure(error: unknown, stderr: (text: string) => void): number {\n',
+      'function threwCode(): number {\n  return 2;\n}\n\nexport function reportFailure(error: unknown, stderr: (text: string) => void): number {\n',
+    )
+    .replace('return 1; // exit: team.command-threw', 'return threwCode(); // exit: team.command-threw');
+  return new Map([['src/cli.ts', next]]);
+}
+
+const form = "a commands-table entry the contract can't read";
+const cli = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+const medic = cli.replace(
+  "  doctor: () => import('./commands/doctor.ts'),\n",
+  "  medic: () => import('./commands/doctor.ts'),\n",
+);
+const noAdd = cli.replace("  add: () => import('./commands/add.ts'),\n", '');
+const notDispatcher = cli.replace(
+  'return command.default(rest, io);',
+  "if (argv[0] === '--gate-probe') return ({ default: () => 17 }).default();\n  return command.default(rest, io);",
+);
+const unreadForms: { name: string; files: Map<string, string>; needle: string; extra?: ExitRow[] }[] = [
+    { name: 'shorthand', files: withTable('shorthand,'), needle: `shorthand: ${form}` },
+    { name: 'method', files: withTable("method() { return import('./commands/doctor.ts'); },"), needle: `method: ${form}` },
+    { name: 'spread', files: withTable("...{ probe: () => import('./commands/doctor.ts') },"), needle: `spread: ${form}` },
+    { name: 'computed key', files: withTable("['computed']: () => import('./commands/doctor.ts'),"), needle: `computed: ${form}` },
+    { name: 'getter', files: withTable("get getter() { return import('./commands/doctor.ts'); },"), needle: `getter: ${form}` },
+    { name: 'setter', files: withTable('set setter(_) {},'), needle: `setter: ${form}` },
+    { name: 'quoted key', files: withTable("'quoted': () => import('./commands/doctor.ts'),"), needle: `quoted: ${form}` },
+    { name: 'block arrow', files: withTable("block: () => { return import('./commands/doctor.ts'); },"), needle: `block: ${form}` },
+    { name: 'async arrow', files: withTable("asyncArrow: async () => import('./commands/doctor.ts'),"), needle: `asyncArrow: ${form}` },
+    { name: 'value is not an import arrow', files: withTable("bare: import('./commands/doctor.ts'),"), needle: `bare: ${form}` },
+    {
+      name: 're-exported default',
+      files: withTable("probe: () => import('./commands/probe.ts'),", [['src/commands/probe.ts', "export { default, USAGE } from './doctor.ts';\n"]]),
+      needle: 'src/commands/probe.ts',
+    },
+    {
+      name: 'no default export',
+      files: withTable("probeEmpty: () => import('./commands/probe-empty.ts'),", [['src/commands/probe-empty.ts', "export const USAGE = 'probe';\n"]]),
+      needle: 'src/commands/probe-empty.ts',
+    },
+    { name: 'import outside src/commands', files: withTable("probe: () => import('./outside.ts'),"), needle: "whose module the gate didn't walk" },
+    {
+      name: 'default is an import',
+      files: withTable("probeAlias: () => import('./commands/probe-alias.ts'),", [['src/commands/probe-alias.ts', "import run from './doctor.ts';\nexport default run;\n"]]),
+      needle: 'src/commands/probe-alias.ts',
+    },
+    { name: 'file with no key', files: new Map([['src/cli.ts', noAdd]]), needle: 'a walked file that is in no table entry' },
+    { name: 'two keys one file', files: withTable("probe: () => import('./commands/doctor.ts'),"), needle: 'doctor and probe load src/commands/doctor.ts' },
+    { name: 'key is not the module name', files: new Map([['src/cli.ts', medic]]), needle: 'medic loads src/commands/doctor.ts' },
+    { name: 'process.exit with no argument', files: withDoctor("  if (argv[0] === '--gate-probe') process.exit();\n"), needle: UNREADABLE },
+    { name: 'module-level process.exit', files: withDoctor('', "if (process.env.GATE_PROBE === '1') process.exit(17);\n"), needle: 'exit site has no row' },
+    { name: 'default call that is not the command table', files: new Map([['src/cli.ts', notDispatcher]]), needle: UNREADABLE },
+    {
+      name: 'function name declared twice',
+      files: withDoctor(
+        "  function probeShadow(): number { return 17; }\n  if (argv[0] === '--gate-probe') return probeShadow();\n",
+        'function probeShadow(): number { return runDoctor(); }\n',
+      ),
+      needle: `probeShadow: ${UNREADABLE}`,
+    },
+    {
+      name: 'helper with no return',
+      files: withDoctor("  if (argv[0] === '--gate-probe') return noReturn() as never;\n", 'function noReturn(): never {}\n'),
+      needle: UNREADABLE,
+    },
+    {
+      name: 'shared helper row missing for the other command',
+      files: sharedProbe().files,
+      extra: sharedProbe().rows,
+      needle: 'marked on status',
+    },
+    {
+      name: 'conditional break',
+      files: withDoctor(
+        "  if (argv[0] === '--review-conditional') return reviewConditionalBreak(true)!;\n",
+        'function reviewConditionalBreak(flag: boolean): number | undefined {\n  switch (flag) {\n    default:\n      if (flag) break;\n      return 1;\n  }\n}\n',
+      ),
+      needle: UNREADABLE,
+    },
+    { name: 'exitCode ||=', files: withCli('process.exitCode ||= 1;'), needle: UNREADABLE },
+    { name: 'exitCode ??=', files: withCli('process.exitCode ??= 1;'), needle: UNREADABLE },
+    { name: 'exitCode &&=', files: withCli('process.exitCode &&= 1;'), needle: UNREADABLE },
+    { name: 'exitCode +=', files: withCli('process.exitCode += 1;'), needle: UNREADABLE },
+    { name: 'exitCode ++', files: withCli('process.exitCode++;'), needle: UNREADABLE },
+    { name: 'exitCode --', files: withCli('process.exitCode--;'), needle: UNREADABLE },
+    { name: 'exitCode destructuring target', files: withCli('({ exitCode: process.exitCode } = { exitCode: 1 });'), needle: UNREADABLE },
+    { name: 'Object.assign(process)', files: withCli('Object.assign(process, { exitCode: 1 });'), needle: UNREADABLE },
+    { name: "Reflect.set exitCode", files: withCli("Reflect.set(process, 'exitCode', 1);"), needle: UNREADABLE },
+    { name: 'Object.defineProperty exitCode', files: withCli("Object.defineProperty(process, 'exitCode', { value: 1 });"), needle: UNREADABLE },
+    { name: "process['exitCode']", files: withCli("process['exitCode'] = 1;"), needle: UNREADABLE },
+    { name: 'shadowed dispatcher', files: shadowedDispatcher(), needle: UNREADABLE },
+    {
+      name: 'imported name also declared in the file',
+      files: fileWideLookup().files,
+      extra: fileWideLookup().rows,
+      needle: 'exit site has no row',
+    },
+    {
+      name: 'callback parameter',
+      ...shadowedImport(
+        "  if (argv[0] === '--review-param') return callbackExit(() => 17);\n",
+        'function callbackExit(reviewShadow: () => number): number {\n  return reviewShadow();\n}\n',
+      ),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
+    {
+      name: 'default-valued parameter',
+      ...shadowedImport(
+        "  if (argv[0] === '--review-default') return callbackExit();\n",
+        'function callbackExit(reviewShadow = () => 17): number {\n  return reviewShadow();\n}\n',
+      ),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
+    {
+      name: 'destructured parameter',
+      ...shadowedImport(
+        "  if (argv[0] === '--review-destructured') return callbackExit({ reviewShadow: () => 17 });\n",
+        'function callbackExit({ reviewShadow }: { reviewShadow: () => number }): number {\n  return reviewShadow();\n}\n',
+      ),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
+    {
+      name: 'let reassigned',
+      ...shadowedImport("  let reviewShadow = () => 2;\n  reviewShadow = () => 17;\n  if (argv[0] === '--review-let') return reviewShadow();\n"),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
+    {
+      name: 'catch variable',
+      ...shadowedImport("  try {\n    throw new Error('review');\n  } catch (reviewShadow) {\n    if (argv[0] === '--review-catch') return reviewShadow();\n  }\n"),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
+    {
+      name: 'inner const hiding an import',
+      ...shadowedImport("  const reviewShadow = () => 17;\n  if (argv[0] === '--review-const') return reviewShadow();\n"),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
+    {
+      name: 'nested var',
+      ...shadowedImport("  if (argv[0] === '--review-nested-var') {\n    {\n      var reviewShadow = () => 17;\n    }\n    return reviewShadow();\n  }\n"),
+      needle: "reviewShadow: the exit-code gate doesn't model var scoping; use let or const",
+    },
+    {
+      name: 'top-level var',
+      files: withDoctor('', 'var reviewShadow = () => 1;\n'),
+      needle: "reviewShadow: the exit-code gate doesn't model var scoping; use let or const",
+    },
+    {
+      name: 'var in a for head',
+      files: withDoctor('  for (var reviewShadow = () => 17; false;) {}\n'),
+      needle: "reviewShadow: the exit-code gate doesn't model var scoping; use let or const",
+    },
+    {
+      name: 'function declared in an if',
+      ...shadowedImport("  if (argv[0] === '--review-block-fn') {\n    function reviewShadow(): number {\n      return 17;\n    }\n  }\n  if (argv[0] === '--review-block-call') return reviewShadow();\n"),
+      needle: `reviewShadow: ${UNREADABLE}`,
+    },
+    {
+      name: 'local reportFailure',
+      files: withDoctor(
+        "  if (argv[0] === '--gate-probe') process.exitCode = reportFailure();\n",
+        'function reportFailure(): number { return 17; }\n',
+      ),
+      needle: UNREADABLE,
+    },
+    { name: 'reportFailure returns a helper', files: failureMoved(), needle: 'says code 1, the site returns 2' },
+];
+
+test.each(unreadForms)('$name fails the check', (row) => {
+  const found = problems(row.extra
+    ? { files: row.files, contractText: canon([...contract.rows, ...row.extra]), page: render([...contract.rows, ...row.extra]) }
+    : { files: row.files });
+  expect(found.some((line) => line.includes(row.needle)), row.name).toBe(true);
+});

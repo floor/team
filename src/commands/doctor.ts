@@ -394,6 +394,7 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
   const args = readArgs(argv, ['session', 'file'], ['login']);
   if (args.error || args.rest.length) {
     io.stderr(`team doctor: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
+    // exit: doctor.invocation
     return 2;
   }
   const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
@@ -401,6 +402,9 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
     for (const problem of loaded.errors) {
       io.stderr(`team doctor: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
     }
+    // exit: doctor.not-a-repo
+    // exit: doctor.file
+    // exit: doctor.file-invalid
     return 2;
   }
   const { team, root } = loaded;
@@ -430,5 +434,7 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
       ? `team doctor: ${missing} missing, ${warnings} warning${warnings === 1 ? '' : 's'}: \`up\` and \`add\` refuse until the missing ones are done\n`
       : `team doctor: nothing missing, ${warnings} warning${warnings === 1 ? '' : 's'}\n`,
   );
+  // exit: doctor.clear
+  // exit: doctor.missing
   return missing ? 1 : 0;
 }

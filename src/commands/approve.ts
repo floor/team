@@ -74,6 +74,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   const args = readArgs(argv, ['file'], ['show']);
   if (args.error || args.rest.length) {
     io.stderr(`team approve: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
+    // exit: approve.invocation
     return 2;
   }
 
@@ -82,6 +83,9 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     for (const problem of loaded.errors) {
       io.stderr(`team approve: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
     }
+    // exit: approve.not-a-repo
+    // exit: approve.file
+    // exit: approve.file-invalid
     return 2;
   }
   // Validate the text load just read. A second read could store an edit under the first read's fingerprints.
@@ -90,11 +94,13 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     for (const problem of checked.errors) {
       io.stderr(`team approve: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
     }
+    // exit: approve.revalidate
     return 2;
   }
   const placed = placedProblems(checked.team, loaded.root);
   if (placed.length) {
     for (const problem of placed) io.stderr(`team approve: ${problem.message}\n`);
+    // exit: approve.placed
     return 2;
   }
   const { team } = checked;
@@ -106,17 +112,20 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   const live = overrideFile(team.project, root, sources.home);
   if (live.problems.length) {
     for (const problem of live.problems) io.stderr(`team approve: ${problem}\n`);
+    // exit: approve.overrides
     return 2;
   }
   const problem = storeProblem(store, root, team);
   if (problem) {
     io.stderr(`team approve: ${problem}\n`);
+    // exit: approve.store
     return 1;
   }
 
   const resolved = resolveChecks(team, root, process.env.PATH ?? '');
   if (!resolved.ok) {
     io.stderr(`team approve: the check for ${resolved.account} cannot be resolved\n`);
+    // exit: approve.check
     return 1;
   }
   let previous: ReturnType<typeof readApproval> = null;
@@ -184,6 +193,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     `approval #${(recorded?.generation ?? 0) + 1} for this project${recorded ? `; the last one was on ${recorded.at.slice(0, 10)}` : ''}${keyRead.kind === 'key' ? `; key ${keyFingerprint(keyRead.key)}` : ''}.\n`,
   );
 
+  // exit: approve.show
   if (args.flags.has('show')) return 0;
 
   // A key that cannot be read fails closed here, before the owner answers anything:
@@ -192,6 +202,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     keyOf(sources.home);
   } catch (error) {
     io.stderr(`team approve: ${(error as Error).message}\n`);
+    // exit: approve.key
     return 1;
   }
 
@@ -200,6 +211,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     io.stderr(
       `team approve: only the owner approves a team file, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`,
     );
+    // exit: approve.not-owner
     return 1;
   }
 
@@ -208,6 +220,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   );
   if (answer === null || answer.trim() !== String(seats)) {
     io.stderr('team approve: not approved; nothing was written\n');
+    // exit: approve.answer
     return 1;
   }
 
@@ -227,5 +240,6 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     now,
   );
   io.stdout(`Approved. The record is in ${store}; signed with key ${keyFingerprint(keyOf(sources.home))}; check the rest with \`team doctor\`.\n`);
+  // exit: approve.approved
   return 0;
 }

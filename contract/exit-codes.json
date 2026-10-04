@@ -1,0 +1,1559 @@
+{
+  "format": 1,
+  "rows": [
+    {
+      "code": 0,
+      "command": "add",
+      "id": "add.dry-budget",
+      "meaning": "a dry run would refuse the budget",
+      "trigger": "team add worker --dry-run"
+    },
+    {
+      "code": 0,
+      "command": "add",
+      "id": "add.dry-run",
+      "meaning": "a dry run printed the plan",
+      "trigger": "team add worker --dry-run"
+    },
+    {
+      "code": 0,
+      "command": "add",
+      "id": "add.ready",
+      "meaning": "the seat is ready",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.agents",
+      "meaning": "the agents can't be read",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.already-running",
+      "meaning": "the seat is already running",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.approved-copy",
+      "meaning": "the approved copy can't be read",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.branch-missing",
+      "meaning": "the merged branch doesn't exist",
+      "trigger": "team add --temporary --like lead --until merged:missing"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.budget",
+      "meaning": "the budget refuses the seat",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.caller",
+      "meaning": "the caller may not change the team",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.ceiling",
+      "meaning": "the approval ceiling would be passed",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.ceilings",
+      "meaning": "the approved ceilings can't be read",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.changed",
+      "meaning": "the file changed while add was checking",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.default-session",
+      "meaning": "the session can't be \"default\"",
+      "trigger": "team add worker --session default"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.differs",
+      "meaning": "the file differs from its approval",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.doctor",
+      "meaning": "doctor refuses the launch",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.file-owner",
+      "meaning": "--file is the owner's",
+      "trigger": "team add worker --file .agents/team.yaml"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.herdr",
+      "meaning": "herdr doesn't answer",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.machine",
+      "meaning": "the machine is over a launch limit",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.machine-again",
+      "meaning": "the machine goes over a launch limit before the seat starts",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.merged-base",
+      "meaning": "workspace.base is required to read a merged end",
+      "trigger": "team add --temporary --like lead --until merged:topic"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.never-approved",
+      "meaning": "the file was never approved",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.no-like",
+      "meaning": "the approved file has no seat to copy",
+      "trigger": "team add --temporary --like missing --until result:out.md"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.no-profile",
+      "meaning": "the seat has no launch profile",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.no-seat",
+      "meaning": "the approved file has no such seat",
+      "trigger": "team add missing"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.not-ready",
+      "meaning": "the launch finished without a ready seat",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.not-restored",
+      "meaning": "the seat can't be put back from the approved copy",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.placed",
+      "meaning": "the seat would be placed outside the project",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.result-absolute",
+      "meaning": "a result path is absolute",
+      "trigger": "team add --temporary --like lead --until result:/tmp/out.md"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.result-exists",
+      "meaning": "the result path already exists",
+      "trigger": "team add --temporary --like lead --until result:README.md"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.server",
+      "meaning": "the session's server did not start",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.start",
+      "meaning": "the seat has nowhere to start",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.stopped",
+      "meaning": "the session is stopped",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.until",
+      "meaning": "--until is not a result path or a merged branch",
+      "trigger": "team add --temporary --like lead --until nope"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.worktree-failed",
+      "meaning": "the worktree setup failed",
+      "trigger": "team add --temporary --like lead --until result:out.md --worktree task"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.worktree-missing",
+      "meaning": "no worktree with that name is recorded",
+      "trigger": "team add --temporary --like lead --until result:out.md --worktree missing"
+    },
+    {
+      "code": 2,
+      "command": "add",
+      "id": "add.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team add worker --file missing.yaml"
+    },
+    {
+      "code": 2,
+      "command": "add",
+      "id": "add.file-invalid",
+      "meaning": "the team file can't be parsed",
+      "trigger": "team add worker --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "add",
+      "id": "add.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team add --nope"
+    },
+    {
+      "code": 2,
+      "command": "add",
+      "id": "add.locked",
+      "meaning": "the locked edit does not validate",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 2,
+      "command": "add",
+      "id": "add.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 2,
+      "command": "add",
+      "id": "add.prepared",
+      "meaning": "the prepared edit does not validate",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 2,
+      "command": "add",
+      "id": "add.seat-name",
+      "meaning": "a seat name is required",
+      "trigger": "team add"
+    },
+    {
+      "code": 2,
+      "command": "add",
+      "id": "add.temporary-flags",
+      "meaning": "--like, --until and --worktree need --temporary",
+      "trigger": "team add worker --like lead"
+    },
+    {
+      "code": 2,
+      "command": "add",
+      "id": "add.temporary-unexpected",
+      "meaning": "an unexpected argument was passed to --temporary",
+      "trigger": "team add extra --temporary"
+    },
+    {
+      "code": 0,
+      "command": "approve",
+      "id": "approve.approved",
+      "meaning": "the owner approved the file",
+      "trigger": "team approve"
+    },
+    {
+      "code": 0,
+      "command": "approve",
+      "id": "approve.show",
+      "meaning": "the comparison was printed",
+      "trigger": "team approve --show"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "id": "approve.answer",
+      "meaning": "the answer was not the number of seats",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "id": "approve.check",
+      "meaning": "an approved check cannot be resolved",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "id": "approve.key",
+      "meaning": "the signing key can't be read",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "id": "approve.not-owner",
+      "meaning": "a seat ran it",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "id": "approve.store",
+      "meaning": "the approval store sits where seats work",
+      "trigger": "team approve"
+    },
+    {
+      "code": 2,
+      "command": "approve",
+      "id": "approve.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team approve --file missing.yaml"
+    },
+    {
+      "code": 2,
+      "command": "approve",
+      "id": "approve.file-invalid",
+      "meaning": "the team file can't be parsed",
+      "trigger": "team approve --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "approve",
+      "id": "approve.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team approve extra"
+    },
+    {
+      "code": 2,
+      "command": "approve",
+      "id": "approve.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team approve"
+    },
+    {
+      "code": 2,
+      "command": "approve",
+      "id": "approve.overrides",
+      "meaning": "the overrides file can't be parsed",
+      "trigger": "team approve"
+    },
+    {
+      "code": 2,
+      "command": "approve",
+      "id": "approve.placed",
+      "meaning": "a path would trust the project's parent",
+      "trigger": "team approve"
+    },
+    {
+      "code": 2,
+      "command": "approve",
+      "id": "approve.revalidate",
+      "meaning": "the file does not validate",
+      "trigger": "team approve"
+    },
+    {
+      "code": 0,
+      "command": "check",
+      "id": "check.passed",
+      "meaning": "every commit passed",
+      "trigger": "team check HEAD"
+    },
+    {
+      "code": 1,
+      "command": "check",
+      "id": "check.refused",
+      "meaning": "a commit was refused",
+      "trigger": "team check HEAD"
+    },
+    {
+      "code": 1,
+      "command": "check",
+      "id": "check.threw",
+      "meaning": "a forbidden pattern is not a regular expression",
+      "trigger": "team check HEAD"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.empty-range",
+      "meaning": "the range holds no commit",
+      "trigger": "team check HEAD..HEAD"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team check HEAD"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.file-invalid",
+      "meaning": "the team file can't be parsed",
+      "trigger": "team check HEAD --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team check"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.ledger",
+      "meaning": "the approval ledger can't be read",
+      "trigger": "team check HEAD"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.no-commit",
+      "meaning": "the ref names nothing",
+      "trigger": "team check not-a-ref"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.not-a-ref",
+      "meaning": "since is not a ref",
+      "trigger": "team check HEAD --since --bad"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team check HEAD"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.outside",
+      "meaning": "the check is not in a git repository",
+      "trigger": "team check HEAD --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.pr-body",
+      "meaning": "the pull request body can't be read",
+      "trigger": "team check HEAD --pr missing.md"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.range",
+      "meaning": "the range can't be resolved",
+      "trigger": "team check missing..also"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.since-missing",
+      "meaning": "since doesn't name a commit",
+      "trigger": "team check HEAD --since missing"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.since-unreachable",
+      "meaning": "since is not reachable from the ref",
+      "trigger": "team check HEAD --since topic"
+    },
+    {
+      "code": 0,
+      "command": "conformance-adapter",
+      "id": "conformance-adapter.finished",
+      "meaning": "the protocol finished",
+      "trigger": "team conformance-adapter"
+    },
+    {
+      "code": 0,
+      "command": "doctor",
+      "id": "doctor.clear",
+      "meaning": "nothing is missing",
+      "trigger": "team doctor"
+    },
+    {
+      "code": 1,
+      "command": "doctor",
+      "id": "doctor.missing",
+      "meaning": "something is missing",
+      "trigger": "team doctor"
+    },
+    {
+      "code": 2,
+      "command": "doctor",
+      "id": "doctor.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team doctor --file missing.yaml"
+    },
+    {
+      "code": 2,
+      "command": "doctor",
+      "id": "doctor.file-invalid",
+      "meaning": "the team file can't be parsed",
+      "trigger": "team doctor --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "doctor",
+      "id": "doctor.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team doctor extra"
+    },
+    {
+      "code": 2,
+      "command": "doctor",
+      "id": "doctor.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team doctor"
+    },
+    {
+      "code": 0,
+      "command": "down",
+      "id": "down.dry-run",
+      "meaning": "a dry run printed the plan",
+      "trigger": "team down --dry-run"
+    },
+    {
+      "code": 0,
+      "command": "down",
+      "id": "down.idle",
+      "meaning": "there was nothing to stop",
+      "trigger": "team down"
+    },
+    {
+      "code": 0,
+      "command": "down",
+      "id": "down.stopped",
+      "meaning": "the seats that could be stopped were stopped",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.abandon",
+      "meaning": "only the owner abandons a team",
+      "trigger": "team down --abandon"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.caller",
+      "meaning": "the caller may not change the team",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.held",
+      "meaning": "a step was held",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.no-launch",
+      "meaning": "this call has no way to reach herdr",
+      "trigger": "team down"
+    },
+    {
+      "code": 2,
+      "command": "down",
+      "id": "down.agents",
+      "meaning": "the agents can't be read",
+      "trigger": "team down"
+    },
+    {
+      "code": 2,
+      "command": "down",
+      "id": "down.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team down --file missing.yaml"
+    },
+    {
+      "code": 2,
+      "command": "down",
+      "id": "down.file-invalid",
+      "meaning": "the team file can't be parsed",
+      "trigger": "team down --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "down",
+      "id": "down.herdr",
+      "meaning": "herdr doesn't answer",
+      "trigger": "team down"
+    },
+    {
+      "code": 2,
+      "command": "down",
+      "id": "down.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team down extra"
+    },
+    {
+      "code": 2,
+      "command": "down",
+      "id": "down.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team down"
+    },
+    {
+      "code": 0,
+      "command": "init",
+      "id": "init.restored",
+      "meaning": "the approved copy was restored",
+      "trigger": "team init --restore"
+    },
+    {
+      "code": 0,
+      "command": "init",
+      "id": "init.wrote",
+      "meaning": "a skeleton was written",
+      "trigger": "team init"
+    },
+    {
+      "code": 1,
+      "command": "init",
+      "id": "init.exists",
+      "meaning": "the team file already exists",
+      "trigger": "team init"
+    },
+    {
+      "code": 1,
+      "command": "init",
+      "id": "init.git-silent",
+      "meaning": "git doesn't answer for this folder",
+      "trigger": "team init"
+    },
+    {
+      "code": 1,
+      "command": "init",
+      "id": "init.legacy",
+      "meaning": "the record predates signed records",
+      "trigger": "team init --restore"
+    },
+    {
+      "code": 1,
+      "command": "init",
+      "id": "init.not-owner",
+      "meaning": "not the owner",
+      "trigger": "team init"
+    },
+    {
+      "code": 1,
+      "command": "init",
+      "id": "init.nothing",
+      "meaning": "there is nothing to restore",
+      "trigger": "team init --restore"
+    },
+    {
+      "code": 1,
+      "command": "init",
+      "id": "init.refused",
+      "meaning": "the stored record does not verify",
+      "trigger": "team init --restore"
+    },
+    {
+      "code": 1,
+      "command": "init",
+      "id": "init.skeleton",
+      "meaning": "the skeleton doesn't validate",
+      "trigger": "team init"
+    },
+    {
+      "code": 1,
+      "command": "init",
+      "id": "init.tracked",
+      "meaning": "the team file is tracked",
+      "trigger": "team init"
+    },
+    {
+      "code": 2,
+      "command": "init",
+      "id": "init.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team init extra"
+    },
+    {
+      "code": 2,
+      "command": "init",
+      "id": "init.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team init"
+    },
+    {
+      "code": 0,
+      "command": "release",
+      "id": "release.passed",
+      "meaning": "every check passed",
+      "trigger": "team release check material@3.0.2"
+    },
+    {
+      "code": 1,
+      "command": "release",
+      "id": "release.missing",
+      "meaning": "a check is missing",
+      "trigger": "team release check material@3.0.2"
+    },
+    {
+      "code": 2,
+      "command": "release",
+      "id": "release.unknown",
+      "meaning": "a check is unknown",
+      "trigger": "team release check material@3.0.2"
+    },
+    {
+      "code": 64,
+      "command": "release",
+      "id": "release.configuration",
+      "meaning": "the team file can't be read",
+      "trigger": "team release check material@3.0.2"
+    },
+    {
+      "code": 64,
+      "command": "release",
+      "id": "release.usage",
+      "meaning": "the invocation can't be read",
+      "trigger": "team release"
+    },
+    {
+      "code": 0,
+      "command": "remove",
+      "id": "remove.kept",
+      "meaning": "a stopped seat was kept",
+      "trigger": "team remove worker --keep"
+    },
+    {
+      "code": 0,
+      "command": "remove",
+      "id": "remove.removed",
+      "meaning": "the seat was removed",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 0,
+      "command": "remove",
+      "id": "remove.temporary",
+      "meaning": "a temporary seat was removed",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.abandon",
+      "meaning": "only the owner abandons a seat",
+      "trigger": "team remove worker --abandon"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.agents",
+      "meaning": "the agents can't be read",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.busy",
+      "meaning": "the seat is not free",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.caller",
+      "meaning": "the caller may not change the team",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.coordinator",
+      "meaning": "only the owner removes the coordinator's or the operator's seat",
+      "trigger": "team remove lead"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.default-session",
+      "meaning": "the session can't be \"default\"",
+      "trigger": "team remove worker --session default"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.file-owner",
+      "meaning": "--file is the owner's",
+      "trigger": "team remove worker --file .agents/team.yaml"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.herdr",
+      "meaning": "herdr doesn't answer",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.keep-temporary",
+      "meaning": "a temporary seat is not kept in the file",
+      "trigger": "team remove worker --keep"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.no-launch",
+      "meaning": "this call has no way to reach herdr",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.no-profile",
+      "meaning": "the running seat has no launch profile",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.no-seat",
+      "meaning": "the team has no such seat",
+      "trigger": "team remove missing"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.stop-failed",
+      "meaning": "the seat could not be stopped",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 2,
+      "command": "remove",
+      "id": "remove.edit",
+      "meaning": "the edit would not validate",
+      "trigger": "team remove lead"
+    },
+    {
+      "code": 2,
+      "command": "remove",
+      "id": "remove.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team remove worker --file missing.yaml"
+    },
+    {
+      "code": 2,
+      "command": "remove",
+      "id": "remove.file-invalid",
+      "meaning": "the team file can't be parsed",
+      "trigger": "team remove worker --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "remove",
+      "id": "remove.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team remove"
+    },
+    {
+      "code": 2,
+      "command": "remove",
+      "id": "remove.locked",
+      "meaning": "the locked edit does not validate",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 2,
+      "command": "remove",
+      "id": "remove.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 0,
+      "command": "status",
+      "id": "status.agrees",
+      "meaning": "the file, the state and the session agree",
+      "trigger": "team status"
+    },
+    {
+      "code": 1,
+      "command": "status",
+      "id": "status.difference",
+      "meaning": "there is a difference",
+      "trigger": "team status"
+    },
+    {
+      "code": 2,
+      "command": "status",
+      "id": "status.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team status --file missing.yaml"
+    },
+    {
+      "code": 2,
+      "command": "status",
+      "id": "status.file-invalid",
+      "meaning": "the team file can't be parsed",
+      "trigger": "team status --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "status",
+      "id": "status.herdr",
+      "meaning": "herdr doesn't answer",
+      "trigger": "team status"
+    },
+    {
+      "code": 2,
+      "command": "status",
+      "id": "status.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team status extra"
+    },
+    {
+      "code": 2,
+      "command": "status",
+      "id": "status.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team status"
+    },
+    {
+      "code": 0,
+      "command": "team",
+      "id": "team.command-help",
+      "meaning": "a command's help was printed",
+      "trigger": "team status --help"
+    },
+    {
+      "code": 0,
+      "command": "team",
+      "id": "team.help",
+      "meaning": "help was printed",
+      "trigger": "team --help"
+    },
+    {
+      "code": 0,
+      "command": "team",
+      "id": "team.version",
+      "meaning": "the version was printed",
+      "trigger": "team --version"
+    },
+    {
+      "code": 1,
+      "command": "team",
+      "id": "team.command-threw",
+      "meaning": "a command threw",
+      "trigger": "team init"
+    },
+    {
+      "code": 2,
+      "command": "team",
+      "id": "team.no-command",
+      "meaning": "no command was given",
+      "trigger": "team"
+    },
+    {
+      "code": 2,
+      "command": "team",
+      "id": "team.unknown",
+      "meaning": "the command is unknown",
+      "trigger": "team nosuch"
+    },
+    {
+      "code": 0,
+      "command": "up",
+      "id": "up.dry-run",
+      "meaning": "a dry run printed the plan",
+      "trigger": "team up --dry-run"
+    },
+    {
+      "code": 0,
+      "command": "up",
+      "id": "up.ready",
+      "meaning": "the launch finished",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.agents",
+      "meaning": "the agents can't be read",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.differs",
+      "meaning": "the file differs from its approval",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.doctor",
+      "meaning": "doctor refuses the launch",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.herdr",
+      "meaning": "herdr doesn't answer",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.machine",
+      "meaning": "the machine is over a launch limit",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.never-approved",
+      "meaning": "the file was never approved",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.no-launch",
+      "meaning": "this call has no way to reach herdr",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.not-owner",
+      "meaning": "only the owner runs up",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.pending",
+      "meaning": "a seat was left short of ready",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.placement",
+      "meaning": "a seat has nowhere to start",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.server",
+      "meaning": "the session's server did not start",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.stopped",
+      "meaning": "the session is stopped",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.unknown",
+      "meaning": "a running agent is not in this file's state",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.watch",
+      "meaning": "the watch did not start",
+      "trigger": "team up"
+    },
+    {
+      "code": 2,
+      "command": "up",
+      "id": "up.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team up --file missing.yaml"
+    },
+    {
+      "code": 2,
+      "command": "up",
+      "id": "up.file-invalid",
+      "meaning": "the team file can't be parsed",
+      "trigger": "team up --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "up",
+      "id": "up.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team up extra"
+    },
+    {
+      "code": 2,
+      "command": "up",
+      "id": "up.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team up"
+    },
+    {
+      "code": 0,
+      "command": "watch",
+      "id": "watch.stopped",
+      "meaning": "the watch ran and stopped",
+      "trigger": "team watch"
+    },
+    {
+      "code": 1,
+      "command": "watch",
+      "id": "watch.already",
+      "meaning": "a watch already runs",
+      "trigger": "team watch"
+    },
+    {
+      "code": 1,
+      "command": "watch",
+      "id": "watch.no-notify",
+      "meaning": "a seat passed --no-notify",
+      "trigger": "team watch --no-notify"
+    },
+    {
+      "code": 1,
+      "command": "watch",
+      "id": "watch.no-nudge",
+      "meaning": "a seat passed --no-nudge",
+      "trigger": "team watch --no-nudge"
+    },
+    {
+      "code": 2,
+      "command": "watch",
+      "id": "watch.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team watch --file missing.yaml"
+    },
+    {
+      "code": 2,
+      "command": "watch",
+      "id": "watch.file-invalid",
+      "meaning": "the team file can't be parsed",
+      "trigger": "team watch --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "watch",
+      "id": "watch.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team watch extra"
+    },
+    {
+      "code": 2,
+      "command": "watch",
+      "id": "watch.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team watch"
+    },
+    {
+      "code": 0,
+      "command": "worktree",
+      "id": "worktree.created",
+      "meaning": "the worktree was created",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 0,
+      "command": "worktree",
+      "id": "worktree.record-gone",
+      "meaning": "the record was removed after the folder was already gone",
+      "trigger": "team worktree remove task"
+    },
+    {
+      "code": 0,
+      "command": "worktree",
+      "id": "worktree.removed",
+      "meaning": "the worktree was removed",
+      "trigger": "team worktree remove task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.base",
+      "meaning": "workspace.base is not a branch here",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.branch",
+      "meaning": "the branch already exists",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.branch-name",
+      "meaning": "the branch name is not valid",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.caller",
+      "meaning": "the caller may not change the team",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.config",
+      "meaning": "workspace.path and workspace.base are required",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.create-failed",
+      "meaning": "the worktree was not created",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.default-session",
+      "meaning": "the session can't be \"default\"",
+      "trigger": "team worktree new task --session default"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.differs",
+      "meaning": "the file differs from its approval",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.dirty",
+      "meaning": "the worktree has uncommitted files",
+      "trigger": "team worktree remove task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.elsewhere",
+      "meaning": "the worktree is recorded in another session",
+      "trigger": "team worktree remove task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.exists",
+      "meaning": "the worktree folder already exists",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.fetch",
+      "meaning": "the base couldn't be fetched",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.file-owner",
+      "meaning": "--file is the owner's",
+      "trigger": "team worktree new task --file .agents/team.yaml"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.forbidden",
+      "meaning": "a public project refuses that name",
+      "trigger": "team worktree new WEB-1 --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.kind",
+      "meaning": "--kind is not a single segment",
+      "trigger": "team worktree new task --kind ../fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.kind-nowhere",
+      "meaning": "--kind has nowhere to go",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.kind-required",
+      "meaning": "--kind is required",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.limit",
+      "meaning": "the worktree limit is reached",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.missing",
+      "meaning": "no worktree with that name is recorded",
+      "trigger": "team worktree remove task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.never-approved",
+      "meaning": "the file was never approved",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.occupied",
+      "meaning": "a seat is recorded in the worktree",
+      "trigger": "team worktree remove task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.path-kind",
+      "meaning": "workspace.path must not contain {kind}",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.placeholder",
+      "meaning": "the branch or path pattern has an unknown placeholder",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.published",
+      "meaning": "the branch already exists on a remote",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.recorded",
+      "meaning": "the task is already recorded",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.recorded-elsewhere",
+      "meaning": "the task is recorded in another session",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.remove-failed",
+      "meaning": "the worktree was not removed",
+      "trigger": "team worktree remove task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.remove-task",
+      "meaning": "the task name is not a single segment",
+      "trigger": "team worktree remove ../task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.seat",
+      "meaning": "--seat names no declared seat",
+      "trigger": "team worktree new task --kind fix --seat missing"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.setup",
+      "meaning": "setup failed",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.shared",
+      "meaning": "the workspace is shared",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.symlink",
+      "meaning": "the worktree follows a symlink outside the trust paths",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.task",
+      "meaning": "the task name is not a single segment",
+      "trigger": "team worktree new ../task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.tracking",
+      "meaning": "the base tracks something that is not a remote branch",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.trust",
+      "meaning": "the worktree is outside the approved trust paths",
+      "trigger": "team worktree new select-width --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.unpublished",
+      "meaning": "the worktree has commits on no remote branch",
+      "trigger": "team worktree remove task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.unreadable",
+      "meaning": "the worktree couldn't be read",
+      "trigger": "team worktree remove task"
+    },
+    {
+      "code": 2,
+      "command": "worktree",
+      "id": "worktree.extra",
+      "meaning": "an unexpected argument was given",
+      "trigger": "team worktree new task extra"
+    },
+    {
+      "code": 2,
+      "command": "worktree",
+      "id": "worktree.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team worktree new task --file missing.yaml"
+    },
+    {
+      "code": 2,
+      "command": "worktree",
+      "id": "worktree.file-invalid",
+      "meaning": "the team file can't be parsed",
+      "trigger": "team worktree new task --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "worktree",
+      "id": "worktree.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team worktree --nope"
+    },
+    {
+      "code": 2,
+      "command": "worktree",
+      "id": "worktree.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 2,
+      "command": "worktree",
+      "id": "worktree.remove-flags",
+      "meaning": "remove takes no --kind or --seat",
+      "trigger": "team worktree remove task --kind fix"
+    },
+    {
+      "code": 2,
+      "command": "worktree",
+      "id": "worktree.subcommand",
+      "meaning": "a subcommand is required",
+      "trigger": "team worktree"
+    },
+    {
+      "code": 2,
+      "command": "worktree",
+      "id": "worktree.task-required",
+      "meaning": "a task name is required",
+      "trigger": "team worktree new"
+    }
+  ]
+}

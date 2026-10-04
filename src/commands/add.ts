@@ -96,36 +96,46 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const args = readArgs(argv, ['like', 'until', 'worktree', 'session', 'file'], ['temporary', 'dry-run']);
   if (args.error) {
     io.stderr(`team add: ${args.error}\n${USAGE}`);
+    // exit: add.invocation
     return 2;
   }
   const temporary = args.flags.has('temporary');
   if (temporary ? args.rest.length > 0 : args.rest.length !== 1) {
     io.stderr(`team add: ${temporary ? `unexpected "${args.rest[0]}"` : 'a seat name is required'}\n${USAGE}`);
+    // exit: add.seat-name
+    // exit: add.temporary-unexpected
     return 2;
   }
   if (!temporary && (args.values.like || args.values.until || args.values.worktree)) {
     io.stderr('team add: --like, --until and --worktree are for --temporary\n');
+    // exit: add.temporary-flags
     return 2;
   }
 
   const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
   if (!loaded.ok) {
     for (const problem of loaded.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
+    // exit: add.not-a-repo
+    // exit: add.file
+    // exit: add.file-invalid
     return 2;
   }
   const caller = callerOf(io);
   if (args.values.file && !isOwner(caller)) {
     io.stderr(`team add: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
+    // exit: add.file-owner
     return 1;
   }
   if (!mayChangeTeam(caller, loaded.team)) {
     io.stderr(`team add: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(caller)}\n`);
+    // exit: add.caller
     return 1;
   }
   const { team, root, path } = loaded;
   const session = args.values.session ?? team.session;
   if (session === 'default') {
     io.stderr('team add: session can\'t be "default", herdr\'s own session\n');
+    // exit: add.default-session
     return 1;
   }
   // One verified snapshot for the whole command: a legacy or refused record is not
@@ -133,17 +143,21 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
   if (standing.kind !== 'verified') {
     io.stderr(`team add: ${notInForce(standing)}\n`);
+    // exit: add.never-approved
+    // exit: add.ceilings
     return 1;
   }
   const differences = approvalDifferencesOf(standing, team);
   if (differences.length) {
     io.stderr(`team add: the file is not the approved one (${differences.join('; ')}): run \`team approve\`\n`);
+    // exit: add.differs
     return 1;
   }
   const approvedText = standing.record.file;
   const approved = validateTeamFile(approvedText);
   if (!approved.ok) {
     io.stderr('team add: the approved copy can\'t be read: run `team approve`\n');
+    // exit: add.approved-copy
     return 1;
   }
 
@@ -151,10 +165,12 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const live = sources.sessionState(session);
   if (live === null) {
     io.stderr('team add: herdr doesn\'t answer\n');
+    // exit: add.herdr
     return 1;
   }
   if (live === 'stopped') {
     io.stderr(`team add: session ${session} is stopped; clear it with \`herdr session delete ${session}\`\n`);
+    // exit: add.stopped
     return 1;
   }
   const agents = live === 'running' ? sources.agents(session) : [];
@@ -162,6 +178,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const workspaces = live === 'running' ? sources.workspaces(session) : [];
   if (agents === null || workspaces === null) {
     io.stderr(`team add: session ${session} runs, and its agents can't be read\n`);
+    // exit: add.agents
     return 1;
   }
 
@@ -174,30 +191,45 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     : declaredSeat(args.rest[0] ?? '', original, approvedText, approved.team);
   if ('error' in built) {
     io.stderr(`team add: ${built.error}\n`);
+    // exit: add.no-seat
+    // exit: add.not-restored
+    // exit: add.no-like
+    // exit: add.until
+    // exit: add.result-absolute
+    // exit: add.result-exists
+    // exit: add.merged-base
+    // exit: add.branch-missing
+    // exit: add.worktree-missing
+    // exit: add.worktree-failed
     return 1;
   }
   if (agents.some((agent) => agent.name === built.name)) {
     io.stderr(`team add: ${built.name} is already running\n`);
+    // exit: add.already-running
     return 1;
   }
   if (!profileFor(built.seat.cli)) {
     io.stderr(`team add: no launch profile for \`${built.seat.cli}\` in this version\n`);
+    // exit: add.no-profile
     return 1;
   }
 
   const prepared = validateTeamFile(built.edited);
   if (!prepared.ok) {
     for (const problem of prepared.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
+    // exit: add.prepared
     return 2;
   }
   for (const problem of placedProblems(prepared.team, root)) {
     io.stderr(`team add: ${problem.message}\n`);
+    // exit: add.placed
     return 1;
   }
   // Where the seat waits: its own folder, the lobby, or a refusal — before the file is edited.
   const start: SeatStart = seatStart(prepared.team, built.seat, root);
   if ('problem' in start) {
     io.stderr(`team add: ${start.problem}\n`);
+    // exit: add.start
     return 1;
   }
   const doctorTeam = built.temporary
@@ -209,6 +241,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   for (const finding of doctorFindings(doctorTeam, root, dir, session, sources.doctor, prepared.warnings, standing, team)) {
     if (blocksLaunch(finding)) {
       io.stderr(`team add: ${finding.text}\n`);
+      // exit: add.doctor
       return 1;
     }
   }
@@ -220,17 +253,20 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const problem = crossed();
   if (problem) {
     io.stderr(`team add: ${problem}\n`);
+    // exit: add.machine
     return 1;
   }
   const running = runningOf(agents, prepared.team, recorded);
   const room = ceilingProblem(ceilings, running, built.seat, Boolean(built.temporary));
   if (room) {
     io.stderr(`team add: ${room}\n`);
+    // exit: add.ceiling
     return 1;
   }
   const again = crossed();
   if (again) {
     io.stderr(`team add: ${again}\n`);
+    // exit: add.machine-again
     return 1;
   }
   // The gate reads the approved budgets, never the edited file's: the seat this `add` inserts
@@ -248,6 +284,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   if (dry) {
     if (decision.kind === 'refuse' && wouldLaunch) {
       io.stdout(`${built.name}: would refuse: ${decision.why}\ndry run: nothing was run\n`);
+      // exit: add.dry-budget
       return 0;
     }
     if (decision.kind === 'unknown') io.stdout(`${built.name}: ${decision.text}\n`);
@@ -259,10 +296,12 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       watchAlive: true,
     });
     io.stdout(formatPlan(preview));
+    // exit: add.dry-run
     return 0;
   }
   if (decision.kind === 'refuse' && wouldLaunch) {
     io.stderr(`team add: refused: ${decision.why}\n`);
+    // exit: add.budget
     return 1;
   }
   if (decision.kind === 'unknown') io.stdout(`${built.name}: ${decision.text}\n`);
@@ -274,10 +313,12 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     });
     if (written.kind === 'changed') {
       io.stderr('team add: the file changed while add was checking; nothing was written\n');
+      // exit: add.changed
       return 1;
     }
     if (written.kind === 'invalid') {
       for (const problem of written.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
+      // exit: add.locked
       return 2;
     }
     const parsed = validateTeamFile(built.edited);
@@ -298,6 +339,9 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   }
   const ready = afterwards?.stage === 'ready';
   if (ready) logLine(dir, 'add', who, `started ${built.name}${built.temporary ? ` like ${built.temporary.like} until ${built.temporary.until}` : ''}`, sources.now());
+  // exit: add.ready
+  // exit: add.not-ready
+  // exit: add.server
   return ready && !report.serverFailed ? 0 : 1;
 }
 
