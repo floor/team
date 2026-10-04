@@ -255,8 +255,8 @@ describe('team status', () => {
     expect(out).toContain('deepseek  unknown');
     const doc = JSON.parse((await status('--json')).out);
     expect(doc.budgets).toEqual([
-      { account: 'deepseek', window: null, left: null, used: null, resetsIn: null, seat: null, age: null, source: null, state: 'unknown' },
-      { account: 'openai', window: 'weekly', left: 39, used: 61, resetsIn: '44m', seat: 'codex-acme', age: '2m', source: 'status_line', state: 'fresh' },
+      { account: 'deepseek', window: null, left: null, used: null, resetsIn: null, seat: null, age: null, source: null, state: 'unknown', inside: false },
+      { account: 'openai', window: 'weekly', left: 39, used: 61, resetsIn: '44m', seat: 'codex-acme', age: '2m', source: 'status_line', state: 'fresh', inside: false },
     ]);
   });
 

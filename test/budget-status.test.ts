@@ -37,7 +37,15 @@ describe('the budgets table', () => {
   test('a fresh reading names what is left, when it resets, and how old it is', () => {
     const [row] = budgetTable(team(10), [reading()], now);
     expect(row?.state).toBe('fresh');
-    expect(budgetLine(row!)).toBe('openai  weekly  left 40%  used 60%  resets in 44m  one  changed 1m ago  status line  fresh');
+    expect(row?.inside).toBe(false);
+    expect(budgetLine(row!, 10)).toBe('openai  weekly  left 40%  used 60%  resets in 44m  one  changed 1m ago  status line  fresh');
+  });
+
+  test('a fresh reading inside the reserve says so, and stays fresh', () => {
+    const row = budgetTable(team(10), [reading({ left: 5, used: 95 })], now)[0];
+    expect(row?.state).toBe('fresh');
+    expect(row?.inside).toBe(true);
+    expect(budgetLine(row!, 10)).toContain('fresh, inside reserve 10%');
   });
 
   test('a stale reading inside the reserve is refusing, and one with no reset is unknown', () => {

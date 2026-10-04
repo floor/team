@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A quota figure is kept per seat in the state file. The newest confirmed change counts. A first
   sight does not replace it, and a reading from before its reset is dropped.
 - `team status` prints a budgets table, and the same rows in `--json`, when an account is named or
-  a reading is stored. Unknown and stale are shown as such.
+  a reading is stored. Unknown and stale are shown as such. A row inside its reserve says so even
+  when the figure is still fresh.
 
 ### Fixed
 

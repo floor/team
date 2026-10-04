@@ -159,7 +159,11 @@ function render(team: TeamFile, session: string, comparison: Comparison, budgets
   }
   if (budgets.length) {
     lines.push('budgets:');
-    for (const row of budgets) lines.push(`  ${budgetLine(row)}`);
+    for (const row of budgets) {
+      const account = team.budgets.accounts[row.account];
+      const reserve = account?.kind === 'subscription' ? account.reserve : null;
+      lines.push(`  ${budgetLine(row, reserve)}`);
+    }
   }
   for (const note of comparison.notes) lines.push(`note: ${note}`);
   for (const difference of comparison.differences) {

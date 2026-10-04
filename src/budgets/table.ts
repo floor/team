@@ -15,6 +15,8 @@ export type BudgetRow = {
   age: string | null;
   source: 'status_line' | null;
   state: BudgetState;
+  /** True when a subscription's left figure is at or inside its reserve. */
+  inside: boolean;
 };
 
 const WINDOWS: WindowName[] = ['session', 'daily', 'weekly'];
@@ -37,7 +39,7 @@ export function budgetTable(team: TeamFile, list: readonly Seen[], now: number):
     named.add(account);
     const accountEntry = team.budgets.accounts[account];
     const reserve = accountEntry?.kind === 'subscription' ? accountEntry.reserve : null;
-    rows.push(rowOf(account, window, verdict(group, now, staleAfterMs, reserve), now));
+    rows.push(rowOf(account, window, verdict(group, now, staleAfterMs, reserve), now, reserve));
   }
   for (const account of Object.keys(team.budgets.accounts)) {
     if (!named.has(account)) rows.push(blank(account));
@@ -45,16 +47,23 @@ export function budgetTable(team: TeamFile, list: readonly Seen[], now: number):
   return rows.sort(byAccount);
 }
 
-export function budgetLine(row: BudgetRow): string {
+export function budgetLine(row: BudgetRow, reserve: number | null = null): string {
   if (row.state === 'unknown' || row.left === null || row.used === null) {
     return [row.account, row.window, 'unknown'].filter((part) => part).join('  ');
   }
   const reset = row.resetsIn === null ? 'resets unknown' : `resets in ${row.resetsIn}`;
   const from = row.source === 'status_line' ? 'status line' : 'unknown source';
-  return `${row.account}  ${row.window}  left ${row.left}%  used ${row.used}%  ${reset}  ${row.seat}  changed ${row.age} ago  ${from}  ${row.state}`;
+  const state = row.inside && reserve !== null ? `${row.state}, inside reserve ${reserve}%` : row.state;
+  return `${row.account}  ${row.window}  left ${row.left}%  used ${row.used}%  ${reset}  ${row.seat}  changed ${row.age} ago  ${from}  ${state}`;
 }
 
-function rowOf(account: string, window: WindowName | null, result: ReturnType<typeof verdict>, now: number): BudgetRow {
+function rowOf(
+  account: string,
+  window: WindowName | null,
+  result: ReturnType<typeof verdict>,
+  now: number,
+  reserve: number | null,
+): BudgetRow {
   if (result.kind === 'unknown') return { ...blank(account), window };
   const reading = result.reading;
   return {
@@ -67,11 +76,23 @@ function rowOf(account: string, window: WindowName | null, result: ReturnType<ty
     age: span(now - reading.changedAt),
     source: 'status_line',
     state: result.kind,
+    inside: reserve !== null && reading.left <= reserve,
   };
 }
 
 function blank(account: string): BudgetRow {
-  return { account, window: null, left: null, used: null, resetsIn: null, seat: null, age: null, source: null, state: 'unknown' };
+  return {
+    account,
+    window: null,
+    left: null,
+    used: null,
+    resetsIn: null,
+    seat: null,
+    age: null,
+    source: null,
+    state: 'unknown',
+    inside: false,
+  };
 }
 
 function byAccount(a: BudgetRow, b: BudgetRow): number {
