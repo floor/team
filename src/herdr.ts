@@ -199,22 +199,40 @@ export function sessionStop(name: string): boolean {
   return body === null || body.type !== 'error';
 }
 
+// The process call behind paneRead, injectable for tests: it returns the call's stdout and
+// throws when herdr refuses an option or the call times out. The real one shells out.
+export type PaneExec = (args: string[]) => string;
+const shellPaneExec: PaneExec = (args) =>
+  execFileSync('herdr', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
+let paneExec: PaneExec = shellPaneExec;
+
+/** Swaps the process call paneRead makes; null restores the real one. */
+export function setPaneExec(exec: PaneExec | null): void {
+  paneExec = exec ?? shellPaneExec;
+}
+
 // The visible lines of a pane, or null. `session` undefined reaches the caller's own server.
 // The lines keep their ANSI styling, CRLF folded to LF: a greyed suggestion and typed text
 // read the same as plain text, and only their styling tells them apart, so the readers that
-// want plain text strip it (`stripSgr`). An herdr without `--format ansi` is read plain, and
-// unstyled text can never read as dim — the placeholder list alone decides, as before.
+// want plain text strip it (`stripSgr`). An herdr without the `--format` option refuses the
+// styled call and is read by the exact call main makes today — no flag at all — where
+// unstyled text can never read as dim and the placeholder list alone decides. A herdr that
+// hangs is not asked twice: one timeout reads null.
 export function paneRead(pane: string, lines: number, session?: string): string | null {
   const full = [...(session ? ['--session', session] : []), 'pane', 'read', pane, '--source', 'visible', '--lines', String(lines)];
+  let styled: string;
   try {
-    return execFileSync('herdr', [...full, '--format', 'ansi'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 }).replace(/\r\n/g, '\n').replace(/\r$/, '');
-  } catch {
+    styled = paneExec([...full, '--format', 'ansi']);
+  } catch (error) {
+    // `killed` is how execFileSync reports its own timeout; the type does not carry it.
+    if (!(error instanceof Error) || ('killed' in error && error.killed === true)) return null;
     try {
-      return execFileSync('herdr', [...full, '--format', 'text'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
+      return paneExec(full);
     } catch {
       return null;
     }
   }
+  return styled.replace(/\r\n/g, '\n').replace(/\r$/, '');
 }
 
 // The words to type for a herdr command, for a repair line.
