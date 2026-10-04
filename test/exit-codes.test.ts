@@ -1688,10 +1688,9 @@ const UNROOTED = "a command file whose default export the contract can't read";
 
 function withTable(line: string, added: readonly (readonly [string, string])[] = []): Map<string, string> {
   const text = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
-  const next = text.replace(
-    "  remove: () => import('./commands/remove.ts'),\n};",
-    `  remove: () => import('./commands/remove.ts'),\n  ${line}\n};`,
-  );
+  const start = text.indexOf('export const commands');
+  const close = text.indexOf('\n};', start);
+  const next = `${text.slice(0, close)}\n  ${line}${text.slice(close)}`;
   return new Map([['src/cli.ts', next], ...added]);
 }
 
