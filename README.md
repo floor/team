@@ -169,8 +169,12 @@ The wrapper sets `CODEX_HOME` and execs this script. The script takes rollouts
 newest first. The first that has a `token_count` primary window is the one used, and
 at most ten files are opened. A new session that has not recorded a figure yet
 does not hide the last one. The line's `at` is that event's own time, so an
-older figure stays dated. It prints one line, such as
-`weekly 39% used resets 114h4m at 1791091200`. Five hours (`300` minutes) is
+older figure stays dated. It prints the primary window, and a second line when
+that event's secondary window is a different length, such as
+`session 21% used resets 3h at 1791091200` and
+`weekly 39% used resets 114h4m at 1791091200`. The same length is not printed
+twice. A secondary figure that cannot be written is left off. When the primary
+figure cannot be written, nothing is printed. Five hours (`300` minutes) is
 `session`, a day (`1440`) is `daily`, and a week (`10080`) is `weekly`. Any other
 length, a figure over 100%, or no such rollout prints nothing, so the account
 reads unknown. `team approve` records the command you named. Bun has to be on
