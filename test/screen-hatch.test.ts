@@ -635,4 +635,139 @@ screen:
       expect(data.profile).toBeUndefined();
     }
   });
+
+  test('round 6: every fixture in conformance manifest reads identical with caution predicates returning false', () => {
+    const manifestPath = resolve(process.cwd(), 'test/fixtures/conformance.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      screens: { file: string; cli: string; classify: Screen['kind']; composer: Screen['kind'] }[];
+    };
+
+    const variants: [name: string, hatch: ScreenProfile][] = [
+      ['working: () => false', { working: () => false }],
+      ['unknown: () => false', { unknown: () => false }],
+      ['trust: () => false', { trust: () => false }],
+      ['permission: () => false', { permission: () => false }],
+      ['question: () => false', { question: () => false }],
+      [
+        'all five together false',
+        {
+          working: () => false,
+          unknown: () => false,
+          trust: () => false,
+          permission: () => false,
+          question: () => false,
+        },
+      ],
+    ];
+
+    for (const [variantName, hatch] of variants) {
+      for (const { file, cli, classify: expectedClassify, composer: expectedComposer } of manifest.screens) {
+        const absPath = resolve(process.cwd(), 'test/fixtures', file);
+        const content = readFileSync(absPath, 'utf8');
+        const lines = content.split('\n');
+        const base = screenData(cli)!;
+        const dataWithHatch: ScreenData = {
+          ...base,
+          profile: hatch,
+        };
+
+        const resClassifyLines = classifyLines(dataWithHatch, lines.slice(-20)).kind;
+        const resReadScreen = readScreen(dataWithHatch, content).kind;
+        const resComposeLines = composeLines(dataWithHatch, lines.slice(-20)).kind;
+        const resClassifyComposer = classifyComposer(dataWithHatch, lines).kind;
+
+        expect(resClassifyLines).toBe(expectedClassify);
+        expect(resReadScreen).toBe(expectedClassify);
+        expect(resComposeLines).toBe(expectedComposer);
+        expect(resClassifyComposer).toBe(expectedComposer);
+      }
+    }
+  });
+
+  test('round 6: a hatch composer on each of the four shipped profiles is refused at load (b)', () => {
+    const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-composer-test-'));
+    writeFileSync(resolve(tempDir, 'composer-hatch.cjs'), 'module.exports = { composer: () => ({ kind: "idle" }) };');
+
+    try {
+      const clis = ['claude-code', 'codex', 'cursor', 'antigravity'];
+      for (const cli of clis) {
+        const rawYaml = readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8');
+        const withHatch = `${rawYaml}\nscreen_module: "composer-hatch.cjs"\n`;
+        expect(() => loadScreen(withHatch, tempDir, `${cli}.yaml`)).toThrow(
+          new RegExp(`profile "${cli}\\.yaml": profile has a data composer and screen_module exports a composer`),
+        );
+      }
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('round 6: throwing getters on profile object and throwing Proxy fail safe to unknown on all readers and through watch pass (c)', () => {
+    const base = screenData('codex')!;
+    const lines = ['some line'];
+    const content = 'some line';
+
+    // 1. Getters that throw on profile object
+    const throwingGettersProfile: ScreenProfile = {
+      get unknown(): any { throw new Error('unknown getter'); },
+      get trust(): any { throw new Error('trust getter'); },
+      get permission(): any { throw new Error('permission getter'); },
+      get question(): any { throw new Error('question getter'); },
+      get working(): any { throw new Error('working getter'); },
+      get composer(): any { throw new Error('composer getter'); },
+    };
+    const dataWithThrowingGetters: ScreenData = {
+      ...base,
+      profile: throwingGettersProfile,
+    };
+
+    expect(classifyLines(dataWithThrowingGetters, lines).kind).toBe('unknown');
+    expect(readScreen(dataWithThrowingGetters, content).kind).toBe('unknown');
+    expect(composeLines(dataWithThrowingGetters, lines).kind).toBe('unknown');
+    expect(classifyComposer(dataWithThrowingGetters, lines).kind).toBe('unknown');
+
+    // 2. Proxy throwing on every get
+    const throwingProxy = new Proxy({}, {
+      get(_target, prop) {
+        throw new Error(`proxy get ${String(prop)}`);
+      },
+    }) as ScreenProfile;
+    const dataWithThrowingProxy: ScreenData = {
+      ...base,
+      profile: throwingProxy,
+    };
+
+    expect(classifyLines(dataWithThrowingProxy, lines).kind).toBe('unknown');
+    expect(readScreen(dataWithThrowingProxy, content).kind).toBe('unknown');
+    expect(composeLines(dataWithThrowingProxy, lines).kind).toBe('unknown');
+    expect(classifyComposer(dataWithThrowingProxy, lines).kind).toBe('unknown');
+  });
+
+  test('round 6: throwing proxy module at loadScreen names the profile file (c)', () => {
+    const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-proxy-test-'));
+    writeFileSync(resolve(tempDir, 'throwing-proxy.cjs'), 'module.exports = new Proxy({}, { get() { throw new Error("proxy export"); } });');
+
+    try {
+      const yaml = `format: 1\ncli: fake\nscreen_module: "throwing-proxy.cjs"\nscreen:\n  composer:\n    mode: status-last\n    status_line: "^status$"\n    prompt: "^>"\n    placeholders: [{ equals: "" }]\n`;
+      expect(() => loadScreen(yaml, tempDir, 'fake-profile.yaml')).toThrow(
+        /profile "fake-profile\.yaml": cannot load "screen_module": proxy export/,
+      );
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('round 6: screen_module extension case agrees with schema (lowercase required)', () => {
+    const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-case-test-'));
+    writeFileSync(resolve(tempDir, 'good.CJS'), 'module.exports = {};');
+
+    try {
+      const yaml = `format: 1\ncli: fake\nscreen_module: "good.CJS"\nscreen:\n  composer:\n    mode: status-last\n    status_line: "^status$"\n    prompt: "^>"\n    placeholders: [{ equals: "" }]\n`;
+      expect(() => loadScreen(yaml, tempDir, 'fake.yaml')).toThrow(
+        /profile "fake\.yaml": "screen_module" must have a script extension \(\.ts, \.js, \.cjs, \.mjs\): "good\.CJS"/,
+      );
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
