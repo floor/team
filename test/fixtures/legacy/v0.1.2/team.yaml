@@ -60,15 +60,6 @@ seats:
     launch: claude-glm
 
   - role: implementer
-    name: kimi-implementer
-    cli: claude-code
-    vendor: moonshot
-    model: Kimi
-    version: "K3"
-    display: Kimi K3
-    launch: claude-kimi
-
-  - role: implementer
     name: grok-implementer
     cli: cursor
     vendor: xai
