@@ -143,6 +143,26 @@ second seat shows the same number. It goes stale from the moment it last changed
 the last readings are kept in the state file beside the team file. `team status` prints
 them, one row per account and window, when there is an account or a stored reading.
 
+`examples/checks/codex-quota` is a check for an openai account. It is a Bun script:
+Bun is already how `team` runs, and the script uses only built-in file modules, so
+there is no package to install beside it. Copy it onto `PATH` and name that command:
+
+```yaml
+openai:
+  kind: subscription
+  reserve: 10%
+  sources: [check, status_line]
+  check: codex-quota
+```
+
+It reads the newest rollout under `CODEX_HOME`, or `~/.codex` when that is unset, and
+prints one line from the last `token_count` primary window, such as
+`weekly 39% used resets 114h4m at 1791091200`. Five hours (`300` minutes) is
+`session`, a day (`1440`) is `daily`, and a week (`10080`) is `weekly`. Any other
+length, a figure over 100%, or no rollout prints nothing, so the account reads
+unknown. `team approve` then records the script. Bun has to be on `PATH` when the
+check runs.
+
 More fields exist — `tools`, `trust`, `machine`, `limits`, `watch`, `visibility` — and the comments
 `team init` writes name them; validation refuses what it cannot check, and this build acts on what
 the commands below read.

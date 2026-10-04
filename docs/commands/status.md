@@ -53,6 +53,11 @@ or unknown. A figure inside its reserve says so on that row, including when it i
 A named account with no reading is unknown. The table is left out when there is nothing
 to show. `status` still writes nothing; the watch is what records a reading.
 
+An openai account can take its figure from a check instead of the status line. Copy
+`examples/checks/codex-quota` onto `PATH` and name it as that account's `check`, with
+`check` listed before `status_line` in `sources`. The script prints one line from the
+newest local rollout, for example `weekly 39% used resets 114h4m at 1791091200`.
+
 ## Differences
 
 | Difference | Repair |
