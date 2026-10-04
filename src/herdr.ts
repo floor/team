@@ -200,12 +200,20 @@ export function sessionStop(name: string): boolean {
 }
 
 // The visible lines of a pane, or null. `session` undefined reaches the caller's own server.
+// The lines keep their ANSI styling, CRLF folded to LF: a greyed suggestion and typed text
+// read the same as plain text, and only their styling tells them apart, so the readers that
+// want plain text strip it (`stripSgr`). An herdr without `--format ansi` is read plain, and
+// unstyled text can never read as dim — the placeholder list alone decides, as before.
 export function paneRead(pane: string, lines: number, session?: string): string | null {
+  const full = [...(session ? ['--session', session] : []), 'pane', 'read', pane, '--source', 'visible', '--lines', String(lines)];
   try {
-    const full = [...(session ? ['--session', session] : []), 'pane', 'read', pane, '--source', 'visible', '--lines', String(lines)];
-    return execFileSync('herdr', full, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
+    return execFileSync('herdr', [...full, '--format', 'ansi'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 }).replace(/\r\n/g, '\n').replace(/\r$/, '');
   } catch {
-    return null;
+    try {
+      return execFileSync('herdr', [...full, '--format', 'text'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
+    } catch {
+      return null;
+    }
   }
 }
 

@@ -100,6 +100,47 @@ describe('claude-code through the screen core', () => {
   });
 });
 
+// Claude Code's screens as herdr reads them styled (`--format ansi`): a greyed suggestion is
+// faint, typed text carries no styling, and the trust dialog keeps the safety floor. The
+// fixtures and their provenance are in fixtures/claude-code/2.1.289/README.md.
+describe('claude-code reads the input line\'s styling', () => {
+  const styled = (name: string): string => readFileSync(new URL(`./fixtures/claude-code/2.1.289/${name}`, import.meta.url), 'utf8');
+
+  test('a greyed suggestion the list does not name is idle', () => {
+    expect(readScreen('claude-code', styled('idle-suggestion-other-ansi.txt')).kind).toBe('idle');
+  });
+
+  test('the captured "Try" suggestion is idle styled and plain', () => {
+    expect(readScreen('claude-code', styled('idle-suggestion-ansi.txt')).kind).toBe('idle');
+    expect(readScreen('claude-code', styled('idle-suggestion-plain.txt')).kind).toBe('idle');
+  });
+
+  test('typed text is unsent, styled read or plain', () => {
+    expect(readScreen('claude-code', styled('unsent-typed-ansi.txt')).kind).toBe('unsent');
+  });
+
+  test('text that opens faint and continues normal is unsent', () => {
+    expect(readScreen('claude-code', styled('unsent-faint-first-ansi.txt')).kind).toBe('unsent');
+  });
+
+  test('a plain source falls back to the list: "Try" stays idle, the rest stays unsent', () => {
+    expect(readScreen('claude-code', styled('idle-suggestion-plain.txt')).kind).toBe('idle');
+    expect(readScreen('claude-code', styled('idle-suggestion-other-plain.txt')).kind).toBe('unsent');
+  });
+
+  test('a styled read the fold has not reached, CRLF and all, reads the same', () => {
+    const crlf = styled('idle-suggestion-other-ansi.txt').replace(/\n/g, '\r\n');
+    expect(readScreen('claude-code', crlf).kind).toBe('idle');
+  });
+
+  test('the styled trust dialog is attention, never idle or unsent', () => {
+    // 2.1.289 draws this dialog's choices without numbers (`❯ No, exit` / `Yes, I trust this
+    // folder`), so the trust stage's `1. Yes` does not match and the dialog reads question —
+    // the same on the plain capture. A question is attention either way; the floor holds.
+    expect(readScreen('claude-code', styled('trust-ansi.txt')).kind).toBe('question');
+  });
+});
+
 // The classifiers codex, cursor and antigravity had on main, copied here so the
 // table proves the new path agrees with them. The production files are gone.
 function mainCodex(lines: string[]): Screen['kind'] {
@@ -324,5 +365,22 @@ screen:
       - equals: ''
 `;
     expect(() => loadScreen(text)).toThrow(YamlError);
+  });
+
+  test('a composer may name its suggestions\' style, and only dim', () => {
+    const text = `
+format: 1
+cli: sample
+screen:
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    placeholder_style: dim
+    placeholders:
+      - equals: ''
+`;
+    expect(loadScreen(text).composer.placeholderStyle).toBe('dim');
+    expect(() => loadScreen(text.replace('placeholder_style: dim', 'placeholder_style: bold'))).toThrow(YamlError);
   });
 });

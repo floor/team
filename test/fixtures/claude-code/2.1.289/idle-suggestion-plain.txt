@@ -1,0 +1,23 @@
+
+ ▐▛███▛█   Claude Code v2.1.289
+▝▜██████▀  Opus 5.5 · Acme billing
+ ▝▝   ▝▝   ~/acme
+
+
+
+
+
+
+
+
+
+
+
+
+
+─────────────────────────────────────────────────────
+❯ Try "fix typecheck errors"
+─────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CO…
+  no-git · …/acme · Opus 5.5 · S: - · L: 7% (…
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
