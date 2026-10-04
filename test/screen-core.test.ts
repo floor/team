@@ -512,6 +512,12 @@ describe('codex, cursor and antigravity through the screen core', () => {
         // meant to read differently: main's classifier called the dialog below `unsent`, and
         // two input paths pressed Enter on that reading. Its own test follows the loop.
         if (name === 'permission-pinned.txt') continue;
+        // Transcribed, not captured (see the fixtures README), and a screen this fix is meant
+        // to read differently: the frozen classifier below knew the spinner verbs Working and
+        // Thinking only, so this frame's Reading spinner fell through to the composer and the
+        // queue read idle, which `down` and `remove` typed into. Its own test follows in
+        // test/launch/cursor.test.ts.
+        if (name === 'follow-up-queue-one.txt') continue;
         const text = readFileSync(new URL(`./fixtures/${cli}/${version}/${name}`, import.meta.url), 'utf8');
         const before = read(windowOf(text));
         const after = readScreen(cli, text).kind;
