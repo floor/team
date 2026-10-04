@@ -22,7 +22,7 @@ The fixture's commits are authored by `agent@example.test`, or by `jane@acme.exa
 | Fence | Meaning |
 | --- | --- |
 | `console` | a transcript: `$ ` lines are run, the lines under each is its expected output |
-| `yaml file=<path>` | a file the fixture gets at that point of the page, read as YAML by the commands |
+| `yaml file=<path>` | a file the fixture gets at that point of the page, read as YAML by the commands. `file=overrides.yaml` is written into the fixture's approval store, beside the approval |
 | `file file=<path>` | the same, for a file that isn't YAML (a log, a PR body) |
 | `commit` (`email=…`) | one commit of the fixture's history; the block's text is its message |
 | `git` | git commands run in the fixture, one per line |

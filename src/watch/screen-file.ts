@@ -60,6 +60,17 @@ function screenOf(node: YamlNode): ScreenData {
   return data;
 }
 
+/**
+ * Rules an override adds to one dialog stage. The stage is a list of patterns:
+ * a map would be a case flag or a renamed stage, and neither is an added pattern.
+ */
+export function addedRules(node: YamlNode): Rule[] {
+  if (node.kind !== 'seq' || node.items.length === 0) fail(node.line, 'an override adds a non-empty list of patterns');
+  // A shipped profile may set a pattern's own case. An override may not: the flag would
+  // loosen a match the shipped patterns made case-sensitively.
+  return node.items.map((item) => ruleOf(item, false, false));
+}
+
 function stageOf(node: YamlNode): Stage {
   if (node.kind === 'seq') return { rules: node.items.map((item) => ruleOf(item, false)) };
   const entries = mapping(node, 'a stage');
@@ -71,7 +82,7 @@ function stageOf(node: YamlNode): Stage {
   return { rules: rules.value.items.map((item) => ruleOf(item, ignoreCase)) };
 }
 
-function ruleOf(node: YamlNode, ignoreCase: boolean): Rule {
+function ruleOf(node: YamlNode, ignoreCase: boolean, allowCase = true): Rule {
   const entries = mapping(node, 'a rule');
   only(entries, ['any', 'all', 'footer', 'on_footer', 'below_last_rule', 'without_rule', 'none_after']);
   if (entries.length === 0) fail(node.line, 'a rule has no primitive');
@@ -83,37 +94,37 @@ function ruleOf(node: YamlNode, ignoreCase: boolean): Rule {
   const below = optional(entries, 'below_last_rule');
   const withoutRule = optional(entries, 'without_rule');
   const noneAfter = optional(entries, 'none_after');
-  if (any) rule.any = patternsOf(any.value, 'any', ignoreCase);
-  if (all) rule.all = patternsOf(all.value, 'all', ignoreCase);
+  if (any) rule.any = patternsOf(any.value, 'any', ignoreCase, allowCase);
+  if (all) rule.all = patternsOf(all.value, 'all', ignoreCase, allowCase);
   if (footer) rule.footer = stringOf(footer.value) ?? fail(footer.line, '"footer" must be a string');
   if (onFooter) rule.onFooter = boolOf(onFooter.value, 'on_footer');
   if (below) rule.belowLastRule = patternOf(stringOf(below.value) ?? fail(below.line, '"below_last_rule" must be a string'), ignoreCase, below.line);
   if (withoutRule) rule.withoutRule = boolOf(withoutRule.value, 'without_rule');
-  if (noneAfter) rule.noneAfter = noneAfterOf(noneAfter.value, ignoreCase);
+  if (noneAfter) rule.noneAfter = noneAfterOf(noneAfter.value, ignoreCase, allowCase);
   return rule;
 }
 
-function noneAfterOf(node: YamlNode, ignoreCase: boolean): NonNullable<Rule['noneAfter']> {
+function noneAfterOf(node: YamlNode, ignoreCase: boolean, allowCase = true): NonNullable<Rule['noneAfter']> {
   const entries = mapping(node, 'none_after');
   only(entries, ['anchor', 'patterns']);
   const anchor = required(entries, 'anchor', node.line);
   const patterns = required(entries, 'patterns', node.line);
   return {
-    anchor: linePattern(anchor.value, ignoreCase),
-    patterns: patternsOf(patterns.value, 'patterns', ignoreCase),
+    anchor: linePattern(anchor.value, ignoreCase, allowCase),
+    patterns: patternsOf(patterns.value, 'patterns', ignoreCase, allowCase),
   };
 }
 
-function patternsOf(node: YamlNode, key: string, ignoreCase: boolean): LinePattern[] {
+function patternsOf(node: YamlNode, key: string, ignoreCase: boolean, allowCase = true): LinePattern[] {
   if (node.kind !== 'seq' || node.items.length === 0) fail(node.line, `"${key}" must be a non-empty list`);
-  return node.items.map((item) => linePattern(item, ignoreCase));
+  return node.items.map((item) => linePattern(item, ignoreCase, allowCase));
 }
 
 // A pattern is a string, or a mapping with `match`, its optional `except` list and its
 // own `ignore_case`. The pattern's flag is read with the stage's: a screen whose own
 // case varies carries the flag beside the pattern, where a stage-wide flag would reach
 // every rule. The flag is the entry's, so `except` is read on the same lines `match` is.
-function linePattern(node: YamlNode, ignoreCase: boolean): LinePattern {
+function linePattern(node: YamlNode, ignoreCase: boolean, allowCase = true): LinePattern {
   if (node.kind === 'scalar') {
     const text = stringOf(node);
     if (text === null) fail(node.line, 'a pattern must be a string');
@@ -125,6 +136,7 @@ function linePattern(node: YamlNode, ignoreCase: boolean): LinePattern {
   const text = stringOf(match.value);
   if (text === null) fail(match.line, '"match" must be a string');
   const flag = optional(entries, 'ignore_case');
+  if (flag && !allowCase) fail(flag.line, 'unknown key "ignore_case"');
   const own = flag ? boolOf(flag.value, 'ignore_case') : false;
   const except = optional(entries, 'except');
   return { match: patternOf(text, ignoreCase || own, match.line), except: except ? exceptOf(except.value, ignoreCase || own) : [] };

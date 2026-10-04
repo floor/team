@@ -26,6 +26,11 @@ export interface Approval {
   ceilings: Ceilings;
   /** Each account's check command, resolved and hashed. Absent on an older record. */
   checks?: Record<string, { command: string; path: string; hash: string }>;
+  /**
+   * The override file as approved, or null when the owner approved there being
+   * none. Absent on a record written before the file existed.
+   */
+  overrides?: string | null;
 }
 
 export interface LedgerEntry {

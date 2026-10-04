@@ -13,6 +13,7 @@ import type { TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
+import { OVERRIDE_CHANGED, overrideFile } from '../profiles/overrides.ts';
 import { readApproval, storePath, writeApproval, type Ceilings } from '../store/store.ts';
 
 // What `approve` reads from outside the file, so tests can stand in for it.
@@ -101,6 +102,11 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   for (const warning of checked.warnings) io.stderr(`team approve: warning, line ${warning.line}: ${warning.message}\n`);
 
   const store = storePath(team.project, root, sources.home);
+  const live = overrideFile(team.project, root, sources.home);
+  if (live.problems.length) {
+    for (const problem of live.problems) io.stderr(`team approve: ${problem}\n`);
+    return 2;
+  }
   const problem = storeProblem(store, root, team);
   if (problem) {
     io.stderr(`team approve: ${problem}\n`);
@@ -137,6 +143,15 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
       io.stdout(`${path}: against the copy approved on ${previous.approval.approvedAt}:\n\n`);
       io.stdout(`${lines.map((line) => `  ${line}`).join('\n')}\n\n`);
     }
+    const recorded = Object.hasOwn(previous.approval, 'overrides') ? previous.approval.overrides ?? null : null;
+    if (recorded !== live.text) {
+      changes.push(OVERRIDE_CHANGED);
+      const overrideLines = formatDiff(recorded ?? '', live.text ?? '');
+      if (overrideLines.length) {
+        io.stdout(`overrides.yaml: against the copy approved on ${previous.approval.approvedAt}:\n\n`);
+        io.stdout(`${overrideLines.map((line) => `  ${line}`).join('\n')}\n\n`);
+      }
+    }
     io.stdout(
       changes.length ? `Needs a new approval: ${changes.join('; ')}.\n` : 'Nothing in it needs a new approval.\n',
     );
@@ -166,7 +181,11 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   }
 
   const now = sources.now();
-  writeApproval(store, { approval: approvalOf(team, root, now, resolved.checks), file: text }, team.seats);
+  writeApproval(
+    store,
+    { approval: { ...approvalOf(team, root, now, resolved.checks), overrides: live.text }, file: text },
+    team.seats,
+  );
   logLine(
     dirname(path),
     'approve',

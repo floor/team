@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
+import { homedir } from 'node:os';
 import { relative, resolve } from 'node:path';
 import { approvalDifferences, budgetsInForce, watchInForce } from '../approve/approval.ts';
+import { overridesInForce, type OverrideForce } from '../profiles/overrides.ts';
 import { readArgs } from '../args.ts';
 import { budgetLine, budgetTable, type BudgetRow } from '../budgets/table.ts';
 import { recall } from '../budgets/readings.ts';
@@ -24,6 +26,8 @@ export type StatusSources = {
   // unapproved reserve can't move a row's marks or its `inside reserve` line.
   budgetsInForce(team: TeamFile, root: string): TeamFile['budgets'];
   now(): Date;
+  /** The home whose store holds the override file. Absent in a test that does not set one. */
+  home?: string;
 };
 
 export const realSources: StatusSources = {
@@ -53,6 +57,7 @@ export const realSources: StatusSources = {
   watchInForce: (team, root) => watchInForce(team, root),
   budgetsInForce: (team, root) => budgetsInForce(team, root),
   now: () => new Date(),
+  home: homedir(),
 };
 
 export const status: Command = (argv, io) => runStatus(argv, io, realSources);
@@ -101,6 +106,8 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
   for (const warning of current.warnings) io.stderr(`team status: warning, line ${warning.line}: ${warning.message}\n`);
 
   const session = args.values.session ?? team.session;
+  const overrides = sources.home ? overridesInForce(team.project, root, sources.home) : emptyOverrides();
+  for (const problem of overrides.problems) io.stderr(`team status: ${problem}\n`);
   const live = sources.live(session, team);
   if (!live) {
     io.stderr('team status: herdr doesn\'t answer; is it installed and running?\n');
@@ -111,7 +118,11 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
   const budgets = budgetTable(sources.budgetsInForce(team, root), recall(whole.budgets), sources.now().getTime());
   const comparison = compare(team, session, state, live, sources.now(), sources.watchInForce(team, root));
   if (!live.running) comparison.notes.unshift(`the herdr session "${session}" is not running`);
-  comparison.differences.push(...protectedCheckouts(team, root, sources), ...approvalDrift(sources.approval(team, root)));
+  comparison.differences.push(
+    ...protectedCheckouts(team, root, sources),
+    ...approvalDrift(sources.approval(team, root)),
+    ...overrideDrift(overrides),
+  );
 
   if (args.flags.has('json')) {
     const doc: StatusJson = {
@@ -129,6 +140,20 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     io.stdout(render(team, session, comparison, budgets));
   }
   return comparison.differences.length ? 1 : 0;
+}
+
+function emptyOverrides(): OverrideForce {
+  return { profiles: [], differences: [], problems: [] };
+}
+
+function overrideDrift(report: OverrideForce): Difference[] {
+  return [
+    ...report.differences.map((line) => ({
+      what: `the overrides differ from the approved copy: ${line}`,
+      repair: 'the owner runs team approve',
+    })),
+    ...report.problems.map((problem) => ({ what: problem, repair: 'fix the overrides file' })),
+  ];
 }
 
 // A file that was never approved, or was changed since, runs nothing until the owner approves it.

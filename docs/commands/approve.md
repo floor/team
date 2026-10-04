@@ -12,9 +12,10 @@ run. `--show` prints the same comparison and stops, writing nothing.
 ## What it reads and writes
 
 Reads the team file (or the one `--file` names), its validation, and, when there is one, the approved
-copy this machine holds. Writes the approval record and the ledger of every seat the team has had
-here — both in the store, `~/.config/team/<project>-<hash>` — and one line in `.agents/team.log`.
-`--show` writes nothing.
+copy this machine holds. It also reads `overrides.yaml` in that same store, when the owner has one.
+Writes the approval record — the team file and the override file, as approved — and the ledger of
+every seat the team has had here — both in the store, `~/.config/team/<project>-<hash>` — and one
+line in `.agents/team.log`. `--show` writes nothing.
 
 ## Who may run it
 
@@ -311,6 +312,54 @@ $ team approve --show ; echo "exit $?"
 ./.agents/team.yaml: the same text as the copy approved on 2026-10-04T09:00:00.000Z.
 
 Nothing in it needs a new approval.
+Ceilings this approval fixes: 4 seats at most, 2 temporary.
+Seats: 2 (claude-keeper, claude-beacon).
+exit 0
+```
+
+## The overrides file
+
+`overrides.yaml` lives in the approval store, beside the record. It may add dialog patterns
+(`unknown`, `trust`, `permission`, `question`) and `quota` patterns to a profile this version
+ships, and nothing else: not a composer, a prompt, a footer, a launch line, a stage order, a
+case flag, a fold, or a code module. A pattern is added after the shipped ones. It cannot take
+a shipped pattern out, and it cannot make a screen read `idle` or `unsent` that does not
+already, nor stop a shipped permission, trust or question pattern from matching.
+
+`approve` records the file's text with the team file. Until it does, the approved copy stays
+in force — or the shipped profiles alone, when there is no copy, or the copy cannot be read.
+`doctor` and `status` name the difference. A file that does not parse is refused here, with
+its path and its line, and the other commands report that line instead of failing on it.
+
+```yaml file=overrides.yaml
+format: 1
+profiles:
+  codex:
+    quota:
+      - account: anthropic
+        match: '\bL: ([0-9]+)% \(([0-9hm]+)\)'
+        used: '{1}%'
+        resets: '{2}'
+        window: session
+```
+
+```console
+$ team approve --show ; echo "exit $?"
+./.agents/team.yaml: the same text as the copy approved on 2026-10-04T09:00:00.000Z.
+
+overrides.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
+
+  + 1: format: 1
+  + 2: profiles:
+  + 3:   codex:
+  + 4:     quota:
+  + 5:       - account: anthropic
+  + 6:         match: '\bL: ([0-9]+)% \(([0-9hm]+)\)'
+  + 7:         used: '{1}%'
+  + 8:         resets: '{2}'
+  + 9:         window: session
+
+Needs a new approval: `overrides` changed.
 Ceilings this approval fixes: 4 seats at most, 2 temporary.
 Seats: 2 (claude-keeper, claude-beacon).
 exit 0
