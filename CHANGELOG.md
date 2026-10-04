@@ -12,9 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 A feature release: the budgets table falls back per window and names the source each figure was
 counted from; `team doctor` runs each account's approved budget check; `overrides.yaml` teaches a
 shipped profile new dialog and quota patterns without waiting for a release; and every typing path
-reads the composer from the captures, pressing Enter only on a box that read back as exactly the
-typed text. Upgrade: a seat with no label is titled with its model and version, and `team down`
-now clears the session it stopped.
+reads the input row from the captured frame and its prompt column, pressing Enter only when the box
+reads back as exactly the typed text. Upgrade: a seat with no label is titled with its model and
+version, and `team down` now clears the session it stopped.
 
 ### Security
 
@@ -48,17 +48,20 @@ now clears the session it stopped.
   the fold frame ended on the first rule-looking row** — pre-existing holes, present in every
   release before this one too. A box holding a person's text and then a continuation row with only
   the CLI's prompt glyph read idle, the read-back held, and the Enter submitted the person's text
-  with the team's; a rule row after the true tail still got the Enter. The input row is now the
-  capture's own: the box's first row under its opening rule, its prompt at the pane's captured
-  column, and a prompt glyph on a continuation row is content — the person's text above it stays in
-  the box, and no Enter is pressed on a box that shows it. The box's fold is read the same way: its
-  closing rule is the window's last rule row at the opening rule's own width, a rule-looking row
-  anywhere else is a row of the box, and where the frame cannot be told the read fails closed and
-  nothing is entered.
-- **In 0.1.2 a two-rule frame was read without comparing its rules' widths** — also pre-existing.
-  The composer's frame is read only when its two rules are one width, as every capture draws them:
-  where a window's rules differ — a closing rule that is not the opening rule's own width — the box
-  cannot be established, the read is unknown, and nothing is entered.
+  with the team's; a rule row after the true tail still got the Enter. The input row is now read
+  from the captured frame and its prompt column: for Claude Code and Antigravity, the box's first
+  row under its opening rule; for Codex and Cursor, the column their captures draw the prompt at,
+  where a continuation row as those CLIs draw it — indented — is content, so the person's text
+  above it stays in the box. A row carrying the glyph at that exact column — a shape no capture
+  shows those two CLIs drawing — is read as the input row, and a person's text left above it is not
+  read. The box's fold is read the same way: its closing rule is the window's last rule row at the
+  opening rule's own width, a rule-looking row anywhere else is a row of the box, and where the
+  frame cannot be told the read fails closed and nothing is entered.
+- **In 0.1.2 a two-rule frame was read without comparing its rules' widths** — pre-existing too,
+  present in every release before this one. The composer's frame is read only when its two rules are
+  one width, as every capture draws them: where a window's rules differ — a closing rule that is not
+  the opening rule's own width — the box cannot be established, the read is unknown, and nothing is
+  entered.
 
 ### Added
 
@@ -84,6 +87,12 @@ now clears the session it stopped.
   `coverage:check` keeps `contract/capture-coverage.json` current in CI, failing on a difference or
   any provenance problem. Only the fixture folder's README decides: a `capture` claim counts where
   the README lists the file under a heading that is not Constructed or Not produced.
+- A profile may give a dialog pattern its own `ignore_case: true` beside its `match` — the flag
+  reaching its `except` list too. Claude Code's trust question, spelled out in both cases letter
+  class by letter class through 0.1.2, is now one line with the flag on it, and the "1. Yes" choice
+  beside it stays matched as it is drawn. A composer's own patterns — `prompt`, `rule`, `footers`,
+  the status line, the suffix — take strings; a flag written among them is refused at load with the
+  key's name (`"prompt" cannot ignore case: only a dialog pattern may`).
 - A profile may name a `screen_module` — a code module inside the package's profiles folder — for a
   CLI whose screens the data rules cannot express. Its predicates are combined with the data rules
   by OR for `working`, every dialog stage and `unknown`, so a hatch can only add caution, never
