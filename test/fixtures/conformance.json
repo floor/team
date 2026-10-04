@@ -386,6 +386,13 @@
       "provenance": "constructed"
     },
     {
+      "file": "codex/0.157.0/blank-middle.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "codex/0.157.0/exit-typed.txt",
       "cli": "codex",
       "classify": "unsent",
@@ -414,6 +421,13 @@
       "provenance": "constructed"
     },
     {
+      "file": "codex/0.157.0/pasted-two-lines.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "codex/0.157.0/permission-pinned.txt",
       "cli": "codex",
       "classify": "permission",
@@ -435,6 +449,20 @@
       "provenance": "capture"
     },
     {
+      "file": "codex/0.157.0/second-line-glyph.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/second-line-gt.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "codex/0.157.0/startup-loading.txt",
       "cli": "codex",
       "classify": "unknown",
@@ -449,10 +477,31 @@
       "provenance": "capture"
     },
     {
+      "file": "codex/0.157.0/trust-folder-163.txt",
+      "cli": "codex",
+      "classify": "trust",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/trust-folder.txt",
+      "cli": "codex",
+      "classify": "trust",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
       "file": "codex/0.157.0/trust.txt",
       "cli": "codex",
       "classify": "trust",
       "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/typed-two-lines.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
       "provenance": "capture"
     },
     {
@@ -467,6 +516,13 @@
       "cli": "codex",
       "classify": "working",
       "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/wrapped-line.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
       "provenance": "capture"
     },
     {
