@@ -753,6 +753,20 @@ describe('team watch', () => {
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
   });
 
+  test('a wrapped box with a blank row between its rows never gets the Enter', async () => {
+    // An empty continuation row is not part of the nudge: the pane draws one only where the
+    // nudge itself has a blank line, and it has none. The nudge is typed, and not sent.
+    const rows = wordWrap(NUDGE_TEXT, 24);
+    const [firstRow = '', ...rest] = rows;
+    const wrapped = claudeBox([firstRow, '', ...rest].join('\n'));
+    const io = testIo(dir);
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = wrapped; return true; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was typed and not sent');
+  });
+
   test('a box that holds someone else\'s text gets no Enter', async () => {
     let looks = 0;
     const io = testIo(dir);

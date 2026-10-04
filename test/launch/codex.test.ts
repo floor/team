@@ -4,7 +4,7 @@ import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
 import { classify, classifyComposer, readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
-import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
+import { boxHoldsText, deliverRules, type Delivery } from '../../src/launch/deliver.ts';
 import { upPlan } from '../../src/launch/plan.ts';
 import { wordWrap } from '../helpers.ts';
 
@@ -171,6 +171,29 @@ describe('Codex rules delivery', () => {
     d.io.type = (text) => { d.calls.push(text); d.showText(boxed(wordWrap(changed, 53 - 2).join('\n'))); return true; };
     expect(await deliverRules('codex', line, 1, d.io)).toBe(false);
     expect(d.calls).toEqual([line]);
+  });
+  test('a word-wrapped box with a blank row between its rows gets no Enter', async () => {
+    // An empty continuation row is not part of the wrapped line: the pane draws one only where
+    // the text itself has a blank line, and this line has none.
+    const line = 'End every commit message and every pull request body with your signature, given below.';
+    const rows = wordWrap(line, 53 - 2);
+    const [firstRow = '', ...rest] = rows;
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed([firstRow, '', ...rest].join('\n'))); return true; };
+    expect(await deliverRules('codex', line, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([line]);
+  });
+  test('a blank line the typed text itself has is entered', async () => {
+    const typed = 'Rules.\n\nMore rules.';
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed(typed)); return true; };
+    expect(await deliverRules('codex', typed, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([typed, 'Enter']);
+  });
+  test('two spaces typed, one shown, gets no Enter', async () => {
+    // The shared read refuses a box that shows a single space where the typed text has two: the
+    // wrap did not add or drop it. Every profile without a captured wrap reads the same way.
+    expect(boxHoldsText('codex', 'alpha  beta', boxed('alpha beta'))).toBe(false);
   });
   test.each(['permission', 'trust', 'startup', 'unsent', 'exit', 'working'])('types nothing at %s', async (screen) => {
     const d = delivery(screen);

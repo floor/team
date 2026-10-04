@@ -4,13 +4,14 @@ import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
 import { readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
-import { deliverRules, type Delivery } from '../../src/launch/deliver.ts';
+import { boxHoldsText, deliverRules, type Delivery } from '../../src/launch/deliver.ts';
 import { rulesText, type RulesInput } from '../../src/launch/rules.ts';
 import { downPlan, upPlan } from '../../src/launch/plan.ts';
 import { pass, newMemory } from '../../src/watch/pass.ts';
 import { emptySession } from '../../src/state.ts';
 import { stateOf } from '../../src/commands/down.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
+import { wordWrap } from '../helpers.ts';
 
 const fixture = (name: string) => readFileSync(new URL(`../fixtures/antigravity/1.2.16/${name}.txt`, import.meta.url), 'utf8');
 
@@ -173,6 +174,32 @@ describe('Antigravity rules delivery', () => {
     d.io.type = (text) => { d.calls.push(text); d.showText(boxed(chunks.join('\n'))); return true; };
     expect(await deliverRules('antigravity', long, 1, d.io)).toBe(false);
     expect(d.calls).toEqual([long]);
+  });
+
+  test('a word-wrapped box with a blank row between its rows gets no Enter', async () => {
+    // An empty continuation row is not part of the typed line: the pane draws one only where
+    // the text itself has a blank line, and this line has none.
+    const long = 'These are standing rules, not a task: reply ready and wait for your brief.';
+    const rows = wordWrap(long, 53 - 2);
+    const [firstRow = '', ...rest] = rows;
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed([firstRow, '', ...rest].join('\n'))); return true; };
+    expect(await deliverRules('antigravity', long, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([long]);
+  });
+
+  test('a blank line the typed text itself has is entered', async () => {
+    const typed = 'Rules.\n\nMore rules.';
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed(typed)); return true; };
+    expect(await deliverRules('antigravity', typed, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([typed, 'Enter']);
+  });
+
+  test('two spaces typed, one shown, gets no Enter', async () => {
+    // The shared read refuses a box showing a single space where the typed text has two: the
+    // wrap did not add or drop it.
+    expect(boxHoldsText('antigravity', 'alpha  beta', boxed('alpha beta'))).toBe(false);
   });
 
   test('a boxed multi-line paste reads back row for row and is entered', async () => {

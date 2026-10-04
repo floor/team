@@ -344,6 +344,61 @@ describe('Cursor rules delivery', () => {
     expect(d.calls).toEqual([CAPTURED_WRAP]);
   });
 
+  test('a wrapped box with a blank row between its rows gets no Enter', async () => {
+    // An empty continuation row is not part of a wrapped text: the pane draws one only where
+    // the text itself has a blank line, and this sentence has none.
+    const rows = wordWrap(CAPTURED_WRAP, 51 - 4);
+    const [firstRow = '', ...rest] = rows;
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(box([firstRow, '', ...rest])); return true; };
+    expect(await deliverRules('cursor', CAPTURED_WRAP, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([CAPTURED_WRAP]);
+  });
+
+  test('the nudge wrapped with a blank row gets no Enter', async () => {
+    // The nudge and the exit gate on the same read: a blank row the nudge does not have.
+    const rows = wordWrap(NUDGE_TEXT, 51 - 4);
+    const [firstRow = '', ...rest] = rows;
+    expect(boxHoldsText('cursor', NUDGE_TEXT, box([firstRow, '', ...rest]))).toBe(false);
+  });
+
+  test('a blank row the typed text itself has is entered', async () => {
+    // The one place a blank row is the text's own: the typed text has that blank line there.
+    const typed = 'alpha beta\n\ngamma delta';
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(boxed(typed)); return true; };
+    expect(await deliverRules('cursor', typed, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([typed, 'Enter']);
+  });
+
+  test('two spaces typed, one shown, gets no Enter — the delivery path and the gate', async () => {
+    // The typed text has a run of two spaces; the box shows one. The wrap did not add or drop
+    // that space, so the box is not the typed text, and nothing presses Enter on it. The watch's
+    // nudge and the typed exit gate on the same read.
+    const typed = 'alpha  beta';
+    expect(boxHoldsText('cursor', typed, box(['alpha beta']))).toBe(false);
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(box(['alpha beta'])); return true; };
+    expect(await deliverRules('cursor', typed, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([typed]);
+  });
+
+  test('the same collapse inside a wrapped row gets no Enter', async () => {
+    // Only a row break may stand for whitespace at a wrap boundary; inside a row the characters
+    // must match the typed text exactly, runs of spaces included.
+    const typed = 'alpha  beta gamma delta epsilon';
+    const collapsed = wordWrap(typed, 20).map((row) => row.replace('  ', ' '));
+    expect(boxHoldsText('cursor', typed, box(collapsed))).toBe(false);
+  });
+
+  test('two spaces shown as two are the text and are entered', async () => {
+    const typed = 'alpha  beta';
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(box(['alpha  beta'])); return true; };
+    expect(await deliverRules('cursor', typed, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([typed, 'Enter']);
+  });
+
   test('a box holding a person\'s own text gets no Enter', async () => {
     // The captured rules box against a shorter first message: the box is not the typed text.
     const d = delivery();
