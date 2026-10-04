@@ -101,9 +101,39 @@ function plainLines(lines: string[]): string[] {
   return lines.map((line) => stripSgr(line).trimEnd());
 }
 
-function hitFromReading(reading: ComposerReading): Hit {
+const SCREEN_KINDS: ReadonlySet<string> = new Set<Screen['kind']>([
+  'idle',
+  'working',
+  'unsent',
+  'permission',
+  'trust',
+  'question',
+  'unknown',
+]);
+
+function callPredicate(predicate: unknown, lines: string[]): boolean {
+  if (typeof predicate !== 'function') return false;
+  try {
+    return predicate(lines) === true;
+  } catch {
+    return false;
+  }
+}
+
+function callComposer(composer: unknown, lines: string[]): Hit {
+  if (typeof composer !== 'function') return { kind: 'unknown' };
+  let reading: any;
+  try {
+    reading = composer(lines);
+  } catch {
+    return { kind: 'unknown' };
+  }
+  if (!reading || typeof reading !== 'object') return { kind: 'unknown' };
+  if (typeof reading.kind !== 'string' || !SCREEN_KINDS.has(reading.kind)) {
+    return { kind: 'unknown' };
+  }
   return {
-    kind: reading.kind,
+    kind: reading.kind as Screen['kind'],
     from: 0,
     input: -1,
   };
@@ -129,7 +159,7 @@ export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClo
     if (tick()) return { kind: 'unknown' };
     const predicate = data.profile?.[kind];
     if (predicate) {
-      if (predicate(plain)) return { kind };
+      if (callPredicate(predicate, plain)) return { kind };
     } else if (stage) {
       for (const rule of stage.rules) {
         const hit = ruleMatches(data, plain, rule, tick);
@@ -139,7 +169,7 @@ export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClo
     }
   }
   if (data.profile?.composer) {
-    const composed = hitFromReading(data.profile.composer(plain));
+    const composed = callComposer(data.profile.composer, plain);
     if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
     const marked = floorHits(plain, 0, -1, data.chrome, tick);
     if (marked === 'stop' || marked) return { kind: 'unknown' };
@@ -165,7 +195,7 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
   const plain = plainLines(lines);
   if (data.profile?.unknown) {
     if (tick()) return { kind: 'unknown' };
-    if (data.profile.unknown(plain)) return { kind: 'unknown' };
+    if (callPredicate(data.profile.unknown, plain)) return { kind: 'unknown' };
   } else if (data.unknown) {
     for (const rule of data.unknown.rules) {
       const hit = ruleMatches(data, plain, rule, tick);
@@ -174,7 +204,7 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
     }
   }
   if (data.profile?.composer) {
-    const composed = hitFromReading(data.profile.composer(plain));
+    const composed = callComposer(data.profile.composer, plain);
     if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
     const marked = floorHits(plain, 0, -1, data.chrome, tick);
     if (marked === 'stop' || marked) return { kind: 'unknown' };
