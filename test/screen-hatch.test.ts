@@ -4,13 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { classifyLines, composeLines } from '../src/watch/screen-core.ts';
 import { loadScreen } from '../src/watch/screen-file.ts';
-import { classify, classifyComposer, readScreen } from '../src/watch/screen.ts';
+import { classify, classifyComposer, readScreen, type Screen } from '../src/watch/screen.ts';
 import { callOrder, resetCalls } from './fixtures/hatch/hatch.ts';
 import type { ScreenProfile } from '../src/watch/screen-profile.ts';
 
 const fixtureDir = fileURLToPath(new URL('./fixtures/hatch', import.meta.url));
 
-const EXPECTED_FIXTURES: [path: string, cli: string, r: string, c: string, comp: string][] = [
+const EXPECTED_FIXTURES: [path: string, cli: string, r: Screen['kind'], c: Screen['kind'], comp: Screen['kind']][] = [
   ['test/fixtures/antigravity/1.2.16/exit-typed.txt', 'antigravity', 'unsent', 'unsent', 'unsent'],
   ['test/fixtures/antigravity/1.2.16/exit.txt', 'antigravity', 'unknown', 'unknown', 'unknown'],
   ['test/fixtures/antigravity/1.2.16/idle.txt', 'antigravity', 'idle', 'idle', 'idle'],
