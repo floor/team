@@ -69,7 +69,14 @@ describe('claude-code through the screen core', () => {
     expect(readScreen('claude-code', text).kind).toBe('unknown');
   });
 
-  test.each(['shell-git-log.txt', 'shell-right-prompt.txt', 'shell-shortcuts.txt', 'shell-shortcuts-indented.txt'])('%s reads unknown', (name) => {
+  test.each([
+    'shell-git-log.txt',
+    'shell-right-prompt.txt',
+    'shell-shortcuts.txt',
+    'shell-shortcuts-indented.txt',
+    'shell-status-only.txt',
+    'shell-bypass-only.txt',
+  ])('%s reads unknown', (name) => {
     const text = readFileSync(new URL(`./fixtures/claude-code/${name}`, import.meta.url), 'utf8');
     expect(readScreen('claude-code', text).kind).toBe('unknown');
   });
@@ -114,6 +121,39 @@ describe('claude-code through the screen core', () => {
     // A scrolled-out box with one valid footer row and one foreign line reads unknown
     const scrolledOneValidOneForeign = `❯ \n${RULE}\n  main · Opus 5.5\nshell output\n`;
     expect(readScreen('claude-code', scrolledOneValidOneForeign).kind).toBe('unknown');
+
+    // A scrolled-out box with only the status row reads unknown
+    const scrolledStatusOnly = `❯ \n${RULE}\n  main · Opus 5.5\n`;
+    expect(readScreen('claude-code', scrolledStatusOnly).kind).toBe('unknown');
+
+    // A scrolled-out box with only the mode row reads unknown
+    const scrolledBypassOnly = `❯ \n${RULE}\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n`;
+    expect(readScreen('claude-code', scrolledBypassOnly).kind).toBe('unknown');
+
+    // A scrolled-out box with footer rows in reversed order reads unknown
+    const scrolledReversed = `❯ \n${RULE}\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n  main · Opus 5.5\n`;
+    expect(readScreen('claude-code', scrolledReversed).kind).toBe('unknown');
+  });
+
+  test('both rows typed by hand under a rule below a shell prompt reproduce the frame', () => {
+    const prompt = '~/acme % ls\nREADME.md\nsrc\n❯ \n';
+    const handTypedFrame = `${prompt}${RULE}\n  main · Opus 5.5\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n`;
+    // A person typing both rows under a rule below a shell prompt reproduces the exact
+    // multi-row frame and reads idle; this residual is acceptable because it requires
+    // reproducing the entire multi-row frame in order.
+    expect(readScreen('claude-code', handTypedFrame).kind).toBe('idle');
+  });
+
+  test('a real box with a custom status line stays idle with the footer frame', () => {
+    // Custom status line containing custom branch, directory, Opus model, and custom tokens
+    const customStatus = `❯ \n${RULE}\n  custom-branch · my-repo · Opus 5.5 · tokens: 12k\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n`;
+    expect(readScreen('claude-code', customStatus).kind).toBe('idle');
+  });
+
+  test('a real box in a narrow pane where the status row is cut with … stays idle with the footer frame', () => {
+    // Narrow pane status row truncated with ellipsis, as captured in live sessions
+    const narrowStatus = `❯ \n${RULE}\n  no-git · …/acme · Opus 5.5 · S: - · L: …\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n`;
+    expect(readScreen('claude-code', narrowStatus).kind).toBe('idle');
   });
 
   test('every fixture matches the classifier main had', () => {
