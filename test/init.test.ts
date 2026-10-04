@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { init, runInit, skeleton } from '../src/commands/init.ts';
-import { approvalOf } from '../src/approve/approval.ts';
+import { approvalDifferences, approvalOf } from '../src/approve/approval.ts';
 import { fingerprints } from '../src/approve/fingerprint.ts';
 import { version } from '../src/cli.ts';
 import { storePath, writeApproval } from '../src/store/store.ts';
@@ -73,6 +73,14 @@ describe('team init', () => {
 
       const fixedDate = new Date(1700000000000);
       expect(approvalOf(resWith.team, project, fixedDate)).toEqual(approvalOf(resWithout.team, project, fixedDate));
+
+      const home = join(base, 'home');
+      mkdirSync(home);
+      writeApproval(storePath(resWithout.team.project, project, home), { approval: approvalOf(resWithout.team, project), file: withoutLine }, resWithout.team.seats);
+      expect(approvalDifferences(resWith.team, project, home)).toEqual([]);
+
+      writeApproval(storePath(resWith.team.project, project, home), { approval: approvalOf(resWith.team, project), file: withLine }, resWith.team.seats);
+      expect(approvalDifferences(resWithout.team, project, home)).toEqual([]);
     }
   });
 
