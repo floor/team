@@ -211,6 +211,10 @@ describe('codex, cursor and antigravity through the screen core', () => {
       const dir = fileURLToPath(new URL(`./fixtures/${cli}/${version}/`, import.meta.url));
       for (const name of readdirSync(dir)) {
         if (!name.endsWith('.txt')) continue;
+        // Constructed, not captured (see the fixtures README), and the one screen a fix is
+        // meant to read differently: main's classifier called the dialog below `unsent`, and
+        // two input paths pressed Enter on that reading. Its own test follows the loop.
+        if (name === 'permission-pinned.txt') continue;
         const text = readFileSync(new URL(`./fixtures/${cli}/${version}/${name}`, import.meta.url), 'utf8');
         const before = read(windowOf(text));
         const after = readScreen(cli, text).kind;
@@ -219,6 +223,15 @@ describe('codex, cursor and antigravity through the screen core', () => {
         expect(`${cli} ${name}: ${named}`).toBe(`${cli} ${name}: ${before}`);
       }
     }
+  });
+
+  test('the constructed fixture differs on purpose: a permission dialog above the pinned status line', () => {
+    const text = readFileSync(new URL('./fixtures/codex/0.157.0/permission-pinned.txt', import.meta.url), 'utf8');
+    // Main missed the dialog twice over: its lower-case footer phrase, and the choice line read
+    // as the composer's input. The new reading is the dialog, and never idle or unsent.
+    expect(mainCodex(windowOf(text))).toBe('unsent');
+    expect(readScreen('codex', text).kind).toBe('permission');
+    expect(classify('codex', text.split('\n')).kind).toBe('permission');
   });
 
   test('the one difference: cursor reads a resume line before a trust dialog', () => {
