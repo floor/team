@@ -28,6 +28,25 @@ const V012 = {
     'deepseek-acme-2': '0df8be68ae90a771c2db4d6b2ec5da65767e31abbb80a8621357e522d92ac879',
     'grok-acme': 'b534081b5aeb30e57c7fda3a1a1ae0389e924a2b68e9995f17c6fd0c74852c9b',
   },
+  // v0.1.1 hashed the same name-title, and left `parked` and `stopped` out of the digest.
+  'v0.1.1:.github/team.yaml': {
+    'claude-coordinator': 'a5cbd59ea101b537555a1daa3d25f465a51c30bee840a9a57ac44e198ecd549b',
+    'claude-implementer': '67699b1dbb8368a84036f3eb828b2ec26ceedf9a637b96dadbf344a0b1b2cd49',
+    'claude-reviewer': '91b5620988519df360972082d6e5a4487f53b670d49b26b86f97528fc5637559',
+    'deepseek-implementer': 'fb15acada4abbeaddc566e1ec554ec4bde8cb7ce75cd269977af535508a7f013',
+    'glm-implementer': '7027749b041caa95c314c315b74d610448869aa63678b4b791689ebdba71eced',
+    'grok-implementer': 'acddc18b5b3ff920ee8c46280485ea69af8fc00f9dcff444d8d262f564b1bd0c',
+    'astra-implementer': '3d38e9a1abe328df05e2dd8c58c0621920bd2a8cde103f80800393c3f785d878',
+    'gemini-implementer': '52d6765ff70e80bb1a2aba89806e18c0c1597ff5baaa551f1958e403c0449575',
+    'claude-operator': '05fd042a4ed49afccc6511eac7d89a285efa214b0800a2c9497fc645128b26b2',
+  },
+  'v0.1.1:test/fixtures/example.yaml': {
+    'claude-coordinator-acme': 'ed61e47ddccf9d75216fb82777d0d7389e2d6479288e873a535ec9fea6668d4a',
+    'codex-acme': '5d525672dbc2b243fe75623ea3151f3eac867a74dfc46d118df033346aae644c',
+    'deepseek-acme': '4d2a2a1cfe2c1b5638cd11c1fed57c56beb42ad59d355eb265c867e39afda963',
+    'deepseek-acme-2': 'c7f7f236396e45b869f569d23f7af838bc069135d19b3b2b234685779fb39a41',
+    'grok-acme': '8113cb068aa08d6a309f016be782ca11dd7aeedf543a8fda3bdc0a2145fcce00',
+  },
   'examples/team.yaml': {
     'claude-keeper': '6231a2b2fe006bc7a5f12cea59f7a7e6262cab9d0fabf6a7dae9c158b35aa62c',
     'claude-signal': 'cde177c72e839a1d8493afc3cbb4288f651241964d7a47bae63f05de18844939',
@@ -79,6 +98,14 @@ describe('an approval written by v0.1.2', () => {
     approveAsV012(example, V012['test/fixtures/example.yaml']);
     const next = example.replace('model: Grok', 'model: Grok Next');
     expect(approvalDifferences(team(next), home, home)).toEqual(['seat grok-acme changed']);
+  });
+
+  test('the same file approved by v0.1.1 still matches', () => {
+    for (const path of ['.github/team.yaml', 'test/fixtures/example.yaml'] as const) {
+      const text = readFileSync(join(import.meta.dir, '..', path), 'utf8');
+      approveAsV012(text, V012[`v0.1.1:${path}`]);
+      expect(approvalDifferences(team(text), home, home)).toEqual([]);
+    }
   });
 
   test('a file that already wrote its labels has no drift', () => {
