@@ -5,7 +5,6 @@ import { defaultBudgets, defaultWatch, validateTeamFile } from '../file/validate
 import {
   approvalStanding,
   LEGACY_LINE,
-  readApproval,
   storePath,
   writeApproval,
   type Approval,
