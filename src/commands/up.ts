@@ -36,7 +36,7 @@ import { profileFor } from '../profiles/index.ts';
 import { readApproval, storePath, type Ceilings } from '../store/store.ts';
 import { emptySession, readState, updateState, type SeatState } from '../state.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from './doctor.ts';
-import { readMachine, type Machine } from '../watch/machine.ts';
+import { launchLimit, readMachine, type Machine, type SwapSample } from '../watch/machine.ts';
 import { readScreen } from '../watch/screen.ts';
 
 // What `up` reads from outside the file, so tests can stand in for it.
@@ -156,26 +156,6 @@ function resolveState(sources: UpSources, session: string): SessionState | null 
 
 type Running = { name: string; vendor: string; temporary: boolean };
 
-function pastMachine(machine: Machine, limits: TeamFile['machine']): string | null {
-  if (machine.loadPerCore !== null && machine.loadPerCore > limits.loadStart) {
-    return `the load is ${machine.loadPerCore.toFixed(1)} per core, above ${limits.loadStart}`;
-  }
-  if (machine.memoryFree !== null && machine.memoryFree < limits.memoryStart) {
-    return `free memory is ${Math.round(machine.memoryFree)}%, below ${limits.memoryStart}%`;
-  }
-  if (machine.diskFree !== null && machine.diskFree < limits.diskMin) {
-    return `free disk is ${gb(machine.diskFree)}, below ${gb(limits.diskMin)}`;
-  }
-  if (machine.swapFree !== null && machine.swapFree < limits.swapFreeMin) {
-    return `free swap is ${gb(machine.swapFree)}, below ${gb(limits.swapFreeMin)}`;
-  }
-  return null;
-}
-
-function gb(bytes: number): string {
-  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-}
-
 function overCeiling(ceilings: Ceilings, running: readonly Running[], seat: Seat): string | null {
   if (running.some((item) => item.name === seat.name)) return null;
   const count = running.length + 1;
@@ -257,9 +237,12 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     const findings = doctorFindings(team, root, dir, session, sources.doctor, loaded.warnings);
     for (const finding of findings) if (blocksLaunch(finding)) refusals.push(finding.text);
   }
+  const samples: SwapSample[] = [];
+  const readAt = () => (sources.now?.() ?? new Date()).getTime();
+  const crossed = (machine: Machine) => launchLimit(machine, team.machine, samples, readAt());
   const machine = sources.machine?.(root);
   if (machine) {
-    const problem = pastMachine(machine, team.machine);
+    const problem = crossed(machine);
     if (problem) refusals.push(problem);
   }
 
@@ -351,7 +334,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     now: () => now().getTime(),
     allow(name) {
       if (sources.machine) {
-        const problem = pastMachine(sources.machine(root), team.machine);
+        const problem = crossed(sources.machine(root));
         if (problem) return problem;
       }
       const seat = team.seats.find((item) => item.name === name);
