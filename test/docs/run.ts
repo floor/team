@@ -1,0 +1,300 @@
+// Runs one command reference page's examples. The commands are the real ones, in process: the
+// world, the home and the caller are handed in, so no example reaches herdr, a CLI, or the owner's
+// home. A `$ ` line is run, the lines under it must match byte for byte.
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { runAdd } from '../../src/commands/add.ts';
+import { runApprove } from '../../src/commands/approve.ts';
+import { check, loadConfig } from '../../src/commands/check.ts';
+import { runDoctor } from '../../src/commands/doctor.ts';
+import { runDown } from '../../src/commands/down.ts';
+import { runInit } from '../../src/commands/init.ts';
+import { runRemove } from '../../src/commands/remove.ts';
+import { runStatus } from '../../src/commands/status.ts';
+import { runUp } from '../../src/commands/up.ts';
+import { runWatch } from '../../src/commands/watch.ts';
+import { runWorktree } from '../../src/commands/worktree.ts';
+import type { Caller } from '../../src/caller.ts';
+import type { TeamFile } from '../../src/file/types.ts';
+import { loadTeamFile } from '../../src/file/load.ts';
+import type { Io } from '../../src/io.ts';
+import { emptySession, updateState } from '../../src/state.ts';
+import { blocksOf, EXIT_SUFFIX, transcript, type Block } from './blocks.ts';
+import { createFixture, type Fixture } from './fixture.ts';
+import { DEFAULT_SPEC, specOf, type ScreenKind, type Spec, type ToolState } from './spec.ts';
+import { createWorld, RUN_WATCH_PID, WATCH_PID, type World } from './world.ts';
+
+export type Failure = { page: string; line: number; message: string };
+
+type Page = {
+  name: string;
+  fixture: Fixture;
+  spec: Spec;
+  world: World | null;
+  team: TeamFile | null;
+  session: string;
+  ready: boolean;
+};
+
+const words = (line: string): string[] => {
+  const out: string[] = [];
+  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  for (const match of line.matchAll(pattern)) out.push(match[1] ?? match[2] ?? (match[3] as string));
+  return out;
+};
+
+function callerOf(name: string, team: TeamFile | null): Caller {
+  if (name === 'owner') return { kind: 'owner' };
+  if (name === 'agent') return { kind: 'unplaced', reason: 'it is run by an agent (claude) outside herdr' };
+  const seat = team?.seats.find((candidate) => candidate.name === name);
+  if (!seat) throw new Error(`caller=${name} names no seat of the file`);
+  return { kind: 'seat', name, pane: '<pane of ' + name + '>' };
+}
+
+/**
+ * The three values no page can print: the fixture's own path, read as `.`; the home, read as `~`;
+ * the store's folder ends in a hash of the project's path; and commit hashes, read as `<sha>`.
+ */
+function normalize(text: string, page: { fixture: Fixture }): string {
+  return text
+    .replaceAll(page.fixture.root, '.')
+    .replaceAll(page.fixture.home, '~')
+    .replace(/(team\/[A-Za-z0-9._-]+)-[0-9a-f]{12}\b/g, '$1-<hash>')
+    .replace(/\b[0-9a-f]{40}\b/g, '<sha>')
+    .replace(/\b[0-9a-f]{10}\b/g, '<sha>')
+    .replace(/^(\s+)[0-9a-f]{7,40} /gm, '$1<sha> ');
+}
+
+async function setup(page: Page): Promise<void> {
+  const { fixture } = page;
+  const loaded = loadTeamFile(fixture.root, {});
+  if (loaded.ok) {
+    page.team = loaded.team;
+    page.session = loaded.team.session;
+  }
+  const world = createWorld({ team: page.team, spec: page.spec, root: fixture.root, home: fixture.home });
+  page.world = world;
+
+  const dir = join(fixture.root, '.agents');
+  mkdirSync(dir, { recursive: true });
+  const session = emptySession() as unknown as Record<string, unknown>;
+  if (page.spec.agents === 'all' && page.team) {
+    const seats: Record<string, unknown> = {};
+    for (const seat of page.team.seats) seats[seat.name] = { stage: 'ready' };
+    session.seats = seats;
+  }
+  if (page.spec.watch === 'alive' || page.spec.watch === 'stale') {
+    const interval = page.team?.watch.interval ?? 120;
+    const ago = page.spec.watch === 'stale' ? 3 * interval : 0;
+    session.watch = { pid: WATCH_PID, heartbeat: new Date(Date.parse(page.spec.now) - ago * 1000).toISOString() };
+  }
+  for (const [key, value] of Object.entries(page.spec.state)) {
+    const current = (session[key] ?? {}) as Record<string, unknown>;
+    session[key] = typeof value === 'object' && value !== null && !Array.isArray(value) ? { ...current, ...value } : value;
+  }
+  updateState(dir, (state) => {
+    state.sessions[page.session] = session as never;
+  });
+
+  if (page.spec.approved && page.team) {
+    const parts: string[] = [];
+    const io: Io = {
+      stdout: (text) => parts.push(text),
+      stderr: (text) => parts.push(text),
+      cwd: fixture.root,
+      env: {},
+      stdinIsTTY: false,
+      caller: { kind: 'owner' },
+    };
+    const seats = page.team.seats.length;
+    const code = await runApprove([], io, {
+      ask: async () => page.spec.answer ?? String(seats),
+      now: () => new Date(page.spec.now),
+      home: fixture.home,
+    });
+    if (code !== 0) throw new Error(`the fixture could not approve its team file: ${parts.join('')}`);
+  }
+  page.ready = true;
+}
+
+async function command(page: Page, line: string, io: Io, answer?: string): Promise<number> {
+  const [first, ...argv] = words(line);
+  if (first !== 'team') throw new Error(`a console line runs \`team …\`, not "${first ?? ''}"`);
+  const name = argv[0];
+  const rest = argv.slice(1);
+  const spec = page.spec;
+  const world = page.world as World;
+  const fixture = page.fixture;
+  switch (name) {
+    case 'add':
+      return runAdd(rest, io, world.addSources());
+    case 'approve':
+      return runApprove(rest, io, {
+        ask: async (question) => {
+          // The question goes to the terminal, and the answer is what the terminal echoes back.
+          const typed = answer ?? spec.answer ?? String(page.team?.seats.length ?? 0);
+          io.stdout(`${question}${typed}\n`);
+          return typed;
+        },
+        now: () => new Date(spec.now),
+        home: fixture.home,
+      });
+    case 'check':
+      return check(rest, io, (cwd, file) => loadConfig(cwd, file, fixture.home));
+    case 'doctor':
+      return runDoctor(rest, io, world.doctorSources());
+    case 'down':
+      return runDown(rest, io, world.downSources());
+    case 'init':
+      return runInit(rest, io, fixture.home);
+    case 'remove':
+      return runRemove(rest, io, world.removeSources());
+    case 'status':
+      return runStatus(rest, io, world.statusSources());
+    case 'up':
+      return runUp(rest, io, world.upSources());
+    case 'watch':
+      return runWatch(rest, io, world.watchSources());
+    case 'worktree':
+      return runWorktree(rest, io, { home: fixture.home, now: () => new Date(spec.now) });
+    default:
+      throw new Error(`no such command: ${name ?? ''}`);
+  }
+}
+
+function diff(expected: string, produced: string): string {
+  const want = expected.split('\n');
+  const got = produced.split('\n');
+  const at = want.findIndex((line, index) => line !== got[index]);
+  const from = Math.max(0, (at < 0 ? Math.max(want.length, got.length) : at) - 2);
+  const show = (lines: string[]) => lines.slice(from, from + 6).map((line) => `      ${line}`).join('\n');
+  return `expected:\n${show(want)}\n    produced:\n${show(got)}`;
+}
+
+/**
+ * `screens="claude-beacon=question"`, `machine="tight"` and `tools="codex=logged-out"` on a
+ * `console` fence: the world that block's commands run in. Each lasts for the block alone — the
+ * fixture's own world is back for the next one.
+ */
+function blockWorld(page: Page, block: Block): void {
+  const world = page.world as World;
+  const screens = block.attrs.screens;
+  if (screens) {
+    for (const entry of screens.split(',')) {
+      const [seat, kind] = entry.split('=');
+      if (!seat?.trim() || !kind?.trim()) throw new Error(`screens="${screens}": each entry is <seat>=<screen>`);
+      world.setScreen(seat.trim(), kind.trim() as ScreenKind);
+    }
+  }
+  if (block.attrs.machine) {
+    const kind = block.attrs.machine;
+    if (kind !== 'calm' && kind !== 'tight') throw new Error(`machine="${kind}": it is calm or tight`);
+    world.setMachine(kind);
+  }
+  const tools = block.attrs.tools;
+  if (tools) {
+    const state: Record<string, ToolState> = {};
+    for (const entry of tools.split(',')) {
+      const [cli, kind] = entry.split('=');
+      if (!cli?.trim() || !kind?.trim()) throw new Error(`tools="${tools}": each entry is <cli>=<state>`);
+      state[cli.trim()] = kind.trim() as ToolState;
+    }
+    world.setTools(state);
+  }
+}
+
+function restoreWorld(page: Page, block: Block): void {
+  const world = page.world as World;
+  for (const entry of (block.attrs.screens ?? '').split(',')) {
+    const seat = entry.split('=')[0]?.trim();
+    if (seat) world.setScreen(seat, page.spec.screens[seat] ?? 'idle');
+  }
+  if (block.attrs.machine) world.setMachine(page.spec.machine);
+  if (block.attrs.tools) world.setTools(page.spec.tools);
+}
+
+async function consoleBlock(page: Page, block: Block, failures: Failure[]): Promise<void> {
+  if (!page.ready) await setup(page);
+  try {
+    blockWorld(page, block);
+  } catch (error) {
+    failures.push({ page: page.name, line: block.line, message: (error as Error).message });
+    return;
+  }
+  const caller = callerOf(block.attrs.caller ?? page.spec.caller, page.team);
+  try {
+    for (const step of transcript(block.text, block.line)) {
+      const parts: string[] = [];
+      const io: Io = {
+        stdout: (text) => parts.push(text),
+        stderr: (text) => parts.push(text),
+        cwd: page.fixture.root,
+        env: {},
+        stdinIsTTY: false,
+        caller,
+      };
+      let code: number;
+      try {
+        code = await command(page, step.command, io, block.attrs.answer);
+      } catch (error) {
+        failures.push({ page: page.name, line: step.line, message: (error as Error).message });
+        continue;
+      }
+      if (step.showsExit) parts.push(`exit ${code}\n`);
+      const produced = normalize(parts.join(''), page);
+      const expected = normalize(step.expected, page);
+      if (produced !== expected) {
+        failures.push({
+          page: page.name,
+          line: step.line,
+          message: `$ ${step.command}${step.showsExit ? ` ${EXIT_SUFFIX}` : ''}\n    ${diff(expected, produced)}`,
+        });
+      }
+    }
+  } finally {
+    restoreWorld(page, block);
+  }
+}
+
+/** Every example of one page, run in order; the failures are the test's own. */
+export async function runPage(name: string, markdown: string, project = 'beacon'): Promise<Failure[]> {
+  const failures: Failure[] = [];
+  const page: Page = {
+    name,
+    fixture: createFixture(project, { at: Date.parse(DEFAULT_SPEC.now) / 1000 }),
+    spec: { ...DEFAULT_SPEC },
+    world: null,
+    team: null,
+    session: project,
+    ready: false,
+  };
+  try {
+    const blocks = blocksOf(markdown);
+    const declared = blocks.find((block) => block.kind === 'fixture');
+    page.spec = specOf(declared);
+    for (const block of blocks) {
+      try {
+        if (block.kind === 'yaml' || block.kind === 'file') {
+          if (!block.attrs.file) throw new Error(`the ${block.kind} fence at line ${block.line} needs file=<path>`);
+          page.fixture.write(block.attrs.file, block.text.endsWith('\n') ? block.text : `${block.text}\n`);
+        } else if (block.kind === 'commit') {
+          const message = block.text.endsWith('\n') ? block.text : `${block.text}\n`;
+          page.fixture.commit(message, block.attrs.email ?? undefined);
+        } else if (block.kind === 'git') {
+          for (const line of block.text.split('\n')) {
+            if (line.trim() === '') continue;
+            const ran = page.fixture.git(...words(line));
+            if (ran.code !== 0) throw new Error(`git ${line}: ${ran.stderr || ran.stdout}`);
+          }
+        } else if (block.kind === 'console') {
+          await consoleBlock(page, block, failures);
+        }
+      } catch (error) {
+        failures.push({ page: name, line: block.line, message: (error as Error).message });
+      }
+    }
+  } finally {
+    page.fixture.remove();
+  }
+  return failures;
+}

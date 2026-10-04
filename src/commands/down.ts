@@ -31,6 +31,8 @@ export type DownSources = {
   screen(session: string, pane: string, cli: string): Screen;
   /** Herdr's own status for the pane. The Enter waits for idle or done. */
   status(session: string, pane: string): string | null;
+  /** Foreground process names in the pane, or null when the pane can't be read. */
+  foreground?(session: string, pane: string): string[] | null;
   now(): Date;
   sleep?(ms: number): Promise<void>;
   // Present on the shipped command. A dry run never calls it.
@@ -88,6 +90,7 @@ export const realSources: DownSources = {
     return readScreen(cli, paneRead(pane, 200, aim(session)) ?? undefined);
   },
   status: (session, pane) => agentStatus(pane, aim(session)),
+  foreground: (session, pane) => paneForeground(pane, aim(session)),
   now: () => new Date(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   launch: realLaunch,
@@ -267,7 +270,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
         const cli = seats.find((seat) => seat.pane === pane)?.cli;
         const names = cli ? profileFor(cli)?.processNames : undefined;
         if (!names) return true;
-        return paneStillRunning(paneForeground(pane, aim(sessionName)), names);
+        return paneStillRunning(sources.foreground?.(sessionName, pane) ?? paneForeground(pane, aim(sessionName)), names);
       });
     },
     classify: () => 'unknown',
