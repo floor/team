@@ -18,7 +18,8 @@ Reads the team file, this machine's approval store, the session's state
 (`.agents/team.state.json`, for the watch's pid and the seats' recorded panes and CLIs), and herdr:
 whether the session is running, its agents, each pane's screen and status, and each pane's
 foreground processes. Writes `.agents/team.state.json` (the seats it stopped are dropped, the
-session it stopped is recorded so a later `up` clears it itself), `.agents/team.log`, and, through
+session it stopped is recorded so a later `up` clears it itself — a record that lives only until a
+command sees the session again), `.agents/team.log`, and, through
 herdr: the exit in each pane, the workspaces it closes, the watch's process and the session. A team
 file that no longer validates is replaced by the last copy that did, with a notice printed first:
 `down` must keep working when the file breaks.

@@ -8,7 +8,7 @@ import { currentTeam } from '../file/current.ts';
 import type { Problem, TeamFile } from '../file/types.ts';
 import { agentList, paneRead, sessionRunning, workspaceList } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
-import { emptySession, readState } from '../state.ts';
+import { clearStopped, emptySession, readState } from '../state.ts';
 import { compare } from '../status/compare.ts';
 import type { Comparison, Difference, Live } from '../status/compare.ts';
 
@@ -106,6 +106,10 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     io.stderr('team status: herdr doesn\'t answer; is it installed and running?\n');
     return 2;
   }
+  // A running session voids any stop record `down` wrote: left in place, the record could
+  // justify `up` deleting a session someone else stopped. `status` cannot tell a stopped session
+  // from a deleted one, so it clears nothing on one that is not running.
+  if (live.running) clearStopped(dir, session);
   const whole = readState(dir);
   const state = whole.sessions[session] ?? emptySession();
   const budgets = budgetTable(sources.budgetsInForce(team, root), recall(whole.budgets), sources.now().getTime());
