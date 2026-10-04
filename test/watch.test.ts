@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadReadings } from '../src/budgets/readings.ts';
+import { loadReadings, loadSpendReadings } from '../src/budgets/readings.ts';
 import { runWatch } from '../src/commands/watch.ts';
 import type { WatchSources } from '../src/commands/watch.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
@@ -769,6 +769,18 @@ describe('team watch', () => {
     expect(code).toBe(0);
     expect(loadReadings(join(dir, '.agents'), 'acme-web').map(({ account, window, left, used, seat }) => ({ account, window, left, used, seat })))
       .toEqual([{ account: 'openai', window: 'weekly', left: 39, used: 61, seat: 'codex-acme' }]);
+  });
+
+  test('a spend check reading is kept, so `up` and `add` count the floor against it', async () => {
+    writeFileSync(file, withAccounts('  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n'));
+    const code = await runWatch(['--file', file], testIo(dir), sources(1, {
+      readChecks: (_team, _root, at) => [
+        { account: 'deepseek', state: 'read', reading: { kind: 'spend', amount: 4.2, currency: 'USD', at } },
+      ],
+    }));
+    expect(code).toBe(0);
+    expect(loadSpendReadings(join(dir, '.agents'), 'acme-web'))
+      .toEqual([{ account: 'deepseek', amount: 4.2, currency: 'USD', at: Date.parse('2026-10-03T14:00:00Z') }]);
   });
 
   test('a file that never validated, and a bad option', async () => {

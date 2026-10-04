@@ -1,9 +1,11 @@
 // Whether `up` or `add` may start a seat, from the readings already stored.
-// A spend account has no money figure in the state yet, so it is unknown:
-// said, and not refused, until a check reading exists.
+// A subscription account is refused by a counted reading inside its reserve; a
+// spend account by a counted money reading at or below its floor. A reading the
+// gate can't count — missing, stale, or in another currency than the floor's —
+// reads unknown: said, and never a refusal.
 import type { Seat, TeamFile } from '../file/types.ts';
 import type { WindowName } from '../profiles/quota.ts';
-import { verdict, type Seen } from './readings.ts';
+import { verdict, type Seen, type SpendReading } from './readings.ts';
 
 export type LaunchDecision =
   | { kind: 'clear' }
@@ -15,13 +17,35 @@ const RANK: Record<WindowName, number> = { session: 0, daily: 1, weekly: 2 };
 /**
  * The seat's account is its vendor. There is no separate account field on a seat. `budgets` is
  * the section in force: an unapproved edit to a reserve refuses no one until it is approved,
- * and an account only the unapproved edit names is not an account at all.
+ * and an account only the unapproved edit names is not an account at all. `spend` holds the
+ * stored spend check readings; a subscription account never looks at them.
  */
-export function seatBudget(budgets: TeamFile['budgets'], readings: readonly Seen[], seat: Seat, now: number): LaunchDecision {
+export function seatBudget(
+  budgets: TeamFile['budgets'],
+  readings: readonly Seen[],
+  seat: Seat,
+  now: number,
+  spend: readonly SpendReading[] = [],
+): LaunchDecision {
   const name = seat.vendor;
   const account = budgets.accounts[name];
   if (!account) return { kind: 'clear' };
-  if (account.kind === 'spend') return { kind: 'unknown', account: name, text: `${name} is unknown` };
+  if (account.kind === 'spend') {
+    const floor = account.floor;
+    const reading = spend.find((item) => item.account === name);
+    // § 5's freshness rule for a check reading, applied to the floor: a reading with no floor to
+    // measure against, one read longer ago than `stale_after`, and one in another currency than
+    // the floor's are the same answer — unknown, said, never a refusal.
+    if (!floor || !reading || reading.currency !== floor.currency || now - reading.at >= budgets.staleAfter * 1000) {
+      return { kind: 'unknown', account: name, text: `${name} is unknown` };
+    }
+    if (reading.amount > floor.amount) return { kind: 'clear' };
+    const room = accountsWithRoom(budgets, readings, now, spend).filter((accountName) => accountName !== name);
+    return {
+      kind: 'refuse',
+      why: `${name} spend ${money(reading.amount)} ${reading.currency}, at or below its ${money(floor.amount)} ${floor.currency} floor, read ${age(now - reading.at)} ago; accounts with room: ${room.length ? room.join(', ') : 'none'}`,
+    };
+  }
 
   const staleAfterMs = budgets.staleAfter * 1000;
   const mine = readings.filter((item) => item.account === name);
@@ -63,12 +87,28 @@ export function seatBudget(budgets: TeamFile['budgets'], readings: readonly Seen
   return { kind: 'clear' };
 }
 
-/** Subscription accounts whose counted windows are all outside the reserve. */
-export function accountsWithRoom(budgets: TeamFile['budgets'], readings: readonly Seen[], now: number): string[] {
+/**
+ * Accounts whose counted figures leave room: a subscription with every counted window outside
+ * its reserve, a spend account with a fresh reading above its floor.
+ */
+export function accountsWithRoom(
+  budgets: TeamFile['budgets'],
+  readings: readonly Seen[],
+  now: number,
+  spend: readonly SpendReading[] = [],
+): string[] {
   const staleAfterMs = budgets.staleAfter * 1000;
   const names: string[] = [];
   for (const [name, account] of Object.entries(budgets.accounts)) {
-    if (account.kind !== 'subscription' || account.reserve === null) continue;
+    if (account.kind === 'spend') {
+      const floor = account.floor;
+      const reading = spend.find((item) => item.account === name);
+      if (floor && reading && reading.currency === floor.currency && now - reading.at < staleAfterMs && reading.amount > floor.amount) {
+        names.push(name);
+      }
+      continue;
+    }
+    if (account.reserve === null) continue;
     const groups = windowsOf(readings.filter((item) => item.account === name));
     let counted = 0;
     let inside = false;
@@ -100,4 +140,9 @@ function age(ms: number): string {
   if (hours && rest) return `${hours}h${rest}m`;
   if (hours) return `${hours}h`;
   return `${minutes}m`;
+}
+
+/** A money figure in a refusal: the cents are shown even when the file wrote none. */
+function money(amount: number): string {
+  return amount.toFixed(2);
 }
