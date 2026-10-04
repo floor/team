@@ -3,7 +3,10 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
 import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
+import { validateTeamFile } from '../../src/file/validate.ts';
+import { storePath, writeApproval } from '../../src/store/store.ts';
 import type { DownLaunch } from '../../src/commands/down.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { emptySession, readState, updateState } from '../../src/state.ts';
@@ -120,6 +123,26 @@ describe('team remove', () => {
     expect(text).toContain('name: worker');
     expect(text).toContain('stopped: true');
     expect(text).toContain('name: lead');
+  });
+
+  test('--keep by the owner leaves no drift, and a seat-made parked line is drift', async () => {
+    const parsed = validateTeamFile(FILE);
+    if (!parsed.ok) throw new Error('fixture');
+    writeApproval(storePath(parsed.team.project, dir, dir), {
+      approval: approvalOf(parsed.team, dir),
+      file: FILE,
+    }, parsed.team.seats);
+    const parked = FILE.replace('    name: worker', '    name: worker\n    parked: true');
+    const hand = validateTeamFile(parked);
+    if (!hand.ok) throw new Error('parked fixture');
+    expect(approvalDifferences(hand.team, dir, dir)).toEqual(['seat worker changed']);
+
+    const made = world();
+    made.sources.home = dir;
+    expect(await runRemove(['worker', '--keep', '--file', file], testIo(dir, owner), made.sources)).toBe(0);
+    const after = validateTeamFile(readFileSync(file, 'utf8'));
+    if (!after.ok) throw new Error('written file');
+    expect(approvalDifferences(after.team, dir, dir)).toEqual([]);
   });
 
   test('working, blocked, unknown and unsent change nothing', async () => {

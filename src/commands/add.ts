@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
-import { approvalDifferences, budgetsInForce } from '../approve/approval.ts';
+import { approvalDifferences, budgetsInForce, recordSeatDigest } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from '../commands/doctor.ts';
@@ -196,7 +196,10 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const doctorTeam = built.temporary
     ? { ...prepared.team, seats: prepared.team.seats.map((item) => item.name === built.temporary?.like ? { ...item, stopped: false } : item) }
     : prepared.team;
-  for (const finding of doctorFindings(doctorTeam, root, dir, session, sources.doctor, prepared.warnings)) {
+  // `team` is the file on disk, already the approved one. `doctorTeam` is the
+  // seat about to run, so a stopped seat's CLI is still checked. The digest is
+  // recorded with the write, after a refusal has left the file alone.
+  for (const finding of doctorFindings(doctorTeam, root, dir, session, sources.doctor, prepared.warnings, team)) {
     if (blocksLaunch(finding)) {
       io.stderr(`team add: ${finding.text}\n`);
       return 1;
@@ -270,6 +273,8 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       for (const problem of written.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
       return 2;
     }
+    const parsed = validateTeamFile(built.edited);
+    if (parsed.ok) recordSeatDigest(parsed.team, root, built.name, sources.home);
   }
 
   const plan = upPlan({ root, session, sessionRunning: live === 'running', seats: [seatForPlan], watchAlive: true });

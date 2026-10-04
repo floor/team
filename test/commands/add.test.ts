@@ -9,7 +9,7 @@ import type { Launch } from '../../src/commands/up.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { readState } from '../../src/state.ts';
 import { readLedger, storePath, writeApproval } from '../../src/store/store.ts';
-import { approvalOf } from '../../src/approve/approval.ts';
+import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
 import { testIo } from '../helpers.ts';
 import type { Machine } from '../../src/watch/machine.ts';
@@ -163,6 +163,8 @@ describe('team add', () => {
     expect(text).toContain('# the seat stays in this order');
     expect(text.indexOf('name: worker')).toBeLessThan(text.indexOf('# the seat stays in this order'));
     expect(readState(join(project, '.agents')).sessions.acme?.seats.worker?.stage).toBe('ready');
+    const loaded = loadTeamFile(project);
+    expect(loaded.ok && approvalDifferences(loaded.team, project, home)).toEqual([]);
   });
 
   test('refuses a seat the approved file does not hold, and a caller who may not change the team', async () => {

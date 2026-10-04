@@ -2,8 +2,8 @@ import { homedir } from 'node:os';
 import type { ApprovedCheck } from '../budgets/checks.ts';
 import type { TeamFile } from '../file/types.ts';
 import { defaultBudgets, defaultWatch, validateTeamFile } from '../file/validate.ts';
-import { readApproval, storePath, type Approval, type ApprovalRecord, type Ceilings } from '../store/store.ts';
-import { compare, describe, fingerprints, OWNER_SECTIONS, type Fingerprints } from './fingerprint.ts';
+import { readApproval, storePath, writeApproval, type Approval, type ApprovalRecord, type Ceilings } from '../store/store.ts';
+import { compare, describe, fingerprints, legacySeatDigests, OWNER_SECTIONS, type Fingerprints } from './fingerprint.ts';
 
 /** The ceilings an approval fixes: `up` and `add` read them from the record, never from the file. */
 export function ceilingsOf(team: TeamFile): Ceilings {
@@ -36,10 +36,58 @@ export function approvalOf(
  */
 export function approvedFingerprints(record: ApprovalRecord): Fingerprints {
   const stored = record.approval.fingerprints;
-  if (OWNER_SECTIONS.every((name) => stored.sections[name] !== undefined)) return stored;
   const checked = validateTeamFile(record.file);
-  if (!checked.ok) return stored;
-  return { sections: { ...fingerprints(checked.team).sections, ...stored.sections }, seats: stored.seats };
+  let sections = stored.sections;
+  if (!OWNER_SECTIONS.every((name) => stored.sections[name] !== undefined) && checked.ok) {
+    sections = { ...fingerprints(checked.team).sections, ...stored.sections };
+  }
+  const seats = checked.ok ? adoptFlagDigests(stored.seats, checked.team) : stored.seats;
+  if (sections === stored.sections && seats === stored.seats) return stored;
+  return { sections, seats };
+}
+
+/**
+ * A record from before `parked` and `stopped` were in the digest still names
+ * the seat as it was approved, flags included, read from the stored copy. A
+ * digest already in the new shape is left alone, so a later edit of the file
+ * is not adopted from a stale copy. A copy that can't be read is left alone.
+ */
+function adoptFlagDigests(stored: Record<string, string>, team: TeamFile): Record<string, string> {
+  const current = fingerprints(team).seats;
+  const legacy = legacySeatDigests(team);
+  let changed = false;
+  const next = { ...stored };
+  for (const [name, previous] of Object.entries(stored)) {
+    const adopted = current[name];
+    if (adopted !== undefined && previous === legacy[name] && previous !== adopted) {
+      next[name] = adopted;
+      changed = true;
+    }
+  }
+  return changed ? next : stored;
+}
+
+/**
+ * `remove --keep` and `add` write `parked` or `stopped` themselves. The seat's
+ * digest is recorded with that edit, and the rest of the approval stays as it
+ * was, so a launch line edited beside it is not approved along the way.
+ */
+export function recordSeatDigest(team: TeamFile, root: string, name: string, home: string = homedir()): void {
+  const store = storePath(team.project, root, home);
+  const record = readApproval(store);
+  if (record === null) return;
+  const digest = fingerprints(team).seats[name];
+  if (digest === undefined || record.approval.fingerprints.seats[name] === digest) return;
+  writeApproval(store, {
+    approval: {
+      ...record.approval,
+      fingerprints: {
+        ...record.approval.fingerprints,
+        seats: { ...record.approval.fingerprints.seats, [name]: digest },
+      },
+    },
+    file: record.file,
+  }, []);
 }
 
 /**
