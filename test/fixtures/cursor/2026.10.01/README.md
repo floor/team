@@ -10,6 +10,15 @@ the default session had eight agents before and after.
   settled screen is the idle prompt, so both files are that screen.
 - `trust.txt`: the same command in an untrusted directory. The workspace was
   closed without answering the trust question. `--trust` was not passed.
+- `trust-54.txt`: `cursor-agent` with no `--force` and no `--trust`, on 2026-10-04,
+  herdr 0.7.1, `pane read --source visible` (plain and ansi) of a pane created in a
+  scratch session. Cursor Agent `2026.10.01-14929f9`. The pane was 54 columns by 23
+  rows; zoom and resize left it that size, so there is no second width. A new empty
+  git directory showed the trust dialog. Escape returned to the shell. The dialog
+  was not answered. The same dialog appeared again when asked to run `ls`, and
+  again when asked to offer a choice of file names; Escape each time. The shell
+  launch line above the box is omitted. The directory path is replaced by
+  `<untrusted-scratch-directory-place>`, the same length, so the box stays put.
 - `unsent.txt`, `working.txt`, `thinking.txt`, `rules-accepted.txt`: the same
   command in the already-trusted folder. The rules message was pasted, read back,
   and submitted. `working.txt` and `thinking.txt` coincided with herdr reporting
