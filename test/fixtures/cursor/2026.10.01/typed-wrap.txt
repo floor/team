@@ -1,0 +1,14 @@
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Use /run-everything to skip all approvals.
+
+
+
+
+  → iota long line that wraps at the pane width
+    through several words to show the continuation
+    column of a wrapped row on this screen
+
+
+  Grok 4.7 256K High                 Run Everything
+  <workspace>

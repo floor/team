@@ -863,6 +863,91 @@ describe('team down, live', () => {
     expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is\n');
   });
 
+  test('a second glyph row at the prompt column after the exit text gets no Enter', async () => {
+    // The 0.2.1 boundary on the exit path, in Codex's shape: the pane holds the person's own
+    // text and then a row carrying the prompt at the input row's own column, and the read-back
+    // before 0.2.1 took that lowest row for the input — the exit text read back, the Enter went
+    // in, and the person's text was submitted with it. No capture draws a person's continuation
+    // at the prompt column (Codex's are indented two columns), so the shape fails closed: the
+    // exit is typed, and not sent.
+    const codexIdle = readFileSync(new URL('../fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
+    const run = harness({ kind: 'idle' });
+    let shown: string | undefined;
+    run.launch.typeText = (_session, _pane, text) => {
+      run.typed.push(text);
+      shown = codexIdle.replace('› Ask Codex to do anything', `› person text\n› ${text}`);
+      return true;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({
+      screenText: () => shown,
+      agents: () => [{ ...agent('codex-acme', 'w3:p1', 'idle'), agent: 'codex' }],
+    }));
+    expect(code).toBe(1);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('codex-acme: its exit was not typed; left as it is\n');
+  });
+
+  // The refused shapes on the exit path, on both CLIs: the read-back before the Enter must
+  // fail closed when the window starts inside the box with a visible continuation above the
+  // prompt, and when a second prompt row is pressed against the one above it with no blank
+  // row between them (the person's own row would otherwise be submitted with the exit). The
+  // transcript's echo above the blank frame is not refused — it is `idle`, as main reads it.
+  const CURSOR_DS = EXAMPLE.replace(
+    `  - role: implementer
+    name: deepseek-acme
+    cli: claude-code           # DeepSeek's model, run by Claude Code
+    vendor: deepseek
+    model: DeepSeek Flash
+    version: "V4.1"
+    display: DeepSeek V4.1 Flash
+    launch: team-deepseek`,
+    `  - role: implementer
+    name: deepseek-acme
+    cli: cursor
+    vendor: xai
+    model: Grok
+    version: "4.7"
+    launch: cursor-agent`,
+  );
+
+  test.each([
+    ['codex', 'codex-acme', '  person-owned visible continuation\n›'],
+    ['codex', 'codex-acme', '› person text\n›'],
+    ['cursor', 'deepseek-acme', '    person-owned visible continuation\n  →'],
+    ['cursor', 'deepseek-acme', '  → person text\n  →'],
+  ] as const)('an exit into a %s box that is not the one the captures draw gets no Enter (%j)', async (cli, seat, shape) => {
+    // The seat's CLI is read from the team file by name — Codex's seat is codex-acme's, the
+    // cursor case rewrites deepseek-acme's — so each case reads the shape through its own CLI.
+    // The pane shows the shape the captures do not draw: the read is not idle, the seat is
+    // left running, and nothing is typed or sent.
+    const idle = readFileSync(new URL(`../fixtures/${cli}/${cli === 'codex' ? '0.157.0' : '2026.10.01'}/idle.txt`, import.meta.url), 'utf8');
+    const placeholder = cli === 'codex' ? '› Ask Codex to do anything' : '  → Plan, search, build anything';
+    if (cli === 'cursor') writeFileSync(join(root, '.agents/team.yaml'), CURSOR_DS);
+    const pane = idle.replace(placeholder, shape);
+    const run = harness({ kind: 'idle' });
+    run.launch.typeText = (_session, _pane, text) => {
+      run.typed.push(text);
+      return true;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({
+      screen: () => readScreen(cli, pane),
+      screenText: () => pane,
+      agents: () => [{ ...agent(seat, 'w3:p1', 'idle'), agent: cli }],
+    }));
+    // The seat is reported left running and the run ends the way any unrecognised screen
+    // does — nothing was typed, so nothing failed.
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(io.out).toContain(`${seat}: shows a screen the profile does not recognise; left running\n`);
+  });
+
   test.each(['close-short', 'close-long', 'open-short'] as const)(
     'an Antigravity box whose two rules differ in width gets no exit Enter (%s)',
     async (shape) => {

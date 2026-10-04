@@ -33,12 +33,12 @@
         "undocumented": 0
       },
       "permission": {
-        "real": 0,
+        "real": 3,
         "constructed": 2,
         "undocumented": 0
       },
       "question": {
-        "real": 0,
+        "real": 2,
         "constructed": 0,
         "undocumented": 0
       },
@@ -139,17 +139,17 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 2,
+        "real": 8,
         "constructed": 0,
         "undocumented": 0
       },
       "permission": {
-        "real": 0,
+        "real": 1,
         "constructed": 0,
         "undocumented": 0
       },
       "question": {
-        "real": 0,
+        "real": 1,
         "constructed": 0,
         "undocumented": 0
       },
@@ -166,16 +166,10 @@
     }
   },
   "notProduced": {
-    "antigravity": {
-      "permission": "behind the trust dialog",
-      "question": "behind the trust dialog"
-    },
+    "antigravity": {},
     "claude-code": {},
     "codex": {},
-    "cursor": {
-      "permission": "behind the trust dialog",
-      "question": "behind the trust dialog"
-    }
+    "cursor": {}
   },
   "fixtures": [
     {
@@ -203,16 +197,46 @@
       "provenance": "capture"
     },
     {
+      "file": "antigravity/1.2.16/permission-command-54.txt",
+      "cli": "antigravity",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
       "file": "antigravity/1.2.16/permission-cut.txt",
       "cli": "antigravity",
       "kind": "permission",
       "provenance": "constructed"
     },
     {
+      "file": "antigravity/1.2.16/permission-edit-54.txt",
+      "cli": "antigravity",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/permission-write-54.txt",
+      "cli": "antigravity",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
       "file": "antigravity/1.2.16/permission.txt",
       "cli": "antigravity",
       "kind": "permission",
       "provenance": "constructed"
+    },
+    {
+      "file": "antigravity/1.2.16/question-54.txt",
+      "cli": "antigravity",
+      "kind": "question",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/question-unsent-54.txt",
+      "cli": "antigravity",
+      "kind": "question",
+      "provenance": "capture"
     },
     {
       "file": "antigravity/1.2.16/rules-accepted.txt",
@@ -593,6 +617,24 @@
       "provenance": "capture"
     },
     {
+      "file": "cursor/2026.10.01/pasted-two-line.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/permission-plan.txt",
+      "cli": "cursor",
+      "kind": "permission",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/question.txt",
+      "cli": "cursor",
+      "kind": "question",
+      "provenance": "capture"
+    },
+    {
       "file": "cursor/2026.10.01/rules-accepted.txt",
       "cli": "cursor",
       "kind": "idle",
@@ -620,6 +662,36 @@
       "file": "cursor/2026.10.01/trust.txt",
       "cli": "cursor",
       "kind": "trust",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-blank-middle.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-glyph-second.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-gt-second.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-two-line.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/typed-wrap.txt",
+      "cli": "cursor",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {

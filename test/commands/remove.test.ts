@@ -193,6 +193,124 @@ describe('team remove', () => {
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
+  test('a second glyph row at the prompt column after the exit text gets no Enter', async () => {
+    // The 0.2.1 boundary on the remove path, in Codex's shape (the worker seat below is
+    // Codex's): the pane holds the person's own text and then a row carrying the prompt at the
+    // input row's own column, and the read-back before 0.2.1 took that lowest row for the
+    // input — the exit text read back, the Enter went in, and the person's text was submitted
+    // with it. No capture draws a person's continuation at the prompt column (Codex's are
+    // indented two columns), so the shape fails closed: the exit is typed, and not sent.
+    const codexIdle = readFileSync(new URL('../fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
+    writeFileSync(file, FILE.replace(
+      `  - role: implementer
+    name: worker
+    label: worker
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5`,
+      `  - role: implementer
+    name: worker
+    label: worker
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    display: GPT-6 Sol
+    launch: codex -m gpt-6-sol -c model_reasoning_effort=high`,
+    ));
+    const made = world();
+    let shown: string | undefined;
+    let gone = false;
+    const launch = made.sources.launch;
+    if (!launch) throw new Error('fixture');
+    launch.typeText = (_session, _pane, text) => {
+      made.typed.push(text);
+      shown = codexIdle.replace('› Ask Codex to do anything', `› person text\n› ${text}`);
+      return true;
+    };
+    launch.pressEnter = () => {
+      gone = true;
+      return true;
+    };
+    made.sources.screenText = () => shown;
+    made.sources.foreground = () => (gone ? [] : ['codex']);
+    made.agents.push({ name: 'worker', agent: 'codex', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    expect(made.typed).toEqual(['/exit']);
+    expect(made.closed).toEqual([]);
+    expect(io.out).toContain('worker: its exit was not typed; left as it is');
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
+  test.each([
+    ['codex', '  person-owned visible continuation\n›'],
+    ['codex', '› person text\n›'],
+    ['cursor', '    person-owned visible continuation\n  →'],
+    ['cursor', '  → person text\n  →'],
+  ] as const)('a %s box that is not the one the captures draw after the exit text gets no Enter (%j)', async (cli, shape) => {
+    // The refused shapes on the remove path, on both CLIs: a window starting inside the box
+    // with a visible continuation above the prompt, and a second prompt row pressed against
+    // the one above it with no blank row between them. The pane read is not free, so the seat
+    // is left running and nothing is typed: the exit never reaches the pane. The transcript's
+    // echo above the blank frame is not refused — it is `idle`, as main reads it.
+    const idle = readFileSync(new URL(`../fixtures/${cli}/${cli === 'codex' ? '0.157.0' : '2026.10.01'}/idle.txt`, import.meta.url), 'utf8');
+    const placeholder = cli === 'codex' ? '› Ask Codex to do anything' : '  → Plan, search, build anything';
+    writeFileSync(file, FILE.replace(
+      `  - role: implementer
+    name: worker
+    label: worker
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5`,
+      cli === 'codex'
+        ? `  - role: implementer
+    name: worker
+    label: worker
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    display: GPT-6 Sol
+    launch: codex -m gpt-6-sol -c model_reasoning_effort=high`
+        : `  - role: implementer
+    name: worker
+    label: worker
+    cli: cursor
+    vendor: xai
+    model: Grok
+    version: "4.7"
+    launch: cursor-agent`,
+    ));
+    const pane = idle.replace(placeholder, shape);
+    const made = world();
+    let gone = false;
+    const launch = made.sources.launch;
+    if (!launch) throw new Error('fixture');
+    launch.typeText = (_session, _pane, text) => {
+      made.typed.push(text);
+      return true;
+    };
+    launch.pressEnter = () => {
+      gone = true;
+      return true;
+    };
+    made.sources.screen = () => readScreen(cli, pane);
+    made.sources.screenText = () => pane;
+    made.sources.foreground = () => (gone ? [] : [cli === 'codex' ? 'codex' : 'cursor-agent']);
+    made.agents.push({ name: 'worker', agent: cli, pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(io.err).toContain('team remove: worker shows a screen the profile does not recognise');
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
   test('a seat that is not running is taken out without typing', async () => {
     const made = world();
     const io = testIo(dir, lead);
