@@ -225,12 +225,16 @@ function inspect(
   if (!labelMatches(record, screen ?? '')) return say('label', 'the trust choice is not the recorded one');
   const shown = extractFolder(record.extract, screen ?? '');
   if (!shown) return say('folder', 'the dialog does not show exactly one folder');
-  const landed = canonicalLanding(shown);
+  // `shown` must be the lobby as team writes it, byte for byte, and canonicalise to
+  // it — a trailing slash, another case, `//` or `/./` is a different spelling, and
+  // the reading that sends less is to refuse it.
   const lobby = canonicalLanding(lobbyPath(host.home));
-  if (!landed || !lobby || landed !== lobby) return say('folder', OUTSIDE);
-  const listed = team.trust.some((entry) => canonicalLanding(folderOf(entry, root)) === landed);
+  if (!lobby) return say('folder', OUTSIDE);
+  if (canonicalLanding(shown) !== lobby) return say('folder', OUTSIDE);
+  if (shown !== lobby) return say('folder', 'the dialog does not show the lobby as written');
+  const listed = team.trust.some((entry) => canonicalLanding(folderOf(entry, root)) === lobby);
   if (!listed) return say('folder', 'this folder is not an exact trust entry');
-  return { record, version: printed, folder: landed };
+  return { record, version: printed, folder: lobby };
 }
 
 /**

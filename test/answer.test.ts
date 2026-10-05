@@ -343,6 +343,9 @@ describe('team answer', () => {
     const label = trust.replace('[a] Trust this workspace', '[a] Trust this workspacX');
     cases.push(
       { name: 'label', screen: label, message: 'lead: the pane is not the trust dialog' },
+      { name: 'trailing slash', screen: withPath(cursorTrust, '<untrusted-directory>', `${lobby}/`), message: 'lead: the dialog does not show the lobby as written' },
+      { name: 'double slash', screen: withPath(cursorTrust, '<untrusted-directory>', lobby.replace('/team/', '//team/')), message: 'lead: the dialog does not show the lobby as written' },
+      { name: 'dot segment', screen: withPath(cursorTrust, '<untrusted-directory>', lobby.replace('/team/', '/./team/')), message: 'lead: the dialog does not show the lobby as written' },
       { name: 'two paths', screen: two, message: 'lead: the dialog does not show exactly one folder' },
       { name: 'no path', screen: none, message: 'lead: the dialog does not show exactly one folder' },
       { name: 'parent', screen: parent, message: 'lead: ask the owner to approve this exact folder and answer through team up' },
@@ -387,6 +390,26 @@ describe('team answer', () => {
     expect(await runAnswer([...FILE, 'lead', 'trust'], movedIo, moved)).toBe(1);
     expect(moved.keys).toEqual([]);
     expect(movedIo.err).toBe('lead: ask the owner to approve this exact folder and answer through team up\n');
+  });
+
+  test('a lobby path in another case sends nothing', async () => {
+    const { root, home, lobby, dir } = world();
+    writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+    await approve(root, home);
+    wait(dir, 'lead');
+    // The reviewer's case probe: on a case-insensitive volume the path lands on the
+    // lobby and is a wrong spelling; on a case-sensitive one it is a folder outside
+    // the lobby. The reading that sends less refuses either.
+    const host = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', lobby.toUpperCase()), 'cursor');
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], io, host)).toBe(1);
+    expect(host.keys).toEqual([]);
+    expect(host.typed).toEqual([]);
+    expect([
+      'lead: the dialog does not show the lobby as written\n',
+      'lead: ask the owner to approve this exact folder and answer through team up\n',
+    ]).toContain(io.err);
+    expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('waiting-owner');
   });
 
   test('antigravity without the mark or the footer sends nothing', async () => {

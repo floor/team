@@ -400,7 +400,10 @@ function trustFindings(team: TeamFile, dir: string, session: string, sources: Do
       const shown = extractFolder(inRange.extract, screen);
       const landed = shown ? canonicalLanding(shown) : null;
       const lobby = canonicalLanding(lobbyPath(sources.home));
-      if (!landed || !lobby || landed !== lobby) {
+      // The shown spelling must be the lobby itself, not something that only
+      // canonicalises to it: `answer` refuses a trailing slash, another case,
+      // `//` or `/./`, and doctor warns about what `answer` would refuse.
+      if (!landed || !lobby || landed !== lobby || shown !== lobby) {
         findings.push({ level: 'warn', text: `${name}: waiting at trust; the folder is not the lobby` });
       }
     }
