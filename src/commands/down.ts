@@ -315,7 +315,6 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       });
     },
     classify: () => 'unknown',
-    text: () => undefined,
     sleep: sources.sleep ?? launch.sleep,
     now: () => now().getTime(),
     allow: () => null,

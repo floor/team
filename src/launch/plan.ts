@@ -13,7 +13,7 @@ export type Op =
   | { do: 'create'; seat?: string; label: string; cwd: string; notice?: string }
   | { do: 'launch'; seat: string; label: string; command: string; pane?: string; notice?: string }
   | { do: 'refuse'; seat: string; why: string }
-  | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; pane?: string; workspace?: string; notice?: string; model?: string; version?: string }
+  | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; command: string; pane?: string; workspace?: string; notice?: string; model?: string; version?: string }
   | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
   | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; seconds: number; pane?: string; notice?: string }
   | { do: 'ready'; seat: string; rules: 'option' | 'message'; notice?: string }
@@ -54,6 +54,12 @@ export interface UpSeat {
   agentLive?: boolean;
   /** The seat works in worktrees: it waits in the lobby until a brief names its worktree. */
   lobby?: boolean;
+  /**
+   * Set when the seat's own launch line can't run where the seat starts — the program is not
+   * there, or a relative path in it resolves from neither the start folder nor the root. The
+   * seat is left out before its workspace is made; the other seats go on.
+   */
+  launchProblem?: string;
   /**
    * Set when a counted reading is inside the reserve, or the figure is unknown
    * or a first sight. A refusal stops the seat only when this plan would launch it.
@@ -130,6 +136,14 @@ export function upPlan(input: UpInput): Step[] {
     // The same condition as the launch step below. A seat already running keeps
     // its idle wait, rename and rules, and hears the reading as a notice.
     const wouldLaunch = fresh || (seat.stage === 'launched' && !seat.agentLive);
+    if (seat.launchProblem && wouldLaunch) {
+      steps.push({
+        kind: 'skip',
+        text: `${seat.name}: would refuse: ${seat.launchProblem}`,
+        do: { do: 'refuse', seat: seat.name, why: seat.launchProblem },
+      });
+      continue;
+    }
     if (seat.budget?.kind === 'refuse' && wouldLaunch) {
       steps.push({
         kind: 'skip',
@@ -190,6 +204,7 @@ export function upPlan(input: UpInput): Step[] {
           label: seat.label,
           cli: seat.cli,
           seconds: profile.idleTimeout,
+          command,
           pane: seat.pane,
           workspace: seat.workspace,
           ...(seat.model !== undefined && seat.version !== undefined ? { model: seat.model, version: seat.version } : {}),

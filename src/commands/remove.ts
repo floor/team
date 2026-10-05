@@ -281,7 +281,6 @@ export async function stopRunning(input: {
       return listed.filter((pane) => paneStillRunning(sources.foreground(sessionName, pane), names));
     },
     classify: () => 'unknown',
-    text: () => undefined,
     sleep: sources.sleep ?? launch.sleep,
     now: () => sources.now().getTime(),
     allow: () => null,

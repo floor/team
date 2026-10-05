@@ -110,7 +110,6 @@ describe('a shared label', () => {
       kill: () => true,
       agentPanes: () => [],
       classify: () => 'idle',
-      text: () => undefined,
       sleep: async () => {},
       now: () => 0,
       allow: () => null,
