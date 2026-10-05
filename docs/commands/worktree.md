@@ -14,9 +14,24 @@ lost, and keeps its branch.
 
 ## What it reads and writes
 
-Reads the team file and this machine's approval store (the file must be the approved one), the
-session's state (`.agents/team.state.json`), and git: the base branch, the branch names, and the
-worktree itself. With `--session`, the state of that session instead of `team.session`.
+Reads the team file and this machine's approval store, the session's state
+(`.agents/team.state.json`), and git: the base branch, the branch names, and the worktree itself.
+With `--session`, the state of that session instead of `team.session`.
+
+Every value the two subcommands read from the file is the **approved copy's**, whatever the file
+says now: `workspace` (mode, path, branch, base, setup and limit), `trust`, the caller rules, the
+names a public project forbids, and the seats `--seat` names. An unapproved edit — a path moved, a
+setup command added, a trust pattern widened, the coordinator changed, a seat added — is never
+used, and never judged by. `project` is the one value that is always the file's: it is not an
+owner-approved section, so a rename needs no approval and `{repo}` stays current.
+
+When the file differs from the approved copy and nothing else refuses, the command runs with the
+approved settings and prints one note on stderr before its normal output:
+
+    team worktree: using the approved workspace settings; the file has unapproved changes: run `team approve`
+
+The exit code is the one the run itself has, and the log line is unchanged. The note is the only
+sign: nothing in the file takes effect until `team approve`.
 
 Writes `.agents/team.log`, `.agents/team.state.json` (one record under the session: the folder, the
 branch, the seat when `--seat` names one, and whether `workspace.setup` succeeded), and, with `new`,
@@ -56,7 +71,7 @@ terminal outside herdr.
 | `team worktree: session can't be "default", herdr's own session` | 1 |
 | ``team worktree: the file was never approved on this machine: run `team approve` `` | 1 |
 | ``team worktree: approved before records were signed: run `team approve` once`` — the record was written by an earlier `team`; the same line, with the case, for a record that does not verify | 1 |
-| ``team worktree: the file is not the approved one (<differences>): run `team approve` `` | 1 |
+| ``team worktree: the approved copy can't be read: run `team approve` `` — the file differs from an approval whose stored copy this version can't read | 1 |
 | `team worktree: a task name is one segment of letters, digits, ".", "_" and "-", and it starts with a letter or a digit` | 1 |
 | `team worktree: --kind: <the same, for the kind>` | 1 |
 | `team worktree: workspace.mode is shared: this team keeps one checkout, so there is no task worktree to create` | 1 |
@@ -64,6 +79,7 @@ terminal outside herdr.
 | `team worktree: --kind is required: the branch pattern is "{kind}/{task}"` | 1 |
 | `team worktree: --kind has nowhere to go: the branch pattern is "{task}"` | 1 |
 | `team worktree: <folder> is outside the approved trust paths` | 1 |
+| ``team worktree: seat <name> is not in the approved file: run `team approve` `` — a seat the file declares and the approved copy does not | 1 |
 | `team worktree: --seat "x" names no declared seat` | 1 |
 | `team worktree: "t" is already recorded` / `"t" is already recorded in session x` | 1 |
 | `team worktree: the worktree limit is 8, and 8 are open` | 1 |
@@ -195,4 +211,66 @@ $ team worktree new tidy-logs --kind chore
 ```console
 $ team worktree remove tidy-logs
 removed tidy-logs; the branch chore/tidy-logs is kept
+```
+
+An edit to the file is not in effect until the owner approves it. Here the file has been changed
+to `mode: shared` and a seat has been added, neither approved; the command says so once, and goes
+on with the approved workspace:
+
+```yaml file=.agents/team.yaml
+format: 1
+project: beacon
+coordinator: claude-keeper
+operator: claude-keeper
+
+trust:
+  - .
+  - ../worktrees/beacon/*
+
+workspace:
+  mode: shared
+
+seats:
+  - role: coordinator
+    name: claude-keeper
+    label: coordinator
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+
+  - role: implementer
+    name: claude-beacon
+    label: implementer
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+
+  - role: implementer
+    name: claude-later
+    label: later
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+```
+
+```console
+$ team worktree new read-back --kind fix ; echo "exit $?"
+team worktree: using the approved workspace settings; the file has unapproved changes: run `team approve`
+../worktrees/beacon/read-back
+exit 0
+```
+
+The seat the file added is refused, because the approved copy doesn't declare it:
+
+```console
+$ team worktree new later-task --kind fix --seat claude-later ; echo "exit $?"
+team worktree: using the approved workspace settings; the file has unapproved changes: run `team approve`
+team worktree: seat claude-later is not in the approved file: run `team approve`
+exit 1
 ```
