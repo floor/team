@@ -148,6 +148,17 @@ export function workspaceList(session?: string): HerdrWorkspace[] | null {
   }
 }
 
+// The pane ids in a workspace, or null when herdr can't be reached or the workspace does not exist.
+export function workspacePanes(workspace: string, session?: string): string[] | null {
+  try {
+    const result = run(['pane', 'list', '--workspace', workspace], session) as { panes?: Record<string, unknown>[] } | undefined;
+    if (!result || !Array.isArray(result.panes)) return null;
+    return result.panes.map((p) => String(p.pane_id));
+  } catch {
+    return null;
+  }
+}
+
 export type SessionState = 'running' | 'stopped' | 'absent';
 
 // Whether a session exists and runs. A stopped session stays listed with running false; a deleted

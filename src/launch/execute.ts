@@ -27,6 +27,9 @@ export type Host = {
   /** The session's agents as herdr lists them now; null when the list can't be read. The repair
    *  step reads it again, immediately before the close, to bind the seat to its pane. */
   agentList?(session: string): HerdrAgent[] | null;
+  /** Pane ids in a workspace as herdr lists them now; null when the list can't be read. The repair
+   *  step checks that the workspace holds only the seat's pane before closing it. */
+  workspacePanes?(session: string, workspace: string): string[] | null;
   classify(session: string, pane: string, cli: string): ScreenKind;
   /** The pane's visible text, ANSI styling and all, or null when the pane can't be read. */
   paneText?(session: string, pane: string): string | null;
@@ -60,6 +63,7 @@ export type Report = {
   watchFailed: boolean;
   /** A seat or the watch was left behind, so the session must not be stopped. */
   held: boolean;
+  dropped: readonly string[];
 };
 
 type Place = { pane: string; workspace?: string };
@@ -605,6 +609,19 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           finish(op.seat, 'herdr no longer shows this seat on its recorded pane; nothing closed; run team status');
           break;
         }
+        const panes = host.workspacePanes ? host.workspacePanes(session, op.workspace) : null;
+        if (panes === null) {
+          held = true;
+          dropped.add(op.seat);
+          finish(op.seat, 'its pane could not be read; nothing closed');
+          break;
+        }
+        if (panes.length !== 1 || panes[0] !== op.pane) {
+          held = true;
+          dropped.add(op.seat);
+          finish(op.seat, 'its workspace holds other panes; nothing closed (close its pane there, then run team up)');
+          break;
+        }
         const verdict = seatProcessVerdict(op.launched, host.processInfo?.(session, op.pane));
         if (verdict === 'same') {
           dropped.add(op.seat);
@@ -629,6 +646,12 @@ export async function executePlan(steps: readonly Step[], session: string, host:
             held = true;
             dropped.add(op.seat);
             finish(op.seat, `the process in its pane is working; nothing closed (stop it there, or run team remove ${op.seat})`);
+            break;
+          }
+          if (kind === 'unsent') {
+            held = true;
+            dropped.add(op.seat);
+            finish(op.seat, `the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove ${op.seat})`);
             break;
           }
         }
@@ -682,7 +705,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     }
   }
 
-  return { serverFailed, watchFailed, held };
+  return { serverFailed, watchFailed, held, dropped: [...dropped] };
 }
 
 // The owner adds the CLI's model flag for the file's model, or corrects the file and approves it.

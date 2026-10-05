@@ -25,6 +25,7 @@ import {
   workspaceClose,
   workspaceCreate,
   workspaceList,
+  workspacePanes,
   type HerdrAgent,
   type PaneProcesses,
   type SessionState,
@@ -83,6 +84,8 @@ export type Launch = {
   agentPanes(session: string): string[] | null;
   /** The session's agents as herdr lists them now; null when the list can't be read. */
   agents(session: string): HerdrAgent[] | null;
+  /** Pane ids in a workspace as herdr lists them now; null when the list can't be read. */
+  workspacePanes?(session: string, workspace: string): string[] | null;
   paneText(session: string, pane: string): string | null;
   typeText?(session: string, pane: string, text: string): boolean;
   pressEnter?(session: string, pane: string): boolean;
@@ -122,6 +125,7 @@ const realLaunch: Launch = {
     return agents === null ? null : agents.map((agent) => agent.pane);
   },
   agents: (session) => agentList(aim(session)),
+  workspacePanes: (session, workspace) => workspacePanes(workspace, aim(session)),
   paneText: (session, pane) => paneRead(pane, 200, aim(session)),
   typeText: (session, pane, text) => typeText(pane, text, aim(session)),
   pressEnter: (session, pane) => pressEnter(pane, aim(session)),
@@ -491,6 +495,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     kill: () => false,
     agentPanes: launch.agentPanes,
     agentList: launch.agents,
+    workspacePanes: launch.workspacePanes ? (session, workspace) => launch.workspacePanes!(session, workspace) : undefined,
     classify: (name, pane, cli) => readScreen(cli, launch.paneText(name, pane) ?? undefined).kind,
     paneText: (session, pane) => launch.paneText(session, pane),
     shellBack: (session, pane) => launch.shellBack?.(session, pane) ?? null,
