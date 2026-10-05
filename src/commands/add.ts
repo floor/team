@@ -16,7 +16,7 @@ import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
 import {
   agentList, agentRename, paneForeground, paneProcesses, paneRead, paneRun, paneShellBack, sessionRunning, sessionState, startServer, workspaceClose, workspaceCreate,
-  workspaceList, type HerdrAgent, type PaneProcesses,
+  workspaceList, workspacePanes, type HerdrAgent, type PaneProcesses,
 } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { executePlan, type Host } from '../launch/execute.ts';
@@ -61,6 +61,7 @@ const realLaunch: Launch = {
     return agents === null ? null : agents.map((agent) => agent.pane);
   },
   agents: (session) => agentList(aim(session)),
+  workspacePanes: (session, workspace) => workspacePanes(workspace, aim(session)),
   paneText: (session, pane) => paneRead(pane, 200, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
   shellBack: (session, pane) => paneShellBack(pane, aim(session)),
@@ -396,15 +397,15 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   });
   const report = await executePlan(plan, session, host);
   const afterwards = readState(dir).sessions[session]?.seats[built.name];
-  if (afterwards?.stage === 'ready' && built.temporary) {
+  const launched = !report.held && !report.dropped.includes(built.name) && afterwards?.stage === 'ready';
+  if (launched && built.temporary) {
     recordLedger(storePath(team.project, root, sources.home), [built.seat]);
   }
-  const ready = afterwards?.stage === 'ready';
-  if (ready) logLine(dir, 'add', who, `started ${built.name}${built.temporary ? ` like ${built.temporary.like} until ${built.temporary.until}` : ''}`, sources.now());
+  if (launched) logLine(dir, 'add', who, `started ${built.name}${built.temporary ? ` like ${built.temporary.like} until ${built.temporary.until}` : ''}`, sources.now());
   // exit: add.ready
   // exit: add.not-ready
   // exit: add.server
-  return ready && !report.serverFailed ? 0 : 1;
+  return launched && !report.serverFailed ? 0 : 1;
 }
 
 function declaredSeat(
@@ -552,6 +553,7 @@ function hostOf(input: {
     kill: () => false,
     agentPanes: launch.agentPanes,
     agentList: launch.agents,
+    workspacePanes: launch.workspacePanes ? (session, workspace) => launch.workspacePanes!(session, workspace) : undefined,
     classify: (_name, pane, cli) => readScreen(cli, launch.paneText(session, pane) ?? undefined).kind,
     paneText: (_name, pane) => launch.paneText(session, pane),
     shellBack: (_name, pane) => launch.shellBack?.(session, pane) ?? null,

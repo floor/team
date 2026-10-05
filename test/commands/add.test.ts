@@ -149,6 +149,10 @@ function world(): { launch: Launch; creates: string[]; renames: string[]; sessio
     closeWorkspace: () => true,
     agentPanes: () => [...panes].filter(([, pane]) => pane.agent).map(([id]) => id),
     agents: () => [],
+    workspacePanes: (_session, workspace) => {
+      const found = [...panes.keys()].filter((p) => p.startsWith(`${workspace}:`));
+      return found.length > 0 ? found : [`${workspace}:p1`];
+    },
     paneText: (_session, pane) => panes.get(pane)?.text ?? '',
     foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
     sleep: async (ms) => {
@@ -510,5 +514,166 @@ describe('team add', () => {
     const seats = readState(join(project, '.agents')).sessions.acme?.seats ?? {};
     expect(seats.worker?.stage).toBe('ready');
     expect(seats.worker?.pane).toBe('w1:p1');
+  });
+
+  describe('add exits 1 when its repair is refused with a stale record that says ready', () => {
+    function setupReadySeat() {
+      approve(WORKTREE_FILE);
+      updateState(join(project, '.agents'), (state) => {
+        const session = state.sessions.acme ?? emptySession();
+        session.seats.worker = { stage: 'ready', workspace: 'w9', pane: 'w9:p1', launched: { shell: 400, cli: [401] } };
+        state.sessions.acme = session;
+      });
+      const before = readFileSync(join(project, '.agents/team.state.json'), 'utf8');
+      const made = world();
+      const closes: string[] = [];
+      made.launch.closeWorkspace = (_session, workspace) => { closes.push(workspace); return true; };
+      const listed: HerdrAgent = { name: 'worker', agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null };
+      made.launch.agents = () => [listed];
+      made.launch.paneText = () => IDLE;
+      return { made, closes, listed, before };
+    }
+
+    test('agent list binding failed', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      made.launch.processInfo = () => ({ shell: 400, foreground: [500] });
+      made.launch.agents = () => [];
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.out).toContain('worker: herdr no longer shows this seat on its recorded pane; nothing closed; run team status\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('workspace holds other panes', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      made.launch.processInfo = () => ({ shell: 400, foreground: [500] });
+      made.launch.workspacePanes = () => ['w9:p1', 'w9:p2'];
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.out).toContain('worker: its workspace holds other panes; nothing closed (close its pane there, then run team up)\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('workspace read failed', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      made.launch.processInfo = () => ({ shell: 400, foreground: [500] });
+      made.launch.workspacePanes = () => null;
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.out).toContain('worker: its pane could not be read; nothing closed\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('process read failed', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      let reads = 0;
+      made.launch.processInfo = () => {
+        reads += 1;
+        return reads === 1 ? { shell: 400, foreground: [500] } : null;
+      };
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.out).toContain('worker: its pane could not be read; nothing closed\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('process working', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      made.launch.processInfo = () => ({ shell: 400, foreground: [500] });
+      made.launch.paneText = () => 'esc to interrupt';
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.out).toContain('worker: the process in its pane is working; nothing closed (stop it there, or run team remove worker)\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('process unsent', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      const unsentText = readFileSync(join(import.meta.dir, '../fixtures/claude-code/2.1.289/unsent-typed-ansi.txt'), 'utf8');
+      made.launch.processInfo = () => ({ shell: 400, foreground: [500] });
+      made.launch.paneText = () => unsentText;
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.out).toContain('worker: the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove worker)\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('already running: answers as it does today for a seat that is already running', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      made.launch.processInfo = () => ({ shell: 400, foreground: [400, 401] });
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.err).toBe('team add: worker is already running\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('restarts to same between plan and close', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      let reads = 0;
+      made.launch.processInfo = () => {
+        reads += 1;
+        return reads === 1 ? { shell: 400, foreground: [400] } : { shell: 400, foreground: [400, 401] };
+      };
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.out).toContain("worker: its pane is the seat's again; left as it is\n");
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
   });
 });
