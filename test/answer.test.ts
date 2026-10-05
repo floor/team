@@ -15,6 +15,7 @@ import type { Live } from '../src/status/compare.ts';
 import { approvalStanding, storePath } from '../src/store/store.ts';
 import { readState, updateState } from '../src/state.ts';
 import { boxHoldsText } from '../src/launch/deliver.ts';
+import { rulesFilePath } from '../src/launch/rules-file.ts';
 import { testIo } from './helpers.ts';
 
 const cursorTrust = readFileSync(new URL('./fixtures/cursor/2026.10.01/trust.txt', import.meta.url), 'utf8');
@@ -469,6 +470,62 @@ describe('team answer', () => {
     expect(await runAnswer([...FILE, 'lead', 'trust'], io, host)).toBe(1);
     expect(host.keys).toEqual(['a']);
     expect(host.typed.length).toBe(1);
+    expect(host.entered).toBe(0);
+    expect(io.err).toBe('lead: trust sent; recovery required\n');
+    const seat = readState(dir).sessions.acme?.seats.lead;
+    expect(seat?.stage).not.toBe('ready');
+    expect(seat?.waiting?.state).toBe('trust-sent-recovery');
+    expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('answer [owner] lead: refused trust: rule delivery');
+  });
+
+  test("after the key, a rules file that changes before the Enter keeps the seat in recovery", async () => {
+    const { root, home, lobby, dir } = world();
+    writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+    await approve(root, home);
+    wait(dir, 'lead');
+    const host = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', lobby), 'cursor');
+    const path = rulesFilePath('acme', root, home, 'lead') as string;
+    // The box takes the line whole — and in the same moment other bytes land in the file.
+    // The box reads back as the line, Enter is one call away, and the last look before it
+    // finds a file whose hash the line no longer names: no Enter, the seat stays in recovery.
+    host.type = (_session, _pane, value) => {
+      host.typed.push(value);
+      host.screen = cursorBox(value);
+      writeFileSync(path, 'not the rules the line names\n');
+      return true;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], io, host)).toBe(1);
+    expect(host.keys).toEqual(['a']);
+    expect(host.typed.length).toBe(1);
+    expect(host.entered).toBe(0);
+    expect(io.err).toBe('lead: trust sent; recovery required\n');
+    const seat = readState(dir).sessions.acme?.seats.lead;
+    expect(seat?.stage).not.toBe('ready');
+    expect(seat?.waiting?.state).toBe('trust-sent-recovery');
+    expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('answer [owner] lead: refused trust: rule delivery');
+  });
+
+  test("after the key, a seat mid-turn when its delivery starts types nothing more and stays in recovery", async () => {
+    const { root, home, lobby, dir } = world();
+    writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+    await approve(root, home);
+    wait(dir, 'lead');
+    const host = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', lobby), 'cursor');
+    // The key lands and the seat goes straight into a turn: its screen shows the idle
+    // prompt, its status says working, and the delivery refuses to type into a seat
+    // mid-turn — the key is sent, the line never typed, and the seat keeps the recovery
+    // the key's send recorded.
+    const send = host.sendKey.bind(host);
+    host.sendKey = (session, pane, key) => {
+      const took = send(session, pane, key);
+      host.status = () => 'working';
+      return took;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], io, host)).toBe(1);
+    expect(host.keys).toEqual(['a']);
+    expect(host.typed).toEqual([]);
     expect(host.entered).toBe(0);
     expect(io.err).toBe('lead: trust sent; recovery required\n');
     const seat = readState(dir).sessions.acme?.seats.lead;
