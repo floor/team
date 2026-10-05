@@ -1,0 +1,22 @@
+  data sources.
+
+
+  Do not use any tools. Reply with the single
+  word: acknowledged.
+
+
+  acknowledged
+
+
+
+
+  → part line 1 of the rules text
+    part line 2 of the rules text
+    part line 3 of the rules text
+    part line 4 of the rules text
+    part line 5 of the rules text
+    part line 6 of the rules text
+
+
+  Grok 4.7 256K High · 5.8%           Run Everything
+  <workspace>

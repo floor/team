@@ -1,0 +1,21 @@
+-force --sandbox disabled
+
+
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Use /config to
+  customize Cursor
+  settings and behavior.
+
+
+
+
+  → [Pasted text #1 +17
+    lines]
+
+
+  Grok     Run Everything
+  4.7
+  256K
+  High
+  <workspace>

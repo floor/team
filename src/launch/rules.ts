@@ -1,3 +1,7 @@
+import { renderSignature } from '../file/signature.ts';
+import type { Seat, TeamFile } from '../file/types.ts';
+import { profileFor } from '../profiles/index.ts';
+
 /** What the rules of a seat are written from. */
 export interface RulesInput {
   coordinator: string;
@@ -69,4 +73,25 @@ export function rulesText(input: RulesInput, delivery: RulesDelivery): string {
   const closing = CLOSING[delivery];
   const rules = seatRules(input).filter((rule) => rule !== closing);
   return ['Rules for this session, from the team file:', ...rules.map((rule) => `- ${rule}`), closing].join('\n');
+}
+
+/** The rules one seat gets at launch, with its own signature lines, as its delivery carries them:
+ *  the text a launch option embeds and the text the seat's rules file holds, byte for byte. */
+export function rulesOf(team: TeamFile, seat: Seat): string {
+  const { commits, pullRequests } = team.identity.signature;
+  const profile = profileFor(seat.cli);
+  const delivery = profile && profile.rulesOption !== null ? 'option' : 'message';
+  return rulesText(
+    {
+      coordinator: team.coordinator,
+      rules: team.rules,
+      signature: {
+        commit: renderSignature(commits.template, seat),
+        pullRequest: renderSignature(pullRequests.template, seat),
+        commitPosition: commits.position,
+      },
+      workspace: { mode: seat.mode, protected: team.workspace.protected, branch: team.workspace.branch },
+    },
+    delivery,
+  );
 }

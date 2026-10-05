@@ -6,7 +6,6 @@ import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
-import { renderSignature } from '../file/signature.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import {
   agentList,
@@ -36,8 +35,9 @@ import { executePlan } from '../launch/execute.ts';
 import { seatProcessVerdict } from '../launch/identity.ts';
 import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
-import { rulesText } from '../launch/rules.ts';
-import { deliverRules } from '../launch/deliver.ts';
+import { rulesOf } from '../launch/rules.ts';
+import { rulesFileHash, rulesFileHolds, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
+import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -164,26 +164,6 @@ export const USAGE = 'Usage: team up [--dry-run] [--session <name>] [--file <pat
 export const up: Command = (argv, io) => runUp(argv, io, realSources);
 export default up;
 
-/** The rules one seat gets at launch, with its own signature lines, as its delivery carries them. */
-export function rulesOf(team: TeamFile, seat: Seat): string {
-  const { commits, pullRequests } = team.identity.signature;
-  const profile = profileFor(seat.cli);
-  const delivery = profile && profile.rulesOption !== null ? 'option' : 'message';
-  return rulesText(
-    {
-      coordinator: team.coordinator,
-      rules: team.rules,
-      signature: {
-        commit: renderSignature(commits.template, seat),
-        pullRequest: renderSignature(pullRequests.template, seat),
-        commitPosition: commits.position,
-      },
-      workspace: { mode: seat.mode, protected: team.workspace.protected, branch: team.workspace.branch },
-    },
-    delivery,
-  );
-}
-
 function resolveState(sources: UpSources, session: string): SessionState | null {
   if (sources.sessionState) return sources.sessionState(session);
   const running = sources.sessionRunning(session);
@@ -206,12 +186,15 @@ function overCeiling(ceilings: Ceilings, running: readonly Running[], seat: Seat
 }
 
 function seatPlan(
+  standing: Standing,
   team: TeamFile,
   seat: Seat,
   recorded: SeatState | undefined,
   agents: readonly HerdrAgent[],
   workspaces: { id: string }[] | null,
   resume: boolean,
+  root: string,
+  home: string,
   processes: Readonly<Record<string, PaneProcesses | null>> = {},
 ): UpSeat {
   const planned: UpSeat = {
@@ -223,7 +206,10 @@ function seatPlan(
     model: seat.model,
     version: seat.version,
     stopped: seat.stopped,
+    // An option seat's rules keep coming from the live file, as main's launch line does; a
+    // message seat's file and line are the approved copy's, whatever the live file says now.
     rules: rulesOf(team, seat),
+    ...seatDeliveryOf(standing, team, seat, root, home),
   };
   if (!resume || !recorded || seat.stopped) return planned;
   // The pane is the seat only while the process team launched is still in it: a pane that runs
@@ -354,7 +340,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const seats: UpSeat[] = [];
   const refused = new Set<string>();
   for (const seat of team.seats) {
-    const planned = seatPlan(team, seat, recorded?.seats[seat.name], agents ?? [], workspaces, state === 'running', processes);
+    const planned = seatPlan(standing, team, seat, recorded?.seats[seat.name], agents ?? [], workspaces, state === 'running', root, sources.home, processes);
     // A stopped seat, one without a profile, and one already ready are left out of the budget.
     // A seat resumed into a live workspace starts nowhere new, but its reading is still said.
     if (planned.stopped || !profileFor(seat.cli) || planned.stage === 'ready') {
@@ -480,15 +466,34 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     createWorkspace: launch.createWorkspace,
     paneRun: launch.paneRun,
     typeLine: () => false,
-    deliverRules: (session, pane, cli, text, seconds) => deliverRules(cli, text, seconds, {
+    deliverRules: async (session, pane, cli, file, seconds) => {
+      // The rules go to the file first; nothing is typed until it holds them. The writer
+      // builds the path itself, from the approval in force and the seat's name.
+      const written = writeRulesFile(standing, file.seat, root, sources.home, file.text, rulesFileHash(file.text));
+      if (!written.ok) return fileRefusalOf(written);
+      // The plan already refused a path that can't be typed; this is the same check again, so a
+      // path that reached this far by a caller's mistake is refused before anything is typed.
+      if (!typeablePath(file.path)) {
+        return { stop: 'path', typed: false, sent: false, kind: 'unknown' as const, row: null };
+      }
+      // The delivery reports why it stopped through this box; the caller turns the stopped
+      // reading into the report, and a plain refusal stays `false`.
+      const stopped: { why: Refusal | null } = { why: null };
+      const delivered = await deliverRules(cli, file.line, seconds, {
         screen: () => launch.paneText(session, pane) ?? undefined,
         status: () => launch.agentStatus?.(session, pane) ?? null,
         type: (value) => launch.typeText?.(session, pane, value) ?? false,
         enter: () => launch.pressEnter?.(session, pane) ?? false,
+        // The last look before Enter: the file, read without following a link, must still hold
+        // the text whose hash the line names.
+        file: () => rulesFileHolds(file.path, rulesFileHash(file.text)),
         foreground: () => launch.foreground(session, pane),
+        report: (why) => { stopped.why = why; },
         now: () => now().getTime(),
         sleep: sources.sleep ?? launch.sleep,
-      }),
+      });
+      return delivered === false && stopped.why !== null ? stopped.why : delivered;
+    },
     renameAgent: launch.renameAgent,
     closeWorkspace: launch.closeWorkspace,
     stopSession: () => false,

@@ -1,4 +1,5 @@
 import type { HerdrAgent, PaneProcesses } from '../herdr.ts';
+import { refusalReport, type Refusal } from './deliver.ts';
 import { profileFor } from '../profiles/profile.ts';
 import { modelDiffers, seatModel, type Running } from '../status/statusline.ts';
 import { launchedIdentity, seatProcessVerdict, type LaunchedIdentity } from './identity.ts';
@@ -15,7 +16,18 @@ export type Host = {
   createWorkspace(session: string, cwd: string, label: string): { pane: string; workspace: string } | null;
   paneRun(session: string, pane: string, command: string): boolean;
   typeLine(session: string, pane: string, text: string): boolean | 'no-agent';
-  deliverRules?(session: string, pane: string, cli: string, text: string, seconds: number): Promise<boolean | 'no-agent'>;
+  /** `false` is a delivery that stopped without a reading worth reporting (no host, or no live
+   *  pane); a `Refusal` is one that stopped on a screen the report can name. `file` is the
+   *  seat's rules delivery: the text the file holds, the file's path, the one line typed, and
+   *  the seat's name — the writer builds its own path from the name, never from a path a
+   *  caller hands it. */
+  deliverRules?(
+    session: string,
+    pane: string,
+    cli: string,
+    file: { text: string; path: string; line: string; seat: string },
+    seconds: number,
+  ): Promise<boolean | 'no-agent' | Refusal>;
   renameAgent(session: string, pane: string, name: string): boolean;
   closeWorkspace(session: string, workspace: string): boolean;
   stopSession(session: string): boolean;
@@ -534,10 +546,21 @@ export async function executePlan(steps: readonly Step[], session: string, host:
       case 'deliver': {
         if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         const here = place(op.seat, op.pane);
-        const delivered = here ? await host.deliverRules?.(session, here.pane, op.cli, op.rules, op.seconds) : false;
+        const file = { text: op.rules, path: op.path, line: op.line, seat: op.seat };
+        const delivered = here ? await host.deliverRules?.(session, here.pane, op.cli, file, op.seconds) : false;
         if (delivered === 'no-agent') {
           dropped.add(op.seat);
           finish(op.seat, 'no live agent in its pane; its rules were not delivered');
+          break;
+        }
+        if (typeof delivered === 'object') {
+          // The specific reading goes into the log; a row of the screen itself is printed to
+          // the terminal alone, stripped and cut, never logged.
+          dropped.add(op.seat);
+          if (delivered.row !== null) {
+            host.say(`${op.seat}: first row of its box that is not the rules line: ${plainPaneText(delivered.row)}\n`);
+          }
+          finish(op.seat, refusalReport(delivered));
           break;
         }
         if (!here || !delivered) {
