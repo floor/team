@@ -1664,16 +1664,6 @@ scene('answer.folder', async (place) => {
   const screen = CURSOR_TRUST.replace('<untrusted-directory>', lobby);
   return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, answerHost(place, screen)), 'not an exact trust entry');
 });
-scene('answer.action', async (place) => {
-  const lobby = lobbyPath(place.home);
-  mkdirSync(lobby, { recursive: true });
-  approve(place, cursorTeam(lobby, 'coordinator'));
-  updateState(dirname(place.file), (state) => {
-    state.sessions.acme = { seats: { lead: { stage: 'launched', pane: 'w1:p1', waiting: { state: 'waiting-owner', classification: 'trust' } } }, worktrees: {} };
-  });
-  const screen = CURSOR_TRUST.replace('<untrusted-directory>', lobby);
-  return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, answerHost(place, screen, { send: false })), 'not one this version sends');
-});
 scene('answer.recovery', async (place) => {
   const lobby = lobbyPath(place.home);
   mkdirSync(lobby, { recursive: true });
@@ -1694,9 +1684,13 @@ scene('answer.ready', async (place) => {
   return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, answerHost(place, screen)), 'trust answered; ready');
 });
 
-// These returns are reached when a second validation disagrees with the first. The stand-in is
-// the same idea as a fake herdr: the command runs, and only that later check is made to fail.
-const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed']);
+// These returns are reached when a second validation disagrees with the first, or when no data
+// this version ships can reach them. The stand-in is the same idea as a fake herdr: the command
+// runs, and only that later check is made to fail. `answer.action` is the second kind: a send
+// that reports false now leaves the recovery state (`answer.recovery`), so the only action
+// refusal left is a record whose byte the build does not send, and the shipped profiles record
+// 0d, 31 and 61 — all keys the build sends. The check defends against a profile that does not.
+const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed', 'answer.action']);
 
 const contract = loadContract();
 for (const row of contract.rows) {

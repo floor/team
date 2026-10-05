@@ -177,13 +177,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
     }
     if (!sent) {
       logLine(dir, 'answer', who, `${seatName}: refused trust: action`, host.now());
-      if (json) {
-        io.stdout(`${JSON.stringify({ seat: seatName, dialog: 'trust', status: 'recovery', state: 'trust-sent-recovery', reason: 'its key could not be sent' })}\n`);
-      } else {
-        io.stderr(`${seatName}: the key could not be sent; recovery required\n`);
-      }
-      // exit: answer.recovery
-      return 1;
+      return recovery(io, json, seatName, 'its key could not be sent', `${seatName}: the key could not be sent; recovery required`);
     }
     return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace);
   } finally {
@@ -278,6 +272,18 @@ function writeWaiting(
   });
 }
 
+/**
+ * The recovery report. Two paths reach it — a key the host did not take, and a sent key
+ * whose seat did not come ready — and both leave the same `trust-sent-recovery` state,
+ * so both answer with the same object shape and exit.
+ */
+function recovery(io: Io, json: boolean, seat: string, reason: string, human: string): number {
+  if (json) io.stdout(`${JSON.stringify({ seat, dialog: 'trust', status: 'recovery', state: 'trust-sent-recovery', reason })}\n`);
+  else io.stderr(`${human}\n`);
+  // exit: answer.recovery
+  return 1;
+}
+
 async function finish(
   io: Io,
   json: boolean,
@@ -298,13 +304,7 @@ async function finish(
   if (ready !== true) {
     logLine(dir, 'answer', who, `${name}: refused trust: ${ready}`, host.now());
     const reason = ready === 'idle' ? 'its idle prompt did not come' : 'its rules were not delivered';
-    if (json) {
-      io.stdout(`${JSON.stringify({ seat: name, dialog: 'trust', status: 'recovery', state: 'trust-sent-recovery', reason })}\n`);
-    } else {
-      io.stderr(`${name}: trust sent; recovery required\n`);
-    }
-    // exit: answer.recovery
-    return 1;
+    return recovery(io, json, name, reason, `${name}: trust sent; recovery required`);
   }
   updateState(dir, (state) => {
     const current = state.sessions[session] ?? emptySession();
