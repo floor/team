@@ -48,12 +48,15 @@ const words = (line: string): string[] => {
   return out;
 };
 
-function callerOf(name: string, team: TeamFile | null): Caller {
+// A page's caller is a real placement: the seat's pane is the world's own, and its session is the
+// team's, so the commands judge it as they judge a seat of the fixture's session.
+function callerOf(name: string, team: TeamFile | null, world: World, session: string): Caller {
   if (name === 'owner') return { kind: 'owner' };
   if (name === 'agent') return { kind: 'unplaced', reason: 'it is run by an agent (claude) outside herdr' };
   const seat = team?.seats.find((candidate) => candidate.name === name);
   if (!seat) throw new Error(`caller=${name} names no seat of the file`);
-  return { kind: 'seat', name, pane: '<pane of ' + name + '>' };
+  const pane = world.paneOf(name) ?? '<pane of ' + name + '>';
+  return { kind: 'seat', name, pane, session };
 }
 
 /**
@@ -89,11 +92,14 @@ async function setup(page: Page): Promise<void> {
   const session = emptySession() as unknown as Record<string, unknown>;
   if (page.spec.agents === 'all' && page.team) {
     const seats: Record<string, unknown> = {};
-    // A state file this version writes: every seat it launched carries the process identity it
-    // recorded, so no page shows the doctor's "launched before team recorded its process" note
-    // unless it says so on purpose (`state:` dropping a seat's `launched`).
+    // The state records the pane the seat actually runs in — a command run by that seat in a
+    // transcript judges it against this record, as it does for a real launch — and the process
+    // identity this version writes, so no page shows the doctor's "launched before team recorded
+    // its process" note unless it says so on purpose (`state:` dropping a seat's `launched`).
     page.team.seats.forEach((seat, index) => {
-      seats[seat.name] = { stage: 'ready', launched: { shell: 4000 + index, cli: [4100 + index] } };
+      const launched = { shell: 4000 + index, cli: [4100 + index] };
+      const pane = world.paneOf(seat.name);
+      seats[seat.name] = pane === undefined ? { stage: 'ready', launched } : { stage: 'ready', pane, launched };
     });
     session.seats = seats;
   }
@@ -281,7 +287,7 @@ async function consoleBlock(page: Page, block: Block, failures: Failure[]): Prom
     failures.push({ page: page.name, line: block.line, message: (error as Error).message });
     return;
   }
-  const caller = callerOf(block.attrs.caller ?? page.spec.caller, page.team);
+  const caller = callerOf(block.attrs.caller ?? page.spec.caller, page.team, page.world as World, page.session);
   try {
     for (const step of transcript(block.text, block.line)) {
       const parts: string[] = [];

@@ -27,18 +27,28 @@ file that no longer validates is replaced by the last copy that did, with a noti
 
 ## Who may run it
 
-The owner, the coordinator's seat, and the operator's seat. A seat's own call is refused by the
-`--abandon` flag, which only the owner may use. A seat that may stop the team never stops the
-coordinator's or the operator's seat — only the owner does.
+The owner, the coordinator's seat, and the operator's seat. The seat is that name's, in a session
+this project's state records — the file's session, or one the state records the caller's pane in —
+on the pane the state records for that name in that session: a seat of another session, or a pane
+merely renamed to the coordinator's or the operator's name, is refused — and so is a seat the state
+records no pane for, or records on another pane than this call is on; those two refusals name the
+seat and the repair. What that proves is placement, and no more: the state file is in the project,
+and a process of the same user that writes its own pane there under the coordinator's name, and
+renames its pane, passes. The check guards a mistaken agent, not a hostile process running as the
+same user. `--file` and `--session` are the owner's alone, from a terminal outside herdr: a
+non-owner aiming either is refused before the flagged file or session is read at all.
+A seat's
+own call is refused by the `--abandon` flag, which only the owner may use. A seat that may stop the
+team never stops the coordinator's or the operator's seat — only the owner does.
 
 ## Flags
 
 | Flag | Meaning |
 | --- | --- |
-| `--dry-run` | print the plan, and the refusals the real run would stop on, and exit 0 |
+| `--dry-run` | print the plan, and the refusals the real run would stop on, and exit 0 — except a non-owner's `--session`, refused at once with no plan |
 | `--wait` | give a working seat up to 120 seconds to come free, then stop it |
 | `--abandon` | the owner's: close the workspace of a seat that can't be asked, typing nothing into it |
-| `--session <name>` | the herdr session to stop, instead of `team.session` |
+| `--session <name>` | the herdr session to stop, instead of `team.session`; the owner's alone |
 | `--file <path>` | the team file, instead of `.agents/team.yaml` |
 | `--help`, `-h` | the usage, and exit 0 |
 
@@ -83,6 +93,10 @@ stop at all.
 | `team down: the agents of session <session> can't be read` | 2 |
 | `team down: only the owner, the coordinator or the operator stops the team; this call is <caller>` | 1 |
 | `team down: only the owner abandons a team, from a terminal outside herdr` | 1 |
+| `team down: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
+| `team down: --session is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
+| ``team down: no pane is recorded for seat <name> in this session: the owner stops that seat and runs `team up` `` | 1 |
+| ``team down: the state records pane <pane> for seat <name> in this session, not the pane this call is on: the owner stops the team and starts it again (`team down`, then `team up`) `` | 1 |
 
 ## Exit codes
 

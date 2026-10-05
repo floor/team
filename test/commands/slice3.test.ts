@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,7 +23,7 @@ import { emptySession, updateState } from '../../src/state.ts';
 const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8');
 const FILE = ['--file', '.agents/team.yaml'];
 const OWNER: Caller = { kind: 'owner' };
-const COORDINATOR: Caller = { kind: 'seat', name: 'claude-coordinator-acme', pane: 'w1:p1' };
+const COORDINATOR: Caller = { kind: 'seat', name: 'claude-coordinator-acme', pane: 'w1:p1', session: 'acme-web' };
 const WORKER: Caller = { kind: 'seat', name: 'deepseek-acme', pane: 'w3:p1' };
 const NOW = new Date('2026-10-03T14:02:00Z');
 
@@ -36,6 +37,10 @@ beforeEach(() => {
   home = join(base, 'home');
   mkdirSync(join(root, '.agents'), { recursive: true });
   mkdirSync(home);
+  // A project, so a run that finds its team file without `--file` (a non-owner may not aim the
+  // flag since round 4) resolves the same file rather than failing as "not inside a git
+  // repository" before it reaches the gate under test.
+  execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
   // Every approval in this file signs with the fixed fixture key, so the fingerprint the
   // commands print is the same on every run.
   installKey(home, JSON.parse(readFileSync(join(import.meta.dir, '../fixtures/key.json'), 'utf8')));
@@ -580,7 +585,7 @@ describe('team up', () => {
 
 async function down(argv: string[], caller: Caller, overrides: Partial<DownSources> = {}) {
   const io = testIo(root, caller);
-  const code = await runDown([...argv, ...FILE], io, {
+  const code = await runDown([...argv, ...(caller.kind === 'owner' ? FILE : [])], io, {
     sessionRunning: () => true,
     agents: () => [agent('claude-coordinator-acme'), agent('deepseek-acme'), agent('deepseek-acme-2', 'working')],
     alive: () => true,
@@ -622,6 +627,16 @@ describe('team down', () => {
   });
 
   test("--dry-run for the coordinator leaves its own seat; another seat's call would be refused", async () => {
+    // The state `team up` writes for the coordinator's seat: the caller gate judges a seat on
+    // the pane the state records for it, and a state that records no pane fails closed. Without
+    // the record the call is refused for the missing pane, not read as the coordinator.
+    writeFileSync(
+      join(root, '.agents/team.state.json'),
+      JSON.stringify({
+        format: 1,
+        sessions: { 'acme-web': { seats: { 'claude-coordinator-acme': { stage: 'ready', pane: 'w1:p1' } }, worktrees: {} } },
+      }),
+    );
     const lead = await down(['--dry-run'], COORDINATOR);
     expect(lead.out).toStartWith(
       "  skip claude-coordinator-acme: left running; only the owner stops the coordinator's or the operator's seat\n+ herdr --session acme-web pane run deepseek-acme:p1 /exit\n",

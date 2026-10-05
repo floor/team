@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce, recordSeatDigestOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
+import { anotherPaneRefusal, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller } from '../caller.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from '../commands/doctor.ts';
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
@@ -132,6 +132,30 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 2;
   }
 
+  // The `--file` check is the walk's, and it runs before that file is read: a non-owner aiming
+  // `--file` must not make this command read and validate another project's team file, nor leave
+  // its `last_valid` in that project's state. The one place the six commands that take the flag
+  // decide it is `fileOwnerRefusal` (caller.ts).
+  const fileRefusal = fileOwnerRefusal(io, args.values.file);
+  if (fileRefusal !== undefined) {
+    io.stderr(`team add: ${fileRefusal}\n`);
+    // exit: add.file-owner
+    return 1;
+  }
+
+  // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
+  // `--session` is refused here, before the flag's session is read — no agent list, no pane root,
+  // no state write, no log line. (A seat cannot be named in this refusal: placing it would read a
+  // session, and that is what must not happen yet.)
+  if (args.values.session !== undefined) {
+    const walked = walkCaller(io);
+    if (!isOwner(walked)) {
+      io.stderr(`team add: ${sessionOwnerRefusal(walked)}\n`);
+      // exit: add.session-owner
+      return 1;
+    }
+  }
+
   const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
   if (!loaded.ok) {
     for (const problem of loaded.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
@@ -140,19 +164,34 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     // exit: add.file-invalid
     return 2;
   }
-  const caller = callerOf(io);
-  if (args.values.file && !isOwner(caller)) {
-    io.stderr(`team add: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
-    // exit: add.file-owner
+  const { team, root, path } = loaded;
+  const dir = dirname(path);
+  // The gate judges the caller placed in the session this command asks about — the proof its pane
+  // is that session's. With no `--session` the session judged is the caller's own placement: the
+  // file's session first, then a session the state records this caller's pane in (`team up
+  // --session <other>`) — never one a non-owner chose. The refusal names the caller's own
+  // placement, exactly as main described it.
+  const judged = args.values.session !== undefined
+    ? { ...judgeCallerOf(io, args.values.session === 'default' ? undefined : args.values.session), session: args.values.session }
+    : judgeCallerIn(io, dir, team);
+  const { caller, shown } = judged;
+  const session = judged.session;
+  const mayChange = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
+  if (mayChange.kind === 'no-pane') {
+    io.stderr(`team add: ${noPaneRefusal(mayChange.name)}\n`);
+    // exit: add.no-pane
     return 1;
   }
-  if (!mayChangeTeam(caller, loaded.team)) {
-    io.stderr(`team add: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(caller)}\n`);
+  if (mayChange.kind === 'another-pane') {
+    io.stderr(`team add: ${anotherPaneRefusal(mayChange.name, mayChange.recordedPane)}\n`);
+    // exit: add.another-pane
+    return 1;
+  }
+  if (mayChange.kind === 'refused') {
+    io.stderr(`team add: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(shown)}\n`);
     // exit: add.caller
     return 1;
   }
-  const { team, root, path } = loaded;
-  const session = args.values.session ?? team.session;
   if (session === 'default') {
     io.stderr('team add: session can\'t be "default", herdr\'s own session\n');
     // exit: add.default-session
@@ -181,7 +220,6 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 1;
   }
 
-  const dir = dirname(path);
   const live = sources.sessionState(session);
   if (live === null) {
     io.stderr('team add: herdr doesn\'t answer\n');
