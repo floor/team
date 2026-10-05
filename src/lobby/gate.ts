@@ -13,6 +13,8 @@ export interface FsStats {
   isFile(): boolean;
   mode: number;
   uid: number;
+  dev: number;
+  ino: number;
 }
 
 export interface FsReader {
@@ -60,7 +62,7 @@ export function findRepoRoot(startPath: string, fs: FsReader = defaultFs): strin
 }
 
 export type LobbyGateResult =
-  | { ok: true; path: string }
+  | { ok: true; path: string; dev: number; ino: number }
   | { ok: true; missing: true }
   | { ok: false; problem: 'symlink' | 'owner' | 'mode' | 'not-empty' | 'repo' | 'not-directory' | string; text: string; component?: string };
 
@@ -228,5 +230,30 @@ export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGa
     return { ok: false, problem: 'repo', text: `the lobby ${lobby}: is inside the repository ${canonicalRepo.root}` };
   }
 
-  return { ok: true, path: real };
+  return { ok: true, path: real, dev: lobbyStat.dev, ino: lobbyStat.ino };
+}
+
+/** The lobby the gate verified, so a later check can say it is still the same folder. */
+export interface LobbySeen {
+  path: string;
+  dev: number;
+  ino: number;
+}
+
+/**
+ * The confirmation a starting folder gets directly before it is used: the gate's own checks
+ * again, and that it is still the folder the gate read — the same canonical path, the same
+ * device and inode. Null when it is; the refusal line when it is not — the gate's own text
+ * where the check refuses, so the operator reads the same cause the gate would have given.
+ * Used by `up` and `add` before each workspace they make in the lobby, with nothing between
+ * this and the create.
+ */
+export function recheckLobby(home: string, seen: LobbySeen, options?: { getuid?: () => number; fs?: FsReader }): string | null {
+  const again = verifyLobby(home, { create: false, getuid: options?.getuid, fs: options?.fs });
+  if (!again.ok) return again.text;
+  if (!('path' in again)) return `the lobby ${seen.path}: it is not there any more`;
+  if (again.path !== seen.path || again.dev !== seen.dev || again.ino !== seen.ino) {
+    return `the lobby ${seen.path}: it is not the folder the gate read`;
+  }
+  return null;
 }

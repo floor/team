@@ -10,7 +10,7 @@ import type { LaunchedIdentity } from './identity.ts';
 export type Op =
   | { do: 'server'; session: string }
   | { do: 'wait-session'; session: string; seconds: number }
-  | { do: 'create'; seat?: string; label: string; cwd: string; notice?: string }
+  | { do: 'create'; seat?: string; label: string; cwd: string; notice?: string; lobby?: true }
   | { do: 'launch'; seat: string; label: string; command: string; pane?: string; notice?: string }
   | { do: 'refuse'; seat: string; why: string }
   | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; command: string; pane?: string; workspace?: string; notice?: string; model?: string; version?: string }
@@ -203,7 +203,9 @@ export function upPlan(input: UpInput): Step[] {
         kind: 'run',
         argv: herdr(session, 'workspace', 'create', '--cwd', cwd, '--label', seat.label, '--no-focus'),
         ...(said ? { note: `${said}; would launch` } : {}),
-        do: { do: 'create', seat: seat.name, label: seat.label, cwd, ...(said ? { notice: said } : {}) },
+        // A seat that waits in the lobby is created in it: the host confirms that folder again
+        // directly before this create (`execute.ts`), with nothing in between.
+        do: { do: 'create', seat: seat.name, label: seat.label, cwd, ...(seat.lobby ? { lobby: true as const } : {}), ...(said ? { notice: said } : {}) },
       });
     }
     const command = launchCommand(profile, seat.launch, seat.rules);

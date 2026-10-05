@@ -12,8 +12,9 @@ export type Host = {
   startServer(session: string): boolean;
   sessionUp(session: string): boolean | null;
   /**
-   * Run once after the first workspace is created. A string leaves this seat and every
-   * later seat out: the lobby changed between the gate and the create.
+   * Confirms the starting folder of an `op.lobby` create is still the lobby the gate verified,
+   * run directly before `createWorkspace` with nothing in between. A string refuses: nothing is
+   * created, that seat is left out with this line, and the rest of the plan is stopped.
    */
   confirmLobby?(): string | null;
   createWorkspace(session: string, cwd: string, label: string): { pane: string; workspace: string } | null;
@@ -255,8 +256,6 @@ export async function executePlan(steps: readonly Step[], session: string, host:
   let watchFailed = false;
   let held = false;
   let abort = false;
-  let lobbyChecked = false;
-  let lobbyLeftOut: string | null = null;
 
   // The reading is what is logged: screen text may follow it on the terminal (`detail`), and
   // never reaches the log file.
@@ -327,11 +326,6 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'create': {
-        if (lobbyLeftOut && op.seat) {
-          dropped.add(op.seat);
-          finish(op.seat, lobbyLeftOut);
-          break;
-        }
         if (op.seat && op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         if (op.seat) {
           const why = host.allow(op.seat);
@@ -340,11 +334,29 @@ export async function executePlan(steps: readonly Step[], session: string, host:
             finish(op.seat, why);
             break;
           }
-          host.record(op.seat, { stage: 'launched' });
+        }
+        if (op.lobby && host.confirmLobby) {
+          // The last look at the starting folder, with nothing between it and the create. The
+          // host call takes a path, not a handle, so the multiplexer resolves the path itself:
+          // that window is left, and the page says exactly which.
+          const why = host.confirmLobby();
+          if (why) {
+            abort = true;
+            if (op.seat) {
+              dropped.add(op.seat);
+              finish(op.seat, why);
+            } else {
+              watchFailed = true;
+              host.say(`watch: ${why}\n`);
+              host.log('watch', why);
+            }
+            break;
+          }
         }
         const made = host.createWorkspace(session, op.cwd, op.label);
         if (!made) {
           if (op.seat) {
+            host.record(op.seat, { stage: 'launched' });
             dropped.add(op.seat);
             finish(op.seat, 'its workspace was not created; left at launched');
           } else {
@@ -358,17 +370,6 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         if (op.seat) {
           host.record(op.seat, { stage: 'launched', pane: made.pane, workspace: made.workspace, createdWorkspace: true });
           host.running(op.seat);
-        }
-        if (!lobbyChecked && host.confirmLobby) {
-          lobbyChecked = true;
-          const changed = host.confirmLobby();
-          if (changed) {
-            lobbyLeftOut = changed;
-            if (op.seat) {
-              dropped.add(op.seat);
-              finish(op.seat, changed);
-            }
-          }
         }
         break;
       }

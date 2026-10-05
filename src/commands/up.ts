@@ -38,7 +38,7 @@ import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { rulesFileHash, rulesFileHolds, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
 import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
-import { lobbyDir, verifyLobby, type FsReader } from '../lobby/gate.ts';
+import { lobbyDir, recheckLobby, verifyLobby, type FsReader, type LobbySeen } from '../lobby/gate.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -408,6 +408,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     });
   }
   let verifiedLobby: string | null = null;
+  let lobbySeen: LobbySeen | null = null;
   if (isMigratedTrust(team.trust)) {
     const launching = seats.some((seat) => {
       if (seat.stopped || seat.launchProblem) return false;
@@ -424,6 +425,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     if (!gate.ok) refusals.push(gate.text);
     else if ('path' in gate) {
       verifiedLobby = gate.path;
+      lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
       for (const seat of seats) if (seat.lobby) seat.cwd = gate.path;
     }
   }
@@ -487,11 +489,10 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     startServer: launch.startServer,
     sessionUp: launch.sessionUp,
     createWorkspace: launch.createWorkspace,
+    // The lobby is read again directly before each workspace this run makes in it, with nothing
+    // in between (`execute.ts`). Null when it is still the folder the gate read.
     confirmLobby() {
-      if (!verifiedLobby) return null;
-      const again = verifyLobby(sources.home, { create: false, getuid: sources.getuid, fs: sources.fs });
-      if (!again.ok || !('path' in again) || again.path !== verifiedLobby) return 'left out: the lobby changed during the launch';
-      return null;
+      return lobbySeen ? recheckLobby(sources.home, lobbySeen, { getuid: sources.getuid, fs: sources.fs }) : null;
     },
     paneRun: launch.paneRun,
     typeLine: () => false,

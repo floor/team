@@ -18,7 +18,7 @@ import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
 import type { Problem, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
-import { lobbyDir, verifyLobby, type FsReader } from '../lobby/gate.ts';
+import { lobbyDir, recheckLobby, verifyLobby, type FsReader, type LobbySeen } from '../lobby/gate.ts';
 import {
   agentList, agentRename, agentStatus, paneForeground, paneProcesses, paneRead, paneRun, paneShellBack, pressEnter, sessionRunning,
   sessionState, startServer, typeText, workspaceClose, workspaceCreate, workspaceList, workspacePanes,
@@ -261,12 +261,16 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const lobby = lobbyDir(sources.home);
   let startProblem: string | null = null;
   let verifiedLobby: string | null = null;
+  let lobbySeen: LobbySeen | null = null;
   if (!prepared.team.trust || prepared.team.trust.length === 0 || isLegacyTrust(prepared.team.trust)) {
     startProblem = `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`;
   } else {
     const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid, fs: sources.fs });
     if (!gate.ok) startProblem = gate.text;
-    else if ('path' in gate) verifiedLobby = gate.path;
+    else if ('path' in gate) {
+      verifiedLobby = gate.path;
+      lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
+    }
   }
   // Where the seat waits: the lobby the gate verified, or a refusal — before the file is edited.
   const start: SeatStart = startProblem
@@ -398,7 +402,10 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       // exit: add.lobby
       return 1;
     }
-    if ('path' in gate) verifiedLobby = gate.path;
+    if ('path' in gate) {
+      verifiedLobby = gate.path;
+      lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
+    }
   }
   if (decision.kind === 'unknown') io.stdout(`${built.name}: ${decision.text}\n`);
   if (built.edited !== original) {
@@ -429,11 +436,10 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     dir, session, team: prepared.team, root, home: sources.home, ceilings, running, seat: built.seat, temporary: built.temporary,
     caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io, standing,
     verifiedLobby,
+    // The lobby is read again directly before the workspace this run makes in it, with nothing
+    // in between (`execute.ts`). Null when it is still the folder the gate read.
     confirmLobby() {
-      if (!verifiedLobby) return null;
-      const again = verifyLobby(sources.home, { create: false, getuid: sources.getuid, fs: sources.fs });
-      if (!again.ok || !('path' in again) || again.path !== verifiedLobby) return 'left out: the lobby changed during the launch';
-      return null;
+      return lobbySeen ? recheckLobby(sources.home, lobbySeen, { getuid: sources.getuid, fs: sources.fs }) : null;
     },
   });
   const report = await executePlan(plan, session, host);

@@ -1449,7 +1449,7 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
         if (p === lobby && stat.isDirectory()) {
           directories++;
           if (directories >= 2) {
-            return { isDirectory: () => false, isSymbolicLink: () => true, isFile: () => false, mode: stat.mode, uid: stat.uid };
+            return { isDirectory: () => false, isSymbolicLink: () => true, isFile: () => false, mode: stat.mode, uid: stat.uid, dev: stat.dev, ino: stat.ino };
           }
         }
         return stat;
