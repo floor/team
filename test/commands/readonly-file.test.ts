@@ -618,7 +618,11 @@ describe('a team whose owner ran up --file', () => {
     const code = await runUp(['--file', '.agents/team.yaml'], testIo(dir, { kind: 'owner' }), upSources({
       launch,
       agents,
-      workspaces: () => [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }],
+      workspaces: () => [
+        { id: 'w1', label: 'coordinator' },
+        { id: 'w2', label: 'operator' },
+        { id: 'w3', label: 'codex' },
+      ],
     }));
     expect(code).toBe(0);
     const watchLine = lines.find((line) => line.includes(' watch'));
