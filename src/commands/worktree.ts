@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { notInForce, worktreeTeamInForceOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
+import { callerOf, describeCaller, isOwner, judgeCallerOf, mayChangeTeam, standingOf } from '../caller.ts';
 import { insideTrust } from '../file/paths.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -82,11 +82,14 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     return 2;
   }
   const { team, root } = loaded;
-  const caller = callerOf(io);
-  if (args.values.file && !isOwner(caller)) {
-    io.stderr(`team worktree: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
-    // exit: worktree.file-owner
-    return 1;
+  // The --file check reads the caller's own placement, where main read it.
+  if (args.values.file) {
+    const caller = callerOf(io);
+    if (!isOwner(caller)) {
+      io.stderr(`team worktree: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
+      // exit: worktree.file-owner
+      return 1;
+    }
   }
   // One verified snapshot for the whole command, read once: every value the two subcommands read
   // from the file is the approved copy's, including when the fingerprints match. The caller's
@@ -101,12 +104,16 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     return 1;
   }
   const reading = inForce.team;
-  if (!mayChangeTeam(caller, reading)) {
-    io.stderr(`team worktree: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(caller)}\n`);
+  const session = args.values.session ?? reading.session;
+  const dir = dirname(loaded.path);
+  // The gate judges the caller placed in the session this command asks about — the proof its pane
+  // is that session's. The refusal names the caller's own placement, exactly as main described it.
+  const { caller, shown } = judgeCallerOf(io, session === 'default' ? undefined : session);
+  if (!mayChangeTeam(caller, reading, standingOf(dir, session, caller))) {
+    io.stderr(`team worktree: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(shown)}\n`);
     // exit: worktree.caller
     return 1;
   }
-  const session = args.values.session ?? reading.session;
   if (session === 'default') {
     io.stderr('team worktree: session can\'t be "default", herdr\'s own session\n');
     // exit: worktree.default-session
@@ -123,7 +130,6 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     io.stderr('team worktree: using the approved workspace settings; the file has unapproved changes: run `team approve`\n');
   }
 
-  const dir = dirname(loaded.path);
   const who = describeCaller(caller);
   if (sub === 'new') return create(io, sources, reading, team, root, dir, session, task, args.values.kind, args.values.seat, who);
   return removeWorktree(io, sources, reading, root, dir, session, task, who);

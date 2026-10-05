@@ -68,8 +68,10 @@ the local base, with a note in the log, when it doesn't. Nothing is created when
 
 ## Who may run it
 
-The owner, the coordinator's seat, and the operator's seat. `--file` is the owner's alone, from a
-terminal outside herdr.
+The owner, the coordinator's seat, and the operator's seat. The seat is that name's in the session
+the team file names (or `--session`), on the pane the state records for it: a seat of another
+session, or a pane merely renamed to the coordinator's or the operator's name, is refused. `--file`
+is the owner's alone, from a terminal outside herdr.
 
 ## Flags
 

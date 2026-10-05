@@ -14,8 +14,7 @@ and the session, are left alone.
 
 Reads the team file, the session's state (`.agents/team.state.json`, for a temporary seat's record),
 and herdr: whether the session runs, its agents, each pane's screen and status, and the pane's
-foreground processes, which is how it knows the CLI has really exited. No approval is read: taking a
-seat out is not a change the owner has to approve.
+foreground processes, which is how it knows the CLI has really exited.
 
 Writes the team file (the seat's entry taken out, or `stopped: true` added to it),
 `.agents/team.state.json` (the seat's record is dropped), `.agents/team.log`, and, through herdr:
@@ -24,9 +23,11 @@ would not validate is refused before the seat is stopped, so a broken file never
 
 ## Who may run it
 
-The owner, the coordinator's seat and the operator's seat. The coordinator's and the operator's own
-seats are the owner's alone to remove, and so is `--abandon`. `--file` is the owner's alone, from a
-terminal outside herdr.
+The owner, the coordinator's seat and the operator's seat. The seat is that name's in the session
+the team file names (or `--session`), on the pane the state records for it: a seat of another
+session, or a pane merely renamed to the coordinator's or the operator's name, is refused. The
+coordinator's and the operator's own seats are the owner's alone to remove, and so is `--abandon`.
+`--file` is the owner's alone, from a terminal outside herdr.
 
 ## Flags
 

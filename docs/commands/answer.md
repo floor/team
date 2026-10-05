@@ -16,7 +16,7 @@ On success it writes `trust-sent-recovery` into the seat's state and reads it ba
 
 ## Who may run it
 
-The owner, from outside herdr, or the coordinator from its own seat. With `dialogs.trust: owner` (the value when `dialogs` is omitted) nobody sends a key, the owner included.
+The owner, from outside herdr, or the coordinator from its own seat — the seat of that name in the session the team file names (or `--session`), on the pane the state records for it: a seat of another session, or a pane merely renamed to the coordinator's name, is refused. With `dialogs.trust: owner` (the value when `dialogs` is omitted) nobody sends a key, the owner included.
 
 ## Flags
 

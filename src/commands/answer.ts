@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { basename, dirname } from 'node:path';
 import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, type Caller } from '../caller.ts';
+import { callerOf, callerStanding, standingOf, type Caller, type SeatStanding } from '../caller.ts';
 import { canonicalLanding, folderOf, listFolder, lobbyPath } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { renderSignature } from '../file/signature.ts';
@@ -114,7 +114,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
     return 1;
   };
 
-  const callerProblem = callerProblemOf(caller, team, seatName);
+  const callerProblem = callerProblemOf(caller, team, seatName, standingOf(dir, session, caller));
   if (callerProblem) return refused(callerProblem);
   const standing = host.standing(root);
   if (standing.kind !== 'verified') return refused({ class: 'caller', message: notInForce(standing) });
@@ -202,9 +202,11 @@ function logWho(caller: Caller, team: TeamFile): string {
   return caller.name === team.coordinator ? 'coordinator' : 'seat';
 }
 
-function callerProblemOf(caller: Caller, team: TeamFile, seat: string): Refusal | null {
+function callerProblemOf(caller: Caller, team: TeamFile, seat: string, at?: SeatStanding): Refusal | null {
   if (caller.kind === 'owner') return null;
-  if (caller.kind === 'seat' && caller.name === team.coordinator) return null;
+  // The coordinator's seat, in the session judged and on its recorded pane; a seat of another
+  // session, or one merely renamed, falls through to the refusal below, unchanged.
+  if (callerStanding(caller, team.coordinator, at)) return null;
   if (caller.kind === 'unplaced') return { class: 'caller', message: caller.reason };
   return { class: 'caller', message: `${seat}: only the owner, or the coordinator from its own seat, can answer` };
 }

@@ -1,5 +1,5 @@
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, mayChangeTeam, type Caller } from '../caller.ts';
+import { callerOf, describeCaller, mayChangeTeam, standingOf, type Caller } from '../caller.ts';
 import { currentTeam } from '../file/current.ts';
 import {
   agentList,
@@ -176,7 +176,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
 
   const caller = callerOf(io, session === 'default' ? undefined : session);
   const refusals: string[] = [];
-  if (!mayChangeTeam(caller, team)) {
+  if (!mayChangeTeam(caller, team, standingOf(dir, session, caller))) {
     refusals.push(
       `only the owner, the coordinator or the operator stops the team; this call is ${describeCaller(caller)}`,
     );

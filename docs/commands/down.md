@@ -25,9 +25,11 @@ file that no longer validates is replaced by the last copy that did, with a noti
 
 ## Who may run it
 
-The owner, the coordinator's seat, and the operator's seat. A seat's own call is refused by the
-`--abandon` flag, which only the owner may use. A seat that may stop the team never stops the
-coordinator's or the operator's seat — only the owner does.
+The owner, the coordinator's seat, and the operator's seat. The seat is that name's in the session
+the team file names (or `--session`), on the pane the state records for it: a seat of another
+session, or a pane merely renamed to the coordinator's or the operator's name, is refused. A seat's
+own call is refused by the `--abandon` flag, which only the owner may use. A seat that may stop the
+team never stops the coordinator's or the operator's seat — only the owner does.
 
 ## Flags
 

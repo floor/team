@@ -30,8 +30,10 @@ seats the team has had, and, through herdr: the workspace, the launch, and the n
 
 ## Who may run it
 
-The owner, the coordinator's seat and the operator's seat. `--file` is the owner's alone, from a
-terminal outside herdr. Everything `up` refuses on — a file that is not the approved one, a `MISS`
+The owner, the coordinator's seat and the operator's seat. The seat is that name's in the session
+the team file names (or `--session`), on the pane the state records for it: a seat of another
+session, or a pane merely renamed to the coordinator's or the operator's name, is refused. `--file`
+is the owner's alone, from a terminal outside herdr. Everything `up` refuses on — a file that is not the approved one, a `MISS`
 finding from [team doctor](doctor.md), the machine past its limits, the approval's ceilings — refuses
 here too, for the one seat being started.
 

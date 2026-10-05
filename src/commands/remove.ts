@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 import { recordSeatDigestOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
+import { describeCaller, isOwner, judgeCallerOf, mayChangeTeam, standingOf } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { markStopped, takeOut } from '../file/lines.ts';
 import type { Problem } from '../file/types.ts';
@@ -78,19 +78,22 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     // exit: remove.file-invalid
     return 2;
   }
-  const caller = callerOf(io);
+  const { team, path, root } = loaded;
+  const dir = dirname(path);
+  const session = args.values.session ?? team.session;
+  // The gate judges the caller placed in the session this command asks about — the proof its pane
+  // is that session's. The refusal names the caller's own placement, exactly as main described it.
+  const { caller, shown } = judgeCallerOf(io, session === 'default' ? undefined : session);
   if (args.values.file && !isOwner(caller)) {
-    io.stderr(`team remove: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
+    io.stderr(`team remove: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(shown)}\n`);
     // exit: remove.file-owner
     return 1;
   }
-  if (!mayChangeTeam(caller, loaded.team)) {
-    io.stderr(`team remove: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(caller)}\n`);
+  if (!mayChangeTeam(caller, team, standingOf(dir, session, caller))) {
+    io.stderr(`team remove: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(shown)}\n`);
     // exit: remove.caller
     return 1;
   }
-  const { team, path, root } = loaded;
-  const session = args.values.session ?? team.session;
   if (session === 'default') {
     io.stderr('team remove: session can\'t be "default", herdr\'s own session\n');
     // exit: remove.default-session
@@ -108,7 +111,6 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     return 1;
   }
 
-  const dir = dirname(path);
   const recorded = readState(dir).sessions[session]?.seats[name];
   const declared = team.seats.find((seat) => seat.name === name);
   if (!declared && !recorded) {

@@ -1,6 +1,20 @@
-import { describe, expect, test } from 'bun:test';
-import { mayChangeTeam, parseStat, placeCaller, processReader, readAncestors, readWithProc, readWithPs } from '../src/caller.ts';
-import type { CallerSources, Process } from '../src/caller.ts';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  callerStanding,
+  mayChangeTeam,
+  parseStat,
+  placeCaller,
+  processReader,
+  readAncestors,
+  recordedPaneOf,
+  readWithProc,
+  readWithPs,
+  standingOf,
+} from '../src/caller.ts';
+import type { Caller, CallerSources, Process } from '../src/caller.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 
 const agent = (name: string | null, pane: string): HerdrAgent => ({ name, agent: 'claude', pane, workspace: pane.split(':')[0] ?? '', status: 'idle', cwd: null });
@@ -82,6 +96,64 @@ describe('who may change a running team', () => {
   test('no other seat, and no unplaced caller', () => {
     expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1' }, team)).toBe(false);
     expect(mayChangeTeam({ kind: 'unplaced', reason: 'x' }, team)).toBe(false);
+  });
+});
+
+describe('a caller is judged against the session and the pane it was placed in', () => {
+  test('placement records the session it was made in, and nothing when none was asked about', () => {
+    expect(placeCaller(sources(seat), 'b')).toEqual({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1', session: 'b' });
+    expect(placeCaller(sources(seat))).toEqual({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1' });
+  });
+
+  const team = { coordinator: 'codex-acme', operator: 'codex-acme' };
+  const where = { session: 'a', recordedPane: 'w2:p1' };
+
+  test('a seat of another session is not the coordinator of this one', () => {
+    // Placed in session b under the coordinator's name: today's caller shape, still true.
+    expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1', session: 'b' }, team, where)).toBe(false);
+    // The caller main's placement produced (no session at all) and the one this session's
+    // placement produces: the same seat, allowed.
+    expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1' }, team, where)).toBe(true);
+    expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1', session: 'a' }, team, where)).toBe(true);
+  });
+
+  test('a pane merely renamed is not the seat: the state records another pane', () => {
+    expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w9:p1', session: 'a' }, team, where)).toBe(false);
+    expect(callerStanding({ kind: 'seat', name: 'codex-acme', pane: 'w9:p1', session: 'a' }, 'codex-acme', where)).toBe(false);
+    expect(callerStanding({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1', session: 'a' }, 'codex-acme', where)).toBe(true);
+  });
+
+  test('a state that records no pane leaves the name to decide, as long as the session matches', () => {
+    const none = { session: 'a' };
+    expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w9:p1', session: 'a' }, team, none)).toBe(true);
+    expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w9:p1', session: 'b' }, team, none)).toBe(false);
+  });
+
+  test('without a standing the name alone decides, exactly as before', () => {
+    expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1' }, team)).toBe(true);
+    expect(callerStanding({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1' }, 'codex-acme')).toBe(true);
+  });
+
+  const made: string[] = [];
+  afterEach(() => {
+    for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('the recorded pane comes from the state: unreadable, another session or another name records none', () => {
+    // The folder `readState` reads: the `.agents` directory.
+    const dir = mkdtempSync(join(tmpdir(), 'team-caller-'));
+    made.push(dir);
+    const state = join(dir, 'team.state.json');
+    writeFileSync(state, JSON.stringify({ format: 1, sessions: { a: { seats: { lead: { stage: 'ready', pane: 'w1:p1' } }, worktrees: {} } } }));
+    expect(recordedPaneOf(dir, 'a', 'lead')).toBe('w1:p1');
+    expect(recordedPaneOf(dir, 'a', 'worker')).toBeUndefined();
+    expect(recordedPaneOf(dir, 'b', 'lead')).toBeUndefined();
+    const caller: Caller = { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'a' };
+    expect(standingOf(dir, 'a', caller)).toEqual({ session: 'a', recordedPane: 'w1:p1' });
+    expect(standingOf(dir, 'a', { kind: 'owner' })).toEqual({ session: 'a', recordedPane: undefined });
+    // A state that can't be read records none: the caller check must never become a stack trace.
+    writeFileSync(state, '{ not a state');
+    expect(recordedPaneOf(dir, 'a', 'lead')).toBeUndefined();
   });
 });
 
