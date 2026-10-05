@@ -170,6 +170,8 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
     }, pane, workspace)) {
       return refused({ class: 'state', message: `${seatName}: its recovery state could not be recorded` });
     }
+    const keyProcessProblem = checkProcess(seatName, host, session, pane, recorded?.launched);
+    if (keyProcessProblem) return refused(keyProcessProblem);
     let sent = false;
     try {
       sent = host.sendKey(session, pane, key);
@@ -413,8 +415,6 @@ async function recover(
   const named = host.agents(session)?.some((agent) => agent.name === name && agent.pane === pane) === true;
   if (!named && !host.rename(session, pane, name)) return 'rule delivery';
   if (profile.rulesOption !== null) return true;
-  const processProblem = checkProcess(name, host, session, pane, launched);
-  if (processProblem) return processProblem;
   const text = rulesText(
     {
       coordinator: team.coordinator,
@@ -428,7 +428,21 @@ async function recover(
     },
     'message',
   );
-  const delivered = await deliverRules(profile.cli, text, profile.idleTimeout, deliveryOf(host, session, pane));
+  let processRefusal: Refusal | null = null;
+  const delivered = await deliverRules(
+    profile.cli,
+    text,
+    profile.idleTimeout,
+    deliveryOf(host, session, pane, (action) => {
+      const problem = checkProcess(name, host, session, pane, launched);
+      if (!problem) return true;
+      processRefusal = action === 'enter'
+        ? { class: problem.class, message: `${problem.message}; rules were typed, not sent` }
+        : problem;
+      return false;
+    }),
+  );
+  if (processRefusal) return processRefusal;
   return delivered === true ? true : 'rule delivery';
 }
 
@@ -443,7 +457,12 @@ async function waitIdle(host: AnswerHost, session: string, pane: string, profile
   }
 }
 
-function deliveryOf(host: AnswerHost, session: string, pane: string): Delivery {
+function deliveryOf(
+  host: AnswerHost,
+  session: string,
+  pane: string,
+  beforeInput?: (action: 'type' | 'enter') => boolean,
+): Delivery {
   return {
     screen: () => host.pane(session, pane),
     status: () => host.status(session, pane),
@@ -452,6 +471,7 @@ function deliveryOf(host: AnswerHost, session: string, pane: string): Delivery {
     foreground: () => host.foreground(session, pane),
     now: () => host.now().getTime(),
     sleep: (ms) => host.sleep(ms),
+    beforeInput,
   };
 }
 

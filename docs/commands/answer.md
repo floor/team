@@ -12,7 +12,7 @@ Presses the one recorded key of a folder-trust dialog, and only that key. Every 
 
 Reads the team file, this machine's approval and the approved copy the trust entries are read from, the seat's state, the installed CLI's version, and the pane — the screen's own lines, the folder herdr reports the pane working in, and the lobby's parent directory. The version must match a record whose own capture is registered (`src/profiles/trust-answer.ts`); Codex's record also needs a registered capture of its folder layout in the real lobby and none exists, so Codex answers nothing today. The command holds the seat's lock (`<state dir>/seat-locks/<session>/<seat>`) for its whole run, so a launch of the same seat cannot act beside it.
 
-On success it writes `trust-sent-recovery` into the seat's state and reads it back **before** sending the key: a crash between the two leaves a recovery a retry only observes, never a dialog answered twice. Under the seat lock, on both of its fresh reads of the pane, if the seat's state holds a `launched` record (a seat of this version stopped at a dialog before its idle prompt has none, as do old launches from before the field existed: they have nothing to compare and keep today's check), the pane's process identity must match the recorded process (`same`); if herdr cannot read the process or it is `gone` or `replaced`, the command refuses without sending a key or writing recovery state. It then sends one key, waits for the idle prompt, delivers the ordinary rules, and writes the seat `ready`. A refusal before the key writes nothing; a failure after it leaves `trust-sent-recovery`.
+On success it writes `trust-sent-recovery` into the seat's state and reads it back **before** sending the key: a crash between the two leaves a recovery a retry only observes, never a dialog answered twice. Under the seat lock, on both of its fresh reads of the pane, and immediately before every terminal input — the trust key, the typed rules line, and Enter — if the seat's state holds a `launched` record (a seat of this version stopped at a dialog before its idle prompt has none, as do old launches from before the field existed: they have nothing to compare and keep today's check), the pane's process identity must match the recorded process (`same`); if herdr cannot read the process or it is `gone` or `replaced`, the command refuses without sending that input, and leaves state where it was (a refusal before the key writes nothing; after the key it leaves `trust-sent-recovery`). If refusal happens between typing and Enter, the line notes that rules were typed and not sent. It then sends one key, waits for the idle prompt, delivers the ordinary rules, and writes the seat `ready`. A refusal before the key writes nothing; a failure after it leaves `trust-sent-recovery`.
 
 ## Who may run it
 
@@ -64,7 +64,7 @@ Every refusal line is `<seat>: <reason>` except an unplaced caller's, which is i
 | label | `the trust choice is not the recorded one` |
 | folder | `the dialog does not show exactly one folder`; `the dialog does not show the lobby as written: the owner answers it through team up`; `the pane's folder cannot be read`; `the pane's folder is not the lobby as written`; `the lobby's parent folder cannot be read`; `the lobby's parent folder holds a name that differs from the lobby's by whitespace alone`; `this folder is not an exact trust entry`; `ask the owner to approve this exact folder and answer through team up` |
 | action | `the recorded key is not one this version sends` |
-| process | `the process in its pane is not the one team launched`; `its pane could not be read` |
+| process | `the process in its pane is not the one team launched`; `its pane could not be read`; `<reason>; rules were typed, not sent` |
 
 `action` is a well-formedness defence: it is reached only when a profile records a key byte the host does not send, which the shipped profiles (0d, 31, 61) do not.
 
@@ -112,3 +112,7 @@ $ team answer
 team answer: a seat and trust are required
 Usage: team answer <seat> trust [--session <name>] [--file <path>] [--json]
 ```
+
+## Known limits
+
+A process can still change between that last read and the input itself (two herdr calls), as for every read-then-act in `team`.

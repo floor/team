@@ -496,7 +496,7 @@ describe('team answer', () => {
       return { root, home, lobby, dir, trust, host };
     }
 
-    test('same: ordered calls include processInfo on both reads and sends key', async () => {
+    test('same: ordered calls include processInfo directly before each of the 3 inputs', async () => {
       const { root, home, dir, host } = setupIdentitySeat();
       await approve(root, home);
       const calls: string[] = [];
@@ -516,13 +516,22 @@ describe('team answer', () => {
       host.list = (d) => { calls.push('list'); return origList(d); };
       const origSendKey = host.sendKey.bind(host);
       host.sendKey = (session, pane, key) => { calls.push(`sendKey:${key}`); return origSendKey(session, pane, key); };
+      const origFg = host.foreground.bind(host);
+      host.foreground = (session, pane) => { calls.push('foreground'); return origFg(session, pane); };
+      const origStatus = host.status.bind(host);
+      host.status = (session, pane) => { calls.push('status'); return origStatus(session, pane); };
+      const origType = host.type.bind(host);
+      host.type = (session, pane, text) => { calls.push('type'); return origType(session, pane, text); };
+      const origEnter = host.enter.bind(host);
+      host.enter = (session, pane) => { calls.push('enter'); return origEnter(session, pane); };
 
       const io = testIo(root, { kind: 'owner' });
       const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
       expect(code).toBe(0);
       expect(io.out).toBe('lead: trust answered; ready\n');
       expect(host.keys).toEqual(['a']);
-      expect(calls.slice(0, 12)).toEqual([
+      expect(host.typed.length).toBe(1);
+      expect(calls).toEqual([
         'agents',
         'processInfo:w1:p1',
         'version:cursor-agent',
@@ -534,7 +543,24 @@ describe('team answer', () => {
         'pane:w1:p1',
         'foregroundCwd:w1:p1',
         'list',
+        'processInfo:w1:p1',
         'sendKey:a',
+        'pane:w1:p1',
+        'agents',
+        'foreground',
+        'status',
+        'pane:w1:p1',
+        'processInfo:w1:p1',
+        'type',
+        'status',
+        'pane:w1:p1',
+        'foreground',
+        'status',
+        'pane:w1:p1',
+        'processInfo:w1:p1',
+        'enter',
+        'status',
+        'pane:w1:p1',
       ]);
       expect(readState(dir).sessions.acme?.seats.lead?.stage).toBe('ready');
       expect(readState(dir).sessions.acme?.seats.lead?.waiting).toBeUndefined();
@@ -600,14 +626,74 @@ describe('team answer', () => {
       expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
     });
 
-    test('normal path: process changes between key and delivery: no type, state stays recovery', async () => {
+    test('process changes (a) between inspection and key: no key sent, state is recovery', async () => {
       const { root, home, dir, host } = setupIdentitySeat();
       await approve(root, home);
       let reads = 0;
       host.processInfo = () => {
         reads += 1;
-        // First 2 reads (in inspect) return same; 3rd read (before rules delivery) returns replaced.
-        return reads <= 2 ? { shell: 400, foreground: [400, 401] } : { shell: 400, foreground: [500] };
+        if (reads <= 2) {
+          expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('waiting-owner');
+          return { shell: 400, foreground: [400, 401] };
+        }
+        expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
+        return { shell: 400, foreground: [500] };
+      };
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(host.keys).toEqual([]);
+      expect(host.typed).toEqual([]);
+      expect(io.err).toBe('lead: the process in its pane is not the one team launched\n');
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+    });
+
+    test('process unreadable between inspection and key: no key sent, state is recovery', async () => {
+      const { root, home, dir, host } = setupIdentitySeat();
+      await approve(root, home);
+      let reads = 0;
+      host.processInfo = () => {
+        reads += 1;
+        return reads <= 2 ? { shell: 400, foreground: [400, 401] } : null;
+      };
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(host.keys).toEqual([]);
+      expect(host.typed).toEqual([]);
+      expect(io.err).toBe('lead: its pane could not be read\n');
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+    });
+
+    test('process change after recovery write before key: moving read before recovery fails this', async () => {
+      const { root, home, dir, host } = setupIdentitySeat();
+      await approve(root, home);
+      // Process becomes replaced as soon as recovery state is on disk
+      host.processInfo = () => {
+        const state = readState(dir).sessions.acme?.seats.lead?.waiting?.state;
+        return state === 'trust-sent-recovery'
+          ? { shell: 400, foreground: [500] }
+          : { shell: 400, foreground: [400, 401] };
+      };
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(host.keys).toEqual([]);
+      expect(host.typed).toEqual([]);
+      expect(io.err).toBe('lead: the process in its pane is not the one team launched\n');
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
+    });
+
+    test('process changes (b) between key read-back and typing: no type, state stays recovery', async () => {
+      const { root, home, dir, host } = setupIdentitySeat();
+      await approve(root, home);
+      let reads = 0;
+      host.processInfo = () => {
+        reads += 1;
+        // Reads 1, 2 (inspect) and 3 (before key) return same; 4th read (before type) returns replaced.
+        return reads <= 3 ? { shell: 400, foreground: [400, 401] } : { shell: 400, foreground: [500] };
       };
       const io = testIo(root, { kind: 'owner' });
       const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
@@ -615,6 +701,71 @@ describe('team answer', () => {
       expect(host.keys).toEqual(['a']);
       expect(host.typed).toEqual([]);
       expect(io.err).toBe('lead: the process in its pane is not the one team launched\n');
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+    });
+
+    test('process unreadable between key read-back and typing: no type, state stays recovery', async () => {
+      const { root, home, dir, host } = setupIdentitySeat();
+      await approve(root, home);
+      let reads = 0;
+      host.processInfo = () => {
+        reads += 1;
+        return reads <= 3 ? { shell: 400, foreground: [400, 401] } : null;
+      };
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(host.keys).toEqual(['a']);
+      expect(host.typed).toEqual([]);
+      expect(io.err).toBe('lead: its pane could not be read\n');
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+    });
+
+    test('process changes (c) between typing and Enter: typed not sent, state stays recovery', async () => {
+      const { root, home, dir, host } = setupIdentitySeat();
+      await approve(root, home);
+      let reads = 0;
+      host.processInfo = () => {
+        reads += 1;
+        // Reads 1, 2 (inspect), 3 (before key), 4 (before type) return same; 5th read (before enter) returns replaced.
+        return reads <= 4 ? { shell: 400, foreground: [400, 401] } : { shell: 400, foreground: [500] };
+      };
+      const calls: string[] = [];
+      const origEnter = host.enter.bind(host);
+      host.enter = (session, pane) => { calls.push('enter'); return origEnter(session, pane); };
+
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(host.keys).toEqual(['a']);
+      expect(host.typed.length).toBe(1);
+      expect(calls).not.toContain('enter');
+      expect(io.err).toBe('lead: the process in its pane is not the one team launched; rules were typed, not sent\n');
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+    });
+
+    test('process unreadable between typing and Enter: typed not sent, state stays recovery', async () => {
+      const { root, home, dir, host } = setupIdentitySeat();
+      await approve(root, home);
+      let reads = 0;
+      host.processInfo = () => {
+        reads += 1;
+        return reads <= 4 ? { shell: 400, foreground: [400, 401] } : null;
+      };
+      const calls: string[] = [];
+      const origEnter = host.enter.bind(host);
+      host.enter = (session, pane) => { calls.push('enter'); return origEnter(session, pane); };
+
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(host.keys).toEqual(['a']);
+      expect(host.typed.length).toBe(1);
+      expect(calls).not.toContain('enter');
+      expect(io.err).toBe('lead: its pane could not be read; rules were typed, not sent\n');
       expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
       expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
     });
@@ -714,19 +865,50 @@ describe('team answer', () => {
       expect(io.out).toBe('lead: trust answered; ready\n');
       expect(host.keys).toEqual([]);
       expect(host.typed.length).toBe(1);
-      expect(calls.slice(0, 8)).toEqual([
+      expect(calls).toEqual([
         'agents',
         'pane:w1:p1',
         'agents',
-        'processInfo:w1:p1',
         'foreground',
         'status',
         'pane:w1:p1',
+        'processInfo:w1:p1',
         'type',
+        'status',
+        'pane:w1:p1',
+        'foreground',
+        'status',
+        'pane:w1:p1',
+        'processInfo:w1:p1',
+        'enter',
+        'status',
+        'pane:w1:p1',
       ]);
-      expect(calls).toContain('enter');
       expect(readState(dir).sessions.acme?.seats.lead?.stage).toBe('ready');
       expect(readState(dir).sessions.acme?.seats.lead?.waiting).toBeUndefined();
+    });
+
+    test('recovery path: process changes between typing and Enter: typed not sent, state stays recovery', async () => {
+      const { root, home, dir, host } = setupRecoverySeat();
+      await approve(root, home);
+      let reads = 0;
+      host.processInfo = () => {
+        reads += 1;
+        // First read (before type) returns same; 2nd read (before enter) returns replaced.
+        return reads === 1 ? { shell: 400, foreground: [400, 401] } : { shell: 400, foreground: [500] };
+      };
+      const calls: string[] = [];
+      const origEnter = host.enter.bind(host);
+      host.enter = (session, pane) => { calls.push('enter'); return origEnter(session, pane); };
+
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(host.typed.length).toBe(1);
+      expect(calls).not.toContain('enter');
+      expect(io.err).toBe('lead: the process in its pane is not the one team launched; rules were typed, not sent\n');
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
     });
   });
 
