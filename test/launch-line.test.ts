@@ -124,6 +124,8 @@ describe('the launch line check', () => {
       why:
         'its launch line runs `../tools/x.sh`, not found from its start folder ../worktrees/acme/.lobby; ' +
         `the same file is at \`${join(base, 'tools', 'x.sh')}\` from the project root — write that path`,
+      // The same finding in words, folder-free: what a record and the log may hold.
+      record: 'its launch line runs `../tools/x.sh`, not found from its start folder',
     });
   });
 
@@ -277,6 +279,7 @@ describe('the launch line check', () => {
     expect(finding).toEqual({
       level: 'miss',
       why: 'its launch line starts `"~/x"`, not found from its start folder ../worktrees/acme/.lobby',
+      record: 'its launch line starts `"~/x"`, not found from its start folder',
     });
   });
 
@@ -312,7 +315,11 @@ describe('the launch line check', () => {
       `the same file is at \`${join(base, 'tools', 'x.sh')}\` from the project root — write that path`;
     for (const launch of ['zsh ../tools/x.sh', 'sh ../tools/x.sh', '/bin/bash ../tools/x.sh']) {
       const finding = launchLineFinding(team(launch), seat(launch), root, sources());
-      expect(finding).toEqual({ level: 'miss', why });
+      expect(finding).toEqual({
+        level: 'miss',
+        why,
+        record: 'its launch line runs `../tools/x.sh`, not found from its start folder',
+      });
     }
   });
 

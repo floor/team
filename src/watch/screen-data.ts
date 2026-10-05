@@ -16,7 +16,10 @@ export type Rule = {
   noneAfter?: { anchor: LinePattern; patterns: LinePattern[] };
 };
 
-export type Stage = { rules: Rule[] };
+/** The versions a captured record was taken on, as the profile's `tested:` range reads. */
+export type VersionRange = { from: string; to: string };
+
+export type Stage = { rules: Rule[]; tested?: VersionRange };
 
 export type Placeholder = { equals: string } | { prefix: string };
 
@@ -103,6 +106,10 @@ export type ScreenData = {
   trust?: Stage;
   permission?: Stage;
   question?: Stage;
+  /** A vendor's own notice — an update screen, for one: never answered, and it carries the
+   *  version range it was captured on. A stage without `tested` cannot exist: the loader
+   *  requires the range, so a screen is never called a vendor notice without a record. */
+  vendor_notice?: Stage;
   working?: Stage;
   composer: Composer;
   profile?: ScreenProfile;

@@ -350,6 +350,17 @@ describe('a pass of the watch', () => {
     expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: stuck, machine: fine, now: 30 * MIN, memory }).reports).toEqual([]);
   });
 
+  test.each(['idle', 'working'])('a captured Codex update screen is the vendor notice, its owner\'s, when herdr says %s', (status) => {
+    const screen = readFileSync(new URL('./fixtures/codex/0.157.0/startup.txt', import.meta.url), 'utf8');
+    const memory = newMemory();
+    const update = live({ 'codex-acme': { status, screen } });
+    const first = pass({ team: team(), watch: team().watch, state: emptySession(), live: update, machine: fine, now: 0, memory });
+    // Its owner's to act on — never a question the operator nudges, and never an idle seat.
+    expect(first.reports).toEqual([{ key: 'vendor notice:codex-acme', text: "codex-acme shows a vendor notice: its owner's to act on", to: 'owner' }]);
+    expect(first.nudge).toBeNull();
+    expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: update, machine: fine, now: 30 * MIN, memory }).reports).toEqual([]);
+  });
+
   test('a question is the operator\'s', () => {
     const asked = live({ 'deepseek-acme-2': { status: 'blocked', screen: question } });
     const result = pass({ team: team(), watch: team().watch, state: emptySession(), live: asked, machine: fine, now: 0, memory: newMemory() });

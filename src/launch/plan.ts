@@ -2,6 +2,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { profileFor } from '../profiles/index.ts';
 import { launchCommand, shellQuote } from '../profiles/profile.ts';
 import type { LaunchedIdentity } from './identity.ts';
+import type { FinalRecord } from './progress.ts';
 
 /**
  * What running a step does. The printed command stays in `argv`; this is how the live command
@@ -12,7 +13,12 @@ export type Op =
   | { do: 'wait-session'; session: string; seconds: number }
   | { do: 'create'; seat?: string; label: string; cwd: string; notice?: string; lobby?: true }
   | { do: 'launch'; seat: string; label: string; command: string; pane?: string; notice?: string }
-  | { do: 'refuse'; seat: string; why: string }
+  /** `why` is the reason the record and the log carry; `detail`, when the reason has a fuller
+   *  sentence with a folder in it, is the stderr line said under the record. */
+  | { do: 'refuse'; seat: string; why: string; detail?: string }
+  /** A seat's final record, decided by the plan: no profile, already ready. The step's printed
+   *  text stays for the dry run; `detail` is the stderr lines said after the record. */
+  | { do: 'record'; seat: string; record: FinalRecord; detail?: string }
   | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; command: string; pane?: string; workspace?: string; notice?: string; model?: string; version?: string }
   | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
   | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; path: string; line: string; seconds: number; pane?: string; notice?: string }
@@ -77,9 +83,14 @@ export interface UpSeat {
   /**
    * Set when the seat's own launch line can't run where the seat starts — the program is not
    * there, or a relative path in it resolves from neither the start folder nor the root. The
-   * seat is left out before its workspace is made; the other seats go on.
+   * seat is left out before its workspace is made; the other seats go on. The words only: no
+   * folder this machine resolved (`launchProblemDetail` holds the full finding for the terminal).
    */
   launchProblem?: string;
+  /** The finding in full — the start folder and the path to write — said on stderr under the
+   *  seat's record, never logged. Present where `launchProblem` came from a `miss` that names
+   *  a folder; absent when the words are the whole finding. */
+  launchProblemDetail?: string;
   /**
    * Set when a counted reading is inside the reserve, or the figure is unknown
    * or a first sight. A refusal stops the seat only when this plan would launch it.
@@ -151,6 +162,11 @@ export function upPlan(input: UpInput): Step[] {
       steps.push({
         kind: 'skip',
         text: `${seat.name}: no launch profile for \`${seat.cli}\` in this version; left out`,
+        do: {
+          do: 'record',
+          seat: seat.name,
+          record: { kind: 'left out', reason: `no launch profile for \`${seat.cli}\` in this version; left out` },
+        },
       });
       continue;
     }
@@ -158,6 +174,12 @@ export function upPlan(input: UpInput): Step[] {
       steps.push({
         kind: 'skip',
         text: `${seat.name}: already ready; left as it is${seat.restartNote ? `; ${seat.restartNote}` : ''}`,
+        do: {
+          do: 'record',
+          seat: seat.name,
+          record: { kind: 'ready' },
+          detail: `  already ready; left as it is${seat.restartNote ? `; ${seat.restartNote}` : ''}\n`,
+        },
       });
       continue;
     }
@@ -169,9 +191,16 @@ export function upPlan(input: UpInput): Step[] {
     const wouldLaunch = fresh || (seat.stage === 'launched' && !seat.agentLive);
     if (seat.launchProblem && wouldLaunch) {
       steps.push({
+        // The dry run prints the finding in full, as it always did; the record is left out with
+        // the words, and the full sentence follows it on stderr as the record's detail.
         kind: 'skip',
-        text: `${seat.name}: would refuse: ${seat.launchProblem}`,
-        do: { do: 'refuse', seat: seat.name, why: seat.launchProblem },
+        text: `${seat.name}: would refuse: ${seat.launchProblemDetail ?? seat.launchProblem}`,
+        do: {
+          do: 'refuse',
+          seat: seat.name,
+          why: seat.launchProblem,
+          ...(seat.launchProblemDetail ? { detail: seat.launchProblemDetail } : {}),
+        },
       });
       continue;
     }

@@ -294,7 +294,7 @@ describe('a folder with no git repository', () => {
     expect(code, io.out + io.err).toBe(0);
     const watchdog = made.creates.find((created) => created.label === 'watchdog');
     expect(watchdog?.cwd).toBe(root);
-    expect(io.out).toContain('watch: started\n');
+    expect(io.err).toContain('watch: started\n');
     const command = made.runs.find((run) => run.command.includes(' watch'))?.command ?? '';
     expect(command).toContain(' watch');
     expect(command).not.toContain('--file');
@@ -374,8 +374,9 @@ describe('a file the watch would not read', () => {
     expect(code).toBe(1);
     expect(made.creates.some((created) => created.label === 'watchdog')).toBe(false);
     expect(made.runs.some((run) => run.command.includes(' watch'))).toBe(false);
-    expect(io.out).toContain(`${WATCH_NOT_STARTED}\n`);
-    expect(io.out).not.toContain('watch: started');
+    expect(io.err).toContain(`${WATCH_NOT_STARTED}\n`);
+    expect(io.out).not.toContain(WATCH_NOT_STARTED);
+    expect(io.err).not.toContain('watch: started');
 
     const dry = testIo(root, { kind: 'owner' });
     const preview = await runUp(['--dry-run', '--file', custom], dry, upSources(home, world()));
@@ -406,8 +407,36 @@ describe('a file the watch would not read', () => {
     const code = await runUp(['--file', custom], io, upSources(home, made));
     expect(code).toBe(1);
     expect(made.creates.some((created) => created.label === 'watchdog')).toBe(false);
-    expect(io.out).toContain(`${WATCH_NOT_STARTED}\n`);
-    expect(io.out).not.toContain('watch: started');
+    expect(io.err).toContain(`${WATCH_NOT_STARTED}\n`);
+    expect(io.out).not.toContain(WATCH_NOT_STARTED);
+    expect(io.err).not.toContain('watch: started');
+  });
+
+  test('the not-started line is one cleaned line when the flagged path holds an escape', async () => {
+    const { home } = fresh();
+    const root = join(base, 'acme');
+    mkdirSync(root);
+    git(root, 'init', '-q', '-b', 'main');
+    const customDir = join(root, 'custom');
+    const custom = join(customDir, 'te\x1b[2Jam.yaml');
+    approve(root, custom, home, teamText(customDir));
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(['--file', custom], io, upSources(home, made));
+    expect(code).toBe(1);
+    const said = io.err.split('\n').filter((line) => line.includes('watch: not started'));
+    expect(said).toEqual([WATCH_NOT_STARTED]);
+    expect(said[0]?.includes('\n')).toBe(false);
+    expect(io.out.includes('\x1b')).toBe(false);
+    expect(io.err.includes('\x1b')).toBe(false);
+    const dry = testIo(root, { kind: 'owner' });
+    const preview = await runUp(['--dry-run', '--file', custom], dry, upSources(home, world()));
+    expect(preview).toBe(0);
+    const previewed = dry.out.split('\n').filter((line) => line.includes('watch: not started'));
+    expect(previewed).toEqual([WATCH_NOT_STARTED]);
+    expect(dry.out.includes('\x1b')).toBe(false);
+    expect(dry.err.includes('\x1b')).toBe(false);
+    expect(made.creates.some((created) => created.label === 'watchdog')).toBe(false);
   });
 
   test('the default path starts the watch', async () => {
@@ -426,8 +455,9 @@ describe('a file the watch would not read', () => {
     const code = await runUp(['--file', file], io, upSources(home, made));
     expect(code, io.out + io.err).toBe(0);
     expect(made.creates.some((created) => created.label === 'watchdog')).toBe(true);
-    expect(io.out).toContain('watch: started\n');
+    expect(io.err).toContain('watch: started\n');
     expect(io.out).not.toContain(WATCH_NOT_STARTED);
+    expect(io.err).not.toContain(WATCH_NOT_STARTED);
   });
 });
 

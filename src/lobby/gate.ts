@@ -64,7 +64,10 @@ export function findRepoRoot(startPath: string, fs: FsReader = defaultFs): strin
 export type LobbyGateResult =
   | { ok: true; path: string; dev: number; ino: number }
   | { ok: true; missing: true }
-  | { ok: false; problem: 'symlink' | 'owner' | 'mode' | 'not-empty' | 'repo' | 'not-directory' | string; text: string; component?: string };
+  /** A refusal: `text` is the whole finding — the folders this machine resolved — for the
+   *  terminal; `words` is the same cause with no folder in it, what a record and the log may
+   *  hold. Every refusal arm authors both, so no later caller has to guess. */
+  | { ok: false; problem: 'symlink' | 'owner' | 'mode' | 'not-empty' | 'repo' | 'not-directory' | string; text: string; words: string; component?: string };
 
 export interface VerifyLobbyOptions {
   create?: boolean;
@@ -72,7 +75,7 @@ export interface VerifyLobbyOptions {
   fs?: FsReader;
 }
 
-type CompCheck = { ok: true; stat: FsStats } | { ok: false; problem: string; text: string; component?: string };
+type CompCheck = { ok: true; stat: FsStats } | { ok: false; problem: string; text: string; words: string; component?: string };
 
 /**
  * Verifies the lobby folder and every component from `home` down to it.
@@ -97,25 +100,51 @@ export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGa
     lobby,
   ];
 
+  // How a refusal's words name the component that caused it, without the folder itself: the
+  // lobby, your home folder, or a folder on the way to it. The words travel in records and the
+  // log; the folder travels only in `text`, on the terminal.
+  const where = (comp: string): string =>
+    comp === lobby ? 'it' : comp === home ? 'your home folder' : 'a folder on the way to it';
+
   function checkComp(comp: string): CompCheck {
     let stat: FsStats;
     try {
       stat = fs.lstat(comp);
     } catch (err) {
       if (codeOf(err) === 'ENOENT') {
-        return { ok: false, problem: 'not-directory', text: `the lobby ${lobby}: ${comp} does not exist`, component: comp };
+        return {
+          ok: false, problem: 'not-directory',
+          text: `the lobby ${lobby}: ${comp} does not exist`,
+          words: `the lobby: ${where(comp)} is not there`,
+          component: comp,
+        };
       }
-      return { ok: false, problem: 'read-error', text: `the lobby ${lobby}: cannot read ${comp}: ${codeOf(err)}`, component: comp };
+      return {
+        ok: false, problem: 'read-error',
+        text: `the lobby ${lobby}: cannot read ${comp}: ${codeOf(err)}`,
+        words: `the lobby: ${where(comp)} cannot be read`,
+        component: comp,
+      };
     }
     if (stat.isSymbolicLink()) {
-      return { ok: false, problem: 'symlink', text: `the lobby ${lobby}: ${comp} is a symbolic link`, component: comp };
+      return {
+        ok: false, problem: 'symlink',
+        text: `the lobby ${lobby}: ${comp} is a symbolic link`,
+        words: `the lobby: ${where(comp)} is a symbolic link`,
+        component: comp,
+      };
     }
     if (!stat.isDirectory()) {
       const text = comp === lobby ? `the lobby ${lobby}: is not a directory` : `the lobby ${lobby}: ${comp} is not a directory`;
-      return { ok: false, problem: 'not-directory', text, component: comp };
+      return { ok: false, problem: 'not-directory', text, words: `the lobby: ${where(comp)} is not a directory`, component: comp };
     }
     if (stat.uid !== myUid) {
-      return { ok: false, problem: 'owner', text: `the lobby ${lobby}: ${comp} is not owned by you`, component: comp };
+      return {
+        ok: false, problem: 'owner',
+        text: `the lobby ${lobby}: ${comp} is not owned by you`,
+        words: `the lobby: ${where(comp)} is not owned by you`,
+        component: comp,
+      };
     }
     return { ok: true, stat };
   }
@@ -134,12 +163,22 @@ export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGa
         fs.lstat(comp);
       } catch (err) {
         if (codeOf(err) !== 'ENOENT') {
-          return { ok: false, problem: 'read-error', text: `the lobby ${lobby}: cannot read ${comp}: ${codeOf(err)}`, component: comp };
+          return {
+            ok: false, problem: 'read-error',
+            text: `the lobby ${lobby}: cannot read ${comp}: ${codeOf(err)}`,
+            words: `the lobby: ${where(comp)} cannot be read`,
+            component: comp,
+          };
         }
         try {
           fs.mkdir(comp, comp === lobby ? { mode: 0o700 } : undefined);
         } catch (mkErr) {
-          return { ok: false, problem: 'not-directory', text: `the lobby ${lobby}: failed to create ${comp}: ${codeOf(mkErr)}`, component: comp };
+          return {
+            ok: false, problem: 'not-directory',
+            text: `the lobby ${lobby}: failed to create ${comp}: ${codeOf(mkErr)}`,
+            words: `the lobby: ${where(comp)} could not be created`,
+            component: comp,
+          };
         }
       }
 
@@ -153,20 +192,42 @@ export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGa
         stat = fs.lstat(comp);
       } catch (err) {
         if (codeOf(err) === 'ENOENT') {
-          if (comp === home) return { ok: false, problem: 'not-directory', text: `the lobby ${lobby}: ${comp} does not exist`, component: comp };
+          if (comp === home) {
+            return {
+              ok: false, problem: 'not-directory',
+              text: `the lobby ${lobby}: ${comp} does not exist`,
+              words: `the lobby: ${where(comp)} is not there`,
+              component: comp,
+            };
+          }
           return { ok: true, missing: true };
         }
-        return { ok: false, problem: 'read-error', text: `the lobby ${lobby}: cannot read ${comp}: ${codeOf(err)}`, component: comp };
+        return {
+          ok: false, problem: 'read-error',
+          text: `the lobby ${lobby}: cannot read ${comp}: ${codeOf(err)}`,
+          words: `the lobby: ${where(comp)} cannot be read`,
+          component: comp,
+        };
       }
       if (stat.isSymbolicLink()) {
-        return { ok: false, problem: 'symlink', text: `the lobby ${lobby}: ${comp} is a symbolic link`, component: comp };
+        return {
+          ok: false, problem: 'symlink',
+          text: `the lobby ${lobby}: ${comp} is a symbolic link`,
+          words: `the lobby: ${where(comp)} is a symbolic link`,
+          component: comp,
+        };
       }
       if (!stat.isDirectory()) {
         const text = comp === lobby ? `the lobby ${lobby}: is not a directory` : `the lobby ${lobby}: ${comp} is not a directory`;
-        return { ok: false, problem: 'not-directory', text, component: comp };
+        return { ok: false, problem: 'not-directory', text, words: `the lobby: ${where(comp)} is not a directory`, component: comp };
       }
       if (stat.uid !== myUid) {
-        return { ok: false, problem: 'owner', text: `the lobby ${lobby}: ${comp} is not owned by you`, component: comp };
+        return {
+          ok: false, problem: 'owner',
+          text: `the lobby ${lobby}: ${comp} is not owned by you`,
+          words: `the lobby: ${where(comp)} is not owned by you`,
+          component: comp,
+        };
       }
     }
   }
@@ -180,7 +241,11 @@ export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGa
   try {
     homeReal = fs.realpath(home);
   } catch (err) {
-    return { ok: false, problem: 'read-error', text: `the lobby ${lobby}: cannot resolve ${home}: ${codeOf(err)}` };
+    return {
+      ok: false, problem: 'read-error',
+      text: `the lobby ${lobby}: cannot resolve ${home}: ${codeOf(err)}`,
+      words: 'the lobby: your home folder cannot be resolved',
+    };
   }
   const expectedLobby = join(homeReal, '.config', 'team', 'lobby');
 
@@ -188,46 +253,83 @@ export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGa
   try {
     real = fs.realpath(lobby);
   } catch (err) {
-    return { ok: false, problem: 'symlink', text: `the lobby ${lobby}: cannot resolve canonical path: ${codeOf(err)}` };
+    return {
+      ok: false, problem: 'symlink',
+      text: `the lobby ${lobby}: cannot resolve canonical path: ${codeOf(err)}`,
+      words: 'the lobby: its canonical path cannot be resolved',
+    };
   }
   if (real !== expectedLobby) {
-    return { ok: false, problem: 'symlink', text: `the lobby ${lobby}: canonical path ${real} does not match ${expectedLobby}` };
+    return {
+      ok: false, problem: 'symlink',
+      text: `the lobby ${lobby}: canonical path ${real} does not match ${expectedLobby}`,
+      words: 'the lobby: its canonical path leads somewhere else',
+    };
   }
 
   let lobbyStat: FsStats;
   try {
     lobbyStat = fs.lstat(lobby);
   } catch (err) {
-    return { ok: false, problem: 'read-error', text: `the lobby ${lobby}: cannot read ${lobby}: ${codeOf(err)}`, component: lobby };
+    return {
+      ok: false, problem: 'read-error',
+      text: `the lobby ${lobby}: cannot read ${lobby}: ${codeOf(err)}`,
+      words: 'the lobby: it cannot be read',
+      component: lobby,
+    };
   }
   const mode = lobbyStat.mode & 0o7777;
   if (mode !== 0o700) {
-    return { ok: false, problem: 'mode', text: `the lobby ${lobby}: has mode 0${mode.toString(8)}, not 0700` };
+    return {
+      ok: false, problem: 'mode',
+      text: `the lobby ${lobby}: has mode 0${mode.toString(8)}, not 0700`,
+      words: `the lobby: it has mode 0${mode.toString(8)}, not 0700`,
+    };
   }
 
   let entries: string[];
   try {
     entries = fs.readdir(lobby);
   } catch (err) {
-    return { ok: false, problem: 'not-empty', text: `the lobby ${lobby}: cannot read directory: ${codeOf(err)}` };
+    return {
+      ok: false, problem: 'not-empty',
+      text: `the lobby ${lobby}: cannot read directory: ${codeOf(err)}`,
+      words: 'the lobby: it cannot be listed',
+    };
   }
   if (entries.length > 0) {
-    return { ok: false, problem: 'not-empty', text: `the lobby ${lobby}: is not empty` };
+    return { ok: false, problem: 'not-empty', text: `the lobby ${lobby}: is not empty`, words: 'the lobby: it is not empty' };
   }
 
   const logicalRepo = searchRepo(lobby, fs);
   if (logicalRepo.error) {
-    return { ok: false, problem: 'repo', text: `the lobby ${lobby}: cannot read ${logicalRepo.error.path}: ${logicalRepo.error.code}` };
+    return {
+      ok: false, problem: 'repo',
+      text: `the lobby ${lobby}: cannot read ${logicalRepo.error.path}: ${logicalRepo.error.code}`,
+      words: `the lobby: it cannot be checked for a repository above it (${logicalRepo.error.code})`,
+    };
   }
   if (logicalRepo.root) {
-    return { ok: false, problem: 'repo', text: `the lobby ${lobby}: is inside the repository ${logicalRepo.root}` };
+    return {
+      ok: false, problem: 'repo',
+      text: `the lobby ${lobby}: is inside the repository ${logicalRepo.root}`,
+      words: 'the lobby: it is inside a repository',
+    };
   }
   const canonicalRepo = searchRepo(real, fs);
   if (canonicalRepo.error) {
-    return { ok: false, problem: 'repo', text: `the lobby ${lobby}: cannot read ${canonicalRepo.error.path}: ${canonicalRepo.error.code}` };
+    return {
+      ok: false, problem: 'repo',
+      text: `the lobby ${lobby}: cannot read ${canonicalRepo.error.path}: ${canonicalRepo.error.code}`,
+      words: `the lobby: it cannot be checked for a repository above it (${canonicalRepo.error.code})`,
+    };
   }
   if (canonicalRepo.root) {
-    return { ok: false, problem: 'repo', text: `the lobby ${lobby}: is inside the repository ${canonicalRepo.root}` };
+    return {
+      ok: false, problem: 'repo',
+      text: `the lobby ${lobby}: is inside the repository ${canonicalRepo.root}`,
+      words: 'the lobby: its canonical path is inside a repository',
+    };
   }
 
   return { ok: true, path: real, dev: lobbyStat.dev, ino: lobbyStat.ino };
@@ -241,19 +343,36 @@ export interface LobbySeen {
 }
 
 /**
+ * A refusal, in the two forms the run needs: `reason` is the cause in words, with no folder
+ * this machine resolved — what a seat's record and the log may hold; `detail` is the fuller
+ * sentence, the folder included, said on stderr under the record, for the owner's terminal
+ * only.
+ */
+export type LobbyRefusal = { reason: string; detail: string };
+
+/**
  * The confirmation a starting folder gets directly before it is used: the gate's own checks
  * again, and that it is still the folder the gate read — the same canonical path, the same
- * device and inode. Null when it is; the refusal line when it is not — the gate's own text
- * where the check refuses, so the operator reads the same cause the gate would have given.
- * Used by `up` and `add` before each workspace they make in the lobby, with nothing between
- * this and the create.
+ * device and inode. Null when it is; the refusal when it is not — the gate's own words and
+ * text where the check refuses, so the operator reads the same cause the gate would have
+ * given. Used by `up` and `add` before each workspace they make in the lobby, with nothing
+ * between this and the create.
  */
-export function recheckLobby(home: string, seen: LobbySeen, options?: { getuid?: () => number; fs?: FsReader }): string | null {
+export function recheckLobby(
+  home: string,
+  seen: LobbySeen,
+  options?: { getuid?: () => number; fs?: FsReader },
+): LobbyRefusal | null {
   const again = verifyLobby(home, { create: false, getuid: options?.getuid, fs: options?.fs });
-  if (!again.ok) return again.text;
-  if (!('path' in again)) return `the lobby ${seen.path}: it is not there any more`;
+  if (!again.ok) return { reason: again.words, detail: again.text };
+  if (!('path' in again)) {
+    return { reason: 'the lobby: it is not there any more', detail: `the lobby ${seen.path}: it is not there any more` };
+  }
   if (again.path !== seen.path || again.dev !== seen.dev || again.ino !== seen.ino) {
-    return `the lobby ${seen.path}: it is not the folder the gate read`;
+    return {
+      reason: 'the lobby: it is not the folder the gate read',
+      detail: `the lobby ${seen.path}: it is not the folder the gate read`,
+    };
   }
   return null;
 }

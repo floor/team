@@ -85,6 +85,7 @@ export function processIo(): Io {
     cwd: process.cwd(),
     env: process.env,
     stdinIsTTY: Boolean(process.stdin.isTTY),
+    stdoutIsTTY: Boolean(process.stdout.isTTY),
   };
 }
 
