@@ -154,16 +154,37 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
       return refused({ class: 'version', message: `${seatName}: this version has no trust answer` });
     }
     const key = keyOf(checked.record.action);
-    if (!key || !host.sendKey(session, pane, key)) {
+    if (!key) {
       return refused({ class: 'action', message: `${seatName}: the recorded key is not one this version sends` });
     }
-    writeWaiting(dir, session, seatName, {
+    // The recovery intent is on disk before the key: a crash between the two leaves a
+    // recovery that may never have sent (a retry only observes), never a waiting-owner
+    // whose retry sends a second time.
+    if (!recordRecovery(dir, session, seatName, {
       state: 'trust-sent-recovery',
       classification: 'trust',
       sentAt: host.now().toISOString(),
       version: checked.version,
       folder: checked.folder,
-    }, pane, workspace);
+    }, pane, workspace)) {
+      return refused({ class: 'state', message: `${seatName}: its recovery state could not be recorded` });
+    }
+    let sent = false;
+    try {
+      sent = host.sendKey(session, pane, key);
+    } catch {
+      sent = false;
+    }
+    if (!sent) {
+      logLine(dir, 'answer', who, `${seatName}: refused trust: action`, host.now());
+      if (json) {
+        io.stdout(`${JSON.stringify({ seat: seatName, dialog: 'trust', status: 'recovery', state: 'trust-sent-recovery', reason: 'its key could not be sent' })}\n`);
+      } else {
+        io.stderr(`${seatName}: the key could not be sent; recovery required\n`);
+      }
+      // exit: answer.recovery
+      return 1;
+    }
     return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace);
   } finally {
     lock.release();
@@ -210,6 +231,28 @@ function inspect(
   const listed = team.trust.some((entry) => canonicalLanding(folderOf(entry, root)) === landed);
   if (!listed) return say('folder', 'this folder is not an exact trust entry');
   return { record, version: printed, folder: landed };
+}
+
+/**
+ * Writes the recovery record and reads it back: the key is only sent when the intent is
+ * on disk, not merely handed to a writer. A write fault, or a state that reads back
+ * without the record, refuses the send.
+ */
+function recordRecovery(
+  dir: string,
+  session: string,
+  name: string,
+  waiting: NonNullable<SeatState['waiting']>,
+  pane: string,
+  workspace: string | undefined,
+): boolean {
+  try {
+    writeWaiting(dir, session, name, waiting, pane, workspace);
+    const back = readState(dir).sessions[session]?.seats[name]?.waiting;
+    return back?.state === 'trust-sent-recovery' && back.classification === 'trust';
+  } catch {
+    return false;
+  }
 }
 
 function writeWaiting(

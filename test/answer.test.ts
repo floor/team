@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runApprove } from '../src/commands/approve.ts';
@@ -256,6 +256,77 @@ describe('team answer', () => {
     expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: rule delivery');
   });
 
+  test('the recovery state is on disk before the key, and a failed write sends nothing', async () => {
+    const { root, home, lobby, dir } = world();
+    writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+    await approve(root, home);
+    const trust = withPath(cursorTrust, '<untrusted-directory>', lobby);
+
+    // The ordering the reviewer's crash probe needed: at the moment the host is asked
+    // for the key, the state already reads recovery.
+    wait(dir, 'lead');
+    let atSend: string | undefined;
+    const ordered = fake(home, root, trust, 'cursor');
+    const sends = ordered.sendKey.bind(ordered);
+    ordered.sendKey = (session, pane, key) => {
+      atSend = readState(dir).sessions.acme?.seats.lead?.waiting?.state;
+      return sends(session, pane, key);
+    };
+    const orderedIo = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], orderedIo, ordered)).toBe(0);
+    expect(atSend).toBe('trust-sent-recovery');
+
+    // The reviewer's injected write fault: the atomic temporary path is an existing
+    // directory, so the recovery write throws. No key may be sent, and the seat stays
+    // waiting-owner; once the fault is removed the command completes normally.
+    wait(dir, 'lead');
+    const temporary = join(dir, `team.state.json.${process.pid}.tmp`);
+    mkdirSync(temporary);
+    const faulted = fake(home, root, trust, 'cursor');
+    const faultedIo = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], faultedIo, faulted)).toBe(1);
+    expect(faulted.keys).toEqual([]);
+    expect(faulted.typed).toEqual([]);
+    expect(faultedIo.err).toBe('lead: its recovery state could not be recorded\n');
+    expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('waiting-owner');
+    expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('answer [owner] lead: refused trust: state');
+    rmdirSync(temporary);
+
+    const again = fake(home, root, trust, 'cursor');
+    const againIo = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], againIo, again)).toBe(0);
+    expect(again.keys).toEqual(['a']);
+    expect(againIo.out).toBe('lead: trust answered; ready\n');
+  });
+
+  test('a send that throws keeps recovery, and the retry sends no key', async () => {
+    const { root, home, lobby, dir } = world();
+    writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+    await approve(root, home);
+    wait(dir, 'lead');
+    const trust = withPath(cursorTrust, '<untrusted-directory>', lobby);
+    const thrown = fake(home, root, trust, 'cursor');
+    thrown.sendKey = () => { throw new Error('herdr died'); };
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], io, thrown)).toBe(1);
+    expect(io.err).toBe('lead: the key could not be sent; recovery required\n');
+    expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
+    expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('answer [owner] lead: refused trust: action');
+
+    const json = testIo(root, { kind: 'owner' });
+    const retry = fake(home, root, 'not a dialog\n', 'cursor');
+    expect(await runAnswer([...FILE, '--json', 'lead', 'trust'], json, retry)).toBe(1);
+    expect(retry.keys).toEqual([]);
+    expect(json.err).toBe('');
+    expect(JSON.parse(json.out)).toEqual({
+      seat: 'lead',
+      dialog: 'trust',
+      status: 'recovery',
+      state: 'trust-sent-recovery',
+      reason: 'its idle prompt did not come',
+    });
+  });
+
   test('each failed check sends no key', async () => {
     const { root, home, lobby, dir } = world();
     writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
@@ -462,8 +533,8 @@ describe('team answer', () => {
     refused.sendKey = () => false;
     const refusedIo = testIo(root, { kind: 'owner' });
     expect(await runAnswer([...FILE, 'lead', 'trust'], refusedIo, refused)).toBe(1);
-    expect(refusedIo.err).toBe('lead: the recorded key is not one this version sends\n');
-    expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('waiting-owner');
+    expect(refusedIo.err).toBe('lead: the key could not be sent; recovery required\n');
+    expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
 
     const missing = testIo(root, { kind: 'owner' });
     expect(await runAnswer([...FILE, 'gone', 'trust'], missing, refused)).toBe(1);
