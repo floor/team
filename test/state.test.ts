@@ -30,16 +30,16 @@ describe('the state file', () => {
   });
 
   test('an old seat record loads with neither field, with one, or with both', () => {
-    const neither = { stage: 'ready' };
-    const startOnly = { stage: 'ready', start_cwd: '/lobby' };
+    const neither = { stage: 'ready' as const };
+    const startOnly = { stage: 'ready' as const, start_cwd: '/lobby' };
     const waitingOnly = {
-      stage: 'launched',
-      waiting: { state: 'waiting-owner', classification: 'trust' },
+      stage: 'launched' as const,
+      waiting: { state: 'waiting-owner' as const, classification: 'trust' as const },
     };
     const both = {
-      stage: 'ready',
+      stage: 'ready' as const,
       start_cwd: '/lobby',
-      waiting: { state: 'trust-sent-recovery', classification: 'trust' },
+      waiting: { state: 'trust-sent-recovery' as const, classification: 'trust' as const },
     };
     writeFileSync(join(dir, STATE_FILE), JSON.stringify({
       format: 1,
