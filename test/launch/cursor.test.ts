@@ -1623,6 +1623,7 @@ describe('a border anywhere else stays unknown (Cursor)', () => {
     const shellIo: Delivery = {
       screen: () => screen,
       status: () => 'idle',
+      file: () => true, // never reached: the delivery gives up before anything is typed
       type: (text) => { typed.push(text); return true; },
       enter: () => { typed.push('Enter'); return true; },
       foreground: () => ['zsh'],
