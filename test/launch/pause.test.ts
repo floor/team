@@ -1,0 +1,433 @@
+// The pause, against a fake host: what it says, what it writes, and in which order it touches
+// the world. Nothing here is a real terminal, session or pane.
+import { describe, expect, test } from 'bun:test';
+import type { HerdrAgent, PaneProcesses } from '../../src/herdr.ts';
+import { IDLE_POLL_MS } from '../../src/launch/plan.ts';
+import { runPause } from '../../src/launch/pause.ts';
+import type { PauseHost, PauseInput, ScreenReading, WaitingRecord } from '../../src/launch/pause.ts';
+import type { Key } from '../../src/launch/terminal.ts';
+import type { SeatState } from '../../src/state.ts';
+
+const agent = (pane: string): HerdrAgent => ({ name: null, agent: 'claude', pane, workspace: pane.split(':')[0] ?? '', status: 'idle', cwd: null });
+
+type Fake = {
+  calls: string[];
+  host: PauseHost;
+  state: { current: SeatState | undefined };
+  keys: Key[];
+  readings: ScreenReading[];
+  agents: HerdrAgent[] | null;
+  process: PaneProcesses | null;
+  focused: boolean;
+  closeResult: boolean;
+  lockHeld: number | null;
+};
+
+function fake(over: Partial<Fake> = {}): Fake {
+  const own: Fake = {
+    calls: [],
+    state: { current: undefined },
+    keys: [],
+    readings: ['idle'],
+    agents: [agent('w2:p1')],
+    process: { shell: 10, foreground: [11] },
+    focused: true,
+    closeResult: true,
+    lockHeld: null,
+    ...over,
+    host: undefined as unknown as PauseHost,
+  };
+  const waiting: WaitingRecord[] = [];
+  own.host = {
+    lock() {
+      own.calls.push('lock');
+      if (own.lockHeld !== null) return { held: own.lockHeld };
+      return { release: () => own.calls.push('release') };
+    },
+    state() {
+      own.calls.push('state');
+      return own.state.current;
+    },
+    write(change) {
+      const prior = own.state.current?.waiting;
+      const written = change(prior);
+      waiting.push(written);
+      own.state.current = { ...(own.state.current ?? { stage: 'launched' }), waiting: written };
+      own.calls.push(`write:${written.state}:${written.classification}${written.manual ? ':manual' : ''}`);
+    },
+    clear() {
+      own.calls.push('clear');
+      if (own.state.current) {
+        const { waiting: _gone, ...rest } = own.state.current;
+        own.state.current = rest as SeatState;
+      }
+    },
+    drop() {
+      own.calls.push('drop');
+      own.state.current = undefined;
+    },
+    screen() {
+      const kind = own.readings.length > 1 ? own.readings.shift()! : own.readings[0]!;
+      own.calls.push(`screen:${kind}`);
+      return kind;
+    },
+    process() {
+      own.calls.push('process');
+      return own.process;
+    },
+    agents() {
+      own.calls.push('agents');
+      return own.agents;
+    },
+    focus() {
+      own.calls.push('focus');
+      return own.focused;
+    },
+    close(workspace) {
+      own.calls.push(`close:${workspace}`);
+      return own.closeResult;
+    },
+    record(classification) {
+      own.calls.push(`record:${classification}`);
+    },
+    prompt(line) {
+      own.calls.push(`prompt:${line}`);
+    },
+    say(line) {
+      own.calls.push(`say:${line.trim()}`);
+    },
+    entering(classification) {
+      own.calls.push(`entering:${classification}`);
+    },
+    async key(ms) {
+      own.calls.push(`key:${Number.isFinite(ms) ? ms : 'block'}`);
+      OWN_CLOCK.advance(0);
+      const next = own.keys.shift();
+      if (next === undefined) throw new Error('the test ran out of keys');
+      return next;
+    },
+    async sleep(ms) {
+      own.calls.push(`sleep:${ms}`);
+      OWN_CLOCK.advance(ms);
+    },
+    now: () => OWN_CLOCK.now(),
+    idleTimeout: 4,
+    polled: false,
+  };
+  return own;
+}
+
+const OWN_CLOCK = {
+  at: 0,
+  now() {
+    return this.at;
+  },
+  advance(ms: number) {
+    this.at += ms;
+  },
+  reset() {
+    this.at = 0;
+  },
+};
+
+function input(over: Partial<PauseInput> = {}): PauseInput {
+  return { seat: 'beta', classification: 'trust', pane: 'w2:p1', workspace: 'w2', ...over };
+}
+
+const PROMPT = 'beta is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly';
+
+describe('the prompt', () => {
+  test('is the exact line, and an unknown key reprints it and changes nothing', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['other', 'other', 'q'] });
+    const result = await runPause(input(), f.host);
+    expect(result).toEqual({ kind: 'stopped' });
+    expect(f.calls.filter((call) => call.startsWith('prompt:'))).toEqual([`prompt:${PROMPT}`, `prompt:${PROMPT}`, `prompt:${PROMPT}`]);
+    // One entry, one record; no lock, no write beyond the entry's, no close: nothing moved.
+    expect(f.calls.filter((call) => call.startsWith('record:'))).toEqual(['record:trust']);
+    expect(f.calls.filter((call) => call.startsWith('write:'))).toEqual(['write:waiting-owner:trust']);
+    expect(f.calls).not.toContain('lock');
+  });
+
+  test('the entry: entering and the record come before the first prompt; the write is first of all', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['q'] });
+    await runPause(input(), f.host);
+    expect(f.calls.slice(0, 5)).toEqual(['write:waiting-owner:trust', 'entering:trust', 'record:trust', `prompt:${PROMPT}`, 'key:block']);
+  });
+
+  test('without polling the key read blocks; with polling it reads one idle poll at a time', async () => {
+    OWN_CLOCK.reset();
+    const blocked = fake({ keys: ['q'] });
+    await runPause(input(), blocked.host);
+    expect(blocked.calls).toContain('key:block');
+
+    const polled = fake({ keys: ['q'] });
+    polled.host.polled = true;
+    await runPause(input(), polled.host);
+    expect(polled.calls).toContain(`key:${IDLE_POLL_MS}`);
+  });
+});
+
+describe('o, open the pane', () => {
+  test('a fresh reading of idle: the record says manual, the pane is focused, and nothing is typed', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o'], readings: ['idle'], state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2' } } });
+    const result = await runPause(input(), f.host);
+    expect(result).toEqual({ kind: 'idle' });
+    const interesting = f.calls.filter((call) => !call.startsWith('prompt:') && !call.startsWith('sleep:'));
+    expect(interesting).toEqual([
+      'write:waiting-owner:trust',
+      'entering:trust',
+      'record:trust',
+      'key:block',
+      'lock',
+      'state',
+      'agents',
+      'process',
+      'write:waiting-owner:trust:manual',
+      'release',
+      'focus',
+      'lock',
+      'state',
+      'agents',
+      'process',
+      `screen:idle`,
+      'clear',
+      'release',
+    ]);
+    // No key or text was sent to the pane: the host has no such call, and focus is the only act.
+    expect(f.calls.filter((call) => call === 'focus').length).toBe(1);
+  });
+
+  test('a seat made ready under it: no focus, a ready record', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o'], state: { current: { stage: 'ready', pane: 'w2:p1' } } });
+    const result = await runPause(input(), f.host);
+    expect(result.kind).toBe('ready');
+    expect(f.calls).not.toContain('focus');
+    expect(f.calls.filter((call) => call === 'lock').length).toBe(1);
+  });
+
+  test('the pane is gone: fail closed, nothing focused, nothing closed, the state kept', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o'], agents: [] });
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: 'its waiting pane is gone' });
+    expect((result as { detail: string }).detail).toContain('team remove beta --keep');
+    expect(f.calls).not.toContain('focus');
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+    expect(f.calls.filter((call) => call.startsWith('write:')).length).toBe(1); // the entry's alone
+  });
+
+  test('the pane holds another process: fail closed, never closed, never typed into', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({
+      keys: ['o'],
+      state: { current: { stage: 'launched', pane: 'w2:p1', launched: { shell: 99, cli: [98] } } },
+      process: { shell: 10, foreground: [10] },
+    });
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: 'its waiting pane holds another process' });
+    expect(f.calls).not.toContain('focus');
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+  });
+
+  test('a recorded seat herdr can no longer read: fail closed', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({
+      keys: ['o'],
+      state: { current: { stage: 'launched', pane: 'w2:p1', launched: { shell: 10, cli: [11] } } },
+      process: null,
+    });
+    expect(await runPause(input(), f.host)).toMatchObject({ kind: 'left out', reason: 'its waiting pane could not be read' });
+  });
+
+  test('the poll ends at the deadline with a timeout prompt, manual kept', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o', 'q'], readings: ['working'], state: { current: { stage: 'launched', pane: 'w2:p1' } } });
+    const result = await runPause(input(), f.host);
+    expect(result).toEqual({ kind: 'stopped' });
+    expect(f.calls).toContain('record:timeout');
+    expect(f.calls).toContain(`prompt:beta is waiting at timeout: [o] open pane, [s] skip seat, [q] stop cleanly`);
+    // Two polls, then the deadline.
+    expect(f.calls.filter((call) => call === 'sleep:2000').length).toBe(2);
+  });
+
+  test('another dialog found in the pane prompts again at once, with that classification', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o', 'q'], readings: ['permission'], state: { current: { stage: 'launched', pane: 'w2:p1' } } });
+    await runPause(input(), f.host);
+    expect(f.calls).toContain('record:permission');
+    expect(f.calls).toContain('prompt:beta is waiting at permission: [o] open pane, [s] skip seat, [q] stop cleanly');
+  });
+
+  test('a recovery left behind mid-poll is shown as such and offers the same keys', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({
+      keys: ['o', 'q'],
+      readings: ['idle'],
+      state: { current: { stage: 'launched', pane: 'w2:p1', waiting: { state: 'trust-sent-recovery', classification: 'trust' } } },
+    });
+    await runPause(input({ recorded: { state: 'trust-sent-recovery', classification: 'trust' } }), f.host);
+    expect(f.calls).toContain('record:trust sent; recovery required');
+  });
+
+  test('a lock another command holds refuses the open gently, and the prompt asks again', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o', 'q'], lockHeld: 4242 });
+    const result = await runPause(input(), f.host);
+    expect(result).toEqual({ kind: 'stopped' });
+    expect(f.calls.some((call) => call.startsWith('say:beta: another command holds it'))).toBe(true);
+    expect(f.calls).not.toContain('focus');
+  });
+});
+
+describe('s, skip the seat', () => {
+  test('closes the workspace without input, clears the state, and reports skipped', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['s'], state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2' } } });
+    const result = await runPause(input(), f.host);
+    expect(result).toEqual({ kind: 'skipped' });
+    expect(f.calls.filter((call) => !call.startsWith('prompt:') && !call.startsWith('say:'))).toEqual([
+      'write:waiting-owner:trust',
+      'entering:trust',
+      'record:trust',
+      'key:block',
+      'lock',
+      'state',
+      'agents',
+      'process',
+      'close:w2',
+      'drop',
+      'release',
+    ]);
+    expect(f.state.current).toBeUndefined();
+  });
+
+  test('a workspace that does not close keeps the state and never claims the skip', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({
+      keys: ['s'],
+      closeResult: false,
+      state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2' } },
+    });
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: 'its workspace did not close; left as it is' });
+    expect(f.calls).not.toContain('drop');
+    expect(f.state.current?.waiting?.state).toBe('waiting-owner');
+  });
+
+  test('a pane that is no longer the seat is refused: nothing closed', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['s'], agents: [], state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2' } } });
+    expect(await runPause(input(), f.host)).toMatchObject({ kind: 'left out', reason: 'its waiting pane is gone' });
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+    expect(f.calls).not.toContain('drop');
+  });
+});
+
+describe('q and Ctrl-C', () => {
+  test('stop cleanly: no close here, the caller owns what this run created', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['q'] });
+    expect(await runPause(input(), f.host)).toEqual({ kind: 'stopped' });
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+    expect(f.calls).not.toContain('drop');
+  });
+});
+
+describe('the recovery record', () => {
+  test('is kept exactly as the answer left it: no entry write, shown, and the keys still work', async () => {
+    OWN_CLOCK.reset();
+    const recorded = { state: 'trust-sent-recovery' as const, classification: 'trust' as const, sentAt: '2026-10-05T00:00:00.000Z' };
+    const f = fake({ keys: ['s'], state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2', waiting: recorded } } });
+    const result = await runPause(input({ recorded }), f.host);
+    expect(result).toEqual({ kind: 'skipped' });
+    expect(f.calls.filter((call) => call.startsWith('write:')).length).toBe(0);
+    expect(f.calls).toContain('record:trust sent; recovery required');
+    expect(f.calls[0]).toBe('entering:trust');
+  });
+
+  test('the o path keeps it a recovery: manual is added, the state is never rewritten', async () => {
+    OWN_CLOCK.reset();
+    const recorded = { state: 'trust-sent-recovery' as const, classification: 'trust' as const };
+    const f = fake({
+      keys: ['o', 'q'],
+      readings: ['trust'],
+      state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2', waiting: recorded } },
+    });
+    await runPause(input({ recorded }), f.host);
+    expect(f.calls).toContain('write:trust-sent-recovery:trust:manual');
+    expect(f.calls).toContain('focus');
+  });
+});
+
+describe('the polled prompt (coordinator policy)', () => {
+  function polled(): Fake {
+    const f = fake({
+      keys: ['timeout', 'q'],
+      readings: ['idle'],
+      state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2' } },
+    });
+    f.host.polled = true;
+    return f;
+  }
+
+  test('a timeout with an unchanged state re-prompts from the fresh reading', async () => {
+    OWN_CLOCK.reset();
+    const f = polled();
+    f.readings = ['working'];
+    const result = await runPause(input(), f.host);
+    expect(result).toEqual({ kind: 'stopped' });
+    expect(f.calls.filter((call) => call === 'lock').length).toBe(1);
+    expect(f.calls).toContain('screen:working');
+    expect(f.calls.filter((call) => call.startsWith('prompt:')).length).toBe(2);
+  });
+
+  test('a seat that became ready is taken as ready, no prompt again', async () => {
+    OWN_CLOCK.reset();
+    const f = polled();
+    f.state.current = { stage: 'ready', pane: 'w2:p1' };
+    const result = await runPause(input(), f.host);
+    expect(result.kind).toBe('ready');
+    expect(f.calls.filter((call) => call.startsWith('prompt:')).length).toBe(1);
+  });
+
+  test('a recovery read at the tick is shown with the same keys', async () => {
+    OWN_CLOCK.reset();
+    const f = polled();
+    const recorded = { state: 'trust-sent-recovery' as const, classification: 'trust' as const };
+    f.state.current = { stage: 'launched', pane: 'w2:p1', waiting: recorded };
+    const result = await runPause(input({ recorded }), f.host);
+    expect(result).toEqual({ kind: 'stopped' });
+    expect(f.calls).toContain('record:trust sent; recovery required');
+    expect(f.calls).toContain('prompt:beta is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly');
+    expect(f.calls.filter((call) => call.startsWith('write:')).length).toBe(0); // the recovery is kept as is
+  });
+
+  test('a fresh dialog reading becomes the prompt', async () => {
+    OWN_CLOCK.reset();
+    const f = polled();
+    f.readings = ['permission'];
+    await runPause(input(), f.host);
+    expect(f.calls).toContain('record:permission');
+  });
+
+  test('an idle pane finishes the seat: the waiting field is cleared', async () => {
+    OWN_CLOCK.reset();
+    const f = polled();
+    const result = await runPause(input(), f.host);
+    expect(result).toEqual({ kind: 'idle' });
+    expect(f.calls).toContain('clear');
+  });
+
+  test('a pane gone under the prompt is refused, nothing closed', async () => {
+    OWN_CLOCK.reset();
+    const f = polled();
+    f.agents = [];
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: 'its waiting pane is gone' });
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+  });
+});

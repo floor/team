@@ -3,7 +3,7 @@ import { refusalReport, type Refusal } from './deliver.ts';
 import { profileFor, versionVerdict } from '../profiles/profile.ts';
 import { modelDiffers, seatModel, type Running } from '../status/statusline.ts';
 import { launchedIdentity, seatProcessVerdict, type LaunchedIdentity } from './identity.ts';
-import type { Step } from './plan.ts';
+import { IDLE_POLL_MS, type Step } from './plan.ts';
 import { recordWhat, type FinalRecord, type ProgressState } from './progress.ts';
 import { vendorNoticeRange } from '../watch/screen.ts';
 
@@ -448,7 +448,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         }
         const startedAt = host.now();
         const deadline = startedAt + op.seconds * 1000;
-        const pollMs = 2000;
+        const pollMs = IDLE_POLL_MS;
         let outcome: 'idle' | 'permission' | 'trust' | 'question' | 'vendor notice' | 'ended' | 'timeout' = 'timeout';
         let last: ScreenKind = 'unknown';
         let endedRead: string | null = null;

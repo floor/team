@@ -4,6 +4,10 @@ import { launchCommand, shellQuote } from '../profiles/profile.ts';
 import type { LaunchedIdentity } from './identity.ts';
 import type { FinalRecord } from './progress.ts';
 
+/** The pace the idle wait polls a pane at — and the one a pause re-reads an opened pane at, and
+ *  reads a trust prompt's terminal with, when `team answer` may be racing it. */
+export const IDLE_POLL_MS = 2000;
+
 /**
  * What running a step does. The printed command stays in `argv`; this is how the live command
  * performs that same step, so a dry run and a real run share one plan.
