@@ -11,7 +11,7 @@ import { validateTeamFile } from '../file/validate.ts';
 import { agentList, agentRename, agentStatus, paneForeground, paneForegroundCwd, paneRead, pressEnter, sendKey as herdrSendKey, typeText } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { deliverRules, type Delivery } from '../launch/deliver.ts';
-import { rulesDeliveryOf, writeRulesFile } from '../launch/rules-file.ts';
+import { rulesDeliveryOf, rulesFileHash, writeRulesFile } from '../launch/rules-file.ts';
 import { acquireSeatLock } from '../launch/seat-lock.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -379,7 +379,7 @@ async function recover(
   // provable in round 2, and this command shares that delivery.
   const delivery = rulesDeliveryOf(team, seat, root, host.home);
   if ('refusal' in delivery) return 'rule delivery';
-  if (!writeRulesFile(delivery.path, delivery.text).ok) return 'rule delivery';
+  if (!writeRulesFile(delivery.path, delivery.text, rulesFileHash(delivery.text)).ok) return 'rule delivery';
   const delivered = await deliverRules(profile.cli, delivery.line, profile.idleTimeout, deliveryOf(host, session, pane));
   return delivered === true ? true : 'rule delivery';
 }

@@ -7,7 +7,7 @@ import { runApprove } from '../../src/commands/approve.ts';
 import { loadConfig } from '../../src/commands/check.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
 import { rulesOf } from '../../src/launch/rules.ts';
-import { rulesFilePath, writeRulesFile } from '../../src/launch/rules-file.ts';
+import { rulesFileHash, rulesFilePath, writeRulesFile } from '../../src/launch/rules-file.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
 import { paneStillRunning, runDown, type DownSources } from '../../src/commands/down.ts';
 import { runUp, type UpSources } from '../../src/commands/up.ts';
@@ -207,7 +207,8 @@ function writeRulesFiles() {
   if (!parsed.ok) throw new Error('the fixture does not validate');
   for (const seat of parsed.team.seats) {
     if (seat.stopped) continue;
-    const written = writeRulesFile(rulesFilePath(parsed.team.project, root, home, seat.name), rulesOf(parsed.team, seat));
+    const text = rulesOf(parsed.team, seat);
+    const written = writeRulesFile(rulesFilePath(parsed.team.project, root, home, seat.name), text, rulesFileHash(text));
     if (!written.ok) throw new Error('the rules file did not write');
   }
 }
@@ -701,7 +702,7 @@ describe('team down', () => {
     const parsed = validateTeamFile(readFileSync(join(root, '.agents/team.yaml'), 'utf8'));
     if (!parsed.ok) throw new Error('fixture');
     const rulesFile = rulesFilePath(parsed.team.project, root, home, 'deepseek-acme-tmp-1');
-    writeRulesFile(rulesFile, 'Rules.\n');
+    writeRulesFile(rulesFile, 'Rules.\n', rulesFileHash('Rules.\n'));
     // The exit is typed at an idle prompt, read back, and sent; the pane leaves the agent list.
     let sent = false;
     let box: string | undefined;

@@ -9,7 +9,7 @@ import type { StatusSources } from '../src/commands/status.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import type { Seat, TeamFile } from '../src/file/types.ts';
 import { rulesOf } from '../src/launch/rules.ts';
-import { rulesFilePath, writeRulesFile } from '../src/launch/rules-file.ts';
+import { rulesFileHash, rulesFilePath, writeRulesFile } from '../src/launch/rules-file.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import type { Standing } from '../src/store/store.ts';
 import { emptySession, readState, updateState } from '../src/state.ts';
@@ -667,6 +667,8 @@ describe('the rules files of message seats', () => {
   beforeEach(() => {
     home = join(dir, 'home');
     mkdirSync(home);
+    // The store already lives in this home, so `team`'s per-user state root is there with it.
+    mkdirSync(join(home, '.config', 'team'), { recursive: true, mode: 0o700 });
     sources.home = home;
   });
   afterEach(() => {
@@ -682,7 +684,8 @@ describe('the rules files of message seats', () => {
     for (const seat of team.seats) {
       if (seat.stopped) continue;
       const delivery = rulesOf(team, seat);
-      const written = writeRulesFile(rulesFilePath(team.project, dir, home, seat.name), edit ? edit(seat, delivery) : delivery);
+      const text = edit ? edit(seat, delivery) : delivery;
+      const written = writeRulesFile(rulesFilePath(team.project, dir, home, seat.name), text, rulesFileHash(text));
       if (!written.ok) throw new Error('the rules file did not write');
     }
   };

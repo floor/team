@@ -7,7 +7,7 @@ import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
 import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
 import { storePath, writeApproval } from '../../src/store/store.ts';
-import { rulesFilePath, writeRulesFile } from '../../src/launch/rules-file.ts';
+import { rulesFileHash, rulesFilePath, writeRulesFile } from '../../src/launch/rules-file.ts';
 import type { DownLaunch } from '../../src/commands/down.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { emptySession, readState, updateState } from '../../src/state.ts';
@@ -468,7 +468,7 @@ describe('team remove', () => {
     const made = world();
     made.sources.home = dir;
     const rulesFile = rulesFilePath('acme', dir, dir, 'worker-tmp-1');
-    writeRulesFile(rulesFile, 'Rules.\n');
+    writeRulesFile(rulesFile, 'Rules.\n', rulesFileHash('Rules.\n'));
     made.agents.push({ name: 'worker-tmp-1', agent: 'claude', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null });
     expect(await runRemove(['worker-tmp-1', '--file', file], testIo(dir, owner), made.sources)).toBe(0);
     expect(existsSync(rulesFile)).toBe(false);

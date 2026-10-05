@@ -8,8 +8,8 @@ import { blocksLaunch, doctorFindings, realSources as doctorSources, type Doctor
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
 import type { Launch } from '../commands/up.ts';
-import { deliverRules, type Refusal } from '../launch/deliver.ts';
-import { removeRulesFile, rulesFilePath, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
+import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
+import { removeRulesFile, rulesFileHash, rulesFilePath, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { branchPresent, readMerge } from '../end/condition.ts';
 import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines.ts';
@@ -540,10 +540,8 @@ function hostOf(input: {
     typeLine: () => false,
     deliverRules: async (session, pane, cli, file, seconds) => {
       // The rules go to the file first; nothing is typed until it holds them.
-      const written = writeRulesFile(file.path, file.text);
-      if (!written.ok) {
-        return { stop: 'file', typed: false, sent: false, kind: 'unknown' as const, row: null, detail: written.why };
-      }
+      const written = writeRulesFile(file.path, file.text, rulesFileHash(file.text));
+      if (!written.ok) return fileRefusalOf(written);
       if (!typeablePath(file.path)) {
         return { stop: 'path', typed: false, sent: false, kind: 'unknown' as const, row: null };
       }

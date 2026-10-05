@@ -32,8 +32,8 @@ import { executePlan } from '../launch/execute.ts';
 import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { rulesOf } from '../launch/rules.ts';
-import { seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
-import { deliverRules, type Refusal } from '../launch/deliver.ts';
+import { rulesFileHash, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
+import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -429,10 +429,8 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     typeLine: () => false,
     deliverRules: async (session, pane, cli, file, seconds) => {
       // The rules go to the file first; nothing is typed until it holds them.
-      const written = writeRulesFile(file.path, file.text);
-      if (!written.ok) {
-        return { stop: 'file', typed: false, sent: false, kind: 'unknown' as const, row: null, detail: written.why };
-      }
+      const written = writeRulesFile(file.path, file.text, rulesFileHash(file.text));
+      if (!written.ok) return fileRefusalOf(written);
       // The plan already refused a path that can't be typed; this is the same check again, so a
       // path that reached this far by a caller's mistake is refused before anything is typed.
       if (!typeablePath(file.path)) {

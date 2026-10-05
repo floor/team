@@ -1,5 +1,6 @@
 import { reportedLiveAgent } from './agent.ts';
 import { profileFor } from '../profiles/index.ts';
+import type { RulesFileWrite } from './rules-file.ts';
 import {
   classifyComposer, readBox, readFoldMark, readScreen, type Box, type Screen,
 } from '../watch/screen.ts';
@@ -18,14 +19,15 @@ export type Stop = 'file' | 'path' | 'screen' | 'working' | 'leftover' | 'typing
 /** Where a delivery stopped, for the report. `kind` is what the screen read at the stop; `typed`
  *  says the line reached the pane; `sent` says Enter was pressed; `row` is the first row drawn
  *  that was not the line's own, kept out of the log and printed to the terminal alone;
- *  `detail` tells the two ways a file can fail to be written. */
+ *  `detail` tells the ways a file can fail to be written: a folder of the ladder, the final
+ *  name's place, a read-back that didn't match, or any other fault. */
 export type Refusal = {
   stop: Stop;
   typed: boolean;
   sent: boolean;
   kind: Screen['kind'];
   row: string | null;
-  detail?: 'symlink' | 'not-written';
+  detail?: 'not-written' | 'changed' | { at: 'folder' | 'place'; what: string };
 };
 
 export interface Delivery {
@@ -39,6 +41,14 @@ export interface Delivery {
   sleep(ms: number): Promise<void>;
   /** Why a delivery stopped, when the caller wants the detail for its report. */
   report?(why: Refusal): void;
+}
+
+/** The refusal for a rules file that could not be written: nothing was typed, nothing sent, and
+ *  the detail carries what the writer found — a folder of the ladder, the final name's place, a
+ *  read-back mismatch, or any other fault — for the report. */
+export function fileRefusalOf(written: Exclude<RulesFileWrite, { ok: true }>): Refusal {
+  const detail = 'what' in written ? { at: written.why, what: written.what } : written.why;
+  return { stop: 'file', typed: false, sent: false, kind: 'unknown', row: null, detail };
 }
 
 /** Where the text's next row starts after `pos`, or null when `row` is not the text's row there.
@@ -178,9 +188,17 @@ function nextStep(why: Refusal): string {
 export function refusalReport(why: Refusal): string {
   switch (why.stop) {
     case 'file':
-      return why.detail === 'symlink'
-        ? `rules not typed: its rules file, or the folder that holds it, is a symbolic link; remove the link, then run up again`
-        : `rules not typed: its rules file could not be written; check the project state folder, then run up again`;
+      if (typeof why.detail === 'object' && why.detail.at === 'folder') {
+        return `rules not typed: the folder that would hold its rules file is ${why.detail.what}; `
+          + `the owner removes or repairs it, then runs up again`;
+      }
+      if (typeof why.detail === 'object' && why.detail.at === 'place') {
+        return `rules not typed: its rules file's place holds ${why.detail.what}; the owner removes it, then runs up again`;
+      }
+      if (why.detail === 'changed') {
+        return `rules not typed: its rules file did not read back as written; check the project state folder, then run up again`;
+      }
+      return `rules not typed: its rules file could not be written; check the project state folder, then run up again`;
     case 'path':
       return `rules not typed: its rules file's path can't be typed safely: the read-back can't prove a path outside `
         + `letters, digits and . _ / @ + -; rename the seat or move the project, then run up again`;
