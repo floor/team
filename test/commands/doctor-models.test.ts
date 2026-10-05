@@ -114,6 +114,15 @@ describe('team doctor on a file of every model shape', () => {
     expect(run.out).toEndWith('team doctor: nothing missing, 1 warning\n');
   });
 
+  test('model_from is part of the seat the owner approves', async () => {
+    await approve();
+    edit((text) => text.replace('launch: zsh launcher.sh', 'launch: zsh launcher.sh\n    model_from: launcher'));
+    const run = await doctor();
+    // The owner approved the seat without the key, so the file is no longer the approved one, and
+    // the difference names the seat: model_from sits in the seat's digest, not beside it.
+    expect(run.out).toContain('MISS  run `team approve`: seat script-seat changed');
+  });
+
   test('an all-correct running team warns only where a version is untested or the owner must act', async () => {
     edit((text) => text.replace('launch: claude --model claude-fable-5-1', 'launch: claude --model claude-opus-5-5'));
     await approve();
