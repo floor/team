@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { executePlan, paneExcerpt, plainPaneText, stripControlStrings, type Host } from '../../src/launch/execute.ts';
+import { executePlan, paneExcerpt, type Host } from '../../src/launch/execute.ts';
+import { plainPaneText, stripControlStrings } from '../../src/launch/plain.ts';
 import { downPlan, formatPlan, herdr, upPlan, type DownSeat, type Step, type UpSeat } from '../../src/launch/plan.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
 import { profileFor } from '../../src/profiles/index.ts';
