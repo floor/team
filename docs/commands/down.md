@@ -31,11 +31,11 @@ The owner, the coordinator's seat, and the operator's seat. The seat is that nam
 this project's state records — the file's session, or one the state records the caller's pane in —
 on the pane the state records for that name in that session: a seat of another session, or a pane
 merely renamed to the coordinator's or the operator's name, is refused — and so is a seat the state
-records no pane for, or records on another pane than this call is on; each refusal names the seat
-and the repair. What that proves is placement, and no more: the state file is in the project, and a
-process of the same user that writes its own pane there under the coordinator's name, and renames
-its pane, passes. The check guards a mistaken agent, not a hostile process running as the same
-user.
+records no pane for, or records on another pane than this call is on; those two refusals name the
+seat and the repair. What that proves is placement, and no more: the state file is in the project,
+and a process of the same user that writes its own pane there under the coordinator's name, and
+renames its pane, passes. The check guards a mistaken agent, not a hostile process running as the
+same user. `--file` and `--session` are the owner's alone, from a terminal outside herdr.
 A seat's
 own call is refused by the `--abandon` flag, which only the owner may use. A seat that may stop the
 team never stops the coordinator's or the operator's seat — only the owner does.

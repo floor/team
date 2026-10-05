@@ -32,11 +32,11 @@ The owner, the coordinator's seat and the operator's seat. The seat is that name
 this project's state records — the file's session, or one the state records the caller's pane in —
 on the pane the state records for that name in that session: a seat of another session, or a pane
 merely renamed to the coordinator's or the operator's name, is refused — and so is a seat the state
-records no pane for, or records on another pane than this call is on; each refusal names the seat
-and the repair. What that proves is placement, and no more: the state file is in the project, and a
-process of the same user that writes its own pane there under the coordinator's name, and renames
-its pane, passes. The check guards a mistaken agent, not a hostile process running as the same
-user.
+records no pane for, or records on another pane than this call is on; those two refusals name the
+seat and the repair. What that proves is placement, and no more: the state file is in the project,
+and a process of the same user that writes its own pane there under the coordinator's name, and
+renames its pane, passes. The check guards a mistaken agent, not a hostile process running as the
+same user.
 The
 coordinator's and the operator's own seats are the owner's alone to remove, and so is `--abandon`.
 `--file` and `--session` are the owner's alone, from a terminal outside herdr.
@@ -79,7 +79,7 @@ A seat that doesn't leave cleanly is printed once with what stopped it, and `rem
 | `team remove: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | `team remove: --session is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | ``team remove: no pane is recorded for seat <name> in this session: the owner stops that seat and runs `team up` `` | 1 |
-| ``team remove: the state records pane <pane> for seat <name> in this session, not the pane this call is on: the owner stops that seat and runs `team up` `` | 1 |
+| ``team remove: the state records pane <pane> for seat <name> in this session, not the pane this call is on: the owner stops the team and starts it again (`team down`, then `team up`) `` | 1 |
 | `team remove: only the owner abandons a seat, from a terminal outside herdr` | 1 |
 | `team remove: only the owner removes the coordinator's or the operator's seat; this call is <caller>` | 1 |
 | `team remove: session can't be "default", herdr's own session` | 1 |

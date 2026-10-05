@@ -23,7 +23,7 @@ import { runUp, type Launch, type UpSources } from '../../src/commands/up.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { storePath, writeApproval } from '../../src/store/store.ts';
-import { testIo, type TestIo } from '../helpers.ts';
+import { claudeBox, testIo, type TestIo } from '../helpers.ts';
 
 const SESSION = 'acme-web';
 const OTHER = 'other-web';
@@ -301,10 +301,12 @@ const NO_PANE = (name: string) =>
   `no pane is recorded for seat ${name} in this session: the owner stops that seat and runs \`team up\``;
 const OWNER_ONLY = (who: string) => `--session is the owner's, from a terminal outside herdr; this call is ${who}`;
 // The refusal for the right name, in the right session, on the wrong pane: the state records
-// another pane for the seat, so that record is not this call's — and the repair that re-records
-// the pane a seat now runs on is the same stop the no-pane case names.
+// another pane for the seat, so that record is not this call's. No single owner command
+// re-records it (round 4's runs: `up` and `add` bail on the record, `remove` is refused by the
+// file's validation for the two names this can carry), so the repair named is the sequence that
+// repairs every case: `team down`, then `team up` — see `the another-pane repair` below.
 const ANOTHER_PANE = (name: string, pane: string) =>
-  `the state records pane ${pane} for seat ${name} in this session, not the pane this call is on: the owner stops that seat and runs \`team up\``;
+  `the state records pane ${pane} for seat ${name} in this session, not the pane this call is on: the owner stops the team and starts it again (\`team down\`, then \`team up\`)`;
 
 type Case = {
   name: string;
@@ -1111,5 +1113,146 @@ describe('a team run under another session', () => {
     const main = await byName('remove').run({ kind: 'seat', name: COORDINATOR, pane: COORDINATOR_PANE, session: SESSION }, [], { state });
     expect({ code: judged.code, out: judged.out, err: judged.err }).toEqual({ code: main.code, out: main.out, err: main.err });
     expect(judged.code).toBe(0);
+  });
+});
+
+// The another-pane repair, run the way the refusal names it. The state records the coordinator's
+// seat on `w1:p1`; the seat is live on another pane (`live`), gone with the recorded pane still
+// there (`gone`), or gone with that pane closed too (`pane-gone`). `team up` alone repairs only
+// the last (`herdr no longer shows this seat on its recorded pane; nothing closed` where the
+// record can still be read), which is why the line names the sequence and not `up`: `team down`,
+// then `team up` — the stop clears the session and its records, the start launches the seat again
+// on a fresh pane, and the caller standing on that pane passes the gate. (The runs behind
+// src/caller.ts's anotherPaneRefusal.) `no-pane` is the same world with no record at all, for
+// the no-pane line: `up` refuses while the seat runs, launches it once the owner stops it.
+type RepairCase = 'live' | 'gone' | 'pane-gone' | 'no-pane';
+
+function repairWorld(kase: RepairCase): { down: DownSources; up: UpSources; stopSeat: () => void } {
+  let running = true;
+  const panes = new Map<string, { cli: string; live: boolean; sent: boolean }>();
+  if (kase === 'live' || kase === 'no-pane') panes.set('w9:p1', { cli: 'claude', live: true, sent: false });
+  if (kase !== 'no-pane') panes.set('w4:p1', { cli: 'claude', live: true, sent: false });
+  if (kase === 'live' || kase === 'gone') panes.set('w1:p1', { cli: 'claude', live: false, sent: false });
+  const rows = (): HerdrAgent[] =>
+    [...panes]
+      .filter(([, one]) => one.live)
+      .map(([pane]) => runningAgent(pane === 'w9:p1' ? COORDINATOR : OPERATOR, pane));
+  const down: DownSources = {
+    sessionRunning: () => running,
+    agents: () => rows(),
+    alive: () => false,
+    screen: () => ({ kind: 'idle' }),
+    // What the pane shows after a typing: the box with the typed text, as the CLI renders it.
+    screenText: (_session, pane) => (panes.get(pane)?.sent ? claudeBox('/exit') : ''),
+    status: () => 'idle',
+    // A stopped pane falls back to its shell, so the stop's wait sees the seat leave.
+    foreground: (_session, pane) => (panes.get(pane)?.live ? [panes.get(pane)?.cli ?? 'claude'] : []),
+    now: () => new Date(0),
+    launch: {
+      typeText: (_session, pane, text) => {
+        const one = panes.get(pane);
+        if (!one?.live) return false;
+        one.sent = text === '/exit';
+        return true;
+      },
+      pressEnter: (_session, pane) => {
+        const one = panes.get(pane);
+        if (!one?.sent) return false;
+        one.live = false;
+        return true;
+      },
+      agentPanes: () => [...panes].filter(([, one]) => one.live).map(([pane]) => pane),
+      closeWorkspace: (_session, workspace) => {
+        for (const [pane] of [...panes]) if (pane.startsWith(`${workspace}:`)) panes.delete(pane);
+        return true;
+      },
+      stopSession: () => {
+        running = false;
+        return true;
+      },
+      deleteSession: () => {
+        panes.clear();
+        return true;
+      },
+      kill: () => false,
+      sleep: async () => {},
+      now: () => new Date(0),
+    },
+  };
+  const fresh = launching();
+  const launch: Launch = {
+    ...fresh,
+    startServer: () => {
+      running = true;
+      return fresh.startServer(SESSION);
+    },
+  };
+  const up = upSources({
+    sessionRunning: () => running,
+    sessionState: () => (running ? 'running' : 'absent'),
+    agents: () => rows(),
+    workspaces: () => [],
+    launch,
+  });
+  return {
+    down,
+    up,
+    stopSeat: () => {
+      const one = panes.get('w9:p1');
+      if (one) one.live = false;
+    },
+  };
+}
+
+// The caller as the gate reads it after the sequence: the coordinator's seat, standing on the
+// pane the state recorded for it. A dry run exits 0 either way, so the gate's reading is the
+// refusal line the plan run carries.
+async function gateRun(world: { down: DownSources }, pane: string): Promise<{ code: number; out: string }> {
+  const io = testIo(dir, { kind: 'seat', name: COORDINATOR, pane, session: SESSION });
+  return { code: await runDown(['--dry-run'], io, world.down), out: io.out };
+}
+
+describe('the another-pane repair', () => {
+  for (const kase of ['live', 'gone', 'pane-gone'] as const) {
+    test(`the ${kase} case: the named sequence ends with the caller passing the gate`, async () => {
+      writeFileSync(stateFile, `${JSON.stringify(STATE, null, 2)}\n`);
+      const world = repairWorld(kase);
+      // Before the sequence: the caller on the pane its seat really runs on reads the refusal
+      // under test — the gate that is about to be repaired.
+      const before = await gateRun(world, 'w9:p1');
+      expect(before.out).toContain('would refuse: the state records pane w1:p1 for seat');
+      const stoppedIo = testIo(dir, { kind: 'owner' });
+      expect(await runDown([], stoppedIo, world.down)).toBe(0);
+      expect(stoppedIo.out).toContain(`session ${SESSION}: stopped and cleared`);
+      const uppedIo = testIo(dir, { kind: 'owner' });
+      expect(await runUp(['--file', '.agents/team.yaml'], uppedIo, world.up)).toBe(0);
+      const recorded = (JSON.parse(readFileSync(stateFile, 'utf8')) as UpState).sessions[SESSION]?.seats[COORDINATOR]?.pane;
+      if (typeof recorded !== 'string') throw new Error('the up run recorded no pane');
+      // The caller that met the refusal, now on the pane the state records for it: the gate
+      // passes, where before the sequence it read the another-pane refusal.
+      const gate = await gateRun(world, recorded);
+      expect(gate.code).toBe(0);
+      expect(gate.out).not.toContain('would refuse');
+    });
+  }
+
+  test('the no-pane case: up refuses while the seat runs, and records it once the owner stops it', async () => {
+    writeFileSync(stateFile, `${JSON.stringify({ format: 1, sessions: {} }, null, 2)}\n`);
+    const world = repairWorld('no-pane');
+    // Before the repair: the caller on the pane its seat runs on reads the no-pane refusal.
+    const before = await gateRun(world, 'w9:p1');
+    expect(before.out).toContain('would refuse: no pane is recorded for seat');
+    const refusedIo = testIo(dir, { kind: 'owner' });
+    expect(await runUp(['--file', '.agents/team.yaml'], refusedIo, world.up)).toBe(1);
+    expect(refusedIo.err).toContain("this file's state doesn't record: `up` never touches a running team");
+    // The owner stops the seat by hand; the next up launches it and records the pane.
+    world.stopSeat();
+    const uppedIo = testIo(dir, { kind: 'owner' });
+    expect(await runUp(['--file', '.agents/team.yaml'], uppedIo, world.up)).toBe(0);
+    const recorded = (JSON.parse(readFileSync(stateFile, 'utf8')) as UpState).sessions[SESSION]?.seats[COORDINATOR]?.pane;
+    if (typeof recorded !== 'string') throw new Error('the up run recorded no pane');
+    const gate = await gateRun(world, recorded);
+    expect(gate.code).toBe(0);
+    expect(gate.out).not.toContain('would refuse');
   });
 });

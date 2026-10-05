@@ -34,11 +34,11 @@ The owner, the coordinator's seat and the operator's seat. The seat is that name
 this project's state records — the file's session, or one the state records the caller's pane in —
 on the pane the state records for that name in that session: a seat of another session, or a pane
 merely renamed to the coordinator's or the operator's name, is refused — and so is a seat the state
-records no pane for, or records on another pane than this call is on; each refusal names the seat
-and the repair. What that proves is placement, and no more: the state file is in the project, and a
-process of the same user that writes its own pane there under the coordinator's name, and renames
-its pane, passes. The check guards a mistaken agent, not a hostile process running as the same
-user. `--file` and `--session` are the owner's alone, from a terminal outside herdr. Everything `up`
+records no pane for, or records on another pane than this call is on; those two refusals name the
+seat and the repair. What that proves is placement, and no more: the state file is in the project,
+and a process of the same user that writes its own pane there under the coordinator's name, and
+renames its pane, passes. The check guards a mistaken agent, not a hostile process running as the
+same user. `--file` and `--session` are the owner's alone, from a terminal outside herdr. Everything `up`
 refuses on — a file that is not the approved one, a `MISS`
 finding from [team doctor](doctor.md), the machine past its limits, the approval's ceilings — refuses
 here too, for the one seat being started.
@@ -101,7 +101,7 @@ run` — makes nothing and exits 0.
 | `team add: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | `team add: --session is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | ``team add: no pane is recorded for seat <name> in this session: the owner stops that seat and runs `team up` `` | 1 |
-| ``team add: the state records pane <pane> for seat <name> in this session, not the pane this call is on: the owner stops that seat and runs `team up` `` | 1 |
+| ``team add: the state records pane <pane> for seat <name> in this session, not the pane this call is on: the owner stops the team and starts it again (`team down`, then `team up`) `` | 1 |
 | ``team add: the file was never approved on this machine: run `team approve` `` | 1 |
 | ``team add: approved before records were signed: run `team approve` once`` — the record was written by an earlier `team`; the same line, with the case, for a record that does not verify | 1 |
 | ``team add: the file is not the approved one (<differences>): run `team approve` `` | 1 |

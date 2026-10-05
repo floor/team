@@ -155,9 +155,11 @@ export function callerStanding(caller: Caller, name: string, at?: SeatStanding):
 /**
  * The refusal for a seat the state records no pane for: the cause, and the repair that truly
  * records one. Nothing records a running seat's pane — `team up` skips a ready seat without a
- * write, refuses a running agent its state doesn't record, and launches a fresh workspace for a
- * record without a pane — so the seat has to be stopped before the owner's `team up` can launch
- * it and record the pane.
+ * write, refuses a seat the state doesn't record while its agent runs (`up never touches a
+ * running team`), and launches a fresh workspace for a record without a pane — so the seat has
+ * to be stopped before the owner's `team up` can launch it and record the pane. (Runs on a fake
+ * host through the real commands, round 4: with the seat live, `team up` exits 1 with that
+ * line; with the seat stopped, `team up` exits 0 and records the pane it started it on.)
  */
 export function noPaneRefusal(name: string): string {
   return `no pane is recorded for seat ${name} in this session: the owner stops that seat and runs \`team up\``;
@@ -165,16 +167,20 @@ export function noPaneRefusal(name: string): string {
 
 /**
  * The refusal for a seat the state records on another pane: the name is in the session judged,
- * but not on the pane the state holds for it. No owner command repairs that while the seat runs.
- * `up`'s repair step bails on the recorded pane's own check (`herdr no longer shows this seat on
- * its recorded pane; nothing closed`), and for a live seat whose record says `ready` it skips the
- * seat entirely (`already ready; left as it is`); `add` refuses with `already running`; `remove`
- * does not re-record a pane, it stops the seat and drops its record. The repair that really
- * records a pane is the no-pane one: stop the seat, then the owner's `team up` launches it afresh
- * and records the pane it starts.
+ * but not on the pane the state holds for it. No single owner command re-records that pane while
+ * the seat runs, and which one works depends on reads a caller cannot make, so the refusal names
+ * the sequence that repairs every case. (Runs on a fake host through the real commands, round 4,
+ * for the seat live on a new pane, the seat gone, and the recorded pane gone:) `team up` alone
+ * bails on the record it can still read (`herdr no longer shows this seat on its recorded pane;
+ * nothing closed`), and `team add` bails with the same line; `team remove` of the coordinator's
+ * or the operator's name — the two this refusal can name — is refused by the file's own
+ * validation (`names no declared seat` / `can't be a stopped seat`, exit 2); with the recorded
+ * pane gone (unreadable) `team up` alone does launch the seat afresh. `team down` then `team up`
+ * repairs all three: the stop clears the session and its records, the start launches the seat
+ * again and records the pane it starts on (exit 0, 0; the caller then passes the gate).
  */
 export function anotherPaneRefusal(name: string, recordedPane: string): string {
-  return `the state records pane ${recordedPane} for seat ${name} in this session, not the pane this call is on: the owner stops that seat and runs \`team up\``;
+  return `the state records pane ${recordedPane} for seat ${name} in this session, not the pane this call is on: the owner stops the team and starts it again (\`team down\`, then \`team up\`)`;
 }
 
 /** The one refusal a non-owner aiming `--session` meets, decided and printed before any session
