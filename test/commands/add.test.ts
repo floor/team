@@ -395,7 +395,9 @@ describe('team add', () => {
     expect(code).toBe(0);
     expect(made.renames).toEqual(['worker-tmp-1']);
     const text = readFileSync(join(project, '.agents', 'team.yaml'), 'utf8');
-    expect(text).not.toContain('tmp');
+    const loaded = loadTeamFile(project, { home });
+    if (!loaded.ok) throw new Error(loaded.errors.map((problem) => problem.message).join('\n'));
+    expect(loaded.team.seats.map((seat) => seat.name)).not.toContain('worker-tmp-1');
     expect(text).toContain('stopped: true');
     const seat = readState(join(project, '.agents')).sessions.acme?.seats['worker-tmp-1'];
     expect(seat?.temporary).toEqual({ like: 'worker', until: 'merged:fix/fresh', own_commits: false });
