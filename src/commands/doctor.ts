@@ -10,8 +10,9 @@ import { checkCommands, type ApprovedCheck } from '../budgets/checks.ts';
 import { parseOutput, runCommand, type CheckReading } from '../budgets/run.ts';
 import { canonicalLanding as showLanding } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
+import { migrationText } from '../file/migrate.ts';
 import { validateTeamFile } from '../file/validate.ts';
-import { canonicalLanding, insideTrust, isMigratedTrust } from '../file/paths.ts';
+import { canonicalLanding, insideTrust, isLegacyTrust } from '../file/paths.ts';
 import { declaredModel } from '../file/model.ts';
 import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
 import { HERDR_TESTED, herdrVersion, paneRead, sessionRunning, agentList, type HerdrAgent } from '../herdr.ts';
@@ -427,12 +428,6 @@ function identityFindings(team: TeamFile, dir: string, session: string): Finding
   return findings;
 }
 
-function cliOf(team: TeamFile, name: string, recorded: SeatState): string | null {
-  return team.seats.find((seat) => seat.name === name)?.cli
-    ?? team.seats.find((seat) => seat.name === recorded.temporary?.like)?.cli
-    ?? null;
-}
-
 export function doctorFindings(
   team: TeamFile,
   root: string,
@@ -568,12 +563,14 @@ export function doctorFindings(
     }
   }
 
-  const settled = isMigratedTrust(team.trust) && standing.kind === 'verified' && approvalDifferencesOf(standing, team).length === 0;
-  if (!settled) {
+  // The legacy note is told only while the file really is legacy: once the owner has written the
+  // absolute trust entries, the approval findings carry the next step (`run \`team approve\``),
+  // and a note that still says "migrate" would name a step already taken.
+  if (!team.trust || team.trust.length === 0 || isLegacyTrust(team.trust)) {
     const fromText = oldLobby ? `from ${oldLobby} to ${lobby}` : `to ${lobby}`;
     findings.push({
       level: 'note',
-      text: `the file is legacy: migrate ${fromText} by writing trust:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
+      text: `the file is legacy: migrate ${fromText} by writing:\n${migrationText(team, root, sources.home)}`,
     });
   }
   return findings;

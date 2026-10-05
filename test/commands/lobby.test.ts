@@ -18,7 +18,7 @@ import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts
 import { defaultFs, findRepoRoot, lobbyDir, verifyLobby, type FsReader } from '../../src/lobby/gate.ts';
 import { seatStart } from '../../src/worktree/place.ts';
 import { readState, updateState } from '../../src/state.ts';
-import { storePath, writeApproval } from '../../src/store/store.ts';
+import { LEGACY_LINE, storePath, writeApproval } from '../../src/store/store.ts';
 import { testIo } from '../helpers.ts';
 
 const NOW = new Date('2026-10-04T09:00:00Z');
@@ -1099,13 +1099,21 @@ describe('legacy files and migration', () => {
     const madeUp = world();
     const upRes = await runUpCmd([], madeUp);
     expect(upRes.code).toBe(1);
-    expect(upRes.err).toContain(`team up: the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n`);
+    // The third entry is the one the old message left out: the folder workspace.path places
+    // worktrees in, and the from-line says which key each entry comes from.
+    expect(upRes.err).toContain(
+      `team up: the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n  - ${join(base, 'worktrees', 'acme')}\n`,
+    );
+    expect(upRes.err).toContain(
+      `~/.config/team/lobby is the machine lobby, where every seat starts now; ${root} is the project root, replacing "."; `
+        + `${join(base, 'worktrees', 'acme')} is the folder workspace.path "../worktrees/{repo}/{task}" places worktrees in, replacing "../worktrees/acme/*"`,
+    );
     expect(madeUp.workspaces).toHaveLength(0);
 
     const madeAdd = world();
     const addRes = await runAddCmd(['worker'], madeAdd);
     expect(addRes.code).toBe(1);
-    expect(addRes.err).toContain(`team add: the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n`);
+    expect(addRes.err).toContain(`team add: the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n  - ${join(base, 'worktrees', 'acme')}\n`);
     expect(madeAdd.workspaces).toHaveLength(0);
   });
 
@@ -1116,12 +1124,18 @@ describe('legacy files and migration', () => {
 
     const docBefore = await runDoctorCmd();
     expect(docBefore.code).toBe(0);
-    expect(docBefore.out).toContain(`--    the file is legacy: migrate from ../worktrees/acme/.lobby to ${lobby} by writing trust:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n`);
+    expect(docBefore.out).toContain(
+      `--    the file is legacy: migrate from ../worktrees/acme/.lobby to ${lobby} by writing:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n  - ${join(base, 'worktrees', 'acme')}\n`
+        + `~/.config/team/lobby is the machine lobby, where every seat starts now; ${root} is the project root, replacing "."; `
+        + `${join(base, 'worktrees', 'acme')} is the folder workspace.path "../worktrees/{repo}/{task}" places worktrees in, replacing "../worktrees/acme/*"\n`,
+    );
 
-    // Migrated but unapproved: migration note still prints
+    // Migrated but unapproved: the migration note is gone — the file is no longer legacy — and
+    // the approval finding carries the next step.
     writeFileSync(join(root, '.agents', 'team.yaml'), migratedTeamYaml());
     const docUnapproved = await runDoctorCmd();
-    expect(docUnapproved.out).toContain('the file is legacy: migrate');
+    expect(docUnapproved.out).not.toContain('the file is legacy');
+    expect(docUnapproved.out).toContain('MISS  run `team approve`');
 
     approveYaml(migratedTeamYaml());
     const docAfter = await runDoctorCmd();
@@ -1283,6 +1297,140 @@ describe('start_cwd and removal check', () => {
     });
     expect(doc.out).toContain("can't tell if live seats are using it: herdr doesn't answer");
   });
+});
+
+// What a person who upgraded from 0.2.1 holds, on the file and state that release left behind:
+// the skeleton's trust block uncommented, every seat on the placeholder version "0", and a
+// state that records ready with a pane but no process identity and no start folder. The
+// fixtures are those file and state shapes themselves, not 0.2.1's own functions: what the
+// upgrade turns on is exactly these literals, so they are pinned here where the assertions
+// can see them.
+describe('the upgrade from 0.2.1', () => {
+  // 0.2.1's init skeleton with the trust block uncommented, and the
+  // placeholder version "0" that release wrote where no owner had filled one in.
+  function v021TeamYaml(): string {
+    return legacyTeamYaml().replaceAll('version: "5.5"', 'version: "0"');
+  }
+
+  // The trust block exactly as the message prints it: the `  - ` lines under `trust:`.
+  function blockOf(output: string): string[] {
+    return output.split('\n').filter((line) => line.startsWith('  - ')).map((line) => line.slice(4));
+  }
+
+  // The file with its trust replaced by the block the message printed, byte for byte.
+  function pasteTrust(yaml: string, entries: readonly string[]): string {
+    return yaml.replace(/trust:\n(?:  - .*\n)+/, `trust:\n${entries.map((entry) => `  - ${entry}\n`).join('')}`);
+  }
+
+  // The store 0.2.1 left: a format-1 approval nobody signed.
+  function legacyApproval(text: string): void {
+    writeFileSync(join(root, '.agents', 'team.yaml'), text);
+    const loaded = loadTeamFile(root, { home });
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+    const store = storePath(loaded.team.project, loaded.root, home);
+    mkdirSync(store, { recursive: true });
+    writeFileSync(join(store, 'approval.json'), JSON.stringify({ ...approvalOf(loaded.team, loaded.root), format: 1, file: text }));
+  }
+
+  test('the block up prints takes the file past validation for every starting shape it met', async () => {
+    // The file exactly as init wrote it, uncommented.
+    approveYaml(v021TeamYaml());
+    const refusedA = await runUpCmd([], world());
+    expect(refusedA.code).toBe(1);
+    const entriesA = blockOf(refusedA.err);
+    expect(entriesA).toEqual(['~/.config/team/lobby', root, join(base, 'worktrees', 'acme')]);
+    writeFileSync(join(root, '.agents', 'team.yaml'), pasteTrust(v021TeamYaml(), entriesA));
+    const pastedA = loadTeamFile(root, { home });
+    expect(pastedA.ok).toBe(true);
+    if (pastedA.ok) expect(pastedA.team.trust).toEqual(entriesA);
+    const afterA = await runUpCmd([], world());
+    expect(afterA.err).not.toContain('the file is legacy');
+    expect(afterA.err).not.toContain('outside trust');
+    expect(afterA.err).toContain('the file is not the approved one');
+    expect(afterA.err).toContain('run `team approve`');
+
+    // An entry the owner added by hand under the init ones — kept, absolute, named as his.
+    const handAdded = v021TeamYaml().replace('  - ../worktrees/acme/*\n', '  - ../worktrees/acme/*\n  - ../allies/*\n');
+    approveYaml(handAdded);
+    const refusedB = await runUpCmd([], world());
+    const entriesB = blockOf(refusedB.err);
+    expect(entriesB).toEqual(['~/.config/team/lobby', root, join(base, 'worktrees', 'acme'), join(base, 'allies')]);
+    expect(refusedB.err).toContain(`${join(base, 'allies')} is your own "../allies/*" entry, kept in absolute form`);
+    writeFileSync(join(root, '.agents', 'team.yaml'), pasteTrust(handAdded, entriesB));
+    expect(loadTeamFile(root, { home }).ok).toBe(true);
+    const afterB = await runUpCmd([], world());
+    expect(afterB.err).not.toContain('the file is legacy');
+    expect(afterB.err).not.toContain('outside trust');
+    expect(afterB.err).toContain('the file is not the approved one');
+
+    // The approval 0.2.1 left is format-1 and unsigned. The block is computed from the
+    // file, so it is the same one, and pasting it leaves exactly the approval step.
+    legacyApproval(v021TeamYaml());
+    const refusedD = await runUpCmd([], world());
+    expect(refusedD.code).toBe(1);
+    expect(blockOf(refusedD.err)).toEqual(['~/.config/team/lobby', root, join(base, 'worktrees', 'acme')]);
+    expect(refusedD.err).toContain(LEGACY_LINE);
+    writeFileSync(join(root, '.agents', 'team.yaml'), pasteTrust(v021TeamYaml(), blockOf(refusedD.err)));
+    expect(loadTeamFile(root, { home }).ok).toBe(true);
+    const afterD = await runUpCmd([], world());
+    expect(afterD.err).not.toContain('the file is legacy');
+    expect(afterD.err).toContain(LEGACY_LINE);
+  });
+
+  test('worktrees inside the project: one extra edit its own rule names, then the same block', async () => {
+    // 0.2.1 refused this shape too, so no trust block can carry it past validation alone; the
+    // refusal that names the extra edit is the file's own, and once the path is moved the
+    // recomputed block is the skeleton's own shape and pastes clean.
+    const insideProjectYaml = v021TeamYaml().replace('../worktrees/{repo}/{task}', 'wt/{task}');
+    approveYaml(insideProjectYaml);
+    const made = world();
+    const refused = await runUpCmd([], made);
+    expect(refused.code).toBe(1);
+    expect(blockOf(refused.err)).toEqual(['~/.config/team/lobby', root]);
+    expect(refused.err).toContain('inside the protected checkout');
+    expect(made.workspaces).toEqual([]);
+
+    // The one extra edit: give worktrees a folder of their own. The file is still legacy, and
+    // the block recomputed for it carries the worktrees folder.
+    const moved = insideProjectYaml.replace('path: wt/{task}', 'path: ../worktrees/{repo}/{task}');
+    approveYaml(moved);
+    const recomputed = await runUpCmd([], world());
+    const entries = blockOf(recomputed.err);
+    expect(entries).toEqual(['~/.config/team/lobby', root, join(base, 'worktrees', 'acme')]);
+    writeFileSync(join(root, '.agents', 'team.yaml'), pasteTrust(moved, entries));
+    expect(loadTeamFile(root, { home }).ok).toBe(true);
+    const after = await runUpCmd([], world());
+    expect(after.err).not.toContain('the file is legacy');
+    expect(after.err).not.toContain('outside trust');
+    expect(after.err).not.toContain('inside the protected checkout');
+    expect(after.err).toContain('the file is not the approved one');
+  });
+
+  test('a folder the containment rule refuses is never suggested: the key that forces it is named', async () => {
+    // The project sits directly under the home and workspace.path puts worktrees in ~/.config,
+    // which covers the lobby and the approval store. Trust refuses that folder, so the message
+    // cannot print it as a suggestion; the key that forces it is named instead. (A legacy file
+    // loads only when workspace.path matches one of its patterns, so the hand-added pattern that
+    // covers it is part of the fixture — and is the old entry the refused folder would replace.)
+    const inside = join(home, 'acme');
+    mkdirSync(join(inside, '.agents'), { recursive: true });
+    git(inside, 'init', '-q', '-b', 'main');
+    const yaml = v021TeamYaml()
+      .replace('  - ../worktrees/acme/*\n', '  - ../worktrees/acme/*\n  - ../.config/*\n')
+      .replace('path: ../worktrees/{repo}/{task}', 'path: ../.config/{task}');
+    writeFileSync(join(inside, '.agents', 'team.yaml'), yaml);
+    const io = testIo(inside, OWNER);
+    await runDoctor(['--file', '.agents/team.yaml'], io, runDoctorCmdSources());
+    expect(io.out).toContain(
+      `workspace.path "../.config/{task}" would need ${join(home, '.config')}, which would cover `
+        + `${join(home, '.config', 'team')}, which holds the lobby and the approval store: trust a folder of the team's own; `
+        + 'team cannot choose it for you: pick a folder yourself and write it into trust',
+    );
+    // The refused folder is not suggested; the suggestions stay at the lobby and the project root.
+    expect(blockOf(io.out)).toEqual(['~/.config/team/lobby', inside]);
+    expect(io.out).not.toContain(`  - ${join(home, '.config')}\n`);
+  });
+
 });
 
 describe('rules text', () => {
@@ -1643,7 +1791,10 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
   test('doctor notes a migrated file that has never been approved', async () => {
     writeFileSync(join(root, '.agents', 'team.yaml'), migratedTeamYaml());
     const doc = await runDoctorCmd();
-    expect(doc.out).toContain('the file is legacy: migrate');
+    // The file is no longer legacy, so the migration note stays away; the next step the owner
+    // has is the approval.
+    expect(doc.out).not.toContain('the file is legacy');
+    expect(doc.out).toContain('MISS  run `team approve`');
   });
 
   test('a resumed launch from a migrated approved file keeps the recorded start folder', async () => {

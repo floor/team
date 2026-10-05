@@ -255,7 +255,7 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | `herdr doesn't answer` |
 | ``session beacon is stopped; clear it with `herdr session delete beacon` `` |
 | ``session beacon has 2 agents this file's state doesn't record: `up` never touches a running team`` |
-| ``the file is legacy: migrate trust to absolute paths including the lobby ~/.config/team/lobby: ...`` |
+| ``the file is legacy: migrate trust to absolute paths including the lobby ~/.config/team/lobby: ...`` — followed by the whole `trust:` block to paste: every entry the next `up` requires, one line saying which key of the file each entry comes from, and, for an entry a rule of `trust` refuses, one line naming the key that forces it |
 | ``the lobby ~/.config/team/lobby: <check>`` — gate check failed (symbolic link, permissions, mode, not empty, inside git repo) |
 | ``seat beacon-qa would start in live, inside the protected checkout live; a seat that isn't `mode: shared` never starts in one`` — the folder the file gives it, or its lobby, is a protected checkout |
 

@@ -100,6 +100,17 @@ how many of the missing ones block those commands, when any do:
     team doctor: nothing missing, 1 warning
     team doctor: 2 missing, 0 warnings: 2 of them block `up` and `add`
 
+The `trust` note is the one finding that carries a whole block. A file whose `trust` still holds the
+relative entries an earlier release wrote — or none at all — is told every absolute entry the next
+`up` will require, as a block to paste under `trust:`: the lobby, the project root, the folder
+`workspace.path` places worktrees in, each seat's start folder when it sits outside the project, and
+every entry the owner added by hand, kept in absolute form. One line after the entries says which
+key of the file each one comes from and which old entry it replaces, and nothing the block lists
+widens what the old file trusted. An entry a rule of `trust` refuses — a folder that would cover the
+home, or the lobby and the approval store — is never suggested: one line names the key that forces
+it and leaves the choice of folder to the owner. The note is told only while the file really is
+legacy; once the absolute entries are written, the approval finding carries the next step.
+
 A seat's model is judged by what can check it, and a launch that names none is judged by two
 questions. First, does the launch run the CLI's own binary, bare: the first word that is not a
 variable assignment is the binary's own name, with no path, wrapper or shell in front of it —
@@ -326,10 +337,6 @@ ok    claude-code: logged in
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
---    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
-trust:
-  - ~/.config/team/lobby
-  - ~/Code/beacon
 team doctor: 2 missing, 1 warning: 2 of them block `up` and `add`
 exit 1
 ```
@@ -396,10 +403,6 @@ warn  claude-beacon: the launch starts Claude Opus 5.5, the file says Claude Son
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
---    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
-trust:
-  - ~/.config/team/lobby
-  - ~/Code/beacon
 team doctor: 2 missing, 2 warnings: 2 of them block `up` and `add`
 exit 1
 ```
@@ -479,10 +482,6 @@ ok    codex: logged in
 warn  codex-scribe: the launch runs team-codex, not codex, and names no model: if the launcher chooses the model, say so with model_from: launcher
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
---    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
-trust:
-  - ~/.config/team/lobby
-  - ~/Code/beacon
 team doctor: 1 missing, 2 warnings: 1 of them block `up` and `add`
 exit 1
 ```
@@ -562,10 +561,6 @@ ok    codex: logged in
 --    codex-scribe: the model is chosen by its launcher; checked on the running seat
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
---    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
-trust:
-  - ~/.config/team/lobby
-  - ~/Code/beacon
 team doctor: 1 missing, 1 warning: 1 of them block `up` and `add`
 exit 1
 ```

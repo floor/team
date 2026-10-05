@@ -5,6 +5,7 @@ import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
+import { migrationText } from '../file/migrate.ts';
 import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import {
@@ -322,8 +323,10 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
 
   const lobby = lobbyDir(sources.home);
   if (!team.trust || team.trust.length === 0 || isLegacyTrust(team.trust)) {
+    // The block names every entry the next `up` will require, computed from the file, so one
+    // edit takes the file past validation. The same block is what `doctor` and `add` print.
     refusals.push(
-      `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
+      `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\n${migrationText(team, root, sources.home)}`,
     );
   }
 

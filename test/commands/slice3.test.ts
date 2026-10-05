@@ -247,10 +247,13 @@ describe('team doctor', () => {
         'ok    codex codex-cli 0.157.0',
         'ok    codex: logged in',
         `ok    the lobby ${home}/.config/team/lobby: will be created at the first launch`,
-        `--    the file is legacy: migrate from ../worktrees/acme-web/.lobby to ${home}/.config/team/lobby by writing trust:`,
+        `--    the file is legacy: migrate from ../worktrees/acme-web/.lobby to ${home}/.config/team/lobby by writing:`,
         'trust:',
         '  - ~/.config/team/lobby',
         `  - ${root}`,
+        `  - ${join(base, 'worktrees', 'acme-web')}`,
+        `~/.config/team/lobby is the machine lobby, where every seat starts now; ${root} is the project root, replacing "."; `
+          + `${join(base, 'worktrees', 'acme-web')} is the folder workspace.path "../worktrees/{repo}/{task}" places worktrees in, replacing "../worktrees/acme-web/*"`,
         'team doctor: nothing missing, 2 warnings',
         '',
       ].join('\n'),
@@ -531,6 +534,9 @@ describe('team up', () => {
         'trust:',
         '  - ~/.config/team/lobby',
         `  - ${root}`,
+        `  - ${join(base, 'worktrees', 'acme-web')}`,
+        `~/.config/team/lobby is the machine lobby, where every seat starts now; ${root} is the project root, replacing "."; `
+          + `${join(base, 'worktrees', 'acme-web')} is the folder workspace.path "../worktrees/{repo}/{task}" places worktrees in, replacing "../worktrees/acme-web/*"`,
         '+ herdr --session acme-web workspace create',
       ].join('\n'),
     );
