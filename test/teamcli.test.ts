@@ -3,6 +3,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { walkCaller } from '../src/caller.ts';
 
 const repo = join(import.meta.dir, '..');
 
@@ -120,3 +121,27 @@ test('packed team and teamcli bins match the team cli, and a signal reaches the 
   ]);
   expect(exit.signal).toBe('SIGTERM');
 }, 90_000);
+
+test('a node parent is still the owner', () => {
+  const judge = (names: string[], stdinIsTTY: boolean) => walkCaller({
+    env: {},
+    stdinIsTTY,
+    callerSources: () => ({
+      ancestors: () => names.map((name, index) => ({ pid: index + 2, name })),
+      agents: () => [],
+      paneRootPid: () => null,
+      env: {},
+      stdinIsTTY,
+    }),
+  });
+  expect(judge(['zsh'], true)).toEqual({ kind: 'owner' });
+  expect(judge(['node', 'zsh'], true)).toEqual({ kind: 'owner' });
+  expect(judge(['claude', 'zsh'], true)).toEqual({
+    kind: 'unplaced',
+    reason: 'it is run by an agent (claude) outside herdr',
+  });
+  expect(judge(['node', 'zsh'], false)).toEqual({
+    kind: 'unplaced',
+    reason: 'it doesn\'t run on a terminal',
+  });
+});
