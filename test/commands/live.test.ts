@@ -2407,6 +2407,95 @@ describe('team up, a session that was restored', () => {
     // The record — recovery and all — is cleared with it.
     expect(readState(join(root, '.agents')).sessions['acme-web']?.seats['claude-coordinator-acme']).toBeUndefined();
   });
+
+  test('a resumed waiting seat whose process changed under the close is refused there: the launch identity stands, the record kept', async () => {
+    // The identity mutation's resumed half: the record's own identity ({shell 400, cli [401]})
+    // proves the pane through the resume's proof, but between that proof and the close the
+    // pane's process changes. The close must be judged against the launch's identity — the one
+    // the record holds — never against the identity read from the changed process: judged by
+    // that read the close would proceed and drop a record whose seat is not provably this seat's.
+    writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root));
+    await approve();
+    writeFileSync(
+      join(root, '.agents/team.state.json'),
+      JSON.stringify({
+        format: 1,
+        sessions: {
+          'acme-web': {
+            seats: {
+              'claude-coordinator-acme': {
+                stage: 'launched',
+                pane: 'w1:p1',
+                workspace: 'w1',
+                launched: { shell: 400, cli: [401] },
+                waiting: { state: 'waiting-owner', classification: 'trust' },
+              },
+              'deepseek-acme': { stage: 'ready', pane: 'w2:p1', workspace: 'w2', launched: { shell: 500, cli: [501] } },
+              'deepseek-acme-2': { stage: 'ready', pane: 'w3:p1', workspace: 'w3', launched: { shell: 510, cli: [511] } },
+            },
+            worktrees: {},
+          },
+        },
+      }),
+    );
+    const trust = 'Do you trust this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n';
+    const made = world((_pane, label) => (label === 'claude opus 5.5' ? trust : IDLE));
+    made.session = 'running';
+    const listed = [
+      agent('claude-coordinator-acme', 'w1:p1', 'idle'),
+      agent('deepseek-acme', 'w2:p1', 'idle'),
+      agent('deepseek-acme-2', 'w3:p1', 'idle'),
+    ];
+    made.launch.agents = () => listed;
+    made.launch.agentPanes = () => ['w1:p1', 'w2:p1', 'w3:p1'];
+    const calls: string[] = [];
+    let reads = 0;
+    made.launch.processInfo = (_session, pane) => {
+      calls.push(`process:${pane}`);
+      if (pane !== 'w1:p1') return pane === 'w2:p1' ? { shell: 500, foreground: [500, 501] } : { shell: 510, foreground: [510, 511] };
+      // The resume's own proof reads the recorded process; the close's read, directly before
+      // it, finds another one — the seat cannot be proven this seat's any more.
+      reads += 1;
+      return reads <= 2 ? { shell: 400, foreground: [400, 401] } : { shell: 900, foreground: [900, 901] };
+    };
+    const origPaneText = made.launch.paneText;
+    made.launch.paneText = (session, pane) => {
+      calls.push(`paneText:${pane}`);
+      return pane === 'w1:p1' ? trust : origPaneText(session, pane);
+    };
+    const origClose = made.launch.closeWorkspace;
+    made.launch.closeWorkspace = (session, ws) => {
+      calls.push(`close:${ws}`);
+      return origClose(session, ws);
+    };
+    const io = testIo(root, { kind: 'owner-no-tty' });
+    const code = await runUp(FILE, io, sources({
+      sessionState: () => 'running',
+      agents: () => listed,
+      workspaces: () => [{ id: 'w1', label: 'claude opus 5.5' }, { id: 'w2', label: 'deepseek flash v4.1' }, { id: 'w3', label: 'deepseek flash v4.1-2' }],
+    }, made));
+    expect(code).toBe(1);
+    // The refusal names the launch's identity as what changed under it and keeps the record —
+    // nothing is closed, nothing typed, nothing asked of a terminal.
+    expect(calls).toEqual([
+      'process:w1:p1', 'process:w2:p1', 'process:w3:p1',
+      'process:w1:p1', 'paneText:w1:p1', 'process:w1:p1',
+    ]);
+    expect(io.out).toContain('claude-coordinator-acme: left out: left as it is: its process changed\n');
+    expect(io.err).toContain('  its record still names it; `team down` then `team up` (to restart the whole team), clears it\n');
+    expect(made.closes).toEqual([]);
+    expect(made.creates).not.toContain('claude opus 5.5');
+    expect(made.terminal.reads).toBe(0);
+    // The change under the close writes nothing: the record keeps the launch's identity, so the
+    // next `up` can still tell what it is looking at.
+    expect(readState(join(root, '.agents')).sessions['acme-web']?.seats['claude-coordinator-acme']).toMatchObject({
+      stage: 'launched',
+      pane: 'w1:p1',
+      workspace: 'w1',
+      launched: { shell: 400, cli: [401] },
+      waiting: { state: 'waiting-owner', classification: 'trust' },
+    });
+  });
 });
 
 // §3/§4/§5: the pause at the owner's terminal — the prompt and its keys, what `o` waits on,
