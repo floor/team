@@ -556,13 +556,14 @@ describe('the idle anchor', () => {
     expect(reportAt(memory, 35, { [name]: { status: 'idle', screen: idleScreen } })).toEqual([`${name} has been idle for 10 minutes`]);
   });
 
-  test.each(workers)('%s: never seen working, the report carries no duration', (name, _working, idleScreen) => {
+  test.each(workers)('%s: never seen working, the report carries no duration and reports once by default', (name, _working, idleScreen) => {
     const memory = newMemory();
     const quiet = { [name]: { status: 'idle', screen: idleScreen } };
     expect(reportAt(memory, 0, quiet)).toEqual([]);
     expect(reportAt(memory, 9, quiet)).toEqual([]);
     expect(reportAt(memory, 10, quiet)).toEqual([`${name} has been idle since the watch started`]);
-    expect(reportAt(memory, 30, quiet)).toEqual([`${name} has been idle since the watch started`]);
+    // By default idle_repeat is off: reported once per watch run.
+    expect(reportAt(memory, 30, quiet)).toEqual([]);
   });
 });
 
