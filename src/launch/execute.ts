@@ -220,11 +220,14 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         let outcome: 'idle' | 'permission' | 'trust' | 'question' | 'ended' | 'timeout' = 'timeout';
         let last: ScreenKind = 'unknown';
         // The launch line was run a moment ago, and herdr can still report the pane's shell for
-        // a poll or two after it — captured on herdr 0.7.1. So the end is read on two
-        // consecutive polls: the shell is the foreground program, and the screen is neither an
-        // idle prompt nor work, twice. One such reading alone is not an end. A herdr that can't
-        // say (no shell process info) is waited out to the deadline as before: the end is never
-        // inferred from the screen's text.
+        // a poll or two after it. Captured on herdr 0.7.1 in a scratch pane: right after
+        // `pane run node -e …`, `pane process-info` listed the pane's shell (`shell_pid` 11915)
+        // beside the shell's own startup child, and 600 ms later listed the program alone; a
+        // launch line whose relative path was missing listed the shell at once, and 400 ms later
+        // still. So the end is read on two consecutive polls: the shell is the foreground
+        // program, and the screen is neither an idle prompt nor work, twice. One such reading
+        // alone is not an end. A herdr that can't say (no shell process info) is waited out to
+        // the deadline as before: the end is never inferred from the screen's text.
         let shellWasBack = false;
         for (;;) {
           const kind = host.classify(session, here.pane, op.cli);

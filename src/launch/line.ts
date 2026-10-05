@@ -11,7 +11,10 @@ import { lobbyPath } from '../worktree/place.ts';
 // worktrees starts in the lobby, beside the worktrees, not in the project root, so `../tools/x.sh`
 // that a hand run in the root finds may resolve nowhere from the lobby. A line that quotes or
 // substitutes text is left alone and said to be unchecked: the split may not be what a shell would
-// read, and a wrong reading must never cost a seat its launch.
+// read, and a wrong reading must never cost a seat its launch. `~/…` stands for the pane shell's
+// own home, so it is looked for there: captured on herdr 0.7.1, typing `if [ ~ = "$HOME" ]; then
+// echo "tilde-equals-home probe=tilde-expanded-ok"; fi` into a pane printed
+// `tilde-equals-home probe=tilde-expanded-ok`, and `ls -d ~` ran.
 
 /** The command a launch line starts, or null when it names none. */
 export function launchBinary(launch: string): string | null {
