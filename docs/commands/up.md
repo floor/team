@@ -199,11 +199,15 @@ clears the seat's launch state — the `waiting` field with it — and records
 `<seat>: left out: skipped by owner`.
 
 `q`, and a Ctrl-C, closes without input every workspace **this invocation created** that is not
-already ready, and clears those seats' state. The herdr session is stopped only when this
-invocation created it and it now holds no ready seat and no watchdog: a session that existed
-before, a ready seat and the watchdog are kept. The current seat and every later configured,
-non-stopped seat with no final record get, in file order, `<seat>: left out: stopped cleanly`;
-earlier final records stay. The run exits 1.
+already ready, and clears those seats' state. Before each of those closes the agent list, the
+workspace's panes and the pane's process are read again, directly before it, with nothing between
+the last read and the close, and the workspace closed is the one herdr returns for that pane,
+holding no other agent pane; a workspace whose pane's process is not the one this run started is
+not closed, and its record is `<seat>: left out: left as it is: its process changed`. The herdr
+session is stopped only when this invocation created it and it now holds no ready seat and no
+watchdog: a session that existed before, a ready seat and the watchdog are kept. The current seat
+and every later configured, non-stopped seat with no final record get, in file order,
+`<seat>: left out: stopped cleanly`; earlier final records stay. The run exits 1.
 
 A later `up` on a seat the state records waiting reuses its recorded pane and workspace — nothing
 is created for it — verifies the current screen with a fresh read, and enters the same pause,
@@ -237,8 +241,12 @@ own reading. `up` never invokes `team answer` and never sends a trust key.
 
 An owner whose stdin is not a terminal never prompts: for each seat that meets a dialog it closes
 the workspace without input, prints `<seat>: left out: <classification> (no terminal for owner)`
-and exits 1. A seat stopped at the idle wait's `timeout` is not a dialog: that owner keeps the
-ordinary `timeout` record and the detail under it.
+and exits 1. That close makes the stop pass's own reads — the agent list, the workspace's panes and
+the pane's process, directly before it, with nothing between the last read and it — and closes only
+the workspace the multiplexer returns for the verified pane, holding no other agent pane; a pane
+whose process is not the one the dialog was found with is left as it is (`left as it is: its
+process changed`), its record kept. A seat stopped at the idle wait's `timeout` is not a dialog:
+that owner keeps the ordinary `timeout` record and the detail under it.
 
 ### Known limits
 

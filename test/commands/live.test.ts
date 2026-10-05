@@ -259,6 +259,19 @@ describe('team up, live', () => {
       return capture('idle').replace('› Ask Codex to do anything', [`› ${first}`, ...rest.map((line) => `  ${line}`)].join('\n'));
     };
     made.launch.agentStatus = () => status;
+    // Herdr's list and the pane's process, as a terminal-less owner's close reads them: the
+    // pane this run launched is on the list, and its process is the one the dialog was found
+    // with — so the no-terminal close of the trust dialog can be proven and happens.
+    made.launch.agents = (session) =>
+      (made.launch.agentPanes(session) ?? []).map((pane) => ({
+        name: null,
+        agent: 'codex',
+        pane,
+        workspace: pane.split(':')[0] ?? pane,
+        status: 'idle',
+        cwd: null,
+      }));
+    made.launch.processInfo = () => ({ shell: 700, foreground: [700, 701] });
     made.launch.typeText = (_session, pane, text) => { codexPane = pane; typed = text; sent.push(text); pasted = true; return true; };
     made.launch.pressEnter = () => { sent.push('Enter'); if (outcome === 'accepted') { status = 'working'; pasted = false; } return true; };
     made.launch.paneText = (session, pane) => pane === codexPane
@@ -354,6 +367,19 @@ describe('team up, live', () => {
       return capture('idle').replace('\n>\n', `\n${body}\n`);
     };
     made.launch.agentStatus = () => status;
+    // Herdr's list and the pane's process, as a terminal-less owner's close reads them: the
+    // pane this run launched is on the list, and its process is the one the dialog was found
+    // with — so the no-terminal close of the trust dialog can be proven and happens.
+    made.launch.agents = (session) =>
+      (made.launch.agentPanes(session) ?? []).map((pane) => ({
+        name: null,
+        agent: 'agy',
+        pane,
+        workspace: pane.split(':')[0] ?? pane,
+        status: 'idle',
+        cwd: null,
+      }));
+    made.launch.processInfo = () => ({ shell: 700, foreground: [700, 701] });
     made.launch.typeText = (_session, pane, text) => { geminiPane = pane; typed = text; sent.push(text); pasted = true; return true; };
     made.launch.pressEnter = () => { sent.push('Enter'); if (outcome === 'accepted') { status = 'working'; pasted = false; } return true; };
     made.launch.paneText = (session, pane) => (pane === geminiPane
@@ -441,6 +467,19 @@ describe('team up, live', () => {
   test('a permission prompt without a terminal closes that workspace and leaves the others', async () => {
     await approve();
     const made = world((_pane, label) => (label === 'claude opus 5.5' ? PERMISSION : IDLE));
+    // Herdr's list and the pane's process: what the fresh launch's own dialog reads leave behind
+    // for the close. The pane is unnamed in herdr (the rename never happened), on the list, and
+    // its process is the one the dialog was found with — so the close is proven and happens.
+    made.launch.agents = (session) =>
+      (made.launch.agentPanes(session) ?? []).map((pane) => ({
+        name: null,
+        agent: 'claude',
+        pane,
+        workspace: pane.split(':')[0] ?? pane,
+        status: 'idle',
+        cwd: null,
+      }));
+    made.launch.processInfo = () => ({ shell: 400, foreground: [400, 401] });
     // §2: an owner whose stdin is not a terminal never prompts — the dialog's workspace is
     // closed without input, the record says why, and the other seats carry on.
     const io = testIo(root, { kind: 'owner-no-tty' });
@@ -461,10 +500,48 @@ describe('team up, live', () => {
     expect(seats['deepseek-acme']?.stage).toBe('ready');
   });
 
+  test('the same close with no terminal is refused when the process changed under it', async () => {
+    await approve();
+    const made = world((_pane, label) => (label === 'claude opus 5.5' ? PERMISSION : IDLE));
+    made.launch.agents = (session) =>
+      (made.launch.agentPanes(session) ?? []).map((pane) => ({
+        name: null,
+        agent: 'claude',
+        pane,
+        workspace: pane.split(':')[0] ?? pane,
+        status: 'idle',
+        cwd: null,
+      }));
+    // Every read sees another process: the one the dialog was found with is never the one the
+    // close reads back, so the close can prove nothing and does not happen.
+    let n = 0;
+    made.launch.processInfo = () => ({ shell: 700 + ++n, foreground: [700 + n, 701 + n] });
+    const io = testIo(root, { kind: 'owner-no-tty' });
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(1);
+    // §3: a workspace whose pane's process is not the one the dialog was found with is left
+    // as it is — not closed, its record not cleared — and the reason is the stop pass's.
+    expect(made.closes).toEqual([]);
+    expect(io.out).toContain('claude-coordinator-acme: left out: left as it is: its process changed\n');
+    expect(made.terminal.reads).toBe(0);
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['claude-coordinator-acme']).toMatchObject({ pane: 'w1:p1', workspace: 'w1' });
+  });
+
   test('a trust dialog without a terminal closes that workspace without an answer and leaves the seat out', async () => {
     await approve();
     const trust = 'Do you trust this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n';
     const made = world((_pane, label) => (label === 'claude opus 5.5' ? trust : IDLE));
+    made.launch.agents = (session) =>
+      (made.launch.agentPanes(session) ?? []).map((pane) => ({
+        name: null,
+        agent: 'claude',
+        pane,
+        workspace: pane.split(':')[0] ?? pane,
+        status: 'idle',
+        cwd: null,
+      }));
+    made.launch.processInfo = () => ({ shell: 400, foreground: [400, 401] });
     const io = testIo(root, { kind: 'owner-no-tty' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
@@ -2040,14 +2117,15 @@ describe('team up, a session that was restored', () => {
     const code = await runUp(FILE, io, sources({
       sessionState: () => 'running',
       agents: () => listed,
-      workspaces: () => [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }],
+      workspaces: () => [{ id: 'w1', label: 'claude opus 5.5' }, { id: 'w2', label: 'deepseek flash v4.1' }, { id: 'w3', label: 'deepseek flash v4.1-2' }],
     }, made));
     expect(code).toBe(1);
     // The recorded process was verified before anything was closed, its screen read between
-    // the check and the close, and nothing was typed, focused or asked of a terminal.
+    // the check and the close, and the close's own process read comes directly before it —
+    // nothing is typed, focused or asked of a terminal.
     expect(calls).toEqual([
       'process:w1:p1', 'process:w2:p1', 'process:w3:p1',
-      'process:w1:p1', 'paneText:w1:p1', 'close:w1',
+      'process:w1:p1', 'paneText:w1:p1', 'process:w1:p1', 'close:w1',
     ]);
     expect(made.terminal.reads).toBe(0);
     // Nothing was created or run for the recorded seat: only the watchdog, which reads no pane.
@@ -2105,6 +2183,8 @@ describe('team up, the pause', () => {
     made.launch.closeWorkspace = (session, workspace) => { calls.push(`close:${workspace}`); return closeWorkspace(session, workspace); };
     const agentPanes = made.launch.agentPanes;
     made.launch.agentPanes = (session) => { calls.push('agent-panes'); return agentPanes(session); };
+    const workspacePanes = made.launch.workspacePanes;
+    made.launch.workspacePanes = (session, workspace) => { calls.push(`panes:${workspace}`); return workspacePanes?.(session, workspace) ?? null; };
     const agents = made.launch.agents;
     made.launch.agents = (session) => { calls.push('agents'); return agents(session); };
     const paneText = made.launch.paneText;
@@ -2209,6 +2289,66 @@ describe('team up, the pause', () => {
     expect(log).toContain('up [owner] claude-coordinator-acme: stopped cleanly');
   });
 
+  test('the stop pass reads herdr, the workspace and the process directly before the close', async () => {
+    await approve();
+    const made = world((_pane, label) => (label === 'claude opus 5.5' ? PERMISSION : IDLE));
+    made.launch.agents = agentListOf(made);
+    made.launch.processInfo = () => ({ shell: 400, foreground: [400, 401] });
+    // The three reads the stop pass makes, and the close, each on its own label — the World's
+    // agent list happens to be built from its pane list, so instrumenting `agents` alone keeps
+    // one call per read.
+    const calls: string[] = [];
+    const agents = made.launch.agents;
+    made.launch.agents = (session) => { calls.push('agents'); return agents(session); };
+    const workspacePanes = made.launch.workspacePanes;
+    made.launch.workspacePanes = (session, workspace) => { calls.push(`panes:${workspace}`); return workspacePanes?.(session, workspace) ?? null; };
+    const processInfo = made.launch.processInfo;
+    made.launch.processInfo = (session, pane) => { calls.push(`process:${pane}`); return processInfo?.(session, pane) ?? null; };
+    const closeWorkspace = made.launch.closeWorkspace;
+    made.launch.closeWorkspace = (session, workspace) => { calls.push(`close:${workspace}`); return closeWorkspace(session, workspace); };
+    made.terminal.keys.push('q');
+    const io = testIo(root, { kind: 'owner' });
+    io.stdoutIsTTY = true;
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(1);
+    expect(made.closes).toEqual(['w1']);
+    // §3: the four calls that end in the close, consecutive and in order — the multiplexer's
+    // list, the workspace's panes, the process identity, the close — with nothing between the
+    // last read and the close. Dropping any one of the three reads breaks this exact tail.
+    const at = calls.indexOf('close:w1');
+    expect(calls.slice(at - 3, at + 1)).toEqual(['agents', 'panes:w1', 'process:w1:p1', 'close:w1']);
+  });
+
+  test('the stop pass never closes a workspace whose process changed while the prompt was open', async () => {
+    await approve();
+    const made = world((_pane, label) => (label === 'claude opus 5.5' ? PERMISSION : IDLE));
+    made.launch.agents = agentListOf(made);
+    // The identity this run started with, until the owner presses q; every read after that sees
+    // another process in the pane — it was replaced while the prompt sat open.
+    let replaced = false;
+    made.launch.processInfo = () => (replaced ? { shell: 900, foreground: [900, 901] } : { shell: 400, foreground: [400, 401] });
+    const key = made.terminal.key.bind(made.terminal);
+    made.terminal.key = async (ms) => {
+      const next = await key(ms);
+      if (next === 'q') replaced = true;
+      return next;
+    };
+    made.terminal.keys.push('q');
+    const io = testIo(root, { kind: 'owner' });
+    io.stdoutIsTTY = true;
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(1);
+    // §3: the q is the owner's, but this workspace is not this run's to close any more — the
+    // stop pass's own read, directly before the close, sees a process it never started.
+    expect(made.closes).toEqual([]);
+    expect(io.out).toContain('claude-coordinator-acme: left out: left as it is: its process changed\n');
+    // Nothing claims a close that did not happen: the waiting record stands, and the session,
+    // holding the pane that was not closed, is not stopped.
+    const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['claude-coordinator-acme'];
+    expect(seat?.waiting).toEqual({ state: 'waiting-owner', classification: 'permission' });
+    expect(io.err).toContain('session acme-web: not stopped, something was left in it\n');
+  });
+
   test('o carries the seat to ready: the ordered host calls, and nothing sent before the pane reads idle', async () => {
     await approve();
     const made = world((_pane, label) => (label === 'claude opus 5.5' ? PERMISSION : IDLE));
@@ -2290,6 +2430,7 @@ describe('team up, the pause', () => {
     await approve();
     const made = world((_pane, label) => (label === 'deepseek flash v4.1' ? PERMISSION : IDLE));
     made.launch.agents = agentListOf(made);
+    made.launch.processInfo = () => ({ shell: 400, foreground: [400, 401] });
     let stopped = 0;
     made.launch.stopSession = () => { stopped++; return true; };
     made.terminal.keys.push('q');
@@ -2325,6 +2466,7 @@ describe('team up, the pause', () => {
     const made = world((_pane, label) => (label === 'claude opus 5.5' ? PERMISSION : IDLE));
     made.session = 'running';
     made.launch.agents = agentListOf(made);
+    made.launch.processInfo = () => ({ shell: 400, foreground: [400, 401] });
     let stopped = 0;
     made.launch.stopSession = () => { stopped++; return true; };
     made.terminal.keys.push('q');

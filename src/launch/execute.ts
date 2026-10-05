@@ -349,9 +349,18 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     }
     if (dialog?.mode === 'close-no-terminal') {
       // An owner whose stdin is not a terminal: the workspace is closed without input, and the
-      // record says why. Nothing is read from stdin, and nothing is sent into the pane.
-      if (here.workspace && !host.closeWorkspace(session, here.workspace)) {
-        return leftOut(seat, `${classification}; its workspace did not close; left as it is`);
+      // record says why. Nothing is read from stdin, and nothing is sent into the pane. The close
+      // itself makes the stop pass's reads, directly before it: the workspace is the one herdr
+      // returns for the seat's pane, holding that pane and no other seat's, and the pane's
+      // process must still be the one read when the dialog was found — a pane whose process
+      // changed is not closed, and neither is one with no identity to prove it by. A close that
+      // cannot be proven leaves everything as it is.
+      if (here.workspace) {
+        const target = closeTarget(waitingReads(here.pane), { seat, pane: here.pane, workspace: here.workspace, launched });
+        if ('problem' in target) return leftOut(seat, target.problem.reason, target.problem.detail);
+        if (!host.closeWorkspace(session, target.workspace)) {
+          return leftOut(seat, `${classification}; its workspace did not close; left as it is`);
+        }
       }
       host.drop(seat);
       dropped.add(seat);
@@ -1006,7 +1015,25 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         continue;
       }
       try {
-        if (!host.closeWorkspace(session, workspace)) {
+        // The state is never the authority for this close either: herdr's list, the workspace's
+        // panes and the pane's process are read now, directly before it, with nothing between
+        // the last read and the close — and the process must still be the one this run started
+        // (its own read, then the record; never the pane read at the close, which would prove
+        // nothing). A workspace whose pane's process changed, or cannot be proven, is left as it
+        // is. The close is the workspace herdr returns for the pane, never the stored one when
+        // they differ.
+        const here = places.get(seat);
+        const launched = identities.get(seat) ?? host.seatStates?.(session)?.[seat]?.launched;
+        const target: { workspace: string } | { problem: WaitingProblem } = here
+          ? closeTarget(waitingReads(here.pane), { seat, pane: here.pane, workspace, launched })
+          : { problem: { reason: 'its pane is not known; left as it is', detail: '' } };
+        if ('problem' in target) {
+          held = true;
+          dropped.add(seat);
+          final(seat, { kind: 'left out', reason: target.problem.reason }, target.problem.detail);
+          continue;
+        }
+        if (!host.closeWorkspace(session, target.workspace)) {
           // The close did not happen: nothing may claim it did, and the seat keeps its state.
           held = true;
           dropped.add(seat);
