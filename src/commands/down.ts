@@ -1,5 +1,5 @@
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner, mayChangeTeamVerdict, noPaneRefusal, standingOf, type Caller } from '../caller.ts';
+import { callerOf, describeCaller, isOwner, judgeCallerIn, mayChangeTeamVerdict, noPaneRefusal, standingOf, type Caller } from '../caller.ts';
 import { currentTeam } from '../file/current.ts';
 import {
   agentList,
@@ -154,7 +154,15 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   }
   if (current.notice) io.stdout(`${current.notice}\n`);
   const { team, dir } = current;
-  const session = args.values.session ?? team.session;
+  // With no `--session` the session this run judges and stops is the caller's own placement: the
+  // file's session first, then a session the state records this caller's pane in (`team up
+  // --session <other>`) — never one a non-owner chose, and the plan then names that session. The
+  // flag keeps aiming the run, for the owner alone.
+  const judged = args.values.session !== undefined
+    ? { caller: callerOf(io, args.values.session === 'default' ? undefined : args.values.session), session: args.values.session }
+    : judgeCallerIn(io, dir, team);
+  const { caller } = judged;
+  const session = judged.session;
 
   const running = sources.sessionRunning(session);
   if (running === null) {
@@ -174,7 +182,6 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     return 2;
   }
 
-  const caller = callerOf(io, session === 'default' ? undefined : session);
   const refusals: string[] = [];
   // The session a seat is judged in is the team file's; --session is the owner's to choose, so a
   // non-owner can't aim the check at a session where its pane holds the seat's name.

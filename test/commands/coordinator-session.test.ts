@@ -681,3 +681,161 @@ describe('remove needs an approval in force', () => {
     });
   }
 });
+
+// The idle screen a launched seat shows: what `up` reads to call it ready. Each CLI's own —
+// `readScreen` classifies by the seat's CLI, so the codex seat gets the codex fixture, with its
+// composer line naming the model and version the team file declares.
+const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
+const CODEX_IDLE = readFileSync(new URL('../fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8').replace(
+  'GPT-5.6-Terra medium ·',
+  'GPT-6-Sol medium ·',
+);
+
+// The codex pane with typed text, in the registered unsent capture's shape: the pane's own
+// header and warning rows, the typed rows under its prompt, the box's blank frame row, then the
+// footer the model is read from. A first-message seat's rules are typed into it, so every row
+// below the prompt is one line of the rules.
+const CODEX_UNSENT = readFileSync(new URL('../fixtures/codex/0.157.0/unsent.txt', import.meta.url), 'utf8').replace(
+  'GPT-5.6-Terra medium ·',
+  'GPT-6-Sol medium ·',
+);
+const CODEX_HEAD = CODEX_UNSENT.split('\n').slice(0, 14);
+const CODEX_FOOT = CODEX_UNSENT.split('\n')[19] ?? '';
+
+function codexTyped(text: string): string {
+  const [first = '', ...rest] = text.split('\n');
+  return [...CODEX_HEAD, `› ${first}`, ...rest.map((line) => `  ${line}`), '', CODEX_FOOT, ''].join('\n');
+}
+
+// A herdr that starts: every workspace gets its own pane, and the panes `up` handed out are
+// listed back to it with a running agent in each.
+function launching(): Launch {
+  let n = 0;
+  let running = false;
+  const panes = new Map<string, { text: string; agent: boolean; cli: string; status: string }>();
+  return {
+    sessionState: () => (running ? 'running' : 'absent'),
+    startServer() {
+      running = true;
+      return true;
+    },
+    sessionUp: () => running,
+    createWorkspace() {
+      n += 1;
+      const pane = `w${n}:p1`;
+      panes.set(pane, { text: IDLE, agent: false, cli: 'claude', status: 'idle' });
+      return { pane, workspace: `w${n}` };
+    },
+    paneRun(_session, pane, command) {
+      const known = panes.get(pane);
+      if (known) {
+        known.agent = true;
+        known.cli = command.includes('codex') ? 'codex' : 'claude';
+        known.text = known.cli === 'codex' ? CODEX_IDLE : IDLE;
+      }
+      return true;
+    },
+    renameAgent: () => true,
+    closeWorkspace: () => true,
+    agentPanes: () => [...panes].filter(([, one]) => one.agent).map(([id]) => id),
+    paneText: (_session, pane) => panes.get(pane)?.text ?? '',
+    // The codex seat's rules are its first message: typing shows them in its composer, and the
+    // Enter that sends them leaves the pane idle and working, as the registered captures show.
+    // The claude seats take their rules as a launch option, so nothing is ever typed into them.
+    typeText: (_session, pane, text) => {
+      const known = panes.get(pane);
+      if (!known) return false;
+      known.text = known.cli === 'codex' ? codexTyped(text) : IDLE;
+      return true;
+    },
+    pressEnter: (_session, pane) => {
+      const known = panes.get(pane);
+      if (!known) return false;
+      known.text = known.cli === 'codex' ? CODEX_IDLE : IDLE;
+      known.status = 'working';
+      return true;
+    },
+    agentStatus: (_session, pane) => panes.get(pane)?.status ?? null,
+    foreground: (_session, pane) => [panes.get(pane)?.cli ?? 'claude'],
+    sleep: async () => {},
+    now: () => new Date(0),
+  };
+}
+
+type UpState = {
+  sessions: Record<string, { seats: Record<string, { pane?: string; stage?: string }>; worktrees: Record<string, unknown> }>;
+};
+
+// A team the owner started under another session: `team up --session <name>` writes its state
+// under that session — the file names one session, the team runs under another — and the seats
+// `up` started must still stand in every command, with no flag. Which session a caller is
+// judged in comes from the caller's own placement and the state `up` wrote for it; `--session`
+// stays the owner's own.
+describe('a team run under another session', () => {
+  // The real `up`, in-process on a fake host (never a real herdr), under the overridden session.
+  // Returns the state it wrote and the pane it recorded for the coordinator's seat.
+  async function upUnderOther(): Promise<{ state: UpState; pane: string }> {
+    const io = testIo(dir, { kind: 'owner' });
+    const code = await runUp(
+      ['--session', OTHER],
+      io,
+      upSources({ sessionRunning: () => false, sessionState: () => 'absent', launch: launching() }),
+    );
+    if (code !== 0) throw new Error(`the up run failed: ${io.err}${io.out}`);
+    const state = JSON.parse(readFileSync(stateFile, 'utf8')) as UpState;
+    const pane = state.sessions[OTHER]?.seats[COORDINATOR]?.pane;
+    if (typeof pane !== 'string') throw new Error('up recorded no pane');
+    return { state, pane };
+  }
+
+  for (const command of COMMANDS) {
+    // The seat `up` started, placed through the fake caller sources on the pane the state
+    // records — and the same caller handed in the way main described it — meet the same run.
+    test(`${command.name}: the coordinator's caller of that session passes, read as main read it`, async () => {
+      const { state, pane } = await upUnderOther();
+      const judged = await command.run({ sources: sourcesOf(OTHER, COORDINATOR, pane) }, [], { state });
+      const main = await command.run({ kind: 'seat', name: COORDINATOR, pane }, [], { state });
+      expect({ code: judged.code, out: judged.out, err: judged.err }).toEqual({ code: main.code, out: main.out, err: main.err });
+    });
+  }
+
+  test('down with no flag stops the session the team actually runs under', async () => {
+    const { state, pane } = await upUnderOther();
+    const run = await byName('down').run({ sources: sourcesOf(OTHER, COORDINATOR, pane) }, ['--dry-run'], { state });
+    expect(run.code).toBe(0);
+    expect(run.out).toContain(`+ herdr session stop ${OTHER}\n`);
+  });
+
+  test('a caller on a pane the state records for no one in that session: the no-pane refusal', async () => {
+    const { state, pane } = await upUnderOther();
+    delete state.sessions[OTHER]?.seats[COORDINATOR];
+    const run = await byName('remove').run({ sources: sourcesOf(OTHER, COORDINATOR, pane) }, [], { state });
+    expect({ code: run.code, out: run.out, err: run.err }).toEqual({ code: 1, out: '', err: byName('remove').noPane(COORDINATOR) });
+    expect(readFileSync(file, 'utf8')).toBe(run.before);
+    expect(readFileSync(file, 'utf8')).toContain(`name: ${SEAT}`);
+  });
+
+  test('a caller on another pane of that session: refused, and the file is untouched', async () => {
+    const { state } = await upUnderOther();
+    const run = await byName('remove').run({ sources: sourcesOf(OTHER, COORDINATOR, 'w9:p1') }, [], { state });
+    expect({ code: run.code, out: run.out, err: run.err }).toEqual({ code: 1, out: '', err: byName('remove').refusal(COORDINATOR) });
+    expect(readFileSync(file, 'utf8')).toBe(run.before);
+    expect(readFileSync(file, 'utf8')).toContain(`name: ${SEAT}`);
+  });
+
+  test('a caller placed in the file\'s own session is refused: that state records nothing', async () => {
+    const { state } = await upUnderOther();
+    const run = await byName('remove').run({ sources: sourcesOf(SESSION, COORDINATOR, COORDINATOR_PANE) }, [], { state });
+    expect({ code: run.code, out: run.out, err: run.err }).toEqual({ code: 1, out: '', err: byName('remove').noPane(COORDINATOR) });
+    expect(readFileSync(file, 'utf8')).toBe(run.before);
+  });
+
+  test('unless the file\'s own session records the pane too', async () => {
+    const { state } = await upUnderOther();
+    state.sessions[SESSION] = { seats: { [COORDINATOR]: { stage: 'ready', pane: COORDINATOR_PANE } }, worktrees: {} };
+    const judged = await byName('remove').run({ sources: sourcesOf(SESSION, COORDINATOR, COORDINATOR_PANE) }, [], { state });
+    const main = await byName('remove').run({ kind: 'seat', name: COORDINATOR, pane: COORDINATOR_PANE }, [], { state });
+    expect({ code: judged.code, out: judged.out, err: judged.err }).toEqual({ code: main.code, out: main.out, err: main.err });
+    expect(judged.code).toBe(0);
+  });
+});

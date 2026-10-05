@@ -158,6 +158,51 @@ export function judgeCallerOf(io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'ca
   return { caller, shown: callerOf(io) };
 }
 
+/**
+ * The caller a command must judge when the call named no session, and the session to judge it
+ * in. The file's own session is tried first, exactly as it was before sessions were judged: a
+ * team the file names is judged where it always was, and every existing binding holds. The one
+ * case this adds is a team the owner started under another session — `team up --session <name>`,
+ * the file still naming its own — whose seats must stand in the commands that change the team.
+ * The session then comes from the caller's own placement: the state session that records this
+ * caller's pane for the coordinator's or the operator's seat. The flag never comes back to a
+ * non-owner; only a placement the owner's own state records can move the judgement. A state
+ * that holds no other session — every team that never overrode one — resolves to the file's
+ * own session, unchanged. A seat placed in another session but not standing in it is judged
+ * there, so the refusal names the caller instead of reading it as a stranger; a caller no
+ * state-held session places falls back to the file's placement, today's refusal.
+ */
+export function judgeCallerIn(
+  io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>,
+  dir: string,
+  team: Pick<TeamFile, 'session' | 'coordinator' | 'operator'>,
+): { caller: Caller; shown: Caller; session: string } {
+  const placedIn = (session: string): { caller: Caller; shown: Caller; session: string; verdict: CallerVerdict } => {
+    const { caller, shown } = judgeCallerOf(io, session === 'default' ? undefined : session);
+    return { caller, shown, session, verdict: mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller)) };
+  };
+  const named = placedIn(team.session);
+  if (named.verdict.kind === 'ok') return named;
+  let held: { caller: Caller; shown: Caller; session: string; verdict: CallerVerdict } | undefined;
+  for (const session of stateSessions(dir)) {
+    if (session === team.session) continue;
+    const there = placedIn(session);
+    if (there.verdict.kind === 'ok') return there;
+    if (held === undefined && there.caller.kind === 'seat') held = there;
+  }
+  return held ?? named;
+}
+
+/** The sessions the state holds, or none when it can't be read: a caller check must never
+ *  become a stack trace. */
+function stateSessions(dir: string): string[] {
+  try {
+    return Object.keys(readState(dir).sessions);
+  } catch {
+    return [];
+  }
+}
+
 export function describeCaller(caller: Caller): string {
   if (caller.kind === 'owner') return 'owner';
   if (caller.kind === 'seat') return caller.name;

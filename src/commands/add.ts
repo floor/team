@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce, recordSeatDigestOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { describeCaller, isOwner, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, standingOf } from '../caller.ts';
+import { describeCaller, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, standingOf } from '../caller.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from '../commands/doctor.ts';
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
@@ -125,10 +125,16 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   }
   const { team, root, path } = loaded;
   const dir = dirname(path);
-  const session = args.values.session ?? team.session;
   // The gate judges the caller placed in the session this command asks about — the proof its pane
-  // is that session's. The refusal names the caller's own placement, exactly as main described it.
-  const { caller, shown } = judgeCallerOf(io, session === 'default' ? undefined : session);
+  // is that session's. With no `--session` the session judged is the caller's own placement: the
+  // file's session first, then a session the state records this caller's pane in (`team up
+  // --session <other>`) — never one a non-owner chose. The refusal names the caller's own
+  // placement, exactly as main described it.
+  const judged = args.values.session !== undefined
+    ? { ...judgeCallerOf(io, args.values.session === 'default' ? undefined : args.values.session), session: args.values.session }
+    : judgeCallerIn(io, dir, team);
+  const { caller, shown } = judged;
+  const session = judged.session;
   if (args.values.file && !isOwner(caller)) {
     io.stderr(`team add: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(shown)}\n`);
     // exit: add.file-owner

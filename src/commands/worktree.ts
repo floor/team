@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { notInForce, worktreeTeamInForceOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, standingOf } from '../caller.ts';
+import { callerOf, describeCaller, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, standingOf } from '../caller.ts';
 import { insideTrust } from '../file/paths.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -104,11 +104,17 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     return 1;
   }
   const reading = inForce.team;
-  const session = args.values.session ?? reading.session;
   const dir = dirname(loaded.path);
   // The gate judges the caller placed in the session this command asks about — the proof its pane
-  // is that session's. The refusal names the caller's own placement, exactly as main described it.
-  const { caller, shown } = judgeCallerOf(io, session === 'default' ? undefined : session);
+  // is that session's. With no `--session` the session judged is the caller's own placement: the
+  // approved file's session first, then a session the state records this caller's pane in (`team
+  // up --session <other>`) — never one a non-owner chose. The refusal names the caller's own
+  // placement, exactly as main described it.
+  const judged = args.values.session !== undefined
+    ? { ...judgeCallerOf(io, args.values.session === 'default' ? undefined : args.values.session), session: args.values.session }
+    : judgeCallerIn(io, dir, reading);
+  const { caller, shown } = judged;
+  const session = judged.session;
   // The session a seat is judged in is the team file's; --session is the owner's to choose, so a
   // non-owner can't aim the check at a session where its pane holds the seat's name.
   if (args.values.session && !isOwner(caller)) {

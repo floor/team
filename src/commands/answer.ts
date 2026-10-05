@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { basename, dirname } from 'node:path';
 import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, callerVerdict, describeCaller, noPaneRefusal, standingOf, type Caller, type SeatStanding } from '../caller.ts';
+import { callerOf, callerVerdict, describeCaller, judgeCallerIn, noPaneRefusal, standingOf, type Caller, type SeatStanding } from '../caller.ts';
 import { canonicalLanding, folderOf, listFolder, lobbyPath } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { renderSignature } from '../file/signature.ts';
@@ -95,8 +95,15 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
   }
   const { team, root } = loaded;
   const dir = dirname(loaded.path);
-  const session = args.values.session ?? team.session;
-  const caller = callerOf(io, session);
+  // The gate judges the caller placed in the session this command asks about. With no `--session`
+  // the session judged is the caller's own placement: the file's session first, then a session
+  // the state records this caller's pane in (`team up --session <other>`) — never one a non-owner
+  // chose. The refusal names the caller's own placement, exactly as main described it.
+  const judged = args.values.session !== undefined
+    ? { caller: callerOf(io, args.values.session), session: args.values.session }
+    : judgeCallerIn(io, dir, team);
+  const { caller } = judged;
+  const session = judged.session;
   const who = logWho(caller, team);
 
   const refused = (reason: Refusal): number => {
