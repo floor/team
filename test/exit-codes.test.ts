@@ -22,7 +22,7 @@ import { runUp, type Launch, type UpSources } from '../src/commands/up.ts';
 import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import { runWorktree, type WorktreeSources } from '../src/commands/worktree.ts';
 import { main, reportFailure, version } from '../src/cli.ts';
-import { lobbyPath } from '../src/file/landing.ts';
+import { listFolder, lobbyPath } from '../src/file/landing.ts';
 import { loadTeamFile } from '../src/file/load.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import { overridesPath } from '../src/profiles/overrides.ts';
@@ -1598,6 +1598,8 @@ function answerHost(place: Place, screen: string, opts: { version?: string; send
     },
     rename: () => true,
     foreground: () => ['cursor-agent'],
+    foregroundCwd: () => lobbyPath(place.home),
+    list: (dir) => listFolder(dir),
     status: () => status,
     type: (_session, _pane, value) => {
       if (opts.type === false) return false;

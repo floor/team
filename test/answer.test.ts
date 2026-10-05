@@ -6,7 +6,7 @@ import { fingerprints } from '../src/approve/fingerprint.ts';
 import { runApprove } from '../src/commands/approve.ts';
 import { runAnswer, type AnswerHost } from '../src/commands/answer.ts';
 import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
-import { lobbyPath } from '../src/file/landing.ts';
+import { listFolder, lobbyPath } from '../src/file/landing.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import { extractFolder, isEligible, labelMatches, versionMatches, wholeVersion, type TrustRecord } from '../src/profiles/trust-answer.ts';
 import { profileFor } from '../src/profiles/index.ts';
@@ -125,6 +125,8 @@ function fake(home: string, root: string, screen: string, cli: 'cursor' | 'antig
     },
     rename() { host.named = true; return true; },
     foreground() { return [cli === 'cursor' ? 'cursor-agent' : 'agy']; },
+    foregroundCwd() { return lobbyPath(home); },
+    list(dir: string) { return listFolder(dir); },
     status() { return status; },
     type(_session: string, _pane: string, value: string) {
       host.typed.push(value);
@@ -420,9 +422,9 @@ describe('team answer', () => {
     const label = trust.replace('[a] Trust this workspace', '[a] Trust this workspacX');
     cases.push(
       { name: 'label', screen: label, message: 'lead: the pane is not the trust dialog' },
-      { name: 'trailing slash', screen: withPath(cursorTrust, '<untrusted-directory>', `${lobby}/`), message: 'lead: the dialog does not show the lobby as written' },
-      { name: 'double slash', screen: withPath(cursorTrust, '<untrusted-directory>', lobby.replace('/team/', '//team/')), message: 'lead: the dialog does not show the lobby as written' },
-      { name: 'dot segment', screen: withPath(cursorTrust, '<untrusted-directory>', lobby.replace('/team/', '/./team/')), message: 'lead: the dialog does not show the lobby as written' },
+      { name: 'trailing slash', screen: withPath(cursorTrust, '<untrusted-directory>', `${lobby}/`), message: 'lead: the dialog does not show the lobby as written: the owner answers it through team up' },
+      { name: 'double slash', screen: withPath(cursorTrust, '<untrusted-directory>', lobby.replace('/team/', '//team/')), message: 'lead: the dialog does not show the lobby as written: the owner answers it through team up' },
+      { name: 'dot segment', screen: withPath(cursorTrust, '<untrusted-directory>', lobby.replace('/team/', '/./team/')), message: 'lead: the dialog does not show the lobby as written: the owner answers it through team up' },
       { name: 'two paths', screen: two, message: 'lead: the dialog does not show exactly one folder' },
       { name: 'no path', screen: none, message: 'lead: the dialog does not show exactly one folder' },
       { name: 'parent', screen: parent, message: 'lead: ask the owner to approve this exact folder and answer through team up' },
@@ -485,10 +487,115 @@ describe('team answer', () => {
     expect(host.keys).toEqual([]);
     expect(host.typed).toEqual([]);
     expect([
-      'lead: the dialog does not show the lobby as written\n',
+      'lead: the dialog does not show the lobby as written: the owner answers it through team up\n',
       'lead: ask the owner to approve this exact folder and answer through team up\n',
     ]).toContain(io.err);
     expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('waiting-owner');
+  });
+
+  test('a path the row could have padded, a pane in the padded folder, and its sibling send nothing', async () => {
+    const { root, home, lobby, dir } = world();
+    writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+    await approve(root, home);
+    // The folder the padding could hide: the lobby's name plus one trailing space. The
+    // extractor strips the row's padding, so the lobby and this folder read the same on
+    // screen — Cursor's boxed row has no visible end — and the pane and parent readings
+    // are what tell them apart. Each eligible CLI sends neither its key nor its text.
+    const hidden = `${lobby} `;
+    mkdirSync(hidden);
+    for (const cli of ['cursor', 'antigravity'] as const) {
+      writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator', cli));
+      await approve(root, home);
+      const source = cli === 'cursor' ? cursorTrust : agyTrust;
+      const token = cli === 'cursor' ? '<untrusted-directory>' : '<project-worktree>';
+      wait(dir, 'lead');
+      const host = fake(home, root, withPath(source, token, hidden), cli);
+      host.foregroundCwd = () => hidden;
+      const io = testIo(root, { kind: 'owner' });
+      expect(await runAnswer([...FILE, 'lead', 'trust'], io, host)).toBe(1);
+      expect(host.keys).toEqual([]);
+      expect(host.typed).toEqual([]);
+      expect(host.entered).toBe(0);
+      expect(io.err).toBe("lead: the pane's folder is not the lobby as written\n");
+    }
+    // The plain case, with the sibling gone and the pane in the lobby, still answers.
+    rmdirSync(hidden);
+    writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+    await approve(root, home);
+    wait(dir, 'lead');
+    const plain = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', lobby), 'cursor');
+    const done = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], done, plain)).toBe(0);
+    expect(plain.keys).toEqual(['a']);
+    expect(done.out).toBe('lead: trust answered; ready\n');
+  });
+
+  test("a pane folder that is not the lobby, or cannot be read, sends nothing", async () => {
+    const { root, home, lobby, dir } = world();
+    writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+    await approve(root, home);
+    const trust = withPath(cursorTrust, '<untrusted-directory>', lobby);
+
+    // The pane reports the lobby-plus-space folder — one the owner may have deleted after
+    // the CLI started there — while the dialog's row trims to the lobby: the byte equality
+    // is what refuses, sibling or none.
+    wait(dir, 'lead');
+    const padded = fake(home, root, trust, 'cursor');
+    padded.foregroundCwd = () => `${lobby} `;
+    const paddedIo = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], paddedIo, padded)).toBe(1);
+    expect(padded.keys).toEqual([]);
+    expect(paddedIo.err).toBe("lead: the pane's folder is not the lobby as written\n");
+
+    // herdr reporting no folder is not a pass either.
+    wait(dir, 'lead');
+    const silent = fake(home, root, trust, 'cursor');
+    silent.foregroundCwd = () => null;
+    const silentIo = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], silentIo, silent)).toBe(1);
+    expect(silent.keys).toEqual([]);
+    expect(silentIo.err).toBe("lead: the pane's folder cannot be read\n");
+
+    // The check is part of each fresh reading: the lobby on the first, the padded name on
+    // the second, sends nothing.
+    let reads = 0;
+    wait(dir, 'lead');
+    const moved = fake(home, root, trust, 'cursor');
+    moved.foregroundCwd = () => { reads += 1; return reads < 2 ? lobby : `${lobby} `; };
+    const movedIo = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], movedIo, moved)).toBe(1);
+    expect(moved.keys).toEqual([]);
+    expect(movedIo.err).toBe("lead: the pane's folder is not the lobby as written\n");
+  });
+
+  test("a sibling name the lobby's plus whitespace, and an unlistable parent, send nothing", async () => {
+    const { root, home, lobby, dir } = world();
+    writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+    await approve(root, home);
+    const trust = withPath(cursorTrust, '<untrusted-directory>', lobby);
+    // The screen shows the lobby exactly and the pane is in it; the name beside it still
+    // refuses — it is the folder the row's trimmed end could have hidden — whatever
+    // whitespace follows the lobby's name.
+    for (const pad of [' ', '\t', ' ']) {
+      const hidden = `${lobby}${pad}`;
+      mkdirSync(hidden);
+      wait(dir, 'lead');
+      const beside = fake(home, root, trust, 'cursor');
+      const besideIo = testIo(root, { kind: 'owner' });
+      expect(await runAnswer([...FILE, 'lead', 'trust'], besideIo, beside)).toBe(1);
+      expect(beside.keys).toEqual([]);
+      expect(besideIo.err).toBe("lead: the lobby's parent folder holds a name that differs from the lobby's by whitespace alone\n");
+      rmdirSync(hidden);
+    }
+
+    // A parent that cannot be listed refuses; it is never read as "no such name".
+    wait(dir, 'lead');
+    const unreadable = fake(home, root, trust, 'cursor');
+    unreadable.list = () => null;
+    const unreadableIo = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], unreadableIo, unreadable)).toBe(1);
+    expect(unreadable.keys).toEqual([]);
+    expect(unreadableIo.err).toBe("lead: the lobby's parent folder cannot be read\n");
   });
 
   test('antigravity without the mark or the footer sends nothing', async () => {

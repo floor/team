@@ -193,6 +193,8 @@ function answerHost(home: string): AnswerHost {
     sendKey: unused,
     rename: unused,
     foreground: unused,
+    foregroundCwd: unused,
+    list: unused,
     status: unused,
     type: unused,
     enter: unused,

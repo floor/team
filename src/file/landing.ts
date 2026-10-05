@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync } from 'node:fs';
+import { lstatSync, readdirSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 
 /** The one folder every seat starts in: `<home>/.config/team/lobby`. */
@@ -43,4 +43,13 @@ export function canonicalLanding(path: string): string | null {
 /** An absolute folder as written, or a project-relative one resolved from the root. */
 export function folderOf(entry: string, root: string): string {
   return isAbsolute(entry) ? entry : resolve(root, entry);
+}
+
+/** The names in a folder, or null when it cannot be listed. */
+export function listFolder(dir: string): string[] | null {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return null;
+  }
 }

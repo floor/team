@@ -67,6 +67,21 @@ export function paneForeground(pane: string, session?: string): string[] | null 
   }
 }
 
+// The folder a pane's foreground program works in — `pane get`'s `foreground_cwd` — or null
+// when herdr can't be reached or does not report one. Captured from herdr 0.7.1 in a scratch
+// session: a pane whose CLI was started in a folder reports that folder byte for byte, a
+// trailing space included; the field follows the program's live folder (one that chdir'd to
+// /tmp reported /private/tmp) where the pane's `cwd` keeps the folder it was started in.
+export function paneForegroundCwd(pane: string, session?: string): string | null {
+  try {
+    const result = run(['pane', 'get', pane], session) as { pane?: { foreground_cwd?: unknown } };
+    const cwd = result.pane?.foreground_cwd;
+    return typeof cwd === 'string' ? cwd : null;
+  } catch {
+    return null;
+  }
+}
+
 // Whether a pane's foreground program is back to the shell, from a `pane process-info` result:
 // true when a foreground process is the pane's own shell process, false when none is, and null
 // when herdr can't say — no process info, no `shell_pid` (an older herdr), an empty or

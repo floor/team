@@ -1,15 +1,15 @@
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
-import { dirname } from 'node:path';
+import { basename, dirname } from 'node:path';
 import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, type Caller } from '../caller.ts';
-import { canonicalLanding, folderOf, lobbyPath } from '../file/landing.ts';
+import { canonicalLanding, folderOf, listFolder, lobbyPath } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { renderSignature } from '../file/signature.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
-import { agentList, agentRename, agentStatus, paneForeground, paneRead, pressEnter, sendKey as herdrSendKey, typeText } from '../herdr.ts';
+import { agentList, agentRename, agentStatus, paneForeground, paneForegroundCwd, paneRead, pressEnter, sendKey as herdrSendKey, typeText } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { deliverRules, type Delivery } from '../launch/deliver.ts';
 import { rulesText } from '../launch/rules.ts';
@@ -34,6 +34,8 @@ export type AnswerHost = {
   sendKey(session: string, pane: string, key: string): boolean;
   rename(session: string, pane: string, name: string): boolean;
   foreground(session: string, pane: string): string[] | null;
+  foregroundCwd(session: string, pane: string): string | null;
+  list(dir: string): string[] | null;
   status(session: string, pane: string): string | null;
   type(session: string, pane: string, text: string): boolean;
   enter(session: string, pane: string): boolean;
@@ -56,6 +58,8 @@ export const realHost: AnswerHost = {
   sendKey: (session, pane, key) => herdrSendKey(pane, key, session),
   rename: (session, pane, name) => agentRename(pane, name, session),
   foreground: (session, pane) => paneForeground(pane, session),
+  foregroundCwd: (session, pane) => paneForegroundCwd(pane, session),
+  list: (dir) => listFolder(dir),
   status: (session, pane) => agentStatus(pane, session),
   type: (session, pane, text) => typeText(pane, text, session),
   enter: (session, pane) => pressEnter(pane, session),
@@ -243,7 +247,21 @@ function inspect(
   const lobby = canonicalLanding(lobbyPath(host.home));
   if (!lobby) return say('folder', OUTSIDE);
   if (canonicalLanding(shown) !== lobby) return say('folder', OUTSIDE);
-  if (shown !== lobby) return say('folder', 'the dialog does not show the lobby as written');
+  if (shown !== lobby) return say('folder', 'the dialog does not show the lobby as written: the owner answers it through team up');
+  // The screen read strips the row's trailing padding, so the last byte of the path it
+  // shows is never proof — a boxed row has no visible end. Two other readings, fresh with
+  // this one, must say the lobby too: the folder the pane itself reports working in, byte
+  // for byte, and the lobby's parent, where a name the lobby's plus whitespace would be
+  // the folder such trimming could have hidden.
+  const own = host.foregroundCwd(session, pane);
+  if (own === null) return say('folder', "the pane's folder cannot be read");
+  if (own !== lobby) return say('folder', "the pane's folder is not the lobby as written");
+  const names = host.list(dirname(lobby));
+  if (names === null) return say('folder', "the lobby's parent folder cannot be read");
+  const base = basename(lobby);
+  if (names.some((name) => name.length > base.length && name.startsWith(base) && /\s/.test(name.charAt(base.length)))) {
+    return say('folder', "the lobby's parent folder holds a name that differs from the lobby's by whitespace alone");
+  }
   const listed = trust.some((entry) => canonicalLanding(folderOf(entry, root)) === lobby);
   if (!listed) return say('folder', 'this folder is not an exact trust entry');
   return { record, version: printed, folder: lobby };
