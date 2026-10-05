@@ -3,7 +3,7 @@ import type { Seat, TeamFile } from '../file/types.ts';
 import type { HerdrAgent, HerdrWorkspace, PaneProcesses } from '../herdr.ts';
 import { herdrCommand } from '../herdr.ts';
 import { seatProcessVerdict } from '../launch/identity.ts';
-import type { SessionState } from '../state.ts';
+import type { SeatState, SessionState } from '../state.ts';
 import { readScreen } from '../watch/screen.ts';
 import { modelDiffers, seatModel } from './statusline.ts';
 
@@ -18,7 +18,7 @@ export type Live = {
   processes?: Record<string, PaneProcesses | null>;
 };
 
-export type Row = { name: string; state: string; model: string; pane: string };
+export type Row = { name: string; state: string; model: string; pane: string; stored?: string };
 
 /** The repair of the one precondition `status` knows: the file is not the approved one. The
  *  approval differences carry it, and a repair that waits on it is marked with it. */
@@ -48,6 +48,40 @@ export type Difference = {
 export type Comparison = { rows: Row[]; differences: Difference[]; notes: string[] };
 
 export const WATCH_LABEL = 'watchdog';
+
+/** The one row a seat shows while it waits, ahead of the ordinary launch-stopped and unnamed rows. */
+function waitingView(
+  name: string,
+  recorded: SeatState | undefined,
+  team: TeamFile,
+): { state: string; stored: string; difference: Difference } | null {
+  const waiting = recorded?.waiting;
+  if (!waiting) return null;
+  if (waiting.state === 'trust-sent-recovery') {
+    return {
+      state: 'trust sent; recovery required',
+      stored: 'trust-sent-recovery',
+      difference: {
+        what: `${name}: trust sent; recovery required`,
+        repair: 'the owner runs team up',
+        needs: 'approve',
+        owner: true,
+      },
+    };
+  }
+  const phrase = `waiting for owner (${waiting.classification})`;
+  const answer = team.dialogs.trust === 'coordinator' && waiting.classification === 'trust';
+  return {
+    state: phrase,
+    stored: 'waiting-owner',
+    difference: {
+      what: `${name}: ${phrase}`,
+      repair: answer ? `team answer ${name} trust` : 'the owner runs team up',
+      needs: 'approve',
+      ...(answer ? {} : { owner: true as const }),
+    },
+  };
+}
 
 /**
  * The approval differences first, then the repairs that wait on one marked `(after: …)`. The
@@ -97,6 +131,18 @@ export function compare(
         continue;
       }
       const model = modelOf(seat, agent, live, differences, notes);
+      const held = waitingView(seat.name, recorded, team);
+      if (held) {
+        rows.push({ name: seat.name, state: held.state, stored: held.stored, model, pane: agent.pane });
+        differences.push(held.difference);
+        if (seat.stopped) {
+          differences.push({
+            what: `${seat.name} is marked stopped in the file and is running`,
+            repair: `team remove ${seat.name} --keep, or take "stopped: true" off the seat`,
+          });
+        }
+        continue;
+      }
       const screenText = live.screens[agent.pane];
       const screen = readScreen(seat.cli, screenText);
       // `done` is as free as `idle`: delivery types into either one (`deliver.ts`), and the
@@ -163,6 +209,15 @@ export function compare(
       differences.push(difference);
       continue;
     }
+    // A waiting record is read only of a pane that may still hold the seat: one that lost the
+    // launched process reads `missing` or `restored, not launched by team` above — never
+    // `waiting for owner`, and never under the declared model for a replaced one.
+    const waiting = recorded?.pane ? waitingView(seat.name, recorded, team) : null;
+    if (waiting && recorded?.pane) {
+      rows.push({ name: seat.name, state: waiting.state, stored: waiting.stored, model: seat.display, pane: recorded.pane });
+      differences.push(waiting.difference);
+      continue;
+    }
     // An agent sits in the workspace recorded for this name, under another name or under none.
     // The display label is not a key: two seats may share it.
     const stray = recorded?.workspace
@@ -192,6 +247,13 @@ export function compare(
     const agent = live.agents.find((candidate) => candidate.name === name);
     if (agent) {
       claimed.add(agent.pane);
+      const held = waitingView(name, recorded, team);
+      if (held) {
+        rows.push({ name, state: held.state, stored: held.stored, model: `like ${recorded.temporary.like}`, pane: agent.pane });
+        differences.push(held.difference);
+        notes.push(`${name} is temporary, until ${recorded.temporary.until}`);
+        continue;
+      }
       rows.push({ name, state: `${agent.status}, temporary`, model: `like ${recorded.temporary.like}`, pane: agent.pane });
       notes.push(`${name} is temporary, until ${recorded.temporary.until}`);
     } else {

@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAdd } from '../../src/commands/add.ts';
+import { runAnswer, type AnswerHost } from '../../src/commands/answer.ts';
 import { runApprove } from '../../src/commands/approve.ts';
 import { check, loadConfig } from '../../src/commands/check.ts';
 import { runDoctor } from '../../src/commands/doctor.ts';
@@ -149,6 +150,8 @@ async function command(page: Page, line: string, io: Io, answer?: string): Promi
   switch (name) {
     case 'add':
       return runAdd(rest, io, world.addSources());
+    case 'answer':
+      return runAnswer(rest, io, answerHost(fixture.home));
     case 'approve':
       return runApprove(rest, io, {
         ask: async (question) => {
@@ -183,6 +186,28 @@ async function command(page: Page, line: string, io: Io, answer?: string): Promi
     default:
       throw new Error(`no such command: ${name ?? ''}`);
   }
+}
+
+/** The docs page's only `answer` example fails before any pane is read. */
+function answerHost(home: string): AnswerHost {
+  const unused = (): never => { throw new Error('the docs example does not read a pane'); };
+  return {
+    version: unused,
+    agents: unused,
+    pane: unused,
+    sendKey: unused,
+    rename: unused,
+    foreground: unused,
+    foregroundCwd: unused,
+    list: unused,
+    status: unused,
+    type: unused,
+    enter: unused,
+    now: () => new Date(0),
+    sleep: async () => {},
+    home,
+    standing: unused,
+  };
 }
 
 function diff(expected: string, produced: string): string {

@@ -14,6 +14,7 @@ import { storePath, writeApproval, type ApprovalRecord } from '../src/store/stor
 test('the generated owner sections equal the hand-kept list, in order', () => {
   expect(OWNER_SECTIONS).toEqual([
     'trust',
+    'dialogs',
     'limits',
     'machine',
     'rules',
