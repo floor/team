@@ -588,21 +588,94 @@ for (const command of COMMANDS) {
   });
 }
 
-// `--file` is the owner's too, and the walk alone decides it: `answer` and `down` refuse it
-// before that file is read and before anything is written beside it. (The other four commands
-// refuse it after their own read; the round that added these two left them as they were.)
-// The flagged project below is another one entirely, its team file not even parseable: a run
-// that read it would report the file's own problem, and could leave its `last_valid` or a log
-// line there. The refusal has neither.
-function flaggedProject(): { root: string; file: string; listing: () => string[] } {
+// `--file` is the owner's, and the walk alone decides it, for every command that takes the flag:
+// the five commands, `worktree`'s two subcommands, and the dry runs. A non-owner's flag is
+// refused before that file is read, so the refusal depends on nothing stored at the flagged path
+// — not its bytes, not its problems, not the session it names. The flagged project below is
+// another one entirely: a run that read its file would report the file's own problem, ask the
+// host about the session it names, and could leave its `last_valid` or a log line beside it. The
+// refusal has none of that.
+
+// The states a flagged path stands in, one test each: no file at all, an unparsable file, a valid
+// team file, a folder, an unreadable file. The refusal is the same bytes and the same exit in all
+// five. The unreadable one is sealed after its bytes are captured, and opened again before they
+// are read back.
+const FLAGGED_STATES: { name: string; setUp: (path: string) => void; seal?: (path: string) => void; open?: (path: string) => void }[] = [
+  { name: 'missing', setUp: () => {} },
+  { name: 'unparsable', setUp: (path) => writeFileSync(path, 'format: [\n') },
+  { name: 'valid', setUp: (path) => writeFileSync(path, FILE) },
+  { name: 'a folder', setUp: (path) => mkdirSync(path) },
+  { name: 'unreadable', setUp: (path) => writeFileSync(path, FILE), seal: (path) => chmodSync(path, 0o000), open: (path) => chmodSync(path, 0o600) },
+];
+
+function flaggedProject(stateName = 'unparsable'): {
+  root: string;
+  file: string;
+  listing: () => string[];
+  bytes: () => string | null;
+  seal: () => void;
+  open: () => void;
+  cleanup: () => void;
+} {
+  const state = FLAGGED_STATES.find((one) => one.name === stateName);
+  if (!state) throw new Error(`no flagged state named ${stateName}`);
   const root = mkdtempSync(join(tmpdir(), 'team-flagged-'));
   mkdirSync(join(root, '.agents'));
   const flagged = join(root, '.agents', 'team.yaml');
-  writeFileSync(flagged, 'format: [\n');
-  return { root, file: flagged, listing: () => readdirSync(join(root, '.agents')).sort() };
+  state.setUp(flagged);
+  return {
+    root,
+    file: flagged,
+    listing: () => readdirSync(join(root, '.agents')).sort(),
+    bytes: () => {
+      try {
+        return readFileSync(flagged, 'utf8');
+      } catch {
+        return null;
+      }
+    },
+    seal: () => state.seal?.(flagged),
+    open: () => state.open?.(flagged),
+    cleanup: () => rmSync(root, { recursive: true, force: true }),
+  };
 }
 
-for (const command of COMMANDS.filter((one) => one.name === 'answer' || one.name === 'down')) {
+// The one rule, run against one surface and one state of the flagged path: the walk refuses the
+// flag before the file is read, no host call is made, and neither project moves.
+async function refusedBeforeRead(surface: Case, argv: string[], stateName: string): Promise<void> {
+  const flagged = flaggedProject(stateName);
+  try {
+    const beforeListing = flagged.listing();
+    const beforeBytes = flagged.bytes();
+    flagged.seal();
+    const calls: string[] = [];
+    const run = await surface.run(
+      { sources: recordingSources(calls, OTHER, COORDINATOR, COORDINATOR_PANE) },
+      ['--file', flagged.file, ...argv],
+    );
+    flagged.open();
+    // exit 1: <command>.file-owner, the case's own id (docs/reference/exit-codes.md).
+    expect({ code: run.code, out: run.out, err: run.err }).toEqual({
+      code: 1,
+      out: '',
+      err: surface.fileOwner('unplaced (it runs under herdr)'),
+    });
+    // No session and no pane: the fixture would answer, and nothing asks — the state's bytes
+    // never reach this run, however valid they are.
+    expect(calls).toEqual([]);
+    // The flagged project is untouched, whatever state its path is in.
+    expect(flagged.listing()).toEqual(beforeListing);
+    expect(flagged.bytes()).toBe(beforeBytes);
+    // And nothing of this run's own project either: no file, no state, no log line.
+    expect(readFileSync(file, 'utf8')).toBe(run.before);
+    expect(readFileSync(stateFile, 'utf8')).toBe(run.beforeState);
+    expect(existsSync(join(dir, '.agents', 'team.log'))).toBe(false);
+  } finally {
+    flagged.cleanup();
+  }
+}
+
+for (const command of COMMANDS) {
   describe(`${command.name}: --file is the owner's`, () => {
     test('a non-owner\'s --file is refused before the file is read', async () => {
       const flagged = flaggedProject();
@@ -683,8 +756,33 @@ for (const command of COMMANDS.filter((one) => one.name === 'answer' || one.name
       const plain = await command.run({ kind: 'owner' });
       expect({ code: flagged.code, out: flagged.out, err: flagged.err }).toEqual({ code: plain.code, out: plain.out, err: plain.err });
     });
+
+    // The same bytes and the same exit whatever is at the flagged path: a missing file, an
+    // unparsable one and a valid one answer alike — no `no team file at …`, no YAML problem, no
+    // host call about the session the valid one names.
+    for (const state of FLAGGED_STATES) {
+      test(`a non-owner's --file is refused before the file is read: the flagged path is ${state.name}`, async () => {
+        await refusedBeforeRead(command, [], state.name);
+      });
+    }
   });
 }
+
+// The dry runs refuse the same way, and before the plan they would print: the flag is the
+// walk's, not the run the plan describes.
+describe('the dry runs: --file is the owner\'s', () => {
+  const surfaces = [
+    { label: 'add --dry-run', surface: byName('add'), argv: ['--dry-run'] },
+    { label: 'down --dry-run', surface: byName('down'), argv: ['--dry-run'] },
+  ];
+  for (const { label, surface, argv } of surfaces) {
+    for (const state of FLAGGED_STATES) {
+      test(`${label}: a non-owner's --file is refused before the file is read, the flagged path ${state.name}`, async () => {
+        await refusedBeforeRead(surface, argv, state.name);
+      });
+    }
+  }
+});
 
 // The reported run, as a regression: a pane in another herdr session, renamed to the
 // coordinator's name, running `team remove codex-acme`. It removes nothing, stops nothing and
