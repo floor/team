@@ -20,7 +20,7 @@ jobs:
   test:
     # The two systems the watch reads: Linux answers from /proc, macOS from its own commands.
     # Linux runs on pull requests and pushes to main; macOS runs on pushes to main, nightly schedule
-    # and workflow_dispatch (reviewers run bun run ci on macOS locally before merge).
+    # and workflow_dispatch (the author and at least one reviewer run bun run ci on macOS locally before merge).
     # Both run the same `bun run ci`, so neither path rots unseen.
     strategy:
       fail-fast: false
