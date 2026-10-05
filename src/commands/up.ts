@@ -1,4 +1,3 @@
-import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -467,14 +466,6 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const host: Host = {
     startServer: launch.startServer,
     sessionUp: launch.sessionUp,
-    makeDir(path) {
-      try {
-        mkdirSync(path, { recursive: true });
-        return true;
-      } catch {
-        return false;
-      }
-    },
     createWorkspace: launch.createWorkspace,
     confirmLobby() {
       if (!verifiedLobby) return null;
