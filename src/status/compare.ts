@@ -1,3 +1,4 @@
+import { declaredModel } from '../file/model.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import type { HerdrAgent, HerdrWorkspace } from '../herdr.ts';
 import { herdrCommand } from '../herdr.ts';
@@ -132,7 +133,7 @@ function modelOf(seat: Seat, agent: HerdrAgent, live: Live, differences: Differe
   }
   if (running.model === seat.model && running.version === seat.version) return seat.display;
   differences.push({
-    what: `${seat.name} runs ${running.model} ${running.version}; the file says ${seat.model} ${seat.version}`,
+    what: `${seat.name} runs ${running.model} ${running.version}; the file says ${declaredModel(seat)}`,
     repair: `restart the seat on the file's model (team remove ${seat.name} --keep, then team add ${seat.name}), or correct the file and run team approve`,
   });
   return `${running.model} ${running.version} (file: ${seat.display})`;

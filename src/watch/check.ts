@@ -35,7 +35,7 @@ export type SeatHistory = {
 export type SeatObservation = {
   name: string;
   // The seat the file declares; undefined for a temporary seat, which signs with no file model.
-  seat: { cli: string; model: string; version: string } | undefined;
+  seat: { cli: string; model: string; version: string; display: string } | undefined;
   // The agent herdr lists for the seat; undefined when no agent answers for it.
   agent: HerdrAgent | undefined;
   // Whether the session answered at all: false is every seat absent for the same reason.
