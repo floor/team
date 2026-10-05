@@ -130,6 +130,20 @@ describe('writing the file', () => {
     }
   });
 
+  test('a hundred deliveries leave no descriptor behind', () => {
+    const { home, path, text } = fresh();
+    try {
+      // The count of open descriptors, read from the folder the platform lists them in: a
+      // descriptor the writer forgets to close is one more entry here, one per delivery.
+      const listed = existsSync('/proc/self/fd') ? '/proc/self/fd' : '/dev/fd';
+      const before = readdirSync(listed).length;
+      for (let at = 0; at < 100; at++) expect(writeRulesFile(path, text, rulesFileHash(text)).ok).toBe(true);
+      expect(readdirSync(listed).length).toBe(before);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test('a symbolic link at the file is refused, never written through', () => {
     const { home, path, text } = fresh();
     try {

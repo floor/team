@@ -178,6 +178,14 @@ export function writeRulesFile(path: string, text: string, hash12: string, rando
   const temporary = join(dirname(path), `${basename(path)}.${random()}.tmp`);
   let fd;
   try {
+    // Each flag refuses a link planted at the temporary's name, its own way. `open(2)`: with
+    // `O_CREAT` and `O_EXCL` set the open fails whenever the path exists, a symbolic link
+    // included, whatever its target; `O_NOFOLLOW` refuses a link on its own. Measured here
+    // (bun's `node:fs`, macOS): `O_WRONLY | O_CREAT` opens through the link into its target,
+    // adding either flag refuses it (`EEXIST`, `ELOOP`). The exclusive flag refuses first, so
+    // the no-follow is unreachable while it is there — a second lock, not the only one. It
+    // stays: it is the one that keeps the open from following a link if the exclusive flag is
+    // ever dropped.
     fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW, 0o600);
   } catch {
     // The name is taken — or worse, is a link: exclusive no-follow refused it, nothing was
@@ -190,7 +198,15 @@ export function writeRulesFile(path: string, text: string, hash12: string, rando
       wrote += writeSync(fd, buffer, wrote, buffer.length - wrote);
     }
     renameSync(temporary, path);
+    closeSync(fd);
   } catch {
+    // The temporary's descriptor closes on the way out of every failure too: a delivery that
+    // leaked one would leak one per run, every run.
+    try {
+      closeSync(fd);
+    } catch {
+      // It went with whatever failed: nothing more to close.
+    }
     try {
       unlinkSync(temporary);
     } catch {
