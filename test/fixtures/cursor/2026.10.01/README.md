@@ -138,3 +138,52 @@ the Enter is refused.
 The tests wrap the sentence themselves at 40- and 80-column panes, and refuse a wrapped box
 that holds another text, an extra row, one character changed, a collapsed space, a
 blank row the text does not have, or a trailing blank row the text does not end with.
+
+## Round 3: the standing-rules message, the paste marker, and the box's limits
+
+Captured from the same installed CLI (`2026.10.01-14929f9`) on 2026-10-05 with herdr
+0.7.1, `pane read --source visible --lines 200` (plain), in a scratch session of my own
+with one Cursor pane, 54 by 23 — the size `up` creates. Launched as a seat is launched,
+with the model this profile reads:
+
+`cursor-agent --model grok-4.7-high --force --sandbox disabled`
+
+Each text was pasted in one `pane send-text` and never sent. Each box was cleared
+afterwards with its own key, Ctrl+C, and the box was verified empty before the next text
+was typed. The session was stopped and deleted. The standing-rules texts are what
+`rulesText` renders for a sample team file (no real seat names).
+
+- `rules-pasted.txt` / `rules-pasted-medium.txt` / `rules-pasted-short.txt`: the
+  standing-rules message with seven file rules (17 lines, 1193 characters), with four
+  (14 lines, 1044), and with none (10 lines, 875) — each pasted in one piece. Each came
+  back as a `[Pasted text #1 +N lines]` marker row, with none of the text drawn anywhere:
+  the box reads `unsent`, but no row of it is a row of the message, so delivery can never
+  verify the paste. The counter in the marker is the CLI's own, one per paste; the stored
+  files say `#1` because the counter is an artefact of the session, not the shape.
+- `rules-threshold-800.txt` / `rules-threshold-801.txt`: single-line filler texts of 800
+  and 801 characters (runs of `word`, their last words `wordx` and `w`). The 800-character
+  paste is drawn as text — the box shows its last six rows, its own scroll, so the paste as
+  a whole still does not read back, but none of it is hidden. The 801-character paste is
+  hidden behind the marker. The budget is characters, and the boundary is exact between the
+  two captures: 800 is drawn, 801 is not.
+- `rules-fit-6.txt` / `rules-fit-7.txt`: six and seven short lines pasted in one piece.
+  The six-line box draws the prompt glyph on the first typed row, and its rows read back
+  as exactly the typed text. The seven-line box scrolls: the glyph is drawn on the second
+  typed row and the first is gone, so its rows read as a text that is not the typed one
+  and every check of it fails. Six is the most rows delivery may send in one paste.
+- `rules-part-6-after-reply.txt`: six lines typed after a sent turn that was answered.
+  The transcript above the box does not stop the read-back: the box reads `unsent` and
+  its rows are exactly the typed text, which is what a second part of a split delivery
+  sees.
+- `rules-pasted-narrow.txt`: the seven-rule message pasted in a 27-column pane (a split
+  pane whose tty was set with `stty cols 27 rows 23` before the CLI started — the
+  session's panes otherwise keep a 54-column tty whatever `pane layout` reports). The
+  paste is hidden behind the marker again, and the marker itself is what the narrower
+  pane wraps: `[Pasted text #1 +17` and then `lines]`. At this width the CLI's footer
+  reflows too — the version drops to a row of its own, so the `Grok 4.7 …` row the
+  profile reads is gone and the screen reads `unknown`, not `unsent`. The fixture is
+  kept for what the box shows at this width, not as an `unsent` shape.
+
+The workspace line is replaced by `<workspace>` (in `rules-pasted-narrow.txt` it had
+wrapped over two rows at 27 columns and is folded back to one); the line is not part of a
+box.

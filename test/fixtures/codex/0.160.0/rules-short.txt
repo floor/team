@@ -1,0 +1,23 @@
+
+
+› body with your signature, given below.
+  - Never stop at a question: tell the coordinator
+  (coordinator) in one line and keep working.
+  - Never run `team trust` or `team approve`, and
+  never edit `trust:` in the team file.
+  - In a protected checkout, never switch the
+  branch, reset or commit.
+  - Your signature in a commit message, as a
+  trailer, in a last paragraph of its own that holds
+  trailers only: Agent: Sample Model · implementer
+  - Your signature in a pull request body, as its
+  last line: **Agent:** Sample Model · implementer
+  - Protected checkouts, relative to the project
+  root: .
+  - Work on the code in the worktree your brief
+  names, never in the checkout you started in.
+  Branches are named {kind}/{task}.
+  These are standing rules, not a task: reply ready
+  and wait for your brief.
+
+  GPT-5.6-Terra medium · Context 100% left · weekly …
