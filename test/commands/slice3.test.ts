@@ -220,8 +220,8 @@ describe('team doctor', () => {
         '--    session acme-web is not running',
         'ok    claude 2.1.288 (Claude Code)',
         'ok    claude-code: logged in',
-        'warn  deepseek-acme: the launch names no model this version knows; the file says DeepSeek Flash V4.1',
-        'warn  deepseek-acme-2: the launch names no model this version knows; the file says DeepSeek Flash V4.1',
+        'warn  deepseek-acme: the launch runs team-deepseek, not claude, and names no model: if the launcher chooses the model, say so with model_from: launcher',
+        'warn  deepseek-acme-2: the launch runs team-deepseek, not claude, and names no model: if the launcher chooses the model, say so with model_from: launcher',
         'ok    codex codex-cli 0.157.0',
         'ok    codex: logged in',
         '--    trust: not applied or checked by this version; trust each folder by hand',
@@ -262,7 +262,9 @@ describe('team doctor', () => {
       herdrVersion: () => '0.6.9',
       loggedIn: () => null,
     });
-    expect(run.out).toContain('warn  claude 2.2.0 (Claude Code) is newer than the tested 2.1.288\n');
+    expect(run.out).toContain(
+      'warn  claude 2.2.0 (Claude Code) is newer than the tested 2.1.288: its screens are untested with this version; a seat that isn\'t read at launch is left out, never typed into\n',
+    );
     expect(run.out).toContain('warn  herdr 0.6.9 is older than the tested 0.7.1\n');
     expect(run.out).toContain('--    claude-code: the login is not checked in this version\n');
     expect(run.code).toBe(0);
