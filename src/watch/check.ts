@@ -8,6 +8,7 @@ import type { CheckOutcome } from '../budgets/run.ts';
 import type { Seen } from '../budgets/readings.ts';
 import type { TeamFile } from '../file/types.ts';
 import type { HerdrAgent } from '../herdr.ts';
+import type { SeatProcessVerdict } from '../launch/identity.ts';
 import type { QuotaFigure } from '../profiles/quota.ts';
 import type { Live } from '../status/compare.ts';
 import type { SessionState } from '../state.ts';
@@ -52,6 +53,11 @@ export type SeatObservation = {
   // The quota figures the seat's screen showed (RFC 0003 § 4.1), parsed by the core so a
   // check never reads a screen. Empty for a seat that is not running, or shows none.
   quota: QuotaFigure[];
+  // What the recorded process identity says of the pane the seat answers in: `same` while the
+  // process team launched is still there, `gone` for a pane back at its shell, `replaced` for
+  // one held by a process team did not launch, and `unknown` when herdr can't tell or the seat
+  // was launched before the identity was recorded — treated as today everywhere.
+  identity: SeatProcessVerdict;
   // Whether an agent answers for the seat. False: the seat's own checks never run.
   running: boolean;
   quiet: boolean;
@@ -124,6 +130,7 @@ export interface TeamCheck {
 // checks. The order decides the order of the lines in the log, nothing else.
 export const CHECK_NAMES = [
   'missing',
+  'restored',
   'model-drift',
   'attention',
   'unsent',

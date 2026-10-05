@@ -401,6 +401,37 @@ describe('a pass of the watch', () => {
     ]);
   });
 
+  test('a pane that no longer holds the process team launched, reported once per change', () => {
+    const state = emptySession();
+    state.seats['deepseek-acme'] = { stage: 'ready', pane: 'w3:p1', workspace: 'w3', launched: { shell: 400, cli: [401] } };
+    const memory = newMemory();
+    const at = (processes: Record<string, { shell: number; foreground: number[] }>) =>
+      pass({ team: team(), watch: team().watch, state, live: live(), machine: fine, now: 0, memory, processes }).reports.map((report) => report.text);
+    const restored = 'deepseek-acme is no longer the process team launched (its session was restored, or its CLI was restarted)';
+    // Another CLI under the recorded shell: replaced.
+    expect(at({ 'w3:p1': { shell: 400, foreground: [500] } })).toEqual([restored]);
+    // The same reading again: the condition still holds, and it stands reported once.
+    expect(at({ 'w3:p1': { shell: 400, foreground: [500] } })).toEqual([]);
+    // The pane back at its own shell: the same condition, no second report.
+    expect(at({ 'w3:p1': { shell: 400, foreground: [400] } })).toEqual([]);
+    // The recorded process in front again: the condition cleared.
+    expect(at({ 'w3:p1': { shell: 400, foreground: [401] } })).toEqual([]);
+    // Held by another process anew — a new change, reported anew.
+    expect(at({ 'w3:p1': { shell: 500, foreground: [501] } })).toEqual([restored]);
+  });
+
+  test('herdr can\'t tell, or the seat has no record: the pane reads as today', () => {
+    const recorded = emptySession();
+    recorded.seats['deepseek-acme'] = { stage: 'ready', pane: 'w3:p1', workspace: 'w3', launched: { shell: 400, cli: [401] } };
+    const at = (state: typeof recorded, processes: Record<string, { shell: number; foreground: number[] } | null>) =>
+      pass({ team: team(), watch: team().watch, state, live: live(), machine: fine, now: 0, memory: newMemory(), processes }).reports.map((report) => report.text);
+    // No foreground process at all, or no reading for the pane: unknown, never restored.
+    expect(at(recorded, { 'w3:p1': { shell: 400, foreground: [] } })).toEqual([]);
+    expect(at(recorded, { 'w3:p1': null })).toEqual([]);
+    // A seat launched before team recorded its process: the pane reads as today.
+    expect(at(emptySession(), { 'w3:p1': { shell: 400, foreground: [500] } })).toEqual([]);
+  });
+
   test('a temporary seat of the state is watched as a seat', () => {
     const state = { ...emptySession(), seats: { 'deepseek-acme-tmp-1': { stage: 'ready' as const, temporary: { like: 'deepseek-acme', until: 'result:out.md' } } } };
     const now = live();

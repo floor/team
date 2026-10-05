@@ -392,6 +392,7 @@
           "type": "object",
           "propertyNames": {
             "enum": [
+              "restored",
               "unsent",
               "idle",
               "extra",
