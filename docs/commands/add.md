@@ -64,7 +64,9 @@ not created; left at launched`, `left out: timeout`,
 `left out: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched`, `left out: permission`,
 `left out: vendor notice`, and the rest of the table on the
 [team up](up.md) page. A wait that ended without a prompt writes the pane's last lines under the
-record, on stderr, as `up` does. First-message rules go to the seat's file in the project state folder and arrive as
+record, on stderr, as `up` does. The log file gets each record's line alone, once per final record:
+its reason in words, never a folder the run resolved, a pane's text or a file's content — the
+detail under the record is stderr's alone. First-message rules go to the seat's file in the project state folder and arrive as
 the one line `up` types, read back and entered, exactly as that page describes. A seat
 `add` leaves out takes its rules file with it; a temporary seat removed with `team
 remove` or stopped by `team down` loses its file with the seat, while a declared seat's
