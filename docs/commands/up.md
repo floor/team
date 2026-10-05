@@ -214,6 +214,13 @@ Those lines go to the terminal only: the log file gets the reading, never the sc
 | `<seat>: <account> is unknown` | the account is in the file and its figure is unknown — a subscription with no counted reading, or a spend account whose money reading is missing, older than `budgets.stale_after`, or in another currency than the floor's. A subscription figure with no known reset is unknown while it could still matter — inside its reserve, or within the reserve again outside it; further out — more than the reserve again — it counts, the room the figure last held, and the launch decision is clear: no unknown line. The seat still starts |
 | `<seat>: <account>: first sight only, not yet counted` | the account's only readings are unconfirmed; the seat still starts |
 
+A `version: "0"` — exactly that literal, the placeholder a fresh `init` writes before the owner
+fills the release number — is read as *no version declared*: the seat's first launch is not stopped
+by it, and the model family is still compared, so a file whose model names a family the CLI does
+not run stops as above. No other spelling is read that way: `version: "0.0"` stops the launch as
+any mismatch would. [team doctor](doctor.md) says the placeholder as a note — what the seat really
+runs, and the one edit that pins it.
+
 `<account>` in these lines is the seat's own account: its `account:` when the file names one, its
 `vendor` when it doesn't.
 

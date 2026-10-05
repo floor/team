@@ -1721,6 +1721,55 @@ describe('the upgrade from 0.2.1', () => {
     );
   });
 
+  test('version "0" — the placeholder init writes — no longer stops the first fresh launch', async () => {
+    approveYaml(migratedTeamYaml().replaceAll('version: "5.5"', 'version: "0"'));
+    const run = await runUpCmd([], world());
+    expect(run.code).toBe(0);
+    expect(run.out).toContain('lead: ready\n');
+    expect(run.out).toContain('worker: ready\n');
+  });
+
+  test('the family is still compared: a wrong model with version "0" stops exactly as today', async () => {
+    const yaml = migratedTeamYaml()
+      .replaceAll('version: "5.5"', 'version: "0"')
+      .replaceAll('model: Claude Opus', 'model: Claude Sonnet');
+    approveYaml(yaml);
+    const run = await runUpCmd([], world());
+    expect(run.code).toBe(1);
+    expect(run.out).toContain('runs Claude Opus 5.5; the file says Claude Sonnet 0; left at launched, not named');
+    expect(readState(dir).sessions['acme']?.seats.worker?.stage).toBe('launched');
+  });
+
+  test('no other spelling is the placeholder: "0.0" still stops the launch', async () => {
+    approveYaml(migratedTeamYaml().replaceAll('version: "5.5"', 'version: "0.0"'));
+    const run = await runUpCmd([], world());
+    expect(run.code).toBe(1);
+    expect(run.out).toContain('the file says Claude Opus 0.0; left at launched, not named');
+  });
+
+  test('doctor says the placeholder as information: the running model and the one edit', async () => {
+    approveYaml(migratedTeamYaml().replaceAll('version: "5.5"', 'version: "0"'));
+    updateState(dir, (st) => {
+      st.sessions['acme'] = { seats: { worker: { stage: 'ready', pane: 'w1:p1' } }, worktrees: {} };
+    });
+    const over = { paneText: () => IDLE };
+    const doc = await runDoctorCmd([], over);
+    expect(doc.out).toContain(
+      'worker: runs Claude Opus 5.5; the file\'s version "0" is the placeholder init writes — '
+        + 'write "5.5" into the file, then run `team approve`',
+    );
+    // Information, not a block: the note adds no finding that stops anything.
+    expect(doc.code).toBe(0);
+
+    // A seat that runs another family than the file's is not told this: the note names a
+    // version only where the family already matches.
+    const other = migratedTeamYaml()
+      .replaceAll('version: "5.5"', 'version: "0"')
+      .replaceAll('model: Claude Opus', 'model: Claude Sonnet');
+    writeFileSync(join(root, '.agents', 'team.yaml'), other);
+    const docOther = await runDoctorCmd([], over);
+    expect(docOther.out).not.toContain('the placeholder init writes');
+  });
 });
 
 describe('rules text', () => {

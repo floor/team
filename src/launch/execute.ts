@@ -453,7 +453,13 @@ export async function executePlan(steps: readonly Step[], session: string, host:
             const screen = host.paneText?.(session, here.pane) ?? null;
             const running = screen === null ? null : seatModel({ cli: op.cli, model: op.model }, screen);
             const declared = { model: op.model, version: op.version };
-            if (modelDiffers(running, declared)) {
+            // `init` writes version "0" — the placeholder before the owner fills the release
+            // number in — and the release before this one left whole teams carrying it. Exactly
+            // that literal is read as "no version declared": the family is still compared, and
+            // any other value ("0.0", "00", a real number) is compared as today.
+            const differs = running !== null
+              && (op.version === '0' ? running.model !== op.model : modelDiffers(running, declared));
+            if (differs) {
               dropped.add(op.seat);
               finish(op.seat, modelLeft(running, declared, op.cli));
               break;

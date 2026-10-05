@@ -26,7 +26,7 @@ import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
 import { extractFolder, isEligible, versionMatches } from '../profiles/trust-answer.ts';
 import { readState, type SeatState } from '../state.ts';
-import { canShowModel } from '../status/statusline.ts';
+import { canShowModel, seatModel } from '../status/statusline.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
 import { approvalStanding, LEGACY_LINE, type Standing } from '../store/store.ts';
 import { readScreen } from '../watch/screen.ts';
@@ -436,6 +436,38 @@ function identityFindings(team: TeamFile, dir: string, session: string): Finding
   return findings;
 }
 
+// A seat whose file still carries the "0" init writes before the owner fills the release
+// number. The launch no longer stops on it (the model family is still checked), so this is
+// information: what the running seat really runs, and the one edit that pins it. Said only
+// when the seat is live in a pane whose screen names a model of the declared family.
+function placeholderVersionFindings(team: TeamFile, dir: string, session: string, sources: DoctorSources): Finding[] {
+  if (!sources.paneText) return [];
+  const recorded = readState(dir).sessions[session]?.seats ?? {};
+  const findings: Finding[] = [];
+  for (const seat of team.seats) {
+    if (seat.stopped || seat.version !== '0') continue;
+    const held = recorded[seat.name];
+    if (!held?.pane) continue;
+    const screen = sources.paneText(session, held.pane);
+    if (screen === undefined) continue;
+    const running = seatModel(seat, screen);
+    if (!running || running.model !== seat.model) continue;
+    findings.push({
+      level: 'note',
+      text:
+        `${seat.name}: runs ${running.model} ${running.version}; the file's version "0" is the placeholder init writes — ` +
+        `write "${running.version}" into the file, then run \`team approve\``,
+    });
+  }
+  return findings;
+}
+
+function cliOf(team: TeamFile, name: string, recorded: SeatState): string | null {
+  return team.seats.find((seat) => seat.name === name)?.cli
+    ?? team.seats.find((seat) => seat.name === recorded.temporary?.like)?.cli
+    ?? null;
+}
+
 export function doctorFindings(
   team: TeamFile,
   root: string,
@@ -510,6 +542,7 @@ export function doctorFindings(
   findings.push(...launchLines);
 
   findings.push(...identityFindings(team, dir, session));
+  findings.push(...placeholderVersionFindings(team, dir, session, sources));
 
   findings.push(...watchFindings(watchInForceOf(standing, team), dir, session, running, sources.now()));
   findings.push(...trustFindings(team, dir, session, sources));

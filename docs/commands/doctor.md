@@ -92,7 +92,9 @@ instead; a line only said to be unchecked, or a relative path that exists nowher
 note — `not checked: the command may create it`), one note per seat the state records from a launch
 that predates the process identity — `--    <seat>: launched before team recorded its process; run
 \`team remove <seat> --keep\` then \`team add <seat>\` (or \`team down\` then \`team up\` for the whole
-team) to launch it again`, the relaunch being what records the identity — the watch, and the
+team) to launch it again`, the relaunch being what records the identity — one note per live seat
+whose file still carries the placeholder `version: "0"` `init` writes, saying what it runs and the
+one edit that pins it — the watch, and the
 `trust` note. A seat the file
 stops is left out of the CLI findings and the launch lines. A CLI outside its tested range keeps its
 `warn` and says what that means: its screens are untested with this version, and a seat that isn't
@@ -138,6 +140,16 @@ chosen by its launcher (declared in the file); this version can't read <declared
 screen, so nothing checks it`. A real multi-vendor file may still warn; every one of these lines
 names what the owner can do. The model the file declares is spelled by the seat's `display` in
 every line that names it.
+
+The placeholder `version: "0"` a fresh `init` writes before the owner fills the release number no
+longer stops a seat's first launch — the launch compares the model family only — so a seat that
+runs despite it is said as information: `--    <seat>: runs Claude Opus 5.5; the file's version "0"
+is the placeholder init writes — write "5.5" into the file, then run \`team approve\``. The note is
+said only for a live seat whose screen names a model of the family the file declares; a seat on
+another family keeps the launch's own line. No other spelling is the placeholder: `version: "0.0"`
+stops the launch as any mismatch would. Nothing is lost by it — a "0" never pinned a release — and
+the file's approval still covers the version as written, so pinning the number is one edit and one
+`team approve`.
 
 The key's fingerprint is the first twelve hex digits of the signing key's public half. What it
 proves is narrow: an owner who noted it sees a *replaced* key — a process that only reads the
