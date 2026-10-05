@@ -425,7 +425,7 @@ describe('team add', () => {
     const file = rulesFilePath('acme', project, home, 'scribe-tmp-1') as string;
     const io = testIo(project, owner);
     expect(await runAdd(['--temporary', '--like', 'scribe', '--until', 'merged:fix/fresh'], io, sources(made))).toBe(1);
-    expect(io.out).toContain('scribe-tmp-1: left out: trust question');
+    expect(io.out).toContain('scribe-tmp-1: trust question; its workspace was closed without an answer and the seat left out');
     expect(existsSync(file)).toBe(false);
     expect(readState(join(project, '.agents')).sessions.acme?.seats['scribe-tmp-1']).toBeUndefined();
   });
