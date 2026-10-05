@@ -691,9 +691,9 @@ describe('the box\'s top frame (Cursor)', () => {
   });
 
   test('a second prompt row pressed against the one above it fails closed', async () => {
-    // Round 1's must-fix, Cursor's twin, unchanged: no blank row separates the person's row
-    // from the later prompt, so the row above the lowest prompt is not the frame and the input
-    // row cannot be shown to be the box's top. Nothing is typed and Enter is not sent.
+    // Cursor's twin of the pressed-row rule, unchanged: no blank row separates the person's
+    // row from the later prompt, so the row above the lowest prompt is not the frame and the
+    // input row cannot be shown to be the box's top. Nothing is typed and Enter is not sent.
     const at = (typed = '') => shaped(`  → person text\n  →${typed === '' ? '' : ` ${typed}`}`);
     expect(readScreen('cursor', at()).kind).toBe('unknown');
     expect(classify('cursor', at().split('\n')).kind).toBe('unknown');
