@@ -134,7 +134,9 @@ export function seatStart(
         return {
           problem:
             `seat ${seat.name} would start in ${seat.cwd}, inside the protected checkout ${hit}; ` +
-            "a seat that isn't `mode: shared` never starts in one",
+            (seat.mode === 'shared'
+              ? 'a shared seat never works in a protected checkout'
+              : "a seat that isn't `mode: shared` never starts in one"),
         };
       }
     }
@@ -145,7 +147,7 @@ export function seatStart(
         return {
           problem:
             `seat ${seat.name} workspace would land in ${folder}, inside the protected checkout ${hit}; ` +
-            "a seat that isn't `mode: shared` never starts in one",
+            'worktrees never land in a protected checkout',
         };
       }
     }
