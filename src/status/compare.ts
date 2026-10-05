@@ -5,7 +5,7 @@ import { herdrCommand } from '../herdr.ts';
 import { seatProcessVerdict } from '../launch/identity.ts';
 import type { SessionState } from '../state.ts';
 import { readScreen } from '../watch/screen.ts';
-import { seatModel } from './statusline.ts';
+import { modelDiffers, seatModel } from './statusline.ts';
 
 // What herdr shows of a session. `screens` holds a pane's visible text, where it could be read;
 // `processes` each seat pane's process identity, where it was read, and null where herdr can't
@@ -260,7 +260,7 @@ function modelOf(seat: Seat, agent: HerdrAgent, live: Live, differences: Differe
     notes.push(`${seat.name}: version unread (its screen doesn't show the model)`);
     return `${seat.display} (unread)`;
   }
-  if (running.model === seat.model && running.version === seat.version) return seat.display;
+  if (!modelDiffers(running, seat)) return seat.display;
   differences.push({
     what: `${seat.name} runs ${running.model} ${running.version}; the file says ${declaredModel(seat)}`,
     repair: `restart the seat on the file's model (team remove ${seat.name} --keep, then team add ${seat.name}), or correct the file and run team approve`,

@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DialectError, compilePattern } from './dialect.ts';
-import type { Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage, Wrap } from './screen-data.ts';
+import type { Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage, StatusBelow, Wrap } from './screen-data.ts';
 import type { ScreenProfile } from './screen-profile.ts';
 import type { Screen } from './screen.ts';
 import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts';
@@ -397,16 +397,19 @@ function composerOf(node: YamlNode): Composer {
     };
   }
   if (name === 'status-last') {
-    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style', 'wrap', 'frame_rows']);
-    return { mode: name, statusLine: regexField(entries, 'status_line', node.line), prompt: regexField(entries, 'prompt', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value), placeholderStyle, wrap, frameRows };
+    only(entries, ['mode', 'status_line', 'status_below', 'prompt', 'placeholders', 'placeholder_style', 'wrap', 'frame_rows']);
+    const below = optional(entries, 'status_below');
+    return { mode: name, statusLine: statusLineField(entries, node.line), ...(below ? { statusBelow: statusBelowOf(below) } : {}), prompt: regexField(entries, 'prompt', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value), placeholderStyle, wrap, frameRows };
   }
   if (name === 'status-then-one') {
-    only(entries, ['mode', 'status_line', 'prompt', 'placeholders', 'placeholder_style', 'strip_suffix', 'fallback', 'wrap', 'frame_rows']);
+    only(entries, ['mode', 'status_line', 'status_below', 'prompt', 'placeholders', 'placeholder_style', 'strip_suffix', 'fallback', 'wrap', 'frame_rows']);
     const suffix = optional(entries, 'strip_suffix');
     const fallback = required(entries, 'fallback', node.line);
+    const below = optional(entries, 'status_below');
     return {
       mode: name,
-      statusLine: regexField(entries, 'status_line', node.line),
+      statusLine: statusLineField(entries, node.line),
+      ...(below ? { statusBelow: statusBelowOf(below) } : {}),
       prompt: regexField(entries, 'prompt', node.line),
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
       placeholderStyle,
@@ -526,6 +529,35 @@ function chromeOf(node: YamlNode): RegExp[] {
 function regexField(entries: YamlEntry[], key: string, line: number, ignoreCase = false): RegExp {
   const entry = required(entries, key, line);
   return composerString(entry.value, key, entry.line, ignoreCase);
+}
+
+// The status line's patterns: one string, or a list when one pattern would not fit the dialect's
+// length cap. The list is read as the union — a line is a candidate when it matches any of it —
+// and the core, not the profile, decides what a candidate still needs to be the row. A mapping
+// is still read as a single pattern (via composerString), so the refusal for a map with a flag
+// names the key, as it always did.
+function statusLineField(entries: YamlEntry[], line: number): RegExp[] {
+  const entry = required(entries, 'status_line', line);
+  if (entry.value.kind === 'seq') {
+    if (entry.value.items.length === 0) fail(entry.line, '"status_line" must be a string or a non-empty list of strings');
+    return entry.value.items.map((item) => composerString(item, 'status_line', item.line));
+  }
+  return [composerString(entry.value, 'status_line', entry.line)];
+}
+
+// Where the status row must sit. A bare pattern is the line directly under the row — the
+// workspace line — which must then be the pane's last non-empty one. A map names that line with
+// `line` and may exempt rows with `except`: a row matching it keeps its grammar-only reading.
+function statusBelowOf(entry: YamlEntry): StatusBelow {
+  const node = entry.value;
+  if (node.kind === 'scalar') return { line: composerString(node, 'status_below', entry.line), except: null };
+  const entries = mapping(node, 'status_below');
+  only(entries, ['line', 'except']);
+  const except = optional(entries, 'except');
+  return {
+    line: composerString(required(entries, 'line', node.line).value, 'status_below', node.line),
+    except: except ? composerString(except.value, 'status_below', except.line) : null,
+  };
 }
 
 // A composer key that reads a pattern string. The dialog shape aims its flag at the one

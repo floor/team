@@ -73,6 +73,8 @@ place and the seat is left as it is:
 `<seat>: its workspace did not close; left as it is`, with `up` exiting 1. A seat launched before
 the state recorded its process keeps today's behaviour: nothing checks its pane.
 
+When the idle screen names no model this version can read, `up` says `<seat>: its screen doesn't show a model this version knows; not checked` and continues. Nothing is assumed about which model is running.
+
 A seat that doesn't get there is printed once with what stopped it, and `up` exits 1. For a seat
 whose wait ended without a prompt, the last non-empty lines the pane showed — the launch line's own
 echo first when it is within reach, six at most, every escape sequence and every control character
@@ -84,6 +86,7 @@ Those lines go to the terminal only: the log file gets the reading, never the sc
 | --- | --- |
 | `<seat>: left out: trust question` | the CLI asked whether to trust the folder; its workspace was closed without an answer |
 | `<seat>: permission; its workspace was closed without input and the seat left out` | a permission dialog, or a question, was left for its owner to answer |
+| `<seat>: runs <model> <version>; the file says <model> <version>; left at launched, not named. Add <flag> <id> to its launch, or correct the file's model and version and run team approve` | the idle screen shows a different model than the file. The seat is not renamed and gets no rules; its pane stays open. The flag is that CLI's model flag, and the id is the one the profile maps to the file's model. When the profile knows no id, the line says `<id>` |
 | `<seat>: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched` | herdr's process info says the pane's foreground program is back at its shell through three full polls on end, four readings, the screen matches no CLI shape, and the launch line's own echo is visible on the screen. A pane read before the line arrived, one whose echo scrolled away, one whose program is slow to draw, or a herdr that can't say (no shell process info), is waited out to the deadline — the end is never inferred from the screen's text, and a single reading can never reach the three polls. The workspace is kept, and the pane's last lines follow on the terminal |
 | `<seat>: timed out after <n> s waiting for its idle prompt; the screen last read <kind>; left at launched` | the prompt never came within the profile's own time limit; the last reading and the pane's last lines follow on the terminal |
 | `<seat>: was not in the agent list in time; left at launched` | herdr listed no agent in the pane to name |
@@ -142,7 +145,7 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | ``approved before records were signed: run `team approve` once`` — the record was written by an earlier `team` |
 | ``the record <case>: run `team approve` once`` — a signed record that does not verify |
 | ``the file is not the approved one (<differences>): run `team approve` `` |
-| a `MISS` finding from [team doctor](doctor.md) — herdr or a CLI not installed, or a CLI not logged in. A seat's own launch line is not this: it leaves that seat out alone, in the lines above |
+| a `MISS` finding from [team doctor](doctor.md) — herdr or a CLI not installed, or a CLI not logged in. A launch that names another model than the file, or that names none, is a warning, so `up` still starts the seat; a seat's own launch line is not this — it leaves that seat out alone, in the lines above. After the idle wait, a screen that shows a different model leaves that seat at launched, not named |
 | `the load is 1.2 per core, above 1` / `free memory is 8%, below 25%` / `free disk is 3.0 GB, below 10.0 GB` / `free swap is 1.0 GB, below 2.0 GB` |
 | `herdr doesn't answer` |
 | ``session beacon is stopped; clear it with `herdr session delete beacon` `` |

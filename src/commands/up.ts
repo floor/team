@@ -213,6 +213,8 @@ function seatPlan(
     launch: seat.launch,
     cwd: seat.cwd,
     label: seat.label,
+    model: seat.model,
+    version: seat.version,
     stopped: seat.stopped,
     rules: rulesOf(team, seat),
   };
