@@ -7,6 +7,7 @@ import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { migrationText } from '../file/migrate.ts';
 import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
+import { relaunchRepair } from '../file/sections/lead.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import {
   agentList,
@@ -233,7 +234,7 @@ function seatPlan(
   const named = agents.find((agent) => agent.name === seat.name);
   const onPane = recorded.pane ? agents.some((agent) => agent.pane === recorded.pane) : false;
   if (recorded.stage === 'ready') {
-    if (named || onPane) return { ...planned, stage: 'ready', ...restartNote(seat.name, recorded, home) };
+    if (named || onPane) return { ...planned, stage: 'ready', ...restartNote(team, seat.name, recorded, home) };
     return planned;
   }
   const workspaceLive =
@@ -252,9 +253,14 @@ function seatPlan(
 // What only a relaunch repairs, for a ready seat this `up` leaves as it is: a process team it
 // never recorded (a launch from before identities were), or a start outside the machine lobby
 // (an old release's start). The skip line says what does repair it; both repairs relaunch the
-// seat — one seat at a time, or the whole team.
-function restartNote(name: string, recorded: SeatState, home: string): { restartNote: string } | Record<string, never> {
-  const fix = `team remove ${name} --keep, then team add ${name} (or team down, then team up, for the whole team)`;
+// seat — one seat at a time, or the whole team (for a coordinator or operator, only the whole team).
+function restartNote(
+  team: Pick<TeamFile, 'coordinator' | 'operator'>,
+  name: string,
+  recorded: SeatState,
+  home: string,
+): { restartNote: string } | Record<string, never> {
+  const fix = relaunchRepair(team, name, 'plain');
   if (!recorded.launched) return { restartNote: `a relaunch records its process: ${fix}` };
   if (recorded.start_cwd && recorded.start_cwd !== lobbyDir(home)) {
     return { restartNote: `a relaunch moves it into the lobby: ${fix}` };

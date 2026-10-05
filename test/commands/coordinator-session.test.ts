@@ -1006,11 +1006,9 @@ describe('up over the v0.2.1 state', () => {
     // records it; the seat itself is still left exactly as it is.
     expect(io.out).toBe(
       `  skip ${COORDINATOR}: already ready; left as it is; a relaunch records its process: ` +
-        `team remove ${COORDINATOR} --keep, then team add ${COORDINATOR} ` +
-        '(or team down, then team up, for the whole team)\n' +
+        'team down, then team up (to restart the whole team)\n' +
         `  skip ${OPERATOR}: already ready; left as it is; a relaunch records its process: ` +
-        `team remove ${OPERATOR} --keep, then team add ${OPERATOR} ` +
-        '(or team down, then team up, for the whole team)\n' +
+        'team down, then team up (to restart the whole team)\n' +
         `  skip ${SEAT}: already ready; left as it is; a relaunch records its process: ` +
         `team remove ${SEAT} --keep, then team add ${SEAT} ` +
         '(or team down, then team up, for the whole team)\n',

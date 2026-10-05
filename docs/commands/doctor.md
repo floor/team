@@ -83,7 +83,8 @@ message: its file in the project state folder — missing, a symbolic link, not 
 wider than `0600`, not the owner's, unreadable, or holding something other than the approved
 rules text — is one `warn` (`codex-scribe: its rules file differs from the approved rules; run
 \`team remove codex-scribe --keep\` then \`team add codex-scribe\` (or \`team down\` then \`team up\` for
-the whole team)` — `up` skips a ready seat, so only the relaunch writes the file),
+the whole team)` — for a coordinator or operator, `team down` then `team up` (to restart the whole team) —
+`up` skips a ready seat, so only the relaunch writes the file),
 never a rewrite. herdr, one CLI at a time (its
 version, its login, then each of its seats' launchers and models), one line per seat whose launch
 line can't run where the seat starts (the `MISS` names the start folder, the program that is missing
@@ -92,9 +93,10 @@ instead; a line only said to be unchecked, or a relative path that exists nowher
 note — `not checked: the command may create it`), one note per seat the state records from a launch
 that predates the process identity — `--    <seat>: launched before team recorded its process; run
 \`team remove <seat> --keep\` then \`team add <seat>\` (or \`team down\` then \`team up\` for the whole
-team) to launch it again`, the relaunch being what records the identity — one note per live seat
+team) to launch it again` (for a coordinator or operator, `team down` then `team up` (to restart the whole
+team)), the relaunch being what records the identity — one note per live seat
 whose file still carries the placeholder `version: "0"` `init` writes, saying what it runs and the
-one edit that pins it — the watch, and the
+one edit that pins it (or a warning when the model family differs, so the one edit covers both) — the watch, and the
 `trust` note. A seat the file
 stops is left out of the CLI findings and the launch lines. A CLI outside its tested range keeps its
 `warn` and says what that means: its screens are untested with this version, and a seat that isn't

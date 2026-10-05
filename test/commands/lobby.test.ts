@@ -1630,6 +1630,42 @@ describe('the upgrade from 0.2.1', () => {
     expect(readState(dir).sessions['acme']?.seats.worker?.start_cwd).toBe(canonicalLanding(lobby).landing);
   });
 
+  function downSourcesFor(
+    seats: { name: string; pane: string; workspace: string; cli?: string }[],
+    closed?: string[],
+  ): RemoveSources {
+    let sentPane: string | null = null;
+    const typedBox = new Map<string, string>();
+    const cliMap = new Map(seats.map((s) => [s.pane, s.cli ?? 'claude']));
+    return {
+      sessionRunning: () => true,
+      agents: () => seats.map((seat) => ({ name: seat.name, agent: seat.cli ?? 'claude', pane: seat.pane, workspace: seat.workspace, status: 'idle', cwd: null })),
+      alive: () => false,
+      screen: () => ({ kind: 'idle' as const }),
+      screenText: (_session, pane, cli) => {
+        const text = typedBox.get(pane);
+        if (text === undefined) return undefined;
+        return cli === 'codex' ? codexCapture('idle').replace('› Ask Codex to do anything', `› ${text}`) : claudeBox(text);
+      },
+      status: () => 'idle',
+      foreground: (_session, pane) => (sentPane === null ? [cliMap.get(pane) ?? 'claude'] : pane === sentPane ? [] : [cliMap.get(pane) ?? 'claude']),
+      now: () => NOW,
+      sleep: async () => {},
+      home,
+      launch: {
+        typeText: (_session, pane, text) => { typedBox.set(pane, text); return true; },
+        pressEnter: (_session, pane) => { sentPane = pane; return true; },
+        agentPanes: () => seats.filter((seat) => seat.pane !== sentPane).map((seat) => seat.pane),
+        closeWorkspace: (_session, workspace) => { closed?.push(workspace); return true; },
+        stopSession: () => true,
+        deleteSession: () => true,
+        kill: () => false,
+        sleep: async () => {},
+        now: () => NOW,
+      },
+    };
+  }
+
   test('the same note clears for the whole-team route: down, then up', async () => {
     approveYaml(migratedTeamYaml());
     updateState(dir, (st) => {
@@ -1645,32 +1681,7 @@ describe('the upgrade from 0.2.1', () => {
       { name: 'worker', pane: 'w1:p1', workspace: 'w1' },
     ];
     const closed: string[] = [];
-    let sentPane: string | null = null;
-    const typedBox = new Map<string, string>();
-    const down: RemoveSources = {
-      sessionRunning: () => true,
-      agents: () => seats.map((seat) => ({ name: seat.name, agent: 'claude', pane: seat.pane, workspace: seat.workspace, status: 'idle', cwd: null })),
-      alive: () => false,
-      screen: () => ({ kind: 'idle' as const }),
-      screenText: (_session, pane) => { const text = typedBox.get(pane); return text === undefined ? undefined : claudeBox(text); },
-      status: () => 'idle',
-      foreground: (_session, pane) => (sentPane === null ? ['claude'] : pane === sentPane ? [] : ['claude']),
-      now: () => NOW,
-      sleep: async () => {},
-      home,
-      launch: {
-        typeText: (_session, pane, text) => { typedBox.set(pane, text); return true; },
-        pressEnter: (_session, pane) => { sentPane = pane; return true; },
-        agentPanes: () => seats.filter((seat) => seat.pane !== sentPane).map((seat) => seat.pane),
-        closeWorkspace: (_session, workspace) => { closed.push(workspace); return true; },
-        stopSession: () => true,
-        deleteSession: () => true,
-        kill: () => false,
-        sleep: async () => {},
-        now: () => NOW,
-      },
-    };
-    expect(await runDown([...FILE], testIo(root, OWNER), down)).toBe(0);
+    expect(await runDown([...FILE], testIo(root, OWNER), downSourcesFor(seats, closed))).toBe(0);
     expect(closed.sort()).toEqual(['w0', 'w1']);
 
     const made = world();
@@ -1719,6 +1730,244 @@ describe('the upgrade from 0.2.1', () => {
       '  skip worker: already ready; left as it is; a relaunch moves it into the lobby: '
         + 'team remove worker --keep, then team add worker (or team down, then team up, for the whole team)\n',
     );
+  });
+
+  test('coordinator and operator relaunch lines offer only whole-team repair, and down/up clears them', async () => {
+    // Separate coordinator and operator seats
+    const withOp = migratedTeamYaml()
+      .replace('operator: lead', 'operator: opSeat')
+      .replace(
+        '    count: 1\n',
+        '    count: 1\n  - role: operator\n    name: opSeat\n    label: opSeat\n    cli: claude-code\n    vendor: anthropic\n    model: Claude Opus\n    version: "5.5"\n    launch: claude --model claude-opus-5-5\n    count: 1\n',
+      );
+    approveYaml(withOp);
+    const oldLobby = join(base, 'worktrees', 'acme', '.lobby');
+    mkdirSync(oldLobby, { recursive: true });
+    const oldLanding = canonicalLanding(oldLobby).landing;
+
+    // 1. Identity note: coordinator and operator name only team down/up; ordinary names both
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0' },
+          opSeat: { stage: 'ready', pane: 'w1:p1', workspace: 'w1' },
+          worker: { stage: 'ready', pane: 'w2:p1', workspace: 'w2' },
+        },
+        worktrees: {},
+      };
+    });
+    const liveLeads = {
+      sessionRunning: () => true,
+      agentList: () => [
+        { name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null },
+        { name: 'opSeat', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null },
+        { name: 'worker', agent: 'claude', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null },
+      ],
+    };
+    const docIdent = await runDoctorCmd([], liveLeads);
+    expect(docIdent.out).toContain(
+      'lead: launched before team recorded its process; run `team down` then `team up` (to restart the whole team) to launch it again',
+    );
+    expect(docIdent.out).toContain(
+      'opSeat: launched before team recorded its process; run `team down` then `team up` (to restart the whole team) to launch it again',
+    );
+    expect(docIdent.out).not.toContain('team remove lead --keep');
+    expect(docIdent.out).not.toContain('team remove opSeat --keep');
+    expect(docIdent.out).toContain('team remove worker --keep');
+
+    // Run whole-team repair on fake host; afterwards the identity note is gone
+    const seatsToDown = [
+      { name: 'lead', pane: 'w0:p1', workspace: 'w0' },
+      { name: 'opSeat', pane: 'w1:p1', workspace: 'w1' },
+      { name: 'worker', pane: 'w2:p1', workspace: 'w2' },
+    ];
+    expect(await runDown([...FILE], testIo(root, OWNER), downSourcesFor(seatsToDown))).toBe(0);
+    const madeUp = world();
+    madeUp.launch.processInfo = () => ({ shell: 900, foreground: [901] });
+    expect((await runUpCmd([], madeUp)).code).toBe(0);
+    const docIdentAfter = await runDoctorCmd([], liveLeads);
+    expect(docIdentAfter.out).not.toContain('launched before team recorded its process');
+
+    // 2. Rules-file warning: coordinator and operator name only team down/up
+    const withCodexLeads = withOp
+      .replaceAll('cli: claude-code', 'cli: codex')
+      .replaceAll('vendor: anthropic', 'vendor: openai')
+      .replaceAll('model: Claude Opus', 'model: GPT Sol')
+      .replaceAll('version: "5.5"', 'version: "6"')
+      .replaceAll('launch: claude --model claude-opus-5-5', 'launch: codex');
+    approveYaml(withCodexLeads);
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0' },
+          opSeat: { stage: 'ready', pane: 'w1:p1', workspace: 'w1' },
+          worker: { stage: 'ready', pane: 'w2:p1', workspace: 'w2' },
+        },
+        worktrees: {},
+      };
+    });
+    const docRules = await runDoctorCmd([], liveLeads);
+    expect(docRules.out).toContain(
+      'lead: its rules file is missing; run `team down` then `team up` (to restart the whole team)',
+    );
+    expect(docRules.out).toContain(
+      'opSeat: its rules file is missing; run `team down` then `team up` (to restart the whole team)',
+    );
+    expect(docRules.out).not.toContain('team remove lead --keep');
+    expect(docRules.out).not.toContain('team remove opSeat --keep');
+
+    // Run whole-team repair on fake host; afterwards the rules warning is gone
+    const codexSeatsToDown = seatsToDown.map((s) => ({ ...s, cli: 'codex' }));
+    expect(await runDown([...FILE], testIo(root, OWNER), downSourcesFor(codexSeatsToDown))).toBe(0);
+    const madeCodex = world();
+    madeCodex.session = 'running';
+    const idle = codexCapture('idle');
+    const paneState = new Map<string, { typed: string; pasted: boolean; entered: boolean }>();
+    const stateFor = (pane: string) => {
+      let s = paneState.get(pane);
+      if (!s) {
+        s = { typed: '', pasted: false, entered: false };
+        paneState.set(pane, s);
+      }
+      return s;
+    };
+    madeCodex.launch.paneText = (_session, pane) => {
+      const s = stateFor(pane);
+      if (s.pasted) {
+        const [first = '', ...rest] = s.typed.split('\n');
+        return idle.replace('› Ask Codex to do anything', [`› ${first}`, ...rest.map((line) => `  ${line}`)].join('\n'));
+      }
+      return idle;
+    };
+    madeCodex.launch.typeText = (_session, pane, text) => {
+      const s = stateFor(pane);
+      s.typed = text;
+      s.pasted = true;
+      return true;
+    };
+    madeCodex.launch.pressEnter = (_session, pane) => {
+      const s = stateFor(pane);
+      s.pasted = false;
+      s.entered = true;
+      return true;
+    };
+    madeCodex.launch.agentStatus = (_session, pane) => (stateFor(pane).entered ? 'working' : 'idle');
+    madeCodex.launch.foreground = () => ['codex'];
+    madeCodex.launch.processInfo = () => ({ shell: 900, foreground: [901] });
+    expect((await runUpCmd([], madeCodex)).code).toBe(0);
+    const docRulesAfter = await runDoctorCmd([], liveLeads);
+    expect(docRulesAfter.out).not.toContain('lead: its rules file is missing');
+    expect(docRulesAfter.out).not.toContain('opSeat: its rules file is missing');
+
+    // 3. Old lobby warning: coordinator and operator name only team down/up
+    approveYaml(withOp);
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0', start_cwd: oldLanding, launched: { shell: 1, cli: [2] } },
+          opSeat: { stage: 'ready', pane: 'w1:p1', workspace: 'w1', start_cwd: oldLanding, launched: { shell: 1, cli: [2] } },
+        },
+        worktrees: {},
+      };
+    });
+    const docOld = await runDoctorCmd([], {
+      sessionRunning: () => true,
+      agentList: () => [
+        { name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: oldLanding },
+        { name: 'opSeat', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: oldLanding },
+      ],
+    });
+    expect(docOld.out).toContain(
+      'the old lobby ../worktrees/acme/.lobby: seats lead, opSeat started in it; run `team down` then `team up` to move them into the lobby (to restart the whole team), then remove the folder',
+    );
+    expect(docOld.out).not.toContain('team remove <seat> --keep');
+
+    // Single coordinator in old lobby
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0', start_cwd: oldLanding, launched: { shell: 1, cli: [2] } },
+        },
+        worktrees: {},
+      };
+    });
+    const docOldSingle = await runDoctorCmd([], {
+      sessionRunning: () => true,
+      agentList: () => [{ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: oldLanding }],
+    });
+    expect(docOldSingle.out).toContain(
+      'the old lobby ../worktrees/acme/.lobby: seat lead started in it; run `team down` then `team up` (to restart the whole team) to move it into the lobby, then remove the folder',
+    );
+    expect(docOldSingle.out).not.toContain('team remove lead --keep');
+
+    // Run whole-team repair on fake host; afterwards old lobby may be removed
+    expect(await runDown([...FILE], testIo(root, OWNER), downSourcesFor([{ name: 'lead', pane: 'w0:p1', workspace: 'w0' }]))).toBe(0);
+    const madeLobbyUp = world();
+    madeLobbyUp.launch.processInfo = () => ({ shell: 900, foreground: [901] });
+    expect((await runUpCmd([], madeLobbyUp)).code).toBe(0);
+    const docOldAfter = await runDoctorCmd([], {
+      sessionRunning: () => true,
+      agentList: () => [{ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null }],
+    });
+    expect(docOldAfter.out).toContain('ok    the old lobby ../worktrees/acme/.lobby: may be removed\n');
+
+    // 4. up's skip line: coordinator and operator name only team down/up; ordinary names both
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0' },
+          opSeat: { stage: 'ready', pane: 'w1:p1', workspace: 'w1' },
+          worker: { stage: 'ready', pane: 'w2:p1', workspace: 'w2' },
+        },
+        worktrees: {},
+      };
+    });
+    const upWorld = world();
+    upWorld.session = 'running';
+    const upRun = await runUpCmd([], upWorld, {
+      agents: () => [
+        { name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null },
+        { name: 'opSeat', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null },
+        { name: 'worker', agent: 'claude', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null },
+      ],
+    });
+    expect(upRun.code).toBe(0);
+    expect(upRun.out).toContain(
+      '  skip lead: already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)\n',
+    );
+    expect(upRun.out).toContain(
+      '  skip opSeat: already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)\n',
+    );
+    expect(upRun.out).toContain(
+      '  skip worker: already ready; left as it is; a relaunch records its process: team remove worker --keep, then team add worker (or team down, then team up, for the whole team)\n',
+    );
+    expect(upRun.out).not.toContain('team remove lead --keep');
+    expect(upRun.out).not.toContain('team remove opSeat --keep');
+
+    // Old landing skip line for coordinator
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0', launched: { shell: 1, cli: [2] }, start_cwd: oldLanding },
+        },
+        worktrees: {},
+      };
+    });
+    const upOld = await runUpCmd([], upWorld, {
+      agents: () => [{ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null }],
+    });
+    expect(upOld.code).toBe(0);
+    expect(upOld.out).toContain(
+      '  skip lead: already ready; left as it is; a relaunch moves it into the lobby: team down, then team up (to restart the whole team)\n',
+    );
+    expect(upOld.out).not.toContain('team remove lead --keep');
+
+    // Run whole-team repair on fake host; afterwards up launches fresh and skip line is gone
+    expect(await runDown([...FILE], testIo(root, OWNER), downSourcesFor([{ name: 'lead', pane: 'w0:p1', workspace: 'w0' }]))).toBe(0);
+    const upAfter = await runUpCmd([], world());
+    expect(upAfter.code).toBe(0);
+    expect(upAfter.out).toContain('lead: ready\n');
+    expect(upAfter.out).not.toContain('skip lead');
   });
 
   test('version "0" — the placeholder init writes — no longer stops the first fresh launch', async () => {

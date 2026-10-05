@@ -13,6 +13,7 @@ import { loadTeamFile } from '../file/load.ts';
 import { migrationText } from '../file/migrate.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { canonicalLanding, insideTrust, isLegacyTrust } from '../file/paths.ts';
+import { isLeadSeat, relaunchRepair } from '../file/sections/lead.ts';
 import { declaredModel } from '../file/model.ts';
 import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
 import { HERDR_TESTED, herdrVersion, paneRead, sessionRunning, agentList, type HerdrAgent } from '../herdr.ts';
@@ -410,12 +411,13 @@ function trustFindings(team: TeamFile, dir: string, session: string, sources: Do
 }
 
 // The repair that relaunches one seat `up` leaves as it is: `up` never restarts a ready seat,
-// so a line that names `up` alone names a command that skips the seat. One seat at a time —
-// stop it, keep it in the file, add it again: the add launches it fresh, which is what records
-// the process, writes the rules file and starts the seat in the machine lobby — or the whole
-// team at once.
-const relaunch = (name: string): string =>
-  `\`team remove ${name} --keep\` then \`team add ${name}\` (or \`team down\` then \`team up\` for the whole team)`;
+// so a line that names `up` alone names a command that skips the seat. For a coordinator or
+// an operator, `team remove <seat> --keep` is refused (the file can't have a stopped lead),
+// so only the whole-team sequence is offered. For every other seat — stop it, keep it in the
+// file, add it again: the add launches it fresh, which is what records the process, writes the
+// rules file and starts the seat in the machine lobby — or the whole team at once.
+export const relaunch = (team: Pick<TeamFile, 'coordinator' | 'operator'>, name: string): string =>
+  relaunchRepair(team, name, 'markdown');
 
 // A seat the state records from a launch that predates the process identity: neither the watch
 // nor `status` can tell whether its pane still holds what team launched, and nothing would
@@ -430,7 +432,7 @@ function identityFindings(team: TeamFile, dir: string, session: string): Finding
     if (seat.stopped || !held || held.launched) continue;
     findings.push({
       level: 'note',
-      text: `${seat.name}: launched before team recorded its process; run ${relaunch(seat.name)} to launch it again`,
+      text: `${seat.name}: launched before team recorded its process; run ${relaunch(team, seat.name)} to launch it again`,
     });
   }
   return findings;
@@ -515,7 +517,7 @@ export function doctorFindings(
       const path = rulesFilePathOf(standing, seat.name, root, sources.home);
       if (path === null) continue;
       const check = checkRulesFile(path, rulesOf(ofRecord.ok ? ofRecord.team : approved, seat, root));
-      if (!check.ok) findings.push({ level: 'warn', text: `${seat.name}: ${check.what}; run ${relaunch(seat.name)}` });
+      if (!check.ok) findings.push({ level: 'warn', text: `${seat.name}: ${check.what}; run ${relaunch(team, seat.name)}` });
     }
   }
 
@@ -610,8 +612,10 @@ export function doctorFindings(
           if (inOld.length > 0) {
             const who = inOld.length === 1 ? `seat ${inOld[0]} started in it` : `seats ${inOld.join(', ')} started in it`;
             const move = inOld.length === 1
-              ? `run ${relaunch(inOld[0]!)} to move it into the lobby`
-              : 'run `team remove <seat> --keep` then `team add <seat>` for each to move it into the lobby (or `team down` then `team up` for the whole team)';
+              ? `run ${relaunch(team, inOld[0]!)} to move it into the lobby`
+              : inOld.some((name) => isLeadSeat(team, name))
+                ? 'run `team down` then `team up` to move them into the lobby (to restart the whole team)'
+                : 'run `team remove <seat> --keep` then `team add <seat>` for each to move it into the lobby (or `team down` then `team up` for the whole team)';
             findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: ${who}; ${move}, then remove the folder` });
           } else if (unknown.length > 0) {
             findings.push({
