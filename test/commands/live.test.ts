@@ -1847,6 +1847,89 @@ describe('team up, a session that was restored', () => {
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(readState(join(root, '.agents')).sessions['acme-web']?.seats['claude-coordinator-acme']).toBeUndefined();
   });
+
+  test('a recorded recovery is closed by a no-terminal up the same way: without input, nothing sent', async () => {
+    // The safety rule is state × caller: `trust-sent-recovery` is a recorded waiting seat too.
+    // A terminal `up` never closes it — the owner is asked first. This caller has no terminal,
+    // so the waiting-owner rule above applies to it unchanged: the pane is verified against the
+    // recorded process, its screen read fresh, and the workspace closed without input.
+    writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root));
+    await approve();
+    writeFileSync(
+      join(root, '.agents/team.state.json'),
+      JSON.stringify({
+        format: 1,
+        sessions: {
+          'acme-web': {
+            seats: {
+              'claude-coordinator-acme': {
+                stage: 'launched',
+                pane: 'w1:p1',
+                workspace: 'w1',
+                launched: { shell: 400, cli: [401] },
+                waiting: {
+                  state: 'trust-sent-recovery',
+                  classification: 'trust',
+                  sentAt: '2026-10-03T14:01:00.000Z',
+                },
+              },
+              'deepseek-acme': { stage: 'ready', pane: 'w2:p1', workspace: 'w2', launched: { shell: 500, cli: [501] } },
+              'deepseek-acme-2': { stage: 'ready', pane: 'w3:p1', workspace: 'w3', launched: { shell: 510, cli: [511] } },
+            },
+            worktrees: {},
+          },
+        },
+      }),
+    );
+    const trust = 'Do you trust this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n';
+    const made = world((_pane, label) => (label === 'claude opus 5.5' ? trust : IDLE));
+    made.session = 'running';
+    const listed = [
+      agent('claude-coordinator-acme', 'w1:p1', 'idle'),
+      agent('deepseek-acme', 'w2:p1', 'idle'),
+      agent('deepseek-acme-2', 'w3:p1', 'idle'),
+    ];
+    made.launch.agents = () => listed;
+    made.launch.agentPanes = () => ['w1:p1', 'w2:p1', 'w3:p1'];
+    const calls: string[] = [];
+    made.launch.processInfo = (_session, pane) => {
+      calls.push(`process:${pane}`);
+      return pane === 'w1:p1' ? { shell: 400, foreground: [400, 401] } :
+        pane === 'w2:p1' ? { shell: 500, foreground: [500, 501] } :
+        { shell: 510, foreground: [510, 511] };
+    };
+    const origPaneText = made.launch.paneText;
+    made.launch.paneText = (session, pane) => {
+      calls.push(`paneText:${pane}`);
+      return pane === 'w1:p1' ? trust : origPaneText(session, pane);
+    };
+    const origClose = made.launch.closeWorkspace;
+    made.launch.closeWorkspace = (session, ws) => {
+      calls.push(`close:${ws}`);
+      return origClose(session, ws);
+    };
+    const io = testIo(root, { kind: 'owner-no-tty' });
+    const code = await runUp(FILE, io, sources({
+      sessionState: () => 'running',
+      agents: () => listed,
+      workspaces: () => [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }],
+    }, made));
+    expect(code).toBe(1);
+    // The recorded process was verified before anything was closed, its screen read between
+    // the check and the close, and nothing was typed, focused or asked of a terminal.
+    expect(calls).toEqual([
+      'process:w1:p1', 'process:w2:p1', 'process:w3:p1',
+      'process:w1:p1', 'paneText:w1:p1', 'close:w1',
+    ]);
+    expect(made.terminal.reads).toBe(0);
+    // Nothing was created or run for the recorded seat: only the watchdog, which reads no pane.
+    expect(made.creates).not.toContain('claude opus 5.5');
+    expect(io.out).toContain('claude-coordinator-acme: left out: trust (no terminal for owner)\n');
+    expect(io.err).toContain('  its workspace was closed without input\n');
+    expect(made.closes).toEqual(['w1']);
+    // The record — recovery and all — is cleared with it.
+    expect(readState(join(root, '.agents')).sessions['acme-web']?.seats['claude-coordinator-acme']).toBeUndefined();
+  });
 });
 
 // §3/§4/§5: the pause at the owner's terminal — the prompt and its keys, what `o` waits on,
