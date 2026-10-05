@@ -280,7 +280,7 @@ function cliFindings(cli: string, seats: Seat[], sources: DoctorSources): Findin
 // flag, or know that nothing checks the model. The last-used case keeps its warning, whose text
 // another change rewords.
 export function modelFlagFinding(
-  seat: Pick<Seat, 'name' | 'cli' | 'launch' | 'display' | 'model' | 'modelFrom'>,
+  seat: Pick<Seat, 'name' | 'cli' | 'launch' | 'display' | 'model' | 'version' | 'modelFrom'>,
   profile: Pick<Profile, 'binary' | 'lastUsedModel'>,
 ): Finding | null {
   const declared = declaredModel(seat);

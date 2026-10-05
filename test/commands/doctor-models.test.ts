@@ -4,7 +4,7 @@
 // of each shape; the matrix over launch lines is the review's table. The exact-output test is the
 // contract `bun run contract` regenerates.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Caller } from '../../src/caller.ts';
@@ -12,7 +12,7 @@ import { runApprove } from '../../src/commands/approve.ts';
 import { modelFlagFinding, runDoctor, type DoctorSources, type Finding } from '../../src/commands/doctor.ts';
 import { profileFor } from '../../src/profiles/index.ts';
 import type { Profile } from '../../src/profiles/profile.ts';
-import { canShowModel } from '../../src/status/statusline.ts';
+import { canShowModel, runningModel, type Running } from '../../src/status/statusline.ts';
 import { installKey } from '../../src/store/keys.ts';
 import { testIo } from '../helpers.ts';
 
@@ -140,14 +140,16 @@ describe('modelFlagFinding', () => {
   const profile = profileFor('claude-code');
   if (!profile) throw new Error('claude-code must have a profile');
   // claude-code's screen names Claude's families; a model another maker spells is unread on it.
-  const READABLE: { cli: string; model: string; display: string } = {
+  const READABLE: { cli: string; model: string; version: string; display: string } = {
     cli: 'claude-code',
     model: 'Claude Opus',
+    version: '5.5',
     display: 'Claude Opus 5.5',
   };
-  const FOREIGN: { cli: string; model: string; display: string } = {
+  const FOREIGN: { cli: string; model: string; version: string; display: string } = {
     cli: 'claude-code',
     model: 'DeepSeek Flash',
+    version: 'V4.1',
     display: 'DeepSeek Flash V4.1',
   };
   const LINES = [
@@ -238,13 +240,51 @@ describe('modelFlagFinding', () => {
     });
   });
 
-  test('what the screen can name comes from the profile: its own families, never another maker', () => {
+  // What the screen can name is settled by the real reader: a line the rule's pattern accepts,
+  // with the declared model's own words in the capture its templates name, must read back as
+  // exactly this model — and this version when the seat has one. A yes here is a reading the
+  // reader really gives, never a claim about what a template might spell.
+  test('what the screen can name is what the reader reads back, and nothing else', () => {
+    // The review's probe: the shipped rule knows Opus, Sonnet, Haiku and Fable, so the reader
+    // can never return Terra, and no line the pattern accepts can round-trip to it.
+    expect(runningModel('claude-code', 'Opus 5.5')).toEqual({ model: 'Claude Opus', version: '5.5' });
+    expect(runningModel('claude-code', 'Terra 5.5')).toBeNull();
+    expect(canShowModel({ cli: 'claude-code', model: 'Claude Terra' })).toBe(false);
+    // the seat's own name; without a version the reader is asked about the model alone
     expect(canShowModel({ cli: 'claude-code', model: 'Claude Opus' })).toBe(true);
-    expect(canShowModel({ cli: 'claude-code', model: 'DeepSeek Flash' })).toBe(false);
     expect(canShowModel({ cli: 'codex', model: 'GPT Sol' })).toBe(true);
-    // codex's unreadable-line rule names a group its pattern does not have: it yields nothing
-    expect(canShowModel({ cli: 'codex', model: 'Grok' })).toBe(false);
     expect(canShowModel({ cli: 'cursor', model: 'Grok' })).toBe(true);
     expect(canShowModel({ cli: 'antigravity', model: 'Gemini Flash' })).toBe(true);
+    // another maker's name, and a name no family matches: not readable on this screen
+    expect(canShowModel({ cli: 'claude-code', model: 'DeepSeek Flash' })).toBe(false);
+    expect(canShowModel({ cli: 'claude-code', model: 'GLM' })).toBe(false);
+    // a made-up name is not readable on any other profile either
+    expect(canShowModel({ cli: 'codex', model: 'GPT Nova', version: '6' })).toBe(false);
+    expect(canShowModel({ cli: 'antigravity', model: 'Gemini Ultra', version: '3.8' })).toBe(false);
+    expect(canShowModel({ cli: 'cursor', model: 'Composer', version: '2.5' })).toBe(false);
+    // a version the capture cannot spell is no more readable than the model
+    expect(canShowModel({ cli: 'claude-code', model: 'Claude Opus', version: 'dev' })).toBe(false);
+    // codex's unreadable-line rule names a group its pattern does not have: it yields nothing
+    expect(canShowModel({ cli: 'codex', model: 'Grok' })).toBe(false);
+  });
+
+  // The evidence behind the table: every model any shipped launch fixture shows is one the
+  // profile must call readable — read from the screens themselves, not listed by hand.
+  test('every model the shipped fixtures show is readable', () => {
+    const dirs: [string, string][] = [
+      ['claude-code', 'claude-code/2.1.289'],
+      ['codex', 'codex/0.157.0'],
+      ['cursor', 'cursor/2026.10.01'],
+      ['antigravity', 'antigravity/1.2.16'],
+    ];
+    for (const [cli, dir] of dirs) {
+      const shown = readdirSync(join(import.meta.dir, '../fixtures', dir))
+        .filter((file) => file.endsWith('.txt'))
+        .map((file) => runningModel(cli, readFileSync(join(import.meta.dir, '../fixtures', dir, file), 'utf8')))
+        .filter((running): running is Running => running !== null);
+      // The profile's fixtures show its model at least once: an empty sweep is not a pass.
+      expect(shown.length).toBeGreaterThan(0);
+      for (const running of shown) expect(canShowModel({ cli, model: running.model, version: running.version })).toBe(true);
+    }
   });
 });
