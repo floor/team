@@ -635,3 +635,99 @@ describe('Antigravity rules delivery of the one line (1.2.16 capture)', () => {
     expect(d.calls).toEqual([capturedLine, 'Enter']);
   });
 });
+
+/** A scripted host whose pane starts at the wrapper's shell: `zsh` in front, a shell prompt
+ *  drawn, herdr with no agent to report. The CLI takes the pane at `upAt`, drawing `first` as
+ *  its first frame and reporting idle. Typing while the shell still holds the pane throws:
+ *  nothing may be typed into the wrapper's shell. */
+describe('Antigravity rules delivery through a wrapper', () => {
+  const SHELL = 'Last login: Mon Oct  5 09:12:44 on ttys011\n~/Code/acme % ';
+
+  function wrapper(upAt: number, first: 'idle' | 'trust' = 'idle') {
+    let clock = 0;
+    let up = false;
+    let status: string | null = null;
+    let raw: string | null = null; // the CLI's frames once it is up; the wrapper's shell before
+    const calls: string[] = [];
+    const refusals: Refusal[] = [];
+    const io: Delivery = {
+      screen: () => raw ?? SHELL,
+      status: () => status,
+      report: (why) => { refusals.push(why); },
+      file: () => true, // the delivery tests prove the line, not the file
+      type(text) {
+        if (raw === null) throw new Error('typed into the wrapper\'s shell');
+        calls.push(text);
+        raw = boxed(text);
+        return true;
+      },
+      enter() {
+        calls.push('Enter');
+        raw = fixture('working');
+        status = 'working';
+        return true;
+      },
+      foreground: () => (raw === null ? ['zsh'] : ['agy']),
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+        if (!up && clock >= upAt) {
+          up = true;
+          raw = fixture(first);
+          status = 'idle'; // herdr reports a prompt, even a dialog, as idle
+        }
+      },
+    };
+    return { io, calls, refusals, at: () => clock };
+  }
+
+  test('the line is delivered once the CLI takes the pane off the wrapper\'s shell', async () => {
+    // The wrapper's shell holds the pane for 350 ms; the CLI then draws its idle box. Nothing
+    // is typed before that — `type` would throw — and the delivery reads the box and sends.
+    const d = wrapper(350);
+    expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(true);
+    expect(d.calls).toEqual(['Rules.', 'Enter']);
+    expect(d.at()).toBeGreaterThanOrEqual(350);
+  });
+
+  test('a CLI that never takes the pane gives up at the deadline, saying the CLI never appeared', async () => {
+    const d = wrapper(Number.POSITIVE_INFINITY);
+    expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+    expect(d.refusals).toEqual([{ stop: 'launch', typed: false, sent: false, kind: 'unknown', row: null }]);
+    expect(d.at()).toBe(1000); // the whole second, not a refusal at the first poll
+    expect(refusalReport(d.refusals[0]!)).toContain(
+      'the CLI never appeared as its pane\'s foreground process (the screen read unknown)',
+    );
+  });
+
+  test('a live CLI whose frame never becomes the idle box gives up on the reading it saw', async () => {
+    // The process is the CLI from the first poll, but the frame it draws is never a box this
+    // version recognises: the wait runs out and the refusal names the reading.
+    let clock = 0;
+    const refusals: Refusal[] = [];
+    const io: Delivery = {
+      screen: () => SHELL,
+      status: () => 'idle',
+      report: (why) => { refusals.push(why); },
+      file: () => true,
+      type: () => { throw new Error('nothing may be typed'); },
+      enter: () => false,
+      foreground: () => ['agy'],
+      now: () => clock,
+      sleep: async (ms) => { clock += ms; },
+    };
+    expect(await deliverRules('antigravity', 'Rules.', 1, io)).toBe(false);
+    expect(refusals).toEqual([{ stop: 'screen', typed: false, sent: false, kind: 'unknown', row: null }]);
+  });
+
+  test('a dialog at the CLI\'s first frame is refused at once, nothing typed', async () => {
+    // The wrapper's shell gives way to the CLI's trust dialog: the delivery refuses the moment
+    // the dialog is read, without waiting the deadline out.
+    const d = wrapper(100, 'trust');
+    expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+    expect(d.refusals).toEqual([{ stop: 'screen', typed: false, sent: false, kind: 'trust', row: null }]);
+    expect(d.at()).toBe(100);
+  });
+});

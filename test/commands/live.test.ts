@@ -171,7 +171,7 @@ function wrappedRows(text: string, width = 50): string[] {
 }
 
 describe('team up, live', () => {
-  test('rules are not typed into a pane with no live agent', async () => {
+  test('rules are not typed into a pane the CLI never appears in', async () => {
     const path = join(root, '.agents/team.yaml');
     writeFileSync(path, EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
     await approve();
@@ -179,6 +179,8 @@ describe('team up, live', () => {
     const made = world((_pane, label) => (label === 'gpt sol 6' ? fileModel(capture('idle')) : IDLE));
     const sent: string[] = [];
     made.launch.agentStatus = () => 'idle';
+    // A shell holds the pane and never hands it to the CLI: the delivery waits it out, types
+    // nothing into the shell, and gives up at the deadline saying the CLI never appeared.
     made.launch.foreground = () => ['zsh'];
     made.launch.typeText = (_session, _pane, text) => { sent.push(text); return true; };
     made.launch.pressEnter = () => { sent.push('Enter'); return true; };
@@ -186,7 +188,11 @@ describe('team up, live', () => {
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
     expect(sent).toEqual([]);
-    expect(io.out).toContain('codex-acme: no live agent in its pane; its rules were not delivered');
+    expect(io.out).toContain(
+      'codex-acme: rules not typed: the CLI never appeared as its pane\'s foreground process '
+        + '(the screen read idle); check the seat\'s launch line — the wrapper it starts through, '
+        + 'or the command itself — then run up again',
+    );
   });
 
   test.each(['accepted', 'trust', 'startup', 'swallowed'] as const)('Codex first-message rules: %s', async (outcome) => {

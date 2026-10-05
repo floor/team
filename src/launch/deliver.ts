@@ -8,6 +8,8 @@ import {
 /** Why a delivery stopped. Each one is a reading the owner can act on.
  *  - `file`: the seat's rules file could not be written; nothing was typed.
  *  - `path`: the file's path can't be typed provably; nothing was typed.
+ *  - `launch`: the CLI itself never appeared as its pane's foreground process — a wrapper's
+ *    shell still in front of it, or a launch line that exited; nothing was typed.
  *  - `screen`: the screen was not the idle prompt; nothing was typed.
  *  - `working`: the seat was mid-turn; nothing was typed.
  *  - `leftover`: the box already held text that is not the rules line; nothing typed.
@@ -16,7 +18,7 @@ import {
  *  - `file-changed`: the line read back, but the file no longer held the hash it names; Enter
  *    was not pressed.
  *  - `ack`: Enter was sent and the seat did not come back to its idle prompt. */
-export type Stop = 'file' | 'path' | 'screen' | 'working' | 'leftover' | 'typing' | 'read-back' | 'file-changed' | 'ack';
+export type Stop = 'file' | 'path' | 'launch' | 'screen' | 'working' | 'leftover' | 'typing' | 'read-back' | 'file-changed' | 'ack';
 
 /** Where a delivery stopped, for the report. `kind` is what the screen read at the stop; `typed`
  *  says the line reached the pane; `sent` says Enter was pressed; `row` is the first row drawn
@@ -207,6 +209,9 @@ export function refusalReport(why: Refusal): string {
     case 'path':
       return `rules not typed: its rules file's path can't be typed safely: the read-back can't prove a path outside `
         + `letters, digits and . _ / @ + -; rename the seat or move the project, then run up again`;
+    case 'launch':
+      return `rules not typed: the CLI never appeared as its pane's foreground process (${reading(why, 0)}); `
+        + `check the seat's launch line — the wrapper it starts through, or the command itself — then run up again`;
     case 'working':
       return `rules not confirmed: the seat is working; run up again when it is idle`;
     case 'screen':
@@ -240,12 +245,36 @@ export async function deliverRules(cli: string, line: string, seconds: number, i
   const live = () => reportedLiveAgent(io.foreground(), names);
   const free = () => ['idle', 'done'].includes(io.status() ?? '');
   const report = (why: Refusal): false => { io.report?.(why); return false; };
-  if (!live()) return 'no-agent';
-  const start = readScreen(cli, io.screen()).kind;
-  if (io.status() === 'working' || start === 'working') {
-    return report({ stop: 'working', typed: false, sent: false, kind: 'working', row: null });
+  // The CLI may start through a wrapper: a shell runs in the pane first, and the CLI draws
+  // behind it. Nothing is typed until the CLI itself is the pane's foreground process and its
+  // idle box is up — a line typed into the wrapper's shell would run as a command, not arrive
+  // as a message. A dialog at the CLI's first frame, or a seat already mid-turn, is refused at
+  // once; anything else is waited out, and a wait that outlives the deadline gives up saying
+  // which of the two never came: the CLI itself, or its box.
+  const untilUp = io.now() + seconds * 1000;
+  let seenLive = false;
+  let start: Screen['kind'];
+  for (;;) {
+    if (live()) {
+      seenLive = true;
+      start = readScreen(cli, io.screen()).kind;
+      if (io.status() === 'working' || start === 'working') {
+        return report({ stop: 'working', typed: false, sent: false, kind: 'working', row: null });
+      }
+      if (start === 'trust' || start === 'permission' || start === 'question') {
+        return report(stopAs(cli, 'screen', io.screen()));
+      }
+      if (free() && (start === 'idle' || start === 'unsent')) break;
+    }
+    if (io.now() >= untilUp) {
+      return report(seenLive ? stopAs(cli, 'screen', io.screen()) : stopAs(cli, 'launch', io.screen()));
+    }
+    const before = io.now();
+    await io.sleep(100);
+    if (io.now() <= before) {
+      return report(seenLive ? stopAs(cli, 'screen', io.screen()) : stopAs(cli, 'launch', io.screen()));
+    }
   }
-  if (!free() || (start !== 'idle' && start !== 'unsent')) return report(stopAs(cli, 'screen', io.screen()));
   // The resumed delivery: a box that already holds exactly today's line — the same path, the
   // same hash, the line `team` would type now — is verified and sent. A box holding anything
   // else is left alone: `team` never types a second line onto the first, and never clears a box
