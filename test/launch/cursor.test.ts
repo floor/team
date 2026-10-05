@@ -933,17 +933,21 @@ describe('the closed Cursor status row (round 2)', () => {
     expect(model('  Grok 4.7 wrote this answer in the transcript')).toEqual({ model: 'Grok', version: '4.7' });
   });
 
-  test('one expression, used in the three places', () => {
+  test('one set of expressions, used in the three places', () => {
     const data = screenData('cursor');
     if (!data || data.composer.mode !== 'status-then-one' || !data.trust || !data.working) {
       throw new Error('cursor profile shape changed');
     }
-    const status = data.composer.statusLine;
-    const trustRow = data.trust.rules[0]?.noneAfter?.patterns[1]?.match;
-    const workingRow = data.working.rules[1]?.noneAfter?.patterns[0]?.except.find((re) => re.source === status.source);
-    expect(trustRow?.source).toBe(status.source);
-    expect(workingRow).toBeDefined();
-    expect(status.source).toContain('Run Everything');
-    expect(status.source).toContain('GPT-');
+    // The composer's status_line, the trust dialog's none_after and the working queue's
+    // exception must hold the same expressions, character for character: the three places
+    // that decide whether a line is the status row cannot disagree about which lines those
+    // are.
+    const status = data.composer.statusLine.map((re) => re.source);
+    const trustRows = (data.trust.rules[0]?.noneAfter?.patterns.slice(1) ?? []).map((p) => p.match.source);
+    const workingRows = data.working.rules[1]?.noneAfter?.patterns[0]?.except.map((re) => re.source) ?? [];
+    expect(trustRows).toEqual(status);
+    for (const source of status) expect(workingRows).toContain(source);
+    expect(status.some((source) => source.includes('Run Everything'))).toBe(true);
+    expect(status.some((source) => source.includes('GPT-'))).toBe(true);
   });
 });
