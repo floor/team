@@ -18,7 +18,7 @@ let home: string;
 let sources: WorktreeSources;
 
 const owner = { kind: 'owner' } as const;
-const lead = { kind: 'seat', name: 'lead', pane: 'w1:p1' } as const;
+const lead = { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'acme' } as const;
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
@@ -543,7 +543,7 @@ describe('team worktree and the approved copy', () => {
     approve(staff);
     edit(staff.replace('operator: clerk\n', 'operator: lead\n'));
     recordSeat('clerk', 'w3:p1');
-    const io = await run(['new', 'select-width', '--kind', 'fix'], { kind: 'seat', name: 'clerk', pane: 'w3:p1' });
+    const io = await run(['new', 'select-width', '--kind', 'fix'], { kind: 'seat', name: 'clerk', pane: 'w3:p1', session: 'acme' });
     expect(io.code).toBe(0);
     expect(io.err).toBe(note);
     expect(existsSync(join(base, 'worktrees', 'acme', 'select-width', 'README.md'))).toBe(true);

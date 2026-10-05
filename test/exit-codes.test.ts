@@ -38,7 +38,7 @@ import { claudeBox, testIo } from './helpers.ts';
 const NOW = new Date('2026-10-04T09:00:00Z');
 const owner = { kind: 'owner' } as const;
 const other = { kind: 'seat', name: 'other', pane: 'w9:p1' } as const;
-const leadSeat = { kind: 'seat', name: 'lead', pane: 'w1:p1' } as const;
+const leadSeat = { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'acme' } as const;
 const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
 const hot: Machine = { ...fine, loadPerCore: 9 };
 const quiet: Live = { running: false, agents: [], workspaces: [], screens: {} };

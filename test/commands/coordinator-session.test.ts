@@ -371,7 +371,9 @@ for (const command of COMMANDS) {
 
     test('the coordinator on its recorded pane is read exactly as main read it', async () => {
       const judged = await command.run(placed(SESSION, COORDINATOR, COORDINATOR_PANE));
-      const main = await command.run({ kind: 'seat', name: COORDINATOR, pane: COORDINATOR_PANE });
+      // Handed in as a seat of its session: a caller that carries no session is refused once a
+      // standing is asked for, so a readable caller names the session it stood in.
+      const main = await command.run({ kind: 'seat', name: COORDINATOR, pane: COORDINATOR_PANE, session: SESSION });
       expect({ code: judged.code, out: judged.out, err: judged.err }).toEqual({ code: main.code, out: main.out, err: main.err });
     });
 
@@ -380,7 +382,7 @@ for (const command of COMMANDS) {
     // agent list, places nobody, and this case fails.
     test('a caller placed through the sources of the team\'s own session is read as main read it', async () => {
       const judged = await command.run({ sources: sourcesOf(SESSION, COORDINATOR, COORDINATOR_PANE) });
-      const main = await command.run({ kind: 'seat', name: COORDINATOR, pane: COORDINATOR_PANE });
+      const main = await command.run({ kind: 'seat', name: COORDINATOR, pane: COORDINATOR_PANE, session: SESSION });
       expect({ code: judged.code, out: judged.out, err: judged.err }).toEqual({ code: main.code, out: main.out, err: main.err });
     });
 
@@ -419,7 +421,7 @@ for (const command of COMMANDS) {
     // passed, and the two sides would differ.
     test('a v0.2.1 state places the coordinator as main did: nothing breaks on upgrade', async () => {
       const judged = await command.run(placed(SESSION, COORDINATOR, COORDINATOR_PANE), [], { state: STATE_021 });
-      const main = await command.run({ kind: 'seat', name: COORDINATOR, pane: COORDINATOR_PANE }, [], { state: STATE_021 });
+      const main = await command.run({ kind: 'seat', name: COORDINATOR, pane: COORDINATOR_PANE, session: SESSION }, [], { state: STATE_021 });
       expect({ code: judged.code, out: judged.out, err: judged.err }).toEqual({ code: main.code, out: main.out, err: main.err });
     });
 
@@ -790,11 +792,12 @@ describe('a team run under another session', () => {
 
   for (const command of COMMANDS) {
     // The seat `up` started, placed through the fake caller sources on the pane the state
-    // records — and the same caller handed in the way main described it — meet the same run.
+    // records — and the same caller handed in as a seat of that session, the way main read it —
+    // meet the same run.
     test(`${command.name}: the coordinator's caller of that session passes, read as main read it`, async () => {
       const { state, pane } = await upUnderOther();
       const judged = await command.run({ sources: sourcesOf(OTHER, COORDINATOR, pane) }, [], { state });
-      const main = await command.run({ kind: 'seat', name: COORDINATOR, pane }, [], { state });
+      const main = await command.run({ kind: 'seat', name: COORDINATOR, pane, session: OTHER }, [], { state });
       expect({ code: judged.code, out: judged.out, err: judged.err }).toEqual({ code: main.code, out: main.out, err: main.err });
     });
   }
@@ -834,7 +837,7 @@ describe('a team run under another session', () => {
     const { state } = await upUnderOther();
     state.sessions[SESSION] = { seats: { [COORDINATOR]: { stage: 'ready', pane: COORDINATOR_PANE } }, worktrees: {} };
     const judged = await byName('remove').run({ sources: sourcesOf(SESSION, COORDINATOR, COORDINATOR_PANE) }, [], { state });
-    const main = await byName('remove').run({ kind: 'seat', name: COORDINATOR, pane: COORDINATOR_PANE }, [], { state });
+    const main = await byName('remove').run({ kind: 'seat', name: COORDINATOR, pane: COORDINATOR_PANE, session: SESSION }, [], { state });
     expect({ code: judged.code, out: judged.out, err: judged.err }).toEqual({ code: main.code, out: main.out, err: main.err });
     expect(judged.code).toBe(0);
   });

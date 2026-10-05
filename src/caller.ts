@@ -110,7 +110,11 @@ export type CallerVerdict = { kind: 'ok' } | { kind: 'refused' } | { kind: 'no-p
 export function callerVerdict(caller: Caller, name: string, at?: SeatStanding): CallerVerdict {
   if (caller.kind !== 'seat' || caller.name !== name) return { kind: 'refused' };
   if (!at) return { kind: 'ok' };
-  if (caller.session !== undefined && caller.session !== at.session) return { kind: 'refused' };
+  // Once a standing is asked for, a caller that carries no session is refused: nothing in it
+  // shows it stood in the session judged. Every placement `placeCaller` makes for a command
+  // records the session it asked about, so production callers always carry one; this covers a
+  // caller built by hand, which must name its session to be read as a seat.
+  if (caller.session !== at.session) return { kind: 'refused' };
   if (at.recordedPane === undefined) return { kind: 'no-pane', name };
   return caller.pane === at.recordedPane ? { kind: 'ok' } : { kind: 'refused' };
 }

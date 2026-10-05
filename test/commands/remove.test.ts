@@ -42,7 +42,7 @@ seats:
 `;
 
 const owner = { kind: 'owner' as const };
-const lead = { kind: 'seat' as const, name: 'lead', pane: 'w0:p1' };
+const lead = { kind: 'seat' as const, name: 'lead', pane: 'w0:p1', session: 'acme' };
 
 let dir: string;
 let file: string;

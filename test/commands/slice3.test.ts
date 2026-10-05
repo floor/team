@@ -17,7 +17,7 @@ import { testIo } from '../helpers.ts';
 const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8');
 const FILE = ['--file', '.agents/team.yaml'];
 const OWNER: Caller = { kind: 'owner' };
-const COORDINATOR: Caller = { kind: 'seat', name: 'claude-coordinator-acme', pane: 'w1:p1' };
+const COORDINATOR: Caller = { kind: 'seat', name: 'claude-coordinator-acme', pane: 'w1:p1', session: 'acme-web' };
 const WORKER: Caller = { kind: 'seat', name: 'deepseek-acme', pane: 'w3:p1' };
 const NOW = new Date('2026-10-03T14:02:00Z');
 

@@ -113,9 +113,10 @@ describe('a caller is judged against the session and the pane it was placed in',
   test('a seat of another session is not the coordinator of this one', () => {
     // Placed in session b under the coordinator's name: today's caller shape, still true.
     expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1', session: 'b' }, team, where)).toBe(false);
-    // The caller main's placement produced (no session at all) and the one this session's
-    // placement produces: the same seat, allowed.
-    expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1' }, team, where)).toBe(true);
+    // The caller main's placement produced (no session at all) is refused once a standing is
+    // asked for: nothing in it shows it stood in the session judged. The one this session's
+    // placement produces is the same seat, allowed.
+    expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1' }, team, where)).toBe(false);
     expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1', session: 'a' }, team, where)).toBe(true);
   });
 

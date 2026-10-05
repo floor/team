@@ -679,7 +679,7 @@ describe('team answer', () => {
     expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('answer [unplaced] lead: refused trust: caller');
 
     // The authorized caller keeps its own class, and the owner keeps its.
-    const coordinator = testIo(root, { kind: 'seat', name: 'lead', pane: 'w1:p1' });
+    const coordinator = testIo(root, { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'acme' });
     expect(await runAnswer([...FILE, 'lead', 'trust'], coordinator, host)).toBe(0);
     const log = readFileSync(join(dir, 'team.log'), 'utf8');
     expect(log).toContain('answer [coordinator] lead: trust answered');
