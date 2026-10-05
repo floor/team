@@ -18,20 +18,45 @@ Reads the team file and this machine's approval store, the session's state
 (`.agents/team.state.json`), and git: the base branch, the branch names, and the worktree itself.
 With `--session`, the state of that session instead of `team.session`.
 
-Every value the two subcommands read from the file is the **approved copy's**, whatever the file
-says now: `workspace` (mode, path, branch, base, setup and limit), `trust`, the caller rules, the
-names a public project forbids, and the seats `--seat` names. An unapproved edit — a path moved, a
-setup command added, a trust pattern widened, the coordinator changed, a seat added — is never
-used, and never judged by. `project` is the one value that is always the file's: it is not an
-owner-approved section, so a rename needs no approval and `{repo}` stays current.
+Every value the two subcommands read from the file is the **approved copy's** while a verified
+approval is in force, whatever the file says now and whether or not the fingerprints match:
+`workspace` (mode, path, branch, base, setup and limit), `trust`, the caller rules (`coordinator`
+and `operator`), the session, the names a public project forbids, and the seats `--seat` may name.
+An unapproved edit — a path moved, a setup command added, a trust pattern widened or narrowed, the
+coordinator or the operator changed, a seat added, removed, renamed or redefined — is never used.
+A seat taken out of the file is still one until the owner approves that.
 
-When the file differs from the approved copy and nothing else refuses, the command runs with the
-approved settings and prints one note on stderr before its normal output:
+`project` is read from the file as it is now, not from the approved copy. It is not an owner
+section, so renaming it needs no approval. `{repo}` in `workspace.path` is that current name, which
+decides the folder `new` creates and the directory `workspace.setup` runs in.
+It does not place a worktree outside the approved trust: the landing is still judged against the
+approved `trust` patterns, and a landing outside them is refused before anything is created. A
+rename that puts `{repo}` outside the file's own trust patterns makes the file invalid, so the
+command never starts. A pattern wide enough to cover the new name (for example `../worktrees/*`)
+keeps the new folder inside the approved trust.
+
+When an owner section or a seat was added, removed or changed, the command prints one note on
+stderr before its normal output and before a later refusal (the trust, the limit, an unapproved
+seat):
 
     team worktree: using the approved workspace settings; the file has unapproved changes: run `team approve`
 
-The exit code is the one the run itself has, and the log line is unchanged. The note is the only
-sign: nothing in the file takes effect until `team approve`.
+The exit code is the one the run itself has. The log line is unchanged: the note is not written to
+`team.log`. A caller the approved copy does not allow is refused before the note, and nothing is
+created. `project` itself is not this drift: a file that sets `session` and changes only `project`
+prints no note. When `session` is omitted it defaults to the project name, so a rename changes the
+session too. That session change is the drift, the note prints, and state is written under the
+approved session while `{repo}` is still the live name.
+
+`--seat` is checked against the approved seats. The live seat list is read for one distinction: a
+name the file declares and the approved copy does not gets `seat <name> is not in the approved
+file`; a name neither declares gets `--seat "<name>" names no declared seat`.
+
+A verified record whose stored copy this version cannot read — empty, invalid, or otherwise — refuses
+with `the approved copy can't be read`, whether or not the fingerprints match. A record whose `file`
+is not a string never becomes a verified standing. The store refuses it first, and the command
+prints that line unchanged: `the approval record cannot be read (... "file" is not a string): run
+team approve once`.
 
 Writes `.agents/team.log`, `.agents/team.state.json` (one record under the session: the folder, the
 branch, the seat when `--seat` names one, and whether `workspace.setup` succeeded), and, with `new`,
@@ -71,7 +96,8 @@ terminal outside herdr.
 | `team worktree: session can't be "default", herdr's own session` | 1 |
 | ``team worktree: the file was never approved on this machine: run `team approve` `` | 1 |
 | ``team worktree: approved before records were signed: run `team approve` once`` — the record was written by an earlier `team`; the same line, with the case, for a record that does not verify | 1 |
-| ``team worktree: the approved copy can't be read: run `team approve` `` — the file differs from an approval whose stored copy this version can't read | 1 |
+| ``team worktree: the approval record cannot be read (<store>/approval.json: "file" is not a string): run `team approve` once`` — the record's `file` is not a string; the store refuses it before this command reads a copy | 1 |
+| ``team worktree: the approved copy can't be read: run `team approve` `` — a verified record whose stored copy this version can't read, whether or not the fingerprints match | 1 |
 | `team worktree: a task name is one segment of letters, digits, ".", "_" and "-", and it starts with a letter or a digit` | 1 |
 | `team worktree: --kind: <the same, for the kind>` | 1 |
 | `team worktree: workspace.mode is shared: this team keeps one checkout, so there is no task worktree to create` | 1 |
@@ -213,7 +239,7 @@ $ team worktree remove tidy-logs
 removed tidy-logs; the branch chore/tidy-logs is kept
 ```
 
-An edit to the file is not in effect until the owner approves it. Here the file has been changed
+An edit to an owner-controlled value is not in effect until the owner approves it. Here the file has been changed
 to `mode: shared` and a seat has been added, neither approved; the command says so once, and goes
 on with the approved workspace:
 
