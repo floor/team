@@ -51,6 +51,44 @@ seats:
     stopped: true
 `;
 
+// A file whose worker works in worktrees: it would start in the lobby, never the project root.
+const WORKTREE_FILE = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+trust:
+  - .
+  - ../worktrees/acme/*
+workspace:
+  mode: worktree
+  path: ../worktrees/{repo}/{task}
+  base: main
+seats:
+  - role: coordinator
+    name: lead
+    label: lead
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+    mode: shared
+  - role: implementer
+    name: worker
+    label: worker
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: zsh ../tools/x.sh
+    stopped: true
+`;
+
+function file(path: string, text = 'x\n'): void {
+  mkdirSync(join(path, '..'), { recursive: true });
+  writeFileSync(path, text);
+}
+
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
     cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
@@ -207,6 +245,86 @@ describe('team add', () => {
     expect(io.err).toContain('team add: worker: its launch line starts `team-deepseek`, which is not on the PATH\n');
     expect(made.creates).toEqual([]);
     expect(readFileSync(join(project, '.agents/team.yaml'), 'utf8')).toContain('stopped: true');
+  });
+
+  test('a line for an existing unnamed pane is checked where that pane runs', async () => {
+    // The reviewer's probe: the state records the seat at pane `w9:p1` with `start_cwd` at the
+    // project root — where `../tools/x.sh` is a file — and the fresh seat would start in the
+    // lobby, where it is not. The seat is adopted into the pane, not launched, so the recorded
+    // folder is where its line is read: the line resolves, nothing is refused, nothing is made.
+    approve(WORKTREE_FILE);
+    file(join(base, 'tools', 'x.sh'));
+    updateState(join(project, '.agents'), (state) => {
+      const session = state.sessions.acme ?? emptySession();
+      session.seats.worker = { stage: 'launched', workspace: 'w9', pane: 'w9:p1', start_cwd: '.' };
+      state.sessions.acme = session;
+    });
+    const made = world();
+    made.launch.paneText = () => IDLE;
+    made.launch.agentPanes = () => ['w9:p1'];
+    const agent: HerdrAgent = { name: null, agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null };
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker'], io, sources(made, {
+      sessionState: () => 'running',
+      agents: () => [agent],
+      workspaces: () => [{ id: 'w9' }],
+    }));
+    expect(code).toBe(0);
+    expect(io.err).not.toContain('would refuse');
+    expect(made.creates).toEqual([]);
+    expect(made.renames).toEqual(['worker']);
+  });
+
+  test('a line for an existing pane whose state records no start folder is noted, not checked', async () => {
+    approve(WORKTREE_FILE);
+    file(join(base, 'tools', 'x.sh'));
+    updateState(join(project, '.agents'), (state) => {
+      const session = state.sessions.acme ?? emptySession();
+      session.seats.worker = { stage: 'launched', workspace: 'w9', pane: 'w9:p1' };
+      state.sessions.acme = session;
+    });
+    const made = world();
+    made.launch.paneText = () => IDLE;
+    made.launch.agentPanes = () => ['w9:p1'];
+    const agent: HerdrAgent = { name: null, agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null };
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker'], io, sources(made, {
+      sessionState: () => 'running',
+      agents: () => [agent],
+      workspaces: () => [{ id: 'w9' }],
+    }));
+    expect(code).toBe(0);
+    expect(io.err).toContain(
+      '  note worker: its launch line was not checked: the seat is resumed and its state records no start folder\n',
+    );
+    expect(made.creates).toEqual([]);
+    expect(made.renames).toEqual(['worker']);
+  });
+
+  test('a miss at the recorded folder does not refuse a seat that is adopted, not launched', async () => {
+    // The pane runs in the lobby, where the line does not resolve: a miss there keeps `up`'s
+    // rule — a seat that is not launched is not refused for its line — and the seat is renamed.
+    approve(WORKTREE_FILE);
+    file(join(base, 'tools', 'x.sh'));
+    updateState(join(project, '.agents'), (state) => {
+      const session = state.sessions.acme ?? emptySession();
+      session.seats.worker = { stage: 'launched', workspace: 'w9', pane: 'w9:p1', start_cwd: '../worktrees/acme/.lobby' };
+      state.sessions.acme = session;
+    });
+    const made = world();
+    made.launch.paneText = () => IDLE;
+    made.launch.agentPanes = () => ['w9:p1'];
+    const agent: HerdrAgent = { name: null, agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null };
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker'], io, sources(made, {
+      sessionState: () => 'running',
+      agents: () => [agent],
+      workspaces: () => [{ id: 'w9' }],
+    }));
+    expect(code).toBe(0);
+    expect(io.err).not.toContain('would refuse');
+    expect(made.creates).toEqual([]);
+    expect(made.renames).toEqual(['worker']);
   });
 
   test('a line the check cannot read is noted once, and the seat still starts', async () => {
