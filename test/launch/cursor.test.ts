@@ -1799,37 +1799,174 @@ describe('the border inserted around every other capture (Cursor)', () => {
   });
 });
 
+// The two detectors of the corpus test below, as named helpers so the planted tests can
+// run them on built screens. The structural one reads the profile's own patterns through
+// `screenData`, so it follows the profile the reader follows: a complete frame is its
+// parts in order, found at any position of the screen —
+// - the unbordered frame: an empty row, the input row below it, the status row below the
+//   input row matching a closed status-row pattern of the profile whole, the workspace
+//   line directly below that (the row above the input row must be empty, never a border:
+//   a border there hands the frame to the bordered rule, exactly as the reader reads it);
+// - the bordered frame: the top border, the input row directly below, the bottom border
+//   below the input rows, one character longer than the status row, the status row
+//   directly below the border, the workspace line directly below that.
+const composerData = screenData('cursor');
+if (!composerData || composerData.composer.mode !== 'status-then-one') {
+  throw new Error('cursor profile shape changed');
+}
+const composerFrame = composerData.composer;
+const framePrompt = composerFrame.prompt;
+const frameWorkspace = composerFrame.statusBelow?.line ?? /$.^/;
+const frameTop = composerFrame.border?.top ?? /$.^/;
+const frameBottom = composerFrame.border?.bottom ?? /$.^/;
+const frameStatusRow = (line: string) =>
+  composerFrame.statusLine.some((re) => re.source.startsWith('^') && re.source.endsWith('$') && re.test(line));
+
+const holdsUnborderedFrame = (lines: string[]) => {
+  for (let i = 1; i < lines.length; i++) {
+    if (!framePrompt.test(lines[i] ?? '') || (lines[i - 1] ?? '').trim() !== '') continue;
+    for (let s = i + 1; s < lines.length; s++) {
+      const row = lines[s] ?? '';
+      if (framePrompt.test(row) || frameTop.test(row) || frameBottom.test(row)) break;
+      if (frameStatusRow(row)) {
+        if (frameWorkspace.test(lines[s + 1] ?? '')) return true;
+        break;
+      }
+    }
+  }
+  return false;
+};
+const holdsBorderedFrame = (lines: string[]) => {
+  for (let t = 0; t < lines.length; t++) {
+    const top = lines[t] ?? '';
+    if (!frameTop.test(top)) continue;
+    if (!framePrompt.test(lines[t + 1] ?? '')) continue;
+    for (let b = t + 2; b < lines.length; b++) {
+      const bottom = lines[b] ?? '';
+      if (frameTop.test(bottom)) break;
+      if (!frameBottom.test(bottom)) continue;
+      const status = lines[b + 1] ?? '';
+      if (!frameStatusRow(status)) continue;
+      if (bottom.length !== top.length) continue;
+      if (bottom.length !== status.length + 1) continue;
+      if (frameWorkspace.test(lines[b + 2] ?? '')) return true;
+      break;
+    }
+  }
+  return false;
+};
+const holdsCompleteFrame = (lines: string[]) => holdsUnborderedFrame(lines) || holdsBorderedFrame(lines);
+
+// the reading detector: the reader's own window slid over every tail of the screen,
+// reporting the first reading that is neither `unknown` nor the screen's own
+const windowReadsOther = (lines: string[], own: string) => {
+  for (let tail = 0; tail < lines.length; tail++) {
+    const kind = classify('cursor', lines.slice(Math.max(0, tail - 19), tail + 1)).kind;
+    if (kind !== own && kind !== 'unknown') return kind;
+  }
+  return null;
+};
+
+const manifestScreens = JSON.parse(readFileSync(new URL('../fixtures/conformance.json', import.meta.url), 'utf8'))
+  .screens as Array<{ cli: string; classify: string; file: string }>;
+const dialogCaptures = manifestScreens
+  .filter((entry) => entry.cli === 'cursor' && ['permission', 'trust', 'question'].includes(entry.classify))
+  .map((entry) => ({ ...entry, name: entry.file.split('/').pop()!.replace(/\.txt$/, '') }));
+const captureLines = (name: string) => fixture(name).split('\n');
+const plantAt = (lines: string[], at: number, part: string[]) => [...lines.slice(0, at), ...part, ...lines.slice(at)];
+const plantPositions = (lines: string[]) =>
+  [
+    ['top', 0],
+    ['middle', Math.floor(lines.length / 2)],
+    ['end', lines.length],
+  ] as const;
+
 describe('a live dialog and a complete idle frame never share a screen (Cursor)', () => {
   // The corpus evidence for the composite reading below: over every registered Cursor
   // capture whose reading is a dialog — permission, trust or question, every version
-  // folder, bordered or not — no complete idle frame is present anywhere in the capture.
-  // The detector slides the reader's own window over every tail of the screen: classify
-  // sees only the pane's last 20 rows, and a complete frame — bordered or unbordered — is
-  // the last structure of exactly the window that ends at the frame's own last row (the
-  // grammar allows nothing after the workspace line but empty rows), so testing every tail
-  // position cannot miss a frame any window could read; the frames no window reads whole
-  // are not frames the pane could ever read as complete. Every window of every dialog
-  // capture reads its own dialog or `unknown`: while a dialog is live the box is not on
-  // the screen.
-  const manifest = JSON.parse(readFileSync(new URL('../fixtures/conformance.json', import.meta.url), 'utf8'));
-  const dialogs = manifest.screens.filter(
-    (entry: { cli: string; classify: string; file: string }) =>
-      entry.cli === 'cursor' && ['permission', 'trust', 'question'].includes(entry.classify),
-  );
+  // folder, bordered or not — no window reads idle or unsent, and no complete idle frame
+  // is present anywhere in the capture. The reading pass is the stronger net: it slides
+  // the reader's own window over every tail of the screen (classify sees only the pane's
+  // last 20 rows, and a complete frame — bordered or unbordered — is the last structure
+  // of exactly the window that ends at the frame's own last row, the grammar allowing
+  // nothing after the workspace line but empty rows, so testing every tail position
+  // cannot miss a frame any window could read), and it fails for any screen a window
+  // could read idle or unsent, complete frame or not — it can only over-report, never
+  // pass a capture that holds a frame. The structural pass detects a complete frame, and
+  // only that: the frame's parts in order at any position, so an incomplete frame is not
+  // reported. While a dialog is live the box is not on the screen.
 
-  test('no capture of the corpus holds a dialog and a complete idle frame at once', () => {
-    expect(dialogs.length).toBeGreaterThanOrEqual(4);
+  test('no window reads idle or unsent (the reading)', () => {
+    expect(dialogCaptures.length).toBeGreaterThanOrEqual(4);
     const found: string[] = [];
-    for (const entry of dialogs) {
-      const lines = readFileSync(new URL(`../fixtures/${entry.file}`, import.meta.url), 'utf8').split('\n');
-      const windows: string[] = [];
-      for (let tail = 0; tail < lines.length; tail++) {
-        const kind = classify('cursor', lines.slice(Math.max(0, tail - 19), tail + 1)).kind;
-        if (kind !== entry.classify && kind !== 'unknown') windows.push(`tail ${tail} reads ${kind}`);
-      }
-      if (windows.length > 0) found.push(`${entry.file}: ${windows.join(', ')}`);
+    for (const entry of dialogCaptures) {
+      const lines = captureLines(entry.name);
+      const kind = windowReadsOther(lines, entry.classify);
+      if (kind !== null) found.push(`${entry.name}: a window reads ${kind}`);
     }
     expect(found).toEqual([]);
+  });
+
+  test('no complete frame is present (the structure)', () => {
+    const found: string[] = [];
+    for (const entry of dialogCaptures) {
+      if (holdsCompleteFrame(captureLines(entry.name))) found.push(entry.name);
+    }
+    expect(found).toEqual([]);
+  });
+});
+
+describe('the two detectors on a planted frame (Cursor)', () => {
+  // The detectors of the corpus test above, run on built screens. A planted frame is the
+  // idle capture's own bytes, raw, with the capture's trailing blank row kept: the
+  // captures draw the frame with its transcript above it, and a bare frame planted at a
+  // dialog capture's end can leave the dialog's own rows in the same 20-row window, where
+  // the dialog reading wins — a different screen, not a missed frame.
+  test('a complete frame of either kind, planted at the top, the middle or the end of a dialog capture, is reported by both detectors', () => {
+    const missed: string[] = [];
+    for (const entry of dialogCaptures) {
+      const lines = captureLines(entry.name);
+      for (const frame of ['bordered-idle', 'idle']) {
+        const part = captureLines(frame);
+        for (const [pos, at] of plantPositions(lines)) {
+          const screen = plantAt(lines, at, part);
+          const kind = windowReadsOther(screen, entry.classify);
+          if (kind !== 'idle' || !holdsCompleteFrame(screen)) {
+            missed.push(`${entry.name} ${frame} @${pos}: reading=${kind} structure=${holdsCompleteFrame(screen)}`);
+          }
+        }
+      }
+    }
+    expect(missed).toEqual([]);
+  });
+
+  // The one incomplete frame the reading pass reports: the unbordered frame without its
+  // workspace line still reads idle in a window because the empty-framed reading accepts
+  // the Grok status row with no workspace line below it — the reading main already gives.
+  // The structural pass reports nothing: the frame is not complete.
+  const incompleteRows: Array<[string, string, (row: string) => boolean, string]> = [
+    ['idle', 'workspace line', (row) => frameWorkspace.test(row), 'idle'],
+    ['idle', 'status row', (row) => frameStatusRow(row), 'none'],
+    ['bordered-idle', 'workspace line', (row) => frameWorkspace.test(row), 'none'],
+    ['bordered-idle', 'status row', (row) => frameStatusRow(row), 'none'],
+    ['bordered-idle', 'top border', (row) => frameTop.test(row), 'none'],
+    ['bordered-idle', 'bottom border', (row) => frameBottom.test(row), 'none'],
+  ];
+
+  test.each(incompleteRows)('%s with its %s removed holds no complete frame; a window reads %s', (frame, dropped, drop, reading) => {
+    const part = captureLines(frame).filter((row) => !drop(row));
+    const missed: string[] = [];
+    for (const entry of dialogCaptures) {
+      const lines = captureLines(entry.name);
+      for (const [pos, at] of plantPositions(lines)) {
+        const screen = plantAt(lines, at, part);
+        const kind = windowReadsOther(screen, entry.classify);
+        if (holdsCompleteFrame(screen) || kind !== (reading === 'none' ? null : reading)) {
+          missed.push(`${entry.name} @${pos}: structure=${holdsCompleteFrame(screen)} reading=${kind}`);
+        }
+      }
+    }
+    expect(missed).toEqual([]);
   });
 });
 
