@@ -71,14 +71,12 @@ export function isOwner(caller: Caller): boolean {
 }
 
 /**
- * What a seat is judged against: the session the team file (or `--session`) names, and the pane
- * the state records for the seat, when it records one. The pane it was launched on is the seat's;
- * a pane merely renamed to the seat's name, even in the right session, is not it. A state that
- * records no pane (a team never brought up, the coordinator's seat not launched by `team`) is not
- * compared — the read that would refuse it for its own reasons is elsewhere, and a caller check
- * that turned a missing record into a refusal would break the documented flow in which an owner
- * starts a seat by hand. Refusing on a missing record is a follow-up of its own: those documented
- * flows would need to record a pane first.
+ * What a seat is judged against: the session the approved team file names, and the pane the state
+ * records for the seat, when it records one. The pane it was launched on is the seat's; a pane
+ * merely renamed to the seat's name, even in the right session, is not it. A state that records no
+ * pane (a team never brought up; a coordinator's seat `team` didn't launch) is refused: nothing in
+ * the state tells that seat apart from a renamed shell, so the check fails closed. The refusal is
+ * `noPaneRefusal` — the cause, and the repair that truly records a pane.
  */
 export type SeatStanding = { session: string; recordedPane?: string };
 
@@ -98,20 +96,51 @@ export function standingOf(dir: string, session: string, caller: Caller): SeatSt
   return { session, recordedPane: caller.kind === 'seat' ? recordedPaneOf(dir, session, caller.name) : undefined };
 }
 
+/**
+ * Why the caller is or is not the seat `name`. `refused` is every mismatch: another name, and a
+ * caller of another session or of another pane. `no-pane` is the state recording no pane for the
+ * seat — refused too, and the one refusal that tells its caller what to ask the owner for.
+ */
+export type CallerVerdict = { kind: 'ok' } | { kind: 'refused' } | { kind: 'no-pane'; name: string };
+
 /** Whether the caller is the seat `name`: in the session judged (a caller placed in another
  *  session is a seat of that other session, not of this one), and on the pane the state records
- *  for it, when one is recorded. Without a standing the name alone decides, exactly as before. */
-export function callerStanding(caller: Caller, name: string, at?: SeatStanding): boolean {
-  if (caller.kind !== 'seat' || caller.name !== name) return false;
-  if (!at) return true;
-  if (caller.session !== undefined && caller.session !== at.session) return false;
-  return at.recordedPane === undefined || caller.pane === at.recordedPane;
+ *  for it. A state that records no pane refuses it. Without a standing the name alone decides,
+ *  exactly as before. */
+export function callerVerdict(caller: Caller, name: string, at?: SeatStanding): CallerVerdict {
+  if (caller.kind !== 'seat' || caller.name !== name) return { kind: 'refused' };
+  if (!at) return { kind: 'ok' };
+  if (caller.session !== undefined && caller.session !== at.session) return { kind: 'refused' };
+  if (at.recordedPane === undefined) return { kind: 'no-pane', name };
+  return caller.pane === at.recordedPane ? { kind: 'ok' } : { kind: 'refused' };
 }
 
-// The owner, or the coordinator's or the operator's seat: who may change a running team.
+export function callerStanding(caller: Caller, name: string, at?: SeatStanding): boolean {
+  return callerVerdict(caller, name, at).kind === 'ok';
+}
+
+/**
+ * The refusal for a seat the state records no pane for: the cause, and the repair that truly
+ * records one. Nothing records a running seat's pane — `team up` skips a ready seat without a
+ * write, refuses a running agent its state doesn't record, and launches a fresh workspace for a
+ * record without a pane — so the seat has to be stopped before the owner's `team up` can launch
+ * it and record the pane.
+ */
+export function noPaneRefusal(name: string): string {
+  return `no pane is recorded for seat ${name} in this session: the owner stops that seat and runs \`team up\``;
+}
+
+// The owner, or the coordinator's or the operator's seat: who may change a running team. The
+// no-pane verdict names the seat, so a command's refusal can say which seat the state lost.
+export function mayChangeTeamVerdict(caller: Caller, team: Pick<TeamFile, 'coordinator' | 'operator'>, at?: SeatStanding): CallerVerdict {
+  if (caller.kind === 'owner') return { kind: 'ok' };
+  const asCoordinator = callerVerdict(caller, team.coordinator, at);
+  return asCoordinator.kind === 'refused' ? callerVerdict(caller, team.operator, at) : asCoordinator;
+}
+
+// The same question, as a boolean, for callers that need no reason.
 export function mayChangeTeam(caller: Caller, team: Pick<TeamFile, 'coordinator' | 'operator'>, at?: SeatStanding): boolean {
-  if (caller.kind === 'owner') return true;
-  return callerStanding(caller, team.coordinator, at) || callerStanding(caller, team.operator, at);
+  return mayChangeTeamVerdict(caller, team, at).kind === 'ok';
 }
 
 /**
@@ -121,7 +150,7 @@ export function mayChangeTeam(caller: Caller, team: Pick<TeamFile, 'coordinator'
  * so a seat of another session is refused by its name, today's text, and the text names nothing
  * that would have told it which name would have worked.
  */
-export function judgeCallerOf(io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller'>, session?: string): { caller: Caller; shown: Caller } {
+export function judgeCallerOf(io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>, session?: string): { caller: Caller; shown: Caller } {
   const caller = callerOf(io, session);
   // A caller a test handed in is itself; a seat placed in the session asked about is described
   // by that placement. Anything else is described by its own placement.
@@ -198,9 +227,13 @@ export function readAncestors(pid: number = process.ppid, read: ReadProcess = pr
   return null;
 }
 
-// The caller of a command: the one a test handed in, or the one the processes show.
-export function callerOf(io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller'>, session?: string): Caller {
-  return io.caller ?? currentCaller(io, session);
+// The caller of a command: the one a test handed in, the one test sources place, or the one the
+// processes show. The sources are asked about the session the command asks about, so a test sees
+// the placement the command itself made.
+export function callerOf(io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>, session?: string): Caller {
+  if (io.caller !== undefined) return io.caller;
+  if (io.callerSources !== undefined) return placeCaller(io.callerSources(session), session);
+  return currentCaller(io, session);
 }
 
 export function currentCaller(io: { env: Record<string, string | undefined>; stdinIsTTY: boolean }, session?: string): Caller {

@@ -31,9 +31,11 @@ seats the team has had, and, through herdr: the workspace, the launch, and the n
 ## Who may run it
 
 The owner, the coordinator's seat and the operator's seat. The seat is that name's in the session
-the team file names (or `--session`), on the pane the state records for it: a seat of another
-session, or a pane merely renamed to the coordinator's or the operator's name, is refused. `--file`
-is the owner's alone, from a terminal outside herdr. Everything `up` refuses on — a file that is not the approved one, a `MISS`
+the team file names, on the pane the state records for it: a seat of another session, or a pane
+merely renamed to the coordinator's or the operator's name, is refused — and so is a seat the state
+records no pane for, a coordinator `team` never launched; its refusal names the seat and the repair.
+`--file` and `--session` are the owner's alone, from a terminal outside herdr. Everything `up`
+refuses on — a file that is not the approved one, a `MISS`
 finding from [team doctor](doctor.md), the machine past its limits, the approval's ceilings — refuses
 here too, for the one seat being started.
 
@@ -45,7 +47,7 @@ here too, for the one seat being started.
 | `--like <seat>` | the approved seat a temporary seat is a copy of: its CLI, model and launch |
 | `--until <end>` | what the temporary seat works for: `result:<path>` (a file it writes, relative to the project) or `merged:<branch>` (a branch merged into the base) |
 | `--worktree <task>` | the worktree the temporary seat is started in, instead of the seat's own `cwd` |
-| `--session <name>` | the herdr session, instead of `team.session` |
+| `--session <name>` | the herdr session, instead of `team.session`; the owner's alone |
 | `--dry-run` | print whether this seat would launch or be refused, and exit 0; nothing is written |
 | `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone |
 | `--help`, `-h` | the usage, and exit 0 |
@@ -87,6 +89,8 @@ run` — makes nothing and exits 0.
 | `team add: line <n>: <message>` / `team add: <message>` | 2 |
 | `team add: only the owner, the coordinator or the operator runs it; this call is <caller>` | 1 |
 | `team add: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
+| `team add: --session is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
+| ``team add: no pane is recorded for seat <name> in this session: the owner stops that seat and runs `team up` `` | 1 |
 | ``team add: the file was never approved on this machine: run `team approve` `` | 1 |
 | ``team add: approved before records were signed: run `team approve` once`` — the record was written by an earlier `team`; the same line, with the case, for a record that does not verify | 1 |
 | ``team add: the file is not the approved one (<differences>): run `team approve` `` | 1 |
@@ -157,7 +161,18 @@ seats:
 agents: [claude-beacon]
 ```
 
-Only the implementer is up. The coordinator's seat is in the file and nothing runs for it, which is
+Only the implementer is up. A pane made by hand and renamed `claude-keeper` is not the coordinator:
+the state records no pane for the seat, so nothing tells that shell apart from the seat, and every
+command that changes the team refuses it, naming the seat and the repair only the owner can make —
+the hand-started pane is closed, and `team up` starts the seat with a pane of its own:
+
+```console caller=claude-keeper
+$ team add claude-beacon ; echo "exit $?"
+team add: no pane is recorded for seat claude-keeper in this session: the owner stops that seat and runs `team up`
+exit 1
+```
+
+The coordinator's seat is in the file and nothing runs for it, which is
 `team status`'s `missing` and the repair it names:
 
 ```console

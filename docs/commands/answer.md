@@ -16,13 +16,13 @@ On success it writes `trust-sent-recovery` into the seat's state and reads it ba
 
 ## Who may run it
 
-The owner, from outside herdr, or the coordinator from its own seat — the seat of that name in the session the team file names (or `--session`), on the pane the state records for it: a seat of another session, or a pane merely renamed to the coordinator's name, is refused. With `dialogs.trust: owner` (the value when `dialogs` is omitted) nobody sends a key, the owner included.
+The owner, from outside herdr, or the coordinator from its own seat — the seat of that name in the session the team file names, on the pane the state records for it: a seat of another session, or a pane merely renamed to the coordinator's name, is refused — and so is a seat the state records no pane for, a coordinator `team` never launched; its refusal names the seat and the repair. `--session` is the owner's alone, from a terminal outside herdr. With `dialogs.trust: owner` (the value when `dialogs` is omitted) nobody sends a key, the owner included.
 
 ## Flags
 
 | Flag | Meaning |
 | --- | --- |
-| `--session <name>` | the herdr session, instead of `team.session` |
+| `--session <name>` | the herdr session, instead of `team.session`; the owner's alone |
 | `--file <path>` | the team file, instead of `.agents/team.yaml` |
 | `--json` | print one JSON object and nothing on stderr |
 | `--help`, `-h` | the usage, and exit 0 |
@@ -52,11 +52,11 @@ The recovery reasons are `its key could not be sent`, `its idle prompt did not c
 
 ### Refusals
 
-Every refusal line is `<seat>: <reason>` except an unplaced caller's, which is its reason alone and names no seat. The classes are the log line's own (`refused trust: <class>`):
+Every refusal line is `<seat>: <reason>` except an unplaced caller's, which is its reason alone and names no seat, and the two `team answer:` lines that speak to the caller rather than about the seat: `team answer: --session is the owner's, from a terminal outside herdr; this call is <caller>` and ``team answer: no pane is recorded for seat <name> in this session: the owner stops that seat and runs `team up` ``. The classes are the log line's own (`refused trust: <class>`):
 
 | Class | Reasons |
 | --- | --- |
-| caller | `only the owner, or the coordinator from its own seat, can answer`; the unplaced caller's reason; `the file was never approved on this machine: run \`team approve\``; `approved before records were signed: run \`team approve\` once`; the approval verification's own reason; `the file is not the approved one (<section> changed; …)`; `the approved copy of the team file cannot be read` |
+| caller | `only the owner, or the coordinator from its own seat, can answer`; the unplaced caller's reason; `--session is the owner's…`; `no pane is recorded for seat <name>…`; `the file was never approved on this machine: run \`team approve\``; `approved before records were signed: run \`team approve\` once`; the approval verification's own reason; `the file is not the approved one (<section> changed; …)`; `the approved copy of the team file cannot be read` |
 | policy | `use team up and [o]` |
 | state | `another command holds it`; `it is not a live seat`; `the owner has the pane open`; `it is not waiting at a trust dialog`; `its recovery state could not be recorded` |
 | version | `this version has no trust answer` |
@@ -76,9 +76,11 @@ Every refusal line is `<seat>: <reason>` except an unplaced caller's, which is i
 | 1 | `answer.caller` | the caller may not answer a trust dialog |
 | 1 | `answer.folder` | the dialog's folder is not the lobby's exact trust entry |
 | 1 | `answer.label` | the trust choice is not the recorded one |
+| 1 | `answer.no-pane` | the state records no pane for the caller's seat |
 | 1 | `answer.policy` | the file leaves trust dialogs to the owner |
 | 1 | `answer.recovery` | the trust answer did not complete: the seat stays in recovery, and the key may or may not have been sent |
 | 1 | `answer.screen` | the pane is not the trust dialog |
+| 1 | `answer.session-owner` | `--session` is the owner's |
 | 1 | `answer.state` | the seat is not waiting at a trust dialog |
 | 1 | `answer.version` | this version has no trust answer |
 | 2 | `answer.configuration` | the team file cannot be read |

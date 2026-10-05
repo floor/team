@@ -8,7 +8,7 @@ import { compare, fingerprints } from '../../src/approve/fingerprint.ts';
 import { runWorktree, type WorktreeSources } from '../../src/commands/worktree.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
-import { readState } from '../../src/state.ts';
+import { readState, updateState, emptySession } from '../../src/state.ts';
 import { approvalStanding, storePath, writeApproval } from '../../src/store/store.ts';
 import { testIo, type TestIo } from '../helpers.ts';
 
@@ -78,6 +78,15 @@ async function run(argv: string[], caller: TestIo['caller'] = owner): Promise<Te
   return io;
 }
 
+// The state `team up` writes for a seat: the caller gate judges a seat on the pane the state
+// records for it, so a seat caller needs this record to stand as one. Without it the gate fails
+// closed — that refusal has its own tests in coordinator-session.
+function recordSeat(name: string, pane: string): void {
+  updateState(join(project, '.agents'), (state) => {
+    (state.sessions.acme ??= emptySession()).seats[name] = { stage: 'ready', pane };
+  });
+}
+
 beforeEach(() => {
   base = realpathSync(mkdtempSync(join(tmpdir(), 'team-worktree-')));
   project = join(base, 'acme');
@@ -120,6 +129,7 @@ describe('team worktree new', () => {
   });
 
   test('a coordinator seat may create one; another seat may not', async () => {
+    recordSeat('lead', 'w1:p1');
     expect((await run(['new', 'select-width', '--kind', 'fix'], lead)).code).toBe(0);
     const other = await run(['new', 'other-task', '--kind', 'fix'], { kind: 'seat', name: 'stranger', pane: 'w2:p1' });
     expect(other.code).toBe(1);
@@ -462,6 +472,7 @@ describe('team worktree and the approved copy', () => {
     edit(teamText()
       .replace('coordinator: lead\n', 'coordinator: stranger\n')
       .replace('\nseats:\n', '\nseats:\n  - role: coordinator\n    name: stranger\n    cli: claude-code\n    vendor: anthropic\n    model: Claude Opus\n    version: "5.5"\n    launch: claude --model claude-opus-5-5\n'));
+    recordSeat('lead', 'w1:p1');
     const demoted = await run(['new', 'select-width', '--kind', 'fix'], lead);
     expect(demoted.code).toBe(0);
     expect(demoted.err).toBe(note);
@@ -531,6 +542,7 @@ describe('team worktree and the approved copy', () => {
     const staff = staffText();
     approve(staff);
     edit(staff.replace('operator: clerk\n', 'operator: lead\n'));
+    recordSeat('clerk', 'w3:p1');
     const io = await run(['new', 'select-width', '--kind', 'fix'], { kind: 'seat', name: 'clerk', pane: 'w3:p1' });
     expect(io.code).toBe(0);
     expect(io.err).toBe(note);
@@ -546,6 +558,7 @@ describe('team worktree and the approved copy', () => {
       );
     approve(staff);
     edit(staff.replace('coordinator: lead\n', 'coordinator: clerk\n'));
+    recordSeat('lead', 'w1:p1');
     const io = await run(['new', 'select-width', '--kind', 'fix'], lead);
     expect(io.code).toBe(0);
     expect(io.err).toBe(note);

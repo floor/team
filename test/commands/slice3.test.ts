@@ -550,6 +550,16 @@ describe('team down', () => {
   });
 
   test("--dry-run for the coordinator leaves its own seat; another seat's call would be refused", async () => {
+    // The state `team up` writes for the coordinator's seat: the caller gate judges a seat on
+    // the pane the state records for it, and a state that records no pane fails closed. Without
+    // the record the call is refused for the missing pane, not read as the coordinator.
+    writeFileSync(
+      join(root, '.agents/team.state.json'),
+      JSON.stringify({
+        format: 1,
+        sessions: { 'acme-web': { seats: { 'claude-coordinator-acme': { stage: 'ready', pane: 'w1:p1' } }, worktrees: {} } },
+      }),
+    );
     const lead = await down(['--dry-run'], COORDINATOR);
     expect(lead.out).toStartWith(
       "  skip claude-coordinator-acme: left running; only the owner stops the coordinator's or the operator's seat\n+ herdr --session acme-web pane run deepseek-acme:p1 /exit\n",

@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce, recordSeatDigestOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { describeCaller, isOwner, judgeCallerOf, mayChangeTeam, standingOf } from '../caller.ts';
+import { describeCaller, isOwner, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, standingOf } from '../caller.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from '../commands/doctor.ts';
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
@@ -134,7 +134,20 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     // exit: add.file-owner
     return 1;
   }
-  if (!mayChangeTeam(caller, team, standingOf(dir, session, caller))) {
+  // The session a seat is judged in is the team file's; --session is the owner's to choose, so a
+  // non-owner can't aim the check at a session where its pane holds the seat's name.
+  if (args.values.session && !isOwner(caller)) {
+    io.stderr(`team add: --session is the owner's, from a terminal outside herdr; this call is ${describeCaller(shown)}\n`);
+    // exit: add.session-owner
+    return 1;
+  }
+  const verdict = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
+  if (verdict.kind === 'no-pane') {
+    io.stderr(`team add: ${noPaneRefusal(verdict.name)}\n`);
+    // exit: add.no-pane
+    return 1;
+  }
+  if (verdict.kind === 'refused') {
     io.stderr(`team add: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(shown)}\n`);
     // exit: add.caller
     return 1;

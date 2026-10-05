@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { basename, dirname } from 'node:path';
 import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, callerStanding, standingOf, type Caller, type SeatStanding } from '../caller.ts';
+import { callerOf, callerVerdict, describeCaller, noPaneRefusal, standingOf, type Caller, type SeatStanding } from '../caller.ts';
 import { canonicalLanding, folderOf, listFolder, lobbyPath } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { renderSignature } from '../file/signature.ts';
@@ -104,7 +104,9 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
     if (json) io.stdout(`${JSON.stringify({ seat: seatName, dialog: 'trust', status: 'refused', reason: reason.message })}\n`);
     else io.stderr(`${reason.message}\n`);
     // exit: answer.caller
+    // exit: answer.no-pane
     // exit: answer.policy
+    // exit: answer.session-owner
     // exit: answer.state
     // exit: answer.version
     // exit: answer.screen
@@ -114,6 +116,11 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
     return 1;
   };
 
+  // The session a seat is judged in is the team file's; --session is the owner's to choose, so a
+  // non-owner can't aim the check at a session where its pane holds the seat's name.
+  if (args.values.session && caller.kind !== 'owner') {
+    return refused({ class: 'caller', message: `team answer: --session is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}` });
+  }
   const callerProblem = callerProblemOf(caller, team, seatName, standingOf(dir, session, caller));
   if (callerProblem) return refused(callerProblem);
   const standing = host.standing(root);
@@ -206,7 +213,9 @@ function callerProblemOf(caller: Caller, team: TeamFile, seat: string, at?: Seat
   if (caller.kind === 'owner') return null;
   // The coordinator's seat, in the session judged and on its recorded pane; a seat of another
   // session, or one merely renamed, falls through to the refusal below, unchanged.
-  if (callerStanding(caller, team.coordinator, at)) return null;
+  const verdict = callerVerdict(caller, team.coordinator, at);
+  if (verdict.kind === 'ok') return null;
+  if (verdict.kind === 'no-pane') return { class: 'caller', message: `team answer: ${noPaneRefusal(verdict.name)}` };
   if (caller.kind === 'unplaced') return { class: 'caller', message: caller.reason };
   return { class: 'caller', message: `${seat}: only the owner, or the coordinator from its own seat, can answer` };
 }

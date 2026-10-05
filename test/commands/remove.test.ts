@@ -91,6 +91,15 @@ function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
   return { sources, typed, closed, agents, running };
 }
 
+// The state `team up` writes for the coordinator's seat: the caller check judges a seat on the
+// pane the state records for it, so a coordinator caller needs this record to stand as one.
+// Without it the check fails closed — that refusal has its own tests in coordinator-session.
+function recordLead(pane = lead.pane): void {
+  updateState(join(dir, '.agents'), (state) => {
+    (state.sessions.acme ??= emptySession()).seats.lead = { stage: 'ready', pane };
+  });
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'team-remove-'));
   mkdirSync(join(dir, '.agents'));
@@ -326,6 +335,7 @@ describe('team remove', () => {
   });
 
   test('a seat that is not running is taken out without typing', async () => {
+    recordLead();
     const made = world();
     const io = testIo(dir, lead);
     expect(await runRemove(['worker'], io, made.sources)).toBe(0);
@@ -351,6 +361,7 @@ describe('team remove', () => {
     }, parsed.team.seats, dir);
     const edited = FILE.replace('launch: claude --model claude-opus-5-5', 'launch: claude --model claude-opus-5-5 --yolo');
     writeFileSync(file, edited);
+    recordLead();
     const made = world();
     made.sources.home = dir;
     expect(await runRemove(['worker', '--keep'], testIo(dir, lead), made.sources)).toBe(0);
@@ -369,6 +380,7 @@ describe('team remove', () => {
       file: FILE,
     }, parsed.team.seats, dir);
     writeFileSync(file, FILE.replace('    name: worker', '    name: worker\n    parked: true'));
+    recordLead();
     const made = world();
     made.sources.home = dir;
     expect(await runRemove(['worker', '--keep'], testIo(dir, lead), made.sources)).toBe(0);
@@ -445,6 +457,7 @@ describe('team remove', () => {
   });
 
   test('only the owner removes the coordinator, and only the owner abandons', async () => {
+    recordLead();
     const made = world();
     made.agents.push({ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null });
     const seat = testIo(dir, lead);

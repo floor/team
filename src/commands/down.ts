@@ -1,5 +1,5 @@
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, mayChangeTeam, standingOf, type Caller } from '../caller.ts';
+import { callerOf, describeCaller, isOwner, mayChangeTeamVerdict, noPaneRefusal, standingOf, type Caller } from '../caller.ts';
 import { currentTeam } from '../file/current.ts';
 import {
   agentList,
@@ -176,10 +176,19 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
 
   const caller = callerOf(io, session === 'default' ? undefined : session);
   const refusals: string[] = [];
-  if (!mayChangeTeam(caller, team, standingOf(dir, session, caller))) {
-    refusals.push(
-      `only the owner, the coordinator or the operator stops the team; this call is ${describeCaller(caller)}`,
-    );
+  // The session a seat is judged in is the team file's; --session is the owner's to choose, so a
+  // non-owner can't aim the check at a session where its pane holds the seat's name.
+  if (args.values.session && !isOwner(caller)) {
+    refusals.push(`--session is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}`);
+  } else {
+    const verdict = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
+    if (verdict.kind === 'no-pane') {
+      refusals.push(noPaneRefusal(verdict.name));
+    } else if (verdict.kind === 'refused') {
+      refusals.push(
+        `only the owner, the coordinator or the operator stops the team; this call is ${describeCaller(caller)}`,
+      );
+    }
   }
   const abandon = args.flags.has('abandon');
   if (abandon && !callerOwns(caller)) {
@@ -254,6 +263,8 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     for (const refusal of refusals) io.stderr(`team down: ${refusal}\n`);
     // exit: down.caller
     // exit: down.abandon
+    // exit: down.no-pane
+    // exit: down.session-owner
     return 1;
   }
   const launch = sources.launch;

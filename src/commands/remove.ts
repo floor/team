@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 import { recordSeatDigestOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { describeCaller, isOwner, judgeCallerOf, mayChangeTeam, standingOf } from '../caller.ts';
+import { describeCaller, isOwner, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, standingOf } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { markStopped, takeOut } from '../file/lines.ts';
 import type { Problem } from '../file/types.ts';
@@ -89,7 +89,20 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     // exit: remove.file-owner
     return 1;
   }
-  if (!mayChangeTeam(caller, team, standingOf(dir, session, caller))) {
+  // The session a seat is judged in is the team file's; --session is the owner's to choose, so a
+  // non-owner can't aim the check at a session where its pane holds the seat's name.
+  if (args.values.session && !isOwner(caller)) {
+    io.stderr(`team remove: --session is the owner's, from a terminal outside herdr; this call is ${describeCaller(shown)}\n`);
+    // exit: remove.session-owner
+    return 1;
+  }
+  const verdict = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
+  if (verdict.kind === 'no-pane') {
+    io.stderr(`team remove: ${noPaneRefusal(verdict.name)}\n`);
+    // exit: remove.no-pane
+    return 1;
+  }
+  if (verdict.kind === 'refused') {
     io.stderr(`team remove: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(shown)}\n`);
     // exit: remove.caller
     return 1;

@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { notInForce, worktreeTeamInForceOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner, judgeCallerOf, mayChangeTeam, standingOf } from '../caller.ts';
+import { callerOf, describeCaller, isOwner, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, standingOf } from '../caller.ts';
 import { insideTrust } from '../file/paths.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -109,7 +109,20 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
   // The gate judges the caller placed in the session this command asks about — the proof its pane
   // is that session's. The refusal names the caller's own placement, exactly as main described it.
   const { caller, shown } = judgeCallerOf(io, session === 'default' ? undefined : session);
-  if (!mayChangeTeam(caller, reading, standingOf(dir, session, caller))) {
+  // The session a seat is judged in is the team file's; --session is the owner's to choose, so a
+  // non-owner can't aim the check at a session where its pane holds the seat's name.
+  if (args.values.session && !isOwner(caller)) {
+    io.stderr(`team worktree: --session is the owner's, from a terminal outside herdr; this call is ${describeCaller(shown)}\n`);
+    // exit: worktree.session-owner
+    return 1;
+  }
+  const verdict = mayChangeTeamVerdict(caller, reading, standingOf(dir, session, caller));
+  if (verdict.kind === 'no-pane') {
+    io.stderr(`team worktree: ${noPaneRefusal(verdict.name)}\n`);
+    // exit: worktree.no-pane
+    return 1;
+  }
+  if (verdict.kind === 'refused') {
     io.stderr(`team worktree: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(shown)}\n`);
     // exit: worktree.caller
     return 1;

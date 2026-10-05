@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   callerStanding,
+  callerVerdict,
   mayChangeTeam,
+  noPaneRefusal,
   parseStat,
   placeCaller,
   processReader,
@@ -123,9 +125,18 @@ describe('a caller is judged against the session and the pane it was placed in',
     expect(callerStanding({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1', session: 'a' }, 'codex-acme', where)).toBe(true);
   });
 
-  test('a state that records no pane leaves the name to decide, as long as the session matches', () => {
+  test('a state that records no pane refuses the seat: the check fails closed', () => {
     const none = { session: 'a' };
-    expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w9:p1', session: 'a' }, team, none)).toBe(true);
+    // The pane matches nothing, because nothing is recorded — a renamed shell and a hand-started
+    // seat are the same shape here, so neither may pass.
+    expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w9:p1', session: 'a' }, team, none)).toBe(false);
+    expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1', session: 'a' }, team, none)).toBe(false);
+    const verdict = callerVerdict({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1', session: 'a' }, 'codex-acme', none);
+    expect(verdict).toEqual({ kind: 'no-pane', name: 'codex-acme' });
+    expect(noPaneRefusal('codex-acme')).toBe(
+      'no pane is recorded for seat codex-acme in this session: the owner stops that seat and runs `team up`',
+    );
+    // Another session is refused before the missing pane is even consulted.
     expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w9:p1', session: 'b' }, team, none)).toBe(false);
   });
 
