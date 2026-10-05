@@ -162,7 +162,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 1;
   }
   const approvedText = standing.record.file;
-  const approved = validateTeamFile(approvedText, { home: sources.home, fs: sources.fs });
+  const approved = validateTeamFile(approvedText, { home: sources.home, fs: sources.fs, root });
   if (!approved.ok) {
     io.stderr('team add: the approved copy can\'t be read: run `team approve`\n');
     // exit: add.approved-copy
@@ -222,7 +222,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 1;
   }
 
-  const prepared = validateTeamFile(built.edited, { home: sources.home, fs: sources.fs });
+  const prepared = validateTeamFile(built.edited, { home: sources.home, fs: sources.fs, root });
   if (!prepared.ok) {
     for (const problem of prepared.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
     // exit: add.prepared
@@ -388,7 +388,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       // exit: add.locked
       return 2;
     }
-    const parsed = validateTeamFile(built.edited, { home: sources.home, fs: sources.fs });
+    const parsed = validateTeamFile(built.edited, { home: sources.home, fs: sources.fs, root });
     // The amendment re-signs from the command's own one snapshot, read at its gate.
     if (parsed.ok) recordSeatDigestOf(standing, parsed.team, root, built.name, sources.home);
   }

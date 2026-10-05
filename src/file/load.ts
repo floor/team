@@ -54,7 +54,7 @@ export function loadTeamFile(cwd: string, options: { file?: string; home?: strin
   }
   // One read. Callers that store the text (approve) use this string, the one that was validated.
   const text = readFileSync(path, 'utf8');
-  const result = validateTeamFile(text, { home: options.home, fs: options.fs });
+  const result = validateTeamFile(text, { home: options.home, fs: options.fs, root });
   if (!result.ok) return { ...result, path };
   if (options.checkOnly) return { ...result, root, path, text };
   const errors = placedProblems(result.team, root, options.home, options.fs);

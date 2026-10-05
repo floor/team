@@ -28,6 +28,8 @@ The skeleton is validated before it is written. Its `trust:` block names the mac
       - ~/.config/team/lobby
       - <the project root, as an absolute path>
 
+An entry names a folder of the team's own; it is never a folder that contains the project, the home, or `team`'s own folders.
+
 A file that already exists is never overwritten,
 and no history is ever rewritten. The skeleton begins with a `# yaml-language-server: $schema=…` line so editors validate it against the package schema in `schema/team.schema.json`.
 That line names the schema of the release that wrote the file — the tag `v` plus the version

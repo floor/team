@@ -17,7 +17,8 @@ export { defaultWatch } from './sections/watch.ts';
 export { defaultBudgets } from './sections/budgets.ts';
 
 // Validates the text of a team file. Every problem is collected, each with its line.
-export function validateTeamFile(text: string, options: { home?: string; fs?: FsReader } = {}): ValidateResult {
+// `root` is the project root when the caller knows it: trust entries are then checked against it.
+export function validateTeamFile(text: string, options: { home?: string; fs?: FsReader; root?: string } = {}): ValidateResult {
   let root: YamlNode;
   try {
     root = parseYaml(text);
@@ -29,14 +30,14 @@ export function validateTeamFile(text: string, options: { home?: string; fs?: Fs
   const secrets = findSecrets(root);
   check.problems.push(...secrets.refused);
   check.warnings.push(...secrets.warned);
-  const team = readTeam(root, check, options.home, options.fs);
+  const team = readTeam(root, check, options.home, options.fs, options.root);
   if (check.problems.length || !team) {
     return { ok: false, errors: check.problems.sort((a, b) => a.line - b.line) };
   }
   return { ok: true, team, warnings: check.warnings };
 }
 
-function readTeam(root: YamlNode, check: Check, home?: string, fs?: FsReader): TeamFile | null {
+function readTeam(root: YamlNode, check: Check, home?: string, fs?: FsReader, rootDir?: string): TeamFile | null {
   if (root.kind !== 'map') {
     check.fail(root.line, 'the file must be a map of fields, starting with "format: 1"');
     return null;
@@ -44,7 +45,7 @@ function readTeam(root: YamlNode, check: Check, home?: string, fs?: FsReader): T
   // `watch.checks` names a line inside `watch`, not a top-level key, so it is no field of the file.
   const top = check.fields(root, 'the file', SECTIONS.filter((section) => !section.name.includes('.')).map((section) => section.name));
 
-  const ctx: Ctx = { check, root, top, broken: new Set(), values: new Map(), home, fs };
+  const ctx: Ctx = { check, root, top, broken: new Set(), values: new Map(), home, fs, rootDir };
 
   // One wave over the list at a time: a section runs once every section it reads (`after`) has
   // run, so the code moved into the modules reports in the order it reported when it lived here.

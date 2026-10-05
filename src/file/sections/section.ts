@@ -18,6 +18,8 @@ export interface Ctx {
   home?: string;
   /** Injected filesystem for path validation. The gate uses the same reader. */
   fs?: FsReader;
+  /** The project root, when the caller knows it: trust containment is checked against it. */
+  rootDir?: string;
 }
 
 /** A section's value, once every section it names in `after` has run. */

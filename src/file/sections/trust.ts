@@ -12,7 +12,7 @@ export const trust: Section = {
     const hasAbsolute = trustItems.some((item) => !isLegacyTrustEntry(item.value));
     if (hasLegacy && hasAbsolute) {
       for (const item of trustItems) {
-        ctx.check.fail(item.line, 'trust cannot mix legacy patterns and absolute paths');
+        ctx.check.fail(item.line, `trust: "${item.value}" cannot mix legacy patterns and absolute paths`);
       }
       return trustItems.map((item) => item.value);
     }
@@ -24,7 +24,7 @@ export const trust: Section = {
     } else if (hasAbsolute) {
       const home = ctx.home ?? homedir();
       for (const item of trustItems) {
-        const problem = absoluteTrustProblem(item.value, home, ctx.fs);
+        const problem = absoluteTrustProblem(item.value, home, ctx.fs, ctx.rootDir);
         if (problem) ctx.check.fail(item.line, `trust: "${item.value}" ${problem}`);
       }
     }

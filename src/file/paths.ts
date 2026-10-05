@@ -64,13 +64,29 @@ export function trustProblem(pattern: string): string | null {
   return null;
 }
 
+/** True when `folder` is a proper ancestor of `of`. Both are absolute and resolved. */
+function above(folder: string, of: string): boolean {
+  return folder !== of && of.startsWith(folder.endsWith(sep) ? folder : folder + sep);
+}
+
+/** True when `folder` is a proper ancestor of the project root, spelled or canonical. */
+function projectAncestor(folder: string, root: string, fs: FsReader): boolean {
+  if (above(folder, resolve(root))) return true;
+  try {
+    return above(folder, fs.realpath(resolve(root)));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Why an absolute trust entry is refused, or null.
  * An absolute trust entry must start with / or ~, contain no glob, no . or .. segment,
- * no control characters or backticks, and its parent walk must reach an existing directory
- * without meeting a symbolic link (dangling or not).
+ * no control characters or backticks, must not contain the home, the lobby or the approval
+ * store, nor be a parent of the project when the root is known, and its parent walk must
+ * reach an existing directory without meeting a symbolic link (dangling or not).
  */
-export function absoluteTrustProblem(entry: string, home: string = homedir(), fs: FsReader = defaultFs): string | null {
+export function absoluteTrustProblem(entry: string, home: string = homedir(), fs: FsReader = defaultFs, root?: string): string | null {
   if (CONTROL_OR_BACKTICK.test(entry)) {
     return 'must not contain control characters or backticks';
   }
@@ -94,6 +110,19 @@ export function absoluteTrustProblem(entry: string, home: string = homedir(), fs
   }
   const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
   const homeResolved = resolve(home);
+
+  // Containment: an entry names a folder of the team's own. It is never the root, the home, a
+  // folder above the home — the lobby's folder holds the lobby and the approval store — or a
+  // folder above the project; main's legacy checker refused these shapes.
+  if (expanded === sep) return 'is the root of the filesystem: trust a folder of the team\'s own';
+  if (expanded === homeResolved) return 'is the home itself: trust a folder of the team\'s own';
+  if (above(expanded, lobbyDir(homeResolved))) {
+    return `would cover ${join(homeResolved, '.config', 'team')}, which holds the lobby and the approval store: trust a folder of the team's own`;
+  }
+  if (root !== undefined && projectAncestor(expanded, root, fs)) {
+    return 'is a parent of the project: trust a folder of the team\'s own';
+  }
+
   const underHome = expanded === homeResolved || expanded.startsWith(homeResolved.endsWith(sep) ? homeResolved : homeResolved + sep);
   // Ancestors of the home are not the lobby chain. A volume symlink above the home
   // (macOS `/var`) is not a link in the entry.
