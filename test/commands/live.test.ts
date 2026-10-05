@@ -892,6 +892,7 @@ describe('team up, live', () => {
     ['a family the grammar does not know', 'unknown-family', 'refused'],
     ['an output line where the footer was', 'spoof', 'refused'],
     ['a full status row where the footer was', 'full-row', 'drift'],
+    ['a row whose version is not a token', 'unreadable', 'unchecked'],
   ] as const)('cursor launch, screen shows %s', async (_label, screen, expectCase) => {
     const path = join(root, '.agents/team.yaml');
     const cursorSeat = [
@@ -917,22 +918,62 @@ describe('team up, live', () => {
     // without `Run Everything` is output shaped like a row: both screens read `unknown`, the
     // idle wait times out, and the seat is never renamed. A row that keeps every token —
     // `Run Everything` included — is a real row by every test the screen offers, so it is
-    // accepted and the model check reads it.
+    // accepted and the model check reads it. `  Grok 4x …` is a row whose version is not a
+    // token: the screen reads idle, the model check finds nothing to read, and the seat
+    // continues with a line that says so.
     const shown = screen === 'idle'
       ? home
       : screen === 'gpt-sol-idle'
         ? readFileSync(join(import.meta.dir, '../fixtures/cursor/2026.10.01/gpt-sol-idle.txt'), 'utf8')
         : screen === 'unknown-family'
           ? home.replace(footer, '  Muse Spark 1.3                    Run Everything')
-          : screen === 'spoof'
-            ? home.replace(footer, '  GPT-5.6 Sol 272K High')
-            : home.replace(footer, '  GPT-5.6 Sol 272K High              Run Everything');
+          : screen === 'unreadable'
+            ? home.replace(footer, '  Grok 4x 256K High                 Run Everything')
+            : screen === 'spoof'
+              ? home.replace(footer, '  GPT-5.6 Sol 272K High')
+              : home.replace(footer, '  GPT-5.6 Sol 272K High              Run Everything');
     const made = world((_pane, label) => (label === 'grok 4.7' ? shown : IDLE));
-    made.launch.agentStatus = () => 'idle';
     const sent: string[] = [];
-    made.launch.typeText = (_session, _pane, text) => { sent.push(text); return true; };
-    made.launch.pressEnter = () => { sent.push('Enter'); return true; };
+    let cursorPane = '';
+    let pasted = false;
+    let typed = '';
+    let status = 'idle';
+    // In the unreadable case the cursor pane renders the typed rules the way the delivery tests'
+    // panes do — the typed text's rows in the composer's box — and reports the agent working
+    // after the Enter, so the delivery completes like any other seat's.
+    const boxed = () => {
+      const [first = '', ...rest] = typed.split('\n');
+      return shown.replace('  → Plan, search, build anything', [`  → ${first}`, ...rest.map((line) => `    ${line}`)].join('\n'));
+    };
+    made.launch.agentStatus = () => status;
+    // The order the run's host calls are made in, recorded so the unreadable case can pin it.
+    const calls: string[] = [];
+    const makeWorkspace = made.launch.createWorkspace;
+    made.launch.createWorkspace = (session, cwd, label) => { calls.push(`create:${label}`); return makeWorkspace(session, cwd, label); };
+    const runInPane = made.launch.paneRun;
+    made.launch.paneRun = (session, pane, command) => { calls.push(`paneRun:${command.split(' ')[0]}`); return runInPane(session, pane, command); };
+    const readPane = made.launch.paneText;
+    made.launch.paneText = (session, pane) => {
+      calls.push('paneText');
+      return pane === cursorPane && pasted ? boxed() : readPane(session, pane);
+    };
+    const panesOf = made.launch.agentPanes;
+    made.launch.agentPanes = (session) => { calls.push('agentPanes'); return panesOf(session); };
+    const renameSeat = made.launch.renameAgent;
+    made.launch.renameAgent = (session, pane, name) => { calls.push('renameAgent'); return renameSeat(session, pane, name); };
+    made.launch.typeText = (_session, pane, text) => {
+      sent.push(text); calls.push('typeText');
+      if (screen === 'unreadable') { cursorPane = pane; typed = text; pasted = true; }
+      return true;
+    };
+    made.launch.pressEnter = () => {
+      sent.push('Enter'); calls.push('pressEnter');
+      if (screen === 'unreadable') { status = 'working'; pasted = false; }
+      return true;
+    };
     const io = testIo(root, { kind: 'owner' });
+    const say = io.stdout;
+    io.stdout = (text: string) => { calls.push(text.includes('not checked') ? 'not-checked' : 'report'); say(text); };
     const code = await runUp(FILE, io, sources({}, made));
     const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['cursor-acme'];
     if (expectCase === 'drift') {
@@ -951,6 +992,38 @@ describe('team up, live', () => {
       expect(made.renames).not.toContain('cursor-acme');
       expect(seat?.stage).toBe('launched');
       expect(io.out).toContain('cursor-acme: timed out after 90 s waiting for its idle prompt; the screen last read unknown; left at launched\n');
+      return;
+    }
+    if (expectCase === 'unchecked') {
+      // The screen read idle and the model check found nothing to read: the seat is not left
+      // unnamed — it is renamed and given its rules like any other seat, and the report says the
+      // model was not checked.
+      expect(code).toBe(0);
+      expect(seat).toMatchObject({ stage: 'ready', rules: 'message' });
+      expect(made.renames).toContain('cursor-acme');
+      expect(sent.length).toBeGreaterThan(0);
+      expect(io.out).toContain("cursor-acme: its screen doesn't show a model this version knows; not checked\n");
+      // The seat's own calls, in order: the wait's read and the model check's read of the
+      // screen, the report that no model was checked, the rename, then the delivery — read,
+      // typed, read back, entered — and the ready report after it. The not-checked report comes
+      // before the rename, so the seat is named only after the check has had its say.
+      const from = calls.indexOf('create:grok 4.7');
+      expect(calls.slice(from, from + 14)).toEqual([
+        'create:grok 4.7',
+        'paneRun:AGENT_UNATTENDED=1',
+        'paneText',
+        'paneText',
+        'not-checked',
+        'agentPanes',
+        'renameAgent',
+        'paneText',
+        'typeText',
+        'paneText',
+        'paneText',
+        'pressEnter',
+        'paneText',
+        'report',
+      ]);
       return;
     }
     expect(made.renames).toContain('cursor-acme');
