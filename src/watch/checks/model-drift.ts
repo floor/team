@@ -1,3 +1,4 @@
+import { modelDiffers } from '../../status/statusline.ts';
 import { reported, type SeatCheck } from '../check.ts';
 import { declaredModel } from '../../file/model.ts';
 
@@ -9,7 +10,7 @@ export const modelDrift: SeatCheck = {
   run(seat, ctx) {
     const file = seat.seat;
     const running = seat.model;
-    if (!file || !running || (running.model === file.model && running.version === file.version)) return [];
+    if (!file || !modelDiffers(running, file)) return [];
     return reported(ctx.once(
       `model:${seat.name}`,
       `${seat.name} runs ${running.model} ${running.version}; the file says ${declaredModel(file)}: it signs with the wrong model`,

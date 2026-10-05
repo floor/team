@@ -129,7 +129,7 @@
     },
     "cursor": {
       "idle": {
-        "real": 3,
+        "real": 6,
         "constructed": 0,
         "undocumented": 0
       },
@@ -139,7 +139,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 17,
+        "real": 20,
         "constructed": 0,
         "undocumented": 0
       },
@@ -707,6 +707,18 @@
       "provenance": "capture"
     },
     {
+      "file": "cursor/2026.10.01/composer-idle.txt",
+      "cli": "cursor",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/composer-unsent.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "cursor/2026.10.01/exit-typed.txt",
       "cli": "cursor",
       "kind": "unsent",
@@ -741,6 +753,30 @@
       "cli": "cursor",
       "kind": "working",
       "provenance": "constructed"
+    },
+    {
+      "file": "cursor/2026.10.01/gemini-flash-idle.txt",
+      "cli": "cursor",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/gemini-flash-unsent.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/gpt-sol-idle.txt",
+      "cli": "cursor",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/gpt-sol-unsent.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
     },
     {
       "file": "cursor/2026.10.01/idle.txt",

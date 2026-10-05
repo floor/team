@@ -13,7 +13,7 @@ export type Op =
   | { do: 'create'; seat?: string; label: string; cwd: string; notice?: string }
   | { do: 'launch'; seat: string; label: string; command: string; pane?: string; notice?: string }
   | { do: 'refuse'; seat: string; why: string }
-  | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; command: string; pane?: string; workspace?: string; notice?: string }
+  | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; command: string; pane?: string; workspace?: string; notice?: string; model?: string; version?: string }
   | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
   | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; path: string; line: string; seconds: number; pane?: string; notice?: string }
   | { do: 'ready'; seat: string; rules: 'option' | 'message'; notice?: string }
@@ -48,6 +48,9 @@ export interface UpSeat {
   rulesFile?: { path: string; line: string };
   /** Why the seat's rules can't be delivered; set instead of `rulesFile`. */
   rulesRefusal?: string;
+  /** The file's model and version, compared with the screen after the idle wait. */
+  model?: string;
+  version?: string;
   /** Set when a running session is being resumed. Omitted: launch from the start. */
   stage?: 'launched' | 'named' | 'ready';
   pane?: string;
@@ -209,6 +212,7 @@ export function upPlan(input: UpInput): Step[] {
           command,
           pane: seat.pane,
           workspace: seat.workspace,
+          ...(seat.model !== undefined && seat.version !== undefined ? { model: seat.model, version: seat.version } : {}),
           ...(said ? { notice: said } : {}),
         },
       });

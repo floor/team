@@ -272,13 +272,18 @@ describe('modelFlagFinding', () => {
     expect(canShowModel({ cli: 'codex', model: 'GPT Sol' })).toBe(true);
     expect(canShowModel({ cli: 'cursor', model: 'Grok' })).toBe(true);
     expect(canShowModel({ cli: 'antigravity', model: 'Gemini Flash' })).toBe(true);
+    // cursor's rules spell its new families too; their rows are read in place, so the witness
+    // is tried inside the frame the place pins, and the fixtures show the reading is real
+    expect(canShowModel({ cli: 'cursor', model: 'Composer', version: '2.5' })).toBe(true);
+    expect(canShowModel({ cli: 'cursor', model: 'GPT Sol', version: '5.6' })).toBe(true);
+    expect(canShowModel({ cli: 'cursor', model: 'Gemini Flash', version: '3.8' })).toBe(true);
     // another maker's name, and a name no family matches: not readable on this screen
     expect(canShowModel({ cli: 'claude-code', model: 'DeepSeek Flash' })).toBe(false);
     expect(canShowModel({ cli: 'claude-code', model: 'GLM' })).toBe(false);
     // a made-up name is not readable on any other profile either
     expect(canShowModel({ cli: 'codex', model: 'GPT Nova', version: '6' })).toBe(false);
     expect(canShowModel({ cli: 'antigravity', model: 'Gemini Ultra', version: '3.8' })).toBe(false);
-    expect(canShowModel({ cli: 'cursor', model: 'Composer', version: '2.5' })).toBe(false);
+    expect(canShowModel({ cli: 'cursor', model: 'Muse Spark', version: '1.3' })).toBe(false);
     // a version the capture cannot spell is no more readable than the model
     expect(canShowModel({ cli: 'claude-code', model: 'Claude Opus', version: 'dev' })).toBe(false);
     // codex's unreadable-line rule names a group its pattern does not have: it yields nothing

@@ -470,6 +470,8 @@ function seatPlan(
     launch: seat.launch,
     cwd: start.cwd,
     label: seat.label,
+    model: seat.model,
+    version: seat.version,
     stopped: false,
     rules: rulesOf(team, seat),
     ...seatDeliveryOf(team, seat, root, home),
