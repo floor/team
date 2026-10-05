@@ -220,8 +220,8 @@ describe('team doctor', () => {
         '--    session acme-web is not running',
         'ok    claude 2.1.288 (Claude Code)',
         'ok    claude-code: logged in',
-        'warn  deepseek-acme: the launch names no model this version knows; the file says DeepSeek Flash V4.1',
-        'warn  deepseek-acme-2: the launch names no model this version knows; the file says DeepSeek Flash V4.1',
+        'warn  deepseek-acme: the launch runs team-deepseek, not claude, and names no model: if the launcher chooses the model, say so with model_from: launcher',
+        'warn  deepseek-acme-2: the launch runs team-deepseek, not claude, and names no model: if the launcher chooses the model, say so with model_from: launcher',
         'ok    codex codex-cli 0.157.0',
         'ok    codex: logged in',
         '--    trust: not applied or checked by this version; trust each folder by hand',
@@ -262,13 +262,15 @@ describe('team doctor', () => {
       herdrVersion: () => '0.6.9',
       loggedIn: () => null,
     });
-    expect(run.out).toContain('warn  claude 2.2.0 (Claude Code) is newer than the tested 2.1.288\n');
+    expect(run.out).toContain(
+      'warn  claude 2.2.0 (Claude Code) is newer than the tested 2.1.288: its screens are untested with this version; a seat that isn\'t read at launch is left out, never typed into\n',
+    );
     expect(run.out).toContain('warn  herdr 0.6.9 is older than the tested 0.7.1\n');
     expect(run.out).toContain('--    claude-code: the login is not checked in this version\n');
     expect(run.code).toBe(0);
   });
 
-  test('a model-less cursor launch says the seat starts on the last-used model', async () => {
+  test('a bare model-less launch warns only when the screen cannot check it', async () => {
     edit((text) => text.replace(
       `  - role: reviewer
     name: grok-acme
@@ -313,22 +315,20 @@ describe('team doctor', () => {
               : null,
       onPath: (binary) => binary === 'team-deepseek',
     });
+    // cursor-agent started bare shows Grok 4.7, so this seat is checked on the running screen:
+    // no line for it. Muse Spark is a family the cursor rules cannot spell, so nothing checks
+    // that seat and the warning says so. `agy` shows Gemini Flash likewise.
+    expect(run.out).not.toContain('cursor-acme');
     expect(run.out).toContain(
-      'warn  cursor-acme: the launch names no model; cursor starts on whatever model it used last; add --model grok-4.7-high to the launch. The file says Grok 4.7\n',
+      "warn  cursor-other: no model flag, and this version can't read Muse Spark 1.3 on this CLI's screen: nothing checks that it runs it\n",
     );
+    expect(run.out).not.toContain('agy-acme');
+    // The deepseek seats run a launcher, which only `model_from: launcher` can settle.
     expect(run.out).toContain(
-      'warn  cursor-other: the launch names no model; cursor starts on whatever model it used last; add --model <id> to the launch. The file says Muse Spark 1.3\n',
+      'warn  deepseek-acme: the launch runs team-deepseek, not claude, and names no model: if the launcher chooses the model, say so with model_from: launcher\n',
     );
-    expect(run.out).toContain(
-      'warn  agy-acme: the launch names no model this version knows; the file says Gemini Flash 3.8\n',
-    );
-    expect(run.out).toContain(
-      'warn  deepseek-acme: the launch names no model this version knows; the file says DeepSeek Flash V4.1\n',
-    );
-    expect(run.out).toContain(
-      'warn  deepseek-acme-2: the launch names no model this version knows; the file says DeepSeek Flash V4.1\n',
-    );
-    expect(run.out).not.toContain('cursor-acme: the launch names no model this version knows');
+    expect(run.out).not.toContain('cursor-other: the launch names no model this version knows');
+    expect(run.out).toEndWith('team doctor: 1 missing, 3 warnings: 1 of them block `up` and `add`\n');
   });
 
   test("a launch whose model is not the file's warns", async () => {

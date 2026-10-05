@@ -81,7 +81,7 @@ or a machine that stays full, is said once, not every pass.
 | `<seat> has been idle since the watch started` | quiet for `watch.idle_first`, and never seen working |
 | `<seat> has been idle for <n> minutes` | quiet for `watch.idle_first` since its last turn, then every `watch.idle_repeat` |
 | `every agent is idle` | every seat that is not the coordinator, the operator or parked, quiet for `watch.team_idle` |
-| `<seat> runs <model> <version>; the file says <model> <version>: it signs with the wrong model` | the running model or version is not the file's |
+| `<seat> runs <model> <version>; the file says <declared>: it signs with the wrong model` (`<declared>` is the seat's `display` spelling) | the running model or version is not the file's |
 | `<name> (<pane>) is running and is not in the file` | an agent in the session no seat claims, the watchdog pane aside |
 | `the file was never approved on this machine` | there is no approval record for this project |
 | `approved before records were signed: run \`team approve\` once` | the record was written by an earlier `team`: not trusted, said once, and the watch keeps watching |
