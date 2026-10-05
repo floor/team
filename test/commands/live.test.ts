@@ -916,12 +916,12 @@ describe('team up, live', () => {
       '    launch: cursor-agent',
       '    mode: shared',
     ].join('\n');
-    writeFileSync(path, EXAMPLE
+    writeFileSync(path, makeExample(base, root, EXAMPLE
       .replace(
         '    count: 2                   # deepseek-acme, deepseek-acme-2\n',
         '    count: 2\n    stopped: true\n',
       )
-      .replace(/  - role: implementer\n    name: codex-acme[\s\S]*?stopped: true\n/, `${cursorSeat}\n`));
+      .replace(/  - role: implementer\n    name: codex-acme[\s\S]*?stopped: true\n/, `${cursorSeat}\n`)));
     await approve();
     const home = readFileSync(join(import.meta.dir, '../fixtures/cursor/2026.10.01/idle.txt'), 'utf8');
     const footer = '  Grok 4.7 256K High                 Run Everything';
