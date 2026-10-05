@@ -15,7 +15,10 @@
   "license": "MIT",
   "type": "module",
   "bin": { "team": "dist/cli.js" },
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./package.json": "./package.json"
+  },
   "files": ["dist", "examples", "schema", "README.md", "LICENSE"],
   "engines": { "node": ">=22" },
   "repository": { "type": "git", "url": "git+https://github.com/floor/team.git" },
