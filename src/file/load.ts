@@ -36,9 +36,23 @@ export function loadTeamFile(cwd: string, options: { file?: string; home?: strin
     root = folder.endsWith('.agents') ? dirname(folder) : folder;
   } else {
     const found = findRoot(cwd);
-    if (!found) return { ok: false, errors: [{ line: 0, message: 'not inside a git repository: run team from a project, or pass --file' }] };
-    root = found;
-    path = join(root, TEAM_FILE);
+    if (!found) {
+      // No git repository, so there is no checkout this folder belongs to. The team file is
+      // `.agents/team.yaml` in this folder, and not in a parent: a walk up would read a
+      // neighboring project. A repository that has no team file is unchanged — the git root's
+      // file, present or missing, stays the one file — so a nested `.agents/team.yaml` cannot
+      // take its place.
+      const here = resolve(cwd);
+      const candidate = join(here, TEAM_FILE);
+      if (!existsSync(candidate)) {
+        return { ok: false, errors: [{ line: 0, message: 'not inside a git repository: run team from a project, or pass --file' }] };
+      }
+      root = here;
+      path = candidate;
+    } else {
+      root = found;
+      path = join(root, TEAM_FILE);
+    }
   }
   if (!existsSync(path)) {
     return {
