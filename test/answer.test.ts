@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -40,6 +41,10 @@ function world() {
   const lobby = lobbyPath(home);
   mkdirSync(join(root, '.agents'), { recursive: true });
   mkdirSync(lobby, { recursive: true });
+  // A project, so a run that finds its team file without `--file` (a non-owner may not aim the
+  // flag since round 4) resolves the same file rather than failing as "not inside a git
+  // repository" before it reaches the check under test.
+  execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
   return { root, home, lobby, dir: join(root, '.agents') };
 }
 
@@ -1256,12 +1261,12 @@ describe('team answer', () => {
     wait(dir, 'lead');
     const seat = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', lobby), 'cursor');
     const seatIo = testIo(root, { kind: 'seat', name: 'helper', pane: 'w1:p2' });
-    expect(await runAnswer([...FILE, 'lead', 'trust'], seatIo, seat)).toBe(1);
+    expect(await runAnswer(['lead', 'trust'], seatIo, seat)).toBe(1);
     expect(seat.keys).toEqual([]);
     expect(seatIo.err).toBe('lead: only the owner, or the coordinator from its own seat, can answer\n');
 
     const lost = testIo(root, { kind: 'unplaced', reason: 'its parent processes can\'t be read to the top' });
-    expect(await runAnswer([...FILE, 'lead', 'trust'], lost, seat)).toBe(1);
+    expect(await runAnswer(['lead', 'trust'], lost, seat)).toBe(1);
     expect(lost.err).toBe('its parent processes can\'t be read to the top\n');
   });
 
@@ -1274,17 +1279,17 @@ describe('team answer', () => {
 
     // The operator's seat, neither owner nor coordinator: not logged as the owner.
     const seat = testIo(root, { kind: 'seat', name: 'helper', pane: 'w1:p2' });
-    expect(await runAnswer([...FILE, 'lead', 'trust'], seat, host)).toBe(1);
+    expect(await runAnswer(['lead', 'trust'], seat, host)).toBe(1);
     expect(host.keys).toEqual([]);
     expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('answer [seat] lead: refused trust: caller');
 
     const lost = testIo(root, { kind: 'unplaced', reason: 'it doesn\'t run on a terminal' });
-    expect(await runAnswer([...FILE, 'lead', 'trust'], lost, host)).toBe(1);
+    expect(await runAnswer(['lead', 'trust'], lost, host)).toBe(1);
     expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('answer [unplaced] lead: refused trust: caller');
 
     // The authorized caller keeps its own class, and the owner keeps its.
     const coordinator = testIo(root, { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'acme' });
-    expect(await runAnswer([...FILE, 'lead', 'trust'], coordinator, host)).toBe(0);
+    expect(await runAnswer(['lead', 'trust'], coordinator, host)).toBe(0);
     const log = readFileSync(join(dir, 'team.log'), 'utf8');
     expect(log).toContain('answer [coordinator] lead: trust answered');
     expect(log).not.toContain('answer [owner] lead: refused trust: caller');
