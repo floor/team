@@ -123,7 +123,7 @@
       },
       "unknown": {
         "real": 9,
-        "constructed": 0,
+        "constructed": 1,
         "undocumented": 0
       }
     },
@@ -531,6 +531,12 @@
       "cli": "codex",
       "kind": "idle",
       "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/lobby-constructed.txt",
+      "cli": "codex",
+      "kind": "unknown",
+      "provenance": "constructed"
     },
     {
       "file": "codex/0.157.0/owner-status.txt",

@@ -54,6 +54,7 @@
     "status_model": { "type": "array", "items": { "$ref": "#/$defs/modelRule" }, "minItems": 1, "description": "optional: absent, the CLI's screen doesn't show its model" },
     "last_used_model": { "type": "boolean", "description": "optional: the CLI starts on its last-used model when a launch names none" },
     "quota": { "type": "array", "items": { "$ref": "#/$defs/quota" }, "minItems": 1 },
+    "trust_answer": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/trustAnswer" } },
     "screen": { "$ref": "#/$defs/screen" },
     "screen_module": { "$ref": "#/$defs/screenModule" }
   },
@@ -71,6 +72,41 @@
     }
   ],
   "$defs": {
+    "trustAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "label", "action", "capture", "extract"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "mark": { "type": "string", "minLength": 1 },
+        "footer": { "type": "string", "minLength": 1 },
+        "action": { "type": "string", "pattern": "^[0-9a-fA-F]{2}$" },
+        "capture": { "type": "string", "minLength": 1, "description": "The registered capture this record's predicate, label and extractor were taken from: the manifest's whole path, not a basename." },
+        "lobby_evidence": { "type": "string", "minLength": 1, "description": "Codex only: a registered capture of the folder-only layout taken in the real lobby. Other CLIs must not claim it." },
+        "extract": { "$ref": "#/$defs/trustExtract" }
+      }
+    },
+    "trustExtract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["after"],
+      "properties": {
+        "after": { "type": "string", "minLength": 1 },
+        "before": { "type": "string", "minLength": 1 },
+        "until_blank": { "type": "boolean" },
+        "join": { "type": "boolean", "description": "Join the rows after the anchor only when they prove one wrapped path: the first fills the wrap column, each later row starts at the indent. Off, the extractor refuses a run with more than one row." },
+        "indent": { "type": "integer", "minimum": 0, "description": "With join: the continuation column the capture draws." },
+        "wrap": { "type": "integer", "minimum": 0, "description": "With join: the column the capture's first wrapped row fills exactly." },
+        "box": { "type": "boolean" },
+        "refuse_line": { "type": "string", "minLength": 1 }
+      },
+      "anyOf": [{ "required": ["before"] }, { "required": ["until_blank"] }],
+      "allOf": [
+        { "if": { "properties": { "join": { "const": true } }, "required": ["join"] }, "then": { "required": ["indent", "wrap"] } }
+      ]
+    },
     "screenModule": {
       "type": "string",
       "minLength": 1,
