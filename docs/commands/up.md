@@ -234,9 +234,17 @@ A later `up` on a seat the state records waiting reuses its recorded pane and wo
 is created for it — verifies the current screen with a fresh read, and enters the same pause,
 **before** the ordinary unnamed or wrong-name handling. A recorded pane that no longer exists is
 not a reason to launch again: nothing is created, the record kept, and the final record is
-`<seat>: left out: its waiting pane is gone`, with the repair under it on stderr —
-`team remove <seat> --keep`, then `team up`. A pane that still exists but no longer holds the
-recorded process fails the same way, with `its waiting pane holds another process`.
+`<seat>: left out: its waiting pane is gone`, with the team file's own repair under it on stderr —
+`team down` then `team up` (to restart the whole team) for a seat the file names as its
+coordinator or operator, `team remove <seat> --keep` then `team add <seat>` (or `team down` then
+`team up` for the whole team) for any other. A pane that still exists but no longer holds the
+recorded process fails the same way, with `its waiting pane holds another process`. Neither
+`team down` nor `team remove` answers a prompt, and neither touches an agent it cannot name: a
+seat at a dialog is left running — `  skip <seat>: is blocked at a prompt, which \`team\` never
+answers; left running` on stdout for `down`, `team remove: <seat> is blocked at a prompt, which
+team never answers` on stderr and exit 1 for `remove` — and a pane holding an agent the state
+doesn't record is left in place. The owner answers that dialog, or closes that pane, by hand first — then
+the sequence the record names runs, and the next `up` handles the seat.
 
 A waiting record is a hint of where to look, never an authority — the state file is in the project
 and any seat can write it. Before a later `up` resumes, opens, skips or closes a recorded waiting
@@ -248,8 +256,10 @@ carrying this seat's name; the workspace's live label is the one this seat's lau
 `up` set when it created the workspace); and the pane's process is still the recorded one. A
 waiting record with no process identity proves nothing: it is never resumed, opened, skipped or
 closed from the record, and the run fails closed with `<seat>: left out: its waiting record has no
-process identity`, the repair under the record on stderr — run `team remove <seat> --keep`, then
-`team add <seat>`, to establish one by a run. A stored classification is validated on the state's
+process identity`, the team file's own repair under the record on stderr — run `team down` then
+`team up` (to restart the whole team) for a seat the file names as its coordinator or operator, or
+`team remove <seat> --keep` then `team add <seat>` (or `team down` then `team up` for the whole
+team) for any other, to establish one by a run. A stored classification is validated on the state's
 own read against the closed list above: anything else the file holds reads `unknown` in the record,
 the log line, the prompt, `team status` and `team doctor`.
 
@@ -266,17 +276,27 @@ and exits 1. That close makes the stop pass's own reads — the agent list, the 
 the pane's process, directly before it, with nothing between the last read and it — and closes only
 the workspace the multiplexer returns for the verified pane, holding no other agent pane; a pane
 whose process is not the one the dialog was found with is left as it is (`left as it is: its
-process changed`), its record kept. A seat stopped at the idle wait's `timeout` is not a dialog:
-that owner keeps the ordinary `timeout` record and the detail under it.
+process changed`), its record kept — and a close that did not happen writes the seat's state back
+so the next `up` reads it: the waiting record with the classification that stopped it, and the
+process identity the seat's own records already carried (its `launched`), never the changed read
+just made, which would bless the replacement. The next `up` then compares the pane against the
+launch's identity and resumes or refuses by the rules above; a seat whose records carried no
+identity gets the waiting record alone, and the next `up` refuses it for that missing identity
+rather than adopting its named, idle pane or refusing the whole session over an agent the state
+does not record. A seat stopped at the idle wait's `timeout` is not a dialog: that owner keeps the
+ordinary `timeout` record and the detail under it.
 
 ### Known limits
 
 - The waiting proof is placement, and no more: the state file is in the project, and a process of
   the same user that writes its own pane, workspace and process identity into this seat's waiting
-  record — or another seat's — renames the pane to this seat and relabels the workspace to match
-  passes every check above. The proof guards a mistaken or corrupted record, not a hostile process
-  running as the same user; nothing here can tell the two apart, because nothing distinguishes
-  them: the same user may do all of it by hand.
+  record, renames the pane to this seat and relabels the workspace to match, passes every check
+  above. What copying another seat's record cannot pass is that seat's own record: while the seat
+  whose pane or workspace this was still has a record naming it, the pane is refused
+  (`the state names one pane for two seats`), so the forger must also move that record — edit it or
+  delete it — before the copy passes. The proof guards a mistaken or corrupted record, not a
+  hostile process running as the same user; nothing here can tell the two apart, because nothing
+  distinguishes them: the same user may do all of it by hand.
 - The final read of the box and the pressing of Enter are two separate `herdr` calls. Something
   can change the pane in the gap between them; `team` reads the pane again right before the
   Enter, but it cannot make the two one action. Closing that needs a key herdr itself does not
@@ -330,7 +350,7 @@ record it belongs to, as its meaning says.
 | `<seat>: waiting for owner (<classification>)` | the provisional record drawn while the seat's owner is asked, at a terminal (the pause, above); it is rewritten in place when the classification changes, and is not the seat's final record |
 | `<seat>: left out: skipped by owner` | the owner pressed `[s]`: the seat's workspace was closed without input and its launch state cleared, the `waiting` record with it |
 | `<seat>: left out: stopped cleanly` | the owner pressed `[q]` (or Ctrl-C) at this or an earlier seat, and this seat had no final record: a workspace this invocation created for it — not already ready or closed — was closed without input and its state cleared |
-| `<seat>: left out: its waiting pane is gone` / `<seat>: left out: its waiting pane holds another process` | a later `up` found the seat recorded waiting and its recorded pane no longer exists, or no longer holds the recorded process: nothing was created, nothing closed, the record kept; the repair under the record on stderr is `team remove <seat> --keep`, then `team up` |
+| `<seat>: left out: its waiting pane is gone` / `<seat>: left out: its waiting pane holds another process` | a later `up` found the seat recorded waiting and its recorded pane no longer exists, or no longer holds the recorded process: nothing was created, nothing closed, the record kept; the repair under the record on stderr is the team file's own for this seat — `team down` then `team up` (to restart the whole team) for a coordinator or operator, `team remove <seat> --keep` then `team add <seat>` (or the whole team) for any other — and the owner answers or closes by hand first when the seat sits at a dialog, or its pane holds an agent `team` cannot name (above) |
 | `<seat>: left out: <reading>; its workspace did not close; left as it is` | the close of that workspace failed, with `<reading>` one of `trust`, `permission`, `question` or `vendor notice` — a run without a terminal closing it, or the pause's own close at the prompt: nothing claims it was closed, and the seat is left exactly as it was, its state kept — a later `up` resumes it |
 | `<seat>: left out: runs <model> <version>; the file says <model> <version>; left at launched, not named. Add <flag> <id> to its launch, or correct the file's model and version and run team approve` | the idle screen shows a different model than the file. The seat is not renamed and gets no rules; its pane stays open. The flag is that CLI's model flag, and the id is the one the profile maps to the file's model. When the profile knows no id, the line says `<id>` |
 | `<seat>: left out: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched` | herdr's process info says the pane's foreground program is back at its shell through three full polls on end, four readings, the screen matches no CLI shape, and the launch line's own echo is visible on the screen. A pane read before the line arrived, one whose echo scrolled away, one whose program is slow to draw, or a herdr that can't say (no shell process info), is waited out to the deadline — the end is never inferred from the screen's text, and a single reading can never reach the three polls. The workspace is kept, and the pane's last lines follow on stderr, under the record |

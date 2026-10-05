@@ -91,6 +91,7 @@ describe('Antigravity launch and captured screens', () => {
       sessionRunning: true,
       watchAlive: true,
       seats: [{ name: 'gemini', cli: 'antigravity', launch: 'agy', cwd: '.', label: 'gemini', stopped: false, rules: 'Rules.',
+        repairLine: '`team remove gemini --keep` then `team add gemini`',
         rulesFile: { path: '/home/owner/.config/team/demo-3f9c2a8e1d7b/rules/gemini.md', line } }],
     });
     expect(plan.find((step) => step.do?.do === 'deliver')?.do).toMatchObject({ do: 'deliver', cli: 'antigravity', rules: 'Rules.', line, seconds: 90 });
@@ -102,6 +103,7 @@ describe('Antigravity launch and captured screens', () => {
     const plan = upPlan({
       root: '.', session: 'scratch', sessionRunning: true, watchAlive: true,
       seats: [{ name: 'gemini', cli: 'antigravity', launch: 'agy', cwd: '.', label: 'gemini', stopped: false, rules: 'Rules.',
+        repairLine: '`team remove gemini --keep` then `team add gemini`',
         rulesRefusal: "its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -" }],
     });
     expect(plan.some((step) => step.do?.do === 'deliver')).toBe(false);

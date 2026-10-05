@@ -348,12 +348,12 @@ describe('a three-seat launch', () => {
 
   function steps(): Step[] {
     const seat = (name: string, cli: string, seconds: number): Step[] => [
-      { kind: 'run', argv: [], do: { do: 'create', seat: name, label: name, cwd: '.' } },
+      { kind: 'run', argv: [], do: { do: 'create', seat: name, label: name, cwd: '.', repairLine: `\`team remove ${name} --keep\` then \`team add ${name}\`` } },
       { kind: 'run', argv: [], do: { do: 'launch', seat: name, label: name, command: cli } },
       {
         kind: 'wait',
         text: `until ${name} shows its idle prompt`,
-        do: { do: 'idle', seat: name, label: name, cli, seconds, command: cli, pane: `${name}-pane` },
+        do: { do: 'idle', seat: name, label: name, cli, seconds, command: cli, pane: `${name}-pane`, repairLine: `\`team remove ${name} --keep\` then \`team add ${name}\`` },
       },
     ];
     return [

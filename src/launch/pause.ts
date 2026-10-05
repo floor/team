@@ -39,6 +39,10 @@ export type PauseInput = {
    *  (`plan.ts` labels a seat's workspace with `seat.label`). The proof compares it with the
    *  workspace's live label before anything acts on the pane. */
   label: string;
+  /** The relaunch repair as the team file names it for this seat (`relaunchRepair`'s markdown
+   *  text): a lead seat is told only `team down` then `team up`, never a `remove --keep` its
+   *  file would refuse. Every refusal that names a repair prints this one. */
+  repairLine: string;
   /** The waiting record this run resumed into, when the seat was already recorded waiting. */
   recorded?: WaitingRecord;
 };
@@ -116,9 +120,11 @@ function display(view: View): string {
   return view.recovery ? 'trust sent; recovery required' : view.classification;
 }
 
-/** The repair for a waiting record whose pane is gone or no longer holds the seat. */
-export function goneDetail(seat: string): string {
-  return `  its record still names it; \`team remove ${seat} --keep\`, then \`team up\`, clears it\n`;
+/** The repair for a waiting record whose pane is gone or no longer holds the seat: the team
+ *  file's own repair for this seat (`relaunchRepair`), never a `remove --keep` a lead seat's
+ *  file would refuse. */
+export function goneDetail(proof: Pick<WaitingProof, 'repairLine'>): string {
+  return `  its record still names it; ${proof.repairLine}, clears it\n`;
 }
 
 /** The fresh reads that prove a waiting record's pane is still the seat's: herdr's agent list,
@@ -139,6 +145,9 @@ export type WaitingProof = {
   workspace?: string;
   /** The label this seat's launch gives its workspace (`up` sets it when it creates one). */
   label: string;
+  /** The team file's repair for this seat (`relaunchRepair`'s markdown text), printed by any
+   *  refusal that names one: for a lead seat only `team down` then `team up`. */
+  repairLine: string;
   /** The process identity recorded with the waiting record. Absent: nothing is acted on — the
    *  record alone cannot prove the pane is the seat's, and a run must establish one. */
   launched?: LaunchedIdentity;
@@ -149,10 +158,11 @@ export type WaitingProblem = { reason: string; detail: string };
 
 /** The repair for a waiting record that can prove nothing: the record is cleared and the seat is
  *  started again by a run, so the next wait is recorded with the identity read in that same
- *  write. `team remove <seat> --keep` leaves the seat stopped and drops its state; `team add` is
- *  what clears the mark and starts it (`docs/commands/add.md`). */
-function identityDetail(seat: string): string {
-  return `  run \`team remove ${seat} --keep\`, then \`team add ${seat}\`, to establish one by a run\n`;
+ *  write. The text is the team file's own for this seat (`relaunchRepair`): an ordinary seat is
+ *  told `team remove <seat> --keep`, then `team add <seat>`; a lead seat only `team down`, then
+ *  `team up`, which its file would otherwise refuse. */
+function identityDetail(proof: Pick<WaitingProof, 'repairLine'>): string {
+  return `  run ${proof.repairLine}, to establish one by a run\n`;
 }
 
 /**
@@ -170,7 +180,7 @@ export function waitingProblem(reads: WaitingReads, proof: WaitingProof): Waitin
   if (!proof.launched) {
     return {
       reason: 'its waiting record has no process identity',
-      detail: identityDetail(proof.seat),
+      detail: identityDetail(proof),
     };
   }
   const seats = reads.seats();
@@ -190,9 +200,9 @@ export function waitingProblem(reads: WaitingReads, proof: WaitingProof): Waitin
     };
   }
   const agents = reads.agents();
-  if (!agents) return { reason: 'its waiting pane could not be read', detail: goneDetail(proof.seat) };
+  if (!agents) return { reason: 'its waiting pane could not be read', detail: goneDetail(proof) };
   const listed = agents.find((agent) => agent.pane === proof.pane);
-  if (!listed) return { reason: 'its waiting pane is gone', detail: goneDetail(proof.seat) };
+  if (!listed) return { reason: 'its waiting pane is gone', detail: goneDetail(proof) };
   if (listed.name !== null && listed.name !== proof.seat) {
     return {
       reason: `the multiplexer names ${listed.name} in its pane, not ${proof.seat}; nothing renamed, nothing closed, the state as it was`,
@@ -206,9 +216,9 @@ export function waitingProblem(reads: WaitingReads, proof: WaitingProof): Waitin
     };
   }
   const workspaces = reads.workspaces();
-  if (!workspaces) return { reason: 'its workspace could not be read', detail: goneDetail(proof.seat) };
+  if (!workspaces) return { reason: 'its workspace could not be read', detail: goneDetail(proof) };
   const space = workspaces.find((workspace) => workspace.id === listed.workspace);
-  if (!space) return { reason: 'its workspace is gone', detail: goneDetail(proof.seat) };
+  if (!space) return { reason: 'its workspace is gone', detail: goneDetail(proof) };
   if (space.label !== proof.label) {
     return {
       reason: `its workspace is labelled ${space.label}, not ${proof.label}; nothing renamed, nothing closed, the state as it was`,
@@ -217,10 +227,10 @@ export function waitingProblem(reads: WaitingReads, proof: WaitingProof): Waitin
   }
   const verdict = seatProcessVerdict(proof.launched, reads.process());
   if (verdict === 'gone' || verdict === 'replaced') {
-    return { reason: 'its waiting pane holds another process', detail: goneDetail(proof.seat) };
+    return { reason: 'its waiting pane holds another process', detail: goneDetail(proof) };
   }
   if (verdict === 'unknown') {
-    return { reason: 'its waiting pane could not be read', detail: goneDetail(proof.seat) };
+    return { reason: 'its waiting pane could not be read', detail: goneDetail(proof) };
   }
   return null;
 }
@@ -231,6 +241,8 @@ export type CloseProof = {
   pane: string;
   /** The workspace the record names. A live id that differs refuses; it is never closed. */
   workspace?: string;
+  /** The team file's repair for this seat, for a refusal that leaves the record in place. */
+  repairLine: string;
   launched?: LaunchedIdentity;
 };
 
@@ -250,9 +262,9 @@ export type CloseReads = {
  */
 export function closeTarget(reads: CloseReads, proof: CloseProof): { workspace: string } | { problem: WaitingProblem } {
   const agents = reads.agents();
-  if (!agents) return { problem: { reason: 'its waiting pane could not be read', detail: goneDetail(proof.seat) } };
+  if (!agents) return { problem: { reason: 'its waiting pane could not be read', detail: goneDetail(proof) } };
   const listed = agents.find((agent) => agent.pane === proof.pane);
-  if (!listed) return { problem: { reason: 'its waiting pane is gone', detail: goneDetail(proof.seat) } };
+  if (!listed) return { problem: { reason: 'its waiting pane is gone', detail: goneDetail(proof) } };
   if (proof.workspace !== undefined && listed.workspace !== proof.workspace) {
     return {
       problem: {
@@ -262,9 +274,9 @@ export function closeTarget(reads: CloseReads, proof: CloseProof): { workspace: 
     };
   }
   const panes = reads.workspacePanes(listed.workspace);
-  if (panes === null) return { problem: { reason: 'its workspace could not be read; nothing closed', detail: goneDetail(proof.seat) } };
+  if (panes === null) return { problem: { reason: 'its workspace could not be read; nothing closed', detail: goneDetail(proof) } };
   if (!panes.includes(proof.pane)) {
-    return { problem: { reason: 'its workspace does not hold its pane; nothing closed', detail: goneDetail(proof.seat) } };
+    return { problem: { reason: 'its workspace does not hold its pane; nothing closed', detail: goneDetail(proof) } };
   }
   const agentPanes = new Set(agents.map((agent) => agent.pane));
   if (panes.some((pane) => pane !== proof.pane && agentPanes.has(pane))) {
@@ -280,10 +292,10 @@ export function closeTarget(reads: CloseReads, proof: CloseProof): { workspace: 
   }
   const verdict = seatProcessVerdict(proof.launched, reads.process());
   if (verdict === 'gone' || verdict === 'replaced') {
-    return { problem: { reason: 'left as it is: its process changed', detail: goneDetail(proof.seat) } };
+    return { problem: { reason: 'left as it is: its process changed', detail: goneDetail(proof) } };
   }
   if (verdict === 'unknown') {
-    return { problem: { reason: 'its pane could not be read; nothing closed', detail: goneDetail(proof.seat) } };
+    return { problem: { reason: 'its pane could not be read; nothing closed', detail: goneDetail(proof) } };
   }
   return { workspace: listed.workspace };
 }
@@ -307,6 +319,7 @@ function proofOf(input: PauseInput, state: SeatState | undefined): WaitingProof 
     pane: input.pane,
     ...(workspace ? { workspace } : {}),
     label: input.label,
+    repairLine: input.repairLine,
     ...(state?.launched ? { launched: state.launched } : {}),
   };
 }

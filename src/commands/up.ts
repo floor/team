@@ -232,6 +232,9 @@ function seatPlan(
     label: seat.label,
     model: seat.model,
     version: seat.version,
+    // The team file's own repair for this seat — a lead seat is told only the whole-team
+    // sequence, never a `remove --keep` its file refuses (`lead.ts`).
+    repairLine: relaunchRepair(team, seat.name, 'markdown'),
     stopped: seat.stopped,
     // An option seat's rules keep coming from the live file, as main's launch line does; a
     // message seat's file and line are the approved copy's, whatever the live file says now.

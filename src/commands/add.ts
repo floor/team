@@ -16,6 +16,7 @@ import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines
 import { loadTeamFile, placedProblems } from '../file/load.ts';
 import { migrationText } from '../file/migrate.ts';
 import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
+import { relaunchRepair } from '../file/sections/lead.ts';
 import type { Problem, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
@@ -601,6 +602,9 @@ function seatPlan(
     label: seat.label,
     model: seat.model,
     version: seat.version,
+    // The team file's own repair for this seat — a lead seat is told only the whole-team
+    // sequence, never a `remove --keep` its file refuses (`lead.ts`).
+    repairLine: relaunchRepair(team, seat.name, 'markdown'),
     stopped: false,
     // An option seat's rules keep coming from the live file, as main's launch line does; a
     // message seat's file and line are the approved copy's, whatever the live file says now.

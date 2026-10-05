@@ -170,7 +170,15 @@ const OWN_CLOCK = {
 };
 
 function input(over: Partial<PauseInput> = {}): PauseInput {
-  return { seat: 'beta', classification: 'trust', pane: 'w2:p1', workspace: 'w2', label: 'claude opus 5.5', ...over };
+  return {
+    seat: 'beta',
+    classification: 'trust',
+    pane: 'w2:p1',
+    workspace: 'w2',
+    label: 'claude opus 5.5',
+    repairLine: '`team remove beta --keep` then `team add beta` (or `team down` then `team up` for the whole team)',
+    ...over,
+  };
 }
 
 const PROMPT = 'beta is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly';
@@ -436,7 +444,9 @@ describe('the waiting proof: the state is a hint, never an authority', () => {
     const f = fake({ keys: ['o'], process: null });
     const result = await runPause(input(), f.host);
     expect(result).toMatchObject({ kind: 'left out', reason: 'its waiting record has no process identity' });
-    expect((result as { detail: string }).detail).toContain('`team remove beta --keep`, then `team add beta`');
+    expect((result as { detail: string }).detail).toContain(
+      'run `team remove beta --keep` then `team add beta` (or `team down` then `team up` for the whole team), to establish one by a run',
+    );
     expect(f.calls).not.toContain('focus');
     expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
   });
@@ -449,6 +459,18 @@ describe('the waiting proof: the state is a hint, never an authority', () => {
     expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
     expect(f.calls).not.toContain('drop');
     expect(f.state.current?.waiting?.state).toBe('waiting-owner');
+  });
+
+  test('the repair printed is the seat\'s own: a lead seat hears only the whole-team sequence', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o'], process: null });
+    const result = await runPause(
+      input({ seat: 'claude-coordinator-acme', repairLine: '`team down` then `team up` (to restart the whole team)' }),
+      f.host,
+    );
+    expect(result).toMatchObject({ kind: 'left out', reason: 'its waiting record has no process identity' });
+    expect((result as { detail: string }).detail).toContain('run `team down` then `team up` (to restart the whole team), to establish one by a run');
+    expect((result as { detail: string }).detail).not.toContain('remove');
   });
 
   test('(a) another seat recorded on the same pane refuses it: nothing renamed, nothing closed', async () => {

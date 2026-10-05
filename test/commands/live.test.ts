@@ -534,6 +534,125 @@ describe('team up, live', () => {
     expect(seats['claude-coordinator-acme']).toMatchObject({ pane: 'w1:p1', workspace: 'w1' });
   });
 
+  // The state a refused close leaves behind, as the next `up` reads it. The waiting record keeps
+  // the reading that stopped the close and the identity recorded at launch — never the fresh
+  // read of the changed process, which would bless the replacement. Without the record the pane
+  // falls to the ordinary paths again: an unnamed agent is refused session-wide, and a named one
+  // that sits idle is adopted.
+  test('the leftover of a refused close, its pane unnamed: the next up reads the record, not the whole session', async () => {
+    await approve();
+    writeFileSync(join(root, '.agents/team.state.json'), JSON.stringify({
+      format: 1,
+      sessions: {
+        'acme-web': {
+          seats: {
+            'claude-coordinator-acme': {
+              stage: 'launched',
+              pane: 'w9:p1',
+              workspace: 'w9',
+              launched: { shell: 400, cli: [401] },
+              waiting: { state: 'waiting-owner', classification: 'permission' },
+            },
+          },
+          worktrees: {},
+        },
+      },
+    }));
+    const made = world();
+    made.session = 'running';
+    // The pane is unnamed, as a launch's pane is before its rename; herdr lists it, and only the
+    // record's waiting entry makes it known. It holds the replacement process, not the launch's.
+    made.seed('w9:p1', PERMISSION, true);
+    made.launch.processInfo = () => ({ shell: 900, foreground: [900, 901] });
+    const listed = (): HerdrAgent[] => [
+      { name: null, agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null },
+    ];
+    made.launch.agents = listed;
+    const io = testIo(root, { kind: 'owner-no-tty' });
+    const code = await runUp(FILE, io, sources({
+      agents: listed,
+      workspaces: () => [{ id: 'w9', label: 'claude opus 5.5' }],
+    }, made));
+    expect(code).toBe(1);
+    // Not the session-wide refusal: the waiting record names the pane, so the agent is this
+    // seat's own, and the seat is refused on its own line against the launch's identity.
+    expect(io.out + io.err).not.toContain("doesn't record");
+    expect(io.out).toContain('claude-coordinator-acme: left out: its waiting pane holds another process\n');
+    expect(io.err).toContain(
+      '  its record still names it; `team down` then `team up` (to restart the whole team), clears it\n',
+    );
+    expect(made.terminal.reads).toBe(0);
+    expect(made.renames).not.toContain('claude-coordinator-acme');
+    expect(made.closes).not.toContain('w9');
+    // The record is kept as it was: still waiting, still carrying the launch's identity.
+    const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['claude-coordinator-acme'];
+    expect(seat).toMatchObject({
+      stage: 'launched',
+      pane: 'w9:p1',
+      workspace: 'w9',
+      launched: { shell: 400, cli: [401] },
+      waiting: { state: 'waiting-owner', classification: 'permission' },
+    });
+  });
+
+  test('the leftover of a refused close, its pane named and idle: the next up reads the record, never adopts it', async () => {
+    await approve();
+    // A first launch's refused close keeps no identity — the only read it had was the changed
+    // process — so the record is the waiting entry alone. The pane carries the seat's name and
+    // sits at its prompt: without the record the next `up` would finish it as a live seat.
+    writeFileSync(join(root, '.agents/team.state.json'), JSON.stringify({
+      format: 1,
+      sessions: {
+        'acme-web': {
+          seats: {
+            'claude-coordinator-acme': {
+              stage: 'launched',
+              pane: 'w9:p1',
+              workspace: 'w9',
+              createdWorkspace: true,
+              waiting: { state: 'waiting-owner', classification: 'permission' },
+            },
+          },
+          worktrees: {},
+        },
+      },
+    }));
+    const made = world();
+    made.session = 'running';
+    made.seed('w9:p1', IDLE, true);
+    const typed: string[] = [];
+    made.launch.typeText = (_session, pane, text) => { typed.push(`${pane}:${text}`); return true; };
+    made.launch.pressEnter = (_session, pane) => { typed.push(`${pane}:Enter`); return true; };
+    const listed = (): HerdrAgent[] => [
+      { name: 'claude-coordinator-acme', agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null },
+    ];
+    made.launch.agents = listed;
+    const io = testIo(root, { kind: 'owner-no-tty' });
+    const code = await runUp(FILE, io, sources({
+      agents: listed,
+      workspaces: () => [{ id: 'w9', label: 'claude opus 5.5' }],
+    }, made));
+    expect(code).toBe(1);
+    // The record's waiting entry is read before any idle reading: the seat is refused by the
+    // proof, never adopted — nothing renames it, types into it or closes it, and it is not ready.
+    expect(io.out).toContain('claude-coordinator-acme: left out: its waiting record has no process identity\n');
+    expect(io.out).not.toContain('claude-coordinator-acme: ready');
+    expect(io.err).toContain('  run `team down` then `team up` (to restart the whole team), to establish one by a run\n');
+    expect(io.err).not.toContain('team remove');
+    expect(made.renames).not.toContain('claude-coordinator-acme');
+    expect(typed).toEqual([]);
+    expect(made.closes).not.toContain('w9');
+    expect(made.terminal.reads).toBe(0);
+    const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['claude-coordinator-acme'];
+    expect(seat).toMatchObject({
+      stage: 'launched',
+      pane: 'w9:p1',
+      workspace: 'w9',
+      waiting: { state: 'waiting-owner', classification: 'permission' },
+    });
+    expect(seat?.rules).toBeUndefined();
+  });
+
   test('a trust dialog without a terminal closes that workspace without an answer and leaves the seat out', async () => {
     await approve();
     const trust = 'Do you trust this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n';
@@ -2025,7 +2144,7 @@ describe('team up, a session that was restored', () => {
     // is never read, nothing is closed, nothing typed or focused, nothing read from a terminal.
     expect(io.out).toContain('claude-coordinator-acme: left out: its waiting record has no process identity\n');
     expect(io.err).toContain(
-      '  run `team remove claude-coordinator-acme --keep`, then `team add claude-coordinator-acme`, to establish one by a run\n',
+      '  run `team down` then `team up` (to restart the whole team), to establish one by a run\n',
     );
     expect(calls).toEqual([]);
     expect(made.closes).toEqual([]);
@@ -2868,7 +2987,7 @@ describe('team up, the pause', () => {
     expect(code).toBe(1);
     // Fail closed: nothing is created, closed or read from the terminal, and the record stays.
     expect(io.out).toContain('claude-coordinator-acme: left out: its waiting pane is gone\n');
-    expect(io.err).toContain('  its record still names it; `team remove claude-coordinator-acme --keep`, then `team up`, clears it\n');
+    expect(io.err).toContain('  its record still names it; `team down` then `team up` (to restart the whole team), clears it\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).toEqual([]);
     expect(made.terminal.reads).toBe(0);

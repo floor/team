@@ -16,7 +16,9 @@ export const IDLE_POLL_MS = 2000;
 export type Op =
   | { do: 'server'; session: string }
   | { do: 'wait-session'; session: string; seconds: number }
-  | { do: 'create'; seat?: string; label: string; cwd: string; notice?: string; lobby?: true }
+  | { do: 'create'; seat: string; label: string; cwd: string; repairLine: string; notice?: string; lobby?: true }
+  /** The watchdog's workspace: no seat, so no seat repair either. */
+  | { do: 'create'; seat?: undefined; label: string; cwd: string; notice?: string; lobby?: undefined }
   | { do: 'launch'; seat: string; label: string; command: string; pane?: string; notice?: string }
   /** `why` is the reason the record and the log carry; `detail`, when the reason has a fuller
    *  sentence with a folder in it, is the stderr line said under the record. */
@@ -36,6 +38,10 @@ export type Op =
       notice?: string;
       model?: string;
       version?: string;
+      /** The team file's repair for this seat (`relaunchRepair`, markdown text): what every
+       *  refusal of this seat that names a repair prints — for a lead seat, only `team down`
+       *  then `team up`, which its file accepts. */
+      repairLine: string;
       /** A seat recorded waiting: its idle step re-reads the screen and enters the owner's
        *  prompt (`pause.ts`) — it is never launched or closed from here (§5). */
       waiting?: { record: WaitingRecord; launched?: LaunchedIdentity };
@@ -67,6 +73,10 @@ export interface UpSeat {
   /** Relative to the root. */
   cwd: string;
   label: string;
+  /** The team file's repair for this seat (`relaunchRepair`'s markdown text): every line this
+   *  run prints that names a repair prints this one, never a `remove --keep` a lead seat's file
+   *  would refuse. */
+  repairLine: string;
   stopped: boolean;
   /** The seat's rules, as one text: what a launch option embeds and what its file holds. */
   rules: string;
@@ -274,7 +284,7 @@ export function upPlan(input: UpInput): Step[] {
         ...(said ? { note: `${said}; would launch` } : {}),
         // A seat that waits in the lobby is created in it: the host confirms that folder again
         // directly before this create (`execute.ts`), with nothing in between.
-        do: { do: 'create', seat: seat.name, label: seat.label, cwd, ...(seat.lobby ? { lobby: true as const } : {}), ...(said ? { notice: said } : {}) },
+        do: { do: 'create', seat: seat.name, label: seat.label, cwd, repairLine: seat.repairLine, ...(seat.lobby ? { lobby: true as const } : {}), ...(said ? { notice: said } : {}) },
       });
     }
     const command = launchCommand(profile, seat.launch, seat.rules);
@@ -310,6 +320,7 @@ export function upPlan(input: UpInput): Step[] {
           command,
           pane: seat.pane,
           workspace: seat.workspace,
+          repairLine: seat.repairLine,
           ...(seat.model !== undefined && seat.version !== undefined ? { model: seat.model, version: seat.version } : {}),
           ...(said ? { notice: said } : {}),
           ...(waiting ? { waiting: { record: waiting, ...(seat.waitingLaunched ? { launched: seat.waitingLaunched } : {}) } } : {}),

@@ -148,6 +148,7 @@ describe('up --dry-run', () => {
     launch: 'claude --model claude-opus-5-5',
     cwd: '.',
     label: name,
+    repairLine: `\`team remove ${name} --keep\` then \`team add ${name}\``,
     stopped: false,
     rules: 'Rules.',
     ...overrides,

@@ -51,7 +51,16 @@ function valid(text: string) {
 }
 
 function seat(name: string, label: string): UpSeat {
-  return { name, cli: 'claude-code', launch: 'claude --model claude-opus-5-5', cwd: '.', label, stopped: false, rules: 'Rules.' };
+  return {
+    name,
+    cli: 'claude-code',
+    launch: 'claude --model claude-opus-5-5',
+    cwd: '.',
+    label,
+    repairLine: `\`team remove ${name} --keep\` then \`team add ${name}\``,
+    stopped: false,
+    rules: 'Rules.',
+  };
 }
 
 describe('a shared label', () => {
@@ -121,8 +130,8 @@ describe('a shared label', () => {
       log: () => {},
     };
     const steps: Step[] = [
-      { kind: 'run', argv: [], do: { do: 'create', seat: 'coordinator', label: 'claude opus 5.5', cwd: '/a' } },
-      { kind: 'run', argv: [], do: { do: 'create', seat: 'implementer', label: 'claude opus 5.5', cwd: '/b' } },
+      { kind: 'run', argv: [], do: { do: 'create', seat: 'coordinator', label: 'claude opus 5.5', cwd: '/a', repairLine: '`team down` then `team up` (to restart the whole team)' } },
+      { kind: 'run', argv: [], do: { do: 'create', seat: 'implementer', label: 'claude opus 5.5', cwd: '/b', repairLine: '`team remove implementer --keep` then `team add implementer`' } },
       { kind: 'run', argv: [], do: { do: 'launch', seat: 'coordinator', label: 'claude opus 5.5', command: 'echo coordinator' } },
       { kind: 'run', argv: [], do: { do: 'launch', seat: 'implementer', label: 'claude opus 5.5', command: 'echo implementer' } },
     ];
