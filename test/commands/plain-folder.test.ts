@@ -165,6 +165,7 @@ function world(): { launch: Launch; creates: { label: string; cwd: string }[]; r
 function upSources(home: string, made: ReturnType<typeof world>): UpSources {
   return {
     sessionRunning: () => made.launch.sessionUp(''),
+    agents: () => [],
     home,
     getuid: () => process.getuid?.() ?? 0,
     now: made.launch.now,
