@@ -34,13 +34,28 @@ may run — reads and reports, says so once, and saves no reading, budget or spe
 A pane's screen is read by the profile's own expressions — the words a CLI paints for its idle
 prompt, its working frame, its dialogs and its questions — and the reading and the live-agent check
 are separate layers. A screen that reproduces a CLI's complete idle frame (input row, status row
-and workspace line, in place) reads idle; the live-agent check is the second layer. For Cursor the
+and workspace line, in place) reads idle; the live-agent check is the second layer. Old dialog
+text standing in the scrollback above a complete idle frame does not change that reading, for the
+bordered frame as for the empty-framed one: the dialog was answered and the box redrawn below
+it, and a live dialog replaces the box — over every dialog capture of the corpus no window of
+the screen holds both. For Cursor the
 profile pins the status row's place: a line the row's grammar matches is the row only when the
 workspace line sits directly below it, that line is the pane's last non-blank one, and the input
 row sits above it within the captured distance — a grammar-looking line anywhere else is ordinary
 text that names no row and no model. Grok rows are the profile's exception — selected by their
-grammar wherever they sit — and every Grok row in the captures carries exactly the two spaces
-that grammar spells.
+grammar wherever they sit — and every Grok row in the captures carries exactly the two spaces that
+grammar spells.
+
+The box's own border requires the complete frame or nothing: the 2026-10-05 captures draw the input
+rows between a ` ▄▄…` row directly above them and a ` ▀▀…` row directly below them — each one space
+and then only the block character, running exactly one character longer than the status row at equal width —
+with the whole status row directly under the bottom border, the workspace line directly below it, and
+nothing following the workspace line but empty rows (the 2026-10-01 captures draw empty frame rows
+instead; both frames read). In the bordered frame, the status row must match its closed grammar whole
+(a known model family, version, and tokens ending in `Run Everything`, with no Grok exemption), and
+the workspace line is required. A border row missing, unequal or not exactly one character longer than
+the status row, a border row one row away from the input, a border row carrying anything else, or a border pair
+in the transcript above an ordinary box leaves the screen unknown.
 
 ## Who may run it
 

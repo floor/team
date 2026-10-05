@@ -1,0 +1,25 @@
+❯ AGENT_UNATTENDED=1 cursor-agent --model grok-4.7-hi
+gh --force --sandbox disabled
+
+
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Use /plan to iterate on an implementation
+  plan before code changes.
+
+
+  Reply with the single word ok.
+
+
+  ok
+
+
+ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+  → Add a follow-up
+ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  Grok 4.7 256K High · 5.8%          Run Everything
+  <workspace>
+
+  To resume this session: agent --resume=<session>
+<workspace>      25s 13:11:07
+❯
