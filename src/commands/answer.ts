@@ -4,6 +4,7 @@ import { basename, dirname } from 'node:path';
 import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, type Caller } from '../caller.ts';
+import { trustPolicy } from '../file/dialogs.ts';
 import { canonicalLanding, folderOf, listFolder } from '../file/landing.ts';
 import { lobbyDir } from '../lobby/gate.ts';
 import { loadTeamFile } from '../file/load.ts';
@@ -116,7 +117,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
   // but the check must not depend on that to be right about what was approved.
   const approved = validateTeamFile(standing.record.file);
   if (!approved.ok) return refused({ class: 'caller', message: 'the approved copy of the team file cannot be read' });
-  if (team.dialogs.trust !== 'coordinator') return refused({ class: 'policy', message: `${seatName}: use team up and [o]` });
+  if (trustPolicy(team) !== 'coordinator') return refused({ class: 'policy', message: `${seatName}: use team up and [o]` });
 
   const lock = acquireSeatLock(dir, session, seatName);
   if (!('release' in lock)) return refused({ class: 'state', message: `${seatName}: another command holds it` });

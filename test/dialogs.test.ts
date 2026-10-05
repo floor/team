@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { fingerprints } from '../src/approve/fingerprint.ts';
 import { formatDiff } from '../src/approve/diff.ts';
+import { trustPolicy } from '../src/file/dialogs.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import { insideTrust } from '../src/file/paths.ts';
 
@@ -57,5 +58,11 @@ describe('dialogs', () => {
 
   test('an absolute trust entry is not a prefix', () => {
     expect(insideTrust('srv/lobby', ['/srv/lobby'])).toBe(false);
+  });
+
+  test('the policy is read through one function, and a team without the section is the owner\'s', () => {
+    expect(trustPolicy(team())).toBe('owner');
+    expect(trustPolicy(team('dialogs:\n  trust: coordinator\n'))).toBe('coordinator');
+    expect(trustPolicy({})).toBe('owner');
   });
 });
