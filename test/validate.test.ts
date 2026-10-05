@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { validateTeamFile } from '../src/file/validate.ts';
 import { renderSignature } from '../src/file/signature.ts';
 
@@ -27,8 +29,8 @@ function change(text: string, from: string, to: string): string {
   return text.replace(from, to);
 }
 
-function errors(text: string): string[] {
-  const result = validateTeamFile(text);
+function errors(text: string, options: { home?: string; root?: string } = {}): string[] {
+  const result = validateTeamFile(text, options);
   if (result.ok) return [];
   return result.errors.map((problem) => `${problem.line}: ${problem.message}`);
 }
@@ -181,6 +183,57 @@ describe('every refusal of § 2 names its line', () => {
       for (const line of found) expect(line).toMatch(/^\d+: /);
     });
   }
+});
+
+describe('a relative entry in an otherwise migrated file', () => {
+  test('is refused, and the entry is named at its line', () => {
+    const found = errors(`${minimal}trust:\n  - ~/.config/team/lobby\n  - .\n`);
+    expect(found).toHaveLength(2);
+    expect(found[0]).toContain('trust: "~/.config/team/lobby" cannot mix legacy patterns and absolute paths');
+    expect(found[1]).toContain('trust: "." cannot mix legacy patterns and absolute paths');
+  });
+});
+
+describe('absolute trust containment', () => {
+  test('a folder above the project root is refused when the root is known', () => {
+    const found = errors(`${minimal}trust:\n  - /zz-root\n`, { root: '/zz-root/acme' });
+    expect(found.join('\n')).toMatch(/trust: "\/zz-root" is a parent of the project: trust a folder of the team's own/);
+  });
+
+  test('the project root itself and a folder under it are accepted', () => {
+    expect(errors(`${minimal}trust:\n  - /zz-root/acme\n  - /zz-root/acme/sub\n`, { root: '/zz-root/acme' })).toEqual([]);
+  });
+
+  test('without the root the parent check is skipped: the text alone cannot see it', () => {
+    expect(errors(`${minimal}trust:\n  - /zz-root\n`)).toEqual([]);
+  });
+
+  test('a "~" entry is expanded against the given home, not the process\'s', () => {
+    const text = `${minimal}trust:\n  - "~/package.json"\n`;
+    const repo = fileURLToPath(new URL('..', import.meta.url));
+    // Under the repo root, ~/package.json is a file: not a directory.
+    expect(errors(text, { home: repo })).toEqual(['16: trust: "~/package.json" is not a directory']);
+    // Under test/, the same entry names nothing that exists: accepted.
+    expect(errors(text, { home: join(repo, 'test') })).toEqual([]);
+  });
+});
+
+describe('workspace.branch', () => {
+  const branch = (value: string) =>
+    errors(change(minimal, '  mode: shared\n', `  mode: shared\n  branch: "${value}"\n`));
+
+  test('a backtick is refused', () => {
+    expect(branch('feat/`x`')).toEqual(['7: workspace.branch must not contain control characters or backticks']);
+  });
+
+  test('a control character is refused', () => {
+    expect(branch(`feat/${String.fromCharCode(7)}`)).toEqual(['7: workspace.branch must not contain control characters or backticks']);
+  });
+
+  test('an ordinary branch passes', () => {
+    expect(valid(change(minimal, '  mode: shared\n', '  mode: shared\n  branch: "{kind}/{task}"\n')).team.workspace.branch)
+      .toBe('{kind}/{task}');
+  });
 });
 
 describe('names and labels after count is expanded', () => {
