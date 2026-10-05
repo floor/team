@@ -68,7 +68,11 @@ exits 0.
 
 A seat that reaches its idle prompt with its rules delivered prints `<seat>: ready`. A seat already
 ready, stopped in the file, or on a CLI with no launch profile prints one `  skip` line and is left
-as it is. The watch prints `watch: started`.
+as it is. A ready seat the state records without its process identity, or with a start outside the
+machine lobby, is left as it is too — only a relaunch repairs either — and its skip line says so:
+`  skip <seat>: already ready; left as it is; a relaunch records its process: team remove <seat>
+--keep, then team add <seat> (or team down, then team up, for the whole team)`, or the same line
+saying `a relaunch moves it into the lobby`. The watch prints `watch: started`.
 
 A seat is its pane only while the process `team` launched is still in it. A seat the state records
 whose pane no longer holds that process is not "already ready": its workspace is closed without a
@@ -327,8 +331,8 @@ the watchdog pane this session has never had:
 
 ```console
 $ team up --dry-run ; echo "exit $?"
-  skip claude-keeper: already ready; left as it is
-  skip claude-beacon: already ready; left as it is
+  skip claude-keeper: already ready; left as it is; a relaunch records its process: team remove claude-keeper --keep, then team add claude-keeper (or team down, then team up, for the whole team)
+  skip claude-beacon: already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
   skip claude-qa: stopped in the file; start it with `team add claude-qa`
 + herdr --session beacon workspace create --cwd . --label watchdog --no-focus
 + herdr --session beacon pane run <pane of watchdog> 'team watch --session beacon'
@@ -341,8 +345,8 @@ The same command for real runs exactly that:
 
 ```console
 $ team up ; echo "exit $?"
-  skip claude-keeper: already ready; left as it is
-  skip claude-beacon: already ready; left as it is
+  skip claude-keeper: already ready; left as it is; a relaunch records its process: team remove claude-keeper --keep, then team add claude-keeper (or team down, then team up, for the whole team)
+  skip claude-beacon: already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
   skip claude-qa: stopped in the file; start it with `team add claude-qa`
 watch: started
 exit 0
@@ -418,8 +422,8 @@ seats:
 $ team up --dry-run ; echo "exit $?"
 ! up would refuse: the file is not the approved one (`limits` changed): run `team approve`
 ! up would refuse: run `team approve`: `limits` changed
-  skip claude-keeper: already ready; left as it is
-  skip claude-beacon: already ready; left as it is
+  skip claude-keeper: already ready; left as it is; a relaunch records its process: team remove claude-keeper --keep, then team add claude-keeper (or team down, then team up, for the whole team)
+  skip claude-beacon: already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
   skip claude-qa: stopped in the file; start it with `team add claude-qa`
 dry run: nothing was run
 exit 0

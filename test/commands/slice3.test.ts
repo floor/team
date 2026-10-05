@@ -267,12 +267,18 @@ describe('team doctor', () => {
     const path = rulesFilePath('acme-web', root, home, 'codex-acme') as string;
     writeFileSync(path, 'not the approved rules');
     const differs = await doctor();
-    expect(differs.out).toContain('warn  codex-acme: its rules file differs from the approved rules; run `team up`\n');
+    expect(differs.out).toContain(
+      'warn  codex-acme: its rules file differs from the approved rules; run `team remove codex-acme --keep` then `team add codex-acme` '
+        + '(or `team down` then `team up` for the whole team)\n',
+    );
     // The check never repairs by itself: the file is left exactly as it was.
     expect(readFileSync(path, 'utf8')).toBe('not the approved rules');
     rmSync(path);
     const missing = await doctor();
-    expect(missing.out).toContain('warn  codex-acme: its rules file is missing; run `team up`\n');
+    expect(missing.out).toContain(
+      'warn  codex-acme: its rules file is missing; run `team remove codex-acme --keep` then `team add codex-acme` '
+        + '(or `team down` then `team up` for the whole team)\n',
+    );
     expect(missing.code).toBe(0);
   });
 
@@ -281,7 +287,10 @@ describe('team doctor', () => {
     writeRulesFiles();
     chmodSync(rulesFilePath('acme-web', root, home, 'codex-acme') as string, 0o644);
     const run = await doctor();
-    expect(run.out).toContain('warn  codex-acme: its rules file has mode 0644, not 0600; run `team up`\n');
+    expect(run.out).toContain(
+      'warn  codex-acme: its rules file has mode 0644, not 0600; run `team remove codex-acme --keep` then `team add codex-acme` '
+        + '(or `team down` then `team up` for the whole team)\n',
+    );
   });
 
   test('an edited file needs a new approval, by name', async () => {

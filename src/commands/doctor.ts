@@ -409,11 +409,19 @@ function trustFindings(team: TeamFile, dir: string, session: string, sources: Do
   return findings;
 }
 
+// The repair that relaunches one seat `up` leaves as it is: `up` never restarts a ready seat,
+// so a line that names `up` alone names a command that skips the seat. One seat at a time —
+// stop it, keep it in the file, add it again: the add launches it fresh, which is what records
+// the process, writes the rules file and starts the seat in the machine lobby — or the whole
+// team at once.
+const relaunch = (name: string): string =>
+  `\`team remove ${name} --keep\` then \`team add ${name}\` (or \`team down\` then \`team up\` for the whole team)`;
+
 // A seat the state records from a launch that predates the process identity: neither the watch
 // nor `status` can tell whether its pane still holds what team launched, and nothing would
 // notice a restore. One note per such seat; only a launch records the identity, so the note
-// says when. A seat the state doesn't record was not left running by this session, and a
-// stopped seat is never started by `up`: neither is told.
+// says what relaunches it. A seat the state doesn't record was not left running by this
+// session, and a stopped seat is never started by `up`: neither is told.
 function identityFindings(team: TeamFile, dir: string, session: string): Finding[] {
   const recorded = readState(dir).sessions[session]?.seats ?? {};
   const findings: Finding[] = [];
@@ -422,7 +430,7 @@ function identityFindings(team: TeamFile, dir: string, session: string): Finding
     if (seat.stopped || !held || held.launched) continue;
     findings.push({
       level: 'note',
-      text: `${seat.name}: launched before team recorded its process; run team up after the next restart`,
+      text: `${seat.name}: launched before team recorded its process; run ${relaunch(seat.name)} to launch it again`,
     });
   }
   return findings;
@@ -459,7 +467,9 @@ export function doctorFindings(
   );
   // The rules file each message seat runs by, only when there is an approval that writes one.
   // A file that differs is warned about, never rewritten here. A stopped seat is not checked:
-  // `up` writes the file only at a delivery, so the repair could not fix a stopped seat's file.
+  // its file is written at the launch that starts it again. The file is written at a delivery,
+  // and a delivery happens only at a launch — which `up` skips for a ready seat, so the line
+  // names the relaunch that performs one.
   if (standing.kind === 'verified') {
     // The seats of the file as approved, against the approved rules text: a seat the approval
     // does not hold has no approved rules to check, and `up` refuses a drifted file anyway.
@@ -473,7 +483,7 @@ export function doctorFindings(
       const path = rulesFilePathOf(standing, seat.name, root, sources.home);
       if (path === null) continue;
       const check = checkRulesFile(path, rulesOf(ofRecord.ok ? ofRecord.team : approved, seat, root));
-      if (!check.ok) findings.push({ level: 'warn', text: `${seat.name}: ${check.what}; run \`team up\`` });
+      if (!check.ok) findings.push({ level: 'warn', text: `${seat.name}: ${check.what}; run ${relaunch(seat.name)}` });
     }
   }
 
@@ -547,16 +557,36 @@ export function doctorFindings(
             const isLive = Boolean(s.pane && livePanes.has(s.pane));
             return isLive || isRecovery;
           });
-          const missingStart = activeSeats.find(([, s]) => !s.start_cwd);
-          if (missingStart) {
-            findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: seat ${missingStart[0]} has no recorded start_cwd; stop it before removing the folder` });
-          } else {
-            const inOld = activeSeats.find(([, s]) => s.start_cwd === oldLanding);
-            if (inOld) {
-              findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: seat ${inOld[0]} started in it; stop it before removing the folder` });
-            } else {
-              findings.push({ level: 'ok', text: `the old lobby ${oldLobby}: may be removed` });
+          // Where a seat really started. A recorded start_cwd says it. A seat with none is read
+          // from the file the way the release before the lobby started it: a worktree-mode seat
+          // in cwd "." waited in this old lobby, and every other seat — shared, or with a cwd of
+          // its own — started elsewhere, so it never sat in the folder and is not named. A seat
+          // the file no longer names is unknown: the line keeps its hold on the folder rather
+          // than clear it wrongly.
+          const inOld: string[] = [];
+          const unknown: string[] = [];
+          for (const [name, s] of activeSeats) {
+            if (s.start_cwd) {
+              if (s.start_cwd === oldLanding) inOld.push(name);
+              continue;
             }
+            const declared = team.seats.find((seat) => seat.name === name);
+            if (!declared) unknown.push(name);
+            else if (declared.mode !== 'shared' && declared.cwd === '.') inOld.push(name);
+          }
+          if (inOld.length > 0) {
+            const who = inOld.length === 1 ? `seat ${inOld[0]} started in it` : `seats ${inOld.join(', ')} started in it`;
+            const move = inOld.length === 1
+              ? `run ${relaunch(inOld[0]!)} to move it into the lobby`
+              : 'run `team remove <seat> --keep` then `team add <seat>` for each to move it into the lobby (or `team down` then `team up` for the whole team)';
+            findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: ${who}; ${move}, then remove the folder` });
+          } else if (unknown.length > 0) {
+            findings.push({
+              level: 'warn',
+              text: `the old lobby ${oldLobby}: where seat ${unknown.join(', ')} started is not recorded and the file no longer names it; stop it before removing the folder`,
+            });
+          } else {
+            findings.push({ level: 'ok', text: `the old lobby ${oldLobby}: may be removed` });
           }
         }
       }

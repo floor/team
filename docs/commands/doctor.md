@@ -81,7 +81,9 @@ account reads unknown, and `up` and `add` still
 run), the budget checks, then each seat of the approved file whose rules travel as a first
 message: its file in the project state folder — missing, a symbolic link, not a regular file,
 wider than `0600`, not the owner's, unreadable, or holding something other than the approved
-rules text — is one `warn` (`codex-scribe: its rules file differs from the approved rules; run \`team up\``),
+rules text — is one `warn` (`codex-scribe: its rules file differs from the approved rules; run
+\`team remove codex-scribe --keep\` then \`team add codex-scribe\` (or \`team down\` then \`team up\` for
+the whole team)` — `up` skips a ready seat, so only the relaunch writes the file),
 never a rewrite. herdr, one CLI at a time (its
 version, its login, then each of its seats' launchers and models), one line per seat whose launch
 line can't run where the seat starts (the `MISS` names the start folder, the program that is missing
@@ -89,7 +91,8 @@ or not executable, and when the same file resolves from the project root, its pa
 instead; a line only said to be unchecked, or a relative path that exists nowhere yet, is a `--  `
 note — `not checked: the command may create it`), one note per seat the state records from a launch
 that predates the process identity — `--    <seat>: launched before team recorded its process; run
-team up after the next restart`, so the owner can have the seat compared again — the watch, and the
+\`team remove <seat> --keep\` then \`team add <seat>\` (or \`team down\` then \`team up\` for the whole
+team) to launch it again`, the relaunch being what records the identity — the watch, and the
 `trust` note. A seat the file
 stops is left out of the CLI findings and the launch lines. A CLI outside its tested range keeps its
 `warn` and says what that means: its screens are untested with this version, and a seat that isn't
