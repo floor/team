@@ -29,6 +29,34 @@ describe('the state file', () => {
     expect(readdirSync(dir)).toEqual([STATE_FILE]);
   });
 
+  test('an old seat record loads with neither field, with one, or with both', () => {
+    const neither = { stage: 'ready' };
+    const startOnly = { stage: 'ready', start_cwd: '/lobby' };
+    const waitingOnly = {
+      stage: 'launched',
+      waiting: { state: 'waiting-owner', classification: 'trust' },
+    };
+    const both = {
+      stage: 'ready',
+      start_cwd: '/lobby',
+      waiting: { state: 'trust-sent-recovery', classification: 'trust' },
+    };
+    writeFileSync(join(dir, STATE_FILE), JSON.stringify({
+      format: 1,
+      sessions: {
+        neither: { seats: { a: neither }, worktrees: {} },
+        started: { seats: { a: startOnly }, worktrees: {} },
+        held: { seats: { a: waitingOnly }, worktrees: {} },
+        both: { seats: { a: both }, worktrees: {} },
+      },
+    }));
+    const state = readState(dir);
+    expect(state.sessions.neither?.seats.a).toEqual(neither);
+    expect(state.sessions.started?.seats.a).toEqual(startOnly);
+    expect(state.sessions.held?.seats.a).toEqual(waitingOnly);
+    expect(state.sessions.both?.seats.a).toEqual(both);
+  });
+
   test('a file that is not a state is an error, never replaced', () => {
     writeFileSync(join(dir, STATE_FILE), '{"format": 2}');
     expect(() => readState(dir)).toThrow(/not a team state of format 1/);
