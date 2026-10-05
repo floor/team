@@ -49,6 +49,96 @@ export type Report = {
 
 type Place = { pane: string; workspace?: string };
 
+/** Strips string sequences (OSC, DCS, APC, PM, SOS) and their payloads in one linear pass.
+ *  OSC sequences terminate at BEL (\x07) or ST (7-bit ESC \ or 8-bit C1 \x9c).
+ *  DCS, APC, PM and SOS sequences terminate only at ST (7-bit ESC \ or 8-bit C1 \x9c).
+ *  An unterminated sequence drops everything to the end of the text. */
+function stripControlStrings(text: string): string {
+  let result = '';
+  let plainStart = 0;
+  // States: 0: PLAIN, 1: PLAIN_ESC, 2: IN_OSC, 3: IN_OSC_ESC, 4: IN_OTHER, 5: IN_OTHER_ESC
+  let state = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    switch (state) {
+      case 0: // PLAIN
+        if (c === '\x1b') {
+          if (i > plainStart) result += text.slice(plainStart, i);
+          state = 1;
+        } else if (c === '\x9d') {
+          if (i > plainStart) result += text.slice(plainStart, i);
+          state = 2;
+        } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
+          if (i > plainStart) result += text.slice(plainStart, i);
+          state = 4;
+        }
+        break;
+      case 1: // PLAIN_ESC
+        if (c === ']') {
+          state = 2;
+        } else if (c === 'P' || c === 'X' || c === '^' || c === '_') {
+          state = 4;
+        } else if (c === '\x1b') {
+          result += '\x1b';
+        } else if (c === '\x9d') {
+          result += '\x1b';
+          state = 2;
+        } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
+          result += '\x1b';
+          state = 4;
+        } else {
+          result += '\x1b';
+          plainStart = i;
+          state = 0;
+        }
+        break;
+      case 2: // IN_OSC
+        if (c === '\x07' || c === '\x9c') {
+          state = 0;
+          plainStart = i + 1;
+        } else if (c === '\x1b') {
+          state = 3;
+        }
+        break;
+      case 3: // IN_OSC_ESC
+        if (c === '\\' || c === '\x07' || c === '\x9c') {
+          state = 0;
+          plainStart = i + 1;
+        } else if (c === '\x1b') {
+          // stay in 3 (IN_OSC_ESC)
+        } else {
+          state = 2;
+        }
+        break;
+      case 4: // IN_OTHER
+        if (c === '\x9c') {
+          state = 0;
+          plainStart = i + 1;
+        } else if (c === '\x1b') {
+          state = 5;
+        }
+        break;
+      case 5: // IN_OTHER_ESC
+        if (c === '\\' || c === '\x9c') {
+          state = 0;
+          plainStart = i + 1;
+        } else if (c === '\x1b') {
+          // stay in 5 (IN_OTHER_ESC)
+        } else {
+          state = 4;
+        }
+        break;
+    }
+  }
+  if (state === 0) {
+    if (plainStart === 0 && result === '') return text;
+    if (plainStart < text.length) result += text.slice(plainStart);
+  } else if (state === 1) {
+    result += '\x1b';
+  }
+  return result;
+}
+
 /** Pane text as it is safe to show, each line cut to `limit` characters: every escape sequence
  *  is removed whole — a CSI's private parameters among them, and the payload of a string
  *  sequence (OSC, DCS, APC, PM, SOS), whichever introducer and terminator are mixed, 7-bit
@@ -58,11 +148,11 @@ type Place = { pane: string; workspace?: string };
  *  them. Pane text is the one text `team` says that it did not write itself: a carriage return
  *  in it would overwrite the report that carries it. */
 export function plainPaneText(text: string, limit = 200): string {
-  return text
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/\x9b[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/(?:\x1b[\]PX^_]|[\x9d\x90\x98\x9e\x9f])[\s\S]*?(?:\x07|\x1b\\|\x9c)/g, '')
-    .replace(/(?:\x1b[\]PX^_]|[\x9d\x90\x98\x9e\x9f])[\s\S]*$/g, '')
+  return stripControlStrings(
+    text
+      .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+      .replace(/\x9b[0-?]*[ -/]*[@-~]/g, ''),
+  )
     .replace(/\x1b./g, '')
     .replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, '')
     .split('\n')

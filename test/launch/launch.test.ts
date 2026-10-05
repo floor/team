@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { paneExcerpt } from '../../src/launch/execute.ts';
+import { paneExcerpt, plainPaneText } from '../../src/launch/execute.ts';
 import { downPlan, formatPlan, herdr, upPlan, type DownSeat, type UpSeat } from '../../src/launch/plan.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
 import { profileFor } from '../../src/profiles/index.ts';
@@ -442,4 +442,86 @@ describe('the pane lines a report carries', () => {
     const longest = Math.max(...out.split('\n').map((line) => line.length));
     expect(longest).toBe('  | '.length + 200 + '…'.length);
   });
+
+  test('every kind of string sequence, in 7-bit and C1 forms, is removed whole with its legal terminators', () => {
+    // 5 kinds × 2 opener forms × each legal terminator:
+    // OSC ends at BEL (\x07), 7-bit ST (\x1b\\), or C1 ST (\x9c).
+    // DCS, APC, PM, SOS end at 7-bit ST (\x1b\\) or C1 ST (\x9c).
+    const kinds = [
+      { name: 'OSC', openers: ['\x1b]', '\x9d'], terminators: ['\x07', '\x1b\\', '\x9c'] },
+      { name: 'DCS', openers: ['\x1bP', '\x90'], terminators: ['\x1b\\', '\x9c'] },
+      { name: 'SOS', openers: ['\x1bX', '\x98'], terminators: ['\x1b\\', '\x9c'] },
+      { name: 'PM',  openers: ['\x1b^', '\x9e'], terminators: ['\x1b\\', '\x9c'] },
+      { name: 'APC', openers: ['\x1b_', '\x9f'], terminators: ['\x1b\\', '\x9c'] },
+    ];
+    for (const { openers, terminators } of kinds) {
+      for (const op of openers) {
+        for (const term of terminators) {
+          const input = `before${op}hidden-payload${term}after`;
+          expect(plainPaneText(input)).toBe('beforeafter');
+        }
+      }
+    }
+  });
+
+  test('BEL inside DCS, APC, PM, SOS is not a terminator and the payload is removed up to ST', () => {
+    // For non-OSC sequences, BEL is payload: opener + a + BEL + b + ST + visible yields visible only.
+    const nonOscOpeners = [
+      '\x1bP', '\x90', // DCS
+      '\x1bX', '\x98', // SOS
+      '\x1b^', '\x9e', // PM
+      '\x1b_', '\x9f', // APC
+    ];
+    const terminators = ['\x1b\\', '\x9c'];
+    for (const op of nonOscOpeners) {
+      for (const term of terminators) {
+        const input = `${op}hidden-a\x07hidden-b${term}visible`;
+        const out = plainPaneText(input);
+        expect(out).toBe('visible');
+        expect(out).not.toContain('hidden-a');
+        expect(out).not.toContain('hidden-b');
+      }
+    }
+  });
+
+  test('mixed and nested sequences, lone escapes and STs', () => {
+    // An opener inside a payload
+    expect(plainPaneText('before\x1bPouter\x1b]0;inner\x07still-outer\x1b\\after')).toBe('beforeafter');
+    expect(plainPaneText('before\x1b]0;outer\x1bPinner\x07after')).toBe('beforeafter');
+    expect(plainPaneText('before\x1b]0;outer\x1bPinner\x1b\\after')).toBe('beforeafter');
+    expect(plainPaneText('before\x1bPouter\x90inner\x1b\\after')).toBe('beforeafter');
+    expect(plainPaneText('before\x1b]0;outer\x1b]0;inner\x07after')).toBe('beforeafter');
+
+    // An OSC ended by BEL followed by plain text
+    expect(plainPaneText('\x1b]0;title\x07plain text')).toBe('plain text');
+
+    // A sequence spanning newlines
+    expect(plainPaneText('line 1\n\x1b]0;multi\nline\x07line 2')).toBe('line 1\nline 2');
+
+    // An unterminated sequence is removed to the end of the text
+    expect(plainPaneText('visible\x1b]0;no-end\nmore lines')).toBe('visible');
+    expect(plainPaneText('visible\x1bPno-end\nmore lines')).toBe('visible');
+
+    // A lone ESC at the end of the text
+    expect(plainPaneText('plain text\x1b')).toBe('plain text');
+
+    // A lone ST (7-bit and C1) in plain text
+    expect(plainPaneText('plain\x1b\\text')).toBe('plaintext');
+    expect(plainPaneText('plain\x9ctext')).toBe('plaintext');
+  });
+
+  test('stress test: 200-line 2 MB text with unterminated openers finishes in well under 1000 ms', () => {
+    // Guards against quadratic backtracking: the previous regular expressions searched from
+    // every unterminated opener to the end of the text before the second regex dropped it,
+    // taking nearly a second on 2 MB and 9 s on 20 MB. The linear state machine finishes in
+    // well under 100 ms.
+    const line = '\x1b]0;unterminated-payload-' + 'x'.repeat(10_000) + '\n';
+    const text = line.repeat(200);
+    const start = performance.now();
+    const out = plainPaneText(text);
+    const duration = performance.now() - start;
+    expect(out).toBe('');
+    expect(duration).toBeLessThan(1000);
+  });
 });
+
