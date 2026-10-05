@@ -271,6 +271,67 @@ describe('team doctor', () => {
     expect(run.code).toBe(0);
   });
 
+  test('a bare model-less launch warns only when the screen cannot check it', async () => {
+    edit((text) => text.replace(
+      `  - role: reviewer
+    name: grok-acme
+    cli: grok
+    vendor: xai
+    model: Grok
+    version: "4.7"
+    launch: grok --model grok-4.7
+    stopped: true              # kept in the file; \`up\` doesn't start it, \`add grok-acme\` does`,
+      `  - role: reviewer
+    name: cursor-acme
+    cli: cursor
+    vendor: xai
+    model: Grok
+    version: "4.7"
+    launch: cursor-agent
+  - role: implementer
+    name: agy-acme
+    cli: antigravity
+    vendor: google
+    model: Gemini Flash
+    version: "3.8"
+    launch: agy
+  - role: implementer
+    name: cursor-other
+    cli: cursor
+    vendor: xai
+    model: Muse Spark
+    version: "1.3"
+    launch: cursor-agent`,
+    ));
+    await approve([], OWNER);
+    const run = await doctor({
+      version: (binary) => binary === 'claude'
+        ? '2.1.288 (Claude Code)'
+        : binary === 'codex'
+          ? 'codex-cli 0.157.0'
+          : binary === 'cursor-agent'
+            ? '2026.10.01-14929f9'
+            : binary === 'agy'
+              ? '1.2.16'
+              : null,
+      onPath: (binary) => binary === 'team-deepseek',
+    });
+    // cursor-agent started bare shows Grok 4.7, so this seat is checked on the running screen:
+    // no line for it. Muse Spark is a family the cursor rules cannot spell, so nothing checks
+    // that seat and the warning says so. `agy` shows Gemini Flash likewise.
+    expect(run.out).not.toContain('cursor-acme');
+    expect(run.out).toContain(
+      "warn  cursor-other: no model flag, and this version can't read Muse Spark 1.3 on this CLI's screen: nothing checks that it runs it\n",
+    );
+    expect(run.out).not.toContain('agy-acme');
+    // The deepseek seats run a launcher, which only `model_from: launcher` can settle.
+    expect(run.out).toContain(
+      'warn  deepseek-acme: the launch runs team-deepseek, not claude, and names no model: if the launcher chooses the model, say so with model_from: launcher\n',
+    );
+    expect(run.out).not.toContain('cursor-other: the launch names no model this version knows');
+    expect(run.out).toEndWith('team doctor: 1 missing, 3 warnings: 1 of them block `up` and `add`\n');
+  });
+
   test("a launch whose model is not the file's warns", async () => {
     edit((text) => text.replace('launch: claude --model claude-opus-5-5', 'launch: claude --model claude-fable-5-1'));
     const run = await doctor();

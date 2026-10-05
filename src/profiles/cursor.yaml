@@ -24,14 +24,63 @@ timeouts:
 models:
   option:
     - --model
+  # A launch that names no model starts on whatever model this CLI used last.
+  absent: last-used
   ids:
+    - match: '^grok-4\.7(?:-(?:xhigh|high|medium|low)(?:-fast)?|-fast)?$'
+      ignore_case: true
+      model: Grok
+      version: '4.7'
+      flag: grok-4.7-high
     - match: '^(?:cursor-)?grok-([0-9]+(?:\.[0-9]+)*)(?:-(?:xhigh|high|medium|low)(?:-fast)?|-fast)?$'
       ignore_case: true
       model: Grok
       version: '{1}'
+    - match: '^gpt-5\.6-sol(?:-(?:none|low|medium|high|xhigh|max)(?:-fast)?|-fast)?$'
+      ignore_case: true
+      model: 'GPT Sol'
+      version: '5.6'
+      flag: gpt-5.6-sol-high
+    - match: '^gpt-([0-9]+(?:\.[0-9]+)*)-sol(?:-(?:none|low|medium|high|xhigh|max)(?:-fast)?|-fast)?$'
+      ignore_case: true
+      model: 'GPT Sol'
+      version: '{1}'
+    - match: '^gemini-3\.8-flash(?:-(?:low|medium|high))?$'
+      ignore_case: true
+      model: 'Gemini Flash'
+      version: '3.8'
+      flag: gemini-3.8-flash-high
+    - match: '^gemini-([0-9]+(?:\.[0-9]+)*)-flash(?:-(?:low|medium|high))?$'
+      ignore_case: true
+      model: 'Gemini Flash'
+      version: '{1}'
+    - match: '^composer-2\.5(?:-fast)?$'
+      ignore_case: true
+      model: Composer
+      version: '2.5'
+      flag: composer-2.5
+    - match: '^composer-([0-9]+(?:\.[0-9]+)*)(?:-fast)?$'
+      ignore_case: true
+      model: Composer
+      version: '{1}'
 status_model:
-  - match: '(?:^|\s)Grok\s+([0-9]+(?:\.[0-9]+)*)\b'
+  # The model is read from the composer's own status row — the line the composer selected by the
+  # grammar and place below — and only from it: a grammar-looking line out of place names no
+  # model, and a screen that shows no row reads no model. The rule must match the row's own line
+  # whole: a known family, its version, and every token a capture shows. The version and the
+  # `· N%` quota are digits in closed runs (`\d+(?:\.\d+)*`, `\d+(?:\.\d+)?%`) — `5..6` and
+  # `Composer .` are not tokens — and a row missing `Run Everything` names no model.
+  - match: '^  Grok\s+([0-9]+(?:\.[0-9]+)*)\b'
     model: Grok
+    version: '{1}'
+  - match: '^  GPT-(\d+(?:\.\d+)*) Sol(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
+    model: 'GPT Sol'
+    version: '{1}'
+  - match: '^  Gemini (\d+(?:\.\d+)*) Flash(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
+    model: 'Gemini Flash'
+    version: '{1}'
+  - match: '^  Composer (\d+(?:\.\d+)*)(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
+    model: Composer
     version: '{1}'
 screen:
   unknown:
@@ -46,7 +95,12 @@ screen:
         anchor: 'Use arrow keys to navigate, Enter to'
         patterns:
           - '^\s*→'
-          - '^\s+Grok\s+[0-9]'
+          # The composer's own status row, character for character — the same expressions in all
+          # three places that must recognise it.
+          - '^  Grok\s+\d.*'
+          - '^  GPT-\d+(?:\.\d+)* Sol(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
+          - '^  Gemini \d+(?:\.\d+)* Flash(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
+          - '^  Composer \d+(?:\.\d+)*(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
   # A plan-mode switch. The bar is the dialog's own rule; the title, the selected
   # row, the reject row and the footer sit under it, in that order. The same
   # words in a transcript or typed into the box are not this dialog.
@@ -105,13 +159,49 @@ screen:
               - '^\s*[⠀-⣿]'
               - '^\s*Tip:'
               - '^\s*→\s*(?:Add a follow-up|Plan, search, build anything)?\s*$'
-              - '^\s+Grok\s'
+              - '^  Grok\s+\d.*'
+              - '^  GPT-\d+(?:\.\d+)* Sol(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
+              - '^  Gemini \d+(?:\.\d+)* Flash(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
+              - '^  Composer \d+(?:\.\d+)*(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
               - '^\s*<workspace>'
               - '^\s*~/'
               - '^\s*❯'
   composer:
     mode: status-then-one
-    status_line: '^\s+Grok\s+[0-9]'
+    # The status row is its shape, and its tokens are closed: exactly two spaces, then a known
+    # family and its version — Grok N, GPT-N Sol, Gemini N Flash, Composer N — then only tokens
+    # the captures show: a context size (256K, 272K), an effort word (the ones --list-models
+    # prints and the captures paint), the `· N%` quota, `· N files edited`, then padding and, for
+    # the new families, `Run Everything`, which every captured idle, unsent and working row
+    # carries. Every number is digits in closed runs — version \d+(?:\.\d+)*, quota
+    # \d+(?:\.\d+)?%, files \d+ — and nothing else may appear on the line; a row the grammar
+    # does not know leaves the screen unknown. One expression covering all four families with
+    # closed tokens is 227 characters and the dialect refuses anything past 200, so the patterns
+    # are a list, read as the union: a line is a candidate when it matches any entry.
+    #
+    # The row's place is pinned too: the line directly under it is the workspace line the pane
+    # draws (`  <workspace>` in the fixtures — the captures' paths replaced — `  ~/…` or
+    # `  /…` live), that line must be the pane's last non-blank one, and the `  →` input row
+    # sits above the row within the distance the captures show (three to five rows; the core's
+    # bound). A grammar-looking line anywhere else is ordinary text: it opens no fallback, it is
+    # never the row, and it leaves the screen unknown. A grammar line with no workspace line
+    # under it reads no row at all.
+    #
+    # Grok rows are the exception (`except`): main read any `  Grok <digit>` tail wherever it
+    # sat, and the follow-up-queue captures — transcribed rather than captured — draw Grok rows
+    # without `Run Everything`; pinning those rows' place would move readings main makes and
+    # every shipped Grok fixture keeps. The new families' rows have only ever been seen in
+    # place, so they carry the place test. The same four expressions are used, character for
+    # character, in the trust dialog's none_after and in the working queue's exception, so the
+    # three places that decide whether a line is the status row cannot disagree.
+    status_line:
+      - '^  Grok\s+\d.*'
+      - '^  GPT-\d+(?:\.\d+)* Sol(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
+      - '^  Gemini \d+(?:\.\d+)* Flash(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
+      - '^  Composer \d+(?:\.\d+)*(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
+    status_below:
+      line: '^  (?:<workspace>|~?/)'
+      except: '^  Grok\s+\d'
     # The input row carries the prompt at the pane's second column — unsent.txt and
     # follow-up-queue-typed.txt draw `  → Plan, search, build anything` there, continuations at
     # the fourth — and a prompt glyph on a content or popup row is never the input row. The
