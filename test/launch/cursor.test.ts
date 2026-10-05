@@ -1036,18 +1036,31 @@ describe('the closed Cursor status row', () => {
     // The rule itself, applied to a line, so the anchors are pinned at the rule and not only
     // through a screen: one that lost its start anchor would read a family named mid-sentence
     // as the model, and one that lost its end anchor would read a line that runs on past
-    // `Run Everything`.
-    expect(statusOnLine('cursor', 'x GPT-5.6 Sol 272K High              Run Everything')).toBeNull();
-    expect(statusOnLine('cursor', '  GPT-5.6 Sol 272K High              Run Everything and more')).toBeNull();
+    // `Run Everything`. The revealing line is one character and then the row exactly as a
+    // capture draws it — the two leading spaces included — so a rule that lost only its `^`
+    // still begins with those spaces and matches at the second character.
+    const captured = [
+      '  GPT-5.6 Sol 272K High              Run Everything',
+      '  Gemini 3.8 Flash High              Run Everything',
+      '  Composer 2.5                       Run Everything',
+    ];
+    for (const row of captured) expect(statusOnLine('cursor', `x${row}`)).toBeNull();
+    for (const row of captured) expect(statusOnLine('cursor', `${row} and more`)).toBeNull();
     // And on a screen: those lines in the footer's place are not the row at all, so the
     // composer's own read names no model either.
-    expect(model(footer('idle', 'x GPT-5.6 Sol 272K High              Run Everything'))).toBeNull();
+    expect(model(footer('idle', 'x  GPT-5.6 Sol 272K High              Run Everything'))).toBeNull();
     expect(model(footer('idle', '  GPT-5.6 Sol 272K High              Run Everything and more'))).toBeNull();
   });
 
   test('the Grok model rule is anchored to the status row', () => {
-    // Main's rule was `(?:^|\s)Grok\s+…`: it read a family name mid-sentence. The anchored rule
-    // keeps every row main accepted (this one included) and drops prose that is not a row.
+    // Main's rule was `(?:^|\s)Grok\s+…`: it read a family name wherever a space or a line
+    // start preceded it — mid-sentence as readily as in the row's own place. The anchored rule
+    // keeps the rows the captures draw and drops prose that is not a row. It also narrows
+    // main's leading whitespace: every Grok row the fixtures hold — the thirteen the captures
+    // draw and the four the queue fixtures transcribe — carries exactly the two spaces `^  `
+    // spells, and one space, three spaces or a tab is refused where main read a model — a
+    // fail-closed narrowing, pinned above.
+    expect(statusOnLine('cursor', 'x  Grok 4.7 256K High                 Run Everything')).toBeNull();
     expect(model('x Grok 4.7 wrote it')).toBeNull();
     expect(model('  Grok 4.7 wrote this answer in the transcript')).toEqual({ model: 'Grok', version: '4.7' });
   });
