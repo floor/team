@@ -60,6 +60,7 @@ const realLaunch: Launch = {
     const agents = agentList(aim(session));
     return agents === null ? null : agents.map((agent) => agent.pane);
   },
+  agents: (session) => agentList(aim(session)),
   paneText: (session, pane) => paneRead(pane, 200, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
   shellBack: (session, pane) => paneShellBack(pane, aim(session)),
@@ -211,14 +212,16 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // The pane is the seat only while the process team launched is still in it. A recorded seat
   // whose pane runs no CLI, or a process team did not launch, is not "already running": its
   // workspace is closed without input and the seat is launched fresh, exactly as `up` does.
-  // A seat with no record, or a herdr that can't tell, keeps today's reading.
+  // A seat with no record, or a herdr that can't tell, keeps today's reading. The close itself
+  // reads herdr again, immediately before it (`execute.ts`), so this reading only decides that
+  // the seat needs repair, never that its recorded workspace is still its own.
   const held = recorded.seats[built.name];
   const verdict = seatProcessVerdict(
     held?.launched,
     held?.launched && held.pane && sources.launch.processInfo ? sources.launch.processInfo(session, held.pane) : null,
   );
-  const repair = (verdict === 'gone' || verdict === 'replaced') && held?.workspace
-    ? { verdict, workspace: held.workspace }
+  const repair = (verdict === 'gone' || verdict === 'replaced') && held?.workspace && held.pane && held.launched
+    ? { pane: held.pane, workspace: held.workspace, launched: held.launched, cli: built.seat.cli }
     : undefined;
   if (!repair && agents.some((agent) => agent.name === built.name)) {
     io.stderr(`team add: ${built.name} is already running\n`);
@@ -548,6 +551,7 @@ function hostOf(input: {
     stopSession: () => false,
     kill: () => false,
     agentPanes: launch.agentPanes,
+    agentList: launch.agents,
     classify: (_name, pane, cli) => readScreen(cli, launch.paneText(session, pane) ?? undefined).kind,
     paneText: (_name, pane) => launch.paneText(session, pane),
     shellBack: (_name, pane) => launch.shellBack?.(session, pane) ?? null,

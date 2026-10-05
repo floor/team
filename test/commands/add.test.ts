@@ -148,6 +148,7 @@ function world(): { launch: Launch; creates: string[]; renames: string[]; sessio
     },
     closeWorkspace: () => true,
     agentPanes: () => [...panes].filter(([, pane]) => pane.agent).map(([id]) => id),
+    agents: () => [],
     paneText: (_session, pane) => panes.get(pane)?.text ?? '',
     foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
     sleep: async (ms) => {
@@ -487,6 +488,11 @@ describe('team add', () => {
     made.launch.typeText = (_session, pane, text) => { keys.push(`type ${pane} ${text}`); return true; };
     made.launch.pressEnter = (_session, pane) => { keys.push(`enter ${pane}`); return true; };
     const listed: HerdrAgent = { name: 'worker', agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null };
+    // The repair re-reads herdr immediately before the close: the list still names the seat on
+    // its pane, and its screen reads idle, so the replaced seat's workspace may be closed.
+    made.launch.agents = () => [listed];
+    const text = made.launch.paneText;
+    made.launch.paneText = (session, pane) => (pane === 'w9:p1' ? IDLE : text(session, pane));
     const io = testIo(project, owner);
     const code = await runAdd(['worker'], io, sources(made, {
       sessionState: () => 'running',

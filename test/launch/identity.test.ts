@@ -14,8 +14,11 @@ test('same: the recorded shell, with the recorded CLI pid in front', () => {
 
 test('same: several recorded CLI pids, one still in front', () => {
   // A wrapper that hands over, or a helper beside the CLI: the seat is accepted while any
-  // recorded pid is in front.
+  // recorded pid is in front. An extra pid beside the recorded ones, or another order, changes
+  // nothing.
   expect(seatProcessVerdict({ shell: 400, cli: [401, 402] }, pane(400, [402, 999]))).toBe('same');
+  expect(seatProcessVerdict({ shell: 400, cli: [401, 402] }, pane(400, [999, 401, 402]))).toBe('same');
+  expect(seatProcessVerdict({ shell: 400, cli: [401, 402] }, pane(400, [402, 401]))).toBe('same');
 });
 
 test('gone: the pane runs no CLI — its own shell is in front', () => {
@@ -32,6 +35,13 @@ test('replaced: a different shell pid, a CLI in front', () => {
 
 test('replaced: another CLI pid under the recorded shell', () => {
   expect(seatProcessVerdict(recorded, pane(400, [500]))).toBe('replaced');
+});
+
+test('replaced: the recorded CLI pid in front under another shell pid', () => {
+  // A restore restarted the shell, and a process carrying the recorded CLI pid sits in front of
+  // it: the pid alone is not the seat — the shell must be the recorded one too. A mutation that
+  // ignores `recorded.shell` passes every other test here and fails this one.
+  expect(seatProcessVerdict(recorded, pane(500, [401]))).toBe('replaced');
 });
 
 test("herdr can't tell: no reading, or no foreground process at all", () => {

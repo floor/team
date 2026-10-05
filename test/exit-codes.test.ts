@@ -238,6 +238,7 @@ function launching(text: string, paneOk: (command: string) => boolean = () => tr
     renameAgent: () => true,
     closeWorkspace: () => true,
     agentPanes: () => [...panes].filter(([, pane]) => pane.agent).map(([id]) => id),
+    agents: () => [],
     paneText: (_session, pane) => panes.get(pane)?.text ?? '',
     foreground: () => ['claude'],
     sleep: async () => {},

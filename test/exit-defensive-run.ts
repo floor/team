@@ -148,6 +148,7 @@ const sources = {
     renameAgent: () => false,
     closeWorkspace: () => false,
     agentPanes: () => [],
+    agents: () => [],
     paneText: () => '',
     foreground: () => null,
     sleep: async () => {},

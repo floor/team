@@ -81,6 +81,8 @@ export type Launch = {
   renameAgent(session: string, pane: string, name: string): boolean;
   closeWorkspace(session: string, workspace: string): boolean;
   agentPanes(session: string): string[] | null;
+  /** The session's agents as herdr lists them now; null when the list can't be read. */
+  agents(session: string): HerdrAgent[] | null;
   paneText(session: string, pane: string): string | null;
   typeText?(session: string, pane: string, text: string): boolean;
   pressEnter?(session: string, pane: string): boolean;
@@ -119,6 +121,7 @@ const realLaunch: Launch = {
     const agents = agentList(aim(session));
     return agents === null ? null : agents.map((agent) => agent.pane);
   },
+  agents: (session) => agentList(aim(session)),
   paneText: (session, pane) => paneRead(pane, 200, aim(session)),
   typeText: (session, pane, text) => typeText(pane, text, aim(session)),
   pressEnter: (session, pane) => pressEnter(pane, aim(session)),
@@ -222,10 +225,15 @@ function seatPlan(
   // The pane is the seat only while the process team launched is still in it: a pane that runs
   // no CLI, or one whose process is not the recorded one, is not the seat. Its workspace is
   // closed without input and the seat is launched fresh — the stage it stopped at is not
-  // resumed. No workspace recorded, no close to make: the seat is left as it is.
+  // resumed. No workspace recorded, no close to make: the seat is left as it is. The close
+  // itself reads herdr again, immediately before it (`execute.ts`), so this reading only
+  // decides that the seat needs repair, never that its recorded workspace is still its own.
   const verdict = seatProcessVerdict(recorded.launched, processes[seat.name] ?? null);
-  if ((verdict === 'gone' || verdict === 'replaced') && recorded.workspace) {
-    return { ...planned, repair: { verdict, workspace: recorded.workspace } };
+  if ((verdict === 'gone' || verdict === 'replaced') && recorded.workspace && recorded.pane && recorded.launched) {
+    return {
+      ...planned,
+      repair: { pane: recorded.pane, workspace: recorded.workspace, launched: recorded.launched, cli: seat.cli },
+    };
   }
   const named = agents.find((agent) => agent.name === seat.name);
   const onPane = recorded.pane ? agents.some((agent) => agent.pane === recorded.pane) : false;
@@ -482,6 +490,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     stopSession: () => false,
     kill: () => false,
     agentPanes: launch.agentPanes,
+    agentList: launch.agents,
     classify: (name, pane, cli) => readScreen(cli, launch.paneText(name, pane) ?? undefined).kind,
     paneText: (session, pane) => launch.paneText(session, pane),
     shellBack: (session, pane) => launch.shellBack?.(session, pane) ?? null,
@@ -527,9 +536,11 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     if (seat.stopped || !profileFor(seat.cli)) return false;
     return afterwards[seat.name]?.stage !== 'ready';
   });
+  // A seat the plan left behind (a repair it would not close, a dialog it timed out at) is a
+  // seat left short of ready even when its state still says ready: `held` makes that exit 1.
   // exit: up.ready
   // exit: up.pending
   // exit: up.server
   // exit: up.watch
-  return pending.length || report.serverFailed || report.watchFailed ? 1 : 0;
+  return pending.length || report.serverFailed || report.watchFailed || report.held ? 1 : 0;
 }

@@ -1,7 +1,7 @@
-import type { PaneProcesses } from '../herdr.ts';
+import type { HerdrAgent, PaneProcesses } from '../herdr.ts';
 import { profileFor } from '../profiles/profile.ts';
 import { modelDiffers, seatModel, type Running } from '../status/statusline.ts';
-import { launchedIdentity, type LaunchedIdentity } from './identity.ts';
+import { launchedIdentity, seatProcessVerdict, type LaunchedIdentity } from './identity.ts';
 import type { Step } from './plan.ts';
 
 export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'unsent' | 'unknown';
@@ -24,6 +24,9 @@ export type Host = {
   kill(pid: number): boolean;
   /** Pane ids herdr lists an agent in, or null when the list can't be read. */
   agentPanes(session: string): string[] | null;
+  /** The session's agents as herdr lists them now; null when the list can't be read. The repair
+   *  step reads it again, immediately before the close, to bind the seat to its pane. */
+  agentList?(session: string): HerdrAgent[] | null;
   classify(session: string, pane: string, cli: string): ScreenKind;
   /** The pane's visible text, ANSI styling and all, or null when the pane can't be read. */
   paneText?(session: string, pane: string): string | null;
@@ -587,6 +590,48 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         // The pane holds a process team did not launch (or no CLI at all): the workspace is
         // closed with no key and no text sent into it, the seat's launch state is cleared, and
         // the steps after this one launch the seat fresh, exactly as for a seat never launched.
+        //
+        // The close is the one destructive thing here, and the plan's reading may be minutes
+        // old. Read herdr again, with nothing between these reads and the close, and close
+        // only what is provably still the seat's stale pane: herdr must name this seat on the
+        // recorded pane, that pane's workspace must be the recorded one, the process reading
+        // must still be gone or replaced against the record, and a replaced pane's screen must
+        // not read working. Anything else: nothing closed, nothing launched for this seat, its
+        // state left as it is, and the seat out of this run.
+        const listed = host.agentList ? host.agentList(session)?.find((agent) => agent.name === op.seat) : null;
+        if (!listed || listed.pane !== op.pane || listed.workspace !== op.workspace) {
+          held = true;
+          dropped.add(op.seat);
+          finish(op.seat, 'herdr no longer shows this seat on its recorded pane; nothing closed; run team status');
+          break;
+        }
+        const verdict = seatProcessVerdict(op.launched, host.processInfo?.(session, op.pane));
+        if (verdict === 'same') {
+          dropped.add(op.seat);
+          finish(op.seat, "its pane is the seat's again; left as it is");
+          break;
+        }
+        if (verdict === 'unknown') {
+          held = true;
+          dropped.add(op.seat);
+          finish(op.seat, 'its pane could not be read; nothing closed');
+          break;
+        }
+        if (verdict === 'replaced') {
+          const kind = host.classify(session, op.pane, op.cli);
+          if (kind === 'unknown') {
+            held = true;
+            dropped.add(op.seat);
+            finish(op.seat, 'its pane could not be read; nothing closed');
+            break;
+          }
+          if (kind === 'working') {
+            held = true;
+            dropped.add(op.seat);
+            finish(op.seat, `the process in its pane is working; nothing closed (stop it there, or run team remove ${op.seat})`);
+            break;
+          }
+        }
         if (!host.closeWorkspace(session, op.workspace)) {
           held = true;
           dropped.add(op.seat);
@@ -594,7 +639,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           break;
         }
         host.drop(op.seat);
-        relaunched.set(op.seat, op.verdict);
+        relaunched.set(op.seat, verdict);
         break;
       }
       case 'close': {
