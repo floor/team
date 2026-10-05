@@ -1689,7 +1689,6 @@ describe('the border inserted around every other capture (Cursor)', () => {
     .sort();
   const bordered = fixture('bordered-idle').replace(/\n+$/, '').split('\n');
   const TOP = bordered.find((line) => /^ ▄+$/.test(line)) ?? '';
-  const BOTTOM = bordered.find((line) => /^ ▀+$/.test(line)) ?? '';
   const DIALOGS: Record<string, [RegExp, RegExp]> = {
     trust: [/^  ╭─+╮$/, /^  ╰─+╯$/],
     'trust-54': [/^  ╭─+╮$/, /^  ╰─+╯$/],
@@ -1697,14 +1696,15 @@ describe('the border inserted around every other capture (Cursor)', () => {
     'permission-plan': [/^━{8,}$/, /^    Reject \(n or esc\)$/],
   };
 
-  const framed = (name: string) => {
+  const framed = (name: string, delta = 0) => {
     const lines = fixture(name).replace(/\n+$/, '').split('\n');
     const input = lines.findLastIndex((line) => /^ {2}→/.test(line));
     const status = lines.findLastIndex((line) => /^ {2}(?:Grok|GPT-|Gemini |Composer )/.test(line));
     // The frame rows sit at the capture's own width: the reader pins the border to the status
     // row beside it, and the registry holds captures of two pane widths (the 53-column bordered
-    // day, the 54-column rules day), so one fixed pair cannot fit them all.
-    const width = status > input ? (lines[status] ?? '').length : TOP.length - 1;
+    // day, the 54-column rules day), so one fixed pair cannot fit them all. `delta` moves both
+    // rows off that width by the same count, for the wrong-width variants below.
+    const width = (status > input ? (lines[status] ?? '').length : TOP.length - 1) + delta;
     const TOP_HERE = ` ${'▄'.repeat(width)}`;
     const BOTTOM_HERE = ` ${'▀'.repeat(width)}`;
     const out = [...lines];
@@ -1719,13 +1719,20 @@ describe('the border inserted around every other capture (Cursor)', () => {
     return out.join('\n');
   };
 
-  const withDialogWrap = (name: string) => {
+  const withDialogWrap = (name: string, delta = 0) => {
     const [first, last] = DIALOGS[name] ?? [];
-    if (!first || !last) return framed(name);
+    if (!first || !last) return framed(name, delta);
     const lines = fixture(name).replace(/\n+$/, '').split('\n');
     const a = lines.findIndex((line) => first.test(line));
     const b = lines.findIndex((line) => last.test(line));
-    return [...lines.slice(0, a), TOP, ...lines.slice(a, b + 1), BOTTOM, ...lines.slice(b + 1)].join('\n');
+    const blocks = TOP.length - 1 + delta; // the wrap rows sit at the bordered day's own width
+    return [
+      ...lines.slice(0, a),
+      ` ${'▄'.repeat(blocks)}`,
+      ...lines.slice(a, b + 1),
+      ` ${'▀'.repeat(blocks)}`,
+      ...lines.slice(b + 1),
+    ].join('\n');
   };
 
   test('every fixture of the set reads what its original reads', () => {
@@ -1744,6 +1751,51 @@ describe('the border inserted around every other capture (Cursor)', () => {
     expect(NAMES).toContain('trust');
     expect(NAMES).toContain('question');
     expect(NAMES).toContain('permission-plan');
+  });
+
+  test('a border one wider or one narrower than the rule allows never widens a reading', () => {
+    // The exact-width frames above cannot fail a permissive width rule: every border the
+    // helper draws is the status row's own width plus one, so a rule that accepts more
+    // accepts them too. The two variants here — the same frame with both border rows one
+    // character wider, and one narrower, than the rule allows — are what fails it. Where
+    // the reading comes from the frame (an `idle` original, a typed capture whose border
+    // sits against a status row) a wrong-width border is not the frame the captures draw
+    // and the screen fails closed to `unknown`; where the reading comes from elsewhere —
+    // the working rule, a dialog's own rule, a capture that draws no status row — the
+    // wrong-width border is inert and the capture's own reading stands. The expectation
+    // per capture was established from a run over all 39 and is pinned by the tally.
+    const pinned = (name: string) => {
+      const lines = fixture(name).replace(/\n+$/, '').split('\n');
+      const input = lines.findLastIndex((line) => /^ {2}→/.test(line));
+      return lines.findLastIndex((line) => /^ {2}(?:Grok|GPT-|Gemini |Composer )/.test(line)) > input;
+    };
+    const off: string[] = [];
+    const tally: Record<string, number> = {};
+    for (const name of NAMES) {
+      const original = classify('cursor', fixture(name).split('\n')).kind;
+      const expected = original === 'idle' || (original === 'unsent' && pinned(name)) ? 'unknown' : original;
+      for (const delta of [1, -1]) {
+        const after = classify('cursor', withDialogWrap(name, delta).split('\n')).kind;
+        if (after !== expected) off.push(`${name} ${delta > 0 ? 'wider' : 'narrower'}: ${expected} -> ${after}`);
+        const key = `${original} -> ${after}`;
+        tally[key] = (tally[key] ?? 0) + 1;
+      }
+    }
+    expect(off).toEqual([]);
+    // The 6 idle and the 19 status-pinned typed captures fail closed both ways; exit-typed
+    // draws no status row, so its border is inert and `unsent` stands; the 7 working and
+    // the 4 dialog captures read their own reading through a wrong-width border; the 2
+    // `unknown` originals stay `unknown`.
+    expect(tally).toEqual({
+      'idle -> unknown': 12,
+      'unsent -> unknown': 38,
+      'unsent -> unsent': 2,
+      'working -> working': 14,
+      'permission -> permission': 2,
+      'question -> question': 2,
+      'trust -> trust': 4,
+      'unknown -> unknown': 4,
+    });
   });
 });
 
