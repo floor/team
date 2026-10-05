@@ -27,9 +27,10 @@ A seat goes to its real folder itself: a worktree seat to the worktree its brief
 seat to its configured `cwd` before any project work.
 
 The lobby is a folder no CLI has seen before, and `up` reads a trust question and never answers one:
-the first `up` leaves each seat out with `<seat>: left out: trust`, and the detail under the record
-says its workspace was closed without an answer — nothing run — until the owner trusts
-the lobby once in that CLI. Then it starts.
+a seat that stops there waits for its owner — at a terminal `up` keeps the seat's workspace,
+records it waiting and asks with one prompt (below); a run without a terminal closes the workspace
+without an answer and records `<seat>: left out: trust (no terminal for owner)`. Nothing is run
+until the owner trusts the lobby once in that CLI. Then it starts.
 
 ## Synopsis
 
@@ -41,13 +42,16 @@ Reads the team file (or the one `--file` names), this machine's approval store, 
 (`.agents/team.state.json`, for each seat's stage), herdr (whether the session is up, its agents and
 workspaces), the doctor's findings, and the machine's load, free memory, free disk and free swap.
 Writes `.agents/team.state.json` (each seat's stage, pane, workspace and the CLI it was launched
-with; the watch's pid and heartbeat), `.agents/team.log`, the machine lobby folder
+with; a waiting seat's classification, process identity and `manual` flag; the watch's pid and
+heartbeat), `.agents/team.log`, the machine lobby folder
 (`~/.config/team/lobby`) every seat starts in, and, through herdr: the server, one workspace per seat
 and one for the watchdog, each seat's launch, and the watch.
 
 ## Who may run it
 
-The owner, from a terminal outside herdr. `--dry-run` is open to anyone: it reaches nothing and
+The owner, from a terminal outside herdr — or without one: a run whose stdin is not a terminal
+launches seats like any other, but never reads stdin and never prompts, so every dialog is left for
+the owner (below). `--dry-run` is open to anyone: it reaches nothing and
 changes nothing, prints the refusals it would hit as `! up would refuse: …` above the plan, and
 exits 0.
 
@@ -120,12 +124,9 @@ the CLI there is the one `team` launched.
 When the workspace does not close, nothing is launched in its
 place and the seat is left as it is:
 `<seat>: left out: its workspace did not close; left as it is`, with `up` exiting 1. A seat with no `launched`
-record in state (one launched before this version recorded process identity, or one stopped at a
-dialog before its idle prompt: the reading is taken once, after the idle prompt and after the launch
-model check) keeps today's behaviour: nothing checks its pane. (An `up` run without a terminal closes
-a waiting dialog's workspace without input and prints `left out`; interactive handling of waiting
-seats and `trust-sent-recovery` at a terminal, alongside recording process identity before an idle
-prompt, is a separate planned change and is not altered here.)
+record in state (one launched before this version recorded process identity, or one whose process
+herdr could not read when it stopped: the reading is taken once, after the idle prompt and after the
+launch model check) keeps today's behaviour: nothing checks its pane.
 
 When the idle screen names no model this version can read, `up` writes `<seat>: its screen doesn't show a model this version knows; not checked` to stderr, after the seat's record, and continues. Nothing is assumed about which model is running.
 
@@ -149,6 +150,70 @@ every visible character in order, a row break allowed to stand for at most one s
 and only then is Enter pressed, once. A box that already holds exactly today's line (a run that
 stopped after typing it) is verified and sent, never typed onto again. `up` never clears a box it
 could not verify: a stop leaves the text where it is.
+
+### Waiting for the owner
+
+A seat that stops at anything that isn't idle and that `team` may not answer — `trust` under either
+policy, `permission`, `question`, `vendor notice`, `login`, `unknown`, `unsent`, or the idle wait's
+`timeout` — meets the pause when its owner runs `up` at a terminal. `up` keeps the seat's
+workspace, records `waiting-owner` (with the classification and the process identity read at that
+moment, in the same write), shows the provisional record
+
+    claude-beacon: waiting for owner (trust)
+
+and asks, exactly:
+
+    claude-beacon is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly
+
+`o`, `s` and `q` are the whole answer. Any other input reprints the exact line and changes nothing;
+a Ctrl-C is `q`, and a closed input is the same decision made for the owner. The record stays
+provisional while the prompt is open — the seat's one final record still comes later. The seat lock
+is taken before each of resume, open, skip and close, and never held while the owner's key or a
+poll is waited for, so `team answer` can take it in between.
+
+`o` takes the lock, verifies the waiting pane is still the seat's recorded one and still holds the
+recorded process, records `manual: true`, releases the lock, and focuses that seat's herdr pane
+with `herdr agent focus` — it sends no key and no text, and a captured run on a pane holding typed,
+unsent text left the text exactly as it was and only moved the focus. `up` then polls the pane at
+the profile's idle poll interval for at most the profile's idle timeout (90 s today), re-taking the
+lock and reading the state and the pane fresh at each poll. A screen that reads idle means the
+owner finished the seat in the pane: `up` removes the waiting record and carries the seat through
+its ordinary steps — renaming it if it needs renaming, delivering its rules, and recording
+`<seat>: ready`. A screen mid-work keeps the poll running
+to the deadline, with `manual` kept. A screen that reads anything else keeps `manual` and asks
+again at once, under the new classification. The deadline also keeps `manual` and asks again as
+`timeout`. `o` stays available after every re-prompt. `manual` is cleared only when this same `up`
+makes the seat ready, or closes it with `s` or `q`.
+
+`s` takes the lock, closes that seat's workspace without input, clears its launch state — the
+`waiting` field with it — and records `<seat>: left out: skipped by owner`.
+
+`q`, and a Ctrl-C, closes without input every workspace **this invocation created** that is not
+already ready, and clears those seats' state. The herdr session is stopped only when this
+invocation created it and it now holds no ready seat and no watchdog: a session that existed
+before, a ready seat and the watchdog are kept. The current seat and every later configured,
+non-stopped seat with no final record get, in file order, `<seat>: left out: stopped cleanly`;
+earlier final records stay. The run exits 1.
+
+A later `up` on a seat the state records waiting reuses its recorded pane and workspace — nothing
+is created for it — verifies the current screen with a fresh read, and enters the same pause,
+**before** the ordinary unnamed or wrong-name handling. A recorded pane that no longer exists is
+not a reason to launch again: nothing is created, the record kept, and the final record is
+`<seat>: left out: its waiting pane is gone`, with the repair under it on stderr —
+`team remove <seat> --keep`, then `team up`. A pane that still exists but no longer holds the
+recorded process fails the same way, with `its waiting pane holds another process`.
+
+Under `dialogs.trust: coordinator`, a seat waiting at `trust` is also re-read on a tick: every
+prompt timeout and every return from `o` takes the lock and reads the state and the pane fresh,
+and follows what they show — a seat `team answer` made ready in the meantime, the
+`trust-sent-recovery` state it may have left behind (shown as
+`<seat>: waiting for owner (trust sent; recovery required)`, with the same keys), or the screen's
+own reading. `up` never invokes `team answer` and never sends a trust key.
+
+An owner whose stdin is not a terminal never prompts: for each seat that meets a dialog it closes
+the workspace without input, prints `<seat>: left out: <classification> (no terminal for owner)`
+and exits 1. A seat stopped at the idle wait's `timeout` is not a dialog: that owner keeps the
+ordinary `timeout` record and the detail under it.
 
 ### Known limits
 
@@ -183,6 +248,9 @@ non-empty lines the pane showed — the launch line's own
 echo first when it is within reach, six at most, every escape sequence and every control character
 but the line breaks removed, each line cut to 200 characters with `…` — each on `  | `;
 `  run \`team up\` again to resume it` names how the seat is finished.
+A wait that runs out with the owner at a terminal is not left there: it meets the pause as
+`timeout` and is the owner's to open, skip or stop (above); the recorded timeout and the detail
+above are what a run without a terminal keeps.
 Those lines go to the terminal only: the log file gets the record, never the screen's text.
 
 The records are what stdout gets; a line below that is not a record is written to stderr, after the
@@ -190,10 +258,14 @@ record it belongs to, as its meaning says.
 
 | Line | Meaning |
 | --- | --- |
-| `<seat>: left out: trust` | the CLI asked whether to trust the folder, and `up` never answers one; the detail under the record says its workspace was closed without an answer and the seat left out |
-| `<seat>: left out: permission` / `<seat>: left out: question` | a permission dialog, or a question, was left for its owner to answer; the detail under the record says its workspace was closed without input and the seat left out |
-| `<seat>: left out: vendor notice` | the CLI shows a vendor notice its owner has to act on: a screen its profile captured as one — today, Codex 0.157.0's update screen. `team` never answers one, and treats it at least as strictly as a question: nothing is typed, the watch reports it, and delivery stops on it. The detail under the record says its workspace was closed without input and the seat left out, and adds `untested on <version>` when the CLI installed here is outside the range the notice was captured on — the reading itself is never made less cautious by a version |
-| `<seat>: left out: <reading>; its workspace did not close; left as it is` | the close of that workspace failed, with `<reading>` one of `trust`, `permission`, `question` or `vendor notice`: nothing claims it was closed, and the seat is left exactly as it was, its state kept — a later `up` resumes it |
+| `<seat>: left out: trust (no terminal for owner)` | the CLI asked whether to trust the folder, and `up` never answers one; the run had no terminal to ask on, and the detail under the record says its workspace was closed without an answer and the seat left out. A run at a terminal asks its owner instead — the pause, above |
+| `<seat>: left out: permission (no terminal for owner)` / `<seat>: left out: question (no terminal for owner)` | a permission dialog, or a question, was left for its owner to answer; the run had no terminal to ask on, and the detail under the record says its workspace was closed without input and the seat left out. A run at a terminal asks its owner instead |
+| `<seat>: left out: vendor notice (no terminal for owner)` | the CLI shows a vendor notice its owner has to act on: a screen its profile captured as one — today, Codex 0.157.0's update screen. `team` never answers one, and treats it at least as strictly as a question: nothing is typed, the watch reports it, and delivery stops on it. The detail under the record says its workspace was closed without input and the seat left out, and adds `untested on <version>` when the CLI installed here is outside the range the notice was captured on — the reading itself is never made less cautious by a version. A run at a terminal asks its owner instead |
+| `<seat>: waiting for owner (<classification>)` | the provisional record drawn while the seat's owner is asked, at a terminal (the pause, above); it is rewritten in place when the classification changes, and is not the seat's final record |
+| `<seat>: left out: skipped by owner` | the owner pressed `[s]`: the seat's workspace was closed without input and its launch state cleared, the `waiting` record with it |
+| `<seat>: left out: stopped cleanly` | the owner pressed `[q]` (or Ctrl-C) at this or an earlier seat, and this seat had no final record: a workspace this invocation created for it — not already ready or closed — was closed without input and its state cleared |
+| `<seat>: left out: its waiting pane is gone` / `<seat>: left out: its waiting pane holds another process` | a later `up` found the seat recorded waiting and its recorded pane no longer exists, or no longer holds the recorded process: nothing was created, nothing closed, the record kept; the repair under the record on stderr is `team remove <seat> --keep`, then `team up` |
+| `<seat>: left out: <reading>; its workspace did not close; left as it is` | the close of that workspace failed, with `<reading>` one of `trust`, `permission`, `question` or `vendor notice` — a run without a terminal closing it, or the pause's own close at the prompt: nothing claims it was closed, and the seat is left exactly as it was, its state kept — a later `up` resumes it |
 | `<seat>: left out: runs <model> <version>; the file says <model> <version>; left at launched, not named. Add <flag> <id> to its launch, or correct the file's model and version and run team approve` | the idle screen shows a different model than the file. The seat is not renamed and gets no rules; its pane stays open. The flag is that CLI's model flag, and the id is the one the profile maps to the file's model. When the profile knows no id, the line says `<id>` |
 | `<seat>: left out: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched` | herdr's process info says the pane's foreground program is back at its shell through three full polls on end, four readings, the screen matches no CLI shape, and the launch line's own echo is visible on the screen. A pane read before the line arrived, one whose echo scrolled away, one whose program is slow to draw, or a herdr that can't say (no shell process info), is waited out to the deadline — the end is never inferred from the screen's text, and a single reading can never reach the three polls. The workspace is kept, and the pane's last lines follow on stderr, under the record |
 | `<seat>: left out: timeout` | the prompt never came within the profile's own time limit; the detail under the record, on stderr, says after how long it waited, the screen it last read, the pane's last lines, and that `team up` again resumes it |
@@ -259,7 +331,7 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 
 | Reason |
 | --- |
-| ``only the owner runs `up`, from a terminal outside herdr; this call is <caller>`` |
+| ``only the owner runs `up`, from a terminal outside herdr; this call is <caller>`` — the owner without a terminal is not refused: it runs, and never prompts |
 | ``the file was never approved on this machine: run `team approve` `` |
 | ``approved before records were signed: run `team approve` once`` — the record was written by an earlier `team` |
 | ``the record <case>: run `team approve` once`` — a signed record that does not verify |

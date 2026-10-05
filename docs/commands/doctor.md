@@ -125,6 +125,22 @@ screen, so nothing checks it`. A real multi-vendor file may still warn; every on
 names what the owner can do. The model the file declares is spelled by the seat's `display` in
 every line that names it.
 
+A seat the state records waiting at **trust** gets one line of its own. A fresh read of its pane
+must show the recorded trust dialog — the same reading `team answer` checks, and the reason the
+line moves to `warn` when it does not:
+
+    --    claude-beacon: waiting for owner at trust
+    warn  claude-beacon: waiting at trust; its pane can't be read
+    warn  claude-beacon: waiting at trust; the pane is not the trust dialog
+    warn  claude-beacon: waiting at trust; this version has no trust answer
+    warn  claude-beacon: waiting at trust; the folder is not the lobby
+
+Every `warn` is a `warn` and never a `MISS`: it blocks `team answer` and every key `team` could
+send, and leaves the owner's own path through `team up` open. A seat in `trust-sent-recovery` is a
+`warn` with its repair — `warn  <seat>: trust sent; recovery required; the owner runs team up` —
+and the line never claims a trust dialog is still on screen. A seat waiting at any other
+classification prints nothing new here: [team status](status.md) carries it.
+
 The key's fingerprint is the first twelve hex digits of the signing key's public half. What it
 proves is narrow: an owner who noted it sees a *replaced* key — a process that only reads the
 key changes nothing `team` shows. `team` computes it, and a seat could also replace `team`.
