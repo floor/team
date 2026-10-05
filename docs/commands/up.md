@@ -13,9 +13,15 @@ Every seat, shared and worktree-mode alike, starts in `~/.config/team/lobby`. It
 by all projects on the machine. Before creating anything, `team` verifies the lobby gate:
 ownership by the invoking user, no symbolic links anywhere in the chain, directory mode exactly
 `0700`, empty, and not inside a git repository or worktree. The launch uses that verified
-path. A swap between the gate's last check and herdr creating the workspace cannot be prevented
-from this process; after the workspaces are created the gate runs once more, and a change leaves
-the seats out with `left out: the lobby changed during the launch`.
+path. The lobby is checked again — the gate's checks, plus that it is still the folder the gate
+read: the same canonical path, device and inode — directly before every workspace this run creates
+in it, with nothing between that confirmation and herdr's create call. A failed confirmation
+creates nothing: the seat is left out with the gate's own refusal line, and the rest of the
+launch stops, so no further workspace is made, not even the watchdog's. A seat created earlier
+in the same run is left running: its workspace was created while the path was the verified
+lobby, and `up` never closes a workspace it may already have started a CLI in. One window
+remains, inside herdr itself: the create call takes a path, not an open folder handle, so herdr
+resolves that path in its own process after the confirmation.
 
 A seat goes to its real folder itself: a worktree seat to the worktree its brief names; a shared
 seat to its configured `cwd` before any project work.
