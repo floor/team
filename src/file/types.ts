@@ -29,6 +29,12 @@ export type Seat = {
    * means the vendor is the account; a seat that names one spends it instead of the vendor.
    */
   account?: string;
+  /**
+   * Says the model is chosen by the seat's launcher — a script or program that runs the CLI and
+   * picks the model itself. Absent, `doctor` decides from the launch line's first words. Only
+   * `launcher` exists; it is part of the seat's digest, so setting it needs a new approval.
+   */
+  modelFrom?: 'launcher';
   model: string;
   version: string;
   display: string;

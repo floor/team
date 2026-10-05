@@ -101,7 +101,7 @@ function oldPass(
     if (seat) {
       const running = seatModel(seat, live.screens[agent.pane]);
       if (running && (running.model !== seat.model || running.version !== seat.version)) {
-        once(`model:${name}`, `${name} runs ${running.model} ${running.version}; the file says ${seat.model} ${seat.version}: it signs with the wrong model`);
+        once(`model:${name}`, `${name} runs ${running.model} ${running.version}; the file says ${seat.display}: it signs with the wrong model`);
       }
     }
 

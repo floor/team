@@ -443,6 +443,12 @@
           "account": {
             "type": "string"
           },
+          "model_from": {
+            "enum": [
+              "launcher"
+            ],
+            "$comment": "the model is chosen by the launcher; doctor checks the running seat"
+          },
           "model": {
             "type": "string",
             "minLength": 1
