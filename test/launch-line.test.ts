@@ -17,6 +17,10 @@ import {
 } from '../src/launch/line.ts';
 import type { Seat, TeamFile } from '../src/file/types.ts';
 
+// A single-quoted YAML scalar, so a launch line full of quotes survives the file and reaches the
+// check as the string it was written as.
+const yamlQuote = (text: string): string => `'${text.replaceAll("'", "''")}'`;
+
 const TEAM = (launch: string, extra = '') => `format: 1
 project: acme
 coordinator: lead
@@ -45,7 +49,7 @@ seats:
     vendor: anthropic
     model: Claude Opus
     version: "5.5"
-    launch: ${launch}
+    launch: ${yamlQuote(launch)}
 ${extra}`;
 
 let base: string;
@@ -224,6 +228,100 @@ describe('the launch line check', () => {
         level: 'miss',
         why: 'its launch line starts `team-deepseek`, which is not on the PATH',
       });
+    }
+  });
+
+  test('a fully quoted first word is unquoted and checked, as main refused it', () => {
+    // The reviewer's probe: `"definitely-missing" --flag` is a word a shell runs as written —
+    // run from an empty scratch folder, `/bin/sh: definitely-missing: command not found`, exit
+    // 127 — and main refused it. The quotes are the only thing the shell removes, so the word
+    // inside is checked as the program, whatever the line looks like.
+    for (const launch of [
+      '"definitely-missing" --flag',
+      "'definitely-missing' --flag",
+      'VAR=1 "definitely-missing" --flag',
+      '"definitely-missing"',
+    ]) {
+      const raw = launch.includes('"') ? '"definitely-missing"' : "'definitely-missing'";
+      const finding = launchLineFinding(
+        team(launch),
+        seat(launch),
+        root,
+        sources({ onPath: (binary) => binary !== 'definitely-missing' }),
+      );
+      expect(finding).toEqual({
+        level: 'miss',
+        why: `its launch line starts \`${raw}\`, which is not on the PATH`,
+      });
+    }
+  });
+
+  test('a quoted first word the shell would still read is read; the rest stays a note', () => {
+    // `"claude"` is the same word as `claude`; `"$HOME"` and `'a*'` are not — the shell would do
+    // more than remove the quotes — and a line whose first word it would act on is only said to
+    // be unchecked. A readable quoted first word does not make an unreadable tail readable.
+    const good = team('"claude" --model x');
+    expect(launchLineFinding(good, good.seats[1] as Seat, root, sources())).toBeNull();
+    for (const launch of ['"$HOME" --flag', "'a*' --flag", '"claude" --append-system-prompt "be terse"']) {
+      const finding = launchLineFinding(team(launch), seat(launch), root, sources());
+      expect(finding?.level).toBe('note');
+      expect(finding?.why).toContain('not checked');
+    }
+  });
+
+  test('quoting suppresses tilde expansion: a quoted ~ path is the word it is written', () => {
+    // `"~/x"` is not `~/x`: the shell removes only the quotes, and the word is then a pathname
+    // with a literal `~` folder, resolved from the folder the line runs in — never the home.
+    file(join(home, 'x'));
+    const finding = launchLineFinding(team('"~/x"'), seat('"~/x"'), root, sources());
+    expect(finding).toEqual({
+      level: 'miss',
+      why: 'its launch line starts `"~/x"`, not found from its start folder ../worktrees/acme/.lobby',
+    });
+  });
+
+  test('an argument that runs is a note whatever the program: only a shell script path is refused', () => {
+    // The reviewer's false refusals: `echo -c ../y` and `touch ../created.log` ran with exit 0
+    // while the project-root copies existed and the start-folder ones did not. An argument's
+    // meaning is not knowable in general — option text, an output path, a path a launcher
+    // changes directory for — so every relative argument is a note naming the folder it was
+    // looked for in. The refusal is kept only where failure is certain (the test below).
+    file(join(base, 'y'));
+    file(join(base, 'created.log'));
+    for (const launch of ['echo -c ../y', 'touch ../created.log', 'claude --config=../y']) {
+      const finding = launchLineFinding(team(launch), seat(launch), root, sources());
+      expect(finding?.level).not.toBe('miss');
+    }
+    const note = launchLineFinding(team('touch ../created.log'), seat('touch ../created.log'), root, sources());
+    expect(note).toEqual({
+      level: 'note',
+      why:
+        'its launch line runs `../created.log`, not found from its start folder ../worktrees/acme/.lobby; ' +
+        'not checked: the command may create it',
+    });
+  });
+
+  test('a shell given a script path that is not where it runs cannot start, and is refused', () => {
+    // A shell handed a relative script path that does not exist where the line runs exits 127
+    // without reading anything: run from an empty scratch folder, `sh no-such-script.sh`,
+    // `bash no-such-script.sh` and `zsh no-such-script.sh` each print their own "no such file"
+    // line and exit 127. That, and only that, is the relative argument that can be refused.
+    file(join(base, 'tools', 'x.sh'));
+    const why =
+      'its launch line runs `../tools/x.sh`, not found from its start folder ../worktrees/acme/.lobby; ' +
+      `the same file is at \`${join(base, 'tools', 'x.sh')}\` from the project root — write that path`;
+    for (const launch of ['zsh ../tools/x.sh', 'sh ../tools/x.sh', '/bin/bash ../tools/x.sh']) {
+      const finding = launchLineFinding(team(launch), seat(launch), root, sources());
+      expect(finding).toEqual({ level: 'miss', why });
+    }
+  });
+
+  test('a shell option is not a script: `zsh -c …` and `bash -l x` are not this refusal', () => {
+    file(join(base, 'tools', 'x.sh'));
+    file(join(base, 'tools', 'y.sh'));
+    for (const launch of ['zsh -c "echo hi"', 'bash -l ../tools/y.sh']) {
+      const finding = launchLineFinding(team(launch), seat(launch), root, sources());
+      expect(finding?.level).not.toBe('miss');
     }
   });
 
