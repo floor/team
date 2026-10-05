@@ -29,6 +29,17 @@ The readings are only written when the watch's session is the file's own `sessio
 count the state as the project's, so a watch on another session — `--session <other>`, which anyone
 may run — reads and reports, says so once, and saves no reading, budget or spend.
 
+## How a screen is read
+
+A pane's screen is read by the profile's own expressions — the words a CLI paints for its idle
+prompt, its working frame, its dialogs and its questions — and the reading and the live-agent check
+are separate layers. A screen that reproduces a CLI's complete idle frame (input row, status row
+and workspace line, in place) reads idle; the live-agent check is the second layer. For Cursor the
+profile pins the status row's place: a line the row's grammar matches is the row only when the
+workspace line sits directly below it, that line is the pane's last non-blank one, and the input
+row sits above it within the captured distance — a grammar-looking line anywhere else is ordinary
+text that names no row and no model.
+
 ## Who may run it
 
 Anyone, in any terminal. `up` starts one for the session in a pane of its own, and this is the one
