@@ -7,7 +7,7 @@ import { runApprove } from '../../src/commands/approve.ts';
 import { realSources as downReal, runDown, type DownLaunch, type DownSources } from '../../src/commands/down.ts';
 import { realSources as upReal, runUp, type Launch, type UpSources } from '../../src/commands/up.ts';
 import type { DoctorSources } from '../../src/commands/doctor.ts';
-import { sessionState, type HerdrAgent } from '../../src/herdr.ts';
+import { sessionState, setHerdrRun, workspacePanes, type HerdrAgent } from '../../src/herdr.ts';
 import { readApproval, storePath, writeApproval } from '../../src/store/store.ts';
 import { readState } from '../../src/state.ts';
 import { parseMemoryPressure, parseSwapUsage, type Machine } from '../../src/watch/machine.ts';
@@ -42,7 +42,10 @@ beforeEach(() => {
   writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE);
 });
 
-afterEach(() => rmSync(base, { recursive: true, force: true }));
+afterEach(() => {
+  setHerdrRun(null);
+  rmSync(base, { recursive: true, force: true });
+});
 
 const store = () => storePath('acme-web', root, home);
 
@@ -1178,6 +1181,101 @@ describe('team up, a session that was restored', () => {
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(1);
     expect(io.out).toContain('claude-coordinator-acme: its workspace holds other panes; nothing closed (close its pane there, then run team up)\n');
+    expect(made.closes).toEqual([]);
+    expect(made.creates).not.toContain('claude opus 5.5');
+    expect(seatState('claude-coordinator-acme'))
+      .toMatchObject({ stage: 'ready', pane: 'w91:p1', launched: { shell: 420, cli: [421] } });
+  });
+
+  test('workspacePanes with the right pane id under another workspace id: nothing is closed', async () => {
+    restoredFile();
+    await approve();
+    const made = restored();
+    const read = made.launch.processInfo!;
+    made.launch.processInfo = (session, pane) => (pane === 'w91:p1' ? { shell: 420, foreground: [420] } : read(session, pane));
+    setHerdrRun(() => ({ panes: [{ pane_id: 'w91:p1', workspace_id: 'w92' }] }));
+    made.launch.workspacePanes = (_session, ws) => workspacePanes(ws);
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources(restoredSources(), made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('claude-coordinator-acme: its pane could not be read; nothing closed\n');
+    expect(made.closes).toEqual([]);
+    expect(made.creates).not.toContain('claude opus 5.5');
+    expect(seatState('claude-coordinator-acme'))
+      .toMatchObject({ stage: 'ready', pane: 'w91:p1', launched: { shell: 420, cli: [421] } });
+  });
+
+  test('workspacePanes under no workspace id: nothing is closed', async () => {
+    restoredFile();
+    await approve();
+    const made = restored();
+    const read = made.launch.processInfo!;
+    made.launch.processInfo = (session, pane) => (pane === 'w91:p1' ? { shell: 420, foreground: [420] } : read(session, pane));
+    setHerdrRun(() => ({ panes: [{ pane_id: 'w91:p1' }] }));
+    made.launch.workspacePanes = (_session, ws) => workspacePanes(ws);
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources(restoredSources(), made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('claude-coordinator-acme: its pane could not be read; nothing closed\n');
+    expect(made.closes).toEqual([]);
+    expect(made.creates).not.toContain('claude opus 5.5');
+    expect(seatState('claude-coordinator-acme'))
+      .toMatchObject({ stage: 'ready', pane: 'w91:p1', launched: { shell: 420, cli: [421] } });
+  });
+
+  test('workspacePanes with a non-object entry: nothing is closed', async () => {
+    restoredFile();
+    await approve();
+    const made = restored();
+    const read = made.launch.processInfo!;
+    made.launch.processInfo = (session, pane) => (pane === 'w91:p1' ? { shell: 420, foreground: [420] } : read(session, pane));
+    setHerdrRun(() => ({ panes: ['w91:p1'] }));
+    made.launch.workspacePanes = (_session, ws) => workspacePanes(ws);
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources(restoredSources(), made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('claude-coordinator-acme: its pane could not be read; nothing closed\n');
+    expect(made.closes).toEqual([]);
+    expect(made.creates).not.toContain('claude opus 5.5');
+    expect(seatState('claude-coordinator-acme'))
+      .toMatchObject({ stage: 'ready', pane: 'w91:p1', launched: { shell: 420, cli: [421] } });
+  });
+
+  test('workspacePanes with a pane id that is not a string: nothing is closed', async () => {
+    restoredFile();
+    await approve();
+    const made = restored();
+    const read = made.launch.processInfo!;
+    made.launch.processInfo = (session, pane) => (pane === 'w91:p1' ? { shell: 420, foreground: [420] } : read(session, pane));
+    setHerdrRun(() => ({ panes: [{ pane_id: 123, workspace_id: 'w91' }] }));
+    made.launch.workspacePanes = (_session, ws) => workspacePanes(ws);
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources(restoredSources(), made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('claude-coordinator-acme: its pane could not be read; nothing closed\n');
+    expect(made.closes).toEqual([]);
+    expect(made.creates).not.toContain('claude opus 5.5');
+    expect(seatState('claude-coordinator-acme'))
+      .toMatchObject({ stage: 'ready', pane: 'w91:p1', launched: { shell: 420, cli: [421] } });
+  });
+
+  test('workspacePanes with the right entry plus one malformed entry: nothing is closed', async () => {
+    restoredFile();
+    await approve();
+    const made = restored();
+    const read = made.launch.processInfo!;
+    made.launch.processInfo = (session, pane) => (pane === 'w91:p1' ? { shell: 420, foreground: [420] } : read(session, pane));
+    setHerdrRun(() => ({
+      panes: [
+        { pane_id: 'w91:p1', workspace_id: 'w91' },
+        { pane_id: 'w91:p2' },
+      ],
+    }));
+    made.launch.workspacePanes = (_session, ws) => workspacePanes(ws);
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources(restoredSources(), made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('claude-coordinator-acme: its pane could not be read; nothing closed\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(seatState('claude-coordinator-acme'))

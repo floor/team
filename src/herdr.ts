@@ -14,7 +14,14 @@ export type HerdrAgent = {
   cwd: string | null;
 };
 
+export type HerdrRun = (args: string[], session?: string) => unknown;
+let customRun: HerdrRun | null = null;
+export function setHerdrRun(exec: HerdrRun | null): void {
+  customRun = exec;
+}
+
 function run(args: string[], session?: string): unknown {
+  if (customRun) return customRun(args, session);
   const full = session ? ['--session', session, ...args] : args;
   const out = execFileSync('herdr', full, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
   return (JSON.parse(out) as { result?: unknown }).result;
@@ -149,11 +156,21 @@ export function workspaceList(session?: string): HerdrWorkspace[] | null {
 }
 
 // The pane ids in a workspace, or null when herdr can't be reached or the workspace does not exist.
+// Every entry must be an object with a string pane_id and a workspace_id equal to the workspace asked for;
+// anything else makes the whole reading unreadable (null).
 export function workspacePanes(workspace: string, session?: string): string[] | null {
   try {
-    const result = run(['pane', 'list', '--workspace', workspace], session) as { panes?: Record<string, unknown>[] } | undefined;
-    if (!result || !Array.isArray(result.panes)) return null;
-    return result.panes.map((p) => String(p.pane_id));
+    const result = run(['pane', 'list', '--workspace', workspace], session) as { panes?: unknown } | undefined;
+    if (!result || typeof result !== 'object' || !Array.isArray(result.panes)) return null;
+    const panes: string[] = [];
+    for (const entry of result.panes) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+      const p = entry as Record<string, unknown>;
+      if (typeof p.pane_id !== 'string' || !p.pane_id) return null;
+      if (typeof p.workspace_id !== 'string' || p.workspace_id !== workspace) return null;
+      panes.push(p.pane_id);
+    }
+    return panes;
   } catch {
     return null;
   }
