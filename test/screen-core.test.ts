@@ -1045,6 +1045,9 @@ screen:
     // No workspace line under it: the line is not the row, and a grammar line that is not the
     // row is ordinary text, so the fallback stays closed and the screen reads unknown.
     expect(classifyLines(data, ['', '> ', 'STATUS']).kind).toBe('unknown');
+    // A blank line between the row and the workspace line: the workspace line is not directly
+    // below the row, so the line is not the row and the screen reads unknown.
+    expect(classifyLines(data, ['', '> ', 'STATUS', '', 'work']).kind).toBe('unknown');
     // A non-blank line under the workspace line means the workspace line is not the pane's last.
     expect(classifyLines(data, ['', '> ', 'STATUS', 'work', 'more']).kind).toBe('unknown');
     // The row must reach the input row within the captured distance: five blank rows between

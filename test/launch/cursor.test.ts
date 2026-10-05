@@ -1001,6 +1001,12 @@ describe('the closed Cursor status row', () => {
     expect(read(text(rows('gpt-sol-idle').slice(0, -1)))).toBe('unknown / unknown');
     // A non-workspace line under the row: same.
     expect(read(put('gpt-sol-idle', rows('gpt-sol-idle').length, '  something else'))).toBe('unknown / unknown');
+    // A blank line between the row and the workspace line: the workspace line is not directly
+    // below the row, so the row is out of place and the screen reads no row and no model.
+    const gapped = rows('gpt-sol-idle');
+    gapped.splice(gapped.findIndex((row) => /^ {2}GPT-/.test(row)) + 1, 0, '');
+    expect(read(text(gapped))).toBe('unknown / unknown');
+    expect(model(text(gapped))).toBeNull();
     // A non-blank line under the workspace line: it is not the pane's last, so neither the
     // footer nor the appended row is in the position.
     expect(read(`${base}\n${GPT_ROW}`)).toBe('unknown / unknown');
