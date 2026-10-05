@@ -379,10 +379,61 @@ describe('the pane lines a report carries', () => {
     }
   });
 
-  test('an unterminated string sequence is removed to the end of its line', () => {
+  test('a string sequence spanning the six-line cut is removed whole', () => {
+    // The reviewer's cut-spanning probe: an OSC begins before the eventual six-line tail and ends
+    // with `ESC \` in the tail. The entire sequence and its payload must be removed whole.
+    const lines = [
+      `❯ ${command}`,
+      'old line',
+      '\u001b]0;secret-one',
+      'secret-two',
+      'secret-three',
+      'secret-four',
+      'secret-five',
+      'secret-six\u001b\\after',
+    ];
+    const out = paneExcerpt(lines.join('\n'), command);
+    expect(out).not.toContain('secret');
+    expect(out).toContain('  | after\n');
+  });
+
+  test('an opener in the dropped part and its terminator in the kept part are removed whole', () => {
+    const lines = [
+      'dropped line 1',
+      '\u001b]0;secret-dropped',
+      'dropped line 2',
+      'dropped line 3',
+      'dropped line 4',
+      'dropped line 5',
+      `❯ ${command}`,
+      'kept line 1',
+      'kept line 2\u001b\\after-terminator',
+    ];
+    const out = paneExcerpt(lines.join('\n'), command);
+    expect(out).not.toContain('secret');
+    expect(out).toContain('  | after-terminator\n');
+  });
+
+  test('an opener in the kept part with no terminator is removed to the end of the text', () => {
+    const lines = [
+      `❯ ${command}`,
+      'kept line 1',
+      '\u001b]0;secret-unterminated',
+      'kept line 2',
+      'kept line 3',
+    ];
+    const out = paneExcerpt(lines.join('\n'), command);
+    expect(out).not.toContain('secret');
+    expect(out).not.toContain('kept line 2');
+    expect(out).not.toContain('kept line 3');
+    expect(out).toContain('  | kept line 1\n');
+  });
+
+  test('an unterminated string sequence is removed to the end of the text', () => {
     const out = paneExcerpt(`❯ ${command}\n\u001b]0;secret-no-end\nnext line\n~ ❯`, command);
     expect(out).not.toContain('secret-no-end');
-    expect(out).toContain('  | next line\n');
+    expect(out).not.toContain('next line');
+    expect(out).toBe(`  | ❯ ${command}\n`);
   });
 
   test('a line longer than the bound is cut to 200 characters and marked', () => {

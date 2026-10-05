@@ -125,10 +125,11 @@ budgets:                      # the owner's: reserve or floor per account, marks
   folder the seat starts in — the lobby for a seat that works in worktrees — and `team` never
   rewrites it: `team doctor` checks its first word there — one fully quoted literal with its quotes
   removed, the way a shell would run it — and any relative argument. `up` and `add` leave a seat
-  out, saying the same words, when the first word is missing there, or when the line runs a shell
-  (`sh`, `bash`, `zsh`) whose relative script path resolves from the project root and not from that
-  folder; every other relative argument, and a line that quotes or substitutes text, is reported as
-  not checked, never refused.
+  out, saying the same words, when the first word is missing there, or when the first word is a shell
+  (`sh`, `bash`, `zsh`, by name or by path) whose first argument is the script, not an option, and that
+  relative script path resolves from the project root and not from that folder (an option-bearing
+  line such as `zsh -x ../x` is a note); every other relative argument, and a line that quotes or
+  substitutes text, is reported as not checked, never refused.
   `count: 2` makes the
   numbered names; `parked` keeps a seat out of idle reports, `stopped` keeps it out of `up`.
 - `workspace.mode` is `shared` (every seat in the project) or `worktree` (each task in its own

@@ -27,9 +27,11 @@ written as a path is read the way main's launcher check read it — it must be t
 not merely there. A line with a word that quotes or substitutes text is left alone and reported as
 not checked, never refused — the first word is the one exception, and only when it is a fully quoted
 literal, read above. A relative argument is a note, never a refusal — its meaning is not knowable
-and the command may create the path — with one exception: the relative script path of a shell (`sh`,
-`bash`, `zsh`), which the shell cannot start without, is a `MISS` when it resolves from the project
-root but not from the folder the line will run in. The owner's `doctor` also
+and the command may create the path — with one exception: the first word is `sh`, `bash` or `zsh`
+(by name or by path), its first argument is the script, not an option (an argument starting with `-`),
+and that relative path is found from the project root and not from the seat's start folder (an
+option-bearing line such as `zsh -x ../x` is a note, not a refusal); the shell cannot start without
+it and is a `MISS`. The owner's `doctor` also
 runs each approved account's check command once, the way the watch runs it; the command's raw output
 is parsed and dropped, never shown. It writes nothing.
 

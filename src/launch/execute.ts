@@ -53,7 +53,7 @@ type Place = { pane: string; workspace?: string };
  *  is removed whole — a CSI's private parameters among them, and the payload of a string
  *  sequence (OSC, DCS, APC, PM, SOS), whichever introducer and terminator are mixed, 7-bit
  *  `ESC x` or its one-byte C1 form, `ESC \` or C1 ST, or BEL to close an OSC; one left
- *  unterminated goes to the end of its line, a string sequence never crossing one — and every
+ *  unterminated goes to the end of the text — and every
  *  control character but the line break, carriage return, backspace, bell and escape among
  *  them. Pane text is the one text `team` says that it did not write itself: a carriage return
  *  in it would overwrite the report that carries it. */
@@ -61,8 +61,8 @@ export function plainPaneText(text: string, limit = 200): string {
   return text
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
     .replace(/\x9b[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/(?:\x1b[\]PX^_]|[\x9d\x90\x98\x9e\x9f])[^\n]*?(?:\x07|\x1b\\|\x9c)/g, '')
-    .replace(/(?:\x1b[\]PX^_]|[\x9d\x90\x98\x9e\x9f])[^\n]*$/gm, '')
+    .replace(/(?:\x1b[\]PX^_]|[\x9d\x90\x98\x9e\x9f])[\s\S]*?(?:\x07|\x1b\\|\x9c)/g, '')
+    .replace(/(?:\x1b[\]PX^_]|[\x9d\x90\x98\x9e\x9f])[\s\S]*$/g, '')
     .replace(/\x1b./g, '')
     .replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, '')
     .split('\n')
