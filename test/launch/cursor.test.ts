@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { profileFor } from '../../src/profiles/index.ts';
-import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
+import { launchCommand, statusOnLine, versionVerdict } from '../../src/profiles/profile.ts';
 import { classify, classifyComposer, readBox, readFold, readScreen, screenData } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
 import { boxHoldsText, deliverRules, type Delivery } from '../../src/launch/deliver.ts';
@@ -1019,8 +1019,14 @@ describe('the closed Cursor status row', () => {
   });
 
   test("a new family's model rule is anchored to the row's own line, both ends", () => {
-    // A rule that lost its start anchor would read a row mid-sentence; one that lost its end
-    // anchor would read a row that runs on past `Run Everything`. Neither is the row's line.
+    // The rule itself, applied to a line, so the anchors are pinned at the rule and not only
+    // through a screen: one that lost its start anchor would read a family named mid-sentence
+    // as the model, and one that lost its end anchor would read a line that runs on past
+    // `Run Everything`.
+    expect(statusOnLine('cursor', 'x GPT-5.6 Sol 272K High              Run Everything')).toBeNull();
+    expect(statusOnLine('cursor', '  GPT-5.6 Sol 272K High              Run Everything and more')).toBeNull();
+    // And on a screen: those lines in the footer's place are not the row at all, so the
+    // composer's own read names no model either.
     expect(model(footer('idle', 'x GPT-5.6 Sol 272K High              Run Everything'))).toBeNull();
     expect(model(footer('idle', '  GPT-5.6 Sol 272K High              Run Everything and more'))).toBeNull();
   });
