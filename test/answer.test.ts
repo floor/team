@@ -811,7 +811,7 @@ describe('team answer', () => {
       expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
     });
 
-    test('process changes (a) between inspection and key: no key sent, state is recovery', async () => {
+    test('process changes (a) between inspection and key: no key sent, the record is put back', async () => {
       const { root, home, dir, host } = setupIdentitySeat();
       await approve(root, home);
       let reads = 0;
@@ -830,11 +830,23 @@ describe('team answer', () => {
       expect(host.keys).toEqual([]);
       expect(host.typed).toEqual([]);
       expect(io.err).toBe('lead: the process in its pane is not the one team launched\n');
-      expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
+      // The recovery write happened before the check (write-before-key), and the clean
+      // refusal put the record back: the seat waits for its owner again.
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('waiting-owner');
       expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+
+      // A later answer, with the pane's own process reading the same again, can still answer.
+      host.processInfo = () => ({ shell: 400, foreground: [400, 401] });
+      const again = testIo(root, { kind: 'owner' });
+      const code2 = await runAnswer([...FILE, 'lead', 'trust'], again, host);
+      expect(code2).toBe(0);
+      expect(again.out).toBe('lead: trust answered; ready\n');
+      expect(host.keys).toEqual(['a']);
+      expect(readState(dir).sessions.acme?.seats.lead?.stage).toBe('ready');
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting).toBeUndefined();
     });
 
-    test('process unreadable between inspection and key: no key sent, state is recovery', async () => {
+    test('process unreadable between inspection and key: no key sent, the record is put back', async () => {
       const { root, home, dir, host } = setupIdentitySeat();
       await approve(root, home);
       let reads = 0;
@@ -848,14 +860,17 @@ describe('team answer', () => {
       expect(host.keys).toEqual([]);
       expect(host.typed).toEqual([]);
       expect(io.err).toBe('lead: its pane could not be read\n');
-      expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('waiting-owner');
       expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
     });
 
-    test('process change after recovery write before key: moving read before recovery fails this', async () => {
+    test('process change after recovery write before key: the read happens after the write, the refusal puts the record back', async () => {
       const { root, home, dir, host } = setupIdentitySeat();
       await approve(root, home);
-      // Process becomes replaced as soon as recovery state is on disk
+      // Process becomes replaced as soon as recovery state is on disk: the read at the key
+      // check sees recovery (a read moved before the write would see waiting-owner, pass,
+      // and send the key — the empty key list below is what rules that out), refuses, and
+      // the rollback then puts the record back.
       host.processInfo = () => {
         const state = readState(dir).sessions.acme?.seats.lead?.waiting?.state;
         return state === 'trust-sent-recovery'
@@ -868,6 +883,24 @@ describe('team answer', () => {
       expect(host.keys).toEqual([]);
       expect(host.typed).toEqual([]);
       expect(io.err).toBe('lead: the process in its pane is not the one team launched\n');
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('waiting-owner');
+    });
+
+    test('a crash between the recovery write and the key still leaves recovery', async () => {
+      const { root, home, dir, host } = setupIdentitySeat();
+      await approve(root, home);
+      // Reads 1 and 2 (inspect) succeed; the read at the key check throws — the run dies in
+      // the window between the write and the key, the window the write-before-key order buys.
+      let reads = 0;
+      host.processInfo = () => {
+        reads += 1;
+        if (reads <= 2) return { shell: 400, foreground: [400, 401] };
+        throw new Error('herdr died');
+      };
+      const io = testIo(root, { kind: 'owner' });
+      await expect(runAnswer([...FILE, 'lead', 'trust'], io, host)).rejects.toThrow('herdr died');
+      expect(host.keys).toEqual([]);
+      expect(host.typed).toEqual([]);
       expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
     });
 
