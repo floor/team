@@ -58,10 +58,18 @@ A seat that reaches its idle prompt with its rules delivered prints `<seat>: rea
 seat prints `<name>: ready` under the name it was given. Everything else a launch can print is the
 same as `up`'s, with the seat's name in front: `its workspace was not created; left at launched`,
 `timed out after <n> s waiting for its idle prompt; the screen last read <kind>; left at launched`,
-`the launch command ended before the CLI showed a prompt; left at launched`, `permission; its
+`its pane is back at the shell and shows no CLI prompt; left at launched`, `permission; its
 workspace was closed without input and the seat left out`, and the rest of the table on the
 [team up](up.md) page. A wait that ended without a prompt prints the pane's last lines under the
 reading, on the terminal only, as `up` does.
+
+The seat's own launch line is checked where it will start, before the file is edited and before any
+workspace is made. A note — the line quotes or substitutes text, or a path is not there yet — is
+said once as `  note <name>: <why>`, as `up` says it. A line that can't run is refused in the same
+paragraph as any other `MISS` finding: `team add: <name>: its launch line starts \`<program>\`,
+which is not on the PATH`, and the file is left alone. A `--dry-run` prints that refusal in the
+plan instead — `  skip <name>: would refuse: …` above `dry run: nothing was run` — makes nothing
+and exits 0.
 
 ## Refusals
 
@@ -95,7 +103,7 @@ reading, on the terminal only, as `up` does.
 | ``team add: seat beacon-qa would start in live, inside the protected checkout live; a seat that isn't `mode: shared` never starts in one`` | 1 |
 | `team add: the file changed while add was checking; nothing was written` | 1 |
 | `team add: the load is <n> per core, above <n>` / `team add: free memory is <n>%, below <n>%` | 1 |
-| a `MISS` finding from [team doctor](doctor.md) | 1 |
+| a `MISS` finding from [team doctor](doctor.md), the seat's own launch line among them | 1 |
 
 The ceilings are read from the approval's record, never from the file: a seat that would put the
 session past `limits.seats`, past `limits.temporary` for a temporary seat, or past a

@@ -18,7 +18,10 @@ the session is running, and, for each CLI a seat uses, `<binary> --version` and 
 launch line is read the way `team` splits it — the first word that isn't a variable assignment, and
 the arguments written `./…`, `../…` or `~/…` — and each is looked for where the line will run: the
 folder the seat starts in, which for a seat that works in worktrees is the lobby, never a launcher
-run to find out. A line that quotes or substitutes text is left alone and reported as not checked,
+run to find out. The first word is checked before the rest is read: a line whose program is missing
+is a `MISS` whatever follows it, quoted text included, and a program written as a path is read the
+way main's launcher check read it — it must be there and executable, not merely there. A line that
+quotes or substitutes text is left alone and reported as not checked,
 never refused. The owner's `doctor` also
 runs each approved account's check command once, the way the watch runs it; the command's raw output
 is parsed and dropped, never shown. It writes nothing.
@@ -67,8 +70,10 @@ command is unapproved, or no longer matches the file hashed at approval (a warni
 account reads unknown, and `up` and `add` still
 run), the budget checks, herdr, one CLI at a time (its
 version, its login, then each of its seats' models), one line per seat whose launch line can't run
-where the seat starts (the `MISS` names the start folder, and when the same file resolves from the
-project root, its path to write instead), the watch, and the `trust` note.
+where the seat starts (the `MISS` names the start folder, the program that is missing or not
+executable, and when the same file resolves from the
+project root, its path to write instead; a line only said to be unchecked, or a relative path that
+exists nowhere yet, is a `--  ` note — `not checked: the command may create it`), the watch, and the `trust` note.
 A seat the file stops is left out of the CLI findings and the launch lines. The last line counts them:
 
     team doctor: nothing missing, 1 warning
