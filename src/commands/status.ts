@@ -8,9 +8,9 @@ import { budgetLine, budgetTable, type BudgetRow } from '../budgets/table.ts';
 import { recall } from '../budgets/readings.ts';
 import { currentTeam } from '../file/current.ts';
 import type { Problem, TeamFile } from '../file/types.ts';
-import { agentList, PANE_WINDOW, paneRead, sessionRunning, workspaceList } from '../herdr.ts';
+import { agentList, PANE_WINDOW, paneProcesses, paneRead, sessionRunning, workspaceList, type PaneProcesses } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
-import { emptySession, readState } from '../state.ts';
+import { emptySession, readState, type SessionState } from '../state.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
 import { approvalStanding, type Standing } from '../store/store.ts';
 import { APPROVAL_REPAIR, compare, orderAndAnnotateDifferences } from '../status/compare.ts';
@@ -18,7 +18,7 @@ import type { Comparison, Difference, Live } from '../status/compare.ts';
 
 // What `status` reads from outside the file and the state, so tests can stand in for it.
 export type StatusSources = {
-  live(session: string, team: TeamFile): Live | null;
+  live(session: string, team: TeamFile, state: SessionState): Live | null;
   branch(path: string): string | null;
   // The approval store's one snapshot, read once for the whole report: the
   // drift, the watch and budget values in force, and the overrides all derive
@@ -38,7 +38,7 @@ export function standingSource(home: string): StatusSources['standing'] {
 }
 
 export const realSources: StatusSources = {
-  live(session, team) {
+  live(session, team, state) {
     const running = sessionRunning(session);
     if (running === null) return null;
     if (!running) return { running: false, agents: [], workspaces: [], screens: {} };
@@ -46,12 +46,24 @@ export const realSources: StatusSources = {
     const workspaces = workspaceList(session);
     if (!agents || !workspaces) return null;
     const screens: Record<string, string> = {};
+    const processes: Record<string, PaneProcesses | null> = {};
     for (const agent of agents) {
       if (!team.seats.some((seat) => seat.name === agent.name)) continue;
       const screen = paneRead(agent.pane, PANE_WINDOW, session);
       if (screen !== null) screens[agent.pane] = screen;
+      // The pane's process identity, for the comparison with the one the state recorded: a pane
+      // that no longer holds what team launched is not the seat. Null when herdr can't tell.
+      processes[agent.pane] = paneProcesses(agent.pane, session);
     }
-    return { running: true, agents, workspaces, screens };
+    // A recorded seat herdr no longer lists an agent for still has its pane standing where it was
+    // launched: that pane is read too, so one left holding its shell is told apart from one that is
+    // gone. Only a seat with a recorded process is read — one with no record is never compared.
+    for (const seat of team.seats) {
+      const held = state.seats[seat.name];
+      if (!held?.launched || !held.pane || held.pane in processes) continue;
+      processes[held.pane] = paneProcesses(held.pane, session);
+    }
+    return { running: true, agents, workspaces, screens, processes };
   },
   branch(path) {
     try {
@@ -119,14 +131,16 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
   const standing = sources.standing(root);
   const overrides = sources.home ? overridesInForceOf(standing, team.project, root, sources.home) : emptyOverrides();
   for (const problem of overrides.problems) io.stderr(`team status: ${problem}\n`);
-  const live = sources.live(session, team);
+  // The state is read before the world: the live read compares each pane with the process the
+  // state recorded for the seat it holds.
+  const whole = readState(dir);
+  const state = whole.sessions[session] ?? emptySession();
+  const live = sources.live(session, team, state);
   if (!live) {
     io.stderr('team status: herdr doesn\'t answer; is it installed and running?\n');
     // exit: status.herdr
     return 2;
   }
-  const whole = readState(dir);
-  const state = whole.sessions[session] ?? emptySession();
   const budgets = budgetTable(budgetsInForceOf(standing, team), recall(whole.budgets), sources.now().getTime());
   const comparison = compare(team, session, state, live, sources.now(), watchInForceOf(standing, team));
   if (standing.kind === 'verified') {
