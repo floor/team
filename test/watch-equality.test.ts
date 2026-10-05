@@ -137,7 +137,8 @@ function oldPass(
     if (worked === undefined) memory.idleSince[name] ??= now;
     const since = now - (worked ?? (memory.idleSince[name] as number));
     const told = memory.idleTold[name];
-    if (since >= team.watch.idleFirst * 1000 && (told === undefined || now - told >= team.watch.idleRepeat * 1000)) {
+    const repeat = team.watch.idleRepeat;
+    if (since >= team.watch.idleFirst * 1000 && (told === undefined || (repeat !== undefined && now - told >= repeat * 1000))) {
       memory.idleTold[name] = now;
       reports.push({
         key: `idle:${name}`,
@@ -190,7 +191,11 @@ function oldPass(
 
   memory.active = current;
 
-  for (const report of reports) if (report.to === 'operator') memory.pending.push(report.text);
+  for (const report of reports) {
+    if (report.to === 'operator' && !memory.pending.includes(report.text)) {
+      memory.pending.push(report.text);
+    }
+  }
   let nudge: OldPassResult['nudge'] = null;
   let fallback: string | null = null;
   if (memory.pending.length) {

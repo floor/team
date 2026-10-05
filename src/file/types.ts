@@ -89,7 +89,8 @@ export type TeamFile = {
   watch: {
     interval: number;
     idleFirst: number;
-    idleRepeat: number;
+    /** How often to repeat an idle report; absent when repeats are off (the default). */
+    idleRepeat?: number;
     teamIdle: number;
     nudgeWait: number;
     unsentAfter: number;
