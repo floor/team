@@ -4,7 +4,8 @@ import { basename, dirname, join } from 'node:path';
 import { storePath, type Standing } from '../store/store.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { SEAT_NAME } from '../file/sections/seats.ts';
-import { notInForce, worktreeTeamInForceOf } from '../approve/approval.ts';
+import { notInForce } from '../approve/approval.ts';
+import { validateTeamFile } from '../file/validate.ts';
 import { profileFor } from '../profiles/index.ts';
 import { rulesOf } from './rules.ts';
 
@@ -37,6 +38,27 @@ export function typeableSeat(seat: string): boolean {
  *  nothing downstream can normalise it somewhere else. */
 export function rulesFilePath(project: string, root: string, home: string, seat: string): string | null {
   return typeableSeat(seat) ? join(storePath(project, root, home), 'rules', `${seat}.md`) : null;
+}
+
+/** The project name every rules-file path is resolved from: the **approved copy's**. A project
+ *  rename is not approval drift (the project is not an owner section), so `up` does not refuse
+ *  it — and the line a seat is told to obey must name the file the checks look at: resolved
+ *  from the live file's new name, the file would land where `status` and `doctor` never look.
+ *  Null when no approval is in force or its stored copy can't be read: there is no folder to
+ *  name then. */
+export function approvedProjectOf(standing: Standing): string | null {
+  if (standing.kind !== 'verified') return null;
+  const copy = validateTeamFile(standing.record.file);
+  return copy.ok ? copy.team.project : null;
+}
+
+/** The file a seat's rules are written to, checked and removed — resolved the one way
+ *  everywhere, from the approval in force and a seat name: the approved copy's project state
+ *  folder. Null when no approval is in force, its stored copy can't be read, or the seat name
+ *  is refused: no caller resolves this folder on its own. */
+export function rulesFilePathOf(standing: Standing, seat: string, root: string, home: string): string | null {
+  const project = approvedProjectOf(standing);
+  return project === null ? null : rulesFilePath(project, root, home, seat);
 }
 
 /** The line typed into the seat's pane: the file's absolute path and the first 12 hex digits of
@@ -278,13 +300,14 @@ export function checkRulesFile(path: string, approvedText: string): RulesFileChe
  *  it, and the one line typed in its pane. A standing that is not an approval in force — no
  *  record, a legacy one, a record the verification refused — is refused here, with the same
  *  line the commands print: the function decides what text a seat is told to obey, so it does
- *  not lean on a caller's gate to check the approval first. The text is the **approved** one —
- *  taken from the copy of the team file the approval record stored, through the same accessor
- *  the worktree commands use (`worktreeTeamInForceOf`), seat looked up by name in that copy so
- *  its own signature lines are the approved ones too. `up` and `add` refuse a file that differs
- *  from the approval, so on a normal run both texts are equal; the invariant does not depend on
- *  that gate. A path that can't be typed safely is a refusal — before anything is written or
- *  typed. */
+ *  not lean on a caller's gate to check the approval first. The text and the folder are the
+ *  **approved** ones — read from the copy of the team file the approval record stored, the
+ *  seat looked up by name in that copy so its own signature lines are the approved ones too,
+ *  the path resolved through `rulesFilePathOf` like every other reader of this file. The live
+ *  `team` is deliberately not read here, not even for its project name: `up` and `add` refuse
+ *  a file that differs from the approval, so on a normal run both texts are equal, and the
+ *  invariant does not depend on that gate. A path that can't be typed safely is a refusal —
+ *  before anything is written or typed. */
 export function rulesDeliveryOf(
   standing: Standing,
   team: TeamFile,
@@ -294,15 +317,15 @@ export function rulesDeliveryOf(
 ): { text: string; path: string; line: string } | { refusal: string } {
   if (profileFor(seat.cli)?.rulesOption != null) return { refusal: 'its rules travel as a launch option' };
   if (standing.kind !== 'verified') return { refusal: notInForce(standing) };
-  const path = rulesFilePath(team.project, root, home, seat.name);
+  const copy = validateTeamFile(standing.record.file);
+  if (!copy.ok) return { refusal: "the approved copy of the team file can't be read" };
+  const path = rulesFilePathOf(standing, seat.name, root, home);
   if (path === null || !typeablePath(path)) {
     return { refusal: "its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -" };
   }
-  const inForce = worktreeTeamInForceOf(standing, team);
-  if (inForce === null) return { refusal: "the approved copy of the team file can't be read" };
-  const held = inForce.team.seats.find((item) => item.name === seat.name);
+  const held = copy.team.seats.find((item) => item.name === seat.name);
   if (held === undefined) return { refusal: 'its rules are not in the approved copy of the team file' };
-  const text = rulesOf(inForce.team, held);
+  const text = rulesOf(copy.team, held);
   return { text, path, line: rulesLine(path, rulesFileHash(text)) };
 }
 

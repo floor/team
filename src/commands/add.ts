@@ -9,7 +9,7 @@ import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
 import type { Launch } from '../commands/up.ts';
 import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
-import { removeRulesFile, rulesFileHash, rulesFilePath, rulesFileHolds, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
+import { removeRulesFile, rulesFileHash, rulesFileHolds, rulesFilePathOf, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { branchPresent, readMerge } from '../end/condition.ts';
 import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines.ts';
@@ -377,7 +377,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const who = describeCaller(caller);
   const host = hostOf({
     dir, session, team: prepared.team, root, home: sources.home, ceilings, running, seat: built.seat, temporary: built.temporary,
-    caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io,
+    caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io, standing,
   });
   const report = await executePlan(plan, session, host);
   const afterwards = readState(dir).sessions[session]?.seats[built.name];
@@ -524,6 +524,7 @@ function hostOf(input: {
   dir: string; session: string; team: TeamFile; root: string; home: string; ceilings: Ceilings; running: Running[];
   seat: Seat; temporary?: SeatState['temporary']; caller: string; now(): Date; launch: Launch;
   readMachine?: (root: string) => Machine; samples: SwapSample[]; limits: TeamFile['machine']; io: Io;
+  standing: Standing;
 }): Host {
   const { dir, session, launch, seat, temporary } = input;
   const running = [...input.running];
@@ -593,8 +594,9 @@ function hostOf(input: {
       if (!running.some((item) => item.name === name)) running.push({ name, vendor: seat.vendor, temporary: Boolean(temporary) });
     },
     drop(name) {
-      // A temporary seat's rules file goes with the seat.
-      if (temporary && name === seat.name) removeRulesFile(rulesFilePath(input.team.project, input.root, input.home, name));
+      // A temporary seat's rules file goes with the seat. The path is resolved the one way,
+      // from the approval in force, like every other reader of the file.
+      if (temporary && name === seat.name) removeRulesFile(rulesFilePathOf(input.standing, name, input.root, input.home));
       updateState(dir, (file) => {
         const seats = file.sessions[session]?.seats;
         if (seats) delete seats[name];

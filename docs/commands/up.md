@@ -71,6 +71,11 @@ types one line into the pane at an empty idle prompt:
 
     Read /home/owner/.config/team/demo-3f9c2a8e1d7b/rules/implementer.md (sha256 5e1d0a9c4b2f): your standing rules for this session; reply ready and wait for your brief.
 
+The state folder is resolved from the **approved copy's** project name, through the one resolver
+the writer, the line, the hash check before Enter, `status`, `doctor` and `remove` all use: a
+project rename is not approval drift, and the line a seat is told to obey must name the file the
+checks look at, not one resolved from the live file's new name.
+
 The line carries the file's absolute path and the first 12 hex digits of its SHA-256, so the
 seat — and the read-back — can tell exactly which text is meant. A path that holds whitespace or
 a character outside letters, digits and `. _ / @ + -` is never typed: nothing is quoted or

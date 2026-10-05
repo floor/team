@@ -7,7 +7,7 @@ import { validateTeamFile } from '../../src/file/validate.ts';
 import { notInForce, verifiedOf } from '../../src/approve/approval.ts';
 import type { TeamFile } from '../../src/file/types.ts';
 import {
-  checkRulesFile, removeRulesFile, rulesDeliveryOf, rulesFileHash, rulesFilePath, rulesLine, typeablePath, writeRulesFile,
+  checkRulesFile, removeRulesFile, rulesDeliveryOf, rulesFileHash, rulesFilePath, rulesFilePathOf, rulesLine, typeablePath, writeRulesFile,
 } from '../../src/launch/rules-file.ts';
 import { rulesOf } from '../../src/launch/rules.ts';
 
@@ -486,6 +486,36 @@ describe('one seat\'s delivery', () => {
       expect(rulesDeliveryOf(standing, team, spaced, '/nowhere', home)).toEqual({
         refusal: "its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -",
       });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('a renamed project keeps one path everywhere: the approved copy\'s', () => {
+    // A project rename is not approval drift (the project is not an owner section), so nothing
+    // refuses it — and the file, the line, the checks and the removal must all keep naming one
+    // file: the one in the approved copy's state folder. Resolved from the live file's new
+    // name, the line a seat obeys would point where `status` and `doctor` never look.
+    const home = mkdtempSync(join(tmpdir(), 'team-rules-home-'));
+    mkdirSync(join(home, '.config'), { recursive: true });
+    try {
+      const { team, seat } = codexSeat();
+      const standing = verifiedOf(team, EXAMPLE, '/nowhere');
+      const renamed: TeamFile = { ...team, project: 'acme-renamed' };
+      const delivery = rulesDeliveryOf(standing, renamed, seat, '/nowhere', home);
+      if ('refusal' in delivery) throw new Error(`unexpected refusal: ${delivery.refusal}`);
+      // The approved copy's project names the folder; the live file's new name nothing.
+      expect(rulesFilePathOf(standing, seat.name, '/nowhere', home)).toBe(delivery.path);
+      expect(basename(dirname(dirname(delivery.path)))).toMatch(/^acme-web-/);
+      // The writer puts the text exactly there, the check reads exactly there, the removal
+      // takes it from exactly there — and nothing exists under the renamed project's folder.
+      expect(writeRulesFile(delivery.path, delivery.text, rulesFileHash(delivery.text)).ok).toBe(true);
+      expect(checkRulesFile(delivery.path, delivery.text)).toEqual({ ok: true });
+      removeRulesFile(delivery.path);
+      expect(existsSync(delivery.path)).toBe(false);
+      const renamedPath = rulesFilePath('acme-renamed', '/nowhere', home, seat.name);
+      expect(renamedPath).not.toBeNull();
+      if (renamedPath !== null) expect(existsSync(dirname(renamedPath))).toBe(false);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

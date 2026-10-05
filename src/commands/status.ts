@@ -14,7 +14,7 @@ import type { Command, Io } from '../io.ts';
 import { emptySession, readState } from '../state.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
 import { approvalStanding, type Standing } from '../store/store.ts';
-import { checkRulesFile, rulesFilePath } from '../launch/rules-file.ts';
+import { checkRulesFile, rulesFilePathOf } from '../launch/rules-file.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { profileFor } from '../profiles/index.ts';
 import { APPROVAL_REPAIR, compare, orderAndAnnotateDifferences } from '../status/compare.ts';
@@ -214,8 +214,9 @@ function rulesFileDifferences(standing: Standing, root: string, home: string | u
     if (seat.stopped) continue;
     if (profileFor(seat.cli)?.rulesOption != null) continue;
     // A seat name the team file's own rule refuses has no path to check — the parser already
-    // refuses it, so this only guards a record that holds one anyway.
-    const path = rulesFilePath(approved.team.project, root, home, seat.name);
+    // refuses it, so this only guards a record that holds one anyway. The path is resolved the
+    // one way, from the approval in force, like every other reader of the file.
+    const path = rulesFilePathOf(standing, seat.name, root, home);
     if (path === null) continue;
     const text = rulesOf(approved.team, seat);
     const check = checkRulesFile(path, text);

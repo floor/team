@@ -9,7 +9,7 @@ import type { StatusSources } from '../src/commands/status.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import type { Seat, TeamFile } from '../src/file/types.ts';
 import { rulesOf } from '../src/launch/rules.ts';
-import { rulesFileHash, rulesFilePath, writeRulesFile } from '../src/launch/rules-file.ts';
+import { rulesFileHash, rulesFilePathOf, writeRulesFile } from '../src/launch/rules-file.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import type { Standing } from '../src/store/store.ts';
 import { emptySession, readState, updateState } from '../src/state.ts';
@@ -685,7 +685,11 @@ describe('the rules files of message seats', () => {
       if (seat.stopped) continue;
       const delivery = rulesOf(team, seat);
       const text = edit ? edit(seat, delivery) : delivery;
-      const written = writeRulesFile(rulesFilePath(team.project, dir, home, seat.name) as string, text, rulesFileHash(text));
+      // Planted through the same resolution the check reads: the approval in force, not the
+      // live file's project name.
+      const path = rulesFilePathOf(standing, seat.name, dir, home);
+      if (path === null) throw new Error('the fixture seat name must be typeable');
+      const written = writeRulesFile(path, text, rulesFileHash(text));
       if (!written.ok) throw new Error('the rules file did not write');
     }
   };
@@ -707,12 +711,14 @@ describe('the rules files of message seats', () => {
 
   test('a missing file is a difference, and a mode wider than 0600 is one too', async () => {
     writeAll(teamOf());
-    rmSync(rulesFilePath('acme-web', dir, home, 'codex-acme') as string, { force: true });
+    const seatPath = rulesFilePathOf(standing, 'codex-acme', dir, home);
+    if (seatPath === null) throw new Error('the fixture seat name must be typeable');
+    rmSync(seatPath, { force: true });
     const missing = await status();
     expect(missing.out).toContain('codex-acme: its rules file is missing');
     expect(missing.code).toBe(1);
     writeAll(teamOf());
-    chmodSync(rulesFilePath('acme-web', dir, home, 'codex-acme') as string, 0o644);
+    chmodSync(seatPath, 0o644);
     const wide = await status();
     expect(wide.out).toContain('codex-acme: its rules file has mode 0644, not 0600');
     expect(wide.code).toBe(1);

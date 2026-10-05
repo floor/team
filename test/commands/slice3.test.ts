@@ -695,6 +695,8 @@ describe('team down', () => {
   });
 
   test("a temporary seat's rules file goes with it when the team comes down", async () => {
+    // The file's folder is resolved from the approval in force, so the team that ran has one.
+    await approve([], OWNER);
     updateState(join(root, '.agents'), (state) => {
       const session = (state.sessions['acme-web'] ??= emptySession());
       session.seats['deepseek-acme-tmp-1'] = { stage: 'ready', temporary: { like: 'deepseek-acme', until: 'result:out.md' } };

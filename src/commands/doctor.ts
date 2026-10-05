@@ -17,7 +17,7 @@ import type { Command, Io } from '../io.ts';
 import { launchBinary, launchLineFindings } from '../launch/line.ts';
 import { profileFor } from '../profiles/index.ts';
 import { validateTeamFile } from '../file/validate.ts';
-import { checkRulesFile, rulesFilePath } from '../launch/rules-file.ts';
+import { checkRulesFile, rulesFilePathOf } from '../launch/rules-file.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
@@ -447,8 +447,9 @@ export function doctorFindings(
     for (const seat of seats) {
       if (seat.stopped || profileFor(seat.cli)?.rulesOption != null) continue;
       // A seat name the team file's own rule refuses has no path to check — the parser already
-      // refuses it, so this only guards a record that holds one anyway.
-      const path = rulesFilePath(ofRecord.ok ? ofRecord.team.project : approved.project, root, sources.home, seat.name);
+      // refuses it, so this only guards a record that holds one anyway. The path is resolved
+      // the one way, from the approval in force, like every other reader of the file.
+      const path = rulesFilePathOf(standing, seat.name, root, sources.home);
       if (path === null) continue;
       const check = checkRulesFile(path, rulesOf(ofRecord.ok ? ofRecord.team : approved, seat));
       if (!check.ok) findings.push({ level: 'warn', text: `${seat.name}: ${check.what}; run \`team up\`` });
