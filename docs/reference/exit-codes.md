@@ -57,6 +57,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `answer.action` | `answer` | 1 | the recorded key was not sent | `team answer lead trust` |
 | `answer.another-pane` | `answer` | 1 | the state records another pane for the caller's seat | `team answer lead trust` |
 | `answer.caller` | `answer` | 1 | the caller may not answer a trust dialog | `team answer lead trust` |
+| `answer.file-owner` | `answer` | 1 | --file is the owner's | `team answer lead trust --file .agents/team.yaml` |
 | `answer.folder` | `answer` | 1 | the dialog's folder is not the lobby's exact trust entry | `team answer lead trust` |
 | `answer.label` | `answer` | 1 | the trust choice is not the recorded one | `team answer lead trust` |
 | `answer.no-pane` | `answer` | 1 | the state records no pane for the caller's seat | `team answer lead trust` |
@@ -112,6 +113,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `down.abandon` | `down` | 1 | only the owner abandons a team | `team down --abandon` |
 | `down.another-pane` | `down` | 1 | the state records another pane for the caller's seat | `team down` |
 | `down.caller` | `down` | 1 | the caller may not change the team | `team down` |
+| `down.file-owner` | `down` | 1 | --file is the owner's | `team down --file .agents/team.yaml` |
 | `down.held` | `down` | 1 | a step was held | `team down` |
 | `down.no-launch` | `down` | 1 | this call has no way to reach herdr | `team down` |
 | `down.no-pane` | `down` | 1 | the state records no pane for the caller's seat | `team down` |

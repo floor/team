@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -36,6 +37,10 @@ beforeEach(() => {
   home = join(base, 'home');
   mkdirSync(join(root, '.agents'), { recursive: true });
   mkdirSync(home);
+  // A project, so a run that finds its team file without `--file` (a non-owner may not aim the
+  // flag since round 4) resolves the same file rather than failing as "not inside a git
+  // repository" before it reaches the gate under test.
+  execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
   // Every approval in this file signs with the fixed fixture key, so the fingerprint the
   // commands print is the same on every run.
   installKey(home, JSON.parse(readFileSync(join(import.meta.dir, '../fixtures/key.json'), 'utf8')));
@@ -555,7 +560,7 @@ describe('team up', () => {
 
 async function down(argv: string[], caller: Caller, overrides: Partial<DownSources> = {}) {
   const io = testIo(root, caller);
-  const code = await runDown([...argv, ...FILE], io, {
+  const code = await runDown([...argv, ...(caller.kind === 'owner' ? FILE : [])], io, {
     sessionRunning: () => true,
     agents: () => [agent('claude-coordinator-acme'), agent('deepseek-acme'), agent('deepseek-acme-2', 'working')],
     alive: () => true,

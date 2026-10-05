@@ -75,6 +75,7 @@ Every refusal line is `<seat>: <reason>` except an unplaced caller's, which is i
 | 0 | `answer.ready` | the trust dialog was answered and the seat is ready |
 | 1 | `answer.action` | the recorded key is not one this version sends |
 | 1 | `answer.caller` | the caller may not answer a trust dialog |
+| 1 | `answer.file-owner` | `--file` is the owner's |
 | 1 | `answer.folder` | the dialog's folder is not the lobby's exact trust entry |
 | 1 | `answer.label` | the trust choice is not the recorded one |
 | 1 | `answer.no-pane` | the state records no pane for the caller's seat |

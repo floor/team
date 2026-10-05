@@ -8,7 +8,7 @@
 // to each command's real run function, so the gate under test is the shipped one.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalOf } from '../../src/approve/approval.ts';
@@ -320,6 +320,9 @@ type Case = {
   anotherPane: (name: string, pane: string) => string;
   // The refusal for a non-owner aiming `--session` elsewhere: the owner's flag alone.
   sessionOwner: (who: string) => string;
+  // The refusal for a non-owner aiming `--file`: the owner's flag alone too, and the walk alone
+  // decides it — before that file is read, and before anything is written beside it.
+  fileOwner: (who: string) => string;
   // The owner's run: what the gate lets through, when nothing else refuses.
   owner: string;
 };
@@ -332,6 +335,7 @@ const COMMANDS: Case[] = [
     noPane: (name) => `team add: ${NO_PANE(name)}\n`,
     anotherPane: (name, pane) => `team add: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team add: ${OWNER_ONLY(who)}\n`,
+    fileOwner: (who) => `team add: --file is the owner's, from a terminal outside herdr; this call is ${who}\n`,
     owner: `team add: ${NEVER_APPROVED}\n`,
   },
   {
@@ -341,6 +345,7 @@ const COMMANDS: Case[] = [
     noPane: (name) => `team remove: ${NO_PANE(name)}\n`,
     anotherPane: (name, pane) => `team remove: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team remove: ${OWNER_ONLY(who)}\n`,
+    fileOwner: (who) => `team remove: --file is the owner's, from a terminal outside herdr; this call is ${who}\n`,
     owner: '',
   },
   {
@@ -351,6 +356,7 @@ const COMMANDS: Case[] = [
     noPane: (name) => `team worktree: ${NO_PANE(name)}\n`,
     anotherPane: (name, pane) => `team worktree: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team worktree: ${OWNER_ONLY(who)}\n`,
+    fileOwner: (who) => `team worktree: --file is the owner's, from a terminal outside herdr; this call is ${who}\n`,
     owner: `team worktree: ${NEVER_APPROVED}\n`,
   },
   {
@@ -361,6 +367,7 @@ const COMMANDS: Case[] = [
     noPane: (name) => `team worktree: ${NO_PANE(name)}\n`,
     anotherPane: (name, pane) => `team worktree: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team worktree: ${OWNER_ONLY(who)}\n`,
+    fileOwner: (who) => `team worktree: --file is the owner's, from a terminal outside herdr; this call is ${who}\n`,
     owner: `team worktree: ${NEVER_APPROVED}\n`,
   },
   {
@@ -370,6 +377,7 @@ const COMMANDS: Case[] = [
     noPane: (name) => `team down: ${NO_PANE(name)}\n`,
     anotherPane: (name, pane) => `team down: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team down: ${OWNER_ONLY(who)}\n`,
+    fileOwner: (who) => `team down: --file is the owner's, from a terminal outside herdr; this call is ${who}\n`,
     owner: 'team down: this call has no way to reach herdr\n',
   },
   {
@@ -379,6 +387,7 @@ const COMMANDS: Case[] = [
     noPane: (name) => `team answer: ${NO_PANE(name)}\n`,
     anotherPane: (name, pane) => `team answer: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team answer: ${OWNER_ONLY(who)}\n`,
+    fileOwner: (who) => `team answer: --file is the owner's, from a terminal outside herdr; this call is ${who}\n`,
     owner: `${NEVER_APPROVED}\n`,
   },
 ];
@@ -559,6 +568,104 @@ for (const command of COMMANDS) {
         return;
       }
       expect({ code: run.code, out: run.out, err: run.err }).toEqual({ code: 1, out: '', err: command.owner });
+    });
+  });
+}
+
+// `--file` is the owner's too, and the walk alone decides it: `answer` and `down` refuse it
+// before that file is read and before anything is written beside it. (The other four commands
+// refuse it after their own read; the round that added these two left them as they were.)
+// The flagged project below is another one entirely, its team file not even parseable: a run
+// that read it would report the file's own problem, and could leave its `last_valid` or a log
+// line there. The refusal has neither.
+function flaggedProject(): { root: string; file: string; listing: () => string[] } {
+  const root = mkdtempSync(join(tmpdir(), 'team-flagged-'));
+  mkdirSync(join(root, '.agents'));
+  const flagged = join(root, '.agents', 'team.yaml');
+  writeFileSync(flagged, 'format: [\n');
+  return { root, file: flagged, listing: () => readdirSync(join(root, '.agents')).sort() };
+}
+
+for (const command of COMMANDS.filter((one) => one.name === 'answer' || one.name === 'down')) {
+  describe(`${command.name}: --file is the owner's`, () => {
+    test('a non-owner\'s --file is refused before the file is read', async () => {
+      const flagged = flaggedProject();
+      try {
+        const before = flagged.listing();
+        const run = await command.run(placed(OTHER, COORDINATOR, COORDINATOR_PANE), ['--file', flagged.file]);
+        // exit 1: <command>.file-owner, the case's own id (docs/reference/exit-codes.md).
+        expect({ code: run.code, out: run.out, err: run.err }).toEqual({
+          code: 1,
+          out: '',
+          err: command.fileOwner(COORDINATOR),
+        });
+        // Not read, either: the file is unparseable, and no problem of its own is reported.
+        expect(flagged.listing()).toEqual(before);
+        expect(readFileSync(flagged.file, 'utf8')).toBe('format: [\n');
+        // Nothing written in this run's own project: no log line even where a refusal without
+        // `--file` writes one (`answer` logs its caller refusals beside the team file; `down`
+        // logs nothing at all).
+        expect(existsSync(join(dir, '.agents', 'team.log'))).toBe(false);
+        expect(readFileSync(file, 'utf8')).toBe(run.before);
+        expect(readFileSync(stateFile, 'utf8')).toBe(run.beforeState);
+      } finally {
+        rmSync(flagged.root, { recursive: true, force: true });
+      }
+    });
+
+    // The same refusal through the sources a real run reads: decided by the walk alone, so no
+    // session and no pane is read — the fixture answers every session a command could ask
+    // about, and nothing asks.
+    test('the walk alone refuses it: no session, state or file is read', async () => {
+      const flagged = flaggedProject();
+      try {
+        const before = flagged.listing();
+        const calls: string[] = [];
+        const run = await command.run(
+          { sources: recordingSources(calls, OTHER, COORDINATOR, COORDINATOR_PANE) },
+          ['--file', flagged.file],
+        );
+        // exit 1: <command>.file-owner, the case's own id (docs/reference/exit-codes.md).
+        expect({ code: run.code, out: run.out, err: run.err }).toEqual({
+          code: 1,
+          out: '',
+          err: command.fileOwner('unplaced (it runs under herdr)'),
+        });
+        expect(calls).toEqual([]);
+        expect(flagged.listing()).toEqual(before);
+        expect(existsSync(join(dir, '.agents', 'team.log'))).toBe(false);
+        expect(readFileSync(file, 'utf8')).toBe(run.before);
+        expect(readFileSync(stateFile, 'utf8')).toBe(run.beforeState);
+      } finally {
+        rmSync(flagged.root, { recursive: true, force: true });
+      }
+    });
+
+    test('--file with --session: the file is refused first', async () => {
+      const flagged = flaggedProject();
+      try {
+        const before = flagged.listing();
+        const run = await command.run(placed(OTHER, COORDINATOR, COORDINATOR_PANE), [
+          '--file',
+          flagged.file,
+          '--session',
+          OTHER,
+        ]);
+        expect({ code: run.code, out: run.out, err: run.err }).toEqual({
+          code: 1,
+          out: '',
+          err: command.fileOwner(COORDINATOR),
+        });
+        expect(flagged.listing()).toEqual(before);
+      } finally {
+        rmSync(flagged.root, { recursive: true, force: true });
+      }
+    });
+
+    test('the owner may aim --file: the gate lets it through', async () => {
+      const flagged = await command.run({ kind: 'owner' }, ['--file', file]);
+      const plain = await command.run({ kind: 'owner' });
+      expect({ code: flagged.code, out: flagged.out, err: flagged.err }).toEqual({ code: plain.code, out: plain.out, err: plain.err });
     });
   });
 }

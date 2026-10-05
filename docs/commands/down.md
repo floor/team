@@ -92,9 +92,10 @@ stop at all.
 | `team down: the agents of session <session> can't be read` | 2 |
 | `team down: only the owner, the coordinator or the operator stops the team; this call is <caller>` | 1 |
 | `team down: only the owner abandons a team, from a terminal outside herdr` | 1 |
+| `team down: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | `team down: --session is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | ``team down: no pane is recorded for seat <name> in this session: the owner stops that seat and runs `team up` `` | 1 |
-| ``team down: the state records pane <pane> for seat <name> in this session, not the pane this call is on: the owner stops that seat and runs `team up` `` | 1 |
+| ``team down: the state records pane <pane> for seat <name> in this session, not the pane this call is on: the owner stops the team and starts it again (`team down`, then `team up`) `` | 1 |
 
 ## Exit codes
 

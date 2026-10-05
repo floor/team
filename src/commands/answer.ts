@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { basename, dirname } from 'node:path';
 import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { anotherPaneRefusal, callerOf, callerVerdict, isOwner, judgeCallerIn, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller, type SeatStanding } from '../caller.ts';
+import { anotherPaneRefusal, callerOf, callerVerdict, describeCaller, isOwner, judgeCallerIn, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller, type SeatStanding } from '../caller.ts';
 import { canonicalLanding, folderOf, listFolder, lobbyPath } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
@@ -91,6 +91,18 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
     return usage(io, json, message);
   }
 
+  // The `--file` check is the walk's, and it runs before that file is read: a non-owner aiming
+  // `--file` must not make this command read and validate another project's team file, nor leave
+  // a refusal log beside it. The line is the one `add`, `remove` and `worktree` refuse with; the
+  // walk reads no session, no state and no log, so nothing but the process chain decides this.
+  if (args.values.file) {
+    const walked = walkCaller(io);
+    if (!isOwner(walked)) {
+      io.stderr(`team answer: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(walked)}\n`);
+      // exit: answer.file-owner
+      return 1;
+    }
+  }
   const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
   if (!loaded.ok) {
     const message = loaded.errors.map((problem) => (problem.line ? `line ${problem.line}: ${problem.message}` : problem.message)).join('; ');

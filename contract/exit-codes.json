@@ -361,6 +361,13 @@
     {
       "code": 1,
       "command": "answer",
+      "id": "answer.file-owner",
+      "meaning": "--file is the owner's",
+      "trigger": "team answer lead trust --file .agents/team.yaml"
+    },
+    {
+      "code": 1,
+      "command": "answer",
       "id": "answer.folder",
       "meaning": "the dialog's folder is not the lobby's exact trust entry",
       "trigger": "team answer lead trust"
@@ -742,6 +749,13 @@
       "id": "down.caller",
       "meaning": "the caller may not change the team",
       "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.file-owner",
+      "meaning": "--file is the owner's",
+      "trigger": "team down --file .agents/team.yaml"
     },
     {
       "code": 1,

@@ -845,6 +845,10 @@ scene('down.caller', async (place) => {
   write(place, TEAM);
   return show(await down(place, [], other, downSources({ sessionRunning: () => true, agents: () => [] })), 'only the owner, the coordinator or the operator');
 });
+scene('down.file-owner', async (place) => {
+  write(place, TWO);
+  return show(await down(place, ['--file', '.agents/team.yaml'], other, downSources()), "--file is the owner's");
+});
 scene('down.no-pane', async (place) => {
   write(place, TEAM);
   return show(await down(place, [], leadSeat, downSources({ sessionRunning: () => true, agents: () => [] })), 'no pane is recorded for seat lead');
@@ -1702,19 +1706,23 @@ scene('answer.caller', async (place) => {
   const lobby = lobbyPath(place.home);
   mkdirSync(lobby, { recursive: true });
   approve(place, cursorTeam(lobby, 'coordinator'));
-  return show(await answered(place, ['lead', 'trust', '--file', place.file], other, answerHost(place, '')), 'only the owner');
+  return show(await answered(place, ['lead', 'trust'], other, answerHost(place, '')), 'only the owner');
+});
+scene('answer.file-owner', async (place) => {
+  write(place, TWO);
+  return show(await answered(place, ['lead', 'trust', '--file', '.agents/team.yaml'], other, answerHost(place, '')), "--file is the owner's");
 });
 scene('answer.no-pane', async (place) => {
   const lobby = lobbyPath(place.home);
   mkdirSync(lobby, { recursive: true });
   approve(place, cursorTeam(lobby, 'coordinator'));
-  return show(await answered(place, ['lead', 'trust', '--file', place.file], leadSeat, answerHost(place, '')), 'no pane is recorded for seat lead');
+  return show(await answered(place, ['lead', 'trust'], leadSeat, answerHost(place, '')), 'no pane is recorded for seat lead');
 });
 scene('answer.session-owner', async (place) => {
   const lobby = lobbyPath(place.home);
   mkdirSync(lobby, { recursive: true });
   approve(place, cursorTeam(lobby, 'coordinator'));
-  return show(await answered(place, ['lead', 'trust', '--session', 'other', '--file', place.file], leadSeat, answerHost(place, '')), "--session is the owner's");
+  return show(await answered(place, ['lead', 'trust', '--session', 'other'], leadSeat, answerHost(place, '')), "--session is the owner's");
 });
 scene('answer.another-pane', async (place) => {
   const lobby = lobbyPath(place.home);
@@ -1723,7 +1731,7 @@ scene('answer.another-pane', async (place) => {
   updateState(join(place.root, '.agents'), (state) => {
     (state.sessions.acme ??= emptySession()).seats.lead = { stage: 'ready', pane: 'w2:p1' };
   });
-  return show(await answered(place, ['lead', 'trust', '--file', place.file], leadSeat, answerHost(place, '')), 'the state records pane w2:p1 for seat lead');
+  return show(await answered(place, ['lead', 'trust'], leadSeat, answerHost(place, '')), 'the state records pane w2:p1 for seat lead');
 });
 scene('answer.policy', async (place) => {
   const lobby = lobbyPath(place.home);
