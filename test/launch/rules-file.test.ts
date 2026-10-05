@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { validateTeamFile } from '../../src/file/validate.ts';
-import { verifiedOf } from '../../src/approve/approval.ts';
+import { notInForce, verifiedOf } from '../../src/approve/approval.ts';
 import type { TeamFile } from '../../src/file/types.ts';
 import {
   checkRulesFile, removeRulesFile, rulesDeliveryOf, rulesFileHash, rulesFilePath, rulesLine, typeablePath, writeRulesFile,
@@ -416,6 +416,31 @@ describe('the seat name where the path is built', () => {
 });
 
 describe('one seat\'s delivery', () => {
+  test('a standing that is not an approval in force is the function\'s own refusal', () => {
+    // The function decides what text a seat is told to obey, so the approval check is its own,
+    // not a gate a caller happens to put in front: no record, a legacy one, a record the
+    // verification refused — each refused with the line the commands print, nothing written,
+    // nothing typed.
+    const home = mkdtempSync(join(tmpdir(), 'team-rules-home-'));
+    try {
+      const { team, seat } = codexSeat();
+      const standings = [
+        { kind: 'none' } as const,
+        { kind: 'legacy' } as const,
+        { kind: 'refused', why: 'the record was not signed by this machine' } as const,
+      ];
+      for (const standing of standings) {
+        expect(rulesDeliveryOf(standing, team, seat, '/nowhere', home)).toEqual({ refusal: notInForce(standing) });
+      }
+      expect(rulesDeliveryOf({ kind: 'none' }, team, seat, '/nowhere', home)).toEqual({
+        refusal: 'the file was never approved on this machine: run `team approve`',
+      });
+      expect(existsSync(join(home, '.config'))).toBe(false); // nothing was written anywhere
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test('a message seat gets the file\'s text, path and line; an option seat gets no file', () => {
     const { team, seat } = codexSeat();
     const standing = verifiedOf(team, EXAMPLE, '/nowhere');

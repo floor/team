@@ -4,7 +4,7 @@ import { basename, dirname, join } from 'node:path';
 import { storePath, type Standing } from '../store/store.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { SEAT_NAME } from '../file/sections/seats.ts';
-import { worktreeTeamInForceOf } from '../approve/approval.ts';
+import { notInForce, worktreeTeamInForceOf } from '../approve/approval.ts';
 import { profileFor } from '../profiles/index.ts';
 import { rulesOf } from './rules.ts';
 
@@ -275,12 +275,16 @@ export function checkRulesFile(path: string, approvedText: string): RulesFileChe
 }
 
 /** One message-rules seat's delivery: the file its rules are written to, the text that goes in
- *  it, and the one line typed in its pane. The text is the **approved** one — taken from the copy
- *  of the team file the approval record stored, through the same accessor the worktree commands
- *  use (`worktreeTeamInForceOf`), seat looked up by name in that copy so its own signature lines
- *  are the approved ones too. `up` and `add` refuse a file that differs from the approval, so on
- *  a normal run both texts are equal; the invariant does not depend on that gate. A path that
- *  can't be typed safely is a refusal — before anything is written or typed. */
+ *  it, and the one line typed in its pane. A standing that is not an approval in force — no
+ *  record, a legacy one, a record the verification refused — is refused here, with the same
+ *  line the commands print: the function decides what text a seat is told to obey, so it does
+ *  not lean on a caller's gate to check the approval first. The text is the **approved** one —
+ *  taken from the copy of the team file the approval record stored, through the same accessor
+ *  the worktree commands use (`worktreeTeamInForceOf`), seat looked up by name in that copy so
+ *  its own signature lines are the approved ones too. `up` and `add` refuse a file that differs
+ *  from the approval, so on a normal run both texts are equal; the invariant does not depend on
+ *  that gate. A path that can't be typed safely is a refusal — before anything is written or
+ *  typed. */
 export function rulesDeliveryOf(
   standing: Standing,
   team: TeamFile,
@@ -289,6 +293,7 @@ export function rulesDeliveryOf(
   home: string,
 ): { text: string; path: string; line: string } | { refusal: string } {
   if (profileFor(seat.cli)?.rulesOption != null) return { refusal: 'its rules travel as a launch option' };
+  if (standing.kind !== 'verified') return { refusal: notInForce(standing) };
   const path = rulesFilePath(team.project, root, home, seat.name);
   if (path === null || !typeablePath(path)) {
     return { refusal: "its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -" };
