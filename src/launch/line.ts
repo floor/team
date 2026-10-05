@@ -36,7 +36,10 @@ export function startFolder(team: TeamFile, seat: Seat): string {
   return seat.cwd;
 }
 
-export type LineFinding = { level: 'miss' | 'note'; why: string };
+/** `why` is the finding in full, for a terminal (`doctor`, a note, a dry run); `record`, on the
+ *  findings that carry a folder this machine resolved, is the same finding in words — what the
+ *  seat's record and the log may hold, with the folder left to the stderr detail. */
+export type LineFinding = { level: 'miss' | 'note'; why: string; record?: string };
 
 /** What `team doctor` and the launch are told about this machine. */
 export type LineSources = {
@@ -46,8 +49,8 @@ export type LineSources = {
   home: string;
 };
 
-function miss(why: string): LineFinding {
-  return { level: 'miss', why };
+function miss(why: string, record?: string): LineFinding {
+  return record === undefined ? { level: 'miss', why } : { level: 'miss', why, record };
 }
 
 function note(why: string): LineFinding {
@@ -105,8 +108,8 @@ function programFinding(
   const quoted = naked !== show;
   // A program given as a path is looked for where it would run, and must run: main's launcher
   // check was `onPath`'s `X_OK`, not existence.
-  const pathProgram = (absolute: string, missing: string): LineFinding | null => {
-    if (!existsSync(absolute)) return miss(missing);
+  const pathProgram = (absolute: string, missing: string, record?: string): LineFinding | null => {
+    if (!existsSync(absolute)) return miss(missing, record);
     return sources.onPath(absolute) ? null : miss(`its launch line starts \`${show}\`, which is not executable`);
   };
   // An empty literal (`""`) runs nothing: `/bin/sh: : command not found`, exit 127.
@@ -122,6 +125,7 @@ function programFinding(
     return pathProgram(
       resolve(cwd, naked),
       `its launch line starts \`${show}\`, not found from its start folder ${folder}`,
+      `its launch line starts \`${show}\`, not found from its start folder`,
     );
   }
   return sources.onPath(naked) ? null : miss(`its launch line starts \`${show}\`, which is not on the PATH`);
@@ -156,6 +160,7 @@ function shellScriptFinding(
   return miss(
     `its launch line runs \`${script}\`, not found from its start folder ${folder}; ` +
       `the same file is at \`${fromRoot}\` from the project root — write that path`,
+    `its launch line runs \`${script}\`, not found from its start folder`,
   );
 }
 

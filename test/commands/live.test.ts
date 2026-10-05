@@ -933,7 +933,7 @@ describe('team up, live', () => {
     expect([...new Set(after)].sort()).toEqual(['agentStatus w2:p1', 'paneText w2:p1']);
   });
 
-  test('a resumed seat is checked where its pane runs, not where the file would put it', async () => {
+  test('a resumed seat is checked where its pane runs, not where the file would put it; its record and log hold no folder', async () => {
     // The file's deepseek seats work in worktrees and would start in the lobby; their recorded
     // panes run in the project root, where `../tools/x.sh` is a file. Only the state's `start_cwd`
     // says so, and the reading names that folder — the same line, a different folder, a different end.
@@ -996,10 +996,18 @@ describe('team up, live', () => {
     // the recorded folder, with the file that is at the project root named for the line to use.
     const atLobby = await run(lobby);
     expect(atLobby.code).toBe(1);
-    expect(atLobby.out).toContain(
-      'deepseek-acme: left out: refused: its launch line runs `../tools/x.sh`, not found from its start folder ' +
-        `${lobby}; the same file is at \`${join(base, 'tools', 'x.sh')}\` from the project root — write that path`,
+    // The record holds the finding in words; the full sentence — the folder the check looked
+    // in and the path to write — is stderr detail, for the owner's terminal alone.
+    const words = 'its launch line runs `../tools/x.sh`, not found from its start folder';
+    expect(atLobby.out).toContain(`deepseek-acme: left out: refused: ${words}\n`);
+    expect(atLobby.err).toContain(
+      `  ${words} ${lobby}; the same file is at \`${join(base, 'tools', 'x.sh')}\` from the project root — write that path\n`,
     );
+    // The log's bytes hold the words and no folder: the reviewer's `/private/…` probe, as a run.
+    const log = readFileSync(join(root, '.agents/team.log'), 'utf8');
+    expect(log).toContain(`deepseek-acme: left out: refused: ${words}`);
+    expect(log).not.toContain(lobby);
+    expect(log).not.toContain(join(base, 'tools'));
   });
 
   test('a resumed seat whose state records no start folder is not checked at all', async () => {
@@ -1784,7 +1792,7 @@ describe('team up, a session that was restored', () => {
     ['a family the grammar does not know', 'unknown-family', 'refused'],
     ['an output line where the footer was', 'spoof', 'refused'],
     ['a full status row where the footer was', 'full-row', 'drift'],
-    ['a row whose version is not a token', 'unreadable', 'unchecked'],
+    ['a row whose version is not a token, and one log line for the seat', 'unreadable', 'unchecked'],
   ] as const)('cursor launch, screen shows %s', async (_label, screen, expectCase) => {
     const path = join(root, '.agents/team.yaml');
     const cursorSeat = [
@@ -1898,6 +1906,13 @@ describe('team up, a session that was restored', () => {
       expect(made.renames).toContain('cursor-acme');
       expect(sent.length).toBeGreaterThan(0);
       expect(io.err).toContain("cursor-acme: its screen doesn't show a model this version knows; not checked\n");
+      // The note is stderr detail, not a record: the log holds the seat's one line, the record
+      // itself — `ready` — and nothing of the note.
+      const log = readFileSync(join(root, '.agents/team.log'), 'utf8');
+      const mine = log.split('\n').filter((line) => line.includes('cursor-acme'));
+      expect(mine).toHaveLength(1);
+      expect(mine[0]).toContain('cursor-acme: ready');
+      expect(log).not.toContain("doesn't show a model");
       // The seat's own calls, in order: the wait's read and the model check's read of the
       // screen, the rename, then the delivery — read, typed, read back, entered — and the ready
       // report after it. The not-checked note was held when the check made it (before the

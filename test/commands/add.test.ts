@@ -405,7 +405,7 @@ describe('team add', () => {
     expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).toContain('stopped: true');
   });
 
-  test('a temporary seat is recorded, not written into the file, and keeps its own-commits flag', async () => {
+  test('a temporary seat is recorded, not written into the file, keeps its own-commits flag, and the log holds its record alone', async () => {
     const made = world();
     const io = testIo(project, owner);
     const code = await runAdd(['--temporary', '--like', 'worker', '--until', 'merged:fix/fresh'], io, sources(made));
@@ -421,6 +421,15 @@ describe('team add', () => {
     const seat = readState(join(project, '.agents')).sessions.acme?.seats['worker-tmp-1'];
     expect(seat?.temporary).toEqual({ like: 'worker', until: 'merged:fix/fresh', own_commits: false });
     expect(readLedger(storePath('acme', project, home)).some((entry) => entry.display === 'Claude Opus 5.5')).toBe(true);
+    // One line per final record: the log holds the seat's record alone, never the separate
+    // `started <seat>` line `add` used to write beside it. The temporary facts stay in the
+    // state file and the seat's doctor/status reading.
+    const log = readFileSync(join(project, '.agents', 'team.log'), 'utf8');
+    const mine = log.split('\n').filter((line) => line.includes('worker-tmp-1'));
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toContain('worker-tmp-1: ready');
+    expect(log).not.toContain('started worker-tmp-1');
+    expect(log).not.toContain('until merged:fix/fresh');
   });
 
   test('a temporary message seat that is left out takes its rules file with it', async () => {

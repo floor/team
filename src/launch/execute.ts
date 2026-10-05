@@ -3,6 +3,7 @@ import { refusalReport, type Refusal } from './deliver.ts';
 import { profileFor, versionVerdict } from '../profiles/profile.ts';
 import { modelDiffers, seatModel, type Running } from '../status/statusline.ts';
 import { launchedIdentity, seatProcessVerdict, type LaunchedIdentity } from './identity.ts';
+import type { LobbyRefusal } from '../lobby/gate.ts';
 import type { Step } from './plan.ts';
 import { plainPaneText } from './plain.ts';
 import { recordWhat, type FinalRecord, type ProgressState } from './progress.ts';
@@ -16,10 +17,11 @@ export type Host = {
   sessionUp(session: string): boolean | null;
   /**
    * Confirms the starting folder of an `op.lobby` create is still the lobby the gate verified,
-   * run directly before `createWorkspace` with nothing in between. A string refuses: nothing is
-   * created, that seat is left out with this line, and the rest of the plan is stopped.
+   * run directly before `createWorkspace` with nothing in between. A refusal stops everything:
+   * nothing is created, that seat (or the watch) is left out — its record and the log hold the
+   * reason in words — and the fuller sentence, the folder it names, is stderr detail alone.
    */
-  confirmLobby?(): string | null;
+  confirmLobby?(): LobbyRefusal | null;
   createWorkspace(session: string, cwd: string, label: string): { pane: string; workspace: string } | null;
   paneRun(session: string, pane: string, command: string): boolean;
   typeLine(session: string, pane: string, text: string): boolean | 'no-agent';
@@ -222,7 +224,9 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         host.record(op.seat, { stage: 'ready', rules: op.rules });
         finishReady(op.seat);
       } else if (op?.do === 'refuse') {
-        final(op.seat, { kind: 'left out', reason: `refused: ${op.why}` });
+        // The record carries the reason in words; the full finding — the start folder it names —
+        // follows as the record's detail, on stderr alone.
+        final(op.seat, { kind: 'left out', reason: `refused: ${op.why}` }, op.detail ? `  ${op.detail}\n` : '');
       } else host.say(`  skip ${step.text}\n`);
       continue;
     }
@@ -265,14 +269,16 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           // that window is left, and the page says exactly which.
           const why = host.confirmLobby();
           if (why) {
+            // The record (and the log) hold the reason in words; the folder the fuller sentence
+            // names is stderr detail, under the record, for the owner's terminal alone.
             abort = true;
             if (op.seat) {
               dropped.add(op.seat);
-              final(op.seat, { kind: 'left out', reason: why });
+              final(op.seat, { kind: 'left out', reason: why.reason }, `  ${why.detail}\n`);
             } else {
               watchFailed = true;
-              host.say(`watch: ${why}\n`);
-              host.log('watch', why);
+              host.say(`watch: ${why.reason}\n  ${why.detail}\n`);
+              host.log('watch', why.reason);
             }
             break;
           }
@@ -385,9 +391,9 @@ export async function executePlan(steps: readonly Step[], session: string, host:
               break;
             }
             if (!running) {
-              const note = "its screen doesn't show a model this version knows; not checked";
-              hold(op.seat, `${op.seat}: ${note}\n`);
-              host.log(op.seat, note);
+              // The note is not a record: it is held and said as the seat's record's detail —
+              // stderr alone — and the log keeps the one line the record writes, `ready`.
+              hold(op.seat, `${op.seat}: its screen doesn't show a model this version knows; not checked\n`);
             }
           }
           // The seat's own process, read now that its idle prompt is on the screen: the pane's
