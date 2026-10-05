@@ -94,8 +94,9 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     // exit: approve.file-invalid
     return 2;
   }
-  // Validate the text load just read. A second read could store an edit under the first read's fingerprints.
-  const checked = validateTeamFile(loaded.text);
+  // Validate the text load just read, against the same home and root the load used. A second read
+  // could store an edit under the first read's fingerprints.
+  const checked = validateTeamFile(loaded.text, { home: sources.home, root: loaded.root });
   if (!checked.ok) {
     for (const problem of checked.errors) {
       io.stderr(`team approve: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
