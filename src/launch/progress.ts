@@ -12,10 +12,13 @@
 // The record is the unit the next slice builds on: a pause at a dialog is a `waiting for owner`
 // record, carried here so the type and the log already know it, printed by nothing yet.
 //
-// The writer cleans every string it writes (`plainText`): it is the boundary between whatever a
-// caller built — a seat name, a live stage word, a reason read off a screen — and the terminal.
+// The writer cleans every string it writes — one physical line per field and per detail line
+// (`plainLine`: the one cleaning with the line breaks folded) — and it is the boundary between
+// whatever a caller built — a seat name, a live stage word, a reason read off a screen — and the
+// terminal. `cleanRecord` is that cleaning for a whole record, so a caller can clean once and
+// hand the same words to the log and the writer both.
 
-import { plainText } from './plain.ts';
+import { plainLine } from './plain.ts';
 
 /** The classifications a record can name. `login` is reserved: no profile produces it today. */
 export type Classification =
@@ -64,42 +67,54 @@ export type Progress = {
   /** The seat's line, first drawn before its workspace is created and rewritten as it advances.
    *  On a redirected stdout this writes nothing at all. */
   progress(seat: string, state: ProgressState): void;
-  /** The seat's one final record — the newline-terminated line — and, after it, the detail the
-   *  run says about it: cleaned like everything else the writer writes, already indented. */
-  final(seat: string, record: FinalRecord, detail: string): void;
+  /** The seat's one final record — the newline-terminated line. */
+  final(seat: string, record: FinalRecord): void;
+  /** One detail line: one writer call per line, cleaned line by line, never passed through. */
+  detail(line: string): void;
 };
+
+/** A field as a record says it: one physical line — a run of line feeds in whatever a caller
+ *  built becomes one space, so a field can never open a second physical line — and `unknown`
+ *  when the cleaning leaves nothing readable. */
+function field(text: string): string {
+  const folded = plainLine(text);
+  return folded.trim() === '' ? 'unknown' : folded;
+}
+
+/** The record's fields cleaned once, with the same function the writer uses: what `up` and `add`
+ *  hand to the log and to the writer both, so the log line and the terminal line are the same
+ *  cleaned words. */
+export function cleanRecord(record: FinalRecord): FinalRecord {
+  if (record.kind === 'left out') return { kind: 'left out', reason: field(record.reason) };
+  if (record.kind === 'waiting for owner') {
+    return { kind: 'waiting for owner', classification: field(record.classification) as Classification };
+  }
+  return record;
+}
 
 /** The writer `up` and `add` hand their host. One per run. */
 export function progressWriter(sink: ProgressSink): Progress {
-  // The writer is the boundary: whatever a caller hands it, the seat, the stage word, the
-  // reason and every detail line are cleaned here (`plainText`, the cleaning pane excerpts are
-  // built on), so no escape sequence or carriage return a caller slipped in can reach the
-  // terminal, a pipe, or a log that copies the record. A seat, a stage word or a reason the
-  // cleaning leaves empty is said as `unknown`: the one line per seat survives a caller that
-  // said nothing readable, and the word is the one these records already use for a reading this
-  // version cannot make. The detail keeps its line breaks and is never cut: the cut belongs to
-  // pane excerpts, not to a record or a note.
-  const said = (text: string): string => plainText(text) || 'unknown';
+  // The writer is the boundary: whatever a caller hands it, the seat, the stage word, the reason,
+  // the classification and every detail line are cleaned here (`plainLine`, the one cleaning the
+  // pane excerpts are built on, with the line breaks folded), so no escape sequence, carriage
+  // return, bidi override or line feed a caller slipped in can reach the terminal, a pipe, or a
+  // log that copies the record. A field the cleaning leaves with nothing readable is said as
+  // `unknown`: the one line per seat survives a caller that said nothing readable, and the word
+  // is the one these records already use for a reading this version cannot make.
   return {
     progress(seat, state) {
       // Redirected: the final records only. Nothing provisional ever reaches a pipe.
       if (!sink.isTTY) return;
-      sink.stdout(`\r\x1b[K${said(seat)}: ${said(state)}`);
+      sink.stdout(`\r\x1b[K${field(seat)}: ${field(state)}`);
     },
-    final(seat, record, detail) {
-      // The classification is the reason slot of the `waiting for owner` form — the one the next
-      // slice prints from here — so it is cleaned like the stage word, whatever a caller cast
-      // into it; a classification the cleaning leaves empty is said as `unknown`.
-      const clean: FinalRecord =
-        record.kind === 'left out'
-          ? { kind: 'left out', reason: said(record.reason) }
-          : record.kind === 'waiting for owner'
-            ? { kind: 'waiting for owner', classification: said(record.classification) as Classification }
-            : record;
-      const text = recordText(said(seat), clean);
+    final(seat, record) {
+      const text = recordText(field(seat), cleanRecord(record));
       sink.stdout(sink.isTTY ? `\r\x1b[K${text}\n` : `${text}\n`);
-      const rest = plainText(detail);
-      if (rest !== '') sink.stderr(rest);
+    },
+    detail(line) {
+      const text = plainLine(line);
+      if (text.trim() === '') return;
+      sink.stderr(`${text}\n`);
     },
   };
 }

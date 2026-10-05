@@ -6,7 +6,7 @@ import { launchedIdentity, seatProcessVerdict, type LaunchedIdentity } from './i
 import type { LobbyRefusal } from '../lobby/gate.ts';
 import type { Step } from './plan.ts';
 import { plainPaneText } from './plain.ts';
-import { recordWhat, type FinalRecord, type ProgressState } from './progress.ts';
+import { recordWhat, cleanRecord, type FinalRecord, type ProgressState } from './progress.ts';
 import { vendorNoticeRange } from '../watch/screen.ts';
 
 export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'vendor notice' | 'unsent' | 'unknown';
@@ -81,9 +81,12 @@ export type Host = {
   /** The seat's line: first drawn before its workspace is created, rewritten in place as it
    *  advances. Present on `up` and `add`; `down` has none, and its records keep their old lines. */
   progress?(seat: string, state: ProgressState): void;
-  /** The seat's one final record, and the detail lines that follow it on stderr. Present
-   *  wherever `progress` is. */
-  final?(seat: string, record: FinalRecord, detail: string): void;
+  /** The seat's one final record, already cleaned (`cleanRecord`: its fields are one physical
+   *  line each). Present wherever `progress` is. */
+  final?(seat: string, record: FinalRecord): void;
+  /** One detail line of the record just finalized: one call per line, on stderr, after the
+   *  record. Present wherever `final` is. */
+  detail?(line: string): void;
   /** What the installed `<cli>` reports as its version, for a vendor notice's `untested on`
    *  detail. Null when it can't be read. */
   cliVersion?(cli: string): string | null;
@@ -172,15 +175,21 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     return lines;
   };
 
-  // A seat's one final record: the record line, then its detail on stderr. A host without
-  // `final` (no `up` or `add` record path reaches it) says the record's own words as one line.
+  // A seat's one final record: the record line, then its detail lines on stderr, one writer call
+  // each. The record is cleaned once here, before the log and the writer both take it, so the log
+  // line and the terminal line are the same cleaned words; the writer cleans again at its own
+  // boundary. A host without `final` (no `up` or `add` record path reaches it) says the record's
+  // own words as one line.
   const final = (seat: string, record: FinalRecord, detail = '') => {
     if (logged.has(seat)) return;
     logged.add(seat);
-    const what = recordWhat(record);
+    const clean = cleanRecord(record);
+    const what = recordWhat(clean);
     const rest = detail + release(seat);
-    if (host.final) host.final(seat, record, rest);
-    else host.say(`${seat}: ${what}\n${rest}`);
+    if (host.final) {
+      host.final(seat, clean);
+      for (const line of rest.split('\n')) host.detail?.(line);
+    } else host.say(`${seat}: ${what}\n${rest}`);
     host.log(seat, what);
   };
 
