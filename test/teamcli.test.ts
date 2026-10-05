@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -157,4 +157,120 @@ test('a node parent is still the owner', () => {
     kind: 'unplaced',
     reason: 'it doesn\'t run on a terminal',
   });
+});
+
+// A team dependency whose cli records every signal it receives, so a test can count
+// what the shim passed on.
+const FAKE_CLI = [
+  '#!/usr/bin/env node',
+  "process.stdout.write('ready\\n');",
+  "for (const name of ['SIGINT', 'SIGQUIT', 'SIGHUP']) {",
+  "  process.on(name, () => process.stdout.write('signal:' + name + '\\n'));",
+  '}',
+  "process.on('SIGTERM', () => {",
+  "  process.stdout.write('signal:SIGTERM\\n');",
+  '  process.exit(0);',
+  '});',
+  'setInterval(() => {}, 1000);',
+  '',
+].join('\n');
+
+function instrumentedTeam(dest: string, home: string): string {
+  const dir = join(dest, 'instrumented-team');
+  mkdirSync(join(dir, 'dist'), { recursive: true });
+  writeFileSync(join(dir, 'package.json'), `${JSON.stringify({
+    name: 'team',
+    version: '0.2.1',
+    type: 'module',
+    bin: { team: 'dist/cli.js' },
+    exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } },
+    files: ['dist'],
+  }, null, 2)}\n`);
+  writeFileSync(join(dir, 'dist/index.js'), 'export {};\n');
+  writeFileSync(join(dir, 'dist/cli.js'), FAKE_CLI);
+  const packed = npmRun(home, ['pack', '--json', '--pack-destination', dest], dir);
+  expect(packed.status).toBe(0);
+  return join(dest, JSON.parse(packed.stdout)[0].filename);
+}
+
+function installedShim(): string {
+  const home = mkdtempSync(join(tmpdir(), 'teamcli-signals-'));
+  const dest = mkdtempSync(join(tmpdir(), 'teamcli-signals-pack-'));
+  const prefix = join(home, 'install');
+  mkdirSync(prefix);
+  installPair(prefix, instrumentedTeam(dest, home), packTeamcli(dest, home), home);
+  return join(prefix, 'node_modules/.bin/teamcli');
+}
+
+function packTeamcli(dest: string, home: string): string {
+  const packed = npmRun(home, ['pack', '--json', '--pack-destination', dest], join(repo, 'packages/teamcli'));
+  expect(packed.status).toBe(0);
+  return join(dest, JSON.parse(packed.stdout)[0].filename);
+}
+
+function startShim(bin: string) {
+  const child = spawn(bin, [], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  let text = '';
+  child.stdout?.setEncoding('utf8');
+  child.stdout?.on('data', (chunk: string) => {
+    text += chunk;
+  });
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+    child.on('exit', (code, signal) => resolve({ code, signal }));
+  });
+  return { child, text: () => text, exited };
+}
+
+async function until(check: () => boolean, what: string): Promise<void> {
+  const started = Date.now();
+  while (!check()) {
+    if (Date.now() - started > 10_000) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+function stopGroup(child: ChildProcess): void {
+  try {
+    process.kill(-child.pid!, 'SIGKILL');
+  } catch {
+    // The group is already gone.
+  }
+}
+
+// A terminal sends Ctrl-C to the whole foreground process group, so this is how the
+// cli really receives it: SIGINT to the group. Exactly one may reach it.
+test('one Ctrl-C, to the group as a terminal sends it, reaches the cli once', async () => {
+  const { child, text, exited } = startShim(installedShim());
+  try {
+    await until(() => text().includes('ready\n'), 'the cli to start');
+    process.kill(-child.pid!, 'SIGINT');
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    process.kill(child.pid!, 'SIGTERM');
+    const exit = await exited;
+    expect(exit.code).toBe(0);
+    expect(text().match(/signal:SIGINT/g)).toHaveLength(1);
+    expect(text().match(/signal:SIGTERM/g)).toHaveLength(1);
+  } finally {
+    stopGroup(child);
+  }
+});
+
+// A signal sent to the shim's own pid alone is not a terminal's Ctrl-C. SIGINT and
+// SIGQUIT reach nothing at all; SIGTERM is forwarded to the cli once.
+test("a signal to the shim's pid alone: SIGINT and SIGQUIT reach nothing, SIGTERM once", async () => {
+  const { child, text, exited } = startShim(installedShim());
+  try {
+    await until(() => text().includes('ready\n'), 'the cli to start');
+    process.kill(child.pid!, 'SIGINT');
+    process.kill(child.pid!, 'SIGQUIT');
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(text()).not.toContain('signal:');
+    expect(child.exitCode).toBeNull();
+    process.kill(child.pid!, 'SIGTERM');
+    const exit = await exited;
+    expect(exit.code).toBe(0);
+    expect(text().match(/signal:SIGTERM/g)).toHaveLength(1);
+  } finally {
+    stopGroup(child);
+  }
 });

@@ -36,16 +36,23 @@ if (typeof bin !== 'string') {
 }
 
 const child = spawn(join(found.dir, bin), process.argv.slice(2), { stdio: 'inherit' });
-const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'];
-const forward = new Map(signals.map((signal) => [signal, () => child.kill(signal)]));
-for (const [signal, handler] of forward) process.on(signal, handler);
+// A terminal sends Ctrl-C and Ctrl-\ to the whole foreground process group: the
+// cli gets them directly, so the shim must not send them again. It ignores its own
+// copy of each. SIGTERM and SIGHUP are not group-sent by a terminal: forwarded once.
+const handlers = new Map([
+  ['SIGINT', () => {}],
+  ['SIGQUIT', () => {}],
+  ['SIGTERM', () => child.kill('SIGTERM')],
+  ['SIGHUP', () => child.kill('SIGHUP')],
+]);
+for (const [signal, handler] of handlers) process.on(signal, handler);
 
 child.on('error', (error) => {
   process.stderr.write(`teamcli: ${error.message}\n`);
   process.exit(1);
 });
 child.on('exit', (code, signal) => {
-  for (const [name, handler] of forward) process.removeListener(name, handler);
+  for (const [name, handler] of handlers) process.removeListener(name, handler);
   if (signal) {
     process.kill(process.pid, signal);
     return;
