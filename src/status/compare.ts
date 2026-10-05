@@ -40,7 +40,6 @@ export type Difference = {
   approval?: true;
 };
 
->>>>>>> origin/main
 export type Comparison = { rows: Row[]; differences: Difference[]; notes: string[] };
 
 export const WATCH_LABEL = 'watchdog';
