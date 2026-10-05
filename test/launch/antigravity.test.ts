@@ -2,9 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
-import { readScreen } from '../../src/watch/screen.ts';
+import { readFoldMark, readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
-import { boxHoldsText, deliverRules, type Delivery } from '../../src/launch/deliver.ts';
+import { boxHoldsText, deliverRules, refusalReport, type Delivery, type Refusal } from '../../src/launch/deliver.ts';
+import { rulesLine } from '../../src/launch/rules-file.ts';
 import { rulesText, type RulesInput } from '../../src/launch/rules.ts';
 import { downPlan, upPlan } from '../../src/launch/plan.ts';
 import { pass, newMemory } from '../../src/watch/pass.ts';
@@ -82,16 +83,31 @@ describe('Antigravity launch and captured screens', () => {
     expect(runningModel('antigravity', fixture('trust'))).toBeNull();
   });
 
-  test('the plan delivers through the guarded first-message path, never a config file', () => {
+  test('the plan delivers the one line through the guarded path, never a config file', () => {
+    const line = rulesLine('/home/owner/.config/team/demo-3f9c2a8e1d7b/rules/gemini.md', '5e1d0a9c4b2f');
     const plan = upPlan({
       root: '.',
       session: 'scratch',
       sessionRunning: true,
       watchAlive: true,
-      seats: [{ name: 'gemini', cli: 'antigravity', launch: 'agy', cwd: '.', label: 'gemini', stopped: false, rules: 'Rules.' }],
+      seats: [{ name: 'gemini', cli: 'antigravity', launch: 'agy', cwd: '.', label: 'gemini', stopped: false, rules: 'Rules.',
+        rulesFile: { path: '/home/owner/.config/team/demo-3f9c2a8e1d7b/rules/gemini.md', line } }],
     });
-    expect(plan.find((step) => step.do?.do === 'deliver')?.do).toMatchObject({ do: 'deliver', cli: 'antigravity', rules: 'Rules.', seconds: 90 });
+    expect(plan.find((step) => step.do?.do === 'deliver')?.do).toMatchObject({ do: 'deliver', cli: 'antigravity', rules: 'Rules.', line, seconds: 90 });
+    const deliverStep = plan.find((step) => step.do?.do === 'deliver');
+    expect(deliverStep?.kind === 'run' ? deliverStep.argv.at(-1) : undefined).toBe(line);
     expect(plan.some((step) => step.do?.do === 'ready')).toBe(false);
+  });
+  test('a message seat whose rules file has no typeable path is refused before anything is typed', () => {
+    const plan = upPlan({
+      root: '.', session: 'scratch', sessionRunning: true, watchAlive: true,
+      seats: [{ name: 'gemini', cli: 'antigravity', launch: 'agy', cwd: '.', label: 'gemini', stopped: false, rules: 'Rules.',
+        rulesRefusal: "its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -" }],
+    });
+    expect(plan.some((step) => step.do?.do === 'deliver')).toBe(false);
+    expect(plan.find((step) => step.kind === 'skip')?.text).toBe(
+      "gemini: would refuse: its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -",
+    );
   });
 });
 
@@ -109,9 +125,11 @@ function delivery(initial = 'idle') {
   let status = initial === 'working' ? 'working' : 'idle';
   let clock = 0;
   const calls: string[] = [];
+  const refusals: Refusal[] = [];
   const io: Delivery = {
     screen: () => raw,
     status: () => status,
+    report: (why) => { refusals.push(why); },
     // The paste renders as the box the CLI draws for its text.
     type(text) { calls.push(text); raw = boxed(text); return true; },
     enter() { calls.push('Enter'); raw = fixture('working'); status = 'working'; return true; },
@@ -119,7 +137,7 @@ function delivery(initial = 'idle') {
     now: () => clock,
     sleep: async (ms) => { clock += ms; },
   };
-  return { io, calls, show: (name: string) => { raw = fixture(name); }, showText: (screen: string) => { raw = screen; }, status: (value: string) => { status = value; } };
+  return { io, calls, refusals, show: (name: string) => { raw = fixture(name); }, showText: (screen: string) => { raw = screen; }, status: (value: string) => { status = value; } };
 }
 
 describe('Antigravity rules delivery', () => {
@@ -204,12 +222,15 @@ describe('Antigravity rules delivery', () => {
     expect(d.calls).toEqual([long]);
   });
 
-  test('a blank line the typed text itself has is entered', async () => {
+  test('a blank line the typed text itself has is refused: a blank row is never the text\'s', async () => {
+    // A blank row was the pane's drawing of a blank line the text had, when texts could hold
+    // newlines. A row break may stand for at most one space, never a newline, so the blank row
+    // never reads back and there is no Enter.
     const typed = 'Rules.\n\nMore rules.';
     const d = delivery();
     d.io.type = (text) => { d.calls.push(text); d.showText(boxed(typed)); return true; };
-    expect(await deliverRules('antigravity', typed, 1, d.io)).toBe(true);
-    expect(d.calls).toEqual([typed, 'Enter']);
+    expect(await deliverRules('antigravity', typed, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([typed]);
   });
 
   test('two spaces typed, one shown, gets no Enter', async () => {
@@ -218,10 +239,12 @@ describe('Antigravity rules delivery', () => {
     expect(boxHoldsText('antigravity', 'alpha  beta', boxed('alpha beta'))).toBe(false);
   });
 
-  test('a boxed multi-line paste reads back row for row and is entered', async () => {
+  test('a boxed multi-line paste no longer reads back: typed, not sent', async () => {
+    // A row break may stand for at most one space, never the newline between the lines, so a
+    // multi-line text never verifies and the Enter is never the delivery's to send.
     const d = delivery();
-    expect(await deliverRules('antigravity', 'Rules.\nOne more line.', 1, d.io)).toBe(true);
-    expect(d.calls).toEqual(['Rules.\nOne more line.', 'Enter']);
+    expect(await deliverRules('antigravity', 'Rules.\nOne more line.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.\nOne more line.']);
   });
 
   test.each(['trust', 'permission', 'unsent', 'exit', 'working'])('types nothing at %s', async (screen) => {
@@ -301,101 +324,30 @@ function foldedPane(edit: (screen: string) => string = (screen) => screen) {
 }
 
 describe('Antigravity folded rules paste', () => {
-  test('a folded box that holds the typed rules is delivered', async () => {
+  // The round-1 captures of a folded whole message stay as documentation of the fold; since
+  // round 2 the delivery is one line, which the box draws whole, so the fold path in delivery
+  // is gone: a folded box is never verified, whatever its marker says, and never entered.
+  test('a folded box never verifies: the line is typed, not sent', async () => {
     const d = foldedPane();
-    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(true);
-    expect(d.calls).toEqual([RULES, 'Enter']);
+    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([RULES]);
+    expect(d.refusals.at(-1)?.stop).toBe('read-back');
+    expect(d.refusals.at(-1)?.typed).toBe(true);
+    expect(refusalReport(d.refusals.at(-1)!)).toContain("the read-back didn't match");
   });
 
-  test('the prompt-marked fold reads unsent, and is verified the same way', async () => {
+  test('a prompt-marked fold reads unsent and still never verifies', async () => {
     const marked = (screen: string) => screen.replace('↑ 21 more lines', '> ↑ 21 more lines');
     expect(readScreen('antigravity', marked(fixture('folded-rules'))).kind).toBe('unsent');
+    expect(boxHoldsText('antigravity', RULES, marked(fixture('folded-rules')))).toBe(false);
     const d = foldedPane(marked);
-    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(true);
-    expect(d.calls).toEqual([RULES, 'Enter']);
-  });
-
-  test('a prompt-marked fold with a wrong count gets no Enter', async () => {
-    // Before the fold was read, this box only had to read `unsent` to be submitted unverified.
-    const d = foldedPane((screen) => screen.replace('↑ 21 more lines', '> ↑ 22 more lines'));
     expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
     expect(d.calls).toEqual([RULES]);
   });
 
-  test('a fold whose hidden count does not close the gap gets no Enter', async () => {
-    const d = foldedPane((screen) => screen.replace('↑ 21 more lines', '↑ 22 more lines'));
-    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
-    expect(d.calls).toEqual([RULES]);
-  });
-
-  test('a fold whose tail is not the typed text gets no Enter', async () => {
-    const d = foldedPane((screen) => screen.replace('d fix/agy-rules-fold.', 'd fix/some-other-branch.'));
-    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
-    expect(d.calls).toEqual([RULES]);
-  });
-
-  test('a prompt-marked fold whose count cannot be right (zero) gets no Enter', async () => {
-    // A marker that claims nothing is hidden while the box shows only its tail. Read as an
-    // ordinary unsent box, this got the Enter; a fold marker is never submitted unverified.
-    const d = foldedPane((screen) => screen.replace('↑ 21 more lines', '> ↑ 0 more lines'));
-    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
-    expect(d.calls).toEqual([RULES]);
-  });
-
-  test('a zero-count fold with an unrelated tail gets no Enter either', async () => {
-    // The reproduction: prompt-marked marker, count zero, and visible rows that are not the
-    // typed text's ending at all.
-    const d = foldedPane((screen) => screen
-      .replace(
-        ['d fix/agy-rules-fold.', 'These are standing rules, not a task: reply ready and ', 'wait for your brief.'].join('\n'),
-        ['d fix/some-other-branch.', 'Nothing here is the text team typed, and ', 'the count below is wrong as well.'].join('\n'),
-      )
-      .replace('↑ 21 more lines', '> ↑ 0 more lines'));
-    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
-    expect(d.calls).toEqual([RULES]);
-  });
-
-  test('a fold whose count is larger than the text\'s rows gets no Enter', async () => {
-    const d = foldedPane((screen) => screen.replace('↑ 21 more lines', '> ↑ 99 more lines'));
-    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
-    expect(d.calls).toEqual([RULES]);
-  });
-
-  test('a rule-looking row after the true tail gets no Enter', async () => {
-    // The pane holds one row the fold read does not cover. Before the frame was read this
-    // way, the first rule-looking row under the marker ended the fold, so the row — and
-    // everything between it and the box's real bottom rule — was dropped from the read.
-    const d = foldedPane((screen) => screen.replace('wait for your brief.\n', `wait for your brief.\n${'─'.repeat(54)}\n`));
-    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
-    expect(d.calls).toEqual([RULES]);
-  });
-
-  test('two rule-looking rows after the true tail get no Enter', async () => {
-    const d = foldedPane((screen) => screen.replace('wait for your brief.\n', `wait for your brief.\n${'─'.repeat(54)}\n${'─'.repeat(54)}\n`));
-    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
-    expect(d.calls).toEqual([RULES]);
-  });
-
-  test('a heavy rule-looking row after the true tail gets no Enter', async () => {
-    const d = foldedPane((screen) => screen.replace('wait for your brief.\n', `wait for your brief.\n${'━'.repeat(54)}\n`));
-    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
-    expect(d.calls).toEqual([RULES]);
-  });
-
-  test('an indented rule-looking row after the true tail counts as content', async () => {
-    // Drawn at the content column it is no rule at all: it is a row of the tail the typed
-    // text does not have, so the box is not the text and there is no Enter.
-    const d = foldedPane((screen) => screen.replace('wait for your brief.\n', `wait for your brief.\n  ${'─'.repeat(54)}\n`));
-    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
-    expect(d.calls).toEqual([RULES]);
-  });
-
-  test('a rule-looking row between the opening rule and the marker gets no Enter', async () => {
-    // Two rule rows stacked with the marker under the lower one: no capture shows that, and
-    // the read cannot tell which rule opens the box, so it fails closed.
-    const d = foldedPane((screen) => screen.replace('↑ 21 more lines', `${'─'.repeat(54)}\n↑ 21 more lines`));
-    expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
-    expect(d.calls).toEqual([RULES]);
+  test('the one line is far shorter than the fold: its box never shows a marker', () => {
+    expect(readFoldMark('antigravity', fixture('rules-line'))).toBe(false);
+    expect(boxHoldsText('antigravity', rulesLine(CAPTURED_PATH, '5e1d0a9c4b2f'), fixture('rules-line'))).toBe(true);
   });
 });
 
@@ -522,5 +474,149 @@ describe('the two-rule frame whose rules differ in width (Antigravity)', () => {
     d.io.type = (text) => { d.calls.push(text); d.showText(agyMismatchedFrame(shape, text)); return true; };
     expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(false);
     expect(d.calls).toEqual([]);
+  });
+});
+
+// The line the 2026-10-05 capture holds, as `team` composes it: the same path and hash the
+// fixtures README names, through the function that builds it. The box hard-wraps it mid-word
+// into five rows; the break after `Read` hides the line's own single space, and every other
+// break — mid-word, mid-path, mid-hash — hides nothing at all.
+const CAPTURED_PATH = '/home/owner/.config/team/demo-3f9c2a8e1d7b/rules/implementer.md';
+const capturedLine = rulesLine(CAPTURED_PATH, '5e1d0a9c4b2f');
+
+describe('Antigravity rules delivery of the one line (1.2.16 capture)', () => {
+  test('the captured line reads unsent and holds exactly the line', () => {
+    const screen = fixture('rules-line');
+    expect(readScreen('antigravity', screen).kind).toBe('unsent');
+    expect(boxHoldsText('antigravity', capturedLine, screen)).toBe(true);
+    // Anything the seat might hold instead: one character more, the line without its final
+    // full stop, another seat's path, an older hash of the same rules.
+    expect(boxHoldsText('antigravity', `${capturedLine} again`, screen)).toBe(false);
+    expect(boxHoldsText('antigravity', capturedLine.slice(0, -1), screen)).toBe(false);
+    expect(boxHoldsText('antigravity', rulesLine(CAPTURED_PATH.replace('implementer', 'reviewer'), '5e1d0a9c4b2f'), screen)).toBe(false);
+    expect(boxHoldsText('antigravity', rulesLine(CAPTURED_PATH, '4d0c9f8b3a2e'), screen)).toBe(false);
+  });
+
+  test('the line is typed once at an empty prompt, read back row by row, and entered once', async () => {
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(text === capturedLine ? fixture('rules-line') : boxed(text)); return true; };
+    expect(await deliverRules('antigravity', capturedLine, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([capturedLine, 'Enter']);
+  });
+
+  test.each([
+    ['in the path', ['3f9c2a8e1d7b', '3f9c2a8e1d7c']],
+    ['in the hash', ['5e1d0a9c4b2f', '5e1d0a9c4b2e']],
+    ['in a word of the line', ['your standing', 'your stunding']],
+    ['in the final full stop', ['your brief.', 'your brief!']],
+  ] as const)('one character changed %s gets no Enter', async (what, [from, to]) => {
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(fixture('rules-line').replace(from, to)); return true; };
+    expect(await deliverRules('antigravity', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([capturedLine]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('read-back');
+    expect(why?.typed).toBe(true);
+    expect(why?.sent).toBe(false);
+    expect(why?.row).not.toBeNull();
+    expect(refusalReport(why!)).toContain("the read-back didn't match");
+  });
+
+  test('a row of the line with one character more than the line has gets no Enter', async () => {
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(fixture('rules-line').replace('your brief.', 'your brief. x')); return true; };
+    expect(await deliverRules('antigravity', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([capturedLine]);
+  });
+
+  test('the line with one character more than the box shows gets no Enter', async () => {
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(fixture('rules-line')); return true; };
+    expect(await deliverRules('antigravity', `${capturedLine} x`, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([`${capturedLine} x`]);
+  });
+
+  test('two spaces in the line where the row break hides one get no Enter', async () => {
+    // The captured break after `Read` hides the line's single space. A line with two spaces
+    // there draws the same rows — the read-back refuses it: a break may stand for exactly one
+    // space, never a run of them.
+    const doubled = capturedLine.replace('Read /home', 'Read  /home');
+    expect(boxHoldsText('antigravity', doubled, fixture('rules-line'))).toBe(false);
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(fixture('rules-line')); return true; };
+    expect(await deliverRules('antigravity', doubled, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([doubled]);
+  });
+
+  test('a tab in the line gets no Enter', async () => {
+    const tabbed = capturedLine.replace('Read ', 'Read\t');
+    expect(boxHoldsText('antigravity', tabbed, fixture('rules-line'))).toBe(false);
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(fixture('rules-line')); return true; };
+    expect(await deliverRules('antigravity', tabbed, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([tabbed]);
+  });
+
+  test('a trust dialog at the final re-read gets no Enter', async () => {
+    // The mutation both reviews found uncaught, the other way round: the line reads back in the
+    // loop, and the re-read that immediately precedes the Enter sees the dialog.
+    const d = delivery();
+    d.io.type = (text) => {
+      d.calls.push(text);
+      let reads = 0;
+      d.io.screen = () => (++reads <= 1 ? fixture('rules-line') : fixture('trust'));
+      return true;
+    };
+    expect(await deliverRules('antigravity', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([capturedLine]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('read-back');
+    expect(why?.sent).toBe(false);
+    expect(why?.kind).toBe('trust');
+  });
+
+  test('a seat mid-turn is reported as working; nothing is typed', async () => {
+    const d = delivery();
+    d.status('working');
+    expect(await deliverRules('antigravity', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('working');
+    expect(refusalReport(why!)).toBe('rules not confirmed: the seat is working; run up again when it is idle');
+  });
+
+  test('a box already holding the person\'s own text is left alone', async () => {
+    const d = delivery();
+    d.showText(boxed('the person\'s own message'));
+    expect(await deliverRules('antigravity', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('leftover');
+    expect(refusalReport(why!)).toContain('its box already holds text that is not the rules line');
+  });
+
+  test('a resumed seat whose box already holds the line is verified and entered, never typed onto', async () => {
+    const d = delivery();
+    d.showText(fixture('rules-line'));
+    expect(await deliverRules('antigravity', capturedLine, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual(['Enter']);
+  });
+
+  test('a resumed seat whose box holds another seat\'s line is refused, nothing typed', async () => {
+    // This CLI breaks the path mid-word (`…rules/im` / `plementer.md`), so the seat name itself
+    // spans a row break; the other line is made by changing the path's project segment, which
+    // one row holds whole. Any line but today's is leftover, never typed onto.
+    const d = delivery();
+    d.showText(fixture('rules-line').replace('demo-3f9c2a8e1d7b', 'demo-3f9c2a8e1d7c'));
+    expect(await deliverRules('antigravity', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+    expect(d.refusals.at(-1)?.stop).toBe('leftover');
+  });
+
+  test('a resumed seat with an empty box is typed once, verified and sent', async () => {
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(text === capturedLine ? fixture('rules-line') : boxed(text)); return true; };
+    expect(await deliverRules('antigravity', capturedLine, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([capturedLine, 'Enter']);
   });
 });
