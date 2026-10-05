@@ -193,6 +193,32 @@ export function budgetsInForceOf(standing: Standing, team: TeamFile): TeamFile['
   return copy.ok ? copy.team.budgets : defaultBudgets();
 }
 
+/**
+ * The team file the two worktree subcommands read. A verified standing always uses the copy the
+ * record stored, validated, never the live file — a quiet fingerprint is not a reason to skip
+ * that copy. `differs` is a separate question: the live file compared with the approved copy in
+ * both directions, so a section or a seat that was added, removed or changed prints the note.
+ * `project` stays the live file's. It is not an owner section, so a rename is not drift, and
+ * `{repo}` stays the name the file has now. Null when the stored copy can't be read, whatever
+ * the fingerprints say: there is no value to work from, and the command refuses. A standing that
+ * isn't verified hands the live file back with `differs: false` — the caller's gate refuses
+ * before it reads any of it.
+ */
+export function worktreeTeamInForceOf(standing: Standing, team: TeamFile): { team: TeamFile; differs: boolean } | null {
+  if (standing.kind !== 'verified') return { team, differs: false };
+  const copy = validateTeamFile(standing.record.file);
+  if (!copy.ok) return null;
+  return { team: { ...copy.team, project: team.project }, differs: ownerDrift(copy.team, team) };
+}
+
+/** An owner section or a seat added, removed or changed between the approved copy and the live file. */
+function ownerDrift(approved: TeamFile, live: TeamFile): boolean {
+  const approvedPrint = fingerprints(approved);
+  const livePrint = fingerprints(live);
+  // `compare` reports a seat added to its second file, not one taken out of it, so both orders.
+  return compare(approvedPrint, livePrint).length > 0 || compare(livePrint, approvedPrint).length > 0;
+}
+
 /** The wrappers a standalone caller uses: each does its own one read, then derives. */
 export function watchInForce(team: TeamFile, root: string, home: string = homedir()): TeamFile['watch'] {
   return watchInForceOf(approvalStanding(root, home), team);

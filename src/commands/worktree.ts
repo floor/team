@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
-import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
+import { notInForce, worktreeTeamInForceOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
 import { insideTrust } from '../file/paths.ts';
@@ -21,6 +21,9 @@ export type WorktreeSources = {
   // The approval store's one read, overridable so a test can count it or swap the record
   // after the gate. Absent: the real read.
   standing?(root: string): Standing;
+  // One `workspace.setup` command, in the new worktree. Absent: `sh -c` there. The status is
+  // the command's own: zero ran, anything else stops the list.
+  setup?(cwd: string, command: string): number;
 };
 
 export const realSources: WorktreeSources = {
@@ -85,38 +88,52 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     // exit: worktree.file-owner
     return 1;
   }
-  if (!mayChangeTeam(caller, team)) {
+  // One verified snapshot for the whole command, read once: every value the two subcommands read
+  // from the file is the approved copy's, including when the fingerprints match. The caller's
+  // gate below is judged on those values too — a seat the file added to `coordinator` is not one
+  // until the owner approves it. With nothing verified the file's own values are read, exactly
+  // as before, so the refusals are still main's. `project` on the snapshot is the live file's.
+  const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
+  const inForce = worktreeTeamInForceOf(standing, team);
+  if (inForce === null) {
+    io.stderr('team worktree: the approved copy can\'t be read: run `team approve`\n');
+    // exit: worktree.approved-copy
+    return 1;
+  }
+  const reading = inForce.team;
+  if (!mayChangeTeam(caller, reading)) {
     io.stderr(`team worktree: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(caller)}\n`);
     // exit: worktree.caller
     return 1;
   }
-  const session = args.values.session ?? team.session;
+  const session = args.values.session ?? reading.session;
   if (session === 'default') {
     io.stderr('team worktree: session can\'t be "default", herdr\'s own session\n');
     // exit: worktree.default-session
     return 1;
   }
-  const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
   if (standing.kind !== 'verified') {
     io.stderr(`team worktree: ${notInForce(standing)}\n`);
     // exit: worktree.never-approved
     return 1;
   }
-  const differences = approvalDifferencesOf(standing, team);
-  if (differences.length) {
-    io.stderr(`team worktree: the file is not the approved one (${differences.join('; ')}): run \`team approve\`\n`);
-    // exit: worktree.differs
-    return 1;
+  // One note, before the folder or anything else the command prints: the run goes on with the
+  // approved settings, and the owner is told the file asks for more than that.
+  if (inForce.differs) {
+    io.stderr('team worktree: using the approved workspace settings; the file has unapproved changes: run `team approve`\n');
   }
 
   const dir = dirname(loaded.path);
   const who = describeCaller(caller);
-  if (sub === 'new') return create(io, sources, team, root, dir, session, task, args.values.kind, args.values.seat, who);
-  return removeWorktree(io, sources, team, root, dir, session, task, who);
+  if (sub === 'new') return create(io, sources, reading, team, root, dir, session, task, args.values.kind, args.values.seat, who);
+  return removeWorktree(io, sources, reading, root, dir, session, task, who);
 }
 
+// `team` is the approved copy for a verified standing, or the live file when nothing is verified;
+// every value below is read from it. `file` is the live file, read for one thing only: telling a
+// seat the file added — which must not be used until `team approve` — from one no section declares.
 function create(
-  io: Io, sources: WorktreeSources, team: TeamFile, root: string, dir: string, session: string, task: string,
+  io: Io, sources: WorktreeSources, team: TeamFile, file: TeamFile, root: string, dir: string, session: string, task: string,
   kind: string | undefined, seatName: string | undefined, who: string,
 ): number {
   const named = taskProblem(task);
@@ -186,6 +203,11 @@ function create(
     }
   }
   if (seatName !== undefined && !team.seats.some((seat) => seat.name === seatName)) {
+    if (file.seats.some((seat) => seat.name === seatName)) {
+      io.stderr(`team worktree: seat ${seatName} is not in the approved file: run \`team approve\`\n`);
+      // exit: worktree.seat-unapproved
+      return 1;
+    }
     io.stderr(`team worktree: --seat ${JSON.stringify(seatName)} names no declared seat\n`);
     // exit: worktree.seat
     return 1;
@@ -227,7 +249,7 @@ function create(
       refused = `the worktree was not created: ${firstLine(added.stderr || added.stdout)}`;
       return null;
     }
-    const setup = runSetup(absolute, team.workspace.setup);
+    const setup = runSetup(absolute, team.workspace.setup, sources.setup ?? realSetup);
     const record = {
       path: folder,
       branch,
@@ -420,15 +442,21 @@ function commitsOnNoRemote(root: string, worktree: string, branch: string, base:
   return listed.stdout.split('\n').filter((line) => line !== '');
 }
 
-function runSetup(cwd: string, commands: string[]): { ok: true } | { ok: false; at: number } {
+function realSetup(cwd: string, command: string): number {
+  const result = spawnSync('sh', ['-c', command], {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  return result.status ?? 1;
+}
+
+function runSetup(
+  cwd: string, commands: string[], setup: (cwd: string, command: string) => number,
+): { ok: true } | { ok: false; at: number } {
   for (let i = 0; i < commands.length; i++) {
     const command = commands[i] as string;
-    const result = spawnSync('sh', ['-c', command], {
-      cwd,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    if ((result.status ?? 1) !== 0) return { ok: false, at: i + 1 };
+    if (setup(cwd, command) !== 0) return { ok: false, at: i + 1 };
   }
   return { ok: true };
 }
