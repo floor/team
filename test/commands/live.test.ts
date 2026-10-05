@@ -381,12 +381,17 @@ describe('team up, live', () => {
     const shown = '❯ AGENT_UNATTENDED=1 claude --model claude-opus-5-5\nzsh: command not found: claude\n~ ❯\n';
     const made = world(shown);
     made.launch.shellBack = () => true;
+    let naps = 0;
+    const napping = made.launch.sleep;
+    made.launch.sleep = async (ms) => { naps++; return napping(ms); };
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
     expect(io.out).toContain(
       'claude-coordinator-acme: the launch command ended before the CLI showed a prompt; left at launched\n',
     );
+    // One pause per waiting seat, not the 90-second deadline's worth.
+    expect(naps).toBeLessThanOrEqual(4);
     expect(io.out).toContain('  | ❯ AGENT_UNATTENDED=1 claude --model claude-opus-5-5\n');
     expect(io.out).toContain('  | zsh: command not found: claude\n');
     expect(io.out).not.toContain('timed out');

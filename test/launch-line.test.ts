@@ -123,6 +123,26 @@ describe('the launch line check', () => {
     });
   });
 
+  test('the same line is fine for a seat that starts in the project root', () => {
+    file(join(base, 'tools', 'x.sh'));
+    const extra = `
+  - role: implementer
+    name: rooty
+    label: rooty
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: zsh ../tools/x.sh
+    mode: shared
+`;
+    const text = team('claude --model claude-opus-5-5', extra);
+    const found = text.seats.find((item) => item.name === 'rooty');
+    if (!found) throw new Error('no seat rooty');
+    expect(startFolder(text, found)).toBe('.');
+    expect(launchLineFinding(text, found, root, sources())).toBeNull();
+  });
+
   test('the same line is fine when the file is there from the lobby too', () => {
     file(join(base, 'worktrees', 'acme', 'tools', 'x.sh'));
     const text = team('zsh ../tools/x.sh');
