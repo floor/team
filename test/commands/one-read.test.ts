@@ -33,12 +33,15 @@ import type { Machine } from '../../src/watch/machine.ts';
 const NOW = new Date('2026-10-04T00:00:00Z');
 const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
 const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
-const FILE = `format: 1
+function makeFile(basePath: string, projPath: string): string {
+  return `format: 1
 project: acme
 coordinator: lead
 operator: lead
 trust:
-  - ../worktrees/acme/*
+  - ~/.config/team/lobby
+  - ${projPath}
+  - ${join(basePath, 'worktrees')}
 workspace:
   mode: worktree
   path: ../worktrees/{repo}/{task}
@@ -66,10 +69,12 @@ seats:
     version: "5.5"
     launch: claude --model claude-opus-5-5
 `;
+}
 
 let base: string;
 let project: string;
 let file: string;
+let fileContent: string;
 let home: string;
 
 function git(cwd: string, ...args: string[]): string {
@@ -95,12 +100,13 @@ beforeEach(() => {
   git(project, 'commit', '-q', '-m', 'first');
   git(project, 'remote', 'add', 'origin', remote);
   git(project, 'push', '-q', '-u', 'origin', 'main');
-  writeFileSync(file, FILE);
-  const loaded = loadTeamFile(project);
+  fileContent = makeFile(base, project);
+  writeFileSync(file, fileContent);
+  const loaded = loadTeamFile(project, { home });
   if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
   writeApproval(
     storePath(loaded.team.project, loaded.root, home),
-    { approval: approvalOf(loaded.team, loaded.root, NOW), file: FILE },
+    { approval: approvalOf(loaded.team, loaded.root, NOW), file: fileContent },
     loaded.team.seats,
     home,
     NOW,
@@ -306,7 +312,7 @@ describe('one read of the approval store per command', () => {
     const io = testIo(project, owner);
     const code = await runInit(['--restore'], io, home, gate.standing);
     expect(code).toBe(0);
-    expect(readFileSync(file, 'utf8')).toBe(FILE);
+    expect(readFileSync(file, 'utf8')).toBe(fileContent);
     expect(gate.reads()).toBe(1);
   });
 });

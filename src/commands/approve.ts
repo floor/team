@@ -58,9 +58,15 @@ function inside(path: string, folder: string): boolean {
 }
 
 // The store must stay out of the project and of every folder a seat may work in.
-function storeProblem(store: string, root: string, team: TeamFile): string | null {
+function expandTrustEntry(pattern: string, root: string, home: string): string {
+  const trimmed = pattern.replace(/\/?\*$/, '');
+  if (trimmed.startsWith('/') || trimmed.startsWith('~')) return resolve(trimmed.replace(/^~(?=$|\/)/, home));
+  return resolve(root, trimmed);
+}
+
+function storeProblem(store: string, root: string, team: TeamFile, home: string): string | null {
   const place = real(dirname(store));
-  const folders = [root, ...team.trust.map((pattern) => resolve(root, pattern.replace(/\/?\*$/, '')))];
+  const folders = [root, ...team.trust.map((pattern) => expandTrustEntry(pattern, root, home))];
   const holder = folders.map(real).find((folder) => inside(place, folder) || inside(store, folder));
   return holder === undefined ? null : `the approval store ${store} is inside ${holder}, where seats work`;
 }
@@ -78,7 +84,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     return 2;
   }
 
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
+  const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
       io.stderr(`team approve: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
@@ -88,8 +94,9 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     // exit: approve.file-invalid
     return 2;
   }
-  // Validate the text load just read. A second read could store an edit under the first read's fingerprints.
-  const checked = validateTeamFile(loaded.text);
+  // Validate the text load just read, against the same home and root the load used. A second read
+  // could store an edit under the first read's fingerprints.
+  const checked = validateTeamFile(loaded.text, { home: sources.home, root: loaded.root });
   if (!checked.ok) {
     for (const problem of checked.errors) {
       io.stderr(`team approve: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
@@ -97,7 +104,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     // exit: approve.revalidate
     return 2;
   }
-  const placed = placedProblems(checked.team, loaded.root);
+  const placed = placedProblems(checked.team, loaded.root, sources.home);
   if (placed.length) {
     for (const problem of placed) io.stderr(`team approve: ${problem.message}\n`);
     // exit: approve.placed
@@ -115,7 +122,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     // exit: approve.overrides
     return 2;
   }
-  const problem = storeProblem(store, root, team);
+  const problem = storeProblem(store, root, team, sources.home);
   if (problem) {
     io.stderr(`team approve: ${problem}\n`);
     // exit: approve.store
@@ -147,7 +154,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
       `${text
         .replace(/\n$/, '')
         .split('\n')
-        .map((line, index) => `  ${index + 1}: ${line}`)
+        .map((line, index) => (line.length ? `  ${index + 1}: ${line}` : `  ${index + 1}:`))
         .join('\n')}\n\n`,
     );
   } else {

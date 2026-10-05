@@ -47,7 +47,7 @@ function fresh() {
   const standing = verifiedOf(team, EXAMPLE, '/nowhere');
   const write = (text: string, hash: string, random?: () => string) =>
     writeRulesFile(standing, seat.name, '/nowhere', home, text, hash, random);
-  return { home, standing, seat, path: pathOf(team.project, '/nowhere', home, seat.name), text: rulesOf(team, seat), write };
+  return { home, standing, seat, path: pathOf(team.project, '/nowhere', home, seat.name), text: rulesOf(team, seat, '/nowhere'), write };
 }
 describe('the line and its path', () => {
   test('a path of letters, digits and . _ / @ + - is typeable; anything else is not', () => {
@@ -319,7 +319,7 @@ describe('checking the file', () => {
       const { team, seat } = codexSeat();
       const standing = verifiedOf(team, EXAMPLE, '/nowhere');
       const write = (body: string, hash: string) => writeRulesFile(standing, seat.name, '/nowhere', made, body, hash);
-      return { home: made, path: pathOf(team.project, '/nowhere', made, seat.name), text: rulesOf(team, seat), write };
+      return { home: made, path: pathOf(team.project, '/nowhere', made, seat.name), text: rulesOf(team, seat, '/nowhere'), write };
     })();
     try {
       write(text, rulesFileHash(text));
@@ -337,7 +337,7 @@ describe('checking the file', () => {
       const { team, seat } = codexSeat();
       const standing = verifiedOf(team, EXAMPLE, '/nowhere');
       const path = pathOf(team.project, '/nowhere', home, seat.name);
-      const text = rulesOf(team, seat);
+      const text = rulesOf(team, seat, '/nowhere');
       const write = (body: string, hash: string) => writeRulesFile(standing, seat.name, '/nowhere', home, body, hash);
       expect(checkRulesFile(path, text)).toEqual({ ok: false, what: 'its rules file is missing' });
       write(text, rulesFileHash(text));
@@ -503,7 +503,7 @@ describe('one seat\'s delivery', () => {
     if (!claude) throw new Error('the example fixture has no claude-code seat');
     const delivery = rulesDeliveryOf(standing, team, seat, '/nowhere', '/home/owner');
     if ('refusal' in delivery) throw new Error(`unexpected refusal: ${delivery.refusal}`);
-    expect(delivery.text).toBe(rulesOf(team, seat));
+    expect(delivery.text).toBe(rulesOf(team, seat, '/nowhere'));
     expect(delivery.path.endsWith(join('rules', `${seat.name}.md`))).toBe(true);
     expect(delivery.line).toBe(rulesLine(delivery.path, rulesFileHash(delivery.text)));
     expect(rulesDeliveryOf(standing, team, claude, '/nowhere', '/home/owner')).toEqual({ refusal: 'its rules travel as a launch option' });
@@ -516,11 +516,11 @@ describe('one seat\'s delivery', () => {
     const { team, seat } = codexSeat();
     const standing = verifiedOf(team, EXAMPLE, '/nowhere');
     const edited: TeamFile = { ...team, rules: [...team.rules, 'A rule added after the approval.'] };
-    const approvedText = rulesOf(team, seat);
+    const approvedText = rulesOf(team, seat, '/nowhere');
     const delivery = rulesDeliveryOf(standing, edited, seat, '/nowhere', '/home/owner');
     if ('refusal' in delivery) throw new Error(`unexpected refusal: ${delivery.refusal}`);
     expect(delivery.text).toBe(approvedText);
-    expect(delivery.text).not.toBe(rulesOf(edited, seat));
+    expect(delivery.text).not.toBe(rulesOf(edited, seat, '/nowhere'));
     expect(delivery.line).toBe(rulesLine(delivery.path, rulesFileHash(approvedText)));
     // A seat the approved copy does not hold has no approved rules: refused, nothing written.
     const added = { ...seat, name: 'added-after-approval' };

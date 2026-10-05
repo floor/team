@@ -169,6 +169,10 @@ project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
 
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
+
 workspace:
   mode: shared
 
@@ -220,6 +224,7 @@ ok    herdr 0.7.1
 ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
 team doctor: nothing missing, 1 warning
 exit 0
 ```
@@ -237,6 +242,7 @@ ok    herdr 0.7.1
 warn  claude 2.1.200 is older than the tested 2.1.288: its screens are untested with this version; a seat that isn't read at launch is left out, never typed into
 ok    claude-code: logged in
 ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
 team doctor: nothing missing, 2 warnings
 exit 0
 ```
@@ -254,6 +260,7 @@ ok    herdr 0.7.1
 ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
 team doctor: nothing missing, 1 warning
 exit 0
 ```
@@ -266,6 +273,10 @@ format: 1
 project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
+
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
 
 workspace:
   mode: shared
@@ -314,6 +325,11 @@ ok    claude 2.1.288
 ok    claude-code: logged in
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
+--    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
 team doctor: 2 missing, 1 warning: 2 of them block `up` and `add`
 exit 1
 ```
@@ -326,6 +342,10 @@ format: 1
 project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
+
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
 
 workspace:
   mode: shared
@@ -375,6 +395,11 @@ ok    claude-code: logged in
 warn  claude-beacon: the launch starts Claude Opus 5.5, the file says Claude Sonnet 5.5
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
+--    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
 team doctor: 2 missing, 2 warnings: 2 of them block `up` and `add`
 exit 1
 ```
@@ -390,6 +415,10 @@ format: 1
 project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
+
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
 
 workspace:
   mode: shared
@@ -449,6 +478,11 @@ ok    codex 0.157.0
 ok    codex: logged in
 warn  codex-scribe: the launch runs team-codex, not codex, and names no model: if the launcher chooses the model, say so with model_from: launcher
 ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
+--    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
 team doctor: 1 missing, 2 warnings: 1 of them block `up` and `add`
 exit 1
 ```
@@ -463,6 +497,10 @@ format: 1
 project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
+
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
 
 workspace:
   mode: shared
@@ -523,6 +561,11 @@ ok    codex 0.157.0
 ok    codex: logged in
 --    codex-scribe: the model is chosen by its launcher; checked on the running seat
 ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
+--    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
 team doctor: 1 missing, 1 warning: 1 of them block `up` and `add`
 exit 1
 ```
@@ -539,6 +582,10 @@ format: 1
 project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
+
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
 
 workspace:
   mode: shared
@@ -594,6 +641,10 @@ project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
 
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
+
 workspace:
   mode: shared
 
@@ -636,6 +687,7 @@ ok    herdr 0.7.1
 ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
 team doctor: nothing missing, 2 warnings
 exit 0
 ```

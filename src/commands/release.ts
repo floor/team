@@ -76,7 +76,7 @@ export async function runRelease(argv: string[], io: Io, fetcher: Fetch, keyRead
   // load and the path resolution are shared with `team check --file` (loadTeamFile); the argument
   // parsers are separate, and a table test holds the two to the same classification. Nothing else
   // is read from the repository.
-  const loaded = loadTeamFile(io.cwd, { file: args.values.file });
+  const loaded = loadTeamFile(io.cwd, { file: args.values.file, checkOnly: true });
   if (!loaded.ok) {
     const first = loaded.errors[0] as { line: number; message: string };
     const where = [loaded.path, first.line > 0 ? `line ${first.line}` : ''].filter(Boolean).join(', ');

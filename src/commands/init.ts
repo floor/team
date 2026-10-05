@@ -26,7 +26,8 @@ function git(root: string, ...args: string[]): string | null {
   }
 }
 
-export function skeleton(project: string, head: string | null, teamVersion = version()): string {
+export function skeleton(project: string, head: string | null, teamVersion = version(), root?: string): string {
+  const rootPath = root ?? `/path/to/${project}`;
   return `# yaml-language-server: $schema=https://raw.githubusercontent.com/floor/team/v${teamVersion}/schema/team.schema.json
 # The team of ${project}. Private to this clone: see .git/info/exclude.
 # Nothing here runs until the owner has read it and run \`team approve\`.
@@ -53,9 +54,9 @@ ${head ? `#   since: ${head}   # check reads no commit reachable from this one\n
 # rules:                      # added to every seat's rules at launch
 #   - Run the tests your change touches.
 
-# trust:                      # applied only by the owner, with \`team trust\`
-#   - .
-#   - ../worktrees/${project}/*
+trust:
+  - ~/.config/team/lobby
+  - ${rootPath}
 # dialogs:
 #   trust: owner              # owner | coordinator
 
@@ -158,7 +159,7 @@ export async function runInit(argv: string[], io: Io, home?: string, readStandin
     }
     text = copy;
   } else {
-    text = skeleton(basename(root), git(root, 'rev-parse', 'HEAD'));
+    text = skeleton(basename(root), git(root, 'rev-parse', 'HEAD'), version(), root);
     const check = validateTeamFile(text);
     // exit: init.skeleton
     if (!check.ok) throw new Error(`the skeleton doesn't validate: ${check.errors[0]?.message}`);

@@ -2,7 +2,7 @@
 // world, the home and the caller are handed in, so no example reaches herdr, a CLI, or the owner's
 // home. A `$ ` line is run, the lines under it must match byte for byte.
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAdd } from '../../src/commands/add.ts';
 import { runAnswer, type AnswerHost } from '../../src/commands/answer.ts';
@@ -59,9 +59,13 @@ function callerOf(name: string, team: TeamFile | null): Caller {
 /**
  * The three values no page can print: the fixture's own path, read as `.`; the home, read as `~`;
  * the store's folder ends in a hash of the project's path; and commit hashes, read as `<sha>`.
+ * One line is the exception: the migration note prints the project's absolute path, and the
+ * fixture's root sits under its home, so that line reads as `~/Code/<project>`, the entry a
+ * reader would write.
  */
 function normalize(text: string, page: { fixture: Fixture }): string {
   return text
+    .replaceAll(`  - ${page.fixture.root}`, `  - ~/Code/${basename(page.fixture.root)}`)
     .replaceAll(page.fixture.root, '.')
     .replaceAll(page.fixture.home, '~')
     .replace(/(team\/[A-Za-z0-9._-]+)-[0-9a-f]{12}\b/g, '$1-<hash>')
@@ -72,7 +76,7 @@ function normalize(text: string, page: { fixture: Fixture }): string {
 
 async function setup(page: Page): Promise<void> {
   const { fixture } = page;
-  const loaded = loadTeamFile(fixture.root, {});
+  const loaded = loadTeamFile(fixture.root, { home: fixture.home });
   if (loaded.ok) {
     page.team = loaded.team;
     page.session = loaded.team.session;
@@ -314,7 +318,7 @@ async function consoleBlock(page: Page, block: Block, failures: Failure[]): Prom
 
 /** `file=overrides.yaml` is the approval store's file, not a path in the project. */
 function writeOverrides(page: Page, text: string, line: number): void {
-  const loaded = loadTeamFile(page.fixture.root, {});
+  const loaded = loadTeamFile(page.fixture.root, { home: page.fixture.home });
   if (!loaded.ok) throw new Error(`overrides.yaml at line ${line} needs a team file`);
   const path = join(storePath(loaded.team.project, loaded.root, page.fixture.home), 'overrides.yaml');
   mkdirSync(dirname(path), { recursive: true });

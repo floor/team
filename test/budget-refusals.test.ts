@@ -114,13 +114,21 @@ function storeSpend(list: SpendReading[]): void {
   saveSpendReadings(join(root, '.agents'), list);
 }
 
+function writeTeamYaml(text: string): string {
+  const yaml = text.includes('trust:')
+    ? text
+    : text.replace('coordinator: lead\n', `coordinator: lead\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n`);
+  writeFileSync(join(root, '.agents', 'team.yaml'), yaml);
+  return yaml;
+}
+
 function approve(text: string = BASE): void {
-  writeFileSync(join(root, '.agents', 'team.yaml'), text);
-  const loaded = loadTeamFile(root);
+  const yaml = writeTeamYaml(text);
+  const loaded = loadTeamFile(root, { home });
   if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
   writeApproval(
     storePath(loaded.team.project, loaded.root, home),
-    { approval: approvalOf(loaded.team, loaded.root), file: text },
+    { approval: approvalOf(loaded.team, loaded.root), file: yaml },
     loaded.team.seats,
     home,
   );
@@ -815,7 +823,7 @@ describe('an unapproved edit to the budgets', () => {
 
   test('up: unblocks nothing until the owner approves it', async () => {
     store([reading('anthropic', 80), reading('openai', 5)]);
-    writeFileSync(join(root, '.agents', 'team.yaml'), WEAKER);
+    writeTeamYaml(WEAKER);
     const dry = await up(['--dry-run'], world());
     expect(dry.out).toContain(`skip worker: would refuse: ${TAIL}`);
     expect(dry.out).toContain('! up would refuse: the file is not the approved one (`budgets` changed): run `team approve`');
@@ -832,7 +840,7 @@ describe('an unapproved edit to the budgets', () => {
 
   test('add: launches nothing until the owner approves it', async () => {
     store([reading('anthropic', 80), reading('openai', 5)]);
-    writeFileSync(join(root, '.agents', 'team.yaml'), WEAKER);
+    writeTeamYaml(WEAKER);
     const before = await add(['worker'], world());
     expect(before.code).toBe(1);
     expect(before.err).toContain('the file is not the approved one (`budgets` changed)');

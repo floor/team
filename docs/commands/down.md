@@ -101,6 +101,10 @@ project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
 
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
+
 workspace:
   mode: shared
 
@@ -182,6 +186,10 @@ format: 1
 project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
+
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
 
 workspace:
   mode: shared

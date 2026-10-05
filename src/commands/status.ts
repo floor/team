@@ -97,6 +97,7 @@ export interface StatusJson {
     state: string;
     model: string;
     pane: string;
+    start_cwd?: string;
   }>;
   notes: string[];
   differences: Array<{
@@ -118,7 +119,7 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     return 2;
   }
 
-  const current = currentTeam(io.cwd, args.values.file, sources.now());
+  const current = currentTeam(io.cwd, args.values.file, sources.now(), sources.home);
   if (!current.ok) {
     printProblems(io, current.errors);
     // exit: status.not-a-repo
@@ -167,7 +168,13 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
       format: 1,
       project: team.project,
       session,
-      rows: comparison.rows.map((row) => ({ name: row.name, state: row.stored ?? row.state, model: row.model, pane: row.pane })),
+      rows: comparison.rows.map((row) => ({
+        name: row.name,
+        state: row.stored ?? row.state,
+        model: row.model,
+        pane: row.pane,
+        ...(row.start_cwd ? { start_cwd: row.start_cwd } : {}),
+      })),
       notes: comparison.notes,
       // Format 1: the extra facts a difference carries (needs/owner/approval) are for the
       // renderer, not the document.
@@ -232,7 +239,7 @@ function rulesFileDifferences(standing: Standing, root: string, home: string | u
     // one way, from the approval in force, like every other reader of the file.
     const path = rulesFilePathOf(standing, seat.name, root, home);
     if (path === null) continue;
-    const text = rulesOf(approved.team, seat);
+    const text = rulesOf(approved.team, seat, root);
     const check = checkRulesFile(path, text);
     if (!check.ok) out.push({ what: `${seat.name}: ${check.what}`, repair: 'the owner runs team up', owner: true });
   }

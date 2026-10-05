@@ -13,8 +13,8 @@ export type Current =
   | { ok: true; team: TeamFile; root: string; dir: string; warnings: Problem[]; notice?: string }
   | { ok: false; errors: Problem[] };
 
-export function currentTeam(cwd: string, file: string | undefined, now: Date): Current {
-  const loaded = loadTeamFile(cwd, file ? { file } : {});
+export function currentTeam(cwd: string, file: string | undefined, now: Date, home?: string): Current {
+  const loaded = loadTeamFile(cwd, { ...(file ? { file } : {}), ...(home ? { home } : {}) });
   if (loaded.ok) {
     const dir = dirname(loaded.path);
     remember(dir, loaded.path, now);

@@ -1,4 +1,5 @@
-import { trustProblem } from '../paths.ts';
+import { homedir } from 'node:os';
+import { absoluteTrustProblem, isLegacyTrustEntry, trustProblem } from '../paths.ts';
 import type { Section } from './section.ts';
 
 export const trust: Section = {
@@ -7,15 +8,31 @@ export const trust: Section = {
   after: [],
   validate(entry, ctx) {
     const trustItems = ctx.check.list(entry, 'trust');
-    for (const item of trustItems) {
-      const problem = trustProblem(item.value);
-      if (problem) ctx.check.fail(item.line, `trust: "${item.value}" ${problem}`);
+    const hasLegacy = trustItems.some((item) => isLegacyTrustEntry(item.value));
+    const hasAbsolute = trustItems.some((item) => !isLegacyTrustEntry(item.value));
+    if (hasLegacy && hasAbsolute) {
+      for (const item of trustItems) {
+        ctx.check.fail(item.line, `trust: "${item.value}" cannot mix legacy patterns and absolute paths`);
+      }
+      return trustItems.map((item) => item.value);
+    }
+    if (hasLegacy) {
+      for (const item of trustItems) {
+        const problem = trustProblem(item.value);
+        if (problem) ctx.check.fail(item.line, `trust: "${item.value}" ${problem}`);
+      }
+    } else if (hasAbsolute) {
+      const home = ctx.home ?? homedir();
+      for (const item of trustItems) {
+        const problem = absoluteTrustProblem(item.value, home, ctx.fs, ctx.rootDir);
+        if (problem) ctx.check.fail(item.line, `trust: "${item.value}" ${problem}`);
+      }
     }
     return trustItems.map((item) => item.value);
   },
   schema: {
     type: 'array',
     items: { type: 'string', minLength: 1 },
-    $comment: 'paths outside the project the seats may still work in, as the validator reads them',
+    $comment: 'absolute paths the seats may work in, including the machine lobby ~/.config/team/lobby and the project root',
   },
 };

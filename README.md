@@ -8,7 +8,7 @@ works under, the folders it may touch. Commands then check that file against a m
 and a history, and build and watch the team itself. Version 0.1 runs teams in
 [herdr](https://herdr.dev).
 
-**Status: 0.1, early: herdr only; trust is specified, not built yet.** This build parses and
+**Status: 0.1, early: herdr only.** This build parses and
 validates the file, checks who is calling, and holds `add`, `approve`, `check`, `doctor`, `down`,
 `init`, `remove`, `status`, `up`, `watch` and `worktree`.
 
@@ -122,7 +122,7 @@ budgets:                      # the owner's: reserve or floor per account, marks
   `account` names the budget account the seat spends when one vendor has two; without it, the seat
   spends its `vendor`, and changing either is an edit the owner re-approves.
 - `launch` is the plain command, without approval flags: the profile adds them. It runs in the
-  folder the seat starts in — the lobby for a seat that works in worktrees — and `team` never
+  folder the seat starts in — `~/.config/team/lobby` — and `team` never
   rewrites it: `team doctor` checks its first word there — one fully quoted literal with its quotes
   removed, the way a shell would run it — and any relative argument. `up` and `add` leave a seat
   out, saying the same words, when the first word is missing there, or when the first word is a shell
@@ -133,10 +133,10 @@ budgets:                      # the owner's: reserve or floor per account, marks
   `count: 2` makes the
   numbered names; `parked` keeps a seat out of idle reports, `stopped` keeps it out of `up`.
 - `workspace.mode` is `shared` (every seat in the project) or `worktree` (each task in its own
-  checkout, with `path`, `base` and `setup`). Under `worktree`, a seat that isn't `mode: shared`
-  starts in the lobby — the parent of `workspace.path` with `.lobby` beside the worktrees, inside
-  `trust` and outside every protected checkout — never in the project root; `up` and `add` refuse a
-  seat whose folder, lobby included, would be protected or untrusted.
+  checkout, with `path`, `base` and `setup`). Every seat starts in `~/.config/team/lobby`, which
+  `trust` lists as an absolute path along with the project root. `up` and `add` refuse a seat
+  whose own folder is a protected checkout, and a legacy `trust` (project-relative patterns, or
+  none) cannot launch until it is rewritten as those absolute paths and approved.
 
 ### Naming seats
 
@@ -267,7 +267,7 @@ It never answers prompts and performs no sign-in action.
 
 `team up`, `team down`, `team add`, `team remove`, `team worktree new` and `team worktree remove`
 run live. `up` and `down` take `--dry-run` to print every command they would run, and every
-refusal, and change nothing. `trust` is specified but not built yet.
+refusal, and change nothing.
 
 ## Approvals are signed
 
