@@ -14,6 +14,7 @@ import {
   agentRename,
   paneForeground,
   paneRead,
+  paneSize,
   paneRun,
   typeText,
   pressEnter,
@@ -31,7 +32,7 @@ import type { Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { rulesText } from '../launch/rules.ts';
-import { deliverRules } from '../launch/deliver.ts';
+import { deliverRules, type Refusal } from '../launch/deliver.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -80,6 +81,9 @@ export type Launch = {
   typeText?(session: string, pane: string, text: string): boolean;
   pressEnter?(session: string, pane: string): boolean;
   agentStatus?(session: string, pane: string): string | null;
+  /** The pane's own size in cells, or null when it can't be read. A delivery with no size
+   *  pastes the whole message, as it always has. */
+  paneSize?(session: string, pane: string): { width: number; height: number } | null;
   /** Foreground argv0 names, or null when the pane can't be read. */
   foreground(session: string, pane: string): string[] | null;
   sleep(ms: number): Promise<void>;
@@ -114,6 +118,7 @@ const realLaunch: Launch = {
   typeText: (session, pane, text) => typeText(pane, text, aim(session)),
   pressEnter: (session, pane) => pressEnter(pane, aim(session)),
   agentStatus: (session, pane) => agentStatus(pane, aim(session)),
+  paneSize: (session, pane) => paneSize(pane, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now: () => new Date(),
@@ -410,15 +415,23 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     createWorkspace: launch.createWorkspace,
     paneRun: launch.paneRun,
     typeLine: () => false,
-    deliverRules: (session, pane, cli, text, seconds) => deliverRules(cli, text, seconds, {
+    deliverRules: async (session, pane, cli, text, seconds) => {
+      // The delivery reports why it stopped through this box; the caller turns the stopped
+      // reading into the report, and a plain refusal stays `false`.
+      const stopped: { why: Refusal | null } = { why: null };
+      const delivered = await deliverRules(cli, text, seconds, {
         screen: () => launch.paneText(session, pane) ?? undefined,
         status: () => launch.agentStatus?.(session, pane) ?? null,
         type: (value) => launch.typeText?.(session, pane, value) ?? false,
         enter: () => launch.pressEnter?.(session, pane) ?? false,
         foreground: () => launch.foreground(session, pane),
+        size: () => launch.paneSize?.(session, pane) ?? null,
+        report: (why) => { stopped.why = why; },
         now: () => now().getTime(),
         sleep: sources.sleep ?? launch.sleep,
-      }),
+      });
+      return delivered === false && stopped.why !== null ? stopped.why : delivered;
+    },
     renameAgent: launch.renameAgent,
     closeWorkspace: launch.closeWorkspace,
     stopSession: () => false,

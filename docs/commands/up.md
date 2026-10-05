@@ -62,6 +62,12 @@ A seat that reaches its idle prompt with its rules delivered prints `<seat>: rea
 ready, stopped in the file, or on a CLI with no launch profile prints one `  skip` line and is left
 as it is. The watch prints `watch: started`.
 
+A message taller than its box draws is typed in parts of whole lines — its header in the first
+part, its closing line in the last — each part verified to sit in the box before its own Enter,
+and the next typed only once the seat is back at its idle prompt. A box that already holds
+exactly the message (a run that stopped after typing it) is verified and sent, never typed onto
+again. `up` never clears a box it could not verify: a stop leaves the text where it is.
+
 A seat that doesn't get there is printed once with what stopped it, and `up` exits 1:
 
 | Line | Meaning |
@@ -70,7 +76,11 @@ A seat that doesn't get there is printed once with what stopped it, and `up` exi
 | `<seat>: permission; its workspace was closed without input and the seat left out` | a permission dialog, or a question, was left for its owner to answer |
 | `<seat>: timed out waiting for its idle prompt; left at launched` | the prompt never came |
 | `<seat>: was not in the agent list in time; left at launched` | herdr listed no agent in the pane to name |
-| `<seat>: its rules were not delivered; left at named` | the rules did not reach an empty idle prompt |
+| `<seat>: rules not typed: <what stopped it>; <what to do>` | nothing was typed: the screen was not an empty idle prompt, the box already held text that is not the rules message, or a line of the message is taller than its box draws |
+| `<seat>: rules typed, not sent: <part X of Y:>the read-back didn't match (<reading>); <what to do>` | the message was typed and its box did not read back as the message; the rules sit in its box, unsent, and `up` does not clear it. When the box drew a row that is not the message's own, the first such row is printed above this line |
+| `<seat>: rules typed, not sent: <part X of Y:>its box still holds them after Enter (<reading>); <what to do>` | Enter was pressed and the box still shows the rules: the key did not take, and nothing was sent |
+| `<seat>: <parts 1-N of M were sent; ><part X of Y:>the seat did not come back to its idle prompt (<reading>); <what to do>` | a part was submitted and the seat never came back to its idle prompt — a running turn, or a dialog to answer |
+| `<seat>: its rules were not delivered; left at named` | the pane could not be read at all; nothing was typed |
 | `<seat>: its workspace was not created; left at launched` | herdr made no workspace for it |
 | `<seat>: its lobby folder was not created; left out` | the folder a seat that works in worktrees waits in could not be made |
 | `<seat>: its launch command did not run; left at launched` | the pane took no command |

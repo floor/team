@@ -1,3 +1,4 @@
+import { refusalReport, type Refusal } from './deliver.ts';
 import type { Step } from './plan.ts';
 
 export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'unsent' | 'unknown';
@@ -11,7 +12,9 @@ export type Host = {
   createWorkspace(session: string, cwd: string, label: string): { pane: string; workspace: string } | null;
   paneRun(session: string, pane: string, command: string): boolean;
   typeLine(session: string, pane: string, text: string): boolean | 'no-agent';
-  deliverRules?(session: string, pane: string, cli: string, text: string, seconds: number): Promise<boolean | 'no-agent'>;
+  /** `false` is a delivery that stopped without a reading worth reporting (no host, or no live
+   *  pane); a `Refusal` is one that stopped on a screen the report can name. */
+  deliverRules?(session: string, pane: string, cli: string, text: string, seconds: number): Promise<boolean | 'no-agent' | Refusal>;
   renameAgent(session: string, pane: string, name: string): boolean;
   closeWorkspace(session: string, workspace: string): boolean;
   stopSession(session: string): boolean;
@@ -249,6 +252,16 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         if (delivered === 'no-agent') {
           dropped.add(op.seat);
           finish(op.seat, 'no live agent in its pane; its rules were not delivered');
+          break;
+        }
+        if (typeof delivered === 'object') {
+          // The specific reading goes into the log; a row of the screen itself is printed to
+          // the terminal alone, never logged.
+          dropped.add(op.seat);
+          if (delivered.row !== null) {
+            host.say(`${op.seat}: first row of its box that is not the rules: ${delivered.row}\n`);
+          }
+          finish(op.seat, refusalReport(delivered));
           break;
         }
         if (!here || !delivered) {
