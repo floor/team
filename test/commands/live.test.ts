@@ -19,6 +19,12 @@ const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFre
 const FILE = ['--file', '.agents/team.yaml'];
 const NOW = new Date('2026-10-03T14:02:00Z');
 const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
+
+// The captured Codex home names Terra 5.6. The example file says GPT Sol 6, so a launch test
+// that should get past the model check shows the file's model on that same status row.
+function fileModel(text: string): string {
+  return text.replaceAll('GPT-5.6-Terra', 'GPT-6-Sol');
+}
 const PERMISSION = 'Do you want to proceed?\n1. Yes\n';
 const CLOSING_MESSAGE = 'These are standing rules, not a task: reply ready and wait for your brief.';
 const CLOSING_OPTION = 'These are standing rules, not a task.';
@@ -153,7 +159,7 @@ describe('team up, live', () => {
     writeFileSync(path, EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
-    const made = world((_pane, label) => (label === 'gpt sol 6' ? capture('idle') : IDLE));
+    const made = world((_pane, label) => (label === 'gpt sol 6' ? fileModel(capture('idle')) : IDLE));
     const sent: string[] = [];
     made.launch.agentStatus = () => 'idle';
     made.launch.foreground = () => ['zsh'];
@@ -172,7 +178,7 @@ describe('team up, live', () => {
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
     const made = world((_pane, label) => label === 'gpt sol 6'
-      ? capture(outcome === 'trust' || outcome === 'startup' ? outcome : 'idle') : IDLE);
+      ? fileModel(capture(outcome === 'trust' || outcome === 'startup' ? outcome : 'idle')) : IDLE);
     let codexPane = '';
     let status = 'idle';
     const sent: string[] = [];
@@ -582,6 +588,66 @@ describe('team up, live', () => {
     expect(heartbeatIo.out).not.toContain('no watch has run');
   });
 });
+
+  test.each([
+    ['another model', 'gpt-sol-idle', 'drift'],
+    ['the file\'s model', 'idle', 'equal'],
+    ['an unreadable model', 'unread', 'unread'],
+  ] as const)('cursor launch, screen shows %s', async (_label, screen, expectCase) => {
+    const path = join(root, '.agents/team.yaml');
+    const cursorSeat = [
+      '  - role: implementer',
+      '    name: cursor-acme',
+      '    cli: cursor',
+      '    vendor: xai',
+      '    model: Grok',
+      '    version: "4.7"',
+      '    launch: cursor-agent',
+      '    mode: shared',
+    ].join('\n');
+    writeFileSync(path, EXAMPLE
+      .replace(
+        '    count: 2                   # deepseek-acme, deepseek-acme-2\n',
+        '    count: 2\n    stopped: true\n',
+      )
+      .replace(/  - role: implementer\n    name: codex-acme[\s\S]*?stopped: true\n/, `${cursorSeat}\n`));
+    await approve();
+    const home = readFileSync(join(import.meta.dir, '../fixtures/cursor/2026.10.01/idle.txt'), 'utf8');
+    const shown = screen === 'idle'
+      ? home
+      : screen === 'gpt-sol-idle'
+        ? readFileSync(join(import.meta.dir, '../fixtures/cursor/2026.10.01/gpt-sol-idle.txt'), 'utf8')
+        : home.replace(
+          '  Grok 4.7 256K High                 Run Everything',
+          '  Muse Spark 1.3                    Run Everything',
+        );
+    const made = world((_pane, label) => (label === 'grok 4.7' ? shown : IDLE));
+    made.launch.agentStatus = () => 'idle';
+    const sent: string[] = [];
+    made.launch.typeText = (_session, _pane, text) => { sent.push(text); return true; };
+    made.launch.pressEnter = () => { sent.push('Enter'); return true; };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({}, made));
+    const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['cursor-acme'];
+    if (expectCase === 'drift') {
+      expect(code).toBe(1);
+      expect(sent).toEqual([]);
+      expect(made.renames).not.toContain('cursor-acme');
+      expect(seat?.stage).toBe('launched');
+      expect(io.out).toContain(
+        'cursor-acme: runs GPT Sol 5.6; the file says Grok 4.7; left at launched, not named. Add --model grok-4.7-high to its launch, or correct the file\'s model and version and run `team approve`\n',
+      );
+      return;
+    }
+    expect(made.renames).toContain('cursor-acme');
+    expect(sent.length).toBeGreaterThan(0);
+    expect(io.out).not.toContain('left at launched, not named');
+    if (expectCase === 'unread') {
+      expect(io.out).toContain("cursor-acme: its screen doesn't show a model this version knows; not checked\n");
+    } else {
+      expect(io.out).not.toContain('not checked');
+    }
+  });
 
 describe('team down, live', () => {
   function seat(status = 'idle'): HerdrAgent {

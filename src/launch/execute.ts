@@ -1,3 +1,5 @@
+import { profileFor } from '../profiles/profile.ts';
+import { modelDiffers, seatModel, type Running } from '../status/statusline.ts';
 import type { Step } from './plan.ts';
 
 export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'unsent' | 'unknown';
@@ -21,6 +23,8 @@ export type Host = {
   /** Pane ids herdr lists an agent in, or null when the list can't be read. */
   agentPanes(session: string): string[] | null;
   classify(session: string, pane: string, cli: string): ScreenKind;
+  /** The pane's visible text, or undefined when it cannot be read. */
+  text(session: string, pane: string): string | undefined;
   sleep(ms: number): Promise<void>;
   now(): number;
   /** Null when this seat may launch. A string is the reason it may not. */
@@ -199,7 +203,26 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           await host.sleep(2000);
           if (host.now() <= before) break;
         }
-        if (outcome === 'idle') break;
+        if (outcome === 'idle') {
+          // After the idle wait, before the rename and the rules: the same "differs" the watch uses.
+          // Unread is not a difference, and the seat continues. A different model is left unnamed.
+          if (op.model !== undefined && op.version !== undefined) {
+            const screen = host.text(session, here.pane);
+            const running = screen === undefined ? null : seatModel({ cli: op.cli, model: op.model }, screen);
+            const declared = { model: op.model, version: op.version };
+            if (modelDiffers(running, declared)) {
+              dropped.add(op.seat);
+              finish(op.seat, modelLeft(running as Running, declared, op.cli));
+              break;
+            }
+            if (!running) {
+              const note = "its screen doesn't show a model this version knows; not checked";
+              host.say(`${op.seat}: ${note}\n`);
+              host.log(op.seat, note);
+            }
+          }
+          break;
+        }
         const workspace = here.workspace ?? places.get(op.seat)?.workspace;
         if (outcome === 'permission' || outcome === 'trust' || outcome === 'question') {
           // A trust question is closed with no key and no text. The same for a permission or a question.
@@ -342,4 +365,15 @@ export async function executePlan(steps: readonly Step[], session: string, host:
   }
 
   return { serverFailed, watchFailed, held };
+}
+
+// The owner adds the CLI's model flag for the file's model, or corrects the file and approves it.
+function modelLeft(running: Running, declared: { model: string; version: string }, cli: string): string {
+  const profile = profileFor(cli);
+  const flag = profile?.modelFlag(declared.model, declared.version) ?? { option: '--model', id: null };
+  const id = flag.id ?? '<id>';
+  return (
+    `runs ${running.model} ${running.version}; the file says ${declared.model} ${declared.version}; ` +
+    `left at launched, not named. Add ${flag.option} ${id} to its launch, or correct the file's model and version and run \`team approve\``
+  );
 }

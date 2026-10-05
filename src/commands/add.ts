@@ -417,6 +417,8 @@ function seatPlan(team: TeamFile, seat: Seat, start: { cwd: string; lobby?: true
     launch: seat.launch,
     cwd: start.cwd,
     label: seat.label,
+    model: seat.model,
+    version: seat.version,
     stopped: false,
     rules: rulesOf(team, seat),
     ...(start.lobby ? { lobby: true } : {}),
@@ -488,6 +490,7 @@ function hostOf(input: {
     kill: () => false,
     agentPanes: launch.agentPanes,
     classify: (_name, pane, cli) => readScreen(cli, launch.paneText(session, pane) ?? undefined).kind,
+    text: (_name, pane) => launch.paneText(session, pane) ?? undefined,
     sleep: launch.sleep,
     now: () => input.now().getTime(),
     allow(name) {

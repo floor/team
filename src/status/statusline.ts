@@ -7,6 +7,11 @@ import { statusOnLine } from '../profiles/profile.ts';
 
 export type Running = { model: string; version: string };
 
+/** The screen names a model, and it is not the file's. Unread is never a difference. */
+export function modelDiffers(running: Running | null, declared: { model: string; version: string }): boolean {
+  return running !== null && (running.model !== declared.model || running.version !== declared.version);
+}
+
 export function runningModel(cli: string, screen: string): Running | null {
   let found: Running | null = null;
   // The pane's text may keep its ANSI styling; the model is read from the plain form.

@@ -201,6 +201,8 @@ function seatPlan(
     launch: seat.launch,
     cwd: seat.cwd,
     label: seat.label,
+    model: seat.model,
+    version: seat.version,
     stopped: seat.stopped,
     rules: rulesOf(team, seat),
   };
@@ -425,6 +427,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     kill: () => false,
     agentPanes: launch.agentPanes,
     classify: (name, pane, cli) => readScreen(cli, launch.paneText(name, pane) ?? undefined).kind,
+    text: (name, pane) => launch.paneText(name, pane) ?? undefined,
     sleep: sources.sleep ?? launch.sleep,
     now: () => now().getTime(),
     allow(name) {
