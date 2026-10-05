@@ -255,23 +255,6 @@ export function paneRead(pane: string, lines: number, session?: string): string 
   return styled.replace(/\r\n/g, '\n').replace(/\r$/, '');
 }
 
-// The pane's own size in cells, as `pane layout` reports it: the pane's own entry when the
-// layout names one, the layout's area otherwise. Null when the layout can't be read or carries
-// no size — a caller that needs a size refuses without it rather than guessing one.
-export function paneSize(pane: string, session?: string): { width: number; height: number } | null {
-  const result = resultOf(['pane', 'layout', '--pane', pane], session) as {
-    layout?: {
-      area?: { width?: unknown; height?: unknown };
-      panes?: { pane_id?: unknown; rect?: { width?: unknown; height?: unknown } }[];
-    };
-  } | null;
-  const own = (result?.layout?.panes ?? []).find((entry) => entry.pane_id === pane);
-  const rect = own?.rect ?? result?.layout?.area;
-  const { width, height } = rect ?? {};
-  if (typeof width !== 'number' || typeof height !== 'number') return null;
-  return { width, height };
-}
-
 // The words to type for a herdr command, for a repair line.
 export function herdrCommand(session: string | undefined, ...args: string[]): string {
   return ['herdr', ...(session && session !== 'default' ? ['--session', session] : []), ...args].join(' ');

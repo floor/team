@@ -6,7 +6,6 @@ import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
-import { renderSignature } from '../file/signature.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import {
   agentList,
@@ -14,7 +13,6 @@ import {
   agentRename,
   paneForeground,
   paneRead,
-  paneSize,
   paneRun,
   typeText,
   pressEnter,
@@ -31,7 +29,8 @@ import type { Command, Io } from '../io.ts';
 import type { Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
-import { rulesText } from '../launch/rules.ts';
+import { rulesOf } from '../launch/rules.ts';
+import { seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
 import { deliverRules, type Refusal } from '../launch/deliver.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
@@ -81,9 +80,6 @@ export type Launch = {
   typeText?(session: string, pane: string, text: string): boolean;
   pressEnter?(session: string, pane: string): boolean;
   agentStatus?(session: string, pane: string): string | null;
-  /** The pane's own size in cells, or null when it can't be read. A delivery with no size
-   *  pastes the whole message, as it always has. */
-  paneSize?(session: string, pane: string): { width: number; height: number } | null;
   /** Foreground argv0 names, or null when the pane can't be read. */
   foreground(session: string, pane: string): string[] | null;
   sleep(ms: number): Promise<void>;
@@ -118,7 +114,6 @@ const realLaunch: Launch = {
   typeText: (session, pane, text) => typeText(pane, text, aim(session)),
   pressEnter: (session, pane) => pressEnter(pane, aim(session)),
   agentStatus: (session, pane) => agentStatus(pane, aim(session)),
-  paneSize: (session, pane) => paneSize(pane, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now: () => new Date(),
@@ -151,26 +146,6 @@ export const USAGE = 'Usage: team up [--dry-run] [--session <name>] [--file <pat
 export const up: Command = (argv, io) => runUp(argv, io, realSources);
 export default up;
 
-/** The rules one seat gets at launch, with its own signature lines, as its delivery carries them. */
-export function rulesOf(team: TeamFile, seat: Seat): string {
-  const { commits, pullRequests } = team.identity.signature;
-  const profile = profileFor(seat.cli);
-  const delivery = profile && profile.rulesOption !== null ? 'option' : 'message';
-  return rulesText(
-    {
-      coordinator: team.coordinator,
-      rules: team.rules,
-      signature: {
-        commit: renderSignature(commits.template, seat),
-        pullRequest: renderSignature(pullRequests.template, seat),
-        commitPosition: commits.position,
-      },
-      workspace: { mode: seat.mode, protected: team.workspace.protected, branch: team.workspace.branch },
-    },
-    delivery,
-  );
-}
-
 function resolveState(sources: UpSources, session: string): SessionState | null {
   if (sources.sessionState) return sources.sessionState(session);
   const running = sources.sessionRunning(session);
@@ -199,6 +174,8 @@ function seatPlan(
   agents: readonly HerdrAgent[],
   workspaces: { id: string }[] | null,
   resume: boolean,
+  root: string,
+  home: string,
 ): UpSeat {
   const planned: UpSeat = {
     name: seat.name,
@@ -208,6 +185,7 @@ function seatPlan(
     label: seat.label,
     stopped: seat.stopped,
     rules: rulesOf(team, seat),
+    ...seatDeliveryOf(team, seat, root, home),
   };
   if (!resume || !recorded || seat.stopped) return planned;
   const named = agents.find((agent) => agent.name === seat.name);
@@ -316,7 +294,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const seats: UpSeat[] = [];
   const refused = new Set<string>();
   for (const seat of team.seats) {
-    const planned = seatPlan(team, seat, recorded?.seats[seat.name], agents ?? [], workspaces, state === 'running');
+    const planned = seatPlan(team, seat, recorded?.seats[seat.name], agents ?? [], workspaces, state === 'running', root, sources.home);
     // A stopped seat, one without a profile, and one already ready are left out of the budget.
     // A seat resumed into a live workspace starts nowhere new, but its reading is still said.
     if (planned.stopped || !profileFor(seat.cli) || planned.stage === 'ready') {
@@ -415,17 +393,26 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     createWorkspace: launch.createWorkspace,
     paneRun: launch.paneRun,
     typeLine: () => false,
-    deliverRules: async (session, pane, cli, text, seconds) => {
+    deliverRules: async (session, pane, cli, file, seconds) => {
+      // The rules go to the file first; nothing is typed until it holds them.
+      const written = writeRulesFile(file.path, file.text);
+      if (!written.ok) {
+        return { stop: 'file', typed: false, sent: false, kind: 'unknown' as const, row: null, detail: written.why };
+      }
+      // The plan already refused a path that can't be typed; this is the same check again, so a
+      // path that reached this far by a caller's mistake is refused before anything is typed.
+      if (!typeablePath(file.path)) {
+        return { stop: 'path', typed: false, sent: false, kind: 'unknown' as const, row: null };
+      }
       // The delivery reports why it stopped through this box; the caller turns the stopped
       // reading into the report, and a plain refusal stays `false`.
       const stopped: { why: Refusal | null } = { why: null };
-      const delivered = await deliverRules(cli, text, seconds, {
+      const delivered = await deliverRules(cli, file.line, seconds, {
         screen: () => launch.paneText(session, pane) ?? undefined,
         status: () => launch.agentStatus?.(session, pane) ?? null,
         type: (value) => launch.typeText?.(session, pane, value) ?? false,
         enter: () => launch.pressEnter?.(session, pane) ?? false,
         foreground: () => launch.foreground(session, pane),
-        size: () => launch.paneSize?.(session, pane) ?? null,
         report: (why) => { stopped.why = why; },
         now: () => now().getTime(),
         sleep: sources.sleep ?? launch.sleep,
