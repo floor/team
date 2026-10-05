@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { DialectError, compilePattern } from '../watch/dialect.ts';
 import { WINDOWS, type QuotaPattern, type WindowName } from './quota.ts';
 import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts';
+import { trustAnswers, type TrustRecord } from './trust-answer.ts';
 
 /**
  * A launch profile: what `team` knows about one CLI, so a seat can't start
@@ -38,6 +39,8 @@ export interface Profile {
   startsOnLastModel: boolean;
   /** The model flag, and the id this profile maps to that model and version, when it knows one. */
   modelFlag(model: string, version: string): { option: string; id: string | null };
+  /** Trust-answer records. Empty when this version sends no trust key for the CLI. */
+  answers: readonly TrustRecord[];
 }
 
 /** A version as numbers: `2.1.288 (Claude Code)` is [2, 1, 288]. Null when the text holds none. */
@@ -166,7 +169,7 @@ function launchOf(root: YamlNode): Shipped {
   const entries = mapping(root, 'a profile');
   const format = required(entries, 'format', root.line);
   if (format.value.kind !== 'scalar' || format.value.value !== 1) fail(format.line, '"format" must be 1');
-  only(entries, ['format', 'cli', 'screen', 'screen_module', 'quota', ...LAUNCH_KEYS, ...OPTIONAL_LAUNCH_KEYS]);
+  only(entries, ['format', 'cli', 'screen', 'screen_module', 'quota', 'trust_answer', ...LAUNCH_KEYS, ...OPTIONAL_LAUNCH_KEYS]);
   const cli = text(required(entries, 'cli', root.line), 'cli');
   required(entries, 'screen', root.line);
   const quotaEntry = optional(entries, 'quota');
@@ -196,6 +199,7 @@ function launchOf(root: YamlNode): Shipped {
         option: models.option[0] ?? '--model',
         id: suggestId(models.ids, model, version),
       }),
+      answers: trustAnswers(optional(entries, 'trust_answer')),
     },
     status: statusEntry ? modelRules(statusEntry.value, 'status_model') : [],
     quota: quotaEntry ? quotaOf(quotaEntry.value) : [],

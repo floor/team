@@ -1,6 +1,7 @@
 import { format } from './format.ts';
 import { project } from './project.ts';
 import { trust } from './trust.ts';
+import { dialogs } from './dialogs.ts';
 import { limits } from './limits.ts';
 import { machine } from './machine.ts';
 import { rules } from './rules.ts';
@@ -29,6 +30,7 @@ export const SECTIONS: readonly Section[] = [
   format,
   project,
   trust,
+  dialogs,
   limits,
   machine,
   rules,

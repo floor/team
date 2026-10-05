@@ -17,6 +17,7 @@ export const commands: Record<string, () => Promise<{ default: Command; USAGE: s
   watch: () => import('./commands/watch.ts'),
   worktree: () => import('./commands/worktree.ts'),
   add: () => import('./commands/add.ts'),
+  answer: () => import('./commands/answer.ts'),
   remove: () => import('./commands/remove.ts'),
   release: () => import('./commands/release.ts'),
 };

@@ -118,6 +118,8 @@ the typed-newline proof the fix's comment named as still to be taken, and
 
 ## Constructed
 
+- `lobby-constructed.txt`: a one-line file that is not a screen, so a trust-answer record cannot cite it as lobby evidence.
+
 `owner-status.txt` is constructed, not a capture. Nothing in it was read from a live pane.
 It is `idle.txt` with the status row replaced by an owner's configured status line: session
 and weekly use, and the time until each resets. The row is one the shipped composer already
