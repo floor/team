@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { approvalOf } from '../../src/approve/approval.ts';
 import { runAdd, type AddSources } from '../../src/commands/add.ts';
 import { runApprove, type ApproveSources } from '../../src/commands/approve.ts';
@@ -945,10 +945,14 @@ describe('a refused folder is refused under every spelling that names it', () =>
   });
 
   test("a second spelling of the parent that holds the project is refused at load", () => {
-    const variant = join(dirname(base), basename(base).toUpperCase());
-    const folds = foldsSpellings(variant, base);
-    writeFileSync(join(root, '.agents', 'team.yaml'), plus(variant));
-    const loaded = loadTeamFile(root, { home });
+    const project = join(base, 'PB', 'proj');
+    const agents = join(project, '.agents');
+    mkdirSync(agents, { recursive: true });
+    const variant = join(base, 'pb');
+    const folds = foldsSpellings(variant, join(base, 'PB'));
+    const text = migratedTeamYaml().replaceAll(root, project).replace('trust:\n', `trust:\n  - ${variant}\n`);
+    writeFileSync(join(agents, 'team.yaml'), text);
+    const loaded = loadTeamFile(project, { file: join(agents, 'team.yaml'), home });
     expect(loaded.ok).toBe(!folds);
     if (!loaded.ok) expect(loaded.errors.map((e) => e.message).join('\n')).toContain('is a parent of the project');
   });

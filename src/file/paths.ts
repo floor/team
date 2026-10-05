@@ -85,6 +85,13 @@ function projectAncestor(folder: string, root: string, fs: FsReader): boolean {
  * no control characters or backticks, must not contain the home, the lobby or the approval
  * store, nor be a parent of the project when the root is known, and its parent walk must
  * reach an existing directory without meeting a symbolic link (dangling or not).
+ *
+ * Containment compares what an entry names, not how it is spelled: the entry's landing — the
+ * real path of its deepest existing ancestor, the rest as written — is compared against the
+ * canonical home, lobby and project ancestors as well, so on a volume that folds case or a
+ * Unicode normalisation form a second spelling of a refused folder is refused too. When the
+ * landing meets a symbolic link or a read error the written form decides and the walk below
+ * names it; an entry that exists nowhere keeps its tail as written, under its existing folder.
  */
 export function absoluteTrustProblem(entry: string, home: string = homedir(), fs: FsReader = defaultFs, root?: string): string | null {
   if (CONTROL_OR_BACKTICK.test(entry)) {
@@ -110,16 +117,22 @@ export function absoluteTrustProblem(entry: string, home: string = homedir(), fs
   }
   const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
   const homeResolved = resolve(home);
+  const landing = canonicalLanding(expanded, fs);
+  // A symbolic link or a read error keeps the written form here: the walk below names it.
+  const named = landing.symlink === undefined && landing.error === undefined ? landing.landing : expanded;
+  const homeNamed = canonicalLanding(homeResolved, fs).landing;
+  const lobbyNamed = canonicalLanding(lobbyDir(homeResolved), fs).landing;
+  const folds = named !== expanded;
 
   // Containment: an entry names a folder of the team's own. It is never the root, the home, a
   // folder above the home — the lobby's folder holds the lobby and the approval store — or a
   // folder above the project; main's legacy checker refused these shapes.
   if (expanded === sep) return 'is the root of the filesystem: trust a folder of the team\'s own';
-  if (expanded === homeResolved) return 'is the home itself: trust a folder of the team\'s own';
-  if (above(expanded, lobbyDir(homeResolved))) {
+  if (expanded === homeResolved || named === homeNamed) return 'is the home itself: trust a folder of the team\'s own';
+  if (above(expanded, lobbyDir(homeResolved)) || (folds && above(named, lobbyNamed))) {
     return `would cover ${join(homeResolved, '.config', 'team')}, which holds the lobby and the approval store: trust a folder of the team's own`;
   }
-  if (root !== undefined && projectAncestor(expanded, root, fs)) {
+  if (root !== undefined && (projectAncestor(expanded, root, fs) || (folds && projectAncestor(named, root, fs)))) {
     return 'is a parent of the project: trust a folder of the team\'s own';
   }
 
