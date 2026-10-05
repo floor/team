@@ -369,6 +369,34 @@ describe('team up, live', () => {
     expect(seats['claude-coordinator-acme']).toBeUndefined();
   });
 
+  // A close that fails is not a close: no line may claim one, and the seat keeps its state.
+  test.each([
+    ['trust', 'Do you trust this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n', 'trust question'],
+    ['permission', PERMISSION, 'permission'],
+    ['question', 'Which branch should this start from?\n\n❯ 1. main\n  2. next\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n', 'question'],
+  ] as const)('a %s reading whose close fails leaves the seat as it is', async (_reading, screen, reading) => {
+    await approve();
+    const made = world((_pane, label) => (label === 'claude opus 5.5' ? screen : IDLE));
+    const closed: string[] = [];
+    made.launch.closeWorkspace = (_session, workspace) => {
+      closed.push(workspace);
+      return false;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(1);
+    // The line names the seat, the reading and the failed close; the same goes to the log.
+    const line = `claude-coordinator-acme: ${reading}; its workspace did not close; left as it is`;
+    expect(io.out).toContain(`${line}\n`);
+    expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain(line);
+    // It tried; nothing else claims the workspace was closed.
+    expect(closed).toEqual(['w1']);
+    expect(io.out).not.toContain('was closed');
+    // The seat's state is kept as it is: a later `up` finds it at launched, on its pane.
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['claude-coordinator-acme']).toMatchObject({ stage: 'launched', pane: 'w1:p1', workspace: 'w1' });
+  });
+
   test('a seat that never idles stays launched, with the reading and the pane lines', async () => {
     await approve();
     // The screen of the capture this report is built from: the launch line's own echo, the
