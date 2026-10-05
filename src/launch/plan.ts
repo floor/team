@@ -96,6 +96,12 @@ export interface UpSeat {
    * or a first sight. A refusal stops the seat only when this plan would launch it.
    */
   budget?: { kind: 'refuse'; why: string } | { kind: 'unknown'; account: string; text: string };
+  /**
+   * Set when a ready seat's own state is repaired only by a relaunch this `up` never performs —
+   * its process was never recorded, or it still starts outside the machine lobby. The skip line
+   * says it, so the owner is not left with a seat that is "already ready" and stale.
+   */
+  restartNote?: string;
 }
 
 export interface UpInput {
@@ -164,8 +170,13 @@ export function upPlan(input: UpInput): Step[] {
     if (seat.stage === 'ready') {
       steps.push({
         kind: 'skip',
-        text: `${seat.name}: already ready; left as it is`,
-        do: { do: 'record', seat: seat.name, record: { kind: 'ready' }, detail: '  already ready; left as it is\n' },
+        text: `${seat.name}: already ready; left as it is${seat.restartNote ? `; ${seat.restartNote}` : ''}`,
+        do: {
+          do: 'record',
+          seat: seat.name,
+          record: { kind: 'ready' },
+          detail: `  already ready; left as it is${seat.restartNote ? `; ${seat.restartNote}` : ''}\n`,
+        },
       });
       continue;
     }

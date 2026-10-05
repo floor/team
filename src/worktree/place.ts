@@ -1,6 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
+import { migrationText } from '../file/migrate.ts';
 import { insideTrust, isLegacyTrust, isMigratedTrust, protectedBy } from '../file/paths.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { lobbyDir } from '../lobby/gate.ts';
@@ -77,13 +78,13 @@ export type SeatStart = { cwd: string; lobby?: true } | { problem: string; once?
 // starts in the machine lobby ~/.config/team/lobby. In a legacy file, a shared seat starts
 // in its cwd, and a worktree seat starts in the old derived lobby.
 export function seatStart(
-  team: Pick<TeamFile, 'project' | 'workspace' | 'trust'>, seat: Seat, root: string, home: string = homedir(), verifiedLobby?: string,
+  team: Pick<TeamFile, 'project' | 'workspace' | 'trust' | 'seats'>, seat: Seat, root: string, home: string = homedir(), verifiedLobby?: string,
 ): SeatStart {
   if (!team.trust || team.trust.length === 0) {
     const lobby = lobbyDir(home);
     return {
       problem:
-        `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
+        `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\n${migrationText(team, root, home)}`,
       once: true,
     };
   }

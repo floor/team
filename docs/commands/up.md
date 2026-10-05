@@ -75,10 +75,19 @@ the table below. On a terminal the line is drawn before the seat's workspace is 
 `<seat>: launching`, and rewritten in place as the seat advances — `waiting for its prompt`,
 `naming`, `sending its rules` — until its one final record ends the line with a newline. A
 redirected stdout receives the final records only: one newline-terminated line per seat, nothing
-provisional, no escape sequence. Everything else a run says about a seat — the indented detail, the
-`skip` line for a seat already ready, stopped in the file or on a CLI with no launch profile, a
-note, a timeout's last reading and the pane's last lines — is written to stderr, after the record it
-belongs to. `watch: started` is on stderr too.
+provisional, no escape sequence. Everything else a run says about a seat — the indented detail
+under the record, the `skip` line for a seat stopped in the file, a note, a timeout's last reading
+and the pane's last lines — is written to stderr, after the record it belongs to; a seat on a CLI
+with no launch profile prints the `left out` record above, on stdout. `watch: started` is on stderr
+too.
+
+A seat already ready is left as it is, and the words it was left with are the detail under its
+record. A ready seat the state records without its process identity, or with a start outside the
+machine lobby, is left as it is too — only a relaunch repairs either — and its detail says so:
+`  already ready; left as it is; a relaunch records its process: team remove <seat> --keep, then
+team add <seat> (or team down, then team up, for the whole team)`, or the same words saying `a
+relaunch moves it into the lobby`. For a seat the file names as coordinator or operator, the detail
+offers only `team down, then team up (to restart the whole team)`.
 
 A seat is its pane only while the process `team` launched is still in it. A seat the state records
 whose pane no longer holds that process is not "already ready": its workspace is closed without a
@@ -231,6 +240,13 @@ record it belongs to, as its meaning says.
 | `<seat>: <account> is unknown` | the account is in the file and its figure is unknown — a subscription with no counted reading, or a spend account whose money reading is missing, older than `budgets.stale_after`, or in another currency than the floor's. A subscription figure with no known reset is unknown while it could still matter — inside its reserve, or within the reserve again outside it; further out — more than the reserve again — it counts, the room the figure last held, and the launch decision is clear: no unknown line. The seat still starts, and the line is a notice written to stderr, under the seat's record, on a real run |
 | `<seat>: <account>: first sight only, not yet counted` | the account's only readings are unconfirmed; the seat still starts, and the line is a notice written to stderr, under the seat's record, on a real run |
 
+A `version: "0"` — exactly that literal, the placeholder a fresh `init` writes before the owner
+fills the release number — is read as *no version declared*: the seat's first launch is not stopped
+by it, and the model family is still compared, so a file whose model names a family the CLI does
+not run stops as above. No other spelling is read that way: `version: "0.0"` stops the launch as
+any mismatch would. [team doctor](doctor.md) says the placeholder as a note — what the seat really
+runs, and the one edit that pins it.
+
 `<account>` in these lines is the seat's own account: its `account:` when the file names one, its
 `vendor` when it doesn't.
 
@@ -276,7 +292,7 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | `herdr doesn't answer` |
 | ``session beacon is stopped; clear it with `herdr session delete beacon` `` |
 | ``session beacon has 2 agents this file's state doesn't record: `up` never touches a running team`` |
-| ``the file is legacy: migrate trust to absolute paths including the lobby ~/.config/team/lobby: ...`` |
+| ``the file is legacy: migrate trust to absolute paths including the lobby ~/.config/team/lobby: ...`` — followed by the whole `trust:` block to paste: every entry the next `up` requires, one line saying which key of the file each entry comes from, and, for an entry a rule of `trust` refuses, one line naming the key that forces it |
 | ``the lobby ~/.config/team/lobby: <check>`` — gate check failed (symbolic link, permissions, mode, not empty, inside git repo) |
 | ``seat beacon-qa would start in live, inside the protected checkout live; a seat that isn't `mode: shared` never starts in one`` — the folder the file gives it, or its lobby, is a protected checkout |
 
@@ -348,8 +364,8 @@ the watchdog pane this session has never had:
 
 ```console
 $ team up --dry-run ; echo "exit $?"
-  skip claude-keeper: already ready; left as it is
-  skip claude-beacon: already ready; left as it is
+  skip claude-keeper: already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)
+  skip claude-beacon: already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
   skip claude-qa: stopped in the file; start it with `team add claude-qa`
 + herdr --session beacon workspace create --cwd . --label watchdog --no-focus
 + herdr --session beacon pane run <pane of watchdog> 'team watch --session beacon'
@@ -363,9 +379,9 @@ The same command for real runs exactly that:
 ```console
 $ team up ; echo "exit $?"
 claude-keeper: ready
-  already ready; left as it is
+  already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)
 claude-beacon: ready
-  already ready; left as it is
+  already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
   skip claude-qa: stopped in the file; start it with `team add claude-qa`
 watch: started
 exit 0
@@ -441,8 +457,8 @@ seats:
 $ team up --dry-run ; echo "exit $?"
 ! up would refuse: the file is not the approved one (`limits` changed): run `team approve`
 ! up would refuse: run `team approve`: `limits` changed
-  skip claude-keeper: already ready; left as it is
-  skip claude-beacon: already ready; left as it is
+  skip claude-keeper: already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)
+  skip claude-beacon: already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
   skip claude-qa: stopped in the file; start it with `team add claude-qa`
 dry run: nothing was run
 exit 0

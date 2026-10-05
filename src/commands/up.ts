@@ -5,7 +5,9 @@ import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
+import { migrationText } from '../file/migrate.ts';
 import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
+import { relaunchRepair } from '../file/sections/lead.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import {
   agentList,
@@ -233,7 +235,10 @@ function seatPlan(
   }
   const named = agents.find((agent) => agent.name === seat.name);
   const onPane = recorded.pane ? agents.some((agent) => agent.pane === recorded.pane) : false;
-  if (recorded.stage === 'ready') return named || onPane ? { ...planned, stage: 'ready' } : planned;
+  if (recorded.stage === 'ready') {
+    if (named || onPane) return { ...planned, stage: 'ready', ...restartNote(team, seat.name, recorded, home) };
+    return planned;
+  }
   const workspaceLive =
     recorded.workspace && workspaces ? workspaces.some((workspace) => workspace.id === recorded.workspace) : null;
   const live = Boolean(named || onPane || workspaceLive);
@@ -245,6 +250,24 @@ function seatPlan(
     workspace: recorded.workspace,
     agentLive: Boolean(named || onPane),
   };
+}
+
+// What only a relaunch repairs, for a ready seat this `up` leaves as it is: a process team it
+// never recorded (a launch from before identities were), or a start outside the machine lobby
+// (an old release's start). The skip line says what does repair it; both repairs relaunch the
+// seat — one seat at a time, or the whole team (for a coordinator or operator, only the whole team).
+function restartNote(
+  team: Pick<TeamFile, 'coordinator' | 'operator'>,
+  name: string,
+  recorded: SeatState,
+  home: string,
+): { restartNote: string } | Record<string, never> {
+  const fix = relaunchRepair(team, name, 'plain');
+  if (!recorded.launched) return { restartNote: `a relaunch records its process: ${fix}` };
+  if (recorded.start_cwd && recorded.start_cwd !== lobbyDir(home)) {
+    return { restartNote: `a relaunch moves it into the lobby: ${fix}` };
+  }
+  return {};
 }
 
 export async function runUp(argv: string[], io: Io, sources: UpSources): Promise<number> {
@@ -327,8 +350,10 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
 
   const lobby = lobbyDir(sources.home);
   if (!team.trust || team.trust.length === 0 || isLegacyTrust(team.trust)) {
+    // The block names every entry the next `up` will require, computed from the file, so one
+    // edit takes the file past validation. The same block is what `doctor` and `add` print.
     refusals.push(
-      `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
+      `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\n${migrationText(team, root, sources.home)}`,
     );
   }
 
