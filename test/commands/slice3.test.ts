@@ -208,7 +208,7 @@ function writeRulesFiles() {
   for (const seat of parsed.team.seats) {
     if (seat.stopped) continue;
     const text = rulesOf(parsed.team, seat);
-    const written = writeRulesFile(rulesFilePath(parsed.team.project, root, home, seat.name), text, rulesFileHash(text));
+    const written = writeRulesFile(rulesFilePath(parsed.team.project, root, home, seat.name) as string, text, rulesFileHash(text));
     if (!written.ok) throw new Error('the rules file did not write');
   }
 }
@@ -253,7 +253,7 @@ describe('team doctor', () => {
   test('a rules file that differs warns, one that is missing warns, and neither is rewritten', async () => {
     await approve([], OWNER);
     writeRulesFiles();
-    const path = rulesFilePath('acme-web', root, home, 'codex-acme');
+    const path = rulesFilePath('acme-web', root, home, 'codex-acme') as string;
     writeFileSync(path, 'not the approved rules');
     const differs = await doctor();
     expect(differs.out).toContain('warn  codex-acme: its rules file differs from the approved rules; run `team up`\n');
@@ -268,7 +268,7 @@ describe('team doctor', () => {
   test('a rules file with a wider mode warns', async () => {
     await approve([], OWNER);
     writeRulesFiles();
-    chmodSync(rulesFilePath('acme-web', root, home, 'codex-acme'), 0o644);
+    chmodSync(rulesFilePath('acme-web', root, home, 'codex-acme') as string, 0o644);
     const run = await doctor();
     expect(run.out).toContain('warn  codex-acme: its rules file has mode 0644, not 0600; run `team up`\n');
   });
@@ -701,7 +701,7 @@ describe('team down', () => {
     });
     const parsed = validateTeamFile(readFileSync(join(root, '.agents/team.yaml'), 'utf8'));
     if (!parsed.ok) throw new Error('fixture');
-    const rulesFile = rulesFilePath(parsed.team.project, root, home, 'deepseek-acme-tmp-1');
+    const rulesFile = rulesFilePath(parsed.team.project, root, home, 'deepseek-acme-tmp-1') as string;
     writeRulesFile(rulesFile, 'Rules.\n', rulesFileHash('Rules.\n'));
     // The exit is typed at an idle prompt, read back, and sent; the pane leaves the agent list.
     let sent = false;

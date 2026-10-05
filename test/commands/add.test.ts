@@ -421,7 +421,7 @@ describe('team add', () => {
       return text === IDLE ? trust : text;
     };
     // The rules file is written before the pane is ever read; a seat left out takes it away.
-    const file = rulesFilePath('acme', project, home, 'scribe-tmp-1');
+    const file = rulesFilePath('acme', project, home, 'scribe-tmp-1') as string;
     const io = testIo(project, owner);
     expect(await runAdd(['--temporary', '--like', 'scribe', '--until', 'merged:fix/fresh'], io, sources(made))).toBe(1);
     expect(io.out).toContain('scribe-tmp-1: left out: trust question');

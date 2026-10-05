@@ -213,8 +213,12 @@ function rulesFileDifferences(standing: Standing, root: string, home: string | u
     // next time it launches, so no stale file outlives one.
     if (seat.stopped) continue;
     if (profileFor(seat.cli)?.rulesOption != null) continue;
+    // A seat name the team file's own rule refuses has no path to check — the parser already
+    // refuses it, so this only guards a record that holds one anyway.
+    const path = rulesFilePath(approved.team.project, root, home, seat.name);
+    if (path === null) continue;
     const text = rulesOf(approved.team, seat);
-    const check = checkRulesFile(rulesFilePath(approved.team.project, root, home, seat.name), text);
+    const check = checkRulesFile(path, text);
     if (!check.ok) out.push({ what: `${seat.name}: ${check.what}`, repair: 'the owner runs team up', owner: true });
   }
   return out;

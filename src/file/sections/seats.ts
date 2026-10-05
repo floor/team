@@ -11,6 +11,11 @@ import { MODES } from './workspace.ts';
 
 export type DraftSeat = Omit<Seat, 'mode'> & { mode?: Mode };
 
+/** The team file's own seat-name rule: a letter or digit first, then letters, digits, `.`, `_`
+ *  and `-`. Everything that builds a path out of a seat name holds itself to the same rule —
+ *  there is no second, looser one. */
+export const SEAT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
 export const seats: Section = {
   name: 'seats',
   owner: false,
@@ -75,7 +80,7 @@ function readSeats(
     const role = check.required(fields.get('role'), 'a seat\'s role', line);
     const name = check.required(fields.get('name'), 'a seat\'s name', line);
     const at = name ? `seat "${name}"` : 'a seat';
-    if (name && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+    if (name && !SEAT_NAME.test(name)) {
       check.fail(fields.get('name')?.line ?? line, `${at}: the name takes letters, digits, ".", "_" and "-"`);
     }
     if (!fields.get('cli')) check.fail(line, `${at}: cli is required`);

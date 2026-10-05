@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
@@ -8,6 +8,13 @@ import {
   checkRulesFile, removeRulesFile, rulesDeliveryOf, rulesFileHash, rulesFilePath, rulesLine, typeablePath, writeRulesFile,
 } from '../../src/launch/rules-file.ts';
 import { rulesOf } from '../../src/launch/rules.ts';
+
+// The builder under test returns null for a name its rule refuses; every fixture's name passes.
+function pathOf(project: string, root: string, home: string, seat: string): string {
+  const path = rulesFilePath(project, root, home, seat);
+  if (path === null) throw new Error(`the fixture seat name "${seat}" must be typeable`);
+  return path;
+}
 
 const EXAMPLE = readFileSync(new URL('../fixtures/example.yaml', import.meta.url), 'utf8');
 
@@ -53,7 +60,7 @@ describe('the line and its path', () => {
     try {
       // The store folder is the approval store's own: `<home>/.config/team/<project>-<hash>`,
       // the project's state folder, with `rules/` and the seat's file inside it.
-      const path = rulesFilePath('acme-web', root, home, 'codex-acme');
+      const path = pathOf('acme-web', root, home, 'codex-acme');
       expect(path.startsWith(join(home, '.config', 'team'))).toBe(true);
       const parts = path.split('/');
       expect(parts.at(-2)).toBe('rules');
@@ -73,7 +80,7 @@ describe('writing the file', () => {
     // ladder starts at team's state root inside it.
     mkdirSync(join(home, '.config'), { recursive: true });
     const { team, seat } = codexSeat();
-    return { home, path: rulesFilePath(team.project, '/nowhere', home, seat.name), text: rulesOf(team, seat) };
+    return { home, path: pathOf(team.project, '/nowhere', home, seat.name), text: rulesOf(team, seat) };
   }
 
   // A ladder the writer accepts, for fixtures that plant something inside it: the store folder
@@ -269,7 +276,7 @@ describe('checking the file', () => {
       // The approval store always exists before a delivery: `~/.config` is there already.
       mkdirSync(join(made, '.config'), { recursive: true });
       const { team, seat } = codexSeat();
-      return { home: made, path: rulesFilePath(team.project, '/nowhere', made, seat.name), text: rulesOf(team, seat) };
+      return { home: made, path: pathOf(team.project, '/nowhere', made, seat.name), text: rulesOf(team, seat) };
     })();
     try {
       writeRulesFile(path, text, rulesFileHash(text));
@@ -285,7 +292,7 @@ describe('checking the file', () => {
     mkdirSync(join(home, '.config'), { recursive: true });
     try {
       const { team, seat } = codexSeat();
-      const path = rulesFilePath(team.project, '/nowhere', home, seat.name);
+      const path = pathOf(team.project, '/nowhere', home, seat.name);
       const text = rulesOf(team, seat);
       expect(checkRulesFile(path, text)).toEqual({ ok: false, what: 'its rules file is missing' });
       writeRulesFile(path, text, rulesFileHash(text));
@@ -302,6 +309,71 @@ describe('checking the file', () => {
       removeRulesFile(path);
       expect(checkRulesFile(path, text)).toEqual({ ok: false, what: 'its rules file is missing' });
       removeRulesFile(path); // a second removal of nothing is nothing
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the seat name where the path is built', () => {
+  // The names the team file's own rule refuses — plus the one length that makes a file name over
+  // 255 bytes — checked where the path is built, not only by the parser: a corrupt state entry
+  // must never become a path. `codex/acme` and `../victim` are refused names; as raw strings they
+  // are also the corrupt entries the removal test feeds.
+  const refused = ['codex/acme', '..', '../victim', '.hidden', 'codex acme', 'a'.repeat(253)];
+
+  test('a name the team file refuses, and a file name over 255 bytes, get no path at all', () => {
+    const home = mkdtempSync(join(tmpdir(), 'team-rules-home-'));
+    try {
+      for (const name of refused) expect(rulesFilePath('acme-web', '/nowhere', home, name)).toBeNull();
+      // 252 characters make a 255-byte file name exactly: the boundary itself passes.
+      expect(rulesFilePath('acme-web', '/nowhere', home, 'a'.repeat(252))).toContain(`${'a'.repeat(252)}.md`);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('each refused name is refused in the delivery too — nothing written, nothing typed', () => {
+    const home = mkdtempSync(join(tmpdir(), 'team-rules-home-'));
+    try {
+      const { team, seat } = codexSeat();
+      for (const name of refused) {
+        expect(rulesDeliveryOf(team, { ...seat, name }, '/nowhere', home)).toEqual({
+          refusal: "its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -",
+        });
+      }
+      expect(existsSync(join(home, '.config'))).toBe(false); // nothing was written anywhere
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('a corrupt state entry never turns a removal into an unlink elsewhere', () => {
+    const home = mkdtempSync(join(tmpdir(), 'team-rules-home-'));
+    try {
+      const store = join(home, '.config', 'team', 'acme-web-001471018cf6');
+      mkdirSync(join(store, 'rules'), { recursive: true, mode: 0o700 });
+      const victim = join(store, 'victim.md');
+      writeFileSync(victim, 'do not touch\n');
+      // The corrupt entries themselves: a `..` out of rules/ and a `/` into a folder of it.
+      removeRulesFile(`${store}/rules/../victim.md`);
+      removeRulesFile(`${store}/rules/codex/acme.md`);
+      // And decoys planted at refused names inside rules/, plus no path at all. (The 253-character
+      // name has no decoy: the file system itself refuses a 256-byte name, so nothing can be
+      // planted there for a removal to find.)
+      const planted = ['..', '.hidden', 'codex acme'];
+      for (const name of planted) writeFileSync(join(store, 'rules', `${name}.md`), 'planted\n');
+      for (const name of planted) removeRulesFile(join(store, 'rules', `${name}.md`));
+      removeRulesFile(null);
+      expect(readFileSync(victim, 'utf8')).toBe('do not touch\n');
+      for (const name of planted) {
+        expect(readFileSync(join(store, 'rules', `${name}.md`), 'utf8')).toBe('planted\n');
+      }
+      // A name that passes is still taken with its seat.
+      const kept = join(store, 'rules', 'codex-acme.md');
+      writeFileSync(kept, 'rules\n');
+      removeRulesFile(kept);
+      expect(existsSync(kept)).toBe(false);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

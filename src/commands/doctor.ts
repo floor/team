@@ -446,7 +446,11 @@ export function doctorFindings(
     const seats = ofRecord.ok ? ofRecord.team.seats : [];
     for (const seat of seats) {
       if (seat.stopped || profileFor(seat.cli)?.rulesOption != null) continue;
-      const check = checkRulesFile(rulesFilePath(ofRecord.ok ? ofRecord.team.project : approved.project, root, sources.home, seat.name), rulesOf(ofRecord.ok ? ofRecord.team : approved, seat));
+      // A seat name the team file's own rule refuses has no path to check — the parser already
+      // refuses it, so this only guards a record that holds one anyway.
+      const path = rulesFilePath(ofRecord.ok ? ofRecord.team.project : approved.project, root, sources.home, seat.name);
+      if (path === null) continue;
+      const check = checkRulesFile(path, rulesOf(ofRecord.ok ? ofRecord.team : approved, seat));
       if (!check.ok) findings.push({ level: 'warn', text: `${seat.name}: ${check.what}; run \`team up\`` });
     }
   }

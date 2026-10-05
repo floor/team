@@ -3,6 +3,7 @@ import { constants, openSync, closeSync, lstatSync, mkdirSync, readSync, renameS
 import { basename, dirname, join } from 'node:path';
 import { storePath } from '../store/store.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
+import { SEAT_NAME } from '../file/sections/seats.ts';
 import { profileFor } from '../profiles/index.ts';
 import { rulesOf } from './rules.ts';
 
@@ -21,11 +22,20 @@ export function typeablePath(path: string): boolean {
   return TYPEABLE.test(path);
 }
 
+/** Whether a seat name can become a file name: it must pass the team file's own seat-name rule
+ *  (the same expression the parser holds, not a second one — so a leading `.` , a `/`, a `..`,
+ *  a space or any other character the file refuses is refused here too), and the file name it
+ *  makes must stay within 255 bytes. */
+export function typeableSeat(seat: string): boolean {
+  return SEAT_NAME.test(seat) && Buffer.byteLength(`${seat}.md`) <= 255;
+}
+
 /** The file a seat's rules are written to: `<project state folder>/rules/<seat name>.md`, the
  *  folder the approval store already uses for this project, never inside a worktree, the lobby
- *  or the project. */
-export function rulesFilePath(project: string, root: string, home: string, seat: string): string {
-  return join(storePath(project, root, home), 'rules', `${seat}.md`);
+ *  or the project. A seat name the team file's own rule refuses gets no path at all — null, so
+ *  nothing downstream can normalise it somewhere else. */
+export function rulesFilePath(project: string, root: string, home: string, seat: string): string | null {
+  return typeableSeat(seat) ? join(storePath(project, root, home), 'rules', `${seat}.md`) : null;
 }
 
 /** The line typed into the seat's pane: the file's absolute path and the first 12 hex digits of
@@ -206,9 +216,16 @@ export function rulesFileHolds(path: string, hash12: string): boolean {
   return read !== null && rulesFileHash(read) === hash12;
 }
 
-/** Removes a seat's rules file — a temporary seat's, with the seat. A file that is not there,
- *  or a write that never landed, leaves nothing to complain about. */
-export function removeRulesFile(path: string): void {
+/** Removes a seat's rules file — a temporary seat's, with the seat. The name is checked where
+ *  the unlink happens, not only where the path was built: a corrupt state entry holding `..`
+ *  or any name the team file's rule refuses must not turn a removal into an unlink somewhere
+ *  else, so anything that is not `<state folder>/rules/<a name the file accepts>.md` is left
+ *  entirely alone. A file that is not there, or a write that never landed, leaves nothing to
+ *  complain about. */
+export function removeRulesFile(path: string | null): void {
+  if (path === null) return;
+  if (basename(dirname(path)) !== 'rules') return;
+  if (!typeableSeat(basename(path).replace(/\.md$/, ''))) return;
   try {
     unlinkSync(path);
   } catch {
@@ -253,7 +270,7 @@ export function rulesDeliveryOf(
   if (profile !== null && profile.rulesOption !== null) return { refusal: 'its rules travel as a launch option' };
   const text = rulesOf(team, seat);
   const path = rulesFilePath(team.project, root, home, seat.name);
-  if (!typeablePath(path)) {
+  if (path === null || !typeablePath(path)) {
     return { refusal: "its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -" };
   }
   return { text, path, line: rulesLine(path, rulesFileHash(text)) };

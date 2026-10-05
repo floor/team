@@ -685,7 +685,7 @@ describe('the rules files of message seats', () => {
       if (seat.stopped) continue;
       const delivery = rulesOf(team, seat);
       const text = edit ? edit(seat, delivery) : delivery;
-      const written = writeRulesFile(rulesFilePath(team.project, dir, home, seat.name), text, rulesFileHash(text));
+      const written = writeRulesFile(rulesFilePath(team.project, dir, home, seat.name) as string, text, rulesFileHash(text));
       if (!written.ok) throw new Error('the rules file did not write');
     }
   };
@@ -707,12 +707,12 @@ describe('the rules files of message seats', () => {
 
   test('a missing file is a difference, and a mode wider than 0600 is one too', async () => {
     writeAll(teamOf());
-    rmSync(rulesFilePath('acme-web', dir, home, 'codex-acme'), { force: true });
+    rmSync(rulesFilePath('acme-web', dir, home, 'codex-acme') as string, { force: true });
     const missing = await status();
     expect(missing.out).toContain('codex-acme: its rules file is missing');
     expect(missing.code).toBe(1);
     writeAll(teamOf());
-    chmodSync(rulesFilePath('acme-web', dir, home, 'codex-acme'), 0o644);
+    chmodSync(rulesFilePath('acme-web', dir, home, 'codex-acme') as string, 0o644);
     const wide = await status();
     expect(wide.out).toContain('codex-acme: its rules file has mode 0644, not 0600');
     expect(wide.code).toBe(1);

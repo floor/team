@@ -467,7 +467,7 @@ describe('team remove', () => {
     });
     const made = world();
     made.sources.home = dir;
-    const rulesFile = rulesFilePath('acme', dir, dir, 'worker-tmp-1');
+    const rulesFile = rulesFilePath('acme', dir, dir, 'worker-tmp-1') as string;
     writeRulesFile(rulesFile, 'Rules.\n', rulesFileHash('Rules.\n'));
     made.agents.push({ name: 'worker-tmp-1', agent: 'claude', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null });
     expect(await runRemove(['worker-tmp-1', '--file', file], testIo(dir, owner), made.sources)).toBe(0);
