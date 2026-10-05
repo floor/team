@@ -30,6 +30,39 @@ export type TrustRecord = {
 
 const KEYS = ['1', 'a', 'enter'] as const;
 
+/**
+ * A version as a whole number series: `2026.10.01` is [2026, 10, 1]. Null for any text
+ * with a suffix, a pre-release tag, build metadata or other decoration — `2026.10.01-beta.1`
+ * is not `2026.10.01`.
+ */
+export function wholeVersion(text: string): number[] | null {
+  const match = /^\d+(?:\.\d+)*$/.exec(text.trim());
+  return match ? match[0].split('.').map(Number) : null;
+}
+
+function versionOrder(a: readonly number[], b: readonly number[]): number {
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0);
+    if (difference !== 0) return Math.sign(difference);
+  }
+  return 0;
+}
+
+/**
+ * True when a printed version is one the record lists. An exact record matches the printed
+ * text byte for byte, so a build suffix must be spelled in the record exactly as the CLI
+ * prints it; a closed range compares whole versions with no suffix on either side. A
+ * decorated or unparsable version is outside any range.
+ */
+export function versionMatches(record: Pick<TrustRecord, 'from' | 'to'>, printed: string): boolean {
+  if (record.from === record.to) return printed === record.from;
+  const version = wholeVersion(printed);
+  const from = wholeVersion(record.from);
+  const to = wholeVersion(record.to);
+  if (!version || !from || !to) return false;
+  return versionOrder(version, from) >= 0 && versionOrder(version, to) <= 0;
+}
+
 /** The herdr key name for one recorded byte, or null when this version does not send it. */
 export function keyOf(action: string): (typeof KEYS)[number] | null {
   if (!/^[0-9a-fA-F]{2}$/.test(action)) return null;

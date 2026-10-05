@@ -22,8 +22,8 @@ timeouts:
   idle: 90s
   exit: 30s
 trust_answer:
-  - from: '2026.10.01'
-    to: '2026.10.01'
+  - from: '2026.10.01-14929f9'
+    to: '2026.10.01-14929f9'
     label: '[a] Trust this workspace'
     action: '61'
     lobby_evidence: trust.txt

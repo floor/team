@@ -15,8 +15,8 @@ import { rulesText } from '../launch/rules.ts';
 import { acquireSeatLock } from '../launch/seat-lock.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
-import { versionVerdict, type Profile } from '../profiles/profile.ts';
-import { extractFolder, isEligible, keyOf, labelMatches, type TrustRecord } from '../profiles/trust-answer.ts';
+import { type Profile } from '../profiles/profile.ts';
+import { extractFolder, isEligible, keyOf, labelMatches, versionMatches, type TrustRecord } from '../profiles/trust-answer.ts';
 import { emptySession, readState, updateState, type SeatState } from '../state.ts';
 import { approvalStanding, type Standing } from '../store/store.ts';
 import { readEnd } from '../watch/end.ts';
@@ -211,7 +211,7 @@ function inspect(
   if (!profile) return say('version', 'this version has no trust answer');
   const printed = host.version(profile.binary);
   const record = printed
-    ? profile.answers.find((item) => isEligible(profile.cli, item) && versionVerdict(printed, { from: item.from, to: item.to }) === 'tested')
+    ? profile.answers.find((item) => isEligible(profile.cli, item) && versionMatches(item, printed))
     : undefined;
   if (!printed || !record) return say('version', 'this version has no trust answer');
   const screen = host.pane(session, pane);

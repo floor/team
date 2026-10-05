@@ -17,7 +17,7 @@ import type { Command, Io } from '../io.ts';
 import { profileFor } from '../profiles/index.ts';
 import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
-import { extractFolder, isEligible } from '../profiles/trust-answer.ts';
+import { extractFolder, isEligible, versionMatches } from '../profiles/trust-answer.ts';
 import { readState, type SeatState } from '../state.ts';
 import { canShowModel } from '../status/statusline.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
@@ -392,7 +392,7 @@ function trustFindings(team: TeamFile, dir: string, session: string, sources: Do
     findings.push({ level: 'note', text: `${name}: waiting for owner at trust` });
     const printed = profile ? sources.version(profile.binary) : null;
     const inRange = printed && profile
-      ? profile.answers.find((item) => versionVerdict(printed, { from: item.from, to: item.to }) === 'tested')
+      ? profile.answers.find((item) => versionMatches(item, printed))
       : undefined;
     const eligible = inRange && profile ? isEligible(profile.cli, inRange) : false;
     if (!eligible) findings.push({ level: 'warn', text: `${name}: waiting at trust; this version has no trust answer` });

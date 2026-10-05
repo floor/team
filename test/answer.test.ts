@@ -6,7 +6,7 @@ import { runApprove } from '../src/commands/approve.ts';
 import { runAnswer, type AnswerHost } from '../src/commands/answer.ts';
 import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
 import { lobbyPath } from '../src/file/landing.ts';
-import { extractFolder, isEligible, labelMatches, type TrustRecord } from '../src/profiles/trust-answer.ts';
+import { extractFolder, isEligible, labelMatches, versionMatches, wholeVersion, type TrustRecord } from '../src/profiles/trust-answer.ts';
 import { profileFor } from '../src/profiles/index.ts';
 import { runStatus, type StatusSources } from '../src/commands/status.ts';
 import type { Live } from '../src/status/compare.ts';
@@ -193,6 +193,38 @@ describe('what the captures show', () => {
   });
 });
 
+describe('version matching', () => {
+  test('a version is read whole', () => {
+    expect(wholeVersion('2026.10.01')).toEqual([2026, 10, 1]);
+    expect(wholeVersion(' 1.2 ')).toEqual([1, 2]);
+    expect(wholeVersion('2026.10.01-beta.1')).toBeNull();
+    expect(wholeVersion('2026.10.01+build.7')).toBeNull();
+    expect(wholeVersion('codex-cli 1.3.0')).toBeNull();
+    expect(wholeVersion('')).toBeNull();
+  });
+
+  test('an exact record matches only the printed text', () => {
+    // The exact form cursor-agent --version prints on this machine.
+    const record = { from: '2026.10.01-14929f9', to: '2026.10.01-14929f9' };
+    expect(versionMatches(record, '2026.10.01-14929f9')).toBe(true);
+    expect(versionMatches(record, '2026.10.01')).toBe(false);
+    expect(versionMatches(record, '2026.10.01-beta.1')).toBe(false);
+    expect(versionMatches(record, '2026.10.01-14929f9 ')).toBe(false);
+  });
+
+  test('a closed range matches whole versions and nothing decorated', () => {
+    const range = { from: '1.2.0', to: '1.4.9' };
+    expect(versionMatches(range, '1.2.0')).toBe(true);
+    expect(versionMatches(range, '1.3')).toBe(true);
+    expect(versionMatches(range, '1.4.9')).toBe(true);
+    expect(versionMatches(range, '1.5')).toBe(false);
+    expect(versionMatches(range, '1.1.9')).toBe(false);
+    expect(versionMatches(range, '1.3.0-rc.1')).toBe(false);
+    expect(versionMatches(range, 'codex-cli 1.3.0')).toBe(false);
+    expect(versionMatches({ from: '1.2.0', to: '1.4.9-rc.1' }, '1.3.0')).toBe(false);
+  });
+});
+
 describe('team answer', () => {
   test('cursor and antigravity each send their one key, then become ready', async () => {
     for (const cli of ['cursor', 'antigravity'] as const) {
@@ -353,6 +385,8 @@ describe('team answer', () => {
       { name: 'sibling', screen: sibling, message: 'lead: ask the owner to approve this exact folder and answer through team up' },
       { name: 'symlink', screen: linked, message: 'lead: ask the owner to approve this exact folder and answer through team up' },
       { name: 'version', screen: trust, version: '2026.10.02', message: 'lead: this version has no trust answer' },
+      { name: 'prerelease version', screen: trust, version: '2026.10.01-beta.1', message: 'lead: this version has no trust answer' },
+      { name: 'suffix dropped version', screen: trust, version: '2026.10.01', message: 'lead: this version has no trust answer' },
     );
     for (const item of cases) {
       wait(dir, 'lead');
