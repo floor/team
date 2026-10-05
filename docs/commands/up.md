@@ -73,7 +73,7 @@ Those lines go to the terminal only: the log file gets the reading, never the sc
 | --- | --- |
 | `<seat>: left out: trust question` | the CLI asked whether to trust the folder; its workspace was closed without an answer |
 | `<seat>: permission; its workspace was closed without input and the seat left out` | a permission dialog, or a question, was left for its owner to answer |
-| `<seat>: its pane is back at the shell and shows no CLI prompt; left at launched` | herdr's process info says the pane's foreground program is back at its shell for two readings at least a full poll apart, and the launch line's own echo is still on the screen above the prompt: the line ran and the CLI ended without reaching a prompt. A pane read before the line arrived, one whose echo scrolled away, or a herdr that can't say (no shell process info), is waited out to the deadline — the end is never inferred from the screen's text or from one reading. The workspace is kept, and the pane's last lines follow on the terminal |
+| `<seat>: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched` | herdr's process info says the pane's foreground program is back at its shell through three full polls on end, four readings, and the launch line's own echo is still on the screen above the prompt: the line ran and the CLI ended without reaching a prompt. A pane read before the line arrived, one whose echo scrolled away, one whose program is slow to draw, or a herdr that can't say (no shell process info), is waited out to the deadline — the end is never inferred from the screen's text, and a single reading can never reach the three polls. The workspace is kept, and the pane's last lines follow on the terminal |
 | `<seat>: timed out after <n> s waiting for its idle prompt; the screen last read <kind>; left at launched` | the prompt never came within the profile's own time limit; the last reading and the pane's last lines follow on the terminal |
 | `<seat>: was not in the agent list in time; left at launched` | herdr listed no agent in the pane to name |
 | `<seat>: its rules were not delivered; left at named` | the rules did not reach an empty idle prompt |
@@ -83,8 +83,8 @@ Those lines go to the terminal only: the log file gets the reading, never the sc
 | `<seat>: the approval allows 3 seats; 4 would be running` | the approval's ceiling, from the record, not the file |
 | `<seat>: refused: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | a counted reading is inside that account's reserve and this run would launch the seat; this seat is not started, and the others still are. `accounts with room: none` when no other account has room |
 | `<seat>: refused: <account> spend <amount> <CUR>, at or below its <floor> <CUR> floor, read <age> ago; accounts with room: <accounts>` | the money its check counted is at or below the account's floor, and this run would launch the seat; this seat is not started, and the others still are |
-| `<seat>: refused: its launch line starts `<program>`, which is not on the PATH` / `… starts `<path>`, which does not exist` / `… starts `<path>`, which is not executable` | the program the line starts is missing where the seat starts — the lobby for a seat that works in worktrees. A path written as the program is read as main's launcher check read it: it must be there and executable. This seat is not started, and the others still are |
-| `<seat>: refused: its launch line runs `<path>`, not found from its start folder <folder>; the same file is at `<absolute>` from the project root — write that path` | a relative argument resolves from the project root but not from the folder the line will run in; this seat is not started, and the others still are |
+| `<seat>: refused: its launch line starts `<word>`, which is not on the PATH` / `…, which does not exist` / `…, which is not executable` / `…, not found from `~`` / `…, not found from its start folder <folder>` | the program the line starts is missing where the seat starts — the lobby for a seat that works in worktrees. A first word that is one fully quoted literal (`"claude"`, `'zcash'`) is checked with the quotes removed, the way a shell would run it, and `<word>` is the word as written, quotes and all — a quoted `"~/x"` is a pathname with a literal `~` folder, resolved from the start folder, never the home. A path written as the program is read as main's launcher check read it: it must be there and executable, not merely there. This seat is not started, and the others still are |
+| `<seat>: refused: its launch line runs `<path>`, not found from its start folder <folder>; the same file is at `<absolute>` from the project root — write that path` | the line runs a shell — `sh`, `bash` or `zsh`, by name or by path — whose first argument is a relative script path, not an option, and that script resolves from the project root but not from the folder the line will run in: the shell exits 127 without starting anything. This seat is not started, and the others still are |
 | `<seat>: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | the same reading, and the seat is already running; setup continues and the line is only a notice |
 | `<seat>: <account> spend <amount> <CUR>, at or below its <floor> <CUR> floor, read <age> ago; accounts with room: <accounts>` | the same money reading, and the seat is already running; setup continues and the line is only a notice |
 | `<seat>: <account> is unknown` | the account is in the file and its figure is unknown — a subscription with no counted reading, or a spend account whose money reading is missing, older than `budgets.stale_after`, or in another currency than the floor's. A subscription figure with no known reset is unknown while it could still matter — inside its reserve, or within the reserve again outside it; further out — more than the reserve again — it counts, the room the figure last held, and the launch decision is clear: no unknown line. The seat still starts |
@@ -94,14 +94,16 @@ Those lines go to the terminal only: the log file gets the reading, never the sc
 `vendor` when it doesn't.
 
 A launch line the check can't be sure of is never refused: it is printed as `  note <seat>: <why>`
-and the seat starts. A note says the line was not checked — it quotes or substitutes text this
-version does not read, or its first word names no command — or that a relative path is not there
-yet, `not checked: the command may create it`; a `~/…` that is not there now is said the same way.
-A seat resumed into an existing pane is checked where that pane runs when the state records the
-folder it was started in; without that record its launch line is not checked at all and the note
-says so — the file's folder is not where that pane is. The notes are said once: on stderr on a real
-run, on stdout with the plan on a dry one, as [team doctor](doctor.md) says them. A miss is not a
-note: on a dry run it leaves the seat out as `  skip <seat>: would refuse: …`.
+and the seat starts. A note says the line was not checked — a word of it quotes or substitutes text
+this version does not read, or its first word names no command — or that a relative path is not
+there yet, `not checked: the command may create it`; that is every relative argument but the shell's
+script path above — option text, an output path, a path the command creates, one a launcher changes
+directory for — and a `~/…` that is not there now is said the same way. A seat resumed into an
+existing pane is checked where that pane runs when the state records the folder it was started in;
+without that record its launch line is not checked at all and the note says so — the file's folder
+is not where that pane is. The notes are said once: on stderr on a real run, on stdout with the plan
+on a dry one, as [team doctor](doctor.md) says them. A miss is not a note: on a dry run it leaves
+the seat out as `  skip <seat>: would refuse: …`.
 
 The plan a `--dry-run` prints is also what `team down --dry-run` prints: `+ <command>` for a command
 that would run, a `    (<note>)` line under one that carries a note, `  wait <text>` for a wait,

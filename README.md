@@ -120,9 +120,12 @@ budgets:                      # the owner's: reserve or floor per account, marks
   spends its `vendor`, and changing either is an edit the owner re-approves.
 - `launch` is the plain command, without approval flags: the profile adds them. It runs in the
   folder the seat starts in — the lobby for a seat that works in worktrees — and `team` never
-  rewrites it: `team doctor` checks its first word and any `./…`, `../…` or `~/…` argument there,
-  and `up` and `add` leave a seat out, saying the same words, when one resolves nowhere in that
-  folder; a line that quotes or substitutes text is reported as not checked, never refused.
+  rewrites it: `team doctor` checks its first word there — one fully quoted literal with its quotes
+  removed, the way a shell would run it — and any relative argument. `up` and `add` leave a seat
+  out, saying the same words, when the first word is missing there, or when the line runs a shell
+  (`sh`, `bash`, `zsh`) whose relative script path resolves from the project root and not from that
+  folder; every other relative argument, and a line that quotes or substitutes text, is reported as
+  not checked, never refused.
   `count: 2` makes the
   numbered names; `parked` keeps a seat out of idle reports, `stopped` keeps it out of `up`.
 - `workspace.mode` is `shared` (every seat in the project) or `worktree` (each task in its own

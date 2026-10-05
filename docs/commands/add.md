@@ -58,18 +58,23 @@ A seat that reaches its idle prompt with its rules delivered prints `<seat>: rea
 seat prints `<name>: ready` under the name it was given. Everything else a launch can print is the
 same as `up`'s, with the seat's name in front: `its workspace was not created; left at launched`,
 `timed out after <n> s waiting for its idle prompt; the screen last read <kind>; left at launched`,
-`its pane is back at the shell and shows no CLI prompt; left at launched`, `permission; its
+`its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched`, `permission; its
 workspace was closed without input and the seat left out`, and the rest of the table on the
 [team up](up.md) page. A wait that ended without a prompt prints the pane's last lines under the
 reading, on the terminal only, as `up` does.
 
 The seat's own launch line is checked where it will start, before the file is edited and before any
-workspace is made. A note — the line quotes or substitutes text, or a path is not there yet — is
-said once as `  note <name>: <why>`, as `up` says it. A line that can't run is refused in the same
-paragraph as any other `MISS` finding: `team add: <name>: its launch line starts \`<program>\`,
-which is not on the PATH`, and the file is left alone. A `--dry-run` prints that refusal in the
-plan instead — `  skip <name>: would refuse: …` above `dry run: nothing was run` — makes nothing
-and exits 0.
+workspace is made. A note — a word of the line quotes or substitutes text, or a relative argument is
+not there yet — is said once as `  note <name>: <why>`, as `up` says it. A line that can't run is
+refused in the same paragraph as any other `MISS` finding: `team add: <name>: its launch line starts
+\`<word>\`, which is not on the PATH`, or `team add: <name>: its launch line runs \`<path>\`, not
+found from its start folder <folder>; the same file is at \`<absolute>\` from the project root —
+write that path` — and the file is left alone. A seat this `add` adopts into a pane that is already
+there — its state names the workspace, and an unnamed pane is in it — runs nothing now: its line is
+checked where that pane runs when the state records the folder it was started in, and otherwise is
+not checked at all, the note saying so, and a miss found there is never refused. A `--dry-run`
+prints a refusal in the plan instead — `  skip <name>: would refuse: …` above `dry run: nothing was
+run` — makes nothing and exits 0.
 
 ## Refusals
 
@@ -111,7 +116,7 @@ session past `limits.seats`, past `limits.temporary` for a temporary seat, or pa
 
 ## Exit codes
 
-- `0` — the seat reached its idle prompt and is ready; or the temporary seat is.
+- `0` — the seat reached its idle prompt and is ready; or the temporary seat is; or `--dry-run` printed its plan, a would-be refusal included.
 - `1` — the run was refused, or the seat was left behind at some stage of its launch.
 - `2` — the invocation or the team file can't be read.
 

@@ -20,10 +20,16 @@ launch line is read the way `team` splits it — the first word that isn't a var
 the arguments written `./…`, `../…` or `~/…` — and each is looked for where the line will run: the
 folder the seat starts in, which for a seat that works in worktrees is the lobby, never a launcher
 run to find out. The first word is checked before the rest is read: a line whose program is missing
-is a `MISS` whatever follows it, quoted text included, and a program written as a path is read the
-way main's launcher check read it — it must be there and executable, not merely there. A line that
-quotes or substitutes text is left alone and reported as not checked,
-never refused. The owner's `doctor` also
+is a `MISS` whatever follows it, and a first word that is one fully quoted literal — `"claude"`,
+`'zcash'` — is checked with the quotes removed, the way a shell would run it, the quotes printed
+back with the word; a quoted `"~/x"` is a pathname with a literal `~`, not the home. A program
+written as a path is read the way main's launcher check read it — it must be there and executable,
+not merely there. A line with a word that quotes or substitutes text is left alone and reported as
+not checked, never refused — the first word is the one exception, and only when it is a fully quoted
+literal, read above. A relative argument is a note, never a refusal — its meaning is not knowable
+and the command may create the path — with one exception: the relative script path of a shell (`sh`,
+`bash`, `zsh`), which the shell cannot start without, is a `MISS` when it resolves from the project
+root but not from the folder the line will run in. The owner's `doctor` also
 runs each approved account's check command once, the way the watch runs it; the command's raw output
 is parsed and dropped, never shown. It writes nothing.
 
