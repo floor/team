@@ -256,8 +256,8 @@ describe('modelFlagFinding', () => {
   // exactly this model — and this version when the seat has one. A yes here is a reading the
   // reader really gives, never a claim about what a template might spell.
   test('what the screen can name is what the reader reads back, and nothing else', () => {
-    // The review's probe: the shipped rule knows Opus, Sonnet, Haiku and Fable, so the reader
-    // can never return Terra, and no line the pattern accepts can round-trip to it.
+    // The shipped rule reads Opus, Sonnet, Haiku and Fable; Terra is a name it cannot spell, so
+    // the reader never returns it and no line the pattern accepts reads it back.
     expect(runningModel('claude-code', 'Opus 5.5')).toEqual({ model: 'Claude Opus', version: '5.5' });
     expect(runningModel('claude-code', 'Terra 5.5')).toBeNull();
     expect(canShowModel({ cli: 'claude-code', model: 'Claude Terra' })).toBe(false);
