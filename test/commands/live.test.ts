@@ -226,6 +226,13 @@ describe('team up, live', () => {
       expect(seat).toBeUndefined();
       expect(made.closes).toContain('w2');
       expect(made.renames).not.toContain('codex-acme');
+      // The reading, the close included, names the seat on the terminal and in the log.
+      const line =
+        outcome === 'trust'
+          ? 'codex-acme: trust question; its workspace was closed without an answer and the seat left out'
+          : 'codex-acme: question; its workspace was closed without input and the seat left out';
+      expect(io.out).toContain(`${line}\n`);
+      expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain(line);
     }
   });
 
@@ -340,6 +347,10 @@ describe('team up, live', () => {
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
     expect(io.out).toContain('claude-coordinator-acme: permission; its workspace was closed without input');
+    // The reading, the close included, is what the log keeps.
+    expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain(
+      'claude-coordinator-acme: permission; its workspace was closed without input and the seat left out',
+    );
     expect(made.closes).toEqual(['w1']);
     expect(made.renames).not.toContain('claude-coordinator-acme');
     expect(made.renames).toContain('deepseek-acme');
@@ -355,12 +366,43 @@ describe('team up, live', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: left out: trust question');
+    // The line names the seat, the reading and the close; the same goes to the log.
+    const line = 'claude-coordinator-acme: trust question; its workspace was closed without an answer and the seat left out';
+    expect(io.out).toContain(`${line}\n`);
+    expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain(line);
     expect(made.closes).toEqual(['w1']);
     expect(made.renames).not.toContain('claude-coordinator-acme');
     expect(made.runs.some((run) => run.command.includes('Yes'))).toBe(false);
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']).toBeUndefined();
+  });
+
+  // A close that fails is not a close: no line may claim one, and the seat keeps its state.
+  test.each([
+    ['trust', 'Do you trust this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n', 'trust question'],
+    ['permission', PERMISSION, 'permission'],
+    ['question', 'Which branch should this start from?\n\n❯ 1. main\n  2. next\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n', 'question'],
+  ] as const)('a %s reading whose close fails leaves the seat as it is', async (_reading, screen, reading) => {
+    await approve();
+    const made = world((_pane, label) => (label === 'claude opus 5.5' ? screen : IDLE));
+    const closed: string[] = [];
+    made.launch.closeWorkspace = (_session, workspace) => {
+      closed.push(workspace);
+      return false;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(1);
+    // The line names the seat, the reading and the failed close; the same goes to the log.
+    const line = `claude-coordinator-acme: ${reading}; its workspace did not close; left as it is`;
+    expect(io.out).toContain(`${line}\n`);
+    expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain(line);
+    // It tried; nothing else claims the workspace was closed.
+    expect(closed).toEqual(['w1']);
+    expect(io.out).not.toContain('was closed');
+    // The seat's state is kept as it is: a later `up` finds it at launched, on its pane.
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['claude-coordinator-acme']).toMatchObject({ stage: 'launched', pane: 'w1:p1', workspace: 'w1' });
   });
 
   test('a seat that never idles stays launched, with the reading and the pane lines', async () => {
@@ -623,6 +665,164 @@ describe('team up, live', () => {
     expect(made.renames).not.toContain('claude-coordinator-acme');
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['deepseek-acme']?.stage).toBe('ready');
+  });
+
+  // The incident's session, ready to resume: the Codex seat at `named` with its pane and workspace
+  // recorded and its box showing `screen`, the coordinator ready. The file puts the DeepSeek pair out.
+  function incident(screen: string): World {
+    writeFileSync(
+      join(root, '.agents/team.yaml'),
+      EXAMPLE.replace('    stopped: true\n', '')
+        .replace(
+          '    count: 2                   # deepseek-acme, deepseek-acme-2\n',
+          '    count: 2                   # deepseek-acme, deepseek-acme-2\n    stopped: true\n',
+        ),
+    );
+    writeFileSync(join(root, '.agents/team.state.json'), JSON.stringify(namedState()));
+    const made = world();
+    made.session = 'running';
+    made.seed('w2:p1', screen, true);
+    return made;
+  }
+
+  function namedState() {
+    return {
+      format: 1,
+      sessions: {
+        'acme-web': {
+          seats: {
+            'claude-coordinator-acme': { stage: 'ready', pane: 'w1:p1', workspace: 'w1' },
+            'codex-acme': { stage: 'named', pane: 'w2:p1', workspace: 'w2', start_cwd: '.' },
+          },
+          worktrees: {},
+          watch: { pid: 4242, heartbeat: '2026-10-03T14:01:00Z' },
+        },
+      },
+    };
+  }
+
+  function resumed(made: World): UpSources {
+    return sources(
+      {
+        sessionState: () => 'running',
+        agents: () => [agent('claude-coordinator-acme', 'w1:p1'), agent('codex-acme', 'w2:p1')],
+        workspaces: () => [{ id: 'w1' }, { id: 'w2' }],
+        alive: () => true,
+        watchCommand: () => 'team watch',
+      },
+      made,
+    );
+  }
+
+  const captureCodex = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
+
+  test('the incident: a named seat whose box holds an unsent message is left as it is on the next up', async () => {
+    const made = incident(captureCodex('unsent'));
+    await approve();
+    const sent: string[] = [];
+    made.launch.agentStatus = () => 'idle';
+    made.launch.typeText = (_session, _pane, text) => { sent.push(text); return true; };
+    made.launch.pressEnter = () => { sent.push('Enter'); return true; };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, resumed(made));
+    // The box reads `unsent`: nothing is typed, no key is sent, no workspace is closed, and the
+    // seat's state is left byte for byte as it was.
+    expect(code).toBe(1);
+    expect(io.out).toContain('codex-acme: its rules were not delivered; left at named');
+    expect(sent).toEqual([]);
+    expect(made.closes).toEqual([]);
+    expect(JSON.parse(readFileSync(join(root, '.agents/team.state.json'), 'utf8'))).toEqual(namedState());
+  });
+
+  test('a named seat whose box is empty and idle is delivered to on the next up', async () => {
+    const made = incident(captureCodex('idle'));
+    await approve();
+    const calls: string[] = [];
+    let typedPane = '';
+    let typed = '';
+    let pasted = false;
+    let status = 'idle';
+    const read = made.launch.paneText;
+    // The pane with the paste rendered: the idle frame's placeholder row replaced by the typed
+    // message, later lines at the prompt's own column, as the fixtures README describes.
+    const boxed = () => {
+      const [first = '', ...rest] = typed.split('\n');
+      return captureCodex('idle').replace('› Ask Codex to do anything', [`› ${first}`, ...rest.map((line) => `  ${line}`)].join('\n'));
+    };
+    made.launch.foreground = (_session, pane) => { calls.push(`foreground ${pane}`); return ['codex']; };
+    made.launch.agentStatus = (_session, pane) => { calls.push(`agentStatus ${pane}`); return pane === typedPane ? status : 'idle'; };
+    made.launch.paneText = (session, pane) => {
+      calls.push(`paneText ${pane}`);
+      return pane === typedPane ? (pasted ? boxed() : captureCodex('working')) : read(session, pane);
+    };
+    made.launch.typeText = (_session, pane, text) => { calls.push(`typeText ${pane}`); typedPane = pane; typed = text; pasted = true; return true; };
+    made.launch.pressEnter = (_session, pane) => { calls.push(`pressEnter ${pane}`); pasted = false; status = 'working'; return true; };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, resumed(made));
+    expect(code).toBe(0);
+    expect(io.out).toContain('codex-acme: ready');
+    expect(made.closes).toEqual([]);
+    const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['codex-acme'];
+    expect(seat).toMatchObject({ stage: 'ready', rules: 'message', pane: 'w2:p1', workspace: 'w2' });
+    // Main's order of host calls: the pane's program, its status and its box are read first, the
+    // message is typed into the empty box and read back, one key is sent, then the closing readings.
+    expect(calls).toEqual([
+      'foreground w2:p1',
+      'agentStatus w2:p1',
+      'paneText w2:p1',
+      'typeText w2:p1',
+      'agentStatus w2:p1',
+      'paneText w2:p1',
+      'foreground w2:p1',
+      'agentStatus w2:p1',
+      'paneText w2:p1',
+      'pressEnter w2:p1',
+      'agentStatus w2:p1',
+      'paneText w2:p1',
+    ]);
+  });
+
+  test('a named seat whose box holds exactly what team would type now is left as it is', async () => {
+    const made = incident(captureCodex('idle'));
+    await approve();
+    // The message team would type now, taken from team itself: the empty box is delivered to once.
+    let typed = '';
+    let typedPane = '';
+    let pasted = false;
+    let status = 'idle';
+    const read = made.launch.paneText;
+    const boxed = () => {
+      const [first = '', ...rest] = typed.split('\n');
+      return captureCodex('idle').replace('› Ask Codex to do anything', [`› ${first}`, ...rest.map((line) => `  ${line}`)].join('\n'));
+    };
+    made.launch.agentStatus = (_session, pane) => (pane === typedPane ? status : 'idle');
+    made.launch.typeText = (_session, pane, text) => { typedPane = pane; typed = text; pasted = true; return true; };
+    made.launch.pressEnter = () => { pasted = false; status = 'working'; return true; };
+    made.launch.paneText = (session, pane) => (pane === typedPane ? (pasted ? boxed() : captureCodex('working')) : read(session, pane));
+    expect(await runUp(FILE, testIo(root, { kind: 'owner' }), resumed(made))).toBe(0);
+    expect(typed).not.toBe('');
+
+    // The seat is at `named` again, its box holding exactly the message team just typed.
+    writeFileSync(join(root, '.agents/team.state.json'), JSON.stringify(namedState()));
+    const again = world();
+    again.session = 'running';
+    again.seed('w2:p1', boxed(), true);
+    const calls: string[] = [];
+    const sent: string[] = [];
+    again.launch.foreground = (_session, pane) => { calls.push(`foreground ${pane}`); return ['codex']; };
+    again.launch.agentStatus = (_session, pane) => { calls.push(`agentStatus ${pane}`); return 'idle'; };
+    const reread = again.launch.paneText;
+    again.launch.paneText = (session, pane) => { calls.push(`paneText ${pane}`); return reread(session, pane); };
+    again.launch.typeText = (_session, _pane, text) => { sent.push(text); return true; };
+    again.launch.pressEnter = () => { sent.push('Enter'); return true; };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, resumed(again));
+    expect(code).toBe(1);
+    expect(io.out).toContain('codex-acme: its rules were not delivered; left at named');
+    expect(sent).toEqual([]);
+    expect(again.closes).toEqual([]);
+    expect(JSON.parse(readFileSync(join(root, '.agents/team.state.json'), 'utf8'))).toEqual(namedState());
+    expect(calls).toEqual(['foreground w2:p1', 'agentStatus w2:p1', 'paneText w2:p1']);
   });
 
   test('a resumed seat is checked where its pane runs, not where the file would put it', async () => {
@@ -1712,6 +1912,8 @@ describe('team down, live', () => {
     expect(run.closed).toEqual(['w3']);
     expect(run.stopped).toEqual(['acme-web']);
     expect(io.out).toContain('deepseek-acme: stopped\n');
+    // The close op is `down`'s own purpose, announced by its plan; the line and the log name the seat and the fact.
+    expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain('deepseek-acme: stopped');
   });
 
   test('clears the session it stopped, in the same run, and says so in one line', async () => {
@@ -2243,7 +2445,7 @@ describe('scratch session', () => {
         const doctor = upReal.doctor ? { ...upReal.doctor, home: scratchHome } : undefined;
         const upCode = await runUp(file, owner, { ...upReal, home: scratchHome, doctor });
         expect(upCode).toBe(1);
-        if (!owner.out.includes('left out: trust question')) {
+        if (!owner.out.includes('trust question; its workspace was closed without an answer and the seat left out')) {
           throw new Error(owner.out.split('\n').slice(-20).join('\n'));
         }
         await runDown(file, owner, downReal);
