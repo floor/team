@@ -68,7 +68,36 @@ key and without input — its pane runs no CLI, or one team did not launch, and 
 seat — and the seat is launched fresh with its rules. Its one line says both:
 `<seat>: its pane held no CLI; closed without input and launched again` when the pane was back at
 its shell, `<seat>: its pane held a process team did not launch; closed without input and launched
-again` when another process held it. When the workspace does not close, nothing is launched in its
+again` when another process held it.
+
+The reading that decides the repair is taken while the plan is built, and the close can be minutes
+later, after every seat before this one was created, waited for and delivered to. `up` reads herdr
+again immediately before it, with nothing between those reads and the close, and closes only a pane
+that is provably still the seat's stale one: the agent list must name this seat on the recorded
+pane, that pane's workspace as herdr reports it now must be the recorded workspace, the process
+reading must still say the pane runs no CLI or another process, and a pane held by another process
+must not read `working` — a process that is working is never closed by `up`, whoever started it.
+When any of that does not hold, nothing is closed, nothing is launched for that seat, its state is
+left as it is, the seat is out of the run, and `up` exits 1 with one line:
+
+| Line | When |
+| --- | --- |
+| `<seat>: its pane is the seat's again; left as it is` | the pane now holds the recorded process — its owner restarted the CLI between the plan and the close. Not an error: the seat is skipped as ready and the exit code is unaffected |
+| `<seat>: herdr no longer shows this seat on its recorded pane; nothing closed; run team status` | the agent list no longer names the seat on the recorded pane, or that pane's workspace is no longer the recorded one |
+| `<seat>: the process in its pane is working; nothing closed (stop it there, or run team remove <seat>)` | a process team did not launch holds the pane and its screen reads `working` |
+| `<seat>: its pane could not be read; nothing closed` | herdr can't give the pane's processes, or its screen reads as nothing this version knows |
+
+This comparison is wrong in the safe direction, but it is wrong: a CLI that replaces its own
+process — an updater that re-executes, a wrapper that hands over — changes the foreground pids, and
+the seat then reads `restored, not launched by team` although nothing was restored. `up` closes
+that pane without input and launches the seat fresh, and the conversation in it is lost. The record
+holds every pid the launch left in front, and accepts the seat while **any** recorded pid is still
+there; no reading of a CLI after its first message was taken when this record was made, though a
+review's runs of a CLI with a helper beside it and of one behind a pipeline kept every pid. Before
+running `up`, the owner looks: `team status` names such a seat, and the pane itself says whether
+the CLI there is the one `team` launched.
+
+When the workspace does not close, nothing is launched in its
 place and the seat is left as it is:
 `<seat>: its workspace did not close; left as it is`, with `up` exiting 1. A seat launched before
 the state recorded its process keeps today's behaviour: nothing checks its pane.

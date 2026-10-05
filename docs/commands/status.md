@@ -46,11 +46,25 @@ when an agent sits in the seat's workspace under another name.
 
 A pane is its seat only while the process `team` launched is still in it. The state records, for
 each seat `up` or `add` launched, the pane's own shell process and the processes the launch left in
-front of it — pids only, never a command line. Wherever `status` reads the seat as running, the two
-are compared: `same` is the pane team launched, `missing` a pane back at its shell, `restored, not
-launched by team` a pane held by another process. A restored row's model is `-`, never the file's:
-nothing checks what that process runs. A seat launched before this record existed — or one whose
-pane herdr can't read — is shown as it always was; `team doctor` says which seats those are.
+front of it — pids only, never a command line. The reading is one `herdr pane process-info` of the
+pane, taken once, after the idle prompt appears and after the launch model check: nothing is read
+again after a first message. Wherever `status` reads the seat as running, the two are compared:
+`same` is the pane team launched, `missing` a pane back at its shell, `restored, not launched by
+team` a pane held by another process. The comparison is pids only, and it accepts the seat while
+**any** recorded CLI pid is still in front: an extra pid beside them, or another order, changes
+nothing. A restored row's model is `-`, never the file's: nothing checks what that process runs. A
+seat launched before this record existed — or one whose pane herdr can't read — is shown as it
+always was; `team doctor` says which seats those are.
+
+The comparison is wrong in the safe direction, but it is wrong: a CLI that replaces its own process
+— an updater that re-executes, a wrapper that hands over — changes the foreground pids, and the
+seat then reads `restored, not launched by team` although nothing was restored and its conversation
+is intact. `up` acts on that reading: it closes the pane without input and launches the seat fresh,
+and the conversation in it is lost. No reading of a CLI after its first message was taken when this
+record was made; a review's runs of a CLI that starts a helper beside itself and of one behind a
+pipeline kept every pid in front, so all of them were recorded. Before running `up` over such a
+row — `status` names the seat — the owner looks at the pane: it says whether the CLI there is the
+one `team` launched, and `up`'s own guards are in `docs/commands/up.md`.
 
 The model is the seat's `display` when the running model matches the file, and
 `<model> <version> (file: <display>)` when it doesn't. A screen that doesn't show the model is a
