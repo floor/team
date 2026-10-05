@@ -68,7 +68,12 @@ exits 0.
 
 A seat that reaches its idle prompt with its rules delivered prints `<seat>: ready`. A seat already
 ready, stopped in the file, or on a CLI with no launch profile prints one `  skip` line and is left
-as it is. The watch prints `watch: started`.
+as it is. A ready seat the state records without its process identity, or with a start outside the
+machine lobby, is left as it is too — only a relaunch repairs either — and its skip line says so:
+`  skip <seat>: already ready; left as it is; a relaunch records its process: team remove <seat>
+--keep, then team add <seat> (or team down, then team up, for the whole team)`, or the same line
+saying `a relaunch moves it into the lobby`. For a seat the file names as coordinator or operator,
+the line offers only `team down, then team up (to restart the whole team)`. The watch prints `watch: started`.
 
 A seat is its pane only while the process `team` launched is still in it. A seat the state records
 whose pane no longer holds that process is not "already ready": its workspace is closed without a
@@ -210,6 +215,13 @@ Those lines go to the terminal only: the log file gets the reading, never the sc
 | `<seat>: <account> is unknown` | the account is in the file and its figure is unknown — a subscription with no counted reading, or a spend account whose money reading is missing, older than `budgets.stale_after`, or in another currency than the floor's. A subscription figure with no known reset is unknown while it could still matter — inside its reserve, or within the reserve again outside it; further out — more than the reserve again — it counts, the room the figure last held, and the launch decision is clear: no unknown line. The seat still starts |
 | `<seat>: <account>: first sight only, not yet counted` | the account's only readings are unconfirmed; the seat still starts |
 
+A `version: "0"` — exactly that literal, the placeholder a fresh `init` writes before the owner
+fills the release number — is read as *no version declared*: the seat's first launch is not stopped
+by it, and the model family is still compared, so a file whose model names a family the CLI does
+not run stops as above. No other spelling is read that way: `version: "0.0"` stops the launch as
+any mismatch would. [team doctor](doctor.md) says the placeholder as a note — what the seat really
+runs, and the one edit that pins it.
+
 `<account>` in these lines is the seat's own account: its `account:` when the file names one, its
 `vendor` when it doesn't.
 
@@ -255,7 +267,7 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | `herdr doesn't answer` |
 | ``session beacon is stopped; clear it with `herdr session delete beacon` `` |
 | ``session beacon has 2 agents this file's state doesn't record: `up` never touches a running team`` |
-| ``the file is legacy: migrate trust to absolute paths including the lobby ~/.config/team/lobby: ...`` |
+| ``the file is legacy: migrate trust to absolute paths including the lobby ~/.config/team/lobby: ...`` — followed by the whole `trust:` block to paste: every entry the next `up` requires, one line saying which key of the file each entry comes from, and, for an entry a rule of `trust` refuses, one line naming the key that forces it |
 | ``the lobby ~/.config/team/lobby: <check>`` — gate check failed (symbolic link, permissions, mode, not empty, inside git repo) |
 | ``seat beacon-qa would start in live, inside the protected checkout live; a seat that isn't `mode: shared` never starts in one`` — the folder the file gives it, or its lobby, is a protected checkout |
 
@@ -327,8 +339,8 @@ the watchdog pane this session has never had:
 
 ```console
 $ team up --dry-run ; echo "exit $?"
-  skip claude-keeper: already ready; left as it is
-  skip claude-beacon: already ready; left as it is
+  skip claude-keeper: already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)
+  skip claude-beacon: already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
   skip claude-qa: stopped in the file; start it with `team add claude-qa`
 + herdr --session beacon workspace create --cwd . --label watchdog --no-focus
 + herdr --session beacon pane run <pane of watchdog> 'team watch --session beacon'
@@ -341,8 +353,8 @@ The same command for real runs exactly that:
 
 ```console
 $ team up ; echo "exit $?"
-  skip claude-keeper: already ready; left as it is
-  skip claude-beacon: already ready; left as it is
+  skip claude-keeper: already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)
+  skip claude-beacon: already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
   skip claude-qa: stopped in the file; start it with `team add claude-qa`
 watch: started
 exit 0
@@ -418,8 +430,8 @@ seats:
 $ team up --dry-run ; echo "exit $?"
 ! up would refuse: the file is not the approved one (`limits` changed): run `team approve`
 ! up would refuse: run `team approve`: `limits` changed
-  skip claude-keeper: already ready; left as it is
-  skip claude-beacon: already ready; left as it is
+  skip claude-keeper: already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)
+  skip claude-beacon: already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
   skip claude-qa: stopped in the file; start it with `team add claude-qa`
 dry run: nothing was run
 exit 0
