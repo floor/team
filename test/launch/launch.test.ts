@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { paneExcerpt } from '../../src/launch/execute.ts';
+import { paneExcerpt, plainPaneText, stripControlStrings } from '../../src/launch/execute.ts';
 import { downPlan, formatPlan, herdr, upPlan, type DownSeat, type UpSeat } from '../../src/launch/plan.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
 import { profileFor } from '../../src/profiles/index.ts';
@@ -442,4 +442,236 @@ describe('the pane lines a report carries', () => {
     const longest = Math.max(...out.split('\n').map((line) => line.length));
     expect(longest).toBe('  | '.length + 200 + '…'.length);
   });
+
+  test('every kind of string sequence, in 7-bit and C1 forms, is removed whole with its legal terminators', () => {
+    // 5 kinds × 2 opener forms × each legal terminator:
+    // OSC ends at BEL (\x07), 7-bit ST (\x1b\\), or C1 ST (\x9c).
+    // DCS, APC, PM, SOS end at 7-bit ST (\x1b\\) or C1 ST (\x9c).
+    const kinds = [
+      { name: 'OSC', openers: ['\x1b]', '\x9d'], terminators: ['\x07', '\x1b\\', '\x9c'] },
+      { name: 'DCS', openers: ['\x1bP', '\x90'], terminators: ['\x1b\\', '\x9c'] },
+      { name: 'SOS', openers: ['\x1bX', '\x98'], terminators: ['\x1b\\', '\x9c'] },
+      { name: 'PM',  openers: ['\x1b^', '\x9e'], terminators: ['\x1b\\', '\x9c'] },
+      { name: 'APC', openers: ['\x1b_', '\x9f'], terminators: ['\x1b\\', '\x9c'] },
+    ];
+    for (const { openers, terminators } of kinds) {
+      for (const op of openers) {
+        for (const term of terminators) {
+          const input = `before${op}hidden-payload${term}after`;
+          expect(plainPaneText(input)).toBe('beforeafter');
+        }
+      }
+    }
+  });
+
+  test('BEL inside DCS, APC, PM, SOS is not a terminator and the payload is removed up to ST', () => {
+    // For non-OSC sequences, BEL is payload: opener + a + BEL + b + ST + visible yields visible only.
+    const nonOscOpeners = [
+      '\x1bP', '\x90', // DCS
+      '\x1bX', '\x98', // SOS
+      '\x1b^', '\x9e', // PM
+      '\x1b_', '\x9f', // APC
+    ];
+    const terminators = ['\x1b\\', '\x9c'];
+    for (const op of nonOscOpeners) {
+      for (const term of terminators) {
+        const input = `${op}hidden-a\x07hidden-b${term}visible`;
+        const out = plainPaneText(input);
+        expect(out).toBe('visible');
+        expect(out).not.toContain('hidden-a');
+        expect(out).not.toContain('hidden-b');
+      }
+    }
+  });
+
+  test('mixed and nested sequences, lone escapes and STs', () => {
+    // An opener inside a payload
+    expect(plainPaneText('before\x1bPouter\x1b]0;inner\x07still-outer\x1b\\after')).toBe('beforeafter');
+    expect(plainPaneText('before\x1b]0;outer\x1bPinner\x07after')).toBe('beforeafter');
+    expect(plainPaneText('before\x1b]0;outer\x1bPinner\x1b\\after')).toBe('beforeafter');
+    expect(plainPaneText('before\x1bPouter\x90inner\x1b\\after')).toBe('beforeafter');
+    expect(plainPaneText('before\x1b]0;outer\x1b]0;inner\x07after')).toBe('beforeafter');
+
+    // An OSC ended by BEL followed by plain text
+    expect(plainPaneText('\x1b]0;title\x07plain text')).toBe('plain text');
+
+    // A sequence spanning newlines
+    expect(plainPaneText('line 1\n\x1b]0;multi\nline\x07line 2')).toBe('line 1\nline 2');
+
+    // An unterminated sequence is removed to the end of the text
+    expect(plainPaneText('visible\x1b]0;no-end\nmore lines')).toBe('visible');
+    expect(plainPaneText('visible\x1bPno-end\nmore lines')).toBe('visible');
+
+    // A lone ESC at the end of the text
+    expect(plainPaneText('plain text\x1b')).toBe('plain text');
+
+    // A lone ST (7-bit and C1) in plain text
+    expect(plainPaneText('plain\x1b\\text')).toBe('plaintext');
+    expect(plainPaneText('plain\x9ctext')).toBe('plaintext');
+  });
+
+  test('stress test: 200-line 2 MB text with unterminated openers finishes in well under 1000 ms', () => {
+    // Guards against quadratic backtracking: the previous regular expressions searched from
+    // every unterminated opener to the end of the text before the second regex dropped it,
+    // taking nearly a second on 2 MB and 9 s on 20 MB. The linear state machine finishes in
+    // well under 100 ms.
+    const line = '\x1b]0;unterminated-payload-' + 'x'.repeat(10_000) + '\n';
+    const text = line.repeat(200);
+    const start = performance.now();
+    const out = plainPaneText(text);
+    const duration = performance.now() - start;
+    expect(out).toBe('');
+    expect(duration).toBeLessThan(1000);
+  });
+
+  test('a pending ESC does not reach across a removed string to consume text or form new control sequences', () => {
+    // When a lone ESC is followed by a string opener, the ESC is dropped so it never reaches
+    // across the removed string to consume plain text in subsequent passes.
+    expect(plainPaneText('\x1b\x9dhidden\x9cafter')).toBe('after');
+
+    // For each of ], P, X, ^, _: ESC + C1 OSC + ST + that character + visible
+    // produces that character + visible; the same without the leading ESC.
+    const probeChars = [']', 'P', 'X', '^', '_'];
+    for (const ch of probeChars) {
+      expect(plainPaneText(`\x1b\x9d\x9c${ch}visible`)).toBe(`${ch}visible`);
+      expect(plainPaneText(`\x9d\x9c${ch}visible`)).toBe(`${ch}visible`);
+    }
+
+    // Path probe: text starting with P after a removed sequence is preserved intact.
+    expect(plainPaneText('\x1b\x9dx\x9cPath: /tmp')).toBe('Path: /tmp');
+
+    // Multiple ESCs before a string opener are all dropped before the removed sequence.
+    expect(plainPaneText('\x1b\x1b]0;title\x07after')).toBe('after');
+  });
+
+  test('randomised comparison: scanner and independent range-oriented reference agree on all cases', () => {
+    // Independent reference: walks the text, searches forward from each opener for its
+    // legal terminator only, drops the run of ESC immediately before the opener, opener,
+    // payload, and terminator, and copies all other characters. No shared helper with scanner.
+    function referenceStrip(text: string): string {
+      let result = '';
+      let i = 0;
+      while (i < text.length) {
+        const escStart = i;
+        while (i < text.length && text[i] === '\x1b') {
+          i++;
+        }
+        const escCount = i - escStart;
+
+        const c = text[i];
+        let isOsc = false;
+        let isOther = false;
+        let openerLen = 0;
+
+        if (escCount > 0) {
+          if (c === ']') {
+            isOsc = true;
+            openerLen = 1;
+          } else if (c === 'P' || c === 'X' || c === '^' || c === '_') {
+            isOther = true;
+            openerLen = 1;
+          } else if (c === '\x9d') {
+            isOsc = true;
+            openerLen = 1;
+          } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
+            isOther = true;
+            openerLen = 1;
+          }
+        } else {
+          if (c === '\x9d') {
+            isOsc = true;
+            openerLen = 1;
+          } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
+            isOther = true;
+            openerLen = 1;
+          }
+        }
+
+        if (!isOsc && !isOther) {
+          if (escCount > 0) {
+            result += '\x1b'.repeat(escCount);
+          }
+          if (i < text.length) {
+            result += c;
+            i++;
+          }
+          continue;
+        }
+
+        const payloadStart = i + openerLen;
+        let termEnd = -1;
+
+        let j = payloadStart;
+        while (j < text.length) {
+          const ch = text[j];
+          if (isOsc && (ch === '\x07' || ch === '\x9c')) {
+            termEnd = j + 1;
+            break;
+          }
+          if (isOther && ch === '\x9c') {
+            termEnd = j + 1;
+            break;
+          }
+          if (ch === '\x1b') {
+            let k = j;
+            while (k < text.length && text[k] === '\x1b') {
+              k++;
+            }
+            if (k < text.length) {
+              const next = text[k];
+              if (isOsc && (next === '\\' || next === '\x07' || next === '\x9c')) {
+                termEnd = k + 1;
+                break;
+              }
+              if (isOther && (next === '\\' || next === '\x9c')) {
+                termEnd = k + 1;
+                break;
+              }
+            }
+            j = k;
+            continue;
+          }
+          j++;
+        }
+
+        if (termEnd === -1) {
+          break;
+        } else {
+          i = termEnd;
+        }
+      }
+      return result;
+    }
+
+    function mulberry32(seed: number) {
+      return function() {
+        let t = (seed += 0x6d2b79f5);
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    const rand = mulberry32(0x12345678);
+    const alphabet = [
+      'a', 'b', 'c', '\n', '\x1b', '\x07',
+      ']', 'P', 'X', '^', '_',
+      '\x9d', '\x90', '\x98', '\x9e', '\x9f',
+      '\\', '\x9c',
+    ];
+
+    const trials = 5000;
+    for (let t = 0; t < trials; t++) {
+      const len = Math.floor(rand() * 40);
+      let str = '';
+      for (let i = 0; i < len; i++) {
+        const idx = Math.floor(rand() * alphabet.length);
+        str += alphabet[idx];
+      }
+      const fast = stripControlStrings(str);
+      const ref = referenceStrip(str);
+      expect(fast).toBe(ref);
+    }
+  });
 });
+
