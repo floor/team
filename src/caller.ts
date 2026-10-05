@@ -77,7 +77,8 @@ export function isOwner(caller: Caller): boolean {
  * records no pane (a team never brought up, the coordinator's seat not launched by `team`) is not
  * compared — the read that would refuse it for its own reasons is elsewhere, and a caller check
  * that turned a missing record into a refusal would break the documented flow in which an owner
- * starts a seat by hand. See the result's two options.
+ * starts a seat by hand. Refusing on a missing record is a follow-up of its own: those documented
+ * flows would need to record a pane first.
  */
 export type SeatStanding = { session: string; recordedPane?: string };
 

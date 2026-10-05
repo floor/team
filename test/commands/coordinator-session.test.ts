@@ -333,7 +333,7 @@ for (const command of COMMANDS) {
   });
 }
 
-// The run in the brief, as a regression: a pane in another herdr session, renamed to the
+// The reported run, as a regression: a pane in another herdr session, renamed to the
 // coordinator's name, running `team remove codex-acme`. It removes nothing, stops nothing and
 // leaves both the file and the state byte-identical.
 describe('the renamed pane in another session', () => {
