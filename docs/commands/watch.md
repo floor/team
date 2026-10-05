@@ -17,7 +17,11 @@ code, not a sandbox.
 
 Reads the team file — again on every pass, so a seat parked or stopped since is seen — this
 machine's approval store, the session's state (`.agents/team.state.json`) and herdr: the session's
-agents, each pane's screen and status. It also reads the machine's load, free memory, free disk and
+agents, each pane's screen and status. With no `--file`, that file is `.agents/team.yaml` of the
+repository's main checkout, found through git's common directory; a folder that is not a git
+repository is read from `.agents/team.yaml` in that folder only, not from a parent. A file at
+another path is not what this command reads when `up` starts it: `up` does not start that watch
+(`watch: not started: …` on the `up` page). It also reads the machine's load, free memory, free disk and
 swap, and, when a temporary seat's end is judged, git.
 
 Writes `.agents/team.state.json` (the watch's pid and a heartbeat, once a pass; a temporary seat's
