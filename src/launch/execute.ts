@@ -351,7 +351,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         // `pane run node -e …`, `pane process-info` listed the pane's shell (`shell_pid` 11915)
         // beside the shell's own startup child, and 600 ms later listed the program alone; a
         // launch line whose relative path was missing listed the shell at once, and 400 ms later
-        // still. A slow wrapper looks the same for longer: the reviewer's drew its CLI on the
+        // still. A slow wrapper looks the same for longer: one drew its CLI on the
         // fourth poll, so a stretch of one or two polls is not an end. The end is said only on
         // what was read: the shell's own process is the pane's foreground program for three
         // full polls on end — one reading starts the stretch and three more carry it past
