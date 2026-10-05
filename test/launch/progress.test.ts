@@ -58,6 +58,33 @@ describe('the writer', () => {
     expect(err.join('')).toBe('  its workspace was closed without input and the seat left out\n');
   });
 
+  test('the waiting record takes the seat\'s line, and the prompt starts the next one on stderr', () => {
+    const { out, err, sink: s } = sink(true);
+    const records = progressWriter(s);
+    records.progress('alpha', 'waiting for its prompt');
+    records.waiting('alpha', 'trust');
+    records.prompt('alpha is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly');
+    records.waiting('alpha', 'timeout');
+    records.final('alpha', { kind: 'left out', reason: 'skipped by owner' }, '');
+    expect(out.join('')).toBe(
+      '\r\x1b[Kalpha: waiting for its prompt'
+        + '\r\x1b[Kalpha: waiting for owner (trust)'
+        + '\r\x1b[Kalpha: waiting for owner (timeout)'
+        + '\r\x1b[Kalpha: left out: skipped by owner\n',
+    );
+    expect(err.join('')).toBe('\nalpha is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly\n');
+  });
+
+  test('a redirected stdout gets only the final record, prompts or not', () => {
+    const { out, err, sink: s } = sink(false);
+    const records = progressWriter(s);
+    records.waiting('alpha', 'trust');
+    records.prompt('alpha is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly');
+    records.final('alpha', { kind: 'left out', reason: 'trust' }, '');
+    expect(out.join('')).toBe('alpha: left out: trust\n');
+    expect(err.join('')).toBe('alpha is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly\n');
+  });
+
   test('a redirected stdout gets the final records alone, whatever is provisional', () => {
     const { out, err, sink: s } = sink(false);
     const records = progressWriter(s);

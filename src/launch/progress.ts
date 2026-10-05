@@ -10,7 +10,9 @@
 // the owner does next — is on stderr, after the record it belongs to.
 //
 // The record is the unit the next slice builds on: a pause at a dialog is a `waiting for owner`
-// record, carried here so the type and the log already know it, printed by nothing yet.
+// record, and `waiting` draws it provisionally while the prompt is open — replaced in place when
+// the classification changes, and left without a newline, so the seat still ends with exactly one
+// final record.
 
 /** The classifications a record can name. `login` is reserved: no profile produces it today. */
 export type Classification =
@@ -27,8 +29,9 @@ export type Classification =
  *  person watching the terminal sees. */
 export type ProgressState = 'launching' | 'waiting for its prompt' | 'naming' | 'sending its rules';
 
-/** A seat's final record. `waiting for owner` belongs to the next slice: the record type carries
- *  it and the log accepts it; `up` and `add` print neither today. */
+/** A seat's final record. `waiting for owner` is carried for completeness (the log accepts it);
+ *  a run settles a waiting seat one way or another, so `final` never prints it: the provisional
+ *  `waiting` line is the shape it takes while a prompt is open. */
 export type FinalRecord =
   | { kind: 'ready' }
   | { kind: 'left out'; reason: string }
@@ -59,6 +62,13 @@ export type Progress = {
   /** The seat's line, first drawn before its workspace is created and rewritten as it advances.
    *  On a redirected stdout this writes nothing at all. */
   progress(seat: string, state: ProgressState): void;
+  /** The seat's waiting record while a prompt is open — provisional like `progress`, drawn on
+   *  the seat's own line, and rewritten when the prompt returns with another classification.
+   *  It is not a final record: the seat's one final record still comes from `final`. */
+  waiting(seat: string, classification: string): void;
+  /** One line of the owner's prompt, on the next line of the terminal. It is written to stderr,
+   *  so a redirected stdout carries the final records and nothing else, prompts or not. */
+  prompt(line: string): void;
   /** The seat's one final record — the newline-terminated line — and, after it, the detail the
    *  run says about it: the lines are written to stderr verbatim, already indented. */
   final(seat: string, record: FinalRecord, detail: string): void;
@@ -71,6 +81,14 @@ export function progressWriter(sink: ProgressSink): Progress {
       // Redirected: the final records only. Nothing provisional ever reaches a pipe.
       if (!sink.isTTY) return;
       sink.stdout(`\r\x1b[K${seat}: ${state}`);
+    },
+    waiting(seat, classification) {
+      if (!sink.isTTY) return;
+      sink.stdout(`\r\x1b[K${seat}: waiting for owner (${classification})`);
+    },
+    prompt(line) {
+      // The seat's waiting record has no newline yet; the prompt starts its own line.
+      sink.stderr(sink.isTTY ? `\n${line}\n` : `${line}\n`);
     },
     final(seat, record, detail) {
       const text = recordText(seat, record);
