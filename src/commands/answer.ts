@@ -3,10 +3,9 @@ import { homedir } from 'node:os';
 import { basename, dirname } from 'node:path';
 import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, type Caller } from '../caller.ts';
+import { anotherPaneRefusal, callerOf, callerVerdict, fileOwnerRefusal, isOwner, judgeCallerIn, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller, type SeatStanding } from '../caller.ts';
 import { trustPolicy } from '../file/dialogs.ts';
 import { canonicalLanding, folderOf, listFolder } from '../file/landing.ts';
-import { lobbyDir } from '../lobby/gate.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
@@ -16,6 +15,7 @@ import { deliverRules, type Delivery } from '../launch/deliver.ts';
 import { seatProcessVerdict, type LaunchedIdentity } from '../launch/identity.ts';
 import { rulesDeliveryOf, rulesFileHash, rulesFileHolds, writeRulesFile } from '../launch/rules-file.ts';
 import { acquireSeatLock } from '../launch/seat-lock.ts';
+import { lobbyDir } from '../lobby/gate.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { type Profile } from '../profiles/profile.ts';
@@ -93,6 +93,16 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
     return usage(io, json, message);
   }
 
+  // The `--file` check is the walk's, and it runs before that file is read: a non-owner aiming
+  // `--file` must not make this command read and validate another project's team file, nor leave
+  // a refusal log beside it. `fileOwnerRefusal` (caller.ts) is the one place the six commands
+  // that take the flag decide it; the walk reads no session, no state and no log.
+  const fileRefusal = fileOwnerRefusal(io, args.values.file);
+  if (fileRefusal !== undefined) {
+    io.stderr(`team answer: ${fileRefusal}\n`);
+    // exit: answer.file-owner
+    return 1;
+  }
   const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: host.home });
   if (!loaded.ok) {
     const message = loaded.errors.map((problem) => (problem.line ? `line ${problem.line}: ${problem.message}` : problem.message)).join('; ');
@@ -100,13 +110,33 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
   }
   const { team, root } = loaded;
   const dir = dirname(loaded.path);
-  const session = args.values.session ?? team.session;
-  const caller = callerOf(io, session);
+  // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
+  // `--session` is refused here, before the flag's session is read — no agent list, no pane root,
+  // no state write; the refusal's own log line is the only line written. (A seat cannot be named
+  // in this refusal: placing it would read a session, and that is what must not happen yet.)
+  if (args.values.session !== undefined) {
+    const walked = walkCaller(io);
+    if (!isOwner(walked)) {
+      return refuse(io, json, dir, logWho(walked, team), seatName, host, {
+        class: 'caller',
+        message: `team answer: ${sessionOwnerRefusal(walked)}`,
+      });
+    }
+  }
+  // The gate judges the caller placed in the session this command asks about. With no `--session`
+  // the session judged is the caller's own placement: the file's session first, then a session
+  // the state records this caller's pane in (`team up --session <other>`) — never one a non-owner
+  // chose. The refusal names the caller's own placement, exactly as main described it.
+  const judged = args.values.session !== undefined
+    ? { caller: callerOf(io, args.values.session), session: args.values.session }
+    : judgeCallerIn(io, dir, team);
+  const { caller } = judged;
+  const session = judged.session;
   const who = logWho(caller, team);
 
   const refused = (reason: Refusal): number => refuse(io, json, dir, who, seatName, host, reason);
 
-  const callerProblem = callerProblemOf(caller, team, seatName);
+  const callerProblem = callerProblemOf(caller, team, seatName, standingOf(dir, session, caller));
   if (callerProblem) return refused(callerProblem);
   const standing = host.standing(root);
   if (standing.kind !== 'verified') return refused({ class: 'caller', message: notInForce(standing) });
@@ -207,9 +237,16 @@ function logWho(caller: Caller, team: TeamFile): string {
   return caller.name === team.coordinator ? 'coordinator' : 'seat';
 }
 
-function callerProblemOf(caller: Caller, team: TeamFile, seat: string): Refusal | null {
+function callerProblemOf(caller: Caller, team: TeamFile, seat: string, at?: SeatStanding): Refusal | null {
   if (caller.kind === 'owner') return null;
-  if (caller.kind === 'seat' && caller.name === team.coordinator) return null;
+  // The coordinator's seat, in the session judged and on its recorded pane; a seat of another
+  // session, or one merely renamed, falls through to the refusal below, unchanged.
+  const verdict = callerVerdict(caller, team.coordinator, at);
+  if (verdict.kind === 'ok') return null;
+  if (verdict.kind === 'no-pane') return { class: 'caller', message: `team answer: ${noPaneRefusal(verdict.name)}` };
+  if (verdict.kind === 'another-pane') {
+    return { class: 'caller', message: `team answer: ${anotherPaneRefusal(verdict.name, verdict.recordedPane)}` };
+  }
   if (caller.kind === 'unplaced') return { class: 'caller', message: caller.reason };
   return { class: 'caller', message: `${seat}: only the owner, or the coordinator from its own seat, can answer` };
 }
@@ -378,7 +415,10 @@ function refuse(
   if (json) io.stdout(`${JSON.stringify({ seat, dialog: 'trust', status: 'refused', reason: reason.message })}\n`);
   else io.stderr(`${reason.message}\n`);
   // exit: answer.caller
+  // exit: answer.no-pane
+  // exit: answer.another-pane
   // exit: answer.policy
+  // exit: answer.session-owner
   // exit: answer.state
   // exit: answer.version
   // exit: answer.screen

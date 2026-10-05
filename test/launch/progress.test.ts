@@ -38,7 +38,7 @@ describe('the writer', () => {
     records.progress('alpha', 'waiting for its prompt');
     records.progress('alpha', 'naming');
     records.progress('alpha', 'sending its rules');
-    records.final('alpha', { kind: 'ready' }, '');
+    records.final('alpha', { kind: 'ready' });
     expect(out.join('')).toBe(
       '\r\x1b[Kalpha: launching'
         + '\r\x1b[Kalpha: waiting for its prompt'
@@ -53,7 +53,8 @@ describe('the writer', () => {
     const { out, err, sink: s } = sink(true);
     const records = progressWriter(s);
     records.progress('beta', 'waiting for its prompt');
-    records.final('beta', { kind: 'left out', reason: 'vendor notice' }, '  its workspace was closed without input and the seat left out\n');
+    records.final('beta', { kind: 'left out', reason: 'vendor notice' });
+    records.detail('  its workspace was closed without input and the seat left out');
     expect(out.join('')).toBe('\r\x1b[Kbeta: waiting for its prompt\r\x1b[Kbeta: left out: vendor notice\n');
     expect(err.join('')).toBe('  its workspace was closed without input and the seat left out\n');
   });
@@ -65,7 +66,7 @@ describe('the writer', () => {
     records.waiting('alpha', 'trust');
     records.prompt('alpha is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly');
     records.waiting('alpha', 'timeout');
-    records.final('alpha', { kind: 'left out', reason: 'skipped by owner' }, '');
+    records.final('alpha', { kind: 'left out', reason: 'skipped by owner' });
     expect(out.join('')).toBe(
       '\r\x1b[Kalpha: waiting for its prompt'
         + '\r\x1b[Kalpha: waiting for owner (trust)'
@@ -80,7 +81,7 @@ describe('the writer', () => {
     const records = progressWriter(s);
     records.waiting('alpha', 'trust');
     records.prompt('alpha is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly');
-    records.final('alpha', { kind: 'left out', reason: 'trust' }, '');
+    records.final('alpha', { kind: 'left out', reason: 'trust' });
     expect(out.join('')).toBe('alpha: left out: trust\n');
     expect(err.join('')).toBe('alpha is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly\n');
   });
@@ -92,30 +93,33 @@ describe('the writer', () => {
     records.progress('alpha', 'waiting for its prompt');
     records.progress('alpha', 'naming');
     records.progress('alpha', 'sending its rules');
-    records.final('alpha', { kind: 'ready' }, '');
+    records.final('alpha', { kind: 'ready' });
     records.progress('beta', 'launching');
-    records.final('beta', { kind: 'left out', reason: 'trust' }, '  its workspace was closed without an answer and the seat left out\n');
+    records.final('beta', { kind: 'left out', reason: 'trust' });
+    records.detail('  its workspace was closed without an answer and the seat left out');
     expect(out.join('')).toBe('alpha: ready\nbeta: left out: trust\n');
     expect(out.join('').includes('\x0d')).toBe(false);
     expect(out.join('').includes('\x1b')).toBe(false);
     expect(err.join('')).toBe('  its workspace was closed without an answer and the seat left out\n');
   });
 
-  // The reviewers' probe: a seat, a stage word, a reason and a detail line each carrying a
-  // carriage return, `ESC[2J`, `ESC[31m` and a bell. On the unfixed writer a pipe wrote
-  // `610d1b5b324a623a206c656674206f75743a20726561736f6e0d1b5b33316d580a` — the raw bytes, seat
-  // and reason as given. The writer is the boundary: the same call now writes the cleaned bytes,
-  // and the only 0d and 1b bytes in the stream are the writer's own in-place rewrite, `\r\x1b[K`
-  // (a carriage return and a clear-to-end, one per draw) — asserted exactly, byte for byte.
+  // A seat, a stage word, a reason and a detail line each carrying a carriage return, `ESC[2J`,
+  // `ESC[31m` and a bell: what the writer is between — a caller that built a string — and the
+  // terminal. The raw bytes of one unfixed call were
+  // `610d1b5b324a623a206c656674206f75743a20726561736f6e0d1b5b33316d580a`: seat and reason as
+  // given. The same call writes the cleaned bytes below, and the only 0d and 1b bytes left in a
+  // terminal stream are the writer's own in-place rewrite, `\r\x1b[K` (a carriage return and a
+  // clear-to-end, one per draw) — asserted exactly, byte for byte.
   const dirtySeat = 'a\r\x1b[2Jb';
   const dirtyReason = 'reason\r\x1b[31mX';
-  const dirtyDetail = '  d\r\x1b[2Jet\x1b[31mail\x07\n';
+  const dirtyDetail = '  d\r\x1b[2Jet\x1b[31mail\x07';
 
   test('a terminal writes the cleaned bytes: the caller’s carriage returns, escapes and bell are gone', () => {
     const { out, err, sink: s } = sink(true);
     const records = progressWriter(s);
     records.progress(dirtySeat, 'launch\x1b[31ming' as ProgressState);
-    records.final(dirtySeat, { kind: 'left out', reason: dirtyReason }, dirtyDetail);
+    records.final(dirtySeat, { kind: 'left out', reason: dirtyReason });
+    records.detail(dirtyDetail);
     expect(out.join('')).toBe('\r\x1b[Kab: launching\r\x1b[Kab: left out: reasonX\n');
     expect(err.join('')).toBe('  detail\n');
     const mine = out.join('').replaceAll('\r\x1b[K', '');
@@ -129,7 +133,8 @@ describe('the writer', () => {
     const { out, err, sink: s } = sink(false);
     const records = progressWriter(s);
     records.progress(dirtySeat, 'launching');
-    records.final(dirtySeat, { kind: 'left out', reason: dirtyReason }, dirtyDetail);
+    records.final(dirtySeat, { kind: 'left out', reason: dirtyReason });
+    records.detail(dirtyDetail);
     expect(out.join('')).toBe('ab: left out: reasonX\n');
     expect(out.join('').includes('\x0d')).toBe(false);
     expect(out.join('').includes('\x1b')).toBe(false);
@@ -138,16 +143,46 @@ describe('the writer', () => {
     expect(err.join('').includes('\x07')).toBe(false);
   });
 
+  test('a C1 CSI written as its introducer plus the 7-bit tail goes whole: the tail is not left behind', () => {
+    // `\x9b` is the 8-bit CSI introducer; a mangled writing puts the 7-bit `[` after it. The
+    // introducer, the bracket and the sequence's own tail are one sequence, and the whole of it
+    // goes — before this, seat `a\x9b[2Jb` printed `a2Jb`, the tail left as if it were text.
+    const seat = 'a\x9b[2Jb';
+    const reason = 'r\x9b[31mX';
+    const detail = '  d\x9b[2Je';
+    const pipe = sink(false);
+    const redirected = progressWriter(pipe.sink);
+    redirected.final(seat, { kind: 'left out', reason });
+    redirected.detail(detail);
+    expect(pipe.out.join('')).toBe('ab: left out: rX\n');
+    expect(pipe.err.join('')).toBe('  de\n');
+
+    const drawn = sink(true);
+    const terminal = progressWriter(drawn.sink);
+    terminal.final(seat, { kind: 'left out', reason });
+    expect(drawn.out.join('')).toBe('\r\x1b[Kab: left out: rX\n');
+
+    // A lone introducer, with no sequence tail after it, is removed and its neighbours stay.
+    const lone = sink(false);
+    progressWriter(lone.sink).final('x\x9b\u202ey', { kind: 'ready' });
+    expect(lone.out.join('')).toBe('xy: ready\n');
+    // The TTY stream's only 1b bytes are the writer's own in-place rewrite, `\r\x1b[K`.
+    const written = pipe.out.join('') + pipe.err.join('') + lone.out.join('') + drawn.out.join('').replaceAll('\r\x1b[K', '');
+    expect(written.includes('\x9b')).toBe(false);
+    expect(written.includes('\x1b')).toBe(false);
+  });
+
   test('a reason, a seat or a detail the cleaning leaves empty is said as unknown, or not said', () => {
     const { out, err, sink: s } = sink(false);
     const records = progressWriter(s);
     // The reason cleans to nothing: the record keeps its grammar and says the one word these
     // records use for a reading this version cannot make.
-    records.final('alpha', { kind: 'left out', reason: '\r\x1b[2J\x07' }, '');
+    records.final('alpha', { kind: 'left out', reason: '\r\x1b[2J\x07' });
     // The seat cleans to nothing: the same word stands where the seat would.
-    records.final('\x1b[2J\r', { kind: 'ready' }, '');
+    records.final('\x1b[2J\r', { kind: 'ready' });
     // A detail that cleans to nothing is not written at all.
-    records.final('beta', { kind: 'ready' }, '\x1b[2J');
+    records.final('beta', { kind: 'ready' });
+    records.detail('\x1b[2J');
     expect(out.join('')).toBe('alpha: left out: unknown\nunknown: ready\nbeta: ready\n');
     expect(err).toEqual([]);
   });
@@ -157,13 +192,98 @@ describe('the writer', () => {
     const records = progressWriter(s);
     // The classification is where the next slice prints a screen reading from: it is cleaned at
     // the writer like the stage word, whatever a caller cast into it.
-    records.final('alpha', { kind: 'waiting for owner', classification: 'question\r\x1b[2J\x07' as Classification }, '');
-    records.final('beta', { kind: 'waiting for owner', classification: '\r\x1b[2J' as Classification }, '');
+    records.final('alpha', { kind: 'waiting for owner', classification: 'question\r\x1b[2J\x07' as Classification });
+    records.final('beta', { kind: 'waiting for owner', classification: '\r\x1b[2J' as Classification });
     expect(out.join('')).toBe('alpha: waiting for owner (question)\nbeta: waiting for owner (unknown)\n');
     expect(out.join('').includes('\x0d')).toBe(false);
     expect(out.join('').includes('\x1b')).toBe(false);
     expect(out.join('').includes('\x07')).toBe(false);
     expect(err).toEqual([]);
+  });
+
+  test('a line feed in any field is folded to one space: one record is one physical line, on a pipe', () => {
+    // Two lines out of one field would put a record nobody produced on stdout (`reason` /
+    // `forged`). A field is one physical line: a run of line feeds becomes a single space — every
+    // word stays, the field is never cut — and a detail line is one writer call, cleaned as one.
+    const { out, err, sink: s } = sink(false);
+    const records = progressWriter(s);
+    records.final('a\nb', { kind: 'left out', reason: 'reason\nforged' });
+    records.final('c', { kind: 'waiting for owner', classification: 'log\nin' as Classification });
+    records.final('d', { kind: 'left out', reason: 'one\n\ntwo' });
+    records.detail('  first\nsecond');
+    records.detail('\n   ');
+    expect(out.join('')).toBe(
+      'a b: left out: reason forged\n'
+        + 'c: waiting for owner (log in)\n'
+        + 'd: left out: one two\n',
+    );
+    expect(err.join('')).toBe('  first second\n');
+    expect(out.join('').split('\n')).toHaveLength(4);
+    // The bytes are the ASCII they look like: no 0a inside a record.
+    expect(Buffer.from(out.join(''), 'utf8').toString('hex')).toBe(
+      Buffer.from('a b: left out: reason forged\nc: waiting for owner (log in)\nd: left out: one two\n', 'utf8').toString('hex'),
+    );
+  });
+
+  test('a line feed in any field is folded to one space on a terminal too: no line moves down', () => {
+    const { out, err, sink: s } = sink(true);
+    const records = progressWriter(s);
+    records.progress('a\nb', 'launch\ning' as ProgressState);
+    records.final('a\nb', { kind: 'left out', reason: 'reason\nforged' });
+    records.detail('  first\nsecond');
+    expect(out.join('')).toBe('\r\x1b[Ka b: launch ing\r\x1b[Ka b: left out: reason forged\n');
+    expect(err.join('')).toBe('  first second\n');
+  });
+
+  // Every character of Unicode category Cf whose effect is on the display: the bidi embeddings,
+  // overrides and isolates, the direction marks, the zero-width characters, the byte-order mark.
+  const INVISIBLE = '‪‫‬‭\u202e⁦⁧⁨⁩‎‏؜​‌‍⁠﻿';
+
+  test('the invisible format characters are removed from every field, on a pipe and on a terminal', () => {
+    // U+202E (bytes `e2 80 ae`) reverses what follows it: a record would display other words than
+    // it holds. Every field — the seat, the stage word, the reason, a detail line and the
+    // classification — is cleaned of them, whatever a caller built.
+    const pipe = sink(false);
+    const redirected = progressWriter(pipe.sink);
+    redirected.progress(`a${INVISIBLE}b`, `launching${INVISIBLE}` as ProgressState);
+    redirected.final(`a${INVISIBLE}b`, { kind: 'left out', reason: `reason${INVISIBLE}X` });
+    redirected.detail(`  d${INVISIBLE}etail`);
+    redirected.final(`c${INVISIBLE}d`, { kind: 'waiting for owner', classification: `login${INVISIBLE}` as Classification });
+    expect(pipe.out.join('')).toBe('ab: left out: reasonX\ncd: waiting for owner (login)\n');
+    expect(pipe.err.join('')).toBe('  detail\n');
+
+    const drawn = sink(true);
+    const terminal = progressWriter(drawn.sink);
+    terminal.progress(`a${INVISIBLE}b`, 'launching');
+    terminal.final(`a${INVISIBLE}b`, { kind: 'left out', reason: `reason${INVISIBLE}X` });
+    expect(drawn.out.join('')).toBe('\r\x1b[Kab: launching\r\x1b[Kab: left out: reasonX\n');
+
+    const written = (pipe.out.join('') + pipe.err.join('') + drawn.out.join('')).replaceAll('\r\x1b[K', '');
+    for (const character of INVISIBLE) expect(written.includes(character)).toBe(false);
+    // The whole stream is ASCII: no `e2 80 ae`, no other multi-byte format character.
+    expect(Buffer.from(written, 'utf8').every((byte) => byte < 0x80)).toBe(true);
+  });
+
+  test('a reason in Arabic prints as written', () => {
+    const { out, sink: s } = sink(false);
+    const records = progressWriter(s);
+    const reason = 'رفض: لا صلاحية للكتابة';
+    records.final('مراجعة', { kind: 'left out', reason });
+    expect(out.join('')).toBe(`مراجعة: left out: ${reason}\n`);
+    expect(Buffer.from(out.join(''), 'utf8').toString('hex')).toBe(
+      Buffer.from(`مراجعة: left out: ${reason}\n`, 'utf8').toString('hex'),
+    );
+  });
+
+  test('a reason in Hebrew prints as written', () => {
+    const { out, sink: s } = sink(false);
+    const records = progressWriter(s);
+    const reason = 'הסיבה: לא אושר';
+    records.final('ביקורת', { kind: 'left out', reason });
+    expect(out.join('')).toBe(`ביקורת: left out: ${reason}\n`);
+    expect(Buffer.from(out.join(''), 'utf8').toString('hex')).toBe(
+      Buffer.from(`ביקורת: left out: ${reason}\n`, 'utf8').toString('hex'),
+    );
   });
 });
 
@@ -236,11 +356,29 @@ describe('a three-seat launch', () => {
       say: (line) => { err.push(line); },
       log: (who, what) => { logged.push({ who, what }); },
       progress: (seat, state) => records.progress(seat, state),
-      final: (seat, record, detail) => records.final(seat, record, detail),
+      final: (seat, record) => records.final(seat, record),
+      detail: (line) => records.detail(line),
       cliVersion: (cli) => (cli === 'codex' ? '0.160.0' : null),
     };
     return { host, out, err, slept, logged };
   }
+
+  test('a refuse step cleans the reason once, before the log and the writer: one line, the same words', async () => {
+    // A refusal reason holding a carriage return and escape sequences: the record is cleaned in
+    // one place (`final`) before both the log line and the writer take it, so the log holds the
+    // cleaned words — no 0d, no 1b — and says exactly what the record says.
+    const { host, out, err, logged } = world();
+    await executePlan(
+      [{ kind: 'skip', text: 'alpha: would refuse', do: { do: 'refuse', seat: 'alpha', why: 'reason\r\x1b[2J\x1b[31mX' } }],
+      'acme',
+      host,
+    );
+    expect(out.join('')).toBe('alpha: left out: refused: reasonX\n');
+    expect(err.join('')).toBe('');
+    expect(logged).toEqual([{ who: 'alpha', what: 'left out: refused: reasonX' }]);
+    const bytes = Buffer.from(logged.map((entry) => entry.what).join('\n'), 'utf8');
+    for (const byte of bytes) expect(byte >= 0x20).toBe(true);
+  });
 
   test('a redirected stdout is exactly the three records, in file order', async () => {
     const { host, out, err, slept, logged } = world();
@@ -270,7 +408,8 @@ describe('a three-seat launch', () => {
     const terminal: Host = {
       ...host,
       progress: (seat, state) => records.progress(seat, state),
-      final: (seat, record, detail) => records.final(seat, record, detail),
+      final: (seat, record) => records.final(seat, record),
+      detail: (line) => records.detail(line),
     };
     await executePlan(steps(), 'acme', terminal);
     expect(tty.join('')).toBe(

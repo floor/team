@@ -7,6 +7,7 @@ import { approvalDifferences, approvalOf } from '../src/approve/approval.ts';
 import { fingerprints } from '../src/approve/fingerprint.ts';
 import { runDown, type DownSources } from '../src/commands/down.ts';
 import { runRemove, type RemoveSources } from '../src/commands/remove.ts';
+import { loadTeamFile } from '../src/file/load.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import { executePlan, type Host } from '../src/launch/execute.ts';
@@ -232,9 +233,21 @@ describe('down and remove with one label on two seats', () => {
     mkdirSync(join(root, '.agents'));
     const file = join(root, '.agents', 'team.yaml');
     writeFileSync(file, SHARED);
+    // The approval in force a run that stops a seat and edits the file needs.
+    const home = join(root, 'home');
+    execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
+    const loaded = loadTeamFile(root);
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+    writeApproval(
+      storePath(loaded.team.project, loaded.root, home),
+      { approval: approvalOf(loaded.team, loaded.root), file: SHARED },
+      loaded.team.seats,
+      home,
+    );
     const panes: string[] = [];
     let box: string | undefined;
     const sources: RemoveSources = {
+      home,
       sessionRunning: () => true,
       agents: () => [
         { name: 'coordinator', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null },

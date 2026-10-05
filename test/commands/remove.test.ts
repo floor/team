@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalDifferences, approvalOf, verifiedOf } from '../../src/approve/approval.ts';
 import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
+import { loadTeamFile } from '../../src/file/load.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
 import { storePath, writeApproval } from '../../src/store/store.ts';
 import { rulesFileHash, rulesFilePath, writeRulesFile } from '../../src/launch/rules-file.ts';
@@ -42,10 +43,11 @@ seats:
 `;
 
 const owner = { kind: 'owner' as const };
-const lead = { kind: 'seat' as const, name: 'lead', pane: 'w0:p1' };
+const lead = { kind: 'seat' as const, name: 'lead', pane: 'w0:p1', session: 'acme' };
 
 let dir: string;
 let file: string;
+let home: string;
 let clock: number;
 
 function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
@@ -75,6 +77,7 @@ function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
     now: () => new Date(clock),
   };
   const sources: RemoveSources = {
+    home,
     sessionRunning: () => true,
     agents: () => agents,
     alive: () => false,
@@ -89,12 +92,32 @@ function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
   return { sources, typed, closed, agents, running };
 }
 
+// The state `team up` writes for the coordinator's seat: the caller check judges a seat on the
+// pane the state records for it, so a coordinator caller needs this record to stand as one.
+// Without it the check fails closed — that refusal has its own tests in coordinator-session.
+function recordLead(pane = lead.pane): void {
+  updateState(join(dir, '.agents'), (state) => {
+    (state.sessions.acme ??= emptySession()).seats.lead = { stage: 'ready', pane };
+  });
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'team-remove-'));
   mkdirSync(join(dir, '.agents'));
   file = join(dir, '.agents', 'team.yaml');
   writeFileSync(file, FILE);
   execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
+  // The approval in force every test runs under: `remove` refuses to stop a seat or edit the
+  // file without one. The tests that write their own record point `sources.home` at theirs.
+  home = join(dir, 'home');
+  const loaded = loadTeamFile(dir);
+  if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+  writeApproval(
+    storePath(loaded.team.project, loaded.root, home),
+    { approval: approvalOf(loaded.team, loaded.root), file: FILE },
+    loaded.team.seats,
+    home,
+  );
 });
 
 afterEach(() => {
@@ -313,6 +336,7 @@ describe('team remove', () => {
   });
 
   test('a seat that is not running is taken out without typing', async () => {
+    recordLead();
     const made = world();
     const io = testIo(dir, lead);
     expect(await runRemove(['worker'], io, made.sources)).toBe(0);
@@ -338,6 +362,7 @@ describe('team remove', () => {
     }, parsed.team.seats, dir);
     const edited = FILE.replace('launch: claude --model claude-opus-5-5', 'launch: claude --model claude-opus-5-5 --yolo');
     writeFileSync(file, edited);
+    recordLead();
     const made = world();
     made.sources.home = dir;
     expect(await runRemove(['worker', '--keep'], testIo(dir, lead), made.sources)).toBe(0);
@@ -356,6 +381,7 @@ describe('team remove', () => {
       file: FILE,
     }, parsed.team.seats, dir);
     writeFileSync(file, FILE.replace('    name: worker', '    name: worker\n    parked: true'));
+    recordLead();
     const made = world();
     made.sources.home = dir;
     expect(await runRemove(['worker', '--keep'], testIo(dir, lead), made.sources)).toBe(0);
@@ -409,6 +435,7 @@ describe('team remove', () => {
     const ownerIo = testIo(dir, owner);
     expect(await runRemove(['worker', '--file', file], ownerIo, made.sources)).toBe(1);
     expect(ownerIo.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (team remove worker --abandon closes its workspace without typing)\n');
+    recordLead();
     const leadIo = testIo(dir, lead);
     expect(await runRemove(['worker'], leadIo, made.sources)).toBe(1);
     expect(leadIo.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (the owner can close it: team remove worker --abandon)\n');
@@ -418,6 +445,7 @@ describe('team remove', () => {
   test('--abandon closes an unknown screen without typing; a coordinator may not', async () => {
     const made = world({ kind: 'unknown' }, 'idle');
     made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    recordLead();
     const seat = testIo(dir, lead);
     expect(await runRemove(['worker', '--abandon'], seat, made.sources)).toBe(1);
     expect(seat.err).toContain('only the owner abandons');
@@ -459,6 +487,7 @@ describe('team remove', () => {
   });
 
   test('only the owner removes the coordinator, and only the owner abandons', async () => {
+    recordLead();
     const made = world();
     made.agents.push({ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null });
     const seat = testIo(dir, lead);

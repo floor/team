@@ -68,8 +68,18 @@ the local base, with a note in the log, when it doesn't. Nothing is created when
 
 ## Who may run it
 
-The owner, the coordinator's seat, and the operator's seat. `--file` is the owner's alone, from a
-terminal outside herdr.
+The owner, the coordinator's seat, and the operator's seat. The seat is that name's, in a session
+this project's state records — the file's session, or one the state records the caller's pane in —
+on the pane the state records for that name in that session: a seat of another session, or a pane
+merely renamed to the coordinator's or the operator's name, is refused — and so is a seat the state
+records no pane for, or records on another pane than this call is on; those two refusals name the
+seat and the repair. What that proves is placement, and no more: the state file is in the project,
+and a process of the same user that writes its own pane there under the coordinator's name, and
+renames its pane, passes. The check guards a mistaken agent, not a hostile process running as the
+same user.
+`--file` and `--session` are the owner's alone, from a terminal outside herdr: a non-owner aiming
+either is refused before the flagged file or session is read at all. Both subcommands refuse the
+same way.
 
 ## Flags
 
@@ -78,7 +88,7 @@ terminal outside herdr.
 | `<task>` | one path segment: letters, digits, `.`, `_`, `-`, starting with a letter or a digit |
 | `--kind <kind>` | fills `{kind}` in `workspace.branch`; required when the pattern holds it, refused when it doesn't |
 | `--seat <name>` | records a declared seat in the worktree's record |
-| `--session <name>` | the session whose state is read and written, instead of `team.session` |
+| `--session <name>` | the session whose state is read and written, instead of `team.session`; the owner's alone |
 | `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone |
 | `--help`, `-h` | the usage, and exit 0 |
 
@@ -92,7 +102,10 @@ terminal outside herdr.
 | `team worktree: remove takes no --kind or --seat` (with the usage) | 2 |
 | `team worktree: line <n>: <message>` | 2 |
 | `team worktree: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
+| `team worktree: --session is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | `team worktree: only the owner, the coordinator or the operator runs it; this call is <caller>` | 1 |
+| ``team worktree: no pane is recorded for seat <name> in this session: the owner stops that seat and runs `team up` `` | 1 |
+| ``team worktree: the state records pane <pane> for seat <name> in this session, not the pane this call is on: the owner stops the team and starts it again (`team down`, then `team up`) `` | 1 |
 | `team worktree: session can't be "default", herdr's own session` | 1 |
 | ``team worktree: the file was never approved on this machine: run `team approve` `` | 1 |
 | ``team worktree: approved before records were signed: run `team approve` once`` — the record was written by an earlier `team`; the same line, with the case, for a record that does not verify | 1 |

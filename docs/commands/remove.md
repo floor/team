@@ -13,9 +13,11 @@ unless its owner abandons it. Every other seat, and the session, are left alone.
 ## What it reads and writes
 
 Reads the team file, the session's state (`.agents/team.state.json`, for a temporary seat's record),
-and herdr: whether the session runs, its agents, each pane's screen and status, and the pane's
-foreground processes, which is how it knows the CLI has really exited. No approval is read: taking a
-seat out is not a change the owner has to approve.
+herdr: whether the session runs, its agents, each pane's screen and status, and the pane's
+foreground processes, which is how it knows the CLI has really exited, and the approval store:
+stopping a seat and editing the file are changes the owner approves first. Without an approval in
+force — never approved, a record from before records were signed, or one the verification refused —
+nothing is stopped and nothing is written, with the one-line repair every command prints.
 
 Writes the team file (the seat's entry taken out, or `stopped: true` added to it),
 `.agents/team.state.json` (the seat's record is dropped), `.agents/team.log`, and, through herdr:
@@ -26,9 +28,19 @@ would not validate is refused before the seat is stopped, so a broken file never
 
 ## Who may run it
 
-The owner, the coordinator's seat and the operator's seat. The coordinator's and the operator's own
-seats are the owner's alone to remove, and so is `--abandon`. `--file` is the owner's alone, from a
-terminal outside herdr.
+The owner, the coordinator's seat and the operator's seat. The seat is that name's, in a session
+this project's state records — the file's session, or one the state records the caller's pane in —
+on the pane the state records for that name in that session: a seat of another session, or a pane
+merely renamed to the coordinator's or the operator's name, is refused — and so is a seat the state
+records no pane for, or records on another pane than this call is on; those two refusals name the
+seat and the repair. What that proves is placement, and no more: the state file is in the project,
+and a process of the same user that writes its own pane there under the coordinator's name, and
+renames its pane, passes. The check guards a mistaken agent, not a hostile process running as the
+same user.
+The
+coordinator's and the operator's own seats are the owner's alone to remove, and so is `--abandon`.
+`--file` and `--session` are the owner's alone, from a terminal outside herdr: a non-owner aiming
+either is refused before the flagged file or session is read at all.
 
 ## Flags
 
@@ -36,7 +48,7 @@ terminal outside herdr.
 | --- | --- |
 | `--keep` | leave the seat in the file with `stopped: true`: `team up` leaves it out, and `team add <name>` starts it again |
 | `--abandon` | the owner's: close the workspace of a seat that can't be asked, typing nothing into it |
-| `--session <name>` | the herdr session, instead of `team.session` |
+| `--session <name>` | the herdr session, instead of `team.session`; the owner's alone |
 | `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone |
 | `--help`, `-h` | the usage, and exit 0 |
 
@@ -66,6 +78,9 @@ A seat that doesn't leave cleanly is printed once with what stopped it, and `rem
 | `team remove: line <n>: <message>` | 2 |
 | `team remove: only the owner, the coordinator or the operator runs it; this call is <caller>` | 1 |
 | `team remove: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
+| `team remove: --session is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
+| ``team remove: no pane is recorded for seat <name> in this session: the owner stops that seat and runs `team up` `` | 1 |
+| ``team remove: the state records pane <pane> for seat <name> in this session, not the pane this call is on: the owner stops the team and starts it again (`team down`, then `team up`) `` | 1 |
 | `team remove: only the owner abandons a seat, from a terminal outside herdr` | 1 |
 | `team remove: only the owner removes the coordinator's or the operator's seat; this call is <caller>` | 1 |
 | `team remove: session can't be "default", herdr's own session` | 1 |
@@ -78,6 +93,8 @@ A seat that doesn't leave cleanly is printed once with what stopped it, and `rem
 | `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` (the owner) or `… left as it is (the owner can close it: team remove <seat> --abandon)` (a coordinator or the operator) | 1 |
 | `team remove: <seat> holds unsent text in its input box; left as it is` | 1 |
 | ``team remove: no launch profile for `<cli>`; left as it is`` | 1 |
+| ``team remove: the file was never approved on this machine: run `team approve` `` | 1 |
+| ``team remove: approved before records were signed: run `team approve` once`` — the record was written by an earlier `team`; the same line, with the case, for a record that does not verify | 1 |
 
 `--abandon` answers the last five: the seat is not asked anything, its workspace is closed as it is,
 and its pane's text is lost.

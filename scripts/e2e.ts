@@ -289,7 +289,7 @@ async function startSeats(ctx: Context): Promise<boolean> {
     show(io);
     step.check(code === 0, `add ${name} exits 0 (it exited ${code})`);
     step.check(seatRecord(ctx, name)?.stage === 'ready', `${name} is recorded ready in ${STATE_FILE}`);
-    step.check(logHas(ctx, `add [owner] started ${name}`), `the log holds: add [owner] started ${name}`);
+    step.check(logHas(ctx, `add [owner] ${name}: ready`), `the log holds: add [owner] ${name}: ready`);
   }
   const names = (agentList(SESSION) ?? []).map((agent) => agent.name);
   step.check(names.includes('fake-coordinator') && names.includes('fake-work'), 'herdr lists both seats under their names');
@@ -359,8 +359,8 @@ async function stepAddTemporary(ctx: Context): Promise<boolean> {
     'the state records it temporary, like fake-work, until result:result.md',
   );
   step.check(
-    logHas(ctx, 'add [owner] started fake-work-tmp-1 like fake-work until result:result.md'),
-    'the log holds: add [owner] started fake-work-tmp-1 like fake-work until result:result.md',
+    logHas(ctx, 'add [owner] fake-work-tmp-1: ready'),
+    'the log holds: add [owner] fake-work-tmp-1: ready',
   );
   const agent = (agentList(SESSION) ?? []).find((candidate) => candidate.name === 'fake-work-tmp-1');
   step.check(agent !== undefined, 'herdr lists it under its name');

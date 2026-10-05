@@ -3,9 +3,11 @@
 // Everything `team` prints that came from a screen — or from any string a caller could build —
 // has to survive a terminal that would act on it: an escape sequence in a pane's line, a seat's
 // name or a record's reason would move the cursor, clear the screen, or restyle everything after
-// it. `plainText` is the one cleaning: escape sequences removed whole, control characters gone,
-// the line breaks kept. `plainPaneText` is it plus the per-line cut the pane excerpts use; the
-// record writer (`progress.ts`) cleans with `plainText` alone — a record is never cut.
+// it, and an invisible format character would display other words than the string holds, or hide
+// them. `plainText` is the one cleaning: escape sequences removed whole, control characters and
+// the invisible format characters gone, the line breaks kept. `plainLine` is it with the line
+// breaks folded — one line in, one line out — for the fields and the detail lines a record
+// writer says. `plainPaneText` is `plainText` plus the per-line cut the pane excerpts use.
 
 /** Strips string sequences (OSC, DCS, APC, PM, SOS) and their payloads in one linear pass.
  *  OSC sequences terminate at BEL (\x07) or ST (7-bit ESC \ or 8-bit C1 \x9c).
@@ -114,15 +116,32 @@ export function stripControlStrings(text: string): string {
  *  whichever introducer and terminator are mixed, 7-bit `ESC x` or its one-byte C1 form, `ESC \`
  *  or C1 ST, or BEL to close an OSC; one left unterminated goes to the end of the text — and
  *  every control character but the line break, carriage returns, bells and escape characters
- *  among them. The line breaks are kept: a multi-line detail stays multi-line. */
+ *  among them — and every invisible format character that would change how the rest is
+ *  displayed or hide it. The line breaks are kept: a multi-line detail stays multi-line. */
 export function plainText(text: string): string {
   return stripControlStrings(
     text
       .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-      .replace(/\x9b[0-?]*[ -/]*[@-~]/g, ''),
+      // A one-byte C1 CSI may be written as its introducer plus the 7-bit tail, `\x9b[2J`: the
+      // `[` belongs to the mangled sequence, and the whole of it goes, not the introducer alone.
+      .replace(/\x9b\[?[0-?]*[ -/]*[@-~]/g, ''),
   )
     .replace(/\x1b./g, '')
-    .replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, '');
+    .replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, '')
+    // The invisible format characters (Unicode category Cf), exactly the ones whose effect is on
+    // what is displayed rather than on the text itself: the bidi embeddings, overrides and
+    // isolates (U+202A–U+202E, U+2066–U+2069), the direction marks (U+061C, U+200E, U+200F), the
+    // zero-width characters (U+200B–U+200D, U+2060) and the byte-order mark (U+FEFF). A terminal
+    // that honours them displays other words than the string holds, or hides words; ordinary
+    // letters of every script are untouched.
+    .replace(/[؜​-‏‪-‮⁠⁦-⁩﻿]/g, '');
+}
+
+/** `plainText` with the line breaks folded: one line in, one line out, whatever the caller
+ *  built. A run of line feeds becomes one space — every word stays, the field is never cut —
+ *  so a record's field or a detail line can never open a second physical line. */
+export function plainLine(text: string): string {
+  return plainText(text).replace(/\n+/g, ' ');
 }
 
 /** Pane text as it is safe to show (`plainText`), each line cut to `limit` characters. Pane text

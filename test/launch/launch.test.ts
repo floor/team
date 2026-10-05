@@ -511,6 +511,31 @@ describe('the pane lines a report carries', () => {
     expect(plainPaneText('plain\x9ctext')).toBe('plaintext');
   });
 
+  test('a C1 CSI written as its introducer plus the 7-bit tail is removed whole, tail included', () => {
+    // `\x9b` is the 8-bit CSI introducer; a mangled writing puts the 7-bit `[` after it. The
+    // introducer, the bracket and the sequence's own tail are one sequence: the whole of it goes,
+    // and none of it is left in the line as if it were text.
+    expect(plainPaneText('a\x9b[2Jb')).toBe('ab');
+    expect(plainPaneText('r\x9b[31mX')).toBe('rX');
+    expect(plainPaneText('  d\x9b[2Je')).toBe('  de');
+    // A lone introducer, with no tail to introduce, goes and its neighbours stay.
+    expect(plainPaneText('x\x9b\u202ey')).toBe('xy');
+    // A 7-bit CSI, the same sequence written with ESC, is removed whole as before.
+    expect(plainPaneText('a\x1b[2Jb')).toBe('ab');
+  });
+
+  test('the invisible format characters are removed from a pane line, and letters of any script stay', () => {
+    // The same class the writer removes of every field: the bidi embeddings, overrides and
+    // isolates, the direction marks, the zero-width characters and the byte-order mark. Each
+    // reorders or hides what a line shows, so a report row could display other words than it
+    // holds. Ordinary letters — Arabic, Hebrew — are text, not format, and are kept as written.
+    const invisible = '\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u200e\u200f\u061c\u200b\u200c\u200d\u2060\ufeff';
+    expect(plainPaneText(`before${invisible}after`)).toBe('beforeafter');
+    for (const character of invisible) expect(plainPaneText(character)).toBe('');
+    expect(plainPaneText('مراجعة: لا صلاحية للكتابة')).toBe('مراجعة: لا صلاحية للكتابة');
+    expect(plainPaneText('ביקורת: לא אושר')).toBe('ביקורת: לא אושר');
+  });
+
   test('stress test: 200-line 2 MB text with unterminated openers finishes in well under 1000 ms', () => {
     // Guards against quadratic backtracking: the previous regular expressions searched from
     // every unterminated opener to the end of the text before the second regex dropped it,

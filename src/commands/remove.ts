@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
-import { recordSeatDigestOf } from '../approve/approval.ts';
+import { recordSeatDigestOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
+import { anotherPaneRefusal, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { markStopped, takeOut } from '../file/lines.ts';
 import type { Problem } from '../file/types.ts';
@@ -28,8 +28,8 @@ export type RemoveSources = DownSources & {
   foreground(session: string, pane: string): string[] | null;
   /** Approval store home. The real command uses the owner's home. */
   home?: string;
-  // The approval store's one read (the amending branch alone reads it), overridable so a
-  // test can count it or swap the record after the gate. Absent: the real read.
+  // The approval store's one read, done before anything is stopped or written and reused by the
+  // amending branch, overridable so a test can count it or swap the record after the read.
   standing?(root: string): Standing;
 };
 
@@ -71,6 +71,29 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     return 2;
   }
   const name = args.rest[0] ?? '';
+  // The `--file` check is the walk's, and it runs before that file is read: a non-owner aiming
+  // `--file` must not make this command read and validate another project's team file, nor leave
+  // its `last_valid` in that project's state. The one place the six commands that take the flag
+  // decide it is `fileOwnerRefusal` (caller.ts).
+  const fileRefusal = fileOwnerRefusal(io, args.values.file);
+  if (fileRefusal !== undefined) {
+    io.stderr(`team remove: ${fileRefusal}\n`);
+    // exit: remove.file-owner
+    return 1;
+  }
+
+  // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
+  // `--session` is refused here, before the flag's session is read — no agent list, no pane root,
+  // no state write, no log line. (A seat cannot be named in this refusal: placing it would read a
+  // session, and that is what must not happen yet.)
+  if (args.values.session !== undefined) {
+    const walked = walkCaller(io);
+    if (!isOwner(walked)) {
+      io.stderr(`team remove: ${sessionOwnerRefusal(walked)}\n`);
+      // exit: remove.session-owner
+      return 1;
+    }
+  }
   const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), ...(sources.home ? { home: sources.home } : {}) });
   if (!loaded.ok) {
     for (const problem of loaded.errors) io.stderr(`team remove: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
@@ -79,19 +102,34 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     // exit: remove.file-invalid
     return 2;
   }
-  const caller = callerOf(io);
-  if (args.values.file && !isOwner(caller)) {
-    io.stderr(`team remove: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
-    // exit: remove.file-owner
+  const { team, path, root } = loaded;
+  const dir = dirname(path);
+  // The gate judges the caller placed in the session this command asks about — the proof its pane
+  // is that session's. With no `--session` the session judged is the caller's own placement: the
+  // file's session first, then a session the state records this caller's pane in (`team up
+  // --session <other>`) — never one a non-owner chose. The refusal names the caller's own
+  // placement, exactly as main described it.
+  const judged = args.values.session !== undefined
+    ? { ...judgeCallerOf(io, args.values.session === 'default' ? undefined : args.values.session), session: args.values.session }
+    : judgeCallerIn(io, dir, team);
+  const { caller, shown } = judged;
+  const session = judged.session;
+  const verdict = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
+  if (verdict.kind === 'no-pane') {
+    io.stderr(`team remove: ${noPaneRefusal(verdict.name)}\n`);
+    // exit: remove.no-pane
     return 1;
   }
-  if (!mayChangeTeam(caller, loaded.team)) {
-    io.stderr(`team remove: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(caller)}\n`);
+  if (verdict.kind === 'another-pane') {
+    io.stderr(`team remove: ${anotherPaneRefusal(verdict.name, verdict.recordedPane)}\n`);
+    // exit: remove.another-pane
+    return 1;
+  }
+  if (verdict.kind === 'refused') {
+    io.stderr(`team remove: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(shown)}\n`);
     // exit: remove.caller
     return 1;
   }
-  const { team, path, root } = loaded;
-  const session = args.values.session ?? team.session;
   if (session === 'default') {
     io.stderr('team remove: session can\'t be "default", herdr\'s own session\n');
     // exit: remove.default-session
@@ -109,7 +147,6 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     return 1;
   }
 
-  const dir = dirname(path);
   const recorded = readState(dir).sessions[session]?.seats[name];
   const declared = team.seats.find((seat) => seat.name === name);
   if (!declared && !recorded) {
@@ -174,6 +211,17 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     }
   }
 
+  // No approval in force: nothing is stopped and nothing is written for a team the owner never
+  // approved. Read after the read-only refusals above, which name a more specific problem, and
+  // before the seat is stopped or the file is edited.
+  const home = sources.home ?? homedir();
+  const standing = sources.standing?.(root) ?? approvalStanding(root, home);
+  if (standing.kind !== 'verified') {
+    io.stderr(`team remove: ${notInForce(standing)}\n`);
+    // exit: remove.never-approved
+    return 1;
+  }
+
   if (agent) {
     const screen = sources.screen(session, agent.pane, cli);
     const where = stateOf(agent.status, screen);
@@ -208,9 +256,6 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   }
   if (kept !== null) {
     const parsed = validateTeamFile(kept);
-    // The one read of the whole command, done only by the amending branch.
-    const home = sources.home ?? homedir();
-    const standing = sources.standing?.(root) ?? approvalStanding(root, home);
     if (parsed.ok) recordSeatDigestOf(standing, parsed.team, root, name, home);
   }
   if (!agent && recorded) {

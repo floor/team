@@ -405,6 +405,21 @@ describe('team add', () => {
     expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).toContain('stopped: true');
   });
 
+  test('a refused caller is refused before any record: the plain sentence, no seat record, no log line', async () => {
+    // The gate sits before the writer is built: a refused caller prints the refusal exactly as
+    // main prints it — the sentence, nothing wrapped around it — and nothing that reads as a
+    // progress record is written anywhere: stdout is empty, and the log file's bytes are what
+    // they were before the run.
+    const io = testIo(project, { kind: 'seat', name: 'stranger', pane: 'w1:p1' });
+    const log = join(project, '.agents', 'team.log');
+    const logged = () => (existsSync(log) ? readFileSync(log, 'utf8') : null);
+    const before = logged();
+    expect(await runAdd(['worker'], io, sources(world()))).toBe(1);
+    expect(io.out).toBe('');
+    expect(io.err).toBe('team add: only the owner, the coordinator or the operator runs it; this call is stranger\n');
+    expect(logged()).toBe(before);
+  });
+
   test('a temporary seat is recorded, not written into the file, keeps its own-commits flag, and the log holds its record alone', async () => {
     const made = world();
     const io = testIo(project, owner);

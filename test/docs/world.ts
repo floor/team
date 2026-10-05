@@ -232,6 +232,8 @@ export type World = {
   releaseFetch(): Fetch;
   /** The release page's stand-in for the Keychain read: a fixed, deliberate non-real key. */
   releaseKeyReader(): KeyReader;
+  /** The pane a running seat of the fixture is in, or undefined when nothing runs it. */
+  paneOf(name: string): string | undefined;
   setScreen(seat: string, kind: ScreenKind): void;
   setMachine(kind: Spec['machine']): void;
   /** One CLI's installed-and-logged-in state, on top of the fixture's own. */
@@ -501,6 +503,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
   return {
     live,
     did,
+    paneOf: (name) => slots.find((slot) => slot.name === name)?.pane,
     setScreen(seat, kind) {
       const slot = slots.find((candidate) => candidate.name === seat);
       if (!slot) throw new Error(`the fixture has no running seat "${seat}"`);

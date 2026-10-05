@@ -6,7 +6,7 @@ import { launchedIdentity, seatProcessVerdict, type LaunchedIdentity } from './i
 import { IDLE_POLL_MS, type Step } from './plan.ts';
 import { paneProblem, goneDetail, type PauseInput, type PauseResult, type PaneReads } from './pause.ts';
 import { plainPaneText } from './plain.ts';
-import { recordWhat, type Classification, type FinalRecord, type ProgressState } from './progress.ts';
+import { recordWhat, cleanRecord, type Classification, type FinalRecord, type ProgressState } from './progress.ts';
 import type { LobbyRefusal } from '../lobby/gate.ts';
 import type { WaitingRecord } from '../state.ts';
 import { vendorNoticeRange } from '../watch/screen.ts';
@@ -85,9 +85,12 @@ export type Host = {
   /** The seat's line: first drawn before its workspace is created, rewritten in place as it
    *  advances. Present on `up` and `add`; `down` has none, and its records keep their old lines. */
   progress?(seat: string, state: ProgressState): void;
-  /** The seat's one final record, and the detail lines that follow it on stderr. Present
-   *  wherever `progress` is. */
-  final?(seat: string, record: FinalRecord, detail: string): void;
+  /** The seat's one final record, already cleaned (`cleanRecord`: its fields are one physical
+   *  line each). Present wherever `progress` is. */
+  final?(seat: string, record: FinalRecord): void;
+  /** One detail line of the record just finalized: one call per line, on stderr, after the
+   *  record. Present wherever `final` is. */
+  detail?(line: string): void;
   /** What the installed `<cli>` reports as its version, for a vendor notice's `untested on`
    *  detail. Null when it can't be read. */
   cliVersion?(cli: string): string | null;
@@ -207,18 +210,23 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     return lines;
   };
 
-  // A seat's one final record: the record line, then its detail on stderr. A host without
-  // `final` (no `up` or `add` record path reaches it) says the record's own words as one line.
-  // The log's line is the record's words, with one exception: §7 writes the stopped-cleanly
-  // record's log line as `<seat>: stopped cleanly`, without the `left out:` the terminal line
-  // and §3's record keep.
+  // A seat's one final record: the record line, then its detail lines on stderr, one writer call
+  // each. The record is cleaned once here, before the log and the writer both take it, so the log
+  // line and the terminal line are the same cleaned words; the writer cleans again at its own
+  // boundary. A host without `final` (no `up` or `add` record path reaches it) says the record's
+  // own words as one line. The log's line is the record's words, with one exception: §7 writes
+  // the stopped-cleanly record's log line as `<seat>: stopped cleanly`, without the `left out:`
+  // the terminal line and §3's record keep.
   const final = (seat: string, record: FinalRecord, detail = '') => {
     if (logged.has(seat)) return;
     logged.add(seat);
-    const what = record.kind === 'left out' && record.reason === 'stopped cleanly' ? 'stopped cleanly' : recordWhat(record);
+    const clean = cleanRecord(record);
+    const what = clean.kind === 'left out' && clean.reason === 'stopped cleanly' ? 'stopped cleanly' : recordWhat(clean);
     const rest = detail + release(seat);
-    if (host.final) host.final(seat, record, rest);
-    else host.say(`${seat}: ${what}\n${rest}`);
+    if (host.final) {
+      host.final(seat, clean);
+      for (const line of rest.split('\n')) host.detail?.(line);
+    } else host.say(`${seat}: ${what}\n${rest}`);
     host.log(seat, what);
   };
 

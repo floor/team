@@ -5,6 +5,7 @@ import type { TeamFile } from './file/types.ts';
 import { agentList, paneRootPid } from './herdr.ts';
 import type { HerdrAgent } from './herdr.ts';
 import type { Io } from './io.ts';
+import { readState } from './state.ts';
 import { CLI_PROCESSES } from './clis.ts';
 
 // Who runs this command, placed by its parent processes, never by its environment. This guards
@@ -15,7 +16,10 @@ export type Caller =
   // An owner's process with no terminal to prompt on: a script, a pty-less runner. It may run
   // `up` (which then never prompts), and it is refused everywhere a terminal was required.
   | { kind: 'owner-no-tty' }
-  | { kind: 'seat'; name: string; pane: string }
+  // `session` is the session the placement was made in: the command passed it to `callerOf` and
+  // the caller's pane root was found in that session's agent list. Absent when no session was
+  // asked about (the caller's own server answered) and on callers a test hands in.
+  | { kind: 'seat'; name: string; pane: string; session?: string }
   | { kind: 'unplaced'; reason: string };
 
 export type Process = { pid: number; name: string };
@@ -30,7 +34,10 @@ export type CallerSources = {
   stdinIsTTY: boolean;
 };
 
-export function placeCaller(sources: CallerSources): Caller {
+// Places the caller by its parent processes. When `session` is given the agent list and the pane
+// roots are read in that session — the caller of `currentCaller(io, session)` — and a seat it
+// places is recorded as that session's: a pane the session does not list places nobody.
+export function placeCaller(sources: CallerSources, session?: string): Caller {
   const ancestors = sources.ancestors();
   // A walk that stopped early may have stopped below a herdr server: it places nobody.
   if (!ancestors?.length) return { kind: 'unplaced', reason: 'its parent processes can\'t be read to the top' };
@@ -45,12 +52,38 @@ export function placeCaller(sources: CallerSources): Caller {
     for (const agent of ordered) {
       const root = sources.paneRootPid(agent.pane);
       if (root === null || !pids.has(root)) continue;
-      if (agent.name) return { kind: 'seat', name: agent.name, pane: agent.pane };
+      if (agent.name) {
+        return session === undefined
+          ? { kind: 'seat', name: agent.name, pane: agent.pane }
+          : { kind: 'seat', name: agent.name, pane: agent.pane, session };
+      }
       return { kind: 'unplaced', reason: `it runs in pane ${agent.pane}, whose agent has no herdr name` };
     }
     return { kind: 'unplaced', reason: 'it runs in a herdr pane without an agent' };
   }
 
+  return walkOutside(ancestors, sources);
+}
+
+// The walk without any session at all: the owner is a terminal outside herdr, and that reading
+// needs no agent list and no pane root. A caller under herdr is `unplaced` here, whatever session
+// it might stand in — naming that seat would mean reading a session, and the refusal of a
+// non-owner's `--session` must come before any session is read. The same walk as `placeCaller`'s
+// first half, byte for byte on every case a session would not have decided.
+export function walkCaller(io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>): Caller {
+  if (io.caller !== undefined) return io.caller;
+  const sources = io.callerSources?.(undefined);
+  const ancestors = sources ? sources.ancestors() : readAncestors();
+  const env = sources ? sources.env : io.env;
+  const stdinIsTTY = sources ? sources.stdinIsTTY : io.stdinIsTTY;
+  if (!ancestors?.length) return { kind: 'unplaced', reason: 'its parent processes can\'t be read to the top' };
+  if (ancestors.some((process) => process.name === 'herdr')) {
+    return { kind: 'unplaced', reason: 'it runs under herdr' };
+  }
+  return walkOutside(ancestors, { env, stdinIsTTY });
+}
+
+function walkOutside(ancestors: Process[], sources: Pick<CallerSources, 'env' | 'stdinIsTTY'>): Caller {
   const cli = ancestors.find((process) => CLI_PROCESSES.includes(process.name));
   if (cli) return { kind: 'unplaced', reason: `it is run by an agent (${cli.name}) outside herdr` };
   if (sources.env.AGENT_UNATTENDED) return { kind: 'unplaced', reason: 'AGENT_UNATTENDED is set' };
@@ -62,19 +95,208 @@ export function isOwner(caller: Caller): boolean {
   return caller.kind === 'owner';
 }
 
-/**
- * Who may launch seats: the owner at a terminal, and the otherwise-verified owner without one.
- * Only `up` reads this, and only to tell the two apart — the no-terminal one never prompts. Every
- * other command keeps its refusals exactly: `isOwner` is still the terminal case alone.
+/** Who may launch seats: the owner at a terminal, and the otherwise-verified owner without one.
+ *  Only `up` reads this, and only to tell the two apart — the no-terminal one never prompts. Every
+ *  other command keeps its refusals exactly: `isOwner` is still the terminal case alone.
  */
 export function mayLaunchSeats(caller: Caller): boolean {
   return caller.kind === 'owner' || caller.kind === 'owner-no-tty';
 }
 
-// The owner, or the coordinator's or the operator's seat: who may change a running team.
-export function mayChangeTeam(caller: Caller, team: Pick<TeamFile, 'coordinator' | 'operator'>): boolean {
-  if (caller.kind === 'owner') return true;
-  return caller.kind === 'seat' && (caller.name === team.coordinator || caller.name === team.operator);
+/**
+ * What a seat is judged against: the session the approved team file names, and the pane the state
+ * records for the seat, when it records one. The pane it was launched on is the seat's; a pane
+ * merely renamed to the seat's name, even in the right session, is not it. A state that records no
+ * pane (a team never brought up; a coordinator's seat `team` didn't launch) is refused: nothing in
+ * the state tells that seat apart from a renamed shell, so the check fails closed. The refusal is
+ * `noPaneRefusal` — the cause, and the repair that truly records a pane.
+ */
+export type SeatStanding = { session: string; recordedPane?: string };
+
+/** The pane the state records for a seat in a session, or undefined. A state that can't be read
+ *  records no pane: a caller check must never become a stack trace. */
+export function recordedPaneOf(dir: string, session: string, name: string): string | undefined {
+  try {
+    return readState(dir).sessions[session]?.seats[name]?.pane;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The standing to judge `caller` by: the session this command asks about, and the pane the state
+ *  records for the seat the caller claims to be. */
+export function standingOf(dir: string, session: string, caller: Caller): SeatStanding {
+  return { session, recordedPane: caller.kind === 'seat' ? recordedPaneOf(dir, session, caller.name) : undefined };
+}
+
+/**
+ * Why the caller is or is not the seat `name`. `refused` is every mismatch: another name, and a
+ * caller of another session. `no-pane` is the state recording no pane for the seat — refused too,
+ * and the one refusal that tells its caller what to ask the owner for. `another-pane` is the name
+ * in the right session on any pane but the one the state records for it — a seat restored onto a
+ * new pane id: refused, and the repair is not the no-pane one (that record exists), it is the
+ * stop the state can then re-record.
+ */
+export type CallerVerdict =
+  | { kind: 'ok' }
+  | { kind: 'refused' }
+  | { kind: 'no-pane'; name: string }
+  | { kind: 'another-pane'; name: string; recordedPane: string };
+
+/** Whether the caller is the seat `name`: in the session judged (a caller placed in another
+ *  session is a seat of that other session, not of this one), and on the pane the state records
+ *  for it. A state that records no pane refuses it, and so does one that records another pane.
+ *  Without a standing the name alone decides, exactly as before. */
+export function callerVerdict(caller: Caller, name: string, at?: SeatStanding): CallerVerdict {
+  if (caller.kind !== 'seat' || caller.name !== name) return { kind: 'refused' };
+  if (!at) return { kind: 'ok' };
+  // Once a standing is asked for, a caller that carries no session is refused: nothing in it
+  // shows it stood in the session judged. Every placement `placeCaller` makes for a command
+  // records the session it asked about, so production callers always carry one; this covers a
+  // caller built by hand, which must name its session to be read as a seat.
+  if (caller.session !== at.session) return { kind: 'refused' };
+  if (at.recordedPane === undefined) return { kind: 'no-pane', name };
+  return caller.pane === at.recordedPane ? { kind: 'ok' } : { kind: 'another-pane', name, recordedPane: at.recordedPane };
+}
+
+export function callerStanding(caller: Caller, name: string, at?: SeatStanding): boolean {
+  return callerVerdict(caller, name, at).kind === 'ok';
+}
+
+/**
+ * The refusal for a seat the state records no pane for: the cause, and the repair that truly
+ * records one. Nothing records a running seat's pane — `team up` skips a ready seat without a
+ * write, refuses a seat the state doesn't record while its agent runs (`up never touches a
+ * running team`), and launches a fresh workspace for a record without a pane — so the seat has
+ * to be stopped before the owner's `team up` can launch it and record the pane. (Runs on a fake
+ * host through the real commands, round 4: with the seat live, `team up` exits 1 with that
+ * line; with the seat stopped, `team up` exits 0 and records the pane it started it on.)
+ */
+export function noPaneRefusal(name: string): string {
+  return `no pane is recorded for seat ${name} in this session: the owner stops that seat and runs \`team up\``;
+}
+
+/**
+ * The refusal for a seat the state records on another pane: the name is in the session judged,
+ * but not on the pane the state holds for it. No single owner command re-records that pane while
+ * the seat runs, and which one works depends on reads a caller cannot make, so the refusal names
+ * the sequence that repairs every case. (Runs on a fake host through the real commands, round 4,
+ * for the seat live on a new pane, the seat gone, and the recorded pane gone:) `team up` alone
+ * bails on the record it can still read (`herdr no longer shows this seat on its recorded pane;
+ * nothing closed`), and `team add` bails with the same line; `team remove` of the coordinator's
+ * or the operator's name — the two this refusal can name — is refused by the file's own
+ * validation (`names no declared seat` / `can't be a stopped seat`, exit 2); with the recorded
+ * pane gone (unreadable) `team up` alone does launch the seat afresh. `team down` then `team up`
+ * repairs all three: the stop stops every seat it reaches and clears the session, the start
+ * launches the seat again and records the pane it starts on (exit 0, 0; the caller then passes
+ * the gate). A seat the stop cannot reach — the gone case, whose name is not in the agent list —
+ * keeps its old record through the stop, and the start overwrites it by launching. (Round 4's
+ * safety review read the state file after each step of the gone case: still the old pane after
+ * `down`, the launched pane after `up`.)
+ */
+export function anotherPaneRefusal(name: string, recordedPane: string): string {
+  return `the state records pane ${recordedPane} for seat ${name} in this session, not the pane this call is on: the owner stops the team and starts it again (\`team down\`, then \`team up\`)`;
+}
+
+/**
+ * The refusal a command prints when a non-owner aimed `--file`: decided by the walk alone, before
+ * that file is read, so every state of the flagged path — no file at all, an unparsable file, a
+ * valid team file, a folder, an unreadable file — answers with these same bytes and the same
+ * exit, and nothing of the flagged project and no session is read. `undefined` when the flag is
+ * absent or the walk places the owner. Every command that takes `--file` (add, remove, worktree
+ * new / remove, answer, down) asks this before it reads anything; it lives here, beside
+ * `walkCaller`, so a seventh command cannot forget it. (Round 5: `add`, `remove` and `worktree`
+ * read the flagged file and asked the host for its session before their own `--file` check; the
+ * runs that showed it are in the round's result.)
+ */
+export function fileOwnerRefusal(
+  io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>,
+  file: string | undefined,
+): string | undefined {
+  if (!file) return undefined;
+  const walked = walkCaller(io);
+  return isOwner(walked) ? undefined : `--file is the owner's, from a terminal outside herdr; this call is ${describeCaller(walked)}`;
+}
+
+/** The one refusal a non-owner aiming `--session` meets, decided and printed before any session
+ *  is read: the walk places a caller under herdr as `unplaced`, because naming its seat would
+ *  read a session. */
+export function sessionOwnerRefusal(walked: Caller): string {
+  return `--session is the owner's, from a terminal outside herdr; this call is ${describeCaller(walked)}`;
+}
+
+// The owner, or the coordinator's or the operator's seat: who may change a running team. The
+// no-pane and another-pane verdicts name the seat, so a command's refusal can say which seat the
+// state lost, or which pane it holds that the caller is not on.
+export function mayChangeTeamVerdict(caller: Caller, team: Pick<TeamFile, 'coordinator' | 'operator'>, at?: SeatStanding): CallerVerdict {
+  if (caller.kind === 'owner') return { kind: 'ok' };
+  const asCoordinator = callerVerdict(caller, team.coordinator, at);
+  return asCoordinator.kind === 'refused' ? callerVerdict(caller, team.operator, at) : asCoordinator;
+}
+
+// The same question, as a boolean, for callers that need no reason.
+export function mayChangeTeam(caller: Caller, team: Pick<TeamFile, 'coordinator' | 'operator'>, at?: SeatStanding): boolean {
+  return mayChangeTeamVerdict(caller, team, at).kind === 'ok';
+}
+
+/**
+ * The caller a command that changes the team must judge, and how a refusal names it. The decision
+ * is made on the caller placed in the session the command asks about — the proof that its pane is
+ * that session's. `shown` is the caller's own placement, without a session, as main described it:
+ * so a seat of another session is refused by its name, today's text, and the text names nothing
+ * that would have told it which name would have worked.
+ */
+export function judgeCallerOf(io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>, session?: string): { caller: Caller; shown: Caller } {
+  const caller = callerOf(io, session);
+  // A caller a test handed in is itself; a seat placed in the session asked about is described
+  // by that placement. Anything else is described by its own placement.
+  if (io.caller !== undefined || caller.kind !== 'unplaced') return { caller, shown: caller };
+  return { caller, shown: callerOf(io) };
+}
+
+/**
+ * The caller a command must judge when the call named no session, and the session to judge it
+ * in. The file's own session is tried first, exactly as it was before sessions were judged: a
+ * team the file names is judged where it always was, and every existing binding holds. The one
+ * case this adds is a team the owner started under another session — `team up --session <name>`,
+ * the file still naming its own — whose seats must stand in the commands that change the team.
+ * The session then comes from the caller's own placement: the state session that records this
+ * caller's pane for the coordinator's or the operator's seat. The flag never comes back to a
+ * non-owner; only a placement the owner's own state records can move the judgement. A state
+ * that holds no other session — every team that never overrode one — resolves to the file's
+ * own session, unchanged. A seat placed in another session but not standing in it is judged
+ * there, so the refusal names the caller instead of reading it as a stranger; a caller no
+ * state-held session places falls back to the file's placement, today's refusal.
+ */
+export function judgeCallerIn(
+  io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>,
+  dir: string,
+  team: Pick<TeamFile, 'session' | 'coordinator' | 'operator'>,
+): { caller: Caller; shown: Caller; session: string } {
+  const placedIn = (session: string): { caller: Caller; shown: Caller; session: string; verdict: CallerVerdict } => {
+    const { caller, shown } = judgeCallerOf(io, session === 'default' ? undefined : session);
+    return { caller, shown, session, verdict: mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller)) };
+  };
+  const named = placedIn(team.session);
+  if (named.verdict.kind === 'ok') return named;
+  let held: { caller: Caller; shown: Caller; session: string; verdict: CallerVerdict } | undefined;
+  for (const session of stateSessions(dir)) {
+    if (session === team.session) continue;
+    const there = placedIn(session);
+    if (there.verdict.kind === 'ok') return there;
+    if (held === undefined && there.caller.kind === 'seat') held = there;
+  }
+  return held ?? named;
+}
+
+/** The sessions the state holds, or none when it can't be read: a caller check must never
+ *  become a stack trace. */
+function stateSessions(dir: string): string[] {
+  try {
+    return Object.keys(readState(dir).sessions);
+  } catch {
+    return [];
+  }
 }
 
 export function describeCaller(caller: Caller): string {
@@ -154,9 +376,13 @@ export function readAncestors(pid: number = process.ppid, read: ReadProcess = pr
   return null;
 }
 
-// The caller of a command: the one a test handed in, or the one the processes show.
-export function callerOf(io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller'>, session?: string): Caller {
-  return io.caller ?? currentCaller(io, session);
+// The caller of a command: the one a test handed in, the one test sources place, or the one the
+// processes show. The sources are asked about the session the command asks about, so a test sees
+// the placement the command itself made.
+export function callerOf(io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>, session?: string): Caller {
+  if (io.caller !== undefined) return io.caller;
+  if (io.callerSources !== undefined) return placeCaller(io.callerSources(session), session);
+  return currentCaller(io, session);
 }
 
 export function currentCaller(io: { env: Record<string, string | undefined>; stdinIsTTY: boolean }, session?: string): Caller {
@@ -166,5 +392,5 @@ export function currentCaller(io: { env: Record<string, string | undefined>; std
     paneRootPid: (pane) => paneRootPid(pane, session),
     env: io.env,
     stdinIsTTY: io.stdinIsTTY,
-  });
+  }, session);
 }
