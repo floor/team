@@ -291,7 +291,7 @@ describe('a pass of the watch', () => {
     const screen = readFileSync(new URL('./fixtures/codex/0.157.0/working.txt', import.meta.url), 'utf8');
     const drift = live({ 'codex-acme': { status: 'working', screen } });
     const texts = pass({ team: team(), watch: team().watch, state: emptySession(), live: drift, machine: fine, now: 0, memory: newMemory() }).reports.map((report) => report.text);
-    expect(texts).toEqual(['codex-acme runs GPT Terra 5.6; the file says GPT Sol 6: it signs with the wrong model']);
+    expect(texts).toEqual(['codex-acme runs GPT Terra 5.6; the file says GPT-6 Sol: it signs with the wrong model']);
   });
 
   test('a stopped seat that runs is watched like a parked one: its permission prompt is reported', () => {
