@@ -87,6 +87,7 @@ or a machine that stays full, is said once, not every pass.
 | --- | --- |
 | `<seat> is in the file and is not running` | herdr lists no agent for a seat the file has, does not stop, and the watch has not seen running |
 | `<seat> was running and is gone (its pane closed, or its CLI ended)` | herdr lists no agent for a seat the watch had seen running; said at each disappearance |
+| `<seat> is no longer the process team launched (its session was restored, or its CLI was restarted)` | the process in the seat's pane is not the one recorded when `team` launched it: the pane runs no CLI, or one `team` did not launch |
 | `<seat> waits at a permission prompt: its owner's to answer` | a permission dialog or a trust question; only its owner answers those |
 | `<seat> asked a question: the operator's to act on` | a question the seat is waiting on |
 | `<seat> is blocked, and its screen is not one the watch recognises` | herdr says blocked and the screen says nothing the watch knows |
@@ -482,6 +483,6 @@ seats:
 ```console
 $ team approve ; echo "exit $?"
 team approve: line 9: watch.checks can't turn off attention: attention, missing, model-drift, approval always run
-team approve: line 10: unknown check "disks" in watch.checks: the checks are missing, model-drift, attention, unsent, idle, extra, team-idle, approval, load, memory, disk, swap-free, swap-growth, budget
+team approve: line 10: unknown check "disks" in watch.checks: the checks are missing, restored, model-drift, attention, unsent, idle, extra, team-idle, approval, load, memory, disk, swap-free, swap-growth, budget
 exit 2
 ```

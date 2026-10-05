@@ -1,6 +1,7 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { StoredReading, StoredSpend } from './budgets/readings.ts';
+import type { LaunchedIdentity } from './launch/identity.ts';
 
 // What a team keeps: the live session's seats, worktrees and watch, and the project's last
 // readings, which outlive every session (§ 4.4). It lives beside the team file and is written by
@@ -21,6 +22,13 @@ export type SeatState = {
   cli_version?: string;
   rules?: 'option' | 'message' | 'undelivered';
   worked?: boolean;
+  /**
+   * The process `team` launched for this seat, read after its idle prompt appeared: the pane's
+   * shell pid and the foreground pids that are not the shell. A pane that no longer holds them
+   * is not the seat (`src/launch/identity.ts`). Absent on a seat launched before this was
+   * recorded, and on one herdr could not tell about: both keep today's behaviour.
+   */
+  launched?: LaunchedIdentity;
   // `own_commits` is the home for a temporary seat whose end is `merged:` and that has no worktree.
   // A seat in a worktree keeps that record on the worktree instead.
   temporary?: { like: string; until: string; task?: string; own_commits?: boolean };

@@ -6,7 +6,7 @@ import { runChecksOf, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
 import { homedir } from 'node:os';
-import { agentStatus, PANE_WINDOW, paneForeground, paneRead, pressEnter, typeText } from '../herdr.ts';
+import { agentStatus, PANE_WINDOW, paneForeground, paneProcesses, paneRead, pressEnter, typeText, type PaneProcesses } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
@@ -46,6 +46,9 @@ export type WatchSources = {
   status(pane: string, session: string): string | null;
   /** Foreground argv0 names, or null when the pane can't be read. */
   foreground(pane: string, session: string): string[] | null;
+  /** The pane's process identity, compared with the one the state records for its seat; null
+   *  when herdr can't tell. */
+  processes?(pane: string, session: string): PaneProcesses | null;
   typeText(pane: string, text: string, session: string): boolean;
   pressEnter(pane: string, session: string): boolean;
   notify(text: string): void;
@@ -81,13 +84,17 @@ function waitOrStop(seconds: number): Promise<boolean> {
 }
 
 export const realWatchSources: WatchSources = {
-  live: realSources.live,
+  // The status live read, handed no state: the watch compares each live pane's process with its
+  // seat's record itself, through `processes` below — only `status` needs the panes the state
+  // recorded for seats no agent is listed under, so none is read here.
+  live: (session, team) => realSources.live(session, team, emptySession()),
   machine: readMachine,
   standing: standingSource(homedir()),
   readChecks: (standing, team, now) => runChecksOf(standing, team, now),
   screen: (pane, session) => paneRead(pane, PANE_WINDOW, session),
   status: agentStatus,
   foreground: (pane, session) => paneForeground(pane, session),
+  processes: (pane, session) => paneProcesses(pane, session),
   typeText,
   pressEnter,
   notify,
@@ -258,13 +265,19 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         // where herdr reports the seat's CLI. A pane it can't read is null, and a null is not a
         // CLI: no figure.
         const foreground: Record<string, string[] | null> = {};
-        for (const agent of live.agents) foreground[agent.pane] = sources.foreground(agent.pane, session);
+        // The pane's process identity, read with the same screen: a pane that no longer holds
+        // the process team launched for its seat is not the seat, and the restored check says so.
+        const processes: Record<string, PaneProcesses | null> = {};
+        for (const agent of live.agents) {
+          foreground[agent.pane] = sources.foreground(agent.pane, session);
+          processes[agent.pane] = sources.processes?.(agent.pane, session) ?? null;
+        }
         const run = (stored: readonly Seen[]) => pass({
           team, state, live, machine: sources.machine(root), now, memory,
           approval: approval.differences, approvalReason: approval.reason, watch: inForce, outcomes, budgets: budget,
           quotaFor: (cli) => quotaWith(cli, overrides.profiles),
           readScreen: (cli, pane) => classifyWith(cli, pane, overrides.profiles),
-          readings: stored, foreground,
+          readings: stored, foreground, processes,
         });
         // The pass folds its figures where the state is held: two watches of the project fold one
         // after the other, not over each other. A watch on a foreign session still folds, for its

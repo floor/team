@@ -85,7 +85,12 @@ async function setup(page: Page): Promise<void> {
   const session = emptySession() as unknown as Record<string, unknown>;
   if (page.spec.agents === 'all' && page.team) {
     const seats: Record<string, unknown> = {};
-    for (const seat of page.team.seats) seats[seat.name] = { stage: 'ready' };
+    // A state file this version writes: every seat it launched carries the process identity it
+    // recorded, so no page shows the doctor's "launched before team recorded its process" note
+    // unless it says so on purpose (`state:` dropping a seat's `launched`).
+    page.team.seats.forEach((seat, index) => {
+      seats[seat.name] = { stage: 'ready', launched: { shell: 4000 + index, cli: [4100 + index] } };
+    });
     session.seats = seats;
   }
   if (page.spec.watch === 'alive' || page.spec.watch === 'stale') {

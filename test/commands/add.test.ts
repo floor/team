@@ -149,6 +149,11 @@ function world(): { launch: Launch; creates: string[]; renames: string[]; sessio
     },
     closeWorkspace: () => true,
     agentPanes: () => [...panes].filter(([, pane]) => pane.agent).map(([id]) => id),
+    agents: () => [],
+    workspacePanes: (_session, workspace) => {
+      const found = [...panes.keys()].filter((p) => p.startsWith(`${workspace}:`));
+      return found.length > 0 ? found : [`${workspace}:p1`];
+    },
     paneText: (_session, pane) => panes.get(pane)?.text ?? '',
     foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
     sleep: async (ms) => {
@@ -484,4 +489,208 @@ describe('team add', () => {
     expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8')).toContain(line);
     expect(closed).toEqual(['w1']);
   });
+
+  test('a replaced seat is closed without input and launched fresh, not refused as running', async () => {
+    // The recorded pane holds a CLI, and it is not the one team launched: the seat's name in
+    // herdr's list is not the seat. `add` does what `up` does — closes that workspace without a
+    // key or a text, clears the record, and launches fresh with the rules.
+    updateState(join(project, '.agents'), (state) => {
+      const session = state.sessions.acme ?? emptySession();
+      session.seats.worker = { stage: 'launched', workspace: 'w9', pane: 'w9:p1', launched: { shell: 400, cli: [401] } };
+      state.sessions.acme = session;
+    });
+    const made = world();
+    const closes: string[] = [];
+    const keys: string[] = [];
+    made.launch.closeWorkspace = (_session, workspace) => { closes.push(workspace); return true; };
+    made.launch.processInfo = () => ({ shell: 400, foreground: [500] });
+    made.launch.typeText = (_session, pane, text) => { keys.push(`type ${pane} ${text}`); return true; };
+    made.launch.pressEnter = (_session, pane) => { keys.push(`enter ${pane}`); return true; };
+    const listed: HerdrAgent = { name: 'worker', agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null };
+    // The repair re-reads herdr immediately before the close: the list still names the seat on
+    // its pane, and its screen reads idle, so the replaced seat's workspace may be closed.
+    made.launch.agents = () => [listed];
+    const text = made.launch.paneText;
+    made.launch.paneText = (session, pane) => (pane === 'w9:p1' ? IDLE : text(session, pane));
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker'], io, sources(made, {
+      sessionState: () => 'running',
+      agents: () => [listed],
+      workspaces: () => [{ id: 'w9' }],
+    }));
+    expect(code).toBe(0);
+    expect(io.err).not.toContain('already running');
+    // The wrong process was typed into with nothing, and the workspace it sat in was closed; the
+    // seat was launched in a fresh one, its rules carried by the launch line.
+    expect(keys).toEqual([]);
+    expect(closes).toEqual(['w9']);
+    expect(made.creates).toEqual(['worker']);
+    expect(io.out).toContain('worker: its pane held a process team did not launch; closed without input and launched again\n');
+    const seats = readState(join(project, '.agents')).sessions.acme?.seats ?? {};
+    expect(seats.worker?.stage).toBe('ready');
+    expect(seats.worker?.pane).toBe('w1:p1');
+  });
+
+  describe('add exits 1 when its repair is refused with a stale record that says ready', () => {
+    function setupReadySeat() {
+      approve(WORKTREE_FILE);
+      updateState(join(project, '.agents'), (state) => {
+        const session = state.sessions.acme ?? emptySession();
+        session.seats.worker = { stage: 'ready', workspace: 'w9', pane: 'w9:p1', launched: { shell: 400, cli: [401] } };
+        state.sessions.acme = session;
+      });
+      const before = readFileSync(join(project, '.agents/team.state.json'), 'utf8');
+      const made = world();
+      const closes: string[] = [];
+      made.launch.closeWorkspace = (_session, workspace) => { closes.push(workspace); return true; };
+      const listed: HerdrAgent = { name: 'worker', agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null };
+      made.launch.agents = () => [listed];
+      made.launch.paneText = () => IDLE;
+      return { made, closes, listed, before };
+    }
+
+    test('agent list binding failed', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      made.launch.processInfo = () => ({ shell: 400, foreground: [500] });
+      made.launch.agents = () => [];
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.out).toContain('worker: herdr no longer shows this seat on its recorded pane; nothing closed; run team status\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('workspace holds other panes', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      made.launch.processInfo = () => ({ shell: 400, foreground: [500] });
+      made.launch.workspacePanes = () => ['w9:p1', 'w9:p2'];
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.out).toContain('worker: its workspace holds other panes; nothing closed (close its pane there, then run team up)\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('workspace read failed', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      made.launch.processInfo = () => ({ shell: 400, foreground: [500] });
+      made.launch.workspacePanes = () => null;
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.out).toContain('worker: its pane could not be read; nothing closed\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('process read failed', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      let reads = 0;
+      made.launch.processInfo = () => {
+        reads += 1;
+        return reads === 1 ? { shell: 400, foreground: [500] } : null;
+      };
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.out).toContain('worker: its pane could not be read; nothing closed\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('process working', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      made.launch.processInfo = () => ({ shell: 400, foreground: [500] });
+      made.launch.paneText = () => 'esc to interrupt';
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.out).toContain('worker: the process in its pane is working; nothing closed (stop it there, or run team remove worker)\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('process unsent', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      const unsentText = readFileSync(join(import.meta.dir, '../fixtures/claude-code/2.1.289/unsent-typed-ansi.txt'), 'utf8');
+      made.launch.processInfo = () => ({ shell: 400, foreground: [500] });
+      made.launch.paneText = () => unsentText;
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.out).toContain('worker: the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove worker)\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('already running: answers as it does today for a seat that is already running', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      made.launch.processInfo = () => ({ shell: 400, foreground: [400, 401] });
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.err).toBe('team add: worker is already running\n');
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+
+    test('restarts to same between plan and close', async () => {
+      const { made, closes, listed, before } = setupReadySeat();
+      let reads = 0;
+      made.launch.processInfo = () => {
+        reads += 1;
+        return reads === 1 ? { shell: 400, foreground: [400] } : { shell: 400, foreground: [400, 401] };
+      };
+      const io = testIo(project, owner);
+      const code = await runAdd(['worker'], io, sources(made, {
+        sessionState: () => 'running',
+        agents: () => [listed],
+        workspaces: () => [{ id: 'w9' }],
+      }));
+      expect(code).toBe(1);
+      expect(io.err).toContain('team add: worker is already running\n');
+      expect(io.out).not.toContain("worker: its pane is the seat's again; left as it is\n");
+      expect(closes).toEqual([]);
+      expect(made.creates).toEqual([]);
+      expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
+    });
+  });
 });
+

@@ -354,6 +354,13 @@
     {
       "code": 1,
       "command": "answer",
+      "id": "answer.process",
+      "meaning": "the process in the pane is not the one team launched",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
       "id": "answer.recovery",
       "meaning": "the trust answer did not complete: the seat stays in recovery",
       "trigger": "team answer lead trust"
