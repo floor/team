@@ -64,16 +64,19 @@ models:
       model: Composer
       version: '{1}'
 status_model:
-  - match: '(?:^|\s)Grok\s+([0-9]+(?:\.[0-9]+)*)\b'
+  # The line read is the composer's status row, or a line that fully matches the closed
+  # status-row grammar below — family, version and every token a capture shows. A sentence that
+  # merely names a family, or a row missing `Run Everything`, names no model.
+  - match: '^  Grok\s+([0-9]+(?:\.[0-9]+)*)\b'
     model: Grok
     version: '{1}'
-  - match: '^\s+GPT-([0-9]+(?:\.[0-9]+)*) Sol\b'
+  - match: '^  GPT-([\d.]+) Sol(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · [\d.]+%)?(?: · \d+ files edited)?  +Run Everything$'
     model: 'GPT Sol'
     version: '{1}'
-  - match: '^\s+Gemini\s+([0-9]+(?:\.[0-9]+)*) Flash\b'
+  - match: '^  Gemini ([\d.]+) Flash(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · [\d.]+%)?(?: · \d+ files edited)?  +Run Everything$'
     model: 'Gemini Flash'
     version: '{1}'
-  - match: '^\s+Composer\s+([0-9]+(?:\.[0-9]+)*)\b'
+  - match: '^  Composer ([\d.]+)(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · [\d.]+%)?(?: · \d+ files edited)?  +Run Everything$'
     model: Composer
     version: '{1}'
 screen:
@@ -89,7 +92,9 @@ screen:
         anchor: 'Use arrow keys to navigate, Enter to'
         patterns:
           - '^\s*→'
-          - '^\s{2}(?:[A-Z][\w.+-]* )*[A-Z0-9.+-]*\d[\w.+-]*(?: [A-Z0-9][\w.+-]*)*(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?(?:\s{2,}Run Everything)?\s*$'
+          # The composer's own status row, character for character — the same expression in all
+          # three places that must recognise it.
+          - '^  (?:Grok\s+\d.*|(?:GPT-[\d.]+ Sol|Gemini [\d.]+ Flash|Composer [\d.]+)(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · [\d.]+%)?(?: · \d+ files edited)?  +Run Everything)$'
   # A plan-mode switch. The bar is the dialog's own rule; the title, the selected
   # row, the reject row and the footer sit under it, in that order. The same
   # words in a transcript or typed into the box are not this dialog.
@@ -148,17 +153,23 @@ screen:
               - '^\s*[⠀-⣿]'
               - '^\s*Tip:'
               - '^\s*→\s*(?:Add a follow-up|Plan, search, build anything)?\s*$'
-              - '^\s{2}(?:[A-Z][\w.+-]* )*[A-Z0-9.+-]*\d[\w.+-]*(?: [A-Z0-9][\w.+-]*)*(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?(?:\s{2,}Run Everything)?\s*$'
+              - '^  (?:Grok\s+\d.*|(?:GPT-[\d.]+ Sol|Gemini [\d.]+ Flash|Composer [\d.]+)(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · [\d.]+%)?(?: · \d+ files edited)?  +Run Everything)$'
               - '^\s*<workspace>'
               - '^\s*~/'
               - '^\s*❯'
   composer:
     mode: status-then-one
-    # The status row is its shape: an indented line whose tokens are a model, a
-    # version (a digit), then optional context, effort, a quota and "N files
-    # edited", then the sandbox mode. A vendor's name is not the test, so a
-    # sentence that merely mentions a model is not this row.
-    status_line: '^\s{2}(?:[A-Z][\w.+-]* )*[A-Z0-9.+-]*\d[\w.+-]*(?: [A-Z0-9][\w.+-]*)*(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?(?:\s{2,}Run Everything)?\s*$'
+    # The status row is its shape, and its tokens are closed: exactly two spaces, then a known
+    # family and its version — Grok N, GPT-N Sol, Gemini N Flash, Composer N — then only tokens
+    # the captures show: a context size (256K, 272K), an effort word (the ones --list-models
+    # prints and the captures paint), the `· N%` quota, `· N files edited`, then padding and, for
+    # the new families, `Run Everything`, which every captured idle, unsent and working row
+    # carries. Nothing else may appear on the line; a row the grammar does not know leaves the
+    # screen unknown. Grok rows are kept exactly as main read them — main took any `  Grok
+    # <digit>` tail, and the follow-up-queue captures, transcribed rather than captured, draw
+    # Grok rows without `Run Everything` — so the expression below is also used, character for
+    # character, in the trust dialog's none_after and in the working queue's exception.
+    status_line: '^  (?:Grok\s+\d.*|(?:GPT-[\d.]+ Sol|Gemini [\d.]+ Flash|Composer [\d.]+)(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · [\d.]+%)?(?: · \d+ files edited)?  +Run Everything)$'
     # The input row carries the prompt at the pane's second column — unsent.txt and
     # follow-up-queue-typed.txt draw `  → Plan, search, build anything` there, continuations at
     # the fourth — and a prompt glyph on a content or popup row is never the input row. The
