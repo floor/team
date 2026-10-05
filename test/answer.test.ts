@@ -6,7 +6,8 @@ import { fingerprints } from '../src/approve/fingerprint.ts';
 import { runApprove } from '../src/commands/approve.ts';
 import { runAnswer, type AnswerHost } from '../src/commands/answer.ts';
 import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
-import { listFolder, lobbyPath } from '../src/file/landing.ts';
+import { listFolder } from '../src/file/landing.ts';
+import { lobbyDir } from '../src/lobby/gate.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import { extractFolder, isEligible, labelMatches, versionMatches, wholeVersion, type TrustRecord } from '../src/profiles/trust-answer.ts';
 import { profileFor } from '../src/profiles/index.ts';
@@ -27,6 +28,7 @@ const FILE = ['--file', '.agents/team.yaml'];
 const NOW = new Date('2026-10-05T04:00:00.000Z');
 
 let base = '';
+let projectRoot = '';
 
 afterEach(() => {
   if (base) rmSync(base, { recursive: true, force: true });
@@ -36,7 +38,8 @@ function world() {
   base = realpathSync(mkdtempSync(join(tmpdir(), 'team-answer-')));
   const root = join(base, 'acme');
   const home = join(base, 'home');
-  const lobby = lobbyPath(home);
+  const lobby = lobbyDir(home);
+  projectRoot = root;
   mkdirSync(join(root, '.agents'), { recursive: true });
   mkdirSync(lobby, { recursive: true });
   return { root, home, lobby, dir: join(root, '.agents') };
@@ -53,6 +56,7 @@ workspace:
   mode: shared
 ${dialog}trust:
   - ${lobby}
+  - ${projectRoot}
 seats:
   - role: coordinator
     name: lead
@@ -125,7 +129,7 @@ function fake(home: string, root: string, screen: string, cli: 'cursor' | 'antig
     },
     rename() { host.named = true; return true; },
     foreground() { return [cli === 'cursor' ? 'cursor-agent' : 'agy']; },
-    foregroundCwd() { return lobbyPath(home); },
+    foregroundCwd() { return lobbyDir(home); },
     list(dir: string) { return listFolder(dir); },
     status() { return status; },
     type(_session: string, _pane: string, value: string) {
@@ -473,6 +477,22 @@ describe('team answer', () => {
     expect(movedIo.err).toBe('lead: ask the owner to approve this exact folder and answer through team up\n');
   });
 
+  test('a dialog that names the old per-project lobby sends no key', async () => {
+    const { root, home, lobby, dir } = world();
+    writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+    await approve(root, home);
+    wait(dir, 'lead');
+    const old = join(root, 'worktrees', 'acme', '.lobby');
+    mkdirSync(old, { recursive: true });
+    const host = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', old), 'cursor');
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], io, host)).toBe(1);
+    expect(host.keys).toEqual([]);
+    expect(host.typed).toEqual([]);
+    expect(io.err).toBe('lead: ask the owner to approve this exact folder and answer through team up\n');
+    expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('waiting-owner');
+  });
+
   test('a lobby path in another case sends nothing', async () => {
     const { root, home, lobby, dir } = world();
     writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
@@ -751,7 +771,7 @@ describe('team answer', () => {
 
   test('a folder outside the trust list, a key that is not sent, and a seat that is not live', async () => {
     const { root, home, lobby, dir } = world();
-    writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator').replace(`  - ${lobby}`, '  - .'));
+    writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator').replace(`trust:\n  - ${lobby}\n  - ${root}`, 'trust:\n  - .'));
     await approve(root, home);
     wait(dir, 'lead');
     const host = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', lobby), 'cursor');
@@ -786,7 +806,7 @@ describe('team answer', () => {
     // A record whose fingerprints are the live file's — nothing drifts — while the
     // copy it stored carries a different `trust:` list: only the copy says what the
     // owner approved. The folder check must read the entry list from that copy.
-    const copy = live.replace(`  - ${lobby}`, '  - .');
+    const copy = live.replace(`trust:\n  - ${lobby}\n  - ${root}`, 'trust:\n  - .');
     const host = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', lobby), 'cursor');
     host.standing = () => ({
       ...standing,

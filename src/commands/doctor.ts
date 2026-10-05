@@ -8,7 +8,7 @@ import { readArgs } from '../args.ts';
 import { callerOf, isOwner, type Caller } from '../caller.ts';
 import { checkCommands, type ApprovedCheck } from '../budgets/checks.ts';
 import { parseOutput, runCommand, type CheckReading } from '../budgets/run.ts';
-import { canonicalLanding as showLanding, lobbyPath } from '../file/landing.ts';
+import { canonicalLanding as showLanding } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { canonicalLanding, insideTrust, isMigratedTrust } from '../file/paths.ts';
@@ -394,7 +394,7 @@ function trustFindings(team: TeamFile, dir: string, session: string, sources: Do
     if (inRange) {
       const shown = extractFolder(inRange.extract, screen);
       const landed = shown ? showLanding(shown) : null;
-      const lobby = showLanding(lobbyPath(sources.home));
+      const lobby = showLanding(lobbyDir(sources.home));
       // The shown spelling must be the lobby itself, not something that only
       // canonicalises to it: `answer` refuses a trailing slash, another case,
       // `//` or `/./`, and doctor warns about what `answer` would refuse.

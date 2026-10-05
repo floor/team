@@ -1,11 +1,6 @@
 import { lstatSync, readdirSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 
-/** The one folder every seat starts in: `<home>/.config/team/lobby`. */
-export function lobbyPath(home: string): string {
-  return join(home, '.config', 'team', 'lobby');
-}
-
 /**
  * The canonical landing of a folder: the deepest existing ancestor, resolved with
  * `realpath`, plus the tail that does not exist yet, unchanged. A symbolic link in
