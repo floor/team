@@ -24,7 +24,18 @@ export type SeatState = {
   // `own_commits` is the home for a temporary seat whose end is `merged:` and that has no worktree.
   // A seat in a worktree keeps that record on the worktree instead.
   temporary?: { like: string; until: string; task?: string; own_commits?: boolean };
-  waiting?: unknown;
+  /**
+   * Set when a launch left the pane at a dialog. `waiting-owner` is the stored name
+   * even when the coordinator may answer: it is waiting for an authorised human path.
+   */
+  waiting?: {
+    state: 'waiting-owner' | 'trust-sent-recovery';
+    classification: 'trust' | 'permission' | 'question' | 'vendor notice' | 'login' | 'unknown' | 'unsent' | 'timeout';
+    manual?: true;
+    sentAt?: string;
+    version?: string;
+    folder?: string;
+  };
 };
 
 export type WorktreeState = {

@@ -51,9 +51,10 @@
       }
     },
     "models": { "$ref": "#/$defs/models" },
-    "status_model": { "type": "array", "items": { "$ref": "#/$defs/modelRule" }, "minItems": 1, "description": "optional: absent, the CLI's screen doesn't show its model" },
+    "status_model": { "type": "array", "items": { "$ref": "#/$defs/statusModelRule" }, "minItems": 1, "description": "optional: absent, the CLI's screen doesn't show its model" },
     "last_used_model": { "type": "boolean", "description": "optional: the CLI starts on its last-used model when a launch names none" },
     "quota": { "type": "array", "items": { "$ref": "#/$defs/quota" }, "minItems": 1 },
+    "trust_answer": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/trustAnswer" } },
     "screen": { "$ref": "#/$defs/screen" },
     "screen_module": { "$ref": "#/$defs/screenModule" }
   },
@@ -71,6 +72,41 @@
     }
   ],
   "$defs": {
+    "trustAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "label", "action", "capture", "extract"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "mark": { "type": "string", "minLength": 1 },
+        "footer": { "type": "string", "minLength": 1 },
+        "action": { "type": "string", "pattern": "^[0-9a-fA-F]{2}$" },
+        "capture": { "type": "string", "minLength": 1, "description": "The registered capture this record's predicate, label and extractor were taken from: the manifest's whole path, not a basename." },
+        "lobby_evidence": { "type": "string", "minLength": 1, "description": "Codex only: a registered capture of the folder-only layout taken in the real lobby. Other CLIs must not claim it." },
+        "extract": { "$ref": "#/$defs/trustExtract" }
+      }
+    },
+    "trustExtract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["after"],
+      "properties": {
+        "after": { "type": "string", "minLength": 1 },
+        "before": { "type": "string", "minLength": 1 },
+        "until_blank": { "type": "boolean" },
+        "join": { "type": "boolean", "description": "Join the rows after the anchor only when they prove one wrapped path: the first fills the wrap column, each later row starts at the indent. Off, the extractor refuses a run with more than one row." },
+        "indent": { "type": "integer", "minimum": 0, "description": "With join: the continuation column the capture draws." },
+        "wrap": { "type": "integer", "minimum": 0, "description": "With join: the column the capture's first wrapped row fills exactly." },
+        "box": { "type": "boolean" },
+        "refuse_line": { "type": "string", "minLength": 1 }
+      },
+      "anyOf": [{ "required": ["before"] }, { "required": ["until_blank"] }],
+      "allOf": [
+        { "if": { "properties": { "join": { "const": true } }, "required": ["join"] }, "then": { "required": ["indent", "wrap"] } }
+      ]
+    },
     "screenModule": {
       "type": "string",
       "minLength": 1,
@@ -195,7 +231,34 @@
           "description": "Ignore ASCII case only: each letter matches its other case; no other character folds (a long s or a Kelvin sign reads as itself)."
         },
         "model": { "type": "string", "minLength": 1 },
-        "version": { "type": "string", "minLength": 1 }
+        "version": { "type": "string", "minLength": 1 },
+        "flag": { "type": "string", "minLength": 1, "description": "The model id to suggest for this model and version. \"{version}\" is the seat's version." }
+      }
+    },
+    "statusModelRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["match", "model", "version"],
+      "properties": {
+        "match": { "$ref": "#/$defs/patternString" },
+        "ignore_case": {
+          "type": "boolean",
+          "description": "Ignore ASCII case only: each letter matches its other case; no other character folds (a long s or a Kelvin sign reads as itself)."
+        },
+        "model": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "flag": { "type": "string", "minLength": 1, "description": "The model id to suggest for this model and version. \"{version}\" is the seat's version." },
+        "yields": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "description": "The exact model names this rule's templates spell, as the reader reads them back — a closed list, never a pattern, each name once. Absent or empty: the rule yields no model (a template that cannot fill, like an id a launch line shows but the screen never does)."
+        },
+        "version_like": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The version shapes this rule can spell its models with: a regular expression source anchored at both ends (\"^\" and \"$\"), tested against the whole version. Absent: the rule spells no version. A source not anchored at both ends is refused as the profile loads."
+        }
       }
     },
     "models": {
@@ -204,6 +267,7 @@
       "required": ["option", "ids"],
       "properties": {
         "option": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "absent": { "const": "last-used", "description": "What a launch that names no model does. last-used: the CLI starts on whatever model it used last." },
         "ids": { "type": "array", "items": { "$ref": "#/$defs/modelRule" }, "minItems": 1 }
       }
     },
@@ -215,7 +279,28 @@
         "mode": { "enum": ["box-to-rule", "status-last", "status-then-one", "two-rules-footer-below"] },
         "prompt": { "$ref": "#/$defs/patternString" },
         "rule": { "$ref": "#/$defs/patternString" },
-        "status_line": { "$ref": "#/$defs/patternString" },
+        "status_line": {
+          "description": "The status line's patterns: one string, or a list where one pattern per family would not fit the dialect's length cap. A line is a candidate when it matches any entry.",
+          "oneOf": [
+            { "$ref": "#/$defs/patternString" },
+            { "type": "array", "items": { "$ref": "#/$defs/patternString" }, "minItems": 1 }
+          ]
+        },
+        "status_below": {
+          "description": "Where the status row must sit, declared only for a CLI whose captures show the pane drawing a workspace line under it. The line directly under the row must match `line` and be the pane's last non-blank one, and the `  →` input row must sit above the row within the distance the captures show; a grammar line anywhere else is ordinary text. A row matching `except` keeps its grammar-only reading, wherever it is — the reading it had before this field existed. A bare string is `line` with no exemption.",
+          "oneOf": [
+            { "$ref": "#/$defs/patternString" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["line"],
+              "properties": {
+                "line": { "$ref": "#/$defs/patternString" },
+                "except": { "$ref": "#/$defs/patternString" }
+              }
+            }
+          ]
+        },
         "strip_suffix": { "$ref": "#/$defs/patternString" },
         "ignore_case": {
           "type": "boolean",
@@ -258,7 +343,8 @@
         { "if": { "properties": { "mode": { "const": "status-last" } }, "required": ["mode"] }, "then": { "required": ["status_line"] } },
         { "if": { "properties": { "mode": { "const": "status-then-one" } }, "required": ["mode"] }, "then": { "required": ["status_line", "fallback"] } },
         { "if": { "properties": { "mode": { "const": "two-rules-footer-below" } }, "required": ["mode"] }, "then": { "required": ["rule", "footers"] } },
-        { "if": { "required": ["ignore_case"] }, "then": { "properties": { "mode": { "const": "two-rules-footer-below" } } } }
+        { "if": { "required": ["ignore_case"] }, "then": { "properties": { "mode": { "const": "two-rules-footer-below" } } } },
+        { "if": { "required": ["status_below"] }, "then": { "properties": { "mode": { "enum": ["status-last", "status-then-one"] } } } }
       ]
     }
   }

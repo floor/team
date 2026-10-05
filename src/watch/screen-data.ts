@@ -50,10 +50,20 @@ type Box = {
   wrap?: Wrap;
   frameRows: number;
 };
-type StatusLast = { mode: 'status-last'; statusLine: RegExp; prompt: RegExp; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle; wrap?: Wrap; frameRows: number };
+/** Where a status row must sit, from the composer section. `line` is the line directly under the
+ *  row (the workspace line), which must be the pane's last non-empty one; a row matching `except`
+ *  is read as it was before this field — by its grammar alone. */
+export type StatusBelow = { line: RegExp; except: RegExp | null };
+
+/** The status line's patterns — one, or a list where no single pattern fits the dialect's length
+ *  cap. A line is a candidate when it matches any of them. */
+export type StatusLine = RegExp[];
+
+type StatusLast = { mode: 'status-last'; statusLine: StatusLine; statusBelow?: StatusBelow; prompt: RegExp; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle; wrap?: Wrap; frameRows: number };
 type StatusThenOne = {
   mode: 'status-then-one';
-  statusLine: RegExp;
+  statusLine: StatusLine;
+  statusBelow?: StatusBelow;
   prompt: RegExp;
   placeholders: Placeholder[];
   placeholderStyle?: PlaceholderStyle;

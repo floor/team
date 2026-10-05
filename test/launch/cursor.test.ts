@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { profileFor } from '../../src/profiles/index.ts';
-import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
-import { classify, classifyComposer, readBox, readFold, readScreen } from '../../src/watch/screen.ts';
+import { launchCommand, statusOnLine, versionVerdict } from '../../src/profiles/profile.ts';
+import { classify, classifyComposer, readBox, readFold, readScreen, screenData } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
 import { boxHoldsText, deliverRules, type Delivery } from '../../src/launch/deliver.ts';
 import { NUDGE_TEXT } from '../../src/watch/pass.ts';
@@ -237,6 +237,43 @@ describe('Cursor launch and captured screens', () => {
     expect(runningModel('cursor', fixture('rules-accepted'))).toEqual({ model: 'Grok', version: '4.7' });
     expect(runningModel('cursor', fixture('trust'))).toBeNull();
     expect(runningModel('cursor', fixture('exit'))).toBeNull();
+    expect(cursor.modelOf('cursor-agent --model gpt-5.6-sol-high')).toEqual({ model: 'GPT Sol', version: '5.6' });
+    expect(cursor.modelOf('cursor-agent --model gemini-3.8-flash-high')).toEqual({ model: 'Gemini Flash', version: '3.8' });
+    expect(cursor.modelOf('cursor-agent --model composer-2.5')).toEqual({ model: 'Composer', version: '2.5' });
+    expect(cursor.modelOf('cursor-agent --model gpt-5.2')).toBeNull();
+    expect(cursor.modelFlag('Grok', '4.7')).toEqual({ option: '--model', id: 'grok-4.7-high' });
+    expect(cursor.modelFlag('GPT Sol', '5.6')).toEqual({ option: '--model', id: 'gpt-5.6-sol-high' });
+    expect(cursor.modelFlag('Gemini Flash', '3.8')).toEqual({ option: '--model', id: 'gemini-3.8-flash-high' });
+    expect(cursor.modelFlag('Composer', '2.5')).toEqual({ option: '--model', id: 'composer-2.5' });
+    expect(cursor.modelFlag('Grok', '4.5')).toEqual({ option: '--model', id: null });
+    expect(cursor.startsOnLastModel).toBe(true);
+  });
+
+  test('the home and a typed line are read under other model families', () => {
+    expect(readScreen('cursor', fixture('gpt-sol-idle')).kind).toBe('idle');
+    expect(readScreen('cursor', fixture('gpt-sol-unsent')).kind).toBe('unsent');
+    expect(runningModel('cursor', fixture('gpt-sol-idle'))).toEqual({ model: 'GPT Sol', version: '5.6' });
+    expect(runningModel('cursor', fixture('gpt-sol-unsent'))).toEqual({ model: 'GPT Sol', version: '5.6' });
+    expect(readScreen('cursor', fixture('gemini-flash-idle')).kind).toBe('idle');
+    expect(readScreen('cursor', fixture('gemini-flash-unsent')).kind).toBe('unsent');
+    expect(runningModel('cursor', fixture('gemini-flash-idle'))).toEqual({ model: 'Gemini Flash', version: '3.8' });
+    expect(runningModel('cursor', fixture('gemini-flash-unsent'))).toEqual({ model: 'Gemini Flash', version: '3.8' });
+    expect(readScreen('cursor', fixture('composer-idle')).kind).toBe('idle');
+    expect(readScreen('cursor', fixture('composer-unsent')).kind).toBe('unsent');
+    expect(runningModel('cursor', fixture('composer-idle'))).toEqual({ model: 'Composer', version: '2.5' });
+    expect(runningModel('cursor', fixture('composer-unsent'))).toEqual({ model: 'Composer', version: '2.5' });
+    const swapped = fixture('idle').replace('Grok 4.7 256K High', 'GPT-5.6 Sol 272K High');
+    expect(readScreen('cursor', swapped).kind).toBe('idle');
+    expect(runningModel('cursor', swapped)).toEqual({ model: 'GPT Sol', version: '5.6' });
+  });
+
+  test('a line of output that names a model is not a status row', () => {
+    const prose = fixture('idle').replace(
+      '  Grok 4.7 256K High                 Run Everything',
+      '  the agent wrote that GPT-5.6 Sol is ready',
+    );
+    expect(readScreen('cursor', prose).kind).toBe('unknown');
+    expect(runningModel('cursor', prose)).toBeNull();
   });
 
   test('the plan delivers through the guarded first-message path, never a config file', () => {
@@ -437,11 +474,10 @@ describe('Cursor rules delivery', () => {
   });
 
   test('a trailing blank row after the wrapped text gets no Enter', async () => {
-    // The reviewer's reproduction: the correctly wrapped text, then one more empty row inside
-    // the box. Cursor draws two empty rows of its own under the text — idle.txt and unsent.txt
-    // show them, the drop before the status line — and those rows are the box's frame, not its
-    // content. A row beyond them is a row the text does not have: someone pressed a newline
-    // after it.
+    // The probe: the correctly wrapped text, then one more empty row inside the box. Cursor
+    // draws two empty rows of its own under the text — idle.txt and unsent.txt show them, the
+    // drop before the status line — and those rows are the box's frame, not its content. A row
+    // beyond them is a row the text does not have: someone pressed a newline after it.
     const rows = wordWrap(CAPTURED_WRAP, 51 - 4);
     const [firstRow = '', ...rest] = rows;
     const body = [`  → ${firstRow}`, ...rest.map((row) => `    ${row}`), ''].join('\n');
@@ -455,9 +491,10 @@ describe('Cursor rules delivery', () => {
 
   test('a typed text whose own last line is empty: the box shows the row, or no Enter', async () => {
     // The text ends with a newline, so its last line is empty and the pane draws a row for it,
-    // above the two frame rows it draws under every box. That screen and the reviewer's are the
-    // same: only the typed text tells them apart. With the row the box holds the text; without
-    // it the box stops at the sentence and the trailing newline is unaccounted for.
+    // above the two frame rows it draws under every box. That screen and the one with the extra
+    // blank row are the same layout: only the typed text tells them apart. With the row the box
+    // holds the text; without it the box stops at the sentence and the trailing newline is
+    // unaccounted for.
     const typed = CAPTURED_WRAP + '\n';
     const rows = wordWrap(CAPTURED_WRAP, 51 - 4);
     const [firstRow = '', ...rest] = rows;
@@ -654,9 +691,9 @@ describe('the box\'s top frame (Cursor)', () => {
   });
 
   test('a second prompt row pressed against the one above it fails closed', async () => {
-    // Round 1's must-fix, Cursor's twin, unchanged: no blank row separates the person's row
-    // from the later prompt, so the row above the lowest prompt is not the frame and the input
-    // row cannot be shown to be the box's top. Nothing is typed and Enter is not sent.
+    // Cursor's twin of the pressed-row rule, unchanged: no blank row separates the person's
+    // row from the later prompt, so the row above the lowest prompt is not the frame and the
+    // input row cannot be shown to be the box's top. Nothing is typed and Enter is not sent.
     const at = (typed = '') => shaped(`  → person text\n  →${typed === '' ? '' : ` ${typed}`}`);
     expect(readScreen('cursor', at()).kind).toBe('unknown');
     expect(classify('cursor', at().split('\n')).kind).toBe('unknown');
@@ -701,7 +738,7 @@ describe('the box\'s top frame (Cursor)', () => {
 });
 
 describe('the person\'s own box, captured (Cursor)', () => {
-  // The round-2 fixtures (see the fixtures README): a person's text typed into Cursor's own box
+  // The typed fixtures (see the fixtures README): a person's text typed into Cursor's own box
   // and never sent. Each box reads back as exactly its own text, and as nothing else.
   const CAPTURES: [string, string][] = [
     ['typed-two-line', 'alpha typed line one\nbeta typed line two'],
@@ -745,5 +782,310 @@ describe('the person\'s own box, captured (Cursor)', () => {
       rows: ['    → zeta glyph second'],
       wrap: { continuation: 'text-column', kind: 'word' },
     });
+  });
+});
+
+describe('the closed Cursor status row', () => {
+  // A line carrying the closed grammar outside the status position is ordinary text: these
+  // screens are the false rows a transcript, a dialog or a box could paint — a grammar line
+  // with no workspace line under it, a full row below a real footer, a row after a trust
+  // anchor — and each must read what the same screen without that row reads, never idle or
+  // unsent the pane does not show. A row that keeps every closed token and sits in the
+  // footer's place is a real row: it is accepted, and the model it names is the model read.
+  // The six captured panes (see the fixtures README) are the only shipped fixtures whose
+  // reading differs from what main read: a constructed screen below moves only where this
+  // block pins it — a complete frame reproduced in place, a model narrowed to unread when
+  // the real footer is out of place, or a row the closed grammar refuses.
+  const GROK = '  Grok 4.7 256K High                 Run Everything';
+  const GPT_ROW = '  GPT-5.6 Sol 272K High              Run Everything';
+  const COMPOSER_ROW = '  Composer 2.5                       Run Everything';
+  const rows = (name: string) => fixture(name).replace(/\n+$/, '').split('\n');
+  const text = (lines: string[]) => lines.join('\n');
+  const read = (screen: string) => {
+    const lines = screen.split('\n');
+    return `${classify('cursor', lines).kind} / ${classifyComposer('cursor', lines).kind}`;
+  };
+  const model = (screen: string) => runningModel('cursor', screen);
+  const put = (name: string, n: number, line: string) => {
+    const lines = rows(name);
+    lines[n - 1] = line;
+    return text(lines);
+  };
+  const footer = (name: string, line: string) =>
+    put(name, rows(name).findIndex((row) => /^ {2}(?:Grok|GPT-|Gemini |Composer )/.test(row)) + 1, line);
+
+  test('ordinary output where the footer was reads unknown, as main read it', () => {
+    const lines = [
+      '  Step 2',
+      '  Version 1.2 Released',
+      '  HTTP 200 OK',
+      '  Added 2 Files',
+      '  Item 2',
+      '  Release 2',
+      '  NODE22.log',
+      '  Python 3.12 · 45%',
+      '  Node 22',
+      '  3 files edited',
+      '  A1',
+      '  Run Everything',
+      '  Report 2 Run Everything',
+    ];
+    for (const line of lines) {
+      const screen = footer('idle', line);
+      expect(read(screen)).toBe('unknown / unknown');
+      expect(model(screen)).toBeNull();
+    }
+  });
+
+  test('a model-shaped line missing its closed tokens is not a status row', () => {
+    const gpt = footer('idle', '  GPT-5.6 Sol 272K High'); // output text, no `Run Everything`
+    expect(read(gpt)).toBe('unknown / unknown');
+    expect(model(gpt)).toBeNull();
+    const composer = footer('gpt-sol-idle', '  Composer 2.5');
+    expect(read(composer)).toBe('unknown / unknown');
+    expect(model(composer)).toBeNull();
+    const muse = footer('idle', '  Muse Spark 1.3                    Run Everything'); // family unknown
+    expect(read(muse)).toBe('unknown / unknown');
+    expect(model(muse)).toBeNull();
+    const big = footer('idle', '  GPT-5.6 Sol 1M High                Run Everything'); // context unknown
+    expect(read(big)).toBe('unknown / unknown');
+    expect(model(big)).toBeNull();
+  });
+
+  test('the version, the quota and the file count are digits in closed runs', () => {
+    // The probes: `[\d.]+` read `5..6`, a bare `.` and `4..2%` as tokens — a version,
+    // a quota or a file count that no pane draws. The closed runs cannot, on either side: the
+    // status line's grammar and the status_model rule.
+    const row = (text: string) => `  ${text}${' '.repeat(24)}Run Everything`;
+    for (const line of [
+      row('GPT-5..6 Sol 272K High'),
+      row('Composer .'),
+      row('Composer 2.5 · 4..2%'),
+      row('Gemini 3.8 Flash · .%'),
+      row('Composer 2.5 · 12. files edited'),
+      row('Composer 2.5.1. High'),
+    ]) {
+      const screen = footer('idle', line);
+      expect(read(screen)).toBe('unknown / unknown');
+      expect(model(screen)).toBeNull();
+    }
+    expect(model(row('GPT-5..6 Sol 272K High'))).toBeNull();
+    // A multi-part version and a fractional quota are still closed runs that match.
+    const good = footer('idle', row('Composer 2.5.1 · 12.5%'));
+    expect(read(good)).toBe('idle / idle');
+    expect(model(good)).toEqual({ model: 'Composer', version: '2.5.1' });
+  });
+
+  test('a painted running screen stays working, and gains no status row', () => {
+    const screen = footer('working', '  Step 2');
+    expect(read(screen)).toBe('working / unknown');
+    expect(model(screen)).toBeNull();
+  });
+
+  test('a running frame with its spinner and ctrl+c removed is unknown, never idle', () => {
+    const lines = rows('working')
+      .filter((line) => !/^\s*[⠀-⣿]/.test(line))
+      .map((line) => line.replace(/\s*ctrl\+c to stop\s*$/, ''));
+    lines[lines.findIndex((row) => row === GROK)] = '  Step 2';
+    const screen = text(lines);
+    expect(read(screen)).toBe('unknown / unknown');
+    expect(model(screen)).toBeNull();
+  });
+
+  test('a finished turn and an exited shell with the footer replaced are unknown', () => {
+    expect(read(footer('rules-accepted', '  Step 2'))).toBe('unknown / unknown');
+    const exited = put('idle', 12, '  Step 2').split('\n');
+    exited[12] = '❯';
+    expect(read(text(exited))).toBe('unknown / unknown');
+  });
+
+  test('a false footer with no input row above it is unknown', () => {
+    const lines = rows('idle').filter((_, i) => i !== 8);
+    lines[lines.findIndex((row) => row === GROK)] = '  Step 2';
+    expect(read(text(lines))).toBe('unknown / unknown');
+  });
+
+  test('the trust dialog closes as trust with output below its anchor', () => {
+    expect(read(`${text(rows('trust'))}\n  Step 2`)).toBe('trust / unknown');
+    const inside = rows('trust');
+    inside.splice(inside.findIndex((row) => /Use arrow keys to navigate, Enter to/.test(row)), 0, '  Step 2');
+    expect(read(text(inside))).toBe('trust / unknown');
+  });
+
+  test('a quiet follow-up queue reads idle exactly as main read it', () => {
+    const lines = rows('follow-up-queue-hint').filter((line) => !/^\s*[⠀-⣿]/.test(line));
+    lines.splice(lines.findIndex((row) => /enter interrupt and send/.test(row)) + 1, 0, '  Step 2');
+    const screen = text(lines);
+    expect(read(screen)).toBe('idle / idle');
+    expect(model(screen)).toEqual({ model: 'Grok', version: '4.7' });
+  });
+
+  test('prose below the footer leaves the model unread: the row is out of place', () => {
+    const prose = `${text(rows('idle'))}\n  GPT-5.6 Sol completed the task`;
+    expect(read(prose)).toBe('unknown / unknown');
+    // The workspace line is no longer the pane's last non-blank one, so its footer is not the
+    // status row and names no model. Main read Grok 4.7 off that footer; a line the pane does
+    // not draw as the row is not where the model comes from.
+    expect(model(prose)).toBeNull();
+  });
+
+  test('a working screen with a line appended stays working and unknown', () => {
+    const screen = `${text(rows('working'))}\n  Step 2`;
+    expect(read(screen)).toBe('working / unknown');
+    // The appended line sits under the workspace line, so the footer above it is not the row:
+    // no row, no model.
+    expect(model(screen)).toBeNull();
+  });
+
+  test('a Grok row the closed grammar does not spell is not a row, whatever main read', () => {
+    // Main accepted any leading whitespace before the family (`^\s+Grok\s+[0-9]`). The
+    // captures draw exactly two spaces, and the closed grammar keeps only that: a row with
+    // one space, three spaces or a tab is ordinary text — no row, no model. The narrowing
+    // can only take a reading away, never invent one.
+    for (const lead of [' ', '   ', '\t']) {
+      const screen = footer('idle', `${lead}Grok 4.7 256K High                 Run Everything`);
+      expect(read(screen)).toBe('unknown / unknown');
+      expect(model(screen)).toBeNull();
+    }
+  });
+
+  test('a spoofed row names no model, and the same rows in place still name theirs', () => {
+    // A full row below a real footer: the spoof has no workspace line under it, and the real
+    // footer's own workspace line is no longer the pane's last — neither is the row.
+    expect(model(`${text(rows('gpt-sol-idle'))}\n${GPT_ROW}`)).toBeNull();
+    // A full row after the trust dialog's anchor: no workspace line under it.
+    expect(model(`${text(rows('trust'))}\n${GPT_ROW}`)).toBeNull();
+    // A row in the footer's place with the workspace line removed: not the row.
+    expect(model(text(rows('gpt-sol-idle').slice(0, -1)))).toBeNull();
+    // A Composer-shaped spoof below a real Grok footer names no model either: a seat running
+    // Grok is not renamed by it.
+    expect(model(`${text(rows('idle'))}\n${COMPOSER_ROW}`)).toBeNull();
+    // The rows that are in place still name their models.
+    expect(model(text(rows('gpt-sol-idle')))).toEqual({ model: 'GPT Sol', version: '5.6' });
+    expect(model(`${text(rows('idle'))}\n${GROK}`)).toEqual({ model: 'Grok', version: '4.7' });
+  });
+
+  test('a full status row is taken by its position: the lowest one wins', () => {
+    const above = rows('idle');
+    above.splice(above.findIndex((row) => /^ {2}→/.test(row)) - 2, 0, GROK); // a full row in the transcript
+    expect(read(text(above))).toBe('idle / idle'); // the real footer below it wins
+    expect(model(text(above))).toEqual({ model: 'Grok', version: '4.7' });
+    // Below the real footer the appended row is the status row, and the footer above it reads
+    // as text left in the box — main reads it the same way, and it is a position gap, not a row gap.
+    const below = `${text(rows('idle'))}\n${GROK}`;
+    expect(read(below)).toBe('unsent / unsent');
+    expect(model(below)).toEqual({ model: 'Grok', version: '4.7' });
+    // The status row needs no workspace line under it, and tolerates exactly one.
+    expect(read(text(rows('idle').slice(0, -1)))).toBe('idle / idle');
+    expect(read(`${text(rows('idle'))}\n  extra`)).toBe('unknown / unknown');
+  });
+
+  test('a full row in the status position is a real row; the model it names is read', () => {
+    const gpt = footer('idle', GPT_ROW);
+    expect(read(gpt)).toBe('idle / idle');
+    expect(model(gpt)).toEqual({ model: 'GPT Sol', version: '5.6' });
+    const typed = put('gpt-sol-idle', 9, `  → ${GPT_ROW.slice(2)}`);
+    expect(read(typed)).toBe('unsent / unsent');
+    expect(model(typed)).toEqual({ model: 'GPT Sol', version: '5.6' });
+  });
+
+  test('a new-family row outside the status position is ordinary text, not the row', () => {
+    const base = text(rows('gpt-sol-idle'));
+    expect(read(base)).toBe('idle / idle'); // the captured frame: the row sits above its workspace line
+    // A row in the transcript, above the input row: the footer in place below stays the row,
+    // and the screen reads exactly as the capture does.
+    const above = rows('gpt-sol-idle');
+    above.splice(above.findIndex((row) => /^ {2}→/.test(row)) - 2, 0, GPT_ROW);
+    expect(read(text(above))).toBe('idle / idle');
+    // No workspace line under the row: it is not in the position, and it reads no row.
+    expect(read(text(rows('gpt-sol-idle').slice(0, -1)))).toBe('unknown / unknown');
+    // A non-workspace line under the row: same.
+    expect(read(put('gpt-sol-idle', rows('gpt-sol-idle').length, '  something else'))).toBe('unknown / unknown');
+    // A blank line between the row and the workspace line: the workspace line is not directly
+    // below the row, so the row is out of place and the screen reads no row and no model.
+    const gapped = rows('gpt-sol-idle');
+    gapped.splice(gapped.findIndex((row) => /^ {2}GPT-/.test(row)) + 1, 0, '');
+    expect(read(text(gapped))).toBe('unknown / unknown');
+    expect(model(text(gapped))).toBeNull();
+    // A non-blank line under the workspace line: it is not the pane's last, so neither the
+    // footer nor the appended row is in the position.
+    expect(read(`${base}\n${GPT_ROW}`)).toBe('unknown / unknown');
+    // No input row above the row: the frame is not the capture's, and no row is read.
+    const input = rows('gpt-sol-idle').findIndex((row) => /^ {2}→/.test(row));
+    expect(read(text(rows('gpt-sol-idle').filter((_, i) => i !== input)))).toBe('unknown / unknown');
+  });
+
+  test('the input row sits above the status row within the captured distance', () => {
+    // Every composer capture draws the input row three to five rows above the status row
+    // (measured over the idle, startup, unsent, working, thinking, queue and typed frames).
+    // Five holds, six does not: a row further above is not the input row the frame draws.
+    const box = (extra: number) => {
+      const lines = rows('gpt-sol-idle');
+      const at = lines.findIndex((row) => /^ {2}→/.test(row));
+      lines.splice(at + 1, 0, ...Array.from({ length: extra }, () => ''));
+      return text(lines);
+    };
+    expect(read(box(2))).toBe('idle / idle'); // distance five
+    expect(read(box(3))).toBe('unknown / unknown'); // distance six
+  });
+
+  test('a grammar line that is not the row counts for neither the trust rules nor the working queue', () => {
+    // The trust dialog with a full row after its anchor: the row has no workspace line under
+    // it, so it is ordinary text — the dialog still closes as trust, as main read it, and the
+    // composer reads no row.
+    expect(read(`${text(rows('trust'))}\n${GPT_ROW}`)).toBe('trust / unknown');
+    // A running screen with the row appended: still working, and the composer reads no row.
+    expect(read(`${text(rows('working'))}\n${GPT_ROW}`)).toBe('working / unknown');
+  });
+
+  test("a new family's model rule is anchored to the row's own line, both ends", () => {
+    // The rule itself, applied to a line, so the anchors are pinned at the rule and not only
+    // through a screen: one that lost its start anchor would read a family named mid-sentence
+    // as the model, and one that lost its end anchor would read a line that runs on past
+    // `Run Everything`. The revealing line is one character and then the row exactly as a
+    // capture draws it — the two leading spaces included — so a rule that lost only its `^`
+    // still begins with those spaces and matches at the second character.
+    const captured = [
+      '  GPT-5.6 Sol 272K High              Run Everything',
+      '  Gemini 3.8 Flash High              Run Everything',
+      '  Composer 2.5                       Run Everything',
+    ];
+    for (const row of captured) expect(statusOnLine('cursor', `x${row}`)).toBeNull();
+    for (const row of captured) expect(statusOnLine('cursor', `${row} and more`)).toBeNull();
+    // And on a screen: those lines in the footer's place are not the row at all, so the
+    // composer's own read names no model either.
+    expect(model(footer('idle', 'x  GPT-5.6 Sol 272K High              Run Everything'))).toBeNull();
+    expect(model(footer('idle', '  GPT-5.6 Sol 272K High              Run Everything and more'))).toBeNull();
+  });
+
+  test('the Grok model rule is anchored to the status row', () => {
+    // Main's rule was `(?:^|\s)Grok\s+…`: it read a family name wherever a space or a line
+    // start preceded it — mid-sentence as readily as in the row's own place. The anchored rule
+    // keeps the rows the captures draw and drops prose that is not a row. It also narrows
+    // main's leading whitespace: every Grok row the fixtures hold — the thirteen the captures
+    // draw and the four the queue fixtures transcribe — carries exactly the two spaces `^  `
+    // spells, and one space, three spaces or a tab is refused where main read a model — a
+    // fail-closed narrowing, pinned above.
+    expect(statusOnLine('cursor', 'x  Grok 4.7 256K High                 Run Everything')).toBeNull();
+    expect(model('x Grok 4.7 wrote it')).toBeNull();
+    expect(model('  Grok 4.7 wrote this answer in the transcript')).toEqual({ model: 'Grok', version: '4.7' });
+  });
+
+  test('one set of expressions, used in the three places', () => {
+    const data = screenData('cursor');
+    if (!data || data.composer.mode !== 'status-then-one' || !data.trust || !data.working) {
+      throw new Error('cursor profile shape changed');
+    }
+    // The composer's status_line, the trust dialog's none_after and the working queue's
+    // exception must hold the same expressions, character for character: the three places
+    // that decide whether a line is the status row cannot disagree about which lines those
+    // are.
+    const status = data.composer.statusLine.map((re) => re.source);
+    const trustRows = (data.trust.rules[0]?.noneAfter?.patterns.slice(1) ?? []).map((p) => p.match.source);
+    const workingRows = data.working.rules[1]?.noneAfter?.patterns[0]?.except.map((re) => re.source) ?? [];
+    expect(trustRows).toEqual(status);
+    for (const source of status) expect(workingRows).toContain(source);
+    expect(status.some((source) => source.includes('Run Everything'))).toBe(true);
+    expect(status.some((source) => source.includes('GPT-'))).toBe(true);
   });
 });

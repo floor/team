@@ -1,0 +1,13 @@
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Use /config to customize Cursor settings and
+  behavior.
+
+
+
+
+  → Plan, search, build anything
+
+
+  GPT-5.6 Sol 272K High              Run Everything
+  <workspace>

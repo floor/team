@@ -29,6 +29,19 @@ The readings are only written when the watch's session is the file's own `sessio
 count the state as the project's, so a watch on another session — `--session <other>`, which anyone
 may run — reads and reports, says so once, and saves no reading, budget or spend.
 
+## How a screen is read
+
+A pane's screen is read by the profile's own expressions — the words a CLI paints for its idle
+prompt, its working frame, its dialogs and its questions — and the reading and the live-agent check
+are separate layers. A screen that reproduces a CLI's complete idle frame (input row, status row
+and workspace line, in place) reads idle; the live-agent check is the second layer. For Cursor the
+profile pins the status row's place: a line the row's grammar matches is the row only when the
+workspace line sits directly below it, that line is the pane's last non-blank one, and the input
+row sits above it within the captured distance — a grammar-looking line anywhere else is ordinary
+text that names no row and no model. Grok rows are the profile's exception — selected by their
+grammar wherever they sit — and every Grok row in the captures carries exactly the two spaces
+that grammar spells.
+
 ## Who may run it
 
 Anyone, in any terminal. `up` starts one for the session in a pane of its own, and this is the one
@@ -67,8 +80,8 @@ or a machine that stays full, is said once, not every pass.
 | `<seat> is blocked, and its screen is not one the watch recognises` | herdr says blocked and the screen says nothing the watch knows |
 | `<seat>: herdr reports the status "<status>"` | a status that is neither idle, done, working nor blocked |
 | `<seat> holds text in its input box that was never sent` | unsent text for `watch.unsent_after` |
-| `<seat> has been idle since the watch started` | quiet for `watch.idle_first`, and never seen working |
-| `<seat> has been idle for <n> minutes` | quiet for `watch.idle_first` since its last turn, then every `watch.idle_repeat` |
+| `<seat> has been idle since the watch started` | quiet for `watch.idle_first`, and never seen working (reported once; repeated every `watch.idle_repeat` when set) |
+| `<seat> has been idle for <n> minutes` | quiet for `watch.idle_first` since its last turn (reported once per idle period; repeated every `watch.idle_repeat` when set) |
 | `every agent is idle` | every seat that is not the coordinator, the operator or parked, quiet for `watch.team_idle` |
 | `<seat> runs <model> <version>; the file says <declared>: it signs with the wrong model` (`<declared>` is the seat's `display` spelling) | the running model or version is not the file's |
 | `<name> (<pane>) is running and is not in the file` | an agent in the session no seat claims, the watchdog pane aside |
@@ -324,6 +337,9 @@ The watch's own timings are the owner's too: `interval`, `idle_first`, `idle_rep
 `nudge_wait` and `unsent_after` are approved with the file, and an edit to one of them changes
 nothing until the owner approves it — the passes keep running with the values of the approved copy,
 or with the defaults when nothing was approved, and the difference is reported.
+By default an idle seat is reported once per idle period (`idle_repeat` is off). A team that wants
+repeated idle reports turns them on by setting `watch.idle_repeat` to the repeat interval (such as
+`idle_repeat: 20m`), repeating every 20 minutes while the seat stays quiet.
 
 A check the team doesn't want is turned off in `watch.checks` — a section only the owner changes,
 so it is approved like the rest of them. While that edit is unapproved, the approved list stays

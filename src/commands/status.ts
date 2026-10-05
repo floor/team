@@ -148,7 +148,7 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
       format: 1,
       project: team.project,
       session,
-      rows: comparison.rows,
+      rows: comparison.rows.map((row) => ({ name: row.name, state: row.stored ?? row.state, model: row.model, pane: row.pane })),
       notes: comparison.notes,
       // Format 1: the extra facts a difference carries (needs/owner/approval) are for the
       // renderer, not the document.

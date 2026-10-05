@@ -44,8 +44,10 @@ export function trustProblem(pattern: string): string | null {
   if (CONTROL_OR_BACKTICK.test(pattern)) {
     return 'must not contain control characters or backticks';
   }
-  if (pattern.startsWith('/') || pattern.startsWith('~') || /^[A-Za-z]:[\\/]/.test(pattern)) {
-    return 'must be relative to the project';
+  // An absolute folder is a canonical-landing entry, such as the machine lobby.
+  if (pattern.startsWith('/')) return null;
+  if (pattern.startsWith('~') || /^[A-Za-z]:[\\/]/.test(pattern)) {
+    return 'must be relative to the project, or an absolute folder';
   }
   const segments = normalize(pattern).split('/');
   const last = segments.length - 1;
@@ -237,6 +239,8 @@ export function insideTrust(path: string, patterns: readonly string[], root?: st
   }
   const target = normalize(path).split('/');
   return patterns.some((pattern) => {
+    // An absolute entry is an exact landing, compared by `canonicalLanding`, never by this prefix.
+    if (pattern.startsWith('/')) return false;
     if (trustProblem(pattern)) return false;
     const segments = normalize(pattern).split('/');
     if (segments.length === 1 && segments[0] === '.') return insideProject(path);

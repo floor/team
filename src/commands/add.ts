@@ -492,6 +492,8 @@ function seatPlan(team: TeamFile, seat: Seat, start: { cwd: string; lobby?: true
     launch: seat.launch,
     cwd: start.cwd,
     label: seat.label,
+    model: seat.model,
+    version: seat.version,
     stopped: false,
     rules: rulesOf(team, seat, root),
     ...(start.lobby ? { lobby: true } : {}),

@@ -51,6 +51,18 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `add.seat-name` | `add` | 2 | a seat name is required | `team add` |
 | `add.temporary-flags` | `add` | 2 | --like, --until and --worktree need --temporary | `team add worker --like lead` |
 | `add.temporary-unexpected` | `add` | 2 | an unexpected argument was passed to --temporary | `team add extra --temporary` |
+| `answer.ready` | `answer` | 0 | the trust dialog was answered and the seat is ready | `team answer lead trust` |
+| `answer.action` | `answer` | 1 | the recorded key was not sent | `team answer lead trust` |
+| `answer.caller` | `answer` | 1 | the caller may not answer a trust dialog | `team answer lead trust` |
+| `answer.folder` | `answer` | 1 | the dialog's folder is not the lobby's exact trust entry | `team answer lead trust` |
+| `answer.label` | `answer` | 1 | the trust choice is not the recorded one | `team answer lead trust` |
+| `answer.policy` | `answer` | 1 | the file leaves trust dialogs to the owner | `team answer lead trust` |
+| `answer.recovery` | `answer` | 1 | the trust answer did not complete: the seat stays in recovery | `team answer lead trust` |
+| `answer.screen` | `answer` | 1 | the pane is not the trust dialog | `team answer lead trust` |
+| `answer.state` | `answer` | 1 | the seat is not waiting at a trust dialog | `team answer lead trust` |
+| `answer.version` | `answer` | 1 | this version has no trust answer | `team answer lead trust` |
+| `answer.configuration` | `answer` | 2 | the team file cannot be read | `team answer lead trust --file missing.yaml` |
+| `answer.usage` | `answer` | 2 | the invocation is not a seat and trust | `team answer` |
 | `approve.approved` | `approve` | 0 | the owner approved the file | `team approve` |
 | `approve.show` | `approve` | 0 | the comparison was printed | `team approve --show` |
 | `approve.answer` | `approve` | 1 | the answer was not the number of seats | `team approve` |
@@ -184,6 +196,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `worktree.created` | `worktree` | 0 | the worktree was created | `team worktree new task --kind fix` |
 | `worktree.record-gone` | `worktree` | 0 | the record was removed after the folder was already gone | `team worktree remove task` |
 | `worktree.removed` | `worktree` | 0 | the worktree was removed | `team worktree remove task` |
+| `worktree.approved-copy` | `worktree` | 1 | the approved copy can't be read | `team worktree new task --kind fix` |
 | `worktree.base` | `worktree` | 1 | workspace.base is not a branch here | `team worktree new task --kind fix` |
 | `worktree.branch` | `worktree` | 1 | the branch already exists | `team worktree new task --kind fix` |
 | `worktree.branch-name` | `worktree` | 1 | the branch name is not valid | `team worktree new task --kind fix` |
@@ -191,7 +204,6 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `worktree.config` | `worktree` | 1 | workspace.path and workspace.base are required | `team worktree new task` |
 | `worktree.create-failed` | `worktree` | 1 | the worktree was not created | `team worktree new task --kind fix` |
 | `worktree.default-session` | `worktree` | 1 | the session can't be "default" | `team worktree new task --session default` |
-| `worktree.differs` | `worktree` | 1 | the file differs from its approval | `team worktree new task` |
 | `worktree.dirty` | `worktree` | 1 | the worktree has uncommitted files | `team worktree remove task` |
 | `worktree.elsewhere` | `worktree` | 1 | the worktree is recorded in another session | `team worktree remove task` |
 | `worktree.exists` | `worktree` | 1 | the worktree folder already exists | `team worktree new task --kind fix` |
@@ -213,6 +225,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `worktree.remove-failed` | `worktree` | 1 | the worktree was not removed | `team worktree remove task` |
 | `worktree.remove-task` | `worktree` | 1 | the task name is not a single segment | `team worktree remove ../task` |
 | `worktree.seat` | `worktree` | 1 | --seat names no declared seat | `team worktree new task --kind fix --seat missing` |
+| `worktree.seat-unapproved` | `worktree` | 1 | --seat names a seat only the file declares | `team worktree new task --kind fix --seat added-later` |
 | `worktree.setup` | `worktree` | 1 | setup failed | `team worktree new task --kind fix` |
 | `worktree.shared` | `worktree` | 1 | the workspace is shared | `team worktree new task` |
 | `worktree.symlink` | `worktree` | 1 | the worktree follows a symlink outside the trust paths | `team worktree new task --kind fix` |

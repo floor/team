@@ -12,7 +12,7 @@ import { approvalStanding, LEGACY_LINE, type Standing } from '../store/store.ts'
 import { version } from '../version.ts';
 
 // What git must never pick up: the file and the runtime files beside it.
-export const EXCLUDED = [TEAM_FILE, `.agents/${STATE_FILE}`, `.agents/${LOG_FILE}*`, `.agents/${LOCK_FILE}`];
+export const EXCLUDED = [TEAM_FILE, `.agents/${STATE_FILE}`, `.agents/${LOG_FILE}*`, `.agents/${LOCK_FILE}`, '.agents/seat-locks'];
 
 export const PRIVACY = `The team file is private to this clone: it is listed in .git/info/exclude, never in .gitignore,
 so git doesn't see it and a fresh clone doesn't carry it. A collaborator writes their own, or
@@ -57,6 +57,8 @@ ${head ? `#   since: ${head}   # check reads no commit reachable from this one\n
 trust:
   - ~/.config/team/lobby
   - ${rootPath}
+# dialogs:
+#   trust: owner              # owner | coordinator
 
 workspace:
   mode: shared                # worktree | shared

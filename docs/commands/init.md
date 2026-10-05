@@ -20,6 +20,7 @@ one line to `.agents/team.log`:
     .agents/team.state.json
     .agents/team.log*
     .agents/team.lock
+    .agents/seat-locks
 
 The skeleton is validated before it is written. Its `trust:` block names the machine lobby and this checkout:
 

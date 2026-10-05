@@ -25,6 +25,23 @@ exit: /exit
 timeouts:
   idle: 90s
   exit: 30s
+# The folder-only layout, from the registered codex/0.157.0/trust-folder.txt capture: the
+# path is wrapped at column 51, continuing at indent 2. Codex is eligible only when the
+# record also names `lobby_evidence`, a capture of the same dialog in the real lobby; none
+# is registered, so this record answers nothing yet.
+trust_answer:
+  - from: '0.157.0'
+    to: '0.157.0'
+    label: '1. Trust and continue'
+    action: '31'
+    capture: codex/0.157.0/trust-folder.txt
+    extract:
+      after: 'Folder access'
+      until_blank: true
+      join: true
+      indent: 2
+      wrap: 51
+      refuse_line: 'Trusting will apply to the repository root:'
 models:
   option:
     - -m
@@ -43,13 +60,18 @@ status_model:
   - match: '^\s+GPT-([0-9]+(?:\.[0-9]+)?)-([Aa][Ss][Tt][Rr][Aa]|[Ss][Oo][Ll]|[Ll][Uu][Nn][Aa]|[Tt][Ee][Rr][Rr][Aa])\s[^·]*·'
     model: 'GPT {2:title}'
     version: '{1}'
+    # The four families the capture knows; `{2:title}` spells each in its title case.
+    yields: [GPT Astra, GPT Sol, GPT Luna, GPT Terra]
+    version_like: '^[0-9]+(?:\.[0-9]+)?$'
   # A later footer that is not one of those four names is unread, as the old id map was.
   # The `{1}` names a group this pattern does not have, on purpose: a template that cannot
   # fill reads the line as naming no model. There is no plainer spelling — an empty string
-  # is refused and a literal would read as a found model, not as unread.
+  # is refused and a literal would read as a found model, not as unread. The rule declares
+  # the emptiness: it yields nothing and spells no version, and that is its whole reading.
   - match: '^\s+GPT-[0-9][\w.-]*\s[^·]*·'
     model: '{1}'
     version: '{1}'
+    yields: []
 screen:
   unknown:
     - any: ['\bmodel:\s+loading\b']

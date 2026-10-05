@@ -39,6 +39,10 @@ function valid(text: string) {
   return result;
 }
 
+test('an absolute trust path is a folder entry', () => {
+  expect(valid(`${minimal}trust:\n  - /srv/lobby\n`).team.trust).toEqual(['/srv/lobby']);
+});
+
 describe('the complete example of the RFC', () => {
   const { team, warnings } = valid(example);
 
@@ -101,6 +105,7 @@ describe('a minimal file', () => {
     expect(team.workspace).toMatchObject({ mode: 'shared', branch: '{task}', remove: 'on-merge', protected: ['.'], limit: 8 });
     expect(team.limits).toEqual({ seats: 3, temporary: 2, vendors: {} });
     expect(team.watch.nudgeWait).toBe(600);
+    expect(team.watch.idleRepeat).toBeUndefined();
   });
   test('is public when it only sets forbidden_public', () => {
     const text = `${minimal}identity:\n  forbidden_public: ["\\\\bX-[0-9]+"]\n`;
@@ -162,6 +167,7 @@ const refusals: [string, string, RegExp][] = [
   ['a trust pattern over an ancestor', `${minimal}trust:\n  - ../..\n`, /is a parent of the project/],
   ['a star in the middle of a trust pattern', `${minimal}trust:\n  - ../*/acme\n`, /takes "\*" only as a whole last segment/],
   ['a partial star', `${minimal}trust:\n  - ../wt/acme-*\n`, /takes "\*" only as a whole last segment/],
+  ['a home trust path', `${minimal}trust:\n  - ~/lobby\n`, /must be relative to the project, or an absolute folder/],
   ['mixing legacy patterns and absolute paths', `${minimal}trust:\n  - .\n  - /srv\n`, /cannot mix legacy patterns and absolute paths/],
   ['a key with a known prefix', `${minimal}tools:\n  tracker: { kind: linear, token: lin_api_0123456789abcdefghij }\n`, /shaped like a key or token/],
   ['a URL with credentials', `${minimal}tools:\n  db: { kind: postgres, url: "postgres://admin:hunter2@db.example/acme" }\n`, /URL with credentials/],

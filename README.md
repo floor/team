@@ -168,6 +168,16 @@ Launching a Cursor seat, like launching cursor-agent by hand, creates Cursor's o
 under ~/.cursor/projects for that folder; team writes no trust (.workspace-trusted) and no Cursor
 config.
 
+A seat's model is read off its screen through the profile's `status_model` rules. Each rule declares
+what it can name: `yields`, the closed list of exact model names its templates spell, and
+`version_like`, the version shapes it can spell those names with — a regular expression anchored at
+both ends, refused as the profile loads otherwise. A declaration is what `team doctor` checks a launch
+against, and a test over the captured screens keeps it honest: every declared name and version shape
+is read back through the real reader. A profile without the two keys loads as it always has and names
+no model, so `team doctor` says the seat's model can't be checked and keeps its warning — the safe
+direction. `overrides.yaml` adds dialog and quota patterns only, so it cannot change how a model is
+read.
+
 `budgets` is the owner's: marks (percent used), how long a figure stays fresh, and each
 account's reserve or floor. An account's `shared` key is informational; `team` does not act
 on it. A seat spends its own `account:` when the file names one, its `vendor`

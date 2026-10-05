@@ -12,7 +12,7 @@ import {
   type Ceilings,
   type Standing,
 } from '../store/store.ts';
-import { compare, describe, fingerprints, legacyLabelDigests, legacySeatDigests, OWNER_SECTIONS, type Fingerprints } from './fingerprint.ts';
+import { compare, describe, fingerprints, legacyLabelDigests, legacySeatDigests, legacyWatchDigest, OWNER_SECTIONS, type Fingerprints } from './fingerprint.ts';
 
 /** The ceilings an approval fixes: `up` and `add` read them from the record, never from the file. */
 export function ceilingsOf(team: TeamFile): Ceilings {
@@ -63,6 +63,15 @@ export function approvedFingerprints(record: ApprovalRecord): Fingerprints {
   let sections = stored.sections;
   if (!OWNER_SECTIONS.every((name) => stored.sections[name] !== undefined) && checked.ok) {
     sections = { ...fingerprints(checked.team).sections, ...stored.sections };
+  }
+  if (checked.ok && checked.team.watch.idleRepeat === undefined) {
+    const legacy = legacyWatchDigest(checked.team);
+    if (legacy && stored.sections['watch'] === legacy) {
+      const currentWatch = fingerprints(checked.team).sections['watch'];
+      if (currentWatch && sections['watch'] !== currentWatch) {
+        sections = { ...sections, watch: currentWatch };
+      }
+    }
   }
   const seats = checked.ok ? adoptLegacyDigests(stored.seats, checked.team) : stored.seats;
   if (sections === stored.sections && seats === stored.seats) return stored;
@@ -191,6 +200,32 @@ export function budgetsInForceOf(standing: Standing, team: TeamFile): TeamFile['
   if (approvedFingerprints(record).sections['budgets'] === fingerprints(team).sections['budgets']) return team.budgets;
   const copy = validateTeamFile(record.file);
   return copy.ok ? copy.team.budgets : defaultBudgets();
+}
+
+/**
+ * The team file the two worktree subcommands read. A verified standing always uses the copy the
+ * record stored, validated, never the live file — a quiet fingerprint is not a reason to skip
+ * that copy. `differs` is a separate question: the live file compared with the approved copy in
+ * both directions, so a section or a seat that was added, removed or changed prints the note.
+ * `project` stays the live file's. It is not an owner section, so a rename is not drift, and
+ * `{repo}` stays the name the file has now. Null when the stored copy can't be read, whatever
+ * the fingerprints say: there is no value to work from, and the command refuses. A standing that
+ * isn't verified hands the live file back with `differs: false` — the caller's gate refuses
+ * before it reads any of it.
+ */
+export function worktreeTeamInForceOf(standing: Standing, team: TeamFile): { team: TeamFile; differs: boolean } | null {
+  if (standing.kind !== 'verified') return { team, differs: false };
+  const copy = validateTeamFile(standing.record.file);
+  if (!copy.ok) return null;
+  return { team: { ...copy.team, project: team.project }, differs: ownerDrift(copy.team, team) };
+}
+
+/** An owner section or a seat added, removed or changed between the approved copy and the live file. */
+function ownerDrift(approved: TeamFile, live: TeamFile): boolean {
+  const approvedPrint = fingerprints(approved);
+  const livePrint = fingerprints(live);
+  // `compare` reports a seat added to its second file, not one taken out of it, so both orders.
+  return compare(approvedPrint, livePrint).length > 0 || compare(livePrint, approvedPrint).length > 0;
 }
 
 /** The wrappers a standalone caller uses: each does its own one read, then derives. */
