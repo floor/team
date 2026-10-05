@@ -1,0 +1,22 @@
+❯ cursor-agent --model grok-4.7-high --force --sandbox
+ disabled
+
+
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Use /mcp to connect Cursor to your tools and
+  data sources.
+
+
+
+
+  → probe line 1 of this sample
+    probe line 2 of this sample
+    probe line 3 of this sample
+    probe line 4 of this sample
+    probe line 5 of this sample
+    probe line 6 of this sample
+
+
+  Grok 4.7 256K High                  Run Everything
+  <workspace>

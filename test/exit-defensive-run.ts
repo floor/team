@@ -114,7 +114,8 @@ const plan: Record<string, { failAt: number; failure: string }> = {
   'add.not-restored': { failAt: 4, failure: 'edited text rejected' },
   // the prepared-edit check, after the seat was accepted
   'add.prepared': { failAt: 5, failure: 'the prepared edit does not validate' },
-  // writeTeamFile's check, after doctor and the budget read
+  // writeTeamFile's check, after doctor (which now also validates the record's own copy of
+  // the file for the rules-file scan) and the budget read
   'add.locked': { failAt: 11, failure: 'the locked edit does not validate' },
   // approve's second read of the text load just accepted
   'approve.revalidate': { failAt: 2, failure: 'the file does not validate' },

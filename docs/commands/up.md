@@ -114,6 +114,53 @@ prompt, is a separate planned change and is not altered here.)
 
 When the idle screen names no model this version can read, `up` says `<seat>: its screen doesn't show a model this version knows; not checked` and continues. Nothing is assumed about which model is running.
 
+A seat whose rules travel as a first message (codex, cursor, antigravity) gets them from a file:
+`up` writes the approved rules text to `<project state folder>/rules/<seat>.md` — owner-only,
+mode `0600`, beside the approval store, never inside a worktree, the lobby or the project — and
+types one line into the pane at an empty idle prompt:
+
+    Read /home/owner/.config/team/demo-3f9c2a8e1d7b/rules/implementer.md (sha256 5e1d0a9c4b2f): your standing rules for this session; reply ready and wait for your brief.
+
+The state folder is resolved from the **approved copy's** project name, through the one resolver
+the writer, the line, the hash check before Enter, `status`, `doctor` and `remove` all use: a
+project rename is not approval drift, and the line a seat is told to obey must name the file the
+checks look at, not one resolved from the live file's new name.
+
+The line carries the file's absolute path and the first 12 hex digits of its SHA-256, so the
+seat — and the read-back — can tell exactly which text is meant. A path that holds whitespace or
+a character outside letters, digits and `. _ / @ + -` is never typed: nothing is quoted or
+escaped, and the report says the path can't be typed safely. The line is read back row by row —
+every visible character in order, a row break allowed to stand for at most one space or nothing —
+and only then is Enter pressed, once. A box that already holds exactly today's line (a run that
+stopped after typing it) is verified and sent, never typed onto again. `up` never clears a box it
+could not verify: a stop leaves the text where it is.
+
+### Known limits
+
+- The final read of the box and the pressing of Enter are two separate `herdr` calls. Something
+  can change the pane in the gap between them; `team` reads the pane again right before the
+  Enter, but it cannot make the two one action. Closing that needs a key herdr itself does not
+  offer today.
+- A row break may hide at most one space, and no read can prove what a pane folds into a break:
+  the check requires every other visible character to match exactly, and refuses anything looser
+  rather than guess.
+- The file is read once more, without following a link, directly before the Enter — but a
+  process of the same user can still replace the file between that check and the seat's read.
+  The line carries the file's hash, so the seat, or the owner, can check what was read against
+  what was meant.
+- Every folder from `team`'s state root down to `rules/` is checked before it is used — but the
+  check and the use are two calls, and a process of the same user can swap a checked folder for a
+  link in the window between them, so a folder of the ladder, or the file itself, lands where the
+  link points. The runtime this runs on offers no way to hold the checked folder open and create
+  the next level through that handle, so the window stays open. What limits it: the write is the
+  approved text and nothing else, through an exclusive no-follow temporary whose name no other
+  process knows, the file is read back by its hash after the rename, and the line the seat
+  receives carries the same hash — so whatever lands wherever it lands can always be checked
+  against what was meant, and nothing but the approved text ever lands anywhere. The removal
+  of a temporary seat's rules file walks the same checked chain as the writer, folder by folder
+  and without following a link, before it unlinks anything — so its window is the writer's own
+  and no wider.
+
 A seat that doesn't get there is printed once with what stopped it, and `up` exits 1. For a seat
 whose wait ended without a prompt, the last non-empty lines the pane showed — the launch line's own
 echo first when it is within reach, six at most, every escape sequence and every control character
@@ -130,7 +177,19 @@ Those lines go to the terminal only: the log file gets the reading, never the sc
 | `<seat>: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched` | herdr's process info says the pane's foreground program is back at its shell through three full polls on end, four readings, the screen matches no CLI shape, and the launch line's own echo is visible on the screen. A pane read before the line arrived, one whose echo scrolled away, one whose program is slow to draw, or a herdr that can't say (no shell process info), is waited out to the deadline — the end is never inferred from the screen's text, and a single reading can never reach the three polls. The workspace is kept, and the pane's last lines follow on the terminal |
 | `<seat>: timed out after <n> s waiting for its idle prompt; the screen last read <kind>; left at launched` | the prompt never came within the profile's own time limit; the last reading and the pane's last lines follow on the terminal |
 | `<seat>: was not in the agent list in time; left at launched` | herdr listed no agent in the pane to name |
-| `<seat>: its rules were not delivered; left at named` | the rules did not reach an empty idle prompt |
+| `<seat>: rules not typed: the folder that would hold its rules file is <what>; the owner removes or repairs it, then runs up again` | a folder from `team`'s per-user state root down to `rules/` is not a real directory of this user's — a symbolic link, not a directory, another user's, or (for `rules/` and the project folder) a mode wider than `0700`, never `chmod`'d closer; `<what>` says which. Nothing was written, nothing typed |
+| `<seat>: rules not typed: its rules file's place holds <what>; the owner removes it, then runs up again` | the final name holds anything other than this user's `0600` regular file — a symbolic link, a FIFO, a directory, a wider mode, another owner — and is never replaced; `<what>` says what is there |
+| `<seat>: rules not typed: its rules file did not read back as written; check the project state folder, then run up again` | the write landed but did not read back (no-follow) as the hash the line carries; nothing was typed |
+| `<seat>: rules not typed: its rules file could not be written; check the project state folder, then run up again` | the write failed; nothing was typed |
+| `<seat>: rules not typed: its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -; rename the seat or move the project, then run up again` | the path holds a character the read-back cannot prove; nothing was typed, nothing quoted |
+| `<seat>: rules not typed: the CLI never appeared as its pane's foreground process (the screen read <kind>); check the seat's launch line — the wrapper it starts through, or the command itself — then run up again` | within the profile's own time limit the pane's foreground process was never the CLI — a wrapper's shell still in front of it, or a launch line that exited. A CLI that starts through a wrapper is waited out, its first frame included; nothing is typed into the wrapper's shell |
+| `<seat>: rules not confirmed: the seat is working; run up again when it is idle` | the seat is mid-turn; nothing was typed |
+| `<seat>: rules not typed: <what stopped it>; <what to do>` | nothing was typed: the screen was not an empty idle prompt, or the box already held text that is not the rules line |
+| `<seat>: rules typed, not sent: the read-back didn't match; the line sits in its box, unsent: <what to do>` | the line was typed and its box did not read back as the line; `up` does not clear it. When the box drew a row that is not the line's own, the first such row is printed above this line, stripped of control characters and cut to 200 characters |
+| `<seat>: rules typed, not sent: the rules file changed after it was written` | the line read back, but the file — read again without following a link, directly before Enter — no longer held the text whose hash the line names. Enter was not pressed; the line sits in the box, unsent, and the owner checks the project state folder before running `up` again |
+| `<seat>: rules typed, not sent: its box still holds the line after Enter; <what to do>` | Enter was pressed and the box still shows the line: the key did not take, and nothing was sent |
+| `<seat>: the seat did not come back to its idle prompt (<reading>); <what to do>` | the line was submitted and the seat never came back to its idle prompt — a running turn, or a dialog to answer |
+| `<seat>: its rules were not delivered; left at named` | the pane could not be read at all; nothing was typed |
 | `<seat>: its workspace did not close; left as it is` | its pane no longer held the process `team` launched, and closing that workspace failed, so nothing was launched in its place |
 | `<seat>: its workspace was not created; left at launched` | herdr made no workspace for it |
 | `<seat>: its lobby folder was not created; left out` | the folder a seat that works in worktrees waits in could not be made |
@@ -169,10 +228,10 @@ before its workspace is made. The words after `would refuse:` are the same as th
 `refused:`. A seat
 already running keeps its setup, with that reading in a note. A seat whose account is unknown
 carries `(<account> is unknown; would launch)` under its first command. A first sight carries
-`(<account>: first sight only, not yet counted; would launch)`. A launch carries the seat's rules,
-so its line is long. Rules delivered as a launch option (claude-code) close with `These are standing
-rules, not a task.`; rules typed as a first message (codex, cursor and antigravity) close with
-`These are standing rules, not a task: reply ready and wait for your brief.`
+`(<account>: first sight only, not yet counted; would launch)`. A launch carries the seat's rules
+when they travel as a launch option (claude-code), so its line is long; a first-message seat's
+launch is the plain CLI command, and the plan shows the one line it types at the seat's idle
+prompt, with the note that the rules go to a per-seat file in the project state folder first.
 
 ## Refusals
 

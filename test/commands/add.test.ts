@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runAdd, type AddSources } from '../../src/commands/add.ts';
@@ -11,6 +11,7 @@ import type { HerdrAgent } from '../../src/herdr.ts';
 import { emptySession, readState, updateState } from '../../src/state.ts';
 import { readLedger, storePath, writeApproval } from '../../src/store/store.ts';
 import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
+import { rulesFilePath } from '../../src/launch/rules-file.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
 import { testIo } from '../helpers.ts';
 import type { Machine } from '../../src/watch/machine.ts';
@@ -49,6 +50,15 @@ seats:
     version: "5.5"
     launch: claude --model claude-opus-5-5
     # the seat stays in this order
+    stopped: true
+  - role: implementer
+    name: scribe
+    label: scribe
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    launch: codex -m gpt-6-sol
     stopped: true
 `;
 
@@ -210,7 +220,7 @@ describe('team add', () => {
     expect(made.creates).toEqual(['worker']);
     expect(made.renames).toEqual(['worker']);
     const text = readFileSync(join(project, '.agents', 'team.yaml'), 'utf8');
-    expect(text).not.toContain('stopped:');
+    expect(text).not.toMatch(/# the seat stays in this order\n    stopped: true/);
     expect(text).toContain('# the seat stays in this order');
     expect(text.indexOf('name: worker')).toBeLessThan(text.indexOf('# the seat stays in this order'));
     expect(readState(join(project, '.agents')).sessions.acme?.seats.worker?.stage).toBe('ready');
@@ -347,7 +357,8 @@ describe('team add', () => {
     expect(io.err.split('  note worker: its launch line was not checked').length).toBe(2);
     expect(io.out).not.toContain('note worker');
     expect(made.creates).toEqual(['worker']);
-    expect(readFileSync(join(project, '.agents/team.yaml'), 'utf8')).not.toContain('stopped:');
+    // the added seat is unstopped; the fixture's other stopped seat keeps its flag
+    expect(readFileSync(join(project, '.agents/team.yaml'), 'utf8')).not.toMatch(/# the seat stays in this order\n    stopped: true/);
   });
 
   test('add after a clean remove --keep leaves no drift', async () => {
@@ -408,6 +419,24 @@ describe('team add', () => {
     const seat = readState(join(project, '.agents')).sessions.acme?.seats['worker-tmp-1'];
     expect(seat?.temporary).toEqual({ like: 'worker', until: 'merged:fix/fresh', own_commits: false });
     expect(readLedger(storePath('acme', project, home)).some((entry) => entry.display === 'Claude Opus 5.5')).toBe(true);
+  });
+
+  test('a temporary message seat that is left out takes its rules file with it', async () => {
+    const made = world();
+    // The pane comes up at a trust question: the seat is closed without input and left out.
+    const trust = readFileSync(new URL('../fixtures/codex/0.157.0/trust.txt', import.meta.url), 'utf8');
+    const plain = made.launch.paneText;
+    made.launch.paneText = (session, pane) => {
+      const text = plain(session, pane);
+      return text === IDLE ? trust : text;
+    };
+    // The rules file is written before the pane is ever read; a seat left out takes it away.
+    const file = rulesFilePath('acme', project, home, 'scribe-tmp-1') as string;
+    const io = testIo(project, owner);
+    expect(await runAdd(['--temporary', '--like', 'scribe', '--until', 'merged:fix/fresh'], io, sources(made))).toBe(1);
+    expect(io.out).toContain('scribe-tmp-1: trust question; its workspace was closed without an answer and the seat left out');
+    expect(existsSync(file)).toBe(false);
+    expect(readState(join(project, '.agents')).sessions.acme?.seats['scribe-tmp-1']).toBeUndefined();
   });
 
   test('refuses a result that already exists and a merged branch that does not', async () => {

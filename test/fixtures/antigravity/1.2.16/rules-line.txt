@@ -1,0 +1,19 @@
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.2.16
+  user@example.com (Google AI Ultra)
+  Gemini 3.8 Flash (High)
+  ~/project
+
+──────────────────────────────────────────────────────
+> Read
+  /home/owner/.config/team/demo-3f9c2a8e1d7b/rules/im
+  plementer.md (sha256 5e1d0a9c4b2f): your standing
+  rules for this session; reply ready and wait for
+  your brief.
+──────────────────────────────────────────────────────
+                               Gemini 3.8 Flash · high

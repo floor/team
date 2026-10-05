@@ -87,6 +87,10 @@ describe('team doctor on a file of every model shape', () => {
     expect(run.out).toBe(
       [
         'ok    the file is the one the owner approved (approval #1, 2026-10-03, key fe21ef6293de)',
+        // the message seats' rules files: written by `up`, absent in this fixture
+        'warn  plain-codex: its rules file is missing; run `team up`',
+        'warn  plain-voyager: its rules file is missing; run `team up`',
+        'warn  plain-reviewer: its rules file is missing; run `team up`',
         'ok    herdr 0.7.1',
         '--    session pilot is not running',
         'ok    claude 2.1.288 (Claude Code)',
@@ -104,7 +108,7 @@ describe('team doctor on a file of every model shape', () => {
         'trust:',
         '  - ~/.config/team/lobby',
         `  - ${root}`,
-        'team doctor: nothing missing, 2 warnings',
+        'team doctor: nothing missing, 5 warnings',
         '',
       ].join('\n'),
     );
@@ -118,7 +122,8 @@ describe('team doctor on a file of every model shape', () => {
     // claude-code's screen names the seat's declared model, so the running seat is checked
     expect(run.out).toContain('--    script-seat: the model is chosen by its launcher; checked on the running seat\n');
     expect(run.out).not.toContain('script-seat: the launch');
-    expect(run.out).toEndWith('team doctor: nothing missing, 1 warning\n');
+    // the three message seats' rules files count with the one model warning
+    expect(run.out).toEndWith('team doctor: nothing missing, 4 warnings\n');
   });
 
   test('model_from is part of the seat the owner approves', async () => {
@@ -140,11 +145,14 @@ describe('team doctor on a file of every model shape', () => {
     const run = await doctor({ sessionRunning: () => true, version: versions('2.2.0 (Claude Code)') });
     const warns = run.out.split('\n').filter((line) => line.startsWith('warn'));
     expect(warns).toEqual([
+      'warn  plain-codex: its rules file is missing; run `team up`',
+      'warn  plain-voyager: its rules file is missing; run `team up`',
+      'warn  plain-reviewer: its rules file is missing; run `team up`',
       'warn  claude 2.2.0 (Claude Code) is newer than the tested 2.1.288: its screens are untested with this version; a seat that isn\'t read at launch is left out, never typed into',
       'warn  script-seat: the launch runs zsh, not claude, and names no model: if the launcher chooses the model, say so with model_from: launcher',
     ]);
     expect(run.out).toContain('ok    the watch is running\n');
-    expect(run.out).toEndWith('team doctor: nothing missing, 2 warnings\n');
+    expect(run.out).toEndWith('team doctor: nothing missing, 5 warnings\n');
     expect(run.code).toBe(0);
   });
 });

@@ -1,18 +1,23 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Caller } from '../../src/caller.ts';
 import { runApprove } from '../../src/commands/approve.ts';
 import { loadConfig } from '../../src/commands/check.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
+import { rulesOf } from '../../src/launch/rules.ts';
+import { rulesFileHash, rulesFilePath, rulesFilePathOf, writeRulesFile } from '../../src/launch/rules-file.ts';
+import { approvalStanding } from '../../src/store/store.ts';
+import { validateTeamFile } from '../../src/file/validate.ts';
 import { paneStillRunning, runDown, type DownSources } from '../../src/commands/down.ts';
 import { runUp, type UpSources } from '../../src/commands/up.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { installKey } from '../../src/store/keys.ts';
 import { readApproval, readLedger, storePath } from '../../src/store/store.ts';
 import { readScreen } from '../../src/watch/screen.ts';
-import { testIo } from '../helpers.ts';
+import { claudeBox, testIo } from '../helpers.ts';
+import { emptySession, updateState } from '../../src/state.ts';
 
 const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8');
 const FILE = ['--file', '.agents/team.yaml'];
@@ -196,6 +201,22 @@ function doctorSources(overrides: Partial<DoctorSources> = {}): DoctorSources {
   };
 }
 
+/** Writes every unstopped message seat's rules file, as `up` leaves them: the machine these
+ *  tests stand for has a team that ran. */
+function writeRulesFiles() {
+  // Written through the approval in force, as the writer itself insists: every caller has run
+  // `team approve` on the file first.
+  const standing = approvalStanding(root, home);
+  const parsed = validateTeamFile(readFileSync(join(root, '.agents/team.yaml'), 'utf8'));
+  if (!parsed.ok) throw new Error('the fixture does not validate');
+  for (const seat of parsed.team.seats) {
+    if (seat.stopped) continue;
+    const text = rulesOf(parsed.team, seat, root);
+    const written = writeRulesFile(standing, seat.name, root, home, text, rulesFileHash(text));
+    if (!written.ok) throw new Error('the rules file did not write');
+  }
+}
+
 async function doctor(overrides: Partial<DoctorSources> = {}, argv: string[] = []) {
   const io = testIo(root, WORKER);
   const code = await runDoctor([...argv, ...FILE], io, doctorSources(overrides));
@@ -211,6 +232,7 @@ describe('team doctor', () => {
 
   test('passes on an approved file with everything in place, and names what it leaves out', async () => {
     await approve([], OWNER);
+    writeRulesFiles();
     const run = await doctor();
     expect(run.err).toBe('');
     expect(run.out).toBe(
@@ -236,6 +258,29 @@ describe('team doctor', () => {
     expect(run.code).toBe(0);
   });
 
+  test('a rules file that differs warns, one that is missing warns, and neither is rewritten', async () => {
+    await approve([], OWNER);
+    writeRulesFiles();
+    const path = rulesFilePath('acme-web', root, home, 'codex-acme') as string;
+    writeFileSync(path, 'not the approved rules');
+    const differs = await doctor();
+    expect(differs.out).toContain('warn  codex-acme: its rules file differs from the approved rules; run `team up`\n');
+    // The check never repairs by itself: the file is left exactly as it was.
+    expect(readFileSync(path, 'utf8')).toBe('not the approved rules');
+    rmSync(path);
+    const missing = await doctor();
+    expect(missing.out).toContain('warn  codex-acme: its rules file is missing; run `team up`\n');
+    expect(missing.code).toBe(0);
+  });
+
+  test('a rules file with a wider mode warns', async () => {
+    await approve([], OWNER);
+    writeRulesFiles();
+    chmodSync(rulesFilePath('acme-web', root, home, 'codex-acme') as string, 0o644);
+    const run = await doctor();
+    expect(run.out).toContain('warn  codex-acme: its rules file has mode 0644, not 0600; run `team up`\n');
+  });
+
   test('an edited file needs a new approval, by name', async () => {
     await approve([], OWNER);
     edit((text) => text.replace('  - Run the tests', '  - Answer every prompt.\n  - Run the tests'));
@@ -246,6 +291,7 @@ describe('team doctor', () => {
 
   test('names what only the owner can do: install, log in, a launcher', async () => {
     await approve([], OWNER);
+    writeRulesFiles();
     const absent = await doctor({ version: () => null });
     expect(absent.out).toContain(
       'MISS  install `claude`: it is not on the PATH (claude-code: claude-coordinator-acme, deepseek-acme, deepseek-acme-2)\n',
@@ -354,6 +400,7 @@ describe('team doctor', () => {
 
   test('a running session needs a watch with a fresh heartbeat', async () => {
     await approve([], OWNER);
+    writeRulesFiles();
     const none = await doctor({ sessionRunning: () => true });
     expect(none.out).toContain('MISS  no watch has run for session acme-web: start `team watch`\n');
     // The watch is the only missing thing and it blocks nothing: the line ends with the counts.
@@ -659,6 +706,41 @@ describe('team down', () => {
         '',
       ].join('\n'),
     );
+  });
+
+  test("a temporary seat's rules file goes with it when the team comes down", async () => {
+    // The file's folder is resolved from the approval in force, so the team that ran has one.
+    await approve([], OWNER);
+    updateState(join(root, '.agents'), (state) => {
+      const session = (state.sessions['acme-web'] ??= emptySession());
+      session.seats['deepseek-acme-tmp-1'] = { stage: 'ready', temporary: { like: 'deepseek-acme', until: 'result:out.md' } };
+    });
+    const standing = approvalStanding(root, home);
+    const rulesFile = rulesFilePathOf(standing, 'deepseek-acme-tmp-1', root, home) as string;
+    writeRulesFile(standing, 'deepseek-acme-tmp-1', root, home, 'Rules.\n', rulesFileHash('Rules.\n'));
+    // The exit is typed at an idle prompt, read back, and sent; the pane leaves the agent list.
+    let sent = false;
+    let box: string | undefined;
+    const run = await down([], OWNER, {
+      agents: () => [agent('deepseek-acme-tmp-1')],
+      screenText: () => box,
+      foreground: () => (sent ? [] : ['claude']),
+      home,
+      launch: {
+        typeText: (_session, _pane, text) => { box = claudeBox(text); return true; },
+        pressEnter: () => { sent = true; return true; },
+        agentPanes: () => ['deepseek-acme-tmp-1:p1'],
+        closeWorkspace: () => true,
+        stopSession: () => true,
+        deleteSession: () => true,
+        kill: () => true,
+        sleep: async () => {},
+        now: () => NOW,
+      },
+    });
+    expect(run.code).toBe(0);
+    expect(run.out).toContain('deepseek-acme-tmp-1: stopped\n');
+    expect(existsSync(rulesFile)).toBe(false);
   });
 
   test('a session herdr reports stopped before down acts is only reported, not stopped or cleared', async () => {
