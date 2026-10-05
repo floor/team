@@ -88,12 +88,15 @@ async function setup(page: Page): Promise<void> {
   const session = emptySession() as unknown as Record<string, unknown>;
   if (page.spec.agents === 'all' && page.team) {
     const seats: Record<string, unknown> = {};
-    for (const seat of page.team.seats) {
-      // The state records the pane the seat actually runs in: a command run by that seat in a
-      // transcript judges it against this record, as it does for a real launch.
+    // The state records the pane the seat actually runs in — a command run by that seat in a
+    // transcript judges it against this record, as it does for a real launch — and the process
+    // identity this version writes, so no page shows the doctor's "launched before team recorded
+    // its process" note unless it says so on purpose (`state:` dropping a seat's `launched`).
+    page.team.seats.forEach((seat, index) => {
+      const launched = { shell: 4000 + index, cli: [4100 + index] };
       const pane = world.paneOf(seat.name);
-      seats[seat.name] = pane === undefined ? { stage: 'ready' } : { stage: 'ready', pane };
-    }
+      seats[seat.name] = pane === undefined ? { stage: 'ready', launched } : { stage: 'ready', pane, launched };
+    });
     session.seats = seats;
   }
   if (page.spec.watch === 'alive' || page.spec.watch === 'stale') {

@@ -14,7 +14,14 @@ export type HerdrAgent = {
   cwd: string | null;
 };
 
+export type HerdrRun = (args: string[], session?: string) => unknown;
+let customRun: HerdrRun | null = null;
+export function setHerdrRun(exec: HerdrRun | null): void {
+  customRun = exec;
+}
+
 function run(args: string[], session?: string): unknown {
+  if (customRun) return customRun(args, session);
   const full = session ? ['--session', session, ...args] : args;
   const out = execFileSync('herdr', full, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
   return (JSON.parse(out) as { result?: unknown }).result;
@@ -108,6 +115,32 @@ export function paneShellBack(pane: string, session?: string): boolean | null {
   }
 }
 
+// A pane's process identity as `pane process-info` reports it: the pane's own shell process and
+// the foreground processes herdr lists, as pids. Pids only: never an argv, an argument or an
+// environment, which can hold secrets.
+export type PaneProcesses = { shell: number; foreground: number[] };
+
+/** A `pane process-info` result as process pids, or null when herdr can't say: no `shell_pid`
+ *  (an older herdr), no foreground list, an entry without a pid, an empty list. */
+export function paneProcessesOf(result: unknown): PaneProcesses | null {
+  const info = (result as { process_info?: { shell_pid?: unknown; foreground_processes?: { pid?: unknown }[] } } | null)
+    ?.process_info;
+  if (!info || typeof info.shell_pid !== 'number') return null;
+  const list = info.foreground_processes;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const pids = list.map((proc) => (typeof proc?.pid === 'number' ? proc.pid : null));
+  if (pids.some((pid) => pid === null)) return null;
+  return { shell: info.shell_pid, foreground: pids as number[] };
+}
+
+export function paneProcesses(pane: string, session?: string): PaneProcesses | null {
+  try {
+    return paneProcessesOf(run(['pane', 'process-info', '--pane', pane], session));
+  } catch {
+    return null;
+  }
+}
+
 export type HerdrWorkspace = { id: string; label: string };
 
 export function workspaceList(session?: string): HerdrWorkspace[] | null {
@@ -117,6 +150,27 @@ export function workspaceList(session?: string): HerdrWorkspace[] | null {
       id: String(workspace.workspace_id),
       label: typeof workspace.label === 'string' ? workspace.label : '',
     }));
+  } catch {
+    return null;
+  }
+}
+
+// The pane ids in a workspace, or null when herdr can't be reached or the workspace does not exist.
+// Every entry must be an object with a string pane_id and a workspace_id equal to the workspace asked for;
+// anything else makes the whole reading unreadable (null).
+export function workspacePanes(workspace: string, session?: string): string[] | null {
+  try {
+    const result = run(['pane', 'list', '--workspace', workspace], session) as { panes?: unknown } | undefined;
+    if (!result || typeof result !== 'object' || !Array.isArray(result.panes)) return null;
+    const panes: string[] = [];
+    for (const entry of result.panes) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+      const p = entry as Record<string, unknown>;
+      if (typeof p.pane_id !== 'string' || !p.pane_id) return null;
+      if (typeof p.workspace_id !== 'string' || p.workspace_id !== workspace) return null;
+      panes.push(p.pane_id);
+    }
+    return panes;
   } catch {
     return null;
   }

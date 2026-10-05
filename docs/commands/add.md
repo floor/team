@@ -59,8 +59,10 @@ The temporary seat's name is the `--like` seat's, with `-tmp-<n>`: the first `n`
     claude-keeper: ready
 
 A seat that reaches its idle prompt with its rules delivered prints `<seat>: ready`; the temporary
-seat prints `<name>: ready` under the name it was given. Everything else a launch can print is the
-same as `up`'s, with the seat's name in front: `its workspace was not created; left at launched`,
+seat prints `<name>: ready` under the name it was given. A seat the state records whose pane no
+longer holds the process `team` launched is not `already running`: its workspace is closed without
+input and the seat is launched fresh, with the line `up` prints for it. Everything else a launch
+can print is the same as `up`'s, with the seat's name in front: `its workspace was not created; left at launched`,
 `timed out after <n> s waiting for its idle prompt; the screen last read <kind>; left at launched`,
 `its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched`, `permission; its
 workspace was closed without input and the seat left out`, and the rest of the table on the

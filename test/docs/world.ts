@@ -373,6 +373,17 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
       return true;
     },
     agentPanes: () => slots.filter((slot) => slot.agent).map((slot) => slot.pane),
+    agents: () =>
+      slots
+        .filter((slot) => slot.agent && slot.name !== null)
+        .map((slot) => ({
+          name: slot.name,
+          agent: slot.cli,
+          pane: slot.pane,
+          workspace: slot.workspace,
+          status: slot.status,
+          cwd: null,
+        })),
     paneText: (_session: string, pane: string) => {
       const slot = agentOf(pane);
       if (!slot) return '';
@@ -399,6 +410,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     renameAgent: action.renameAgent,
     closeWorkspace: action.closeWorkspace,
     agentPanes: action.agentPanes,
+    agents: action.agents,
     paneText: action.paneText,
     typeText: action.typeText,
     pressEnter: action.pressEnter,

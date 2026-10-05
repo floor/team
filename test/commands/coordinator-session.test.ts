@@ -571,6 +571,7 @@ function upHost(): { counts: Record<'starts' | 'creates' | 'runs' | 'renames' | 
       return false;
     },
     agentPanes: () => [],
+    agents: () => [],
     paneText: () => null,
     foreground: () => null,
     sleep: async () => {},
@@ -740,6 +741,7 @@ function launching(): Launch {
     renameAgent: () => true,
     closeWorkspace: () => true,
     agentPanes: () => [...panes].filter(([, one]) => one.agent).map(([id]) => id),
+    agents: () => [],
     paneText: (_session, pane) => panes.get(pane)?.text ?? '',
     // The codex seat's rules are its first message: typing shows them in its composer, and the
     // Enter that sends them leaves the pane idle and working, as the registered captures show.
