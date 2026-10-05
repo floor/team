@@ -50,18 +50,20 @@ export type Report = {
 type Place = { pane: string; workspace?: string };
 
 /** Pane text as it is safe to show, each line cut to `limit` characters: every escape sequence
- *  is removed whole — a CSI's private parameters among them, and the payload of an OSC, DCS,
- *  APC, PM or SOS — and every control character but the line break, carriage return, backspace,
- *  bell and escape among them. Pane text is the one text `team` says that it did not write
- *  itself: a carriage return in it would overwrite the report that carries it. */
+ *  is removed whole — a CSI's private parameters among them, and the payload of a string
+ *  sequence (OSC, DCS, APC, PM, SOS), whichever introducer and terminator are mixed, 7-bit
+ *  `ESC x` or its one-byte C1 form, `ESC \` or C1 ST, or BEL to close an OSC; one left
+ *  unterminated goes to the end of its line, a string sequence never crossing one — and every
+ *  control character but the line break, carriage return, backspace, bell and escape among
+ *  them. Pane text is the one text `team` says that it did not write itself: a carriage return
+ *  in it would overwrite the report that carries it. */
 export function plainPaneText(text: string, limit = 200): string {
   return text
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b[PX^_][\s\S]*?(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b./g, '')
     .replace(/\x9b[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/[\x9d\x90\x98\x9e\x9f][\s\S]*?(?:\x07|\x9c)/g, '')
+    .replace(/(?:\x1b[\]PX^_]|[\x9d\x90\x98\x9e\x9f])[^\n]*?(?:\x07|\x1b\\|\x9c)/g, '')
+    .replace(/(?:\x1b[\]PX^_]|[\x9d\x90\x98\x9e\x9f])[^\n]*$/gm, '')
+    .replace(/\x1b./g, '')
     .replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, '')
     .split('\n')
     .map((line) => (line.length > limit ? `${line.slice(0, limit)}…` : line))
@@ -244,18 +246,21 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         let outcome: 'idle' | 'permission' | 'trust' | 'question' | 'ended' | 'timeout' = 'timeout';
         let last: ScreenKind = 'unknown';
         let endedRead: string | null = null;
+        let endedFor = 0;
         // The launch line was run a moment ago, and herdr can still report the pane's shell for
         // a poll or two after it. Captured on herdr 0.7.1 in a scratch pane: right after
         // `pane run node -e …`, `pane process-info` listed the pane's shell (`shell_pid` 11915)
         // beside the shell's own startup child, and 600 ms later listed the program alone; a
         // launch line whose relative path was missing listed the shell at once, and 400 ms later
-        // still. So the end is said only on what was read: the shell's own process is the pane's
-        // foreground program for two readings at least a full poll apart — a stretch, not two
-        // polls in the same breath — and the launch line's echo is still on the screen, so the
-        // line did run and a prompt below it is the CLI's absence, not the line's. A pane read
-        // before the line arrived, one whose echo scrolled away, or a herdr that can't say (no
-        // shell process info) is waited out to the deadline: the end is never inferred from the
-        // screen's text or from one reading.
+        // still. A slow wrapper looks the same for longer: the reviewer's drew its CLI on the
+        // fourth poll, so a stretch of one or two polls is not an end. The end is said only on
+        // what was read: the shell's own process is the pane's foreground program for three
+        // full polls on end — one reading starts the stretch and three more carry it past
+        // `pollMs` three times, and a single reading, the verdict's mutation, can never reach it
+        // — and the launch line's echo is still on the screen, so the line did run and a prompt
+        // below it is the CLI's absence, not the line's. A pane read before the line arrived,
+        // one whose echo scrolled away, or a herdr that can't say (no shell process info) is
+        // waited out to the deadline: the end is never inferred from the screen's text.
         let shellBackSince: number | null = null;
         for (;;) {
           const kind = host.classify(session, here.pane, op.cli);
@@ -264,10 +269,11 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           const at = host.now();
           if (kind === 'unknown' && back === true) {
             shellBackSince ??= at;
-            if (at - shellBackSince >= pollMs) {
+            if (at - shellBackSince >= 3 * pollMs) {
               const read = host.paneText?.(session, here.pane) ?? null;
               if (read !== null && echoIndex(plainPaneText(read).split('\n'), op.command) >= 0) {
                 endedRead = read;
+                endedFor = Math.round((at - shellBackSince) / 1000);
                 outcome = 'ended';
                 break;
               }
@@ -299,12 +305,13 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         dropped.add(op.seat);
         const read = endedRead ?? host.paneText?.(session, here.pane) ?? null;
         if (outcome === 'ended') {
-          // The report says only what was read: the shell is back and no CLI prompt is on the
-          // screen. The workspace is left open; the seat stays at launched, and a later `up`
-          // resumes it — the same reading covers a CLI that exited and one that never began.
+          // The report says only what was read: the shell has been the pane's foreground
+          // program for `endedFor` seconds and no CLI prompt is on the screen. The workspace is
+          // left open; the seat stays at launched, and a later `up` resumes it — the same
+          // reading covers a CLI that exited and one that never began.
           finish(
             op.seat,
-            'its pane is back at the shell and shows no CLI prompt; left at launched',
+            `its pane has been back at its shell for ${endedFor} s and shows no CLI prompt; left at launched`,
             `${paneExcerpt(read, op.command)}  run \`team up\` again to resume it\n`,
           );
           break;

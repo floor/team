@@ -352,6 +352,39 @@ describe('the pane lines a report carries', () => {
     }
   });
 
+  test('string sequences are removed whole whichever introducer and terminator are mixed', () => {
+    // The reviewer's mixed probe: an ESC-introduced OSC or DCS ended by the C1 ST, and a
+    // C1-introduced one ended by `ESC \`, each left its payload behind. Every string sequence —
+    // OSC, DCS, APC, PM, SOS — is removed with its payload whichever introducer began it
+    // (7-bit `ESC x` or the 8-bit C1) and whichever terminator ends it (`ESC \`, the C1 ST, or
+    // BEL for an OSC), in any mix.
+    const cases = [
+      '\u001b]0;secret\u009cafter', // ESC OSC, C1 ST
+      '\u009d0;secret\u001b\\after', // C1 OSC, ESC \
+      '\u001bP1|secret\u009cafter', // ESC DCS, C1 ST
+      '\u0090q|secret\u001b\\after', // C1 DCS, ESC \
+      '\u001b]0;secret\u0007after', // ESC OSC, BEL
+      '\u009d0;secret\u0007after', // C1 OSC, BEL
+      '\u001bP1|secret\u001b\\after', // ESC DCS, ESC \
+      '\u0090q|secret\u009cafter', // C1 DCS, C1 ST
+      '\u001b_q|secret\u001b\\after', // ESC APC
+      '\u009eQ|secret\u009cafter', // C1 PM
+      '\u001bXq|secret\u001b\\after', // ESC SOS
+      '\u0098Q|secret\u009cafter', // C1 SOS
+    ];
+    for (const one of cases) {
+      const out = paneExcerpt(`❯ ${command}\n${one}\n~ ❯`, command);
+      expect(out).not.toContain('secret');
+      expect(out).toContain('  | after\n');
+    }
+  });
+
+  test('an unterminated string sequence is removed to the end of its line', () => {
+    const out = paneExcerpt(`❯ ${command}\n\u001b]0;secret-no-end\nnext line\n~ ❯`, command);
+    expect(out).not.toContain('secret-no-end');
+    expect(out).toContain('  | next line\n');
+  });
+
   test('a line longer than the bound is cut to 200 characters and marked', () => {
     const out = paneExcerpt(`❯ ${command}\n${'x'.repeat(200_000)}\n~ ❯`, command);
     expect(out).toContain(`  | ${'x'.repeat(200)}…\n`);

@@ -400,10 +400,11 @@ describe('team up, live', () => {
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
     expect(io.out).toContain(
-      'claude-coordinator-acme: its pane is back at the shell and shows no CLI prompt; left at launched\n',
+      'claude-coordinator-acme: its pane has been back at its shell for 6 s and shows no CLI prompt; left at launched\n',
     );
-    // One pause per waiting seat, not the 90-second deadline's worth: two readings a poll apart.
-    expect(naps).toBeLessThanOrEqual(4);
+    // Three pauses per ended seat — the three full polls the stretch takes — not the 90-second
+    // deadline's worth of them.
+    expect(naps).toBeLessThanOrEqual(9);
     expect(io.out).toContain('  | ❯ AGENT_UNATTENDED=1 claude --model claude-opus-5-5 ');
     expect(io.out).toContain('  | zsh: command not found\n');
     expect(io.out).toContain('  run `team up` again to resume it\n');
@@ -453,6 +454,71 @@ describe('team up, live', () => {
     expect(io.out).toContain('claude-coordinator-acme: ready\n');
     expect(io.out).not.toContain('shows no CLI prompt');
     // The CLI arrived, so the seat is the state's ready — not left at launched by an early end.
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['claude-coordinator-acme']?.stage).toBe('ready');
+  });
+
+  test('one shell-back reading, even with the echo, never ends the wait', async () => {
+    await approve();
+    // The mutation the review found uncaught: letting a single shell-back sample end the wait.
+    // One reading is not a stretch — a pane can show its shell for a moment between the launch
+    // and the CLI's first draw — so the sample is only a start, and the deadline is the report.
+    const made = world();
+    const commands = new Map<string, string>();
+    const run = made.launch.paneRun.bind(made.launch);
+    made.launch.paneRun = (session, pane, command) => {
+      commands.set(pane, command);
+      return run(session, pane, command);
+    };
+    const read = made.launch.paneText.bind(made.launch);
+    made.launch.paneText = (session, pane) => {
+      const command = commands.get(pane);
+      return command ? `❯ ${command.split('\n')[0]}\nstartup still drawing\n` : read(session, pane);
+    };
+    const seen = new Map<string, number>();
+    made.launch.shellBack = (_session, pane) => {
+      const n = (seen.get(pane) ?? 0) + 1;
+      seen.set(pane, n);
+      return n === 1;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('claude-coordinator-acme: timed out after 90 s waiting for its idle prompt');
+    expect(io.out).not.toContain('shows no CLI prompt');
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['claude-coordinator-acme']?.stage).toBe('launched');
+  });
+
+  test('the wrapper that draws its CLI on the fourth poll is not reported as ended', async () => {
+    await approve();
+    // The reviewer's slow-start probe: a wrapper keeps the shell in front for three polls and
+    // the CLI draws on the fourth. The shell-back reading must hold through the fourth reading —
+    // three full poll intervals — before an end is said; two readings ended it at the second.
+    const made = world();
+    const commands = new Map<string, string>();
+    const run = made.launch.paneRun.bind(made.launch);
+    made.launch.paneRun = (session, pane, command) => {
+      commands.set(pane, command);
+      return run(session, pane, command);
+    };
+    const polls = new Map<string, number>();
+    made.launch.shellBack = (_session, pane) => {
+      const n = (polls.get(pane) ?? 0) + 1;
+      polls.set(pane, n);
+      return n <= 3;
+    };
+    const read = made.launch.paneText.bind(made.launch);
+    made.launch.paneText = (session, pane) => {
+      const command = commands.get(pane);
+      if (!command) return read(session, pane);
+      return (polls.get(pane) ?? 0) <= 3 ? `❯ ${command.split('\n')[0]}\nstartup still drawing\n` : IDLE;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(0);
+    expect(io.out).toContain('claude-coordinator-acme: ready\n');
+    expect(io.out).not.toContain('shows no CLI prompt');
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']?.stage).toBe('ready');
   });
