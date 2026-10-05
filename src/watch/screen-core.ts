@@ -11,6 +11,13 @@ import type { ComposerReading } from './screen-profile.ts';
 
 const BUDGET_MS = 100;
 
+/**
+ * The status row's closed grammar for Grok in a bordered frame: model family and version,
+ * then only tokens the captures show (context size, effort, quota, files edited), runs of
+ * spaces and `Run Everything` at the end.
+ */
+const CLOSED_GROK = /^  Grok \d+(?:\.\d+)*(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$/;
+
 // The rule a `below_last_rule` pattern has to sit under. It is the core's, not the profile's.
 const RULE_LINE = /^\s*[─━]{8,}\s*$/;
 
@@ -714,6 +721,18 @@ function statusLast(
     const under = lines[status - 1] ?? '';
     if (!border.bottom.test(under) || under.length !== above.length) return { kind: 'unknown' };
     if ((lines[status - 2] ?? '').trim() === '') return { kind: 'unknown' };
+    const statusLine = lines[status] ?? '';
+    if (under.length < statusLine.length) return { kind: 'unknown' };
+    if (statusLine.startsWith('  Grok')) {
+      if (!CLOSED_GROK.test(statusLine)) return { kind: 'unknown' };
+    } else if (!composer.statusLine.some((re) => re.test(statusLine) && re.source.endsWith('Run Everything$'))) {
+      return { kind: 'unknown' };
+    }
+    const workspace = lines[status + 1];
+    if (!composer.statusBelow || workspace === undefined || !composer.statusBelow.line.test(workspace)) return { kind: 'unknown' };
+    for (let i = status + 2; i < lines.length; i++) {
+      if ((lines[i] ?? '').trim() !== '') return { kind: 'unknown' };
+    }
     end = status - 1;
   } else if (input === 0 || above.trim() !== '') {
     return { kind: 'unknown' };

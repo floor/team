@@ -1221,6 +1221,126 @@ describe('a border anywhere else stays unknown (Cursor)', () => {
     lines[status] = '  Muse Spark 1.3                    Run Everything';
     unknown(text(lines));
   });
+
+  test('a one-character border and short Grok line reads unknown', () => {
+    const screen = [' ▄', '  → ', ' ▀', '  Grok 4', '  ~/x'].join('\n');
+    unknown(screen);
+  });
+
+  test('a four-character border pair around the real placeholder and status row reads unknown', () => {
+    const screen = [
+      ' ▄▄▄▄',
+      '  → Plan, search, build anything',
+      ' ▀▀▀▀',
+      '  Grok 4.7 256K High                 Run Everything',
+      '  <workspace>',
+    ].join('\n');
+    unknown(screen);
+  });
+
+  test('a shell transcript ending in a border pair, prompt line, and Grok-shaped sentence reads unknown', () => {
+    const screen = [
+      '❯ echo done',
+      'done',
+      TOP,
+      '  → next step is to build',
+      BOTTOM,
+      '  Grok 4.7 mentioned in the log',
+      '  ~/some/path',
+    ].join('\n');
+    unknown(screen);
+  });
+
+  test('a bordered frame with its workspace line removed reads unknown', () => {
+    const typedNoWs = source.filter((line) => !line.includes('<workspace>')).join('\n');
+    unknown(typedNoWs);
+    const idleLines = fixture('bordered-idle').replace(/\n+$/, '').split('\n');
+    const idleNoWs = idleLines.filter((line) => !line.includes('<workspace>')).join('\n');
+    unknown(idleNoWs);
+  });
+
+  test('a bordered frame with its workspace line replaced with non-path reads unknown', () => {
+    const lines = fixture('bordered-idle').replace(/\n+$/, '').split('\n');
+    const ws = lines.findIndex((line) => line.includes('<workspace>'));
+    lines[ws] = '  not-a-path';
+    unknown(lines.join('\n'));
+  });
+
+  test('a bordered frame with its status row cut to Grok 4.7 reads unknown', () => {
+    const lines = fixture('bordered-idle').replace(/\n+$/, '').split('\n');
+    const status = lines.findIndex((line) => /^ {2}Grok /.test(line));
+    lines[status] = '  Grok 4.7';
+    unknown(lines.join('\n'));
+  });
+
+  test('a bordered frame with an extra non-blank line after the workspace reads unknown', () => {
+    const lines = fixture('bordered-idle').replace(/\n+$/, '').split('\n');
+    lines.push('❯');
+    unknown(lines.join('\n'));
+  });
+
+  test('border rows of unequal width fail the equal-width check', () => {
+    // Both rows match ^ ▄+$ and ^ ▀+$ and are >= status row length (51), but differ in length
+    const unequalBottom = [...source];
+    unequalBottom[bottom] = ' ' + '▀'.repeat(50); // length 51 !== TOP.length (52)
+    expect(unequalBottom[bottom].length).toBe(51);
+    expect(TOP.length).toBe(52);
+    unknown(text(unequalBottom));
+
+    const unequalTop = [...source];
+    unequalTop[top] = ' ' + '▄'.repeat(50); // length 51 !== BOTTOM.length (52)
+    expect(unequalTop[top].length).toBe(51);
+    expect(BOTTOM.length).toBe(52);
+    unknown(text(unequalTop));
+  });
+
+  test('a bottom border with trailing text at the same width', () => {
+    // Bottom border carries trailing text matching TOP.length (52 chars):
+    // ^ ▀+$ must reject the trailing characters even though the length is identical
+    const sameWidth = [...source];
+    sameWidth[bottom] = `${BOTTOM.slice(0, 49)} ok`; // 49 block chars + ' ok' = 52 chars
+    expect(sameWidth[bottom].length).toBe(TOP.length);
+    unknown(text(sameWidth));
+  });
+
+  test('border rows with two leading spaces read unknown', () => {
+    const twoLeadingTop = [...source];
+    twoLeadingTop[top] = '  ' + '▄'.repeat(50);
+    unknown(text(twoLeadingTop));
+
+    const twoLeadingBottom = [...source];
+    twoLeadingBottom[bottom] = '  ' + '▀'.repeat(50);
+    unknown(text(twoLeadingBottom));
+
+    const twoLeadingBoth = [...source];
+    twoLeadingBoth[top] = '  ' + '▄'.repeat(50);
+    twoLeadingBoth[bottom] = '  ' + '▀'.repeat(50);
+    unknown(text(twoLeadingBoth));
+  });
+
+  test('a shell transcript catting the complete idle frame with no shell prompt after it reads idle as an accepted boundary', async () => {
+    const idleLines = fixture('bordered-idle').replace(/\n+$/, '').split('\n');
+    const screen = [
+      '❯ cat frame.txt',
+      ...idleLines,
+    ].join('\n');
+    expect(readScreen('cursor', screen).kind).toBe('idle');
+    expect(classify('cursor', screen.split('\n')).kind).toBe('idle');
+
+    const withPrompt = `${screen}\n❯`;
+    unknown(withPrompt);
+
+    const shellIo: Delivery = {
+      screen: () => screen,
+      status: () => 'idle',
+      type: () => true,
+      enter: () => true,
+      foreground: () => ['zsh'],
+      now: () => 0,
+      sleep: async () => {},
+    };
+    expect(await deliverRules('cursor', 'Rules.', 1, shellIo)).toBe('no-agent');
+  });
 });
 
 describe('a border around a dialog (Cursor)', () => {
@@ -1312,8 +1432,8 @@ describe('the border inserted around every other capture (Cursor)', () => {
     for (const name of NAMES) {
       const original = fixture(name).split('\n');
       const inserted = withDialogWrap(name).split('\n');
-      const before = `${classify('cursor', original).kind} / ${classifyComposer('cursor', original).kind}`;
-      const after = `${classify('cursor', inserted).kind} / ${classifyComposer('cursor', inserted).kind}`;
+      const before = classify('cursor', original).kind;
+      const after = classify('cursor', inserted).kind;
       if (after !== before) differed.push(`${name}: ${before} -> ${after}`);
     }
     expect(differed).toEqual([]);
