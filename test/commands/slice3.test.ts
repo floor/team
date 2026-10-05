@@ -248,7 +248,8 @@ describe('team doctor', () => {
     );
     const out = await doctor({ loggedIn: () => false, onPath: () => false });
     expect(out.out).toContain('MISS  log in to claude-code: `claude auth login`\n');
-    expect(out.out).toContain('MISS  deepseek-acme: its launcher `team-deepseek` is not on the PATH\n');
+    expect(out.out).toContain('MISS  deepseek-acme: its launch line starts `team-deepseek`, which is not on the PATH\n');
+    expect(out.out).toContain('MISS  deepseek-acme-2: its launch line starts `team-deepseek`, which is not on the PATH\n');
     expect(out.out).toContain(
       'team doctor: 4 missing, 2 warnings: 4 of them block `up` and `add`\n',
     );

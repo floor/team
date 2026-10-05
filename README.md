@@ -121,7 +121,16 @@ budgets:                      # the owner's: reserve or floor per account, marks
   doctor` says what the others still need. `vendor`, `model` and `version` spell one seat's model.
   `account` names the budget account the seat spends when one vendor has two; without it, the seat
   spends its `vendor`, and changing either is an edit the owner re-approves.
-- `launch` is the plain command, without approval flags: the profile adds them. `count: 2` makes the
+- `launch` is the plain command, without approval flags: the profile adds them. It runs in the
+  folder the seat starts in — the lobby for a seat that works in worktrees — and `team` never
+  rewrites it: `team doctor` checks its first word there — one fully quoted literal with its quotes
+  removed, the way a shell would run it — and any relative argument. `up` and `add` leave a seat
+  out, saying the same words, when the first word is missing there, or when the first word is a shell
+  (`sh`, `bash`, `zsh`, by name or by path) whose first argument is the script, not an option, and that
+  relative script path resolves from the project root and not from that folder (an option-bearing
+  line such as `zsh -x ../x` is a note); every other relative argument, and a line that quotes or
+  substitutes text, is reported as not checked, never refused.
+  `count: 2` makes the
   numbered names; `parked` keeps a seat out of idle reports, `stopped` keeps it out of `up`.
 - `workspace.mode` is `shared` (every seat in the project) or `worktree` (each task in its own
   checkout, with `path`, `base` and `setup`). Under `worktree`, a seat that isn't `mode: shared`
@@ -223,7 +232,7 @@ the commands below read.
 | `team init` | writes the skeleton `.agents/team.yaml` and adds it and its runtime files to `.git/info/exclude` | the owner |
 | `team approve` | reads the whole file back for a last look, then records it, its ceilings and its seats on this machine; `--show` prints it | the owner (`--show`: anyone) |
 | `team check <ref>` | checks one commit, a `a..b` range, or a PR body (`--pr <file>`, `-` reads stdin) against the signature rule; exit 1 when one is refused | anyone; read only |
-| `team doctor` | checks this machine for what the file needs: herdr, each CLI, login, launcher, model, watch heartbeat; `--login` checks only CLI sign-ins | anyone; read only |
+| `team doctor` | checks this machine for what the file needs: herdr, each CLI, login, launch line, model, watch heartbeat; `--login` checks only CLI sign-ins | anyone; read only |
 | `team status` | prints the file's seats against the running session, each difference with its repair; `--json` outputs a stable JSON document (`format: 1`) for scripts; exit 1 when they differ | anyone; read only |
 | `team up` / `team down` | starts / stops the session and its seats | `up`: the owner; `down`: the owner, the coordinator or the operator seat |
 | `team watch` | watches the session, reports idle seats and nudges the operator; `--no-nudge` and `--no-notify` are the owner's and do not silence a report addressed to the owner | anyone, one per session; it types only its fixed nudge, into an empty idle prompt |
