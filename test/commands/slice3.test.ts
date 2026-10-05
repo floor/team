@@ -7,7 +7,8 @@ import { runApprove } from '../../src/commands/approve.ts';
 import { loadConfig } from '../../src/commands/check.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
 import { rulesOf } from '../../src/launch/rules.ts';
-import { rulesFileHash, rulesFilePath, writeRulesFile } from '../../src/launch/rules-file.ts';
+import { rulesFileHash, rulesFilePath, rulesFilePathOf, writeRulesFile } from '../../src/launch/rules-file.ts';
+import { approvalStanding } from '../../src/store/store.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
 import { paneStillRunning, runDown, type DownSources } from '../../src/commands/down.ts';
 import { runUp, type UpSources } from '../../src/commands/up.ts';
@@ -203,12 +204,15 @@ function doctorSources(overrides: Partial<DoctorSources> = {}): DoctorSources {
 /** Writes every unstopped message seat's rules file, as `up` leaves them: the machine these
  *  tests stand for has a team that ran. */
 function writeRulesFiles() {
+  // Written through the approval in force, as the writer itself insists: every caller has run
+  // `team approve` on the file first.
+  const standing = approvalStanding(root, home);
   const parsed = validateTeamFile(readFileSync(join(root, '.agents/team.yaml'), 'utf8'));
   if (!parsed.ok) throw new Error('the fixture does not validate');
   for (const seat of parsed.team.seats) {
     if (seat.stopped) continue;
     const text = rulesOf(parsed.team, seat);
-    const written = writeRulesFile(rulesFilePath(parsed.team.project, root, home, seat.name) as string, text, rulesFileHash(text));
+    const written = writeRulesFile(standing, seat.name, root, home, text, rulesFileHash(text));
     if (!written.ok) throw new Error('the rules file did not write');
   }
 }
@@ -701,10 +705,9 @@ describe('team down', () => {
       const session = (state.sessions['acme-web'] ??= emptySession());
       session.seats['deepseek-acme-tmp-1'] = { stage: 'ready', temporary: { like: 'deepseek-acme', until: 'result:out.md' } };
     });
-    const parsed = validateTeamFile(readFileSync(join(root, '.agents/team.yaml'), 'utf8'));
-    if (!parsed.ok) throw new Error('fixture');
-    const rulesFile = rulesFilePath(parsed.team.project, root, home, 'deepseek-acme-tmp-1') as string;
-    writeRulesFile(rulesFile, 'Rules.\n', rulesFileHash('Rules.\n'));
+    const standing = approvalStanding(root, home);
+    const rulesFile = rulesFilePathOf(standing, 'deepseek-acme-tmp-1', root, home) as string;
+    writeRulesFile(standing, 'deepseek-acme-tmp-1', root, home, 'Rules.\n', rulesFileHash('Rules.\n'));
     // The exit is typed at an idle prompt, read back, and sent; the pane leaves the agent list.
     let sent = false;
     let box: string | undefined;

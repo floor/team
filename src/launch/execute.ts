@@ -16,12 +16,14 @@ export type Host = {
   typeLine(session: string, pane: string, text: string): boolean | 'no-agent';
   /** `false` is a delivery that stopped without a reading worth reporting (no host, or no live
    *  pane); a `Refusal` is one that stopped on a screen the report can name. `file` is the
-   *  seat's rules delivery: the text the file holds, the file's path, the one line typed. */
+   *  seat's rules delivery: the text the file holds, the file's path, the one line typed, and
+   *  the seat's name — the writer builds its own path from the name, never from a path a
+   *  caller hands it. */
   deliverRules?(
     session: string,
     pane: string,
     cli: string,
-    file: { text: string; path: string; line: string },
+    file: { text: string; path: string; line: string; seat: string },
     seconds: number,
   ): Promise<boolean | 'no-agent' | Refusal>;
   renameAgent(session: string, pane: string, name: string): boolean;
@@ -490,7 +492,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
       case 'deliver': {
         if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         const here = place(op.seat, op.pane);
-        const file = { text: op.rules, path: op.path, line: op.line };
+        const file = { text: op.rules, path: op.path, line: op.line, seat: op.seat };
         const delivered = here ? await host.deliverRules?.(session, here.pane, op.cli, file, op.seconds) : false;
         if (delivered === 'no-agent') {
           dropped.add(op.seat);

@@ -382,7 +382,7 @@ async function recover(
   // that delivery.
   const delivery = rulesDeliveryOf(standing, team, seat, root, host.home);
   if ('refusal' in delivery) return 'rule delivery';
-  if (!writeRulesFile(delivery.path, delivery.text, rulesFileHash(delivery.text)).ok) return 'rule delivery';
+  if (!writeRulesFile(standing, seat.name, root, host.home, delivery.text, rulesFileHash(delivery.text)).ok) return 'rule delivery';
   const delivered = await deliverRules(
     profile.cli,
     delivery.line,

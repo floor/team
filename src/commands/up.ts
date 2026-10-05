@@ -431,8 +431,9 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     paneRun: launch.paneRun,
     typeLine: () => false,
     deliverRules: async (session, pane, cli, file, seconds) => {
-      // The rules go to the file first; nothing is typed until it holds them.
-      const written = writeRulesFile(file.path, file.text, rulesFileHash(file.text));
+      // The rules go to the file first; nothing is typed until it holds them. The writer
+      // builds the path itself, from the approval in force and the seat's name.
+      const written = writeRulesFile(standing, file.seat, root, sources.home, file.text, rulesFileHash(file.text));
       if (!written.ok) return fileRefusalOf(written);
       // The plan already refused a path that can't be typed; this is the same check again, so a
       // path that reached this far by a caller's mistake is refused before anything is typed.

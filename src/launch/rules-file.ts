@@ -35,9 +35,15 @@ export function typeableSeat(seat: string): boolean {
 /** The file a seat's rules are written to: `<project state folder>/rules/<seat name>.md`, the
  *  folder the approval store already uses for this project, never inside a worktree, the lobby
  *  or the project. A seat name the team file's own rule refuses gets no path at all — null, so
- *  nothing downstream can normalise it somewhere else. */
+ *  nothing downstream can normalise it somewhere else — and no component of the built path may
+ *  be `..` or empty: the pieces (`join`'s own normalisation, the store's sanitised project
+ *  name, the validated seat) already keep that closed, and the check is the belt under them,
+ *  so no future caller can walk a built path out of the state folder. */
 export function rulesFilePath(project: string, root: string, home: string, seat: string): string | null {
-  return typeableSeat(seat) ? join(storePath(project, root, home), 'rules', `${seat}.md`) : null;
+  if (!typeableSeat(seat)) return null;
+  const path = join(storePath(project, root, home), 'rules', `${seat}.md`);
+  const components = path.startsWith('/') ? path.split('/').slice(1) : path.split('/');
+  return components.every((component) => component !== '' && component !== '..') ? path : null;
 }
 
 /** The project name every rules-file path is resolved from: the **approved copy's**. A project
@@ -163,18 +169,33 @@ export type RulesFileWrite =
   | { ok: false; why: 'folder'; what: string }
   | { ok: false; why: 'place'; what: string };
 
-/** Writes the seat's rules to `path` as the approval's equal: nothing is followed, nothing the
- *  writer did not make is replaced. Every folder from `team`'s per-user state root down to
- *  `rules/` is checked with `lstat` — a real directory of this user's, not a link, `rules/` and
- *  the project folder exactly `0700` (a looser folder is refused, never `chmod`'d) — and a
- *  missing level is made one level at a time with an explicit mode, never by a recursive create
- *  that could walk through a link. The final name, if it holds anything, must be this user's
- *  `0600` regular file or the write refuses and says what is there. The text lands through a
- *  temporary of an unpredictable name opened `O_CREAT | O_EXCL | O_NOFOLLOW` at mode `0600` — an
- *  open that fails writes nothing and leaves nothing, and the temporary is removed on every
- *  failure path — and after the rename the file is read back without following a link and its
- *  SHA-256 compared with `hash12`, the hash the line carries: a mismatch refuses, nothing typed. */
-export function writeRulesFile(path: string, text: string, hash12: string, random: () => string = () => randomBytes(10).toString('hex')): RulesFileWrite {
+/** Writes the seat's rules to its file as the approval's equal: nothing is followed, nothing
+ *  the writer did not make is replaced. The path is built here, from the approval in force and
+ *  the seat's name — a caller hands back no path of its own, so no `..` or swapped folder can
+ *  be fed to the write — and a seat that has no path (no approval in force, a copy that can't
+ *  be read, a name the rule refuses) is `not-written`. Every folder from `team`'s per-user
+ *  state root down to `rules/` is checked with `lstat` — a real directory of this user's, not a
+ *  link, `rules/` and the project folder exactly `0700` (a looser folder is refused, never
+ *  `chmod`'d) — and a missing level is made one level at a time with an explicit mode, never by
+ *  a recursive create that could walk through a link. The final name, if it holds anything,
+ *  must be this user's `0600` regular file or the write refuses and says what is there. The
+ *  text lands through a temporary of an unpredictable name opened
+ *  `O_CREAT | O_EXCL | O_NOFOLLOW` at mode `0600` — an open that fails writes nothing and
+ *  leaves nothing, and the temporary is removed on every failure path — and after the rename
+ *  the file is read back without following a link and its SHA-256 compared with `hash12`, the
+ *  hash the line carries: a mismatch refuses, nothing typed. */
+export function writeRulesFile(
+  standing: Standing,
+  seat: string,
+  root: string,
+  home: string,
+  text: string,
+  hash12: string,
+  random: () => string = () => randomBytes(10).toString('hex'),
+): RulesFileWrite {
+  const built = rulesFilePathOf(standing, seat, root, home);
+  if (built === null) return { ok: false, why: 'not-written' };
+  const path = built;
   // The ladder, top down: team's per-user state root (`<home>/.config/team`), the project state
   // folder, `rules/`. The mode is required only of the two `team` itself makes.
   const ladder: Array<{ at: string; mode: number | null }> = [
@@ -255,16 +276,31 @@ export function rulesFileHolds(path: string, hash12: string): boolean {
   return read !== null && rulesFileHash(read) === hash12;
 }
 
-/** Removes a seat's rules file — a temporary seat's, with the seat. The name is checked where
- *  the unlink happens, not only where the path was built: a corrupt state entry holding `..`
- *  or any name the team file's rule refuses must not turn a removal into an unlink somewhere
- *  else, so anything that is not `<state folder>/rules/<a name the file accepts>.md` is left
- *  entirely alone. A file that is not there, or a write that never landed, leaves nothing to
- *  complain about. */
-export function removeRulesFile(path: string | null): void {
+/** Removes a seat's rules file — a temporary seat's, with the seat. The path is built here,
+ *  like the writer's, from the approval in force and the seat's name, and the writer's own
+ *  checked chain is walked again before the unlink: every folder from the state root down to
+ *  `rules/` must still be a real directory of this user's at the mode the writer keeps, so a
+ *  `rules/` swapped for a symbolic link after the write is refused, never unlinked through.
+ *  The final name must be this user's `0600` regular file — only what the writer itself would
+ *  have made is taken. A seat with no path, a level of the chain missing (nothing was ever
+ *  written), a chain that is not the writer's, a file that is not there: each leaves
+ *  everything alone, nothing to complain about. */
+export function removeRulesFile(standing: Standing, seat: string, root: string, home: string): void {
+  const path = rulesFilePathOf(standing, seat, root, home);
   if (path === null) return;
-  if (basename(dirname(path)) !== 'rules') return;
-  if (!typeableSeat(basename(path).replace(/\.md$/, ''))) return;
+  const ladder: Array<{ at: string; mode: number | null }> = [
+    { at: dirname(dirname(dirname(path))), mode: null },
+    { at: dirname(dirname(path)), mode: 0o700 },
+    { at: dirname(path), mode: 0o700 },
+  ];
+  for (const level of ladder) {
+    const held = heldAt(level.at);
+    if (held.kind === 'missing') return; // nothing was ever written here
+    if (folderFinding(held, level.mode) !== null) return; // not the writer's chain: leave it
+  }
+  const held = heldAt(path);
+  if (held.kind === 'missing') return;
+  if (placeFinding(held) !== null) return; // only the writer's own file is ours to take
   try {
     unlinkSync(path);
   } catch {

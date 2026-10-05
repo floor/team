@@ -9,7 +9,7 @@ import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
 import type { Launch } from '../commands/up.ts';
 import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
-import { removeRulesFile, rulesFileHash, rulesFileHolds, rulesFilePathOf, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
+import { removeRulesFile, rulesFileHash, rulesFileHolds, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { branchPresent, readMerge } from '../end/condition.ts';
 import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines.ts';
@@ -543,8 +543,9 @@ function hostOf(input: {
     paneRun: launch.paneRun,
     typeLine: () => false,
     deliverRules: async (session, pane, cli, file, seconds) => {
-      // The rules go to the file first; nothing is typed until it holds them.
-      const written = writeRulesFile(file.path, file.text, rulesFileHash(file.text));
+      // The rules go to the file first; nothing is typed until it holds them. The writer
+      // builds the path itself, from the approval in force and the seat's name.
+      const written = writeRulesFile(input.standing, file.seat, input.root, input.home, file.text, rulesFileHash(file.text));
       if (!written.ok) return fileRefusalOf(written);
       if (!typeablePath(file.path)) {
         return { stop: 'path', typed: false, sent: false, kind: 'unknown' as const, row: null };
@@ -594,9 +595,9 @@ function hostOf(input: {
       if (!running.some((item) => item.name === name)) running.push({ name, vendor: seat.vendor, temporary: Boolean(temporary) });
     },
     drop(name) {
-      // A temporary seat's rules file goes with the seat. The path is resolved the one way,
-      // from the approval in force, like every other reader of the file.
-      if (temporary && name === seat.name) removeRulesFile(rulesFilePathOf(input.standing, name, input.root, input.home));
+      // A temporary seat's rules file goes with the seat. The remover builds the path itself,
+      // from the approval in force and the seat's name, and walks the writer's checked chain.
+      if (temporary && name === seat.name) removeRulesFile(input.standing, name, input.root, input.home);
       updateState(dir, (file) => {
         const seats = file.sessions[session]?.seats;
         if (seats) delete seats[name];

@@ -34,6 +34,21 @@ function codexSeat() {
   return { team, seat };
 }
 
+
+// A home, an approval in force, and the seat the file is for — with the write already going
+// through the writer's own signature: the approval in force and the seat's name. No test hands
+// the writer or the remover a path.
+function fresh() {
+  const home = mkdtempSync(join(tmpdir(), 'team-rules-home-'));
+  // `~/.config` is the user's own configuration folder, never team's to make: the writer's
+  // ladder starts at team's state root inside it.
+  mkdirSync(join(home, '.config'), { recursive: true });
+  const { team, seat } = codexSeat();
+  const standing = verifiedOf(team, EXAMPLE, '/nowhere');
+  const write = (text: string, hash: string, random?: () => string) =>
+    writeRulesFile(standing, seat.name, '/nowhere', home, text, hash, random);
+  return { home, standing, seat, path: pathOf(team.project, '/nowhere', home, seat.name), text: rulesOf(team, seat), write };
+}
 describe('the line and its path', () => {
   test('a path of letters, digits and . _ / @ + - is typeable; anything else is not', () => {
     expect(typeablePath('/home/owner/.config/team/demo-3f9c2a8e1d7b/rules/implementer.md')).toBe(true);
@@ -76,14 +91,6 @@ describe('the line and its path', () => {
 });
 
 describe('writing the file', () => {
-  function fresh() {
-    const home = mkdtempSync(join(tmpdir(), 'team-rules-home-'));
-    // `~/.config` is the user's own configuration folder, never team's to make: the writer's
-    // ladder starts at team's state root inside it.
-    mkdirSync(join(home, '.config'), { recursive: true });
-    const { team, seat } = codexSeat();
-    return { home, path: pathOf(team.project, '/nowhere', home, seat.name), text: rulesOf(team, seat) };
-  }
 
   // A ladder the writer accepts, for fixtures that plant something inside it: the store folder
   // and `rules/` exactly `0700` (mode 0700 has no bits a umask could clear).
@@ -94,10 +101,10 @@ describe('writing the file', () => {
   }
 
   test('the file is written 0600, and every folder of its ladder 0700, whatever the umask leaves in', () => {
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     const umask = process.umask(0o022);
     try {
-      expect(writeRulesFile(path, text, rulesFileHash(text)).ok).toBe(true);
+      expect(write(text, rulesFileHash(text)).ok).toBe(true);
       expect(lstatSync(path).mode & 0o777).toBe(0o600);
       expect(lstatSync(dirname(path)).mode & 0o777).toBe(0o700);
       expect(lstatSync(dirname(dirname(path))).mode & 0o777).toBe(0o700);
@@ -109,9 +116,9 @@ describe('writing the file', () => {
   });
 
   test('the file holds exactly the approved rules text, byte for byte', () => {
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     try {
-      writeRulesFile(path, text, rulesFileHash(text));
+      write(text, rulesFileHash(text));
       expect(readFileSync(path, 'utf8')).toBe(text);
     } finally {
       rmSync(home, { recursive: true, force: true });
@@ -119,10 +126,10 @@ describe('writing the file', () => {
   });
 
   test('a rewrite lands whole and leaves no temporary file behind', () => {
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     try {
-      writeRulesFile(path, text, rulesFileHash(text));
-      writeRulesFile(path, `${text}\nOne more rule.\n`, rulesFileHash(`${text}\nOne more rule.\n`));
+      write(text, rulesFileHash(text));
+      write(`${text}\nOne more rule.\n`, rulesFileHash(`${text}\nOne more rule.\n`));
       expect(readFileSync(path, 'utf8')).toBe(`${text}\nOne more rule.\n`);
       expect(readdirSync(dirname(path)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
     } finally {
@@ -131,13 +138,13 @@ describe('writing the file', () => {
   });
 
   test('a hundred deliveries leave no descriptor behind', () => {
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     try {
       // The count of open descriptors, read from the folder the platform lists them in: a
       // descriptor the writer forgets to close is one more entry here, one per delivery.
       const listed = existsSync('/proc/self/fd') ? '/proc/self/fd' : '/dev/fd';
       const before = readdirSync(listed).length;
-      for (let at = 0; at < 100; at++) expect(writeRulesFile(path, text, rulesFileHash(text)).ok).toBe(true);
+      for (let at = 0; at < 100; at++) expect(write(text, rulesFileHash(text)).ok).toBe(true);
       expect(readdirSync(listed).length).toBe(before);
     } finally {
       rmSync(home, { recursive: true, force: true });
@@ -145,13 +152,13 @@ describe('writing the file', () => {
   });
 
   test('a symbolic link at the file is refused, never written through', () => {
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     try {
       const victim = join(home, 'victim.md');
       writeFileSync(victim, 'do not touch\n');
       mkLadder(path);
       symlinkSync(victim, path);
-      expect(writeRulesFile(path, text, rulesFileHash(text))).toEqual({ ok: false, why: 'place', what: 'a symbolic link' });
+      expect(write(text, rulesFileHash(text))).toEqual({ ok: false, why: 'place', what: 'a symbolic link' });
       expect(readFileSync(victim, 'utf8')).toBe('do not touch\n');
       expect(readlinkSync(path)).toBe(victim);
     } finally {
@@ -160,13 +167,13 @@ describe('writing the file', () => {
   });
 
   test('a symbolic link at the rules folder is refused, nothing written through it', () => {
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     try {
       const elsewhere = mkdtempSync(join(tmpdir(), 'team-rules-elsewhere-'));
       mkdirSync(dirname(dirname(dirname(path))), { recursive: true, mode: 0o700 });
-      mkdirSync(dirname(dirname(path)), { mode: 0o700 });
+      mkdirSync(dirname(dirname(path)), { recursive: true, mode: 0o700 });
       symlinkSync(elsewhere, dirname(path));
-      expect(writeRulesFile(path, text, rulesFileHash(text))).toEqual({ ok: false, why: 'folder', what: 'a symbolic link' });
+      expect(write(text, rulesFileHash(text))).toEqual({ ok: false, why: 'folder', what: 'a symbolic link' });
       expect(readdirSync(elsewhere)).toEqual([]);
       rmSync(elsewhere, { recursive: true, force: true });
     } finally {
@@ -175,12 +182,12 @@ describe('writing the file', () => {
   });
 
   test('a symbolic link at the project state folder is refused, nothing written through it', () => {
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     try {
       const elsewhere = mkdtempSync(join(tmpdir(), 'team-rules-elsewhere-'));
       mkdirSync(dirname(dirname(dirname(path))), { recursive: true, mode: 0o700 });
       symlinkSync(elsewhere, dirname(dirname(path)));
-      expect(writeRulesFile(path, text, rulesFileHash(text))).toEqual({ ok: false, why: 'folder', what: 'a symbolic link' });
+      expect(write(text, rulesFileHash(text))).toEqual({ ok: false, why: 'folder', what: 'a symbolic link' });
       expect(readdirSync(elsewhere)).toEqual([]);
       rmSync(elsewhere, { recursive: true, force: true });
     } finally {
@@ -189,14 +196,14 @@ describe('writing the file', () => {
   });
 
   test('a link pre-planted at the old process-id temporary name is ignored and untouched', () => {
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     try {
-      writeRulesFile(path, text, rulesFileHash(text));
+      write(text, rulesFileHash(text));
       const victim = join(home, 'pid-victim.md');
       writeFileSync(victim, 'do not touch\n');
       const old = `${path}.${process.pid}.tmp`;
       symlinkSync(victim, old);
-      expect(writeRulesFile(path, `${text}\nAgain.\n`, rulesFileHash(`${text}\nAgain.\n`)).ok).toBe(true);
+      expect(write(`${text}\nAgain.\n`, rulesFileHash(`${text}\nAgain.\n`)).ok).toBe(true);
       expect(readFileSync(victim, 'utf8')).toBe('do not touch\n');
       expect(readlinkSync(old)).toBe(victim);
       expect(readdirSync(dirname(path)).filter((name) => name.endsWith('.tmp'))).toEqual([`${basename(path)}.${process.pid}.tmp`]);
@@ -206,14 +213,14 @@ describe('writing the file', () => {
   });
 
   test('a link pre-planted at the temporary\'s own name is refused by the exclusive no-follow open', () => {
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     try {
       const victim = join(home, 'temp-victim.md');
       writeFileSync(victim, 'do not touch\n');
       const planted = join(dirname(path), `${basename(path)}.planted.tmp`);
       mkLadder(path);
       symlinkSync(victim, planted);
-      const written = writeRulesFile(path, text, rulesFileHash(text), () => 'planted');
+      const written = write(text, rulesFileHash(text), () => 'planted');
       expect(written).toEqual({ ok: false, why: 'not-written' });
       expect(readFileSync(victim, 'utf8')).toBe('do not touch\n');
       expect(readlinkSync(planted)).toBe(victim);
@@ -227,12 +234,12 @@ describe('writing the file', () => {
     // Without the exclusive flag the open would land in the planted file — overwriting its
     // head, keeping its tail — and the rename would move someone else's file into the final
     // name. With it, the name being taken is a refusal, nothing written.
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     try {
       const planted = join(dirname(path), `${basename(path)}.planted.tmp`);
       mkLadder(path);
       writeFileSync(planted, 'someone else\'s bytes, longer than any text the writer would put here\n');
-      const written = writeRulesFile(path, text, rulesFileHash(text), () => 'planted');
+      const written = write(text, rulesFileHash(text), () => 'planted');
       expect(written).toEqual({ ok: false, why: 'not-written' });
       expect(readFileSync(planted, 'utf8')).toBe('someone else\'s bytes, longer than any text the writer would put here\n');
       expect(() => lstatSync(path)).toThrow();
@@ -242,11 +249,11 @@ describe('writing the file', () => {
   });
 
   test('a wider mode at the final name is refused, not replaced or chmod\'d', () => {
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     try {
-      writeRulesFile(path, text, rulesFileHash(text));
+      write(text, rulesFileHash(text));
       chmodSync(path, 0o644);
-      expect(writeRulesFile(path, `${text}\nNo.\n`, rulesFileHash(`${text}\nNo.\n`))).toEqual({
+      expect(write(`${text}\nNo.\n`, rulesFileHash(`${text}\nNo.\n`))).toEqual({
         ok: false, why: 'place', what: 'mode 0644, not 0600',
       });
       expect(readFileSync(path, 'utf8')).toBe(text);
@@ -257,16 +264,16 @@ describe('writing the file', () => {
   });
 
   test('a FIFO and a directory at the final name are each refused and left alone', () => {
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     try {
       mkLadder(path);
       execFileSync('mkfifo', [path]);
-      expect(writeRulesFile(path, text, rulesFileHash(text))).toEqual({ ok: false, why: 'place', what: 'a FIFO' });
+      expect(write(text, rulesFileHash(text))).toEqual({ ok: false, why: 'place', what: 'a FIFO' });
       expect(lstatSync(path).isFIFO()).toBe(true);
       expect(readdirSync(dirname(path)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
       rmSync(path);
       mkdirSync(path);
-      expect(writeRulesFile(path, text, rulesFileHash(text))).toEqual({ ok: false, why: 'place', what: 'a directory' });
+      expect(write(text, rulesFileHash(text))).toEqual({ ok: false, why: 'place', what: 'a directory' });
       expect(lstatSync(path).isDirectory()).toBe(true);
       expect(readdirSync(dirname(path)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
     } finally {
@@ -275,15 +282,15 @@ describe('writing the file', () => {
   });
 
   test('a folder of the ladder team made, wider than 0700, is refused and never chmod\'d', () => {
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     try {
-      writeRulesFile(path, text, rulesFileHash(text));
+      write(text, rulesFileHash(text));
       chmodSync(dirname(path), 0o755);
-      expect(writeRulesFile(path, text, rulesFileHash(text))).toEqual({ ok: false, why: 'folder', what: 'mode 0755, not 0700' });
+      expect(write(text, rulesFileHash(text))).toEqual({ ok: false, why: 'folder', what: 'mode 0755, not 0700' });
       expect(lstatSync(dirname(path)).mode & 0o777).toBe(0o755);
       chmodSync(dirname(path), 0o700);
       chmodSync(dirname(dirname(path)), 0o755);
-      expect(writeRulesFile(path, text, rulesFileHash(text))).toEqual({ ok: false, why: 'folder', what: 'mode 0755, not 0700' });
+      expect(write(text, rulesFileHash(text))).toEqual({ ok: false, why: 'folder', what: 'mode 0755, not 0700' });
       expect(lstatSync(dirname(dirname(path))).mode & 0o777).toBe(0o755);
     } finally {
       rmSync(home, { recursive: true, force: true });
@@ -291,11 +298,11 @@ describe('writing the file', () => {
   });
 
   test('a written file that does not read back as the line\'s hash is a changed refusal', () => {
-    const { home, path, text } = fresh();
+    const { home, path, text, write } = fresh();
     try {
       // The hash the line would carry is of another text: the write lands, the read-back
       // refuses it, and nothing would be typed.
-      expect(writeRulesFile(path, text, '000000000000')).toEqual({ ok: false, why: 'changed' });
+      expect(write(text, '000000000000')).toEqual({ ok: false, why: 'changed' });
       expect(readFileSync(path, 'utf8')).toBe(text);
     } finally {
       rmSync(home, { recursive: true, force: true });
@@ -305,15 +312,17 @@ describe('writing the file', () => {
 
 describe('checking the file', () => {
   test('a file with the approved text, 0600 and this user\'s, is ok; a different text is not', () => {
-    const { home, path, text } = (() => {
+    const { home, path, text, write } = (() => {
       const made = mkdtempSync(join(tmpdir(), 'team-rules-home-'));
       // The approval store always exists before a delivery: `~/.config` is there already.
       mkdirSync(join(made, '.config'), { recursive: true });
       const { team, seat } = codexSeat();
-      return { home: made, path: pathOf(team.project, '/nowhere', made, seat.name), text: rulesOf(team, seat) };
+      const standing = verifiedOf(team, EXAMPLE, '/nowhere');
+      const write = (body: string, hash: string) => writeRulesFile(standing, seat.name, '/nowhere', made, body, hash);
+      return { home: made, path: pathOf(team.project, '/nowhere', made, seat.name), text: rulesOf(team, seat), write };
     })();
     try {
-      writeRulesFile(path, text, rulesFileHash(text));
+      write(text, rulesFileHash(text));
       expect(checkRulesFile(path, text)).toEqual({ ok: true });
       expect(checkRulesFile(path, 'other rules')).toEqual({ ok: false, what: 'its rules file differs from the approved rules' });
     } finally {
@@ -326,10 +335,12 @@ describe('checking the file', () => {
     mkdirSync(join(home, '.config'), { recursive: true });
     try {
       const { team, seat } = codexSeat();
+      const standing = verifiedOf(team, EXAMPLE, '/nowhere');
       const path = pathOf(team.project, '/nowhere', home, seat.name);
       const text = rulesOf(team, seat);
+      const write = (body: string, hash: string) => writeRulesFile(standing, seat.name, '/nowhere', home, body, hash);
       expect(checkRulesFile(path, text)).toEqual({ ok: false, what: 'its rules file is missing' });
-      writeRulesFile(path, text, rulesFileHash(text));
+      write(text, rulesFileHash(text));
       const victim = join(home, 'victim.md');
       writeFileSync(victim, text);
       const link = `${path}.link`;
@@ -340,9 +351,9 @@ describe('checking the file', () => {
       expect(checkRulesFile(path, text)).toEqual({ ok: false, what: 'its rules file has mode 0644, not 0600' });
       chmodSync(path, 0o600);
       expect(checkRulesFile(path, text)).toEqual({ ok: true });
-      removeRulesFile(path);
+      removeRulesFile(standing, seat.name, '/nowhere', home);
       expect(checkRulesFile(path, text)).toEqual({ ok: false, what: 'its rules file is missing' });
-      removeRulesFile(path); // a second removal of nothing is nothing
+      removeRulesFile(standing, seat.name, '/nowhere', home); // a second removal of nothing is nothing
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
@@ -386,29 +397,73 @@ describe('the seat name where the path is built', () => {
   test('a corrupt state entry never turns a removal into an unlink elsewhere', () => {
     const home = mkdtempSync(join(tmpdir(), 'team-rules-home-'));
     try {
+      const { team } = codexSeat();
+      const standing = verifiedOf(team, EXAMPLE, '/nowhere');
+      // The store the standing resolves to: `<home>/.config/team/acme-web-<hash of the root>`.
       const store = join(home, '.config', 'team', 'acme-web-001471018cf6');
       mkdirSync(join(store, 'rules'), { recursive: true, mode: 0o700 });
       const victim = join(store, 'victim.md');
       writeFileSync(victim, 'do not touch\n');
-      // The corrupt entries themselves: a `..` out of rules/ and a `/` into a folder of it.
-      removeRulesFile(`${store}/rules/../victim.md`);
-      removeRulesFile(`${store}/rules/codex/acme.md`);
-      // And decoys planted at refused names inside rules/, plus no path at all. (The 253-character
-      // name has no decoy: the file system itself refuses a 256-byte name, so nothing can be
-      // planted there for a removal to find.)
+      // The corrupt entries themselves, as the names a state entry could hold: a `..` that
+      // would walk out of rules/ (the victim), a `/` into a folder of it, and the names the
+      // file's own rule refuses. (The 253-character name has no decoy: the file system itself
+      // refuses a 256-byte name, so nothing can be planted there for a removal to find.)
+      removeRulesFile(standing, '..', '/nowhere', home);
+      removeRulesFile(standing, 'codex/acme', '/nowhere', home);
       const planted = ['..', '.hidden', 'codex acme'];
       for (const name of planted) writeFileSync(join(store, 'rules', `${name}.md`), 'planted\n');
-      for (const name of planted) removeRulesFile(join(store, 'rules', `${name}.md`));
-      removeRulesFile(null);
+      for (const name of planted) removeRulesFile(standing, name, '/nowhere', home);
       expect(readFileSync(victim, 'utf8')).toBe('do not touch\n');
       for (const name of planted) {
         expect(readFileSync(join(store, 'rules', `${name}.md`), 'utf8')).toBe('planted\n');
       }
-      // A name that passes is still taken with its seat.
+      // A name that passes is still taken with its seat — planted as the writer leaves files,
+      // this user's `0600`.
       const kept = join(store, 'rules', 'codex-acme.md');
-      writeFileSync(kept, 'rules\n');
-      removeRulesFile(kept);
+      writeFileSync(kept, 'rules\n', { mode: 0o600 });
+      removeRulesFile(standing, 'codex-acme', '/nowhere', home);
       expect(existsSync(kept)).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('a `..` in a seat name reaches no file outside the rules folder, written or removed', () => {
+    // The writer and the remover build the path themselves from a validated seat name, so a
+    // `..` handed to either is refused before any file is touched: the file beside the store
+    // that a `rules/../victim.md` path would name stays exactly as planted.
+    const { home, path, standing, text, write } = fresh();
+    try {
+      // The store folder is planted as the writer would leave it, with the victim beside where
+      // `rules/` would sit.
+      mkdirSync(dirname(dirname(path)), { recursive: true, mode: 0o700 });
+      const victim = join(dirname(dirname(path)), 'victim.md');
+      writeFileSync(victim, 'do not touch\n');
+      expect(writeRulesFile(standing, '..', '/nowhere', home, text, rulesFileHash(text))).toEqual({ ok: false, why: 'not-written' });
+      removeRulesFile(standing, '..', '/nowhere', home);
+      expect(readFileSync(victim, 'utf8')).toBe('do not touch\n');
+      expect(existsSync(dirname(path))).toBe(false); // rules/ itself was never created either
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('a rules folder swapped for a link is refused, nothing unlinked through it', () => {
+    // After the write, `rules/` is swapped for a link into another folder that holds a file of
+    // the same name and mode: the remover walks the writer's checked chain again, finds the
+    // link, and leaves the target's file alone.
+    const { home, path, standing, seat, text, write } = fresh();
+    try {
+      expect(write(text, rulesFileHash(text)).ok).toBe(true);
+      const elsewhere = mkdtempSync(join(tmpdir(), 'team-rules-elsewhere-'));
+      const target = join(elsewhere, basename(path));
+      writeFileSync(target, 'someone else\'s rules\n', { mode: 0o600 });
+      rmSync(dirname(path), { recursive: true, force: true });
+      symlinkSync(elsewhere, dirname(path));
+      removeRulesFile(standing, seat.name, '/nowhere', home);
+      expect(readFileSync(target, 'utf8')).toBe('someone else\'s rules\n');
+      expect(readlinkSync(dirname(path))).toBe(elsewhere); // the link itself stands
+      rmSync(elsewhere, { recursive: true, force: true });
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
@@ -509,9 +564,9 @@ describe('one seat\'s delivery', () => {
       expect(basename(dirname(dirname(delivery.path)))).toMatch(/^acme-web-/);
       // The writer puts the text exactly there, the check reads exactly there, the removal
       // takes it from exactly there — and nothing exists under the renamed project's folder.
-      expect(writeRulesFile(delivery.path, delivery.text, rulesFileHash(delivery.text)).ok).toBe(true);
+      expect(writeRulesFile(standing, seat.name, '/nowhere', home, delivery.text, rulesFileHash(delivery.text)).ok).toBe(true);
       expect(checkRulesFile(delivery.path, delivery.text)).toEqual({ ok: true });
-      removeRulesFile(delivery.path);
+      removeRulesFile(standing, seat.name, '/nowhere', home);
       expect(existsSync(delivery.path)).toBe(false);
       const renamedPath = rulesFilePath('acme-renamed', '/nowhere', home, seat.name);
       expect(renamedPath).not.toBeNull();

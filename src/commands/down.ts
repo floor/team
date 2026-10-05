@@ -21,7 +21,7 @@ import { executePlan } from '../launch/execute.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
 import { downPlan, formatPlan, type DownSeat } from '../launch/plan.ts';
 import { boxHoldsText } from '../launch/deliver.ts';
-import { removeRulesFile, rulesFilePathOf } from '../launch/rules-file.ts';
+import { removeRulesFile } from '../launch/rules-file.ts';
 import { approvalStanding } from '../store/store.ts';
 import { profileFor } from '../profiles/index.ts';
 import { logLine } from '../log.ts';
@@ -333,9 +333,9 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       });
       // A temporary seat's rules file goes with the seat, as `remove` takes one; a declared
       // seat's stays, ready for the next `up`. No home set is a test with no store at all. The
-      // path is resolved the one way, from the approval in force, like every other reader.
+      // remover builds the path itself, from the approval in force and the seat's name.
       if (state?.seats[name]?.temporary && sources.home) {
-        removeRulesFile(rulesFilePathOf(approvalStanding(root, sources.home), name, root, sources.home));
+        removeRulesFile(approvalStanding(root, sources.home), name, root, sources.home);
       }
     },
     say: (line) => io.stdout(line),

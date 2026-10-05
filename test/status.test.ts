@@ -687,9 +687,8 @@ describe('the rules files of message seats', () => {
       const text = edit ? edit(seat, delivery) : delivery;
       // Planted through the same resolution the check reads: the approval in force, not the
       // live file's project name.
-      const path = rulesFilePathOf(standing, seat.name, dir, home);
-      if (path === null) throw new Error('the fixture seat name must be typeable');
-      const written = writeRulesFile(path, text, rulesFileHash(text));
+      if (rulesFilePathOf(standing, seat.name, dir, home) === null) throw new Error('the fixture seat name must be typeable');
+      const written = writeRulesFile(standing, seat.name, dir, home, text, rulesFileHash(text));
       if (!written.ok) throw new Error('the rules file did not write');
     }
   };
