@@ -952,5 +952,135 @@
       "composer": "idle",
       "provenance": "capture"
     }
+  ],
+  "yaml": [
+    {
+      "file": "yaml/a-complex-key.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-deeper-line-with-no-parent.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-directive.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-document-marker.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-duplicate-key-in-a-flow-map.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-duplicate-key-in-a-nested-map.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-duplicate-key.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-duplicate-quoted-key.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-flow-list-left-open.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-flow-map-across-lines.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-folded-block.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-line-that-is-no-key.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-list-inside-a-list-item.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-list-item-among-keys.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-list-on-its-key-s-line.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-literal-block.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-merge-key.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-second-document.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-second-key-on-a-key-s-line.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-tab-in-the-indentation.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-tag.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-value-that-ends-with-a-colon.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/a-value-that-starts-with.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/an-alias.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/an-anchor.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/an-empty-file.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/an-indented-first-line.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/an-unclosed-double-quote.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/an-unclosed-single-quote.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/an-unknown-escape.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/text-after-a-flow-list.yaml",
+      "ok": false
+    },
+    {
+      "file": "yaml/text-after-a-quoted-string.yaml",
+      "ok": false
+    }
   ]
 }
