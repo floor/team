@@ -438,13 +438,18 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         const workspace = here.workspace ?? places.get(op.seat)?.workspace;
         if (outcome === 'permission' || outcome === 'trust' || outcome === 'question') {
           // A trust question is closed with no key and no text. The same for a permission or a question.
-          if (workspace) host.closeWorkspace(session, workspace);
+          const reading = outcome === 'trust' ? 'trust question' : outcome;
+          if (workspace && !host.closeWorkspace(session, workspace)) {
+            // The close did not happen: nothing may claim it did, and the seat keeps its state
+            // exactly as it is — a later `up` finds it where this run left it.
+            held = true;
+            dropped.add(op.seat);
+            finish(op.seat, `${reading}; its workspace did not close; left as it is`);
+            break;
+          }
           host.drop(op.seat);
           dropped.add(op.seat);
-          const why =
-            outcome === 'trust'
-              ? 'left out: trust question'
-              : `${outcome}; its workspace was closed without input and the seat left out`;
+          const why = `${reading}; its workspace was closed without ${outcome === 'trust' ? 'an answer' : 'input'} and the seat left out`;
           finish(op.seat, why);
           break;
         }

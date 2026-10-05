@@ -20,7 +20,9 @@ the seats out with `left out: the lobby changed during the launch`.
 A seat goes to its real folder itself: a worktree seat to the worktree its brief names; a shared
 seat to its configured `cwd` before any project work.
 
-The first `up` leaves each seat out with `<seat>: left out: trust question` until the owner trusts
+The lobby is a folder no CLI has seen before, and `up` reads a trust question and never answers one:
+the first `up` leaves each seat out with `<seat>: trust question; its
+workspace was closed without an answer and the seat left out` — nothing run — until the owner trusts
 the lobby once in that CLI. Then it starts.
 
 ## Synopsis
@@ -73,8 +75,9 @@ Those lines go to the terminal only: the log file gets the reading, never the sc
 
 | Line | Meaning |
 | --- | --- |
-| `<seat>: left out: trust question` | the CLI asked whether to trust the folder; its workspace was closed without an answer |
+| `<seat>: trust question; its workspace was closed without an answer and the seat left out` | the CLI asked whether to trust the folder, and `up` never answers one |
 | `<seat>: permission; its workspace was closed without input and the seat left out` | a permission dialog, or a question, was left for its owner to answer |
+| `<seat>: <reading>; its workspace did not close; left as it is` | the close of that workspace failed: nothing claims it was closed, and the seat is left exactly as it was, its state kept — a later `up` resumes it |
 | `<seat>: runs <model> <version>; the file says <model> <version>; left at launched, not named. Add <flag> <id> to its launch, or correct the file's model and version and run team approve` | the idle screen shows a different model than the file. The seat is not renamed and gets no rules; its pane stays open. The flag is that CLI's model flag, and the id is the one the profile maps to the file's model. When the profile knows no id, the line says `<id>` |
 | `<seat>: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched` | herdr's process info says the pane's foreground program is back at its shell through three full polls on end, four readings, the screen matches no CLI shape, and the launch line's own echo is visible on the screen. A pane read before the line arrived, one whose echo scrolled away, one whose program is slow to draw, or a herdr that can't say (no shell process info), is waited out to the deadline — the end is never inferred from the screen's text, and a single reading can never reach the three polls. The workspace is kept, and the pane's last lines follow on the terminal |
 | `<seat>: timed out after <n> s waiting for its idle prompt; the screen last read <kind>; left at launched` | the prompt never came within the profile's own time limit; the last reading and the pane's last lines follow on the terminal |
