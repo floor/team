@@ -488,7 +488,7 @@ describe('codex, cursor and antigravity through the screen core', () => {
     // the pane's second column, as unsent.txt draws it, under the blank frame row every
     // capture keeps against the input row. The suffix on the prompt is the running turn.
     // The composer strips it, and the words typed under it are unsent.
-    const text = '\n  → ship the fix   ctrl+c to stop\n  Grok 4.7 medium\n';
+    const text = '\n  → ship the fix   ctrl+c to stop\n  Grok 4.7 256K High\n';
     expect(classifyComposer('cursor', text.split('\n')).kind).toBe('unsent');
     expect(classify('cursor', text.split('\n')).kind).toBe('working');
   });
@@ -524,6 +524,12 @@ describe('codex, cursor and antigravity through the screen core', () => {
         // Captured dialogs main had no rule for, so they fell through to unknown. The profile
         // now names them. Their own test follows the loop.
         if (name === 'permission-plan.txt' || name === 'question.txt') continue;
+        // Captured under other models. Main's status row matched Grok only, so each of these
+        // read unknown. The profile now reads the row by its shape. Their own test is in
+        // test/launch/cursor.test.ts.
+        if (name === 'composer-idle.txt' || name === 'composer-unsent.txt'
+          || name === 'gemini-flash-idle.txt' || name === 'gemini-flash-unsent.txt'
+          || name === 'gpt-sol-idle.txt' || name === 'gpt-sol-unsent.txt') continue;
         // Captured 2026-10-04, and the four screens the antigravity profile's round-2 rules are
         // meant to read differently: main had no rule for the file-creation, file-edit, question
         // or unsent-comments dialogs and read each unknown. Their own test follows the loop.
