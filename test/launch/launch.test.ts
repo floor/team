@@ -331,4 +331,31 @@ describe('the pane lines a report carries', () => {
   test('a command too short to look for leaves the screen as it is', () => {
     expect(paneExcerpt('one\ntwo', 'x')).toBe('  | one\n  | two\n');
   });
+
+  test('every control character and escape sequence is out of the lines', () => {
+    // The reviewer's probe, one sample each: a carriage return would overwrite the report on the
+    // terminal, and a private CSI, a backspace, a bell, a two-character escape and a DCS payload
+    // must not survive as control or as the sequence's own text.
+    const screens = [
+      `❯ ${command}\rfake-overwrite`,
+      `❯ ${command}\n\u001b[?25lhidden\u001b[?25h`,
+      `❯ ${command}\n\u0008\u0008\u0008gone`,
+      `❯ ${command}\n\u0007bell`,
+      `❯ ${command}\n\u001b=keypad`,
+      `❯ ${command}\n\u001bP1;2|payload\u001b\\after`,
+    ];
+    for (const screen of screens) {
+      const out = paneExcerpt(screen, command);
+      expect(out).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+      expect(out).not.toContain('?25l');
+      expect(out).not.toContain('payload');
+    }
+  });
+
+  test('a line longer than the bound is cut to 200 characters and marked', () => {
+    const out = paneExcerpt(`❯ ${command}\n${'x'.repeat(200_000)}\n~ ❯`, command);
+    expect(out).toContain(`  | ${'x'.repeat(200)}…\n`);
+    const longest = Math.max(...out.split('\n').map((line) => line.length));
+    expect(longest).toBe('  | '.length + 200 + '…'.length);
+  });
 });

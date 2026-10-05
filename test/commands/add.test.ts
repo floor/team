@@ -172,6 +172,58 @@ describe('team add', () => {
     expect(loaded.ok && approvalDifferences(loaded.team, project, home)).toEqual([]);
   });
 
+  test('a dry run previews a launch-line refusal, creates nothing, and edits nothing', async () => {
+    approve(FILE.replace(
+      'launch: claude --model claude-opus-5-5\n    # the seat stays in this order',
+      'launch: team-deepseek --key x\n    # the seat stays in this order',
+    ));
+    const made = world();
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker', '--dry-run'], io, sources(made, {
+      doctor: { ...doctor(), onPath: (binary) => binary !== 'team-deepseek' },
+    }));
+    // The refusal is previewed as the plan's own line, and the run exits 0: nothing was made and
+    // the file was not touched — the seat would be started, and its line can't run.
+    expect(code).toBe(0);
+    expect(io.out).toContain(
+      '  skip worker: would refuse: its launch line starts `team-deepseek`, which is not on the PATH\n',
+    );
+    expect(io.out).toContain('dry run: nothing was run\n');
+    expect(made.creates).toEqual([]);
+    expect(readFileSync(join(project, '.agents/team.yaml'), 'utf8')).toContain('stopped: true');
+  });
+
+  test('a real add refuses that seat with the file left as it was', async () => {
+    approve(FILE.replace(
+      'launch: claude --model claude-opus-5-5\n    # the seat stays in this order',
+      'launch: team-deepseek --key x\n    # the seat stays in this order',
+    ));
+    const made = world();
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker'], io, sources(made, {
+      doctor: { ...doctor(), onPath: (binary) => binary !== 'team-deepseek' },
+    }));
+    expect(code).toBe(1);
+    expect(io.err).toContain('team add: worker: its launch line starts `team-deepseek`, which is not on the PATH\n');
+    expect(made.creates).toEqual([]);
+    expect(readFileSync(join(project, '.agents/team.yaml'), 'utf8')).toContain('stopped: true');
+  });
+
+  test('a line the check cannot read is noted once, and the seat still starts', async () => {
+    approve(FILE.replace(
+      'launch: claude --model claude-opus-5-5\n    # the seat stays in this order',
+      'launch: claude --model claude-opus-5-5 --append-system-prompt "be terse"\n    # the seat stays in this order',
+    ));
+    const made = world();
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker'], io, sources(made));
+    expect(code).toBe(0);
+    expect(io.err.split('  note worker: its launch line was not checked').length).toBe(2);
+    expect(io.out).not.toContain('note worker');
+    expect(made.creates).toEqual(['worker']);
+    expect(readFileSync(join(project, '.agents/team.yaml'), 'utf8')).not.toContain('stopped:');
+  });
+
   test('add after a clean remove --keep leaves no drift', async () => {
     approve(FILE.replace('\n    stopped: true', ''));
     const removeSources: RemoveSources = {

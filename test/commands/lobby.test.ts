@@ -358,5 +358,25 @@ describe('a launch line that cannot run where the seat starts', () => {
     const run = await up([], made);
     expect(run.code).toBe(0);
     expect(made.workspaces.map((workspace) => workspace.label)).toEqual(['lead', 'worker', 'worker-2', 'watchdog']);
+    // The note is said once per seat, on stderr for a real run, and the plan is not touched by it.
+    for (const name of ['worker', 'worker-2']) {
+      expect(run.err.split(`  note ${name}: its launch line was not checked`).length).toBe(2);
+    }
+    expect(run.out).not.toContain('note worker');
+  });
+
+  test('a dry run says the same note on its plan, and the notes never refuse', async () => {
+    approve(BASE.replace(
+      'launch: claude --model claude-opus-5-5\n    count: 2',
+      'launch: claude --model claude-opus-5-5 --append-system-prompt "be terse"\n    count: 2',
+    ));
+    const run = await up(['--dry-run'], world());
+    expect(run.code).toBe(0);
+    expect(run.err).toBe('');
+    expect(run.out).toContain(
+      '  note worker: its launch line was not checked: it quotes or substitutes text this version does not read\n',
+    );
+    expect(run.out).toContain('  note worker-2: its launch line was not checked');
+    expect(run.out).not.toContain('would refuse');
   });
 });

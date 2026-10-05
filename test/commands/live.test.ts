@@ -378,9 +378,21 @@ describe('team up, live', () => {
 
   test('a launch command that ended at once is reported at once', async () => {
     await approve();
-    const shown = '❯ AGENT_UNATTENDED=1 claude --model claude-opus-5-5\nzsh: command not found: claude\n~ ❯\n';
-    const made = world(shown);
+    const made = world();
     made.launch.shellBack = () => true;
+    // Each pane shows the line that was run into it, the shell's failure, and the prompt back.
+    const commands = new Map<string, string>();
+    const run = made.launch.paneRun.bind(made.launch);
+    made.launch.paneRun = (session, pane, command) => {
+      commands.set(pane, command);
+      return run(session, pane, command);
+    };
+    const read = made.launch.paneText.bind(made.launch);
+    made.launch.paneText = (session, pane) => {
+      const command = commands.get(pane);
+      // The echo is cut to its first line, as the pane shows it when the command wraps.
+      return command ? `❯ ${command.split('\n')[0]}\nzsh: command not found\n~ ❯\n` : read(session, pane);
+    };
     let naps = 0;
     const napping = made.launch.sleep;
     made.launch.sleep = async (ms) => { naps++; return napping(ms); };
@@ -388,18 +400,61 @@ describe('team up, live', () => {
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
     expect(io.out).toContain(
-      'claude-coordinator-acme: the launch command ended before the CLI showed a prompt; left at launched\n',
+      'claude-coordinator-acme: its pane is back at the shell and shows no CLI prompt; left at launched\n',
     );
-    // One pause per waiting seat, not the 90-second deadline's worth.
+    // One pause per waiting seat, not the 90-second deadline's worth: two readings a poll apart.
     expect(naps).toBeLessThanOrEqual(4);
-    expect(io.out).toContain('  | ❯ AGENT_UNATTENDED=1 claude --model claude-opus-5-5\n');
-    expect(io.out).toContain('  | zsh: command not found: claude\n');
+    expect(io.out).toContain('  | ❯ AGENT_UNATTENDED=1 claude --model claude-opus-5-5 ');
+    expect(io.out).toContain('  | zsh: command not found\n');
+    expect(io.out).toContain('  run `team up` again to resume it\n');
     expect(io.out).not.toContain('timed out');
     // Left at launched, workspace kept: a later `up` resumes the seat.
     expect(made.closes).toEqual([]);
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']?.stage).toBe('launched');
     expect(seats['claude-coordinator-acme']?.pane).toBe('w1:p1');
+  });
+
+  test('a shell-back reading with no echo of the launch line is waited out', async () => {
+    await approve();
+    // The shell is back on every poll, but the screen never holds the launch line's echo: the
+    // line may not have arrived, or the screen may be a fresh shell. That is not evidence the
+    // launch ran and ended, so the wait goes to the deadline and the reading is a timeout.
+    const made = world('restarted\n~ ❯\n');
+    made.launch.shellBack = () => true;
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('claude-coordinator-acme: timed out after 90 s waiting for its idle prompt');
+    expect(io.out).not.toContain('shows no CLI prompt');
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['claude-coordinator-acme']?.stage).toBe('launched');
+  });
+
+  test('the reviewed probe: two shell-back readings a poll apart, then idle, is not an end', async () => {
+    await approve();
+    // The review's own sample sequence at 7ede9fb4: unknown with the shell back at t=0 and
+    // t=2000, then idle at t=4000, the pane still drawing and the launch line's echo nowhere on
+    // it. The wait used to call the second reading an end, at clock 2000 and two reads in; it
+    // must instead go on, so the CLI that was still starting is seen when it arrives.
+    const made = world();
+    const polls = new Map<string, number>();
+    const read = made.launch.paneText.bind(made.launch);
+    made.launch.paneText = (session, pane) => {
+      if (pane !== 'w1:p1') return read(session, pane);
+      const n = (polls.get(pane) ?? 0) + 1;
+      polls.set(pane, n);
+      return n <= 2 ? 'startup still drawing\n' : IDLE;
+    };
+    made.launch.shellBack = (_session, pane) => pane === 'w1:p1' && (polls.get(pane) ?? 0) <= 2;
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(0);
+    expect(io.out).toContain('claude-coordinator-acme: ready\n');
+    expect(io.out).not.toContain('shows no CLI prompt');
+    // The CLI arrived, so the seat is the state's ready — not left at launched by an early end.
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['claude-coordinator-acme']?.stage).toBe('ready');
   });
 
   test('a shell-back reading that clears is not an end, and a herdr that cannot say waits', async () => {
@@ -417,7 +472,7 @@ describe('team up, live', () => {
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
     expect(io.out).toContain('claude-coordinator-acme: timed out after 90 s waiting for its idle prompt');
-    expect(io.out).not.toContain('ended before the CLI showed a prompt');
+    expect(io.out).not.toContain('shows no CLI prompt');
     expect(made.closes).toEqual([]);
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']?.stage).toBe('launched');
@@ -488,6 +543,122 @@ describe('team up, live', () => {
     expect(made.renames).not.toContain('claude-coordinator-acme');
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['deepseek-acme']?.stage).toBe('ready');
+  });
+
+  test('a resumed seat is checked where its pane runs, not where the file would put it', async () => {
+    // The file's deepseek seats work in worktrees and would start in the lobby; their recorded
+    // panes run in the project root, where `../tools/x.sh` is a file. Only the state's `start_cwd`
+    // says so, and the reading names that folder — the same line, a different folder, a different end.
+    writeFileSync(
+      join(root, '.agents/team.yaml'),
+      EXAMPLE.replace('launch: team-deepseek\n    count: 2', 'launch: zsh ../tools/x.sh\n    count: 2'),
+    );
+    await approve();
+    mkdirSync(join(base, 'tools'), { recursive: true });
+    writeFileSync(join(base, 'tools', 'x.sh'), 'echo hi\n');
+    const lobby = join(base, 'worktrees', 'acme-web', '.lobby');
+    const run = async (start_cwd?: string) => {
+      const recorded = (pane: string, workspace: string) => ({
+        stage: 'launched',
+        pane,
+        workspace,
+        ...(start_cwd ? { start_cwd } : {}),
+      });
+      writeFileSync(
+        join(root, '.agents/team.state.json'),
+        JSON.stringify({
+          format: 1,
+          sessions: {
+            'acme-web': {
+              seats: { 'deepseek-acme': recorded('w7:p1', 'w7'), 'deepseek-acme-2': recorded('w6:p1', 'w6') },
+              worktrees: {},
+            },
+          },
+        }),
+      );
+      const made = world();
+      made.session = 'running';
+      made.seed('w7:p1', IDLE, false);
+      made.seed('w6:p1', IDLE, false);
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runUp(
+        FILE,
+        io,
+        sources(
+          {
+            sessionState: () => 'running',
+            agents: () => [],
+            workspaces: () => [{ id: 'w7' }, { id: 'w6' }],
+            doctor: doctor(),
+          },
+          made,
+        ),
+      );
+      return { code, out: io.out, err: io.err };
+    };
+    // The root is where the panes run: the line resolves, the seats are resumed, nothing is refused.
+    const atRoot = await run(root);
+    expect(atRoot.code).toBe(0);
+    expect(atRoot.out).toContain('deepseek-acme: ready');
+    expect(atRoot.out).not.toContain('would refuse');
+    expect(atRoot.err).not.toContain('not checked');
+    // The lobby — where the file's own seats would start — is where it does not resolve: refused at
+    // the recorded folder, with the file that is at the project root named for the line to use.
+    const atLobby = await run(lobby);
+    expect(atLobby.code).toBe(1);
+    expect(atLobby.out).toContain(
+      'deepseek-acme: refused: its launch line runs `../tools/x.sh`, not found from its start folder ' +
+        `${lobby}; the same file is at \`${join(base, 'tools', 'x.sh')}\` from the project root — write that path`,
+    );
+  });
+
+  test('a resumed seat whose state records no start folder is not checked at all', async () => {
+    writeFileSync(
+      join(root, '.agents/team.yaml'),
+      EXAMPLE.replace('launch: team-deepseek\n    count: 2', 'launch: zsh ../tools/x.sh\n    count: 2'),
+    );
+    await approve();
+    writeFileSync(
+      join(root, '.agents/team.state.json'),
+      JSON.stringify({
+        format: 1,
+        sessions: {
+          'acme-web': {
+            seats: {
+              'deepseek-acme': { stage: 'launched', pane: 'w7:p1', workspace: 'w7' },
+              'deepseek-acme-2': { stage: 'launched', pane: 'w6:p1', workspace: 'w6' },
+            },
+            worktrees: {},
+          },
+        },
+      }),
+    );
+    const made = world();
+    made.session = 'running';
+    made.seed('w7:p1', IDLE, false);
+    made.seed('w6:p1', IDLE, false);
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(
+      FILE,
+      io,
+      sources(
+        {
+          sessionState: () => 'running',
+          agents: () => [],
+          workspaces: () => [{ id: 'w7' }, { id: 'w6' }],
+          doctor: doctor(),
+        },
+        made,
+      ),
+    );
+    // The file's folder is not where those panes are, so the lines are not read against either:
+    // they are said to be unchecked, and the seats resume as they always did.
+    expect(code).toBe(0);
+    expect(io.err).toContain(
+      '  note deepseek-acme: its launch line was not checked: the seat is resumed and its state records no start folder\n',
+    );
+    expect(io.out).toContain('deepseek-acme: ready');
+    expect(io.out).not.toContain('would refuse');
   });
 
   test('a stopped session is refused and no server is started', async () => {

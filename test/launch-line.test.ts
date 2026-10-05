@@ -149,23 +149,26 @@ describe('the launch line check', () => {
     expect(launchLineFinding(text, text.seats[1] as Seat, root, sources())).toBeNull();
   });
 
-  test('a relative path that resolves from neither place is the same finding without the file', () => {
+  test('a relative path that resolves from neither place is a note, not a refusal', () => {
+    // The command may create the file it is given, so a path that exists nowhere yet is only said.
     const text = team('zsh ./nowhere.sh');
     const finding = launchLineFinding(text, text.seats[1] as Seat, root, sources());
     expect(finding).toEqual({
-      level: 'miss',
-      why: 'its launch line runs `./nowhere.sh`, not found from its start folder ../worktrees/acme/.lobby',
+      level: 'note',
+      why:
+        'its launch line runs `./nowhere.sh`, not found from its start folder ../worktrees/acme/.lobby; ' +
+        'not checked: the command may create it',
     });
   });
 
-  test('a ~/… that expands to a file is fine; one that does not is a finding', () => {
+  test('a ~/… that expands to a file is fine; one that does not is a note', () => {
     file(join(home, 'bin', 'x.sh'));
     const good = team('zsh ~/bin/x.sh');
     expect(launchLineFinding(good, good.seats[1] as Seat, root, sources())).toBeNull();
     const bad = team('zsh ~/bin/missing.sh');
     expect(launchLineFinding(bad, bad.seats[1] as Seat, root, sources())).toEqual({
-      level: 'miss',
-      why: 'its launch line runs `~/bin/missing.sh`, not found from `~`',
+      level: 'note',
+      why: 'its launch line runs `~/bin/missing.sh`, not found from `~`; not checked: the command may create it',
     });
   });
 
@@ -182,6 +185,23 @@ describe('the launch line check', () => {
     });
   });
 
+  test('a path program that exists but would not run is a miss, as main refused it', () => {
+    // Main's launcher test was `accessSync(…, X_OK)`: a file that is there but not executable is
+    // no launcher, and the line would fail the moment the pane ran it.
+    file(join(lobby, 'run.sh'));
+    const text = team('./run.sh');
+    const finding = launchLineFinding(
+      text,
+      text.seats[1] as Seat,
+      root,
+      sources({ onPath: (binary) => binary !== join(lobby, 'run.sh') }),
+    );
+    expect(finding).toEqual({
+      level: 'miss',
+      why: 'its launch line starts `./run.sh`, which is not executable',
+    });
+  });
+
   test('an argument the check does not examine is left alone', () => {
     const text = team('claude --model claude-opus-5-5 --add-dir relative/dir');
     expect(launchLineFinding(text, text.seats[1] as Seat, root, sources())).toBeNull();
@@ -189,11 +209,44 @@ describe('the launch line check', () => {
 
   test('a line that quotes or substitutes text is not checked, and never refused', () => {
     for (const launch of ['claude --model x --append-system-prompt "be terse"', 'claude $(which claude)', "zsh 'x.sh'"]) {
-      const text = team(launch);
-      const finding = launchLineFinding(text, text.seats[1] as Seat, root, sources({ onPath: () => false }));
+      const finding = launchLineFinding(team(launch), seat(launch), root, sources());
       expect(finding?.level).toBe('note');
       expect(finding?.why).toContain('not checked');
     }
+  });
+
+  test('a missing program is a miss whatever follows it, a quoted tail included', () => {
+    // The first word is checked before the quoting is noticed: main refused `claude "$HOME"`
+    // with `claude` off the PATH, and this check may refuse nothing less.
+    for (const launch of ['team-deepseek "$HOME"', 'VAR=1 team-deepseek "x y"', 'team-deepseek $(pwd)']) {
+      const finding = launchLineFinding(team(launch), seat(launch), root, sources({ onPath: () => false }));
+      expect(finding).toEqual({
+        level: 'miss',
+        why: 'its launch line starts `team-deepseek`, which is not on the PATH',
+      });
+    }
+  });
+
+  test('a VAR=… prefix is skipped and the program after it is the one checked', () => {
+    file(join(lobby, 'run.sh'));
+    expect(launchLineFinding(team('VAR=1 ./run.sh'), seat('VAR=1 ./run.sh'), root, sources())).toBeNull();
+    const missing = launchLineFinding(team('VAR=1 ./run.sh'), seat('VAR=1 ./run.sh'), root, sources({ onPath: () => false }));
+    expect(missing).toEqual({ level: 'miss', why: 'its launch line starts `./run.sh`, which is not executable' });
+  });
+
+  test('a started line is read where the caller says it ran, not where the file would put it', () => {
+    // A resumed seat's pane keeps the folder it was started in: `start` names it, and the file's
+    // own folder is not looked at. From `old` the same `../tools/x.sh` is a file; from the lobby
+    // the file's seat would start in, it is not.
+    file(join(base, 'tools', 'x.sh'));
+    const text = team('zsh ../tools/x.sh');
+    expect(launchLineFinding(text, text.seats[1] as Seat, root, sources())?.level).toBe('miss');
+    expect(
+      launchLineFinding(text, text.seats[1] as Seat, root, sources(), {
+        cwd: join(base, 'old'),
+        folder: join(base, 'old'),
+      }),
+    ).toBeNull();
   });
 
   test('the report names each seat it would start, and leaves the stopped ones out', () => {
