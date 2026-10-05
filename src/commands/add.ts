@@ -15,7 +15,7 @@ import type { Problem, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
 import {
-  agentList, agentRename, paneForeground, paneRead, paneRun, sessionRunning, sessionState, startServer, workspaceClose, workspaceCreate,
+  agentList, agentRename, paneForeground, paneRead, paneRun, paneShellBack, sessionRunning, sessionState, startServer, workspaceClose, workspaceCreate,
   workspaceList, type HerdrAgent,
 } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
@@ -61,6 +61,7 @@ const realLaunch: Launch = {
   },
   paneText: (session, pane) => paneRead(pane, 200, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
+  shellBack: (session, pane) => paneShellBack(pane, aim(session)),
   sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
   now: () => new Date(),
 };
@@ -499,6 +500,8 @@ function hostOf(input: {
     kill: () => false,
     agentPanes: launch.agentPanes,
     classify: (_name, pane, cli) => readScreen(cli, launch.paneText(session, pane) ?? undefined).kind,
+    paneText: (_name, pane) => launch.paneText(session, pane),
+    shellBack: (_name, pane) => launch.shellBack?.(session, pane) ?? null,
     sleep: launch.sleep,
     now: () => input.now().getTime(),
     allow(name) {

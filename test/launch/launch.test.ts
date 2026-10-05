@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { paneExcerpt } from '../../src/launch/execute.ts';
 import { downPlan, formatPlan, herdr, upPlan, type DownSeat, type UpSeat } from '../../src/launch/plan.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
 import { profileFor } from '../../src/profiles/index.ts';
@@ -286,5 +287,48 @@ describe('down --dry-run', () => {
       kind: 'skip',
       text: 'grok-acme: no launch profile for `grok` in this version; left running',
     });
+  });
+});
+
+describe('the pane lines a report carries', () => {
+  const command =
+    "AGENT_UNATTENDED=1 claude --model claude-opus-5-5 'Run the tests your change touches, not the whole suite.'";
+
+  test("starts at the launch line's own echo when it is within reach", () => {
+    const screen = `❯ ${command}\nzsh: no such file or directory\n~ ❯`;
+    expect(paneExcerpt(screen, command)).toBe(
+      `  | ❯ ${command}\n  | zsh: no such file or directory\n  | ~ ❯\n`,
+    );
+  });
+
+  test('a failure naming the program is not taken for the echo', () => {
+    // The launch line of the capture behind this: the error repeats its program and its path,
+    // the echo holds the line itself.
+    const short = 'zsh ../tools/x.sh --agent';
+    const screen = `❯ ${short}\nzsh: can't open input file: ../tools/x.sh\n~ ❯`;
+    expect(paneExcerpt(screen, short)).toBe(
+      `  | ❯ ${short}\n  | zsh: can't open input file: ../tools/x.sh\n  | ~ ❯\n`,
+    );
+  });
+
+  test('keeps the newest six lines when the echo scrolled out of reach', () => {
+    const lines = ['one', 'two', command, 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+    const newest = lines.slice(-6).map((line) => `  | ${line}\n`).join('');
+    expect(paneExcerpt(lines.join('\n'), command)).toBe(newest);
+    expect(paneExcerpt(lines.join('\n'), command)).toContain('  | four\n');
+  });
+
+  test('styling is stripped and empty lines are dropped', () => {
+    expect(paneExcerpt(`\n\n\u001b[31m❯ ${command}\u001b[0m\n \n`, command)).toBe(`  | ❯ ${command}\n`);
+  });
+
+  test('nothing to show reads as an empty excerpt', () => {
+    expect(paneExcerpt(null, command)).toBe('');
+    expect(paneExcerpt('', command)).toBe('');
+    expect(paneExcerpt('\n \t\n', command)).toBe('');
+  });
+
+  test('a command too short to look for leaves the screen as it is', () => {
+    expect(paneExcerpt('one\ntwo', 'x')).toBe('  | one\n  | two\n');
   });
 });

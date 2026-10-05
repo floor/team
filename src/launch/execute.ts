@@ -1,3 +1,4 @@
+import { stripSgr } from '../ansi.ts';
 import type { Step } from './plan.ts';
 
 export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'unsent' | 'unknown';
@@ -21,6 +22,10 @@ export type Host = {
   /** Pane ids herdr lists an agent in, or null when the list can't be read. */
   agentPanes(session: string): string[] | null;
   classify(session: string, pane: string, cli: string): ScreenKind;
+  /** The pane's visible text, ANSI styling and all, or null when the pane can't be read. */
+  paneText?(session: string, pane: string): string | null;
+  /** Whether the pane's foreground program is back to its shell; null when herdr can't tell. */
+  shellBack?(session: string, pane: string): boolean | null;
   sleep(ms: number): Promise<void>;
   now(): number;
   /** Null when this seat may launch. A string is the reason it may not. */
@@ -45,6 +50,28 @@ export type Report = {
 
 type Place = { pane: string; workspace?: string };
 
+/** The pane's last lines for a report: at most six, the newest kept, empty lines dropped, ANSI
+ *  styling stripped — screen text is said on the terminal, never logged. The launch line's own
+ *  echo comes first when it is within reach: the last line holding the start of the command that
+ *  was typed, when six lines or fewer follow it. A launch line that scrolled further up leaves
+ *  only the newest six, with the failure among them. */
+export function paneExcerpt(text: string | null, command: string, limit = 6): string {
+  if (text === null) return '';
+  const lines = stripSgr(text)
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim() !== '');
+  if (lines.length === 0) return '';
+  // A prompt may stand in front of the echo and the command may wrap after it, so only the
+  // command's first characters are looked for — never the program word alone, which the failure
+  // message below the echo often repeats. A marker too short to be sure of is not used.
+  const head = (command.trim().split('\n')[0] ?? '').slice(0, 24).trimEnd();
+  const echo = head.length >= 8 ? lines.findLastIndex((line) => line.includes(head)) : -1;
+  const tail = Math.max(0, lines.length - limit);
+  const start = echo >= tail ? echo : tail;
+  return lines.slice(start).map((line) => `  | ${line}\n`).join('');
+}
+
 async function until(seconds: number, pace: number, host: Host, ready: () => boolean): Promise<boolean> {
   const deadline = host.now() + seconds * 1000;
   for (;;) {
@@ -68,10 +95,12 @@ export async function executePlan(steps: readonly Step[], session: string, host:
   let held = false;
   let abort = false;
 
-  const finish = (seat: string, what: string) => {
+  // The reading is what is logged: screen text may follow it on the terminal (`detail`), and
+  // never reaches the log file.
+  const finish = (seat: string, what: string, detail = '') => {
     if (logged.has(seat)) return;
     logged.add(seat);
-    host.say(`${seat}: ${what}\n`);
+    host.say(`${seat}: ${what}\n${detail}`);
     host.log(seat, what);
   };
 
@@ -186,10 +215,26 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           finish(op.seat, 'has no pane to read; left at launched');
           break;
         }
-        const deadline = host.now() + op.seconds * 1000;
-        let outcome: 'idle' | 'permission' | 'trust' | 'question' | 'timeout' = 'timeout';
+        const startedAt = host.now();
+        const deadline = startedAt + op.seconds * 1000;
+        let outcome: 'idle' | 'permission' | 'trust' | 'question' | 'ended' | 'timeout' = 'timeout';
+        let last: ScreenKind = 'unknown';
+        // The launch line was run a moment ago, and herdr can still report the pane's shell for
+        // a poll or two after it — captured on herdr 0.7.1. So the end is read on two
+        // consecutive polls: the shell is the foreground program, and the screen is neither an
+        // idle prompt nor work, twice. One such reading alone is not an end. A herdr that can't
+        // say (no shell process info) is waited out to the deadline as before: the end is never
+        // inferred from the screen's text.
+        let shellWasBack = false;
         for (;;) {
           const kind = host.classify(session, here.pane, op.cli);
+          last = kind;
+          const back = host.shellBack?.(session, here.pane) ?? null;
+          if (kind === 'unknown' && back === true && shellWasBack) {
+            outcome = 'ended';
+            break;
+          }
+          shellWasBack = kind === 'unknown' && back === true;
           if (kind === 'idle' || kind === 'permission' || kind === 'trust' || kind === 'question') {
             outcome = kind;
             break;
@@ -214,7 +259,22 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           break;
         }
         dropped.add(op.seat);
-        finish(op.seat, 'timed out waiting for its idle prompt; left at launched');
+        const read = host.paneText?.(session, here.pane) ?? null;
+        if (outcome === 'ended') {
+          // The workspace is left open; the seat stays at launched, and a later `up` resumes it.
+          finish(
+            op.seat,
+            'the launch command ended before the CLI showed a prompt; left at launched',
+            paneExcerpt(read, op.command),
+          );
+          break;
+        }
+        const waited = Math.round((host.now() - startedAt) / 1000);
+        finish(
+          op.seat,
+          `timed out after ${waited} s waiting for its idle prompt; the screen last read ${last}; left at launched`,
+          `${paneExcerpt(read, op.command)}  run \`team up\` again to resume it\n`,
+        );
         break;
       }
       case 'rename': {

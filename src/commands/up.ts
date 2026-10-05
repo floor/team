@@ -15,6 +15,7 @@ import {
   paneForeground,
   paneRead,
   paneRun,
+  paneShellBack,
   typeText,
   pressEnter,
   sessionRunning,
@@ -83,6 +84,8 @@ export type Launch = {
   agentStatus?(session: string, pane: string): string | null;
   /** Foreground argv0 names, or null when the pane can't be read. */
   foreground(session: string, pane: string): string[] | null;
+  /** Whether the pane's foreground program is back to its shell; null when herdr can't tell. */
+  shellBack?(session: string, pane: string): boolean | null;
   sleep(ms: number): Promise<void>;
   now(): Date;
 };
@@ -116,6 +119,7 @@ const realLaunch: Launch = {
   pressEnter: (session, pane) => pressEnter(pane, aim(session)),
   agentStatus: (session, pane) => agentStatus(pane, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
+  shellBack: (session, pane) => paneShellBack(pane, aim(session)),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now: () => new Date(),
 };
@@ -434,6 +438,8 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     kill: () => false,
     agentPanes: launch.agentPanes,
     classify: (name, pane, cli) => readScreen(cli, launch.paneText(name, pane) ?? undefined).kind,
+    paneText: (session, pane) => launch.paneText(session, pane),
+    shellBack: (session, pane) => launch.shellBack?.(session, pane) ?? null,
     sleep: sources.sleep ?? launch.sleep,
     now: () => now().getTime(),
     allow(name) {

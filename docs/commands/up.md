@@ -62,13 +62,18 @@ A seat that reaches its idle prompt with its rules delivered prints `<seat>: rea
 ready, stopped in the file, or on a CLI with no launch profile prints one `  skip` line and is left
 as it is. The watch prints `watch: started`.
 
-A seat that doesn't get there is printed once with what stopped it, and `up` exits 1:
+A seat that doesn't get there is printed once with what stopped it, and `up` exits 1. For a seat
+whose wait ended without a prompt, the last non-empty lines the pane showed — the launch line's own
+echo first when it is within reach, six at most, styling stripped — are printed under the reading,
+each on `  | `; `  run \`team up\` again to resume it` names how the seat is finished. Those lines
+go to the terminal only: the log file gets the reading, never the screen's text.
 
 | Line | Meaning |
 | --- | --- |
 | `<seat>: left out: trust question` | the CLI asked whether to trust the folder; its workspace was closed without an answer |
 | `<seat>: permission; its workspace was closed without input and the seat left out` | a permission dialog, or a question, was left for its owner to answer |
-| `<seat>: timed out waiting for its idle prompt; left at launched` | the prompt never came |
+| `<seat>: the launch command ended before the CLI showed a prompt; left at launched` | herdr's process info says the pane's foreground program is back at its shell, on two consecutive reads, and the screen reads none of the CLI's shapes: the launch line was run but the CLI never came up. The workspace is kept, and the pane's last lines follow on the terminal |
+| `<seat>: timed out after <n> s waiting for its idle prompt; the screen last read <kind>; left at launched` | the prompt never came within the profile's own time limit; the last reading and the pane's last lines follow on the terminal |
 | `<seat>: was not in the agent list in time; left at launched` | herdr listed no agent in the pane to name |
 | `<seat>: its rules were not delivered; left at named` | the rules did not reach an empty idle prompt |
 | `<seat>: its workspace was not created; left at launched` | herdr made no workspace for it |

@@ -349,18 +349,73 @@ describe('team up, live', () => {
     expect(seats['claude-coordinator-acme']).toBeUndefined();
   });
 
-  test('a seat that never idles stays launched', async () => {
+  test('a seat that never idles stays launched, with the reading and the pane lines', async () => {
     await approve();
-    const made = world('');
+    // The screen of the capture this report is built from: the launch line's own echo, the
+    // shell's failure, and the prompt back.
+    const shown = "❯ zsh ../tools/launcher.sh\nzsh: can't open input file: ../tools/launcher.sh\n~ ❯\n";
+    const made = world(shown);
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: timed out waiting for its idle prompt; left at launched');
+    expect(io.out).toContain(
+      'claude-coordinator-acme: timed out after 90 s waiting for its idle prompt; ' +
+        'the screen last read unknown; left at launched\n',
+    );
+    expect(io.out).toContain('  | ❯ zsh ../tools/launcher.sh\n');
+    expect(io.out).toContain("  | zsh: can't open input file: ../tools/launcher.sh\n");
+    expect(io.out).toContain('  run `team up` again to resume it\n');
     expect(made.closes).toEqual([]);
     expect(made.renames).toEqual([]);
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']?.stage).toBe('launched');
     expect(seats['claude-coordinator-acme']?.pane).toBe('w1:p1');
+    // The log keeps the reading only: the pane's text is said on the terminal, never written.
+    const log = readFileSync(join(root, '.agents/team.log'), 'utf8');
+    expect(log).toContain('timed out after 90 s waiting for its idle prompt; the screen last read unknown');
+    expect(log).not.toContain('zsh');
+  });
+
+  test('a launch command that ended at once is reported at once', async () => {
+    await approve();
+    const shown = '❯ AGENT_UNATTENDED=1 claude --model claude-opus-5-5\nzsh: command not found: claude\n~ ❯\n';
+    const made = world(shown);
+    made.launch.shellBack = () => true;
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(1);
+    expect(io.out).toContain(
+      'claude-coordinator-acme: the launch command ended before the CLI showed a prompt; left at launched\n',
+    );
+    expect(io.out).toContain('  | ❯ AGENT_UNATTENDED=1 claude --model claude-opus-5-5\n');
+    expect(io.out).toContain('  | zsh: command not found: claude\n');
+    expect(io.out).not.toContain('timed out');
+    // Left at launched, workspace kept: a later `up` resumes the seat.
+    expect(made.closes).toEqual([]);
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['claude-coordinator-acme']?.stage).toBe('launched');
+    expect(seats['claude-coordinator-acme']?.pane).toBe('w1:p1');
+  });
+
+  test('a shell-back reading that clears is not an end, and a herdr that cannot say waits', async () => {
+    await approve();
+    const made = world('');
+    const seen = new Map<string, number>();
+    // The first poll after the launch may still report the shell — captured on herdr 0.7.1 —
+    // and later polls report nothing readable at all.
+    made.launch.shellBack = (_session, pane) => {
+      const n = (seen.get(pane) ?? 0) + 1;
+      seen.set(pane, n);
+      return n === 1 ? true : null;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('claude-coordinator-acme: timed out after 90 s waiting for its idle prompt');
+    expect(io.out).not.toContain('ended before the CLI showed a prompt');
+    expect(made.closes).toEqual([]);
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['claude-coordinator-acme']?.stage).toBe('launched');
   });
 
   test('a recorded pane that is gone is launched again', async () => {

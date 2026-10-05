@@ -13,7 +13,7 @@ export type Op =
   | { do: 'create'; seat?: string; label: string; cwd: string; notice?: string }
   | { do: 'launch'; seat: string; label: string; command: string; pane?: string; notice?: string }
   | { do: 'refuse'; seat: string; why: string }
-  | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; pane?: string; workspace?: string; notice?: string }
+  | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; command: string; pane?: string; workspace?: string; notice?: string }
   | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
   | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; seconds: number; pane?: string; notice?: string }
   | { do: 'ready'; seat: string; rules: 'option' | 'message'; notice?: string }
@@ -201,6 +201,7 @@ export function upPlan(input: UpInput): Step[] {
           label: seat.label,
           cli: seat.cli,
           seconds: profile.idleTimeout,
+          command,
           pane: seat.pane,
           workspace: seat.workspace,
           ...(said ? { notice: said } : {}),
