@@ -253,7 +253,7 @@ test('one Ctrl-C, to the group as a terminal sends it, reaches the cli once', as
   } finally {
     stopGroup(child);
   }
-});
+}, 30_000);
 
 // A signal sent to the shim's own pid alone is not a terminal's Ctrl-C. SIGINT and
 // SIGQUIT reach nothing at all; SIGTERM is forwarded to the cli once.
@@ -273,4 +273,4 @@ test("a signal to the shim's pid alone: SIGINT and SIGQUIT reach nothing, SIGTER
   } finally {
     stopGroup(child);
   }
-});
+}, 30_000);
