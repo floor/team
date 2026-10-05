@@ -25,7 +25,10 @@ export const watch: Section = {
     properties: {
       interval: measureSchema(DURATION),
       idle_first: measureSchema(DURATION),
-      idle_repeat: measureSchema(DURATION),
+      idle_repeat: {
+        ...measureSchema(DURATION),
+        description: 'how often to repeat an idle report while a seat stays idle; off unless set',
+      },
       team_idle: measureSchema(DURATION),
       nudge_wait: measureSchema(DURATION),
       unsent_after: measureSchema(DURATION),
@@ -53,7 +56,6 @@ export function defaultWatch(): TeamFile['watch'] {
   return {
     interval: 120,
     idleFirst: 600,
-    idleRepeat: 1200,
     teamIdle: 600,
     nudgeWait: 600,
     unsentAfter: 60,
@@ -68,6 +70,10 @@ function readWatch(entry: YamlEntry | undefined, check: Check): Watched {
   ]);
   const time = (name: string, fallback: number) =>
     check.measure(fields.get(name), `watch.${name}`, DURATION, '120s or 10m') ?? fallback;
+  const repeatField = fields.get('idle_repeat');
+  const idleRepeat = repeatField
+    ? check.measure(repeatField, 'watch.idle_repeat', DURATION, '120s or 10m')
+    : undefined;
   const base = defaultWatch();
   let quotaMarks = base.quotaMarks;
   const marks = fields.get('quota_marks');
@@ -83,7 +89,7 @@ function readWatch(entry: YamlEntry | undefined, check: Check): Watched {
     watch: {
       interval: time('interval', base.interval),
       idleFirst: time('idle_first', base.idleFirst),
-      idleRepeat: time('idle_repeat', base.idleRepeat),
+      ...(idleRepeat !== undefined ? { idleRepeat } : {}),
       teamIdle: time('team_idle', base.teamIdle),
       nudgeWait: time('nudge_wait', base.nudgeWait),
       unsentAfter: time('unsent_after', base.unsentAfter),
