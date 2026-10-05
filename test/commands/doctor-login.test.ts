@@ -186,7 +186,7 @@ describe('team doctor --login', () => {
     expect(io.out).toContain('ok    claude-code: logged in\n');
     expect(io.out).toContain('MISS  log in to codex: `codex login`\n');
     expect(io.out).toContain('--    grok: no launch profile in this version\n');
-    expect(io.out).toContain('team doctor: 1 missing, 0 warnings: `up` and `add` refuse until the missing ones are done\n');
+    expect(io.out).toContain('team doctor: 1 missing, 0 warnings: 1 of them block `up` and `add`\n');
   });
 
   test('reports unknown when loginCheck cannot tell or profile has none', async () => {
