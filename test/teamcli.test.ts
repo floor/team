@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -35,6 +35,37 @@ test('the teamcli tarball lists exactly the package manifest, the shim and the r
   ]);
 });
 
+// The published manifest exports only ".". This test builds a package with that map
+// rather than packing the tagged tree, then installs this branch's own tarball too.
+function publishedTeam(dest: string): string {
+  const dir = join(dest, 'published-team');
+  mkdirSync(join(dir, 'dist'), { recursive: true });
+  writeFileSync(join(dir, 'package.json'), `${JSON.stringify({
+    name: 'team',
+    version: '0.2.1',
+    type: 'module',
+    bin: { team: 'dist/cli.js' },
+    exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } },
+    files: ['dist'],
+  }, null, 2)}\n`);
+  writeFileSync(join(dir, 'dist/index.js'), 'export {};\n');
+  writeFileSync(join(dir, 'dist/cli.js'), '#!/usr/bin/env node\nconsole.log("published-line");\n');
+  const packed = spawnSync('npm', ['pack', '--json', '--pack-destination', dest], { cwd: dir, encoding: 'utf8' });
+  expect(packed.status).toBe(0);
+  return join(dest, JSON.parse(packed.stdout)[0].filename);
+}
+
+function installPair(prefix: string, teamTarball: string, teamcliTarball: string): void {
+  const installed = spawnSync(
+    'npm',
+    ['install', '--offline', '--no-audit', '--no-fund', '--ignore-scripts', teamTarball, teamcliTarball],
+    { cwd: prefix, encoding: 'utf8', timeout: 40_000 },
+  );
+  if (installed.status !== 0) {
+    throw new Error(`npm install exited ${installed.status} ${installed.signal ?? ''}: ${installed.stderr || installed.stdout}`);
+  }
+}
+
 test('packed team and teamcli bins match the team cli, and a signal reaches the child', async () => {
   const built = spawnSync('bun', ['run', 'build'], { cwd: repo, encoding: 'utf8', timeout: 40_000 });
   expect(built.status).toBe(0);
@@ -52,23 +83,15 @@ test('packed team and teamcli bins match the team cli, and a signal reaches the 
   expect(teamcliPack.status).toBe(0);
   const teamcliReport = JSON.parse(teamcliPack.stdout)[0];
 
+  const teamcliTarball = join(dest, teamcliReport.filename);
+  const published = mkdtempSync(join(tmpdir(), 'teamcli-published-'));
+  installPair(published, publishedTeam(mkdtempSync(join(tmpdir(), 'teamcli-published-pack-'))), teamcliTarball);
+  const publishedRun = spawnSync(join(published, 'node_modules/.bin/teamcli'), [], { encoding: 'utf8' });
+  expect(publishedRun.status).toBe(0);
+  expect(publishedRun.stdout).toBe('published-line\n');
+
   const prefix = mkdtempSync(join(tmpdir(), 'teamcli-prefix-'));
-  const installed = spawnSync(
-    'npm',
-    [
-      'install',
-      '--offline',
-      '--no-audit',
-      '--no-fund',
-      '--ignore-scripts',
-      join(dest, rootReport.filename),
-      join(dest, teamcliReport.filename),
-    ],
-    { cwd: prefix, encoding: 'utf8', timeout: 40_000 },
-  );
-  if (installed.status !== 0) {
-    throw new Error(`npm install exited ${installed.status} ${installed.signal ?? ''}: ${installed.stderr || installed.stdout}`);
-  }
+  installPair(prefix, join(dest, rootReport.filename), teamcliTarball);
 
   const own = spawnSync(process.execPath, [join(repo, 'dist/cli.js'), '--version'], { encoding: 'utf8' });
   const team = spawnSync(join(prefix, 'node_modules/.bin/team'), ['--version'], { encoding: 'utf8' });
