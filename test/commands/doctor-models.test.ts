@@ -487,6 +487,27 @@ describe('the declared models and versions, on the captured screens', () => {
     expect(canShowModel({ cli: 'claude-code', model: 'Claude Opus', version: '5.5 ' })).toBe(false);
   });
 
+  // A declared name is a name, not a family of spellings: `canShowModel` compares the seat's
+  // model with `yields` exactly, so case, an edge space or a doubled space is a different string —
+  // one no rule lists, and a seat running it is not one its screen can name. A truthy here would
+  // silence `doctor`'s warning for a seat whose screen cannot show what the file declares.
+  test('a declared name is exact: case and spaces are not the name', () => {
+    const CASES: [string, string, string[]][] = [
+      ['claude-code', 'Claude Opus', ['claude opus', 'CLAUDE OPUS', 'Claude Opus ', ' Claude Opus', 'Claude  Opus']],
+      ['codex', 'GPT Sol', ['gpt sol', 'GPT SOL', 'GPT Sol ', ' GPT Sol', 'GPT  Sol']],
+      // cursor spells single words: its doubled-space case is its other multi-word name
+      ['cursor', 'Grok', ['grok', 'GROK', 'Grok ', ' Grok', 'GPT  Sol']],
+      ['antigravity', 'Gemini Flash', ['gemini flash', 'GEMINI FLASH', 'Gemini Flash ', ' Gemini Flash', 'Gemini  Flash']],
+    ];
+    for (const [cli, declared, variants] of CASES) {
+      expect(canShowModel({ cli, model: declared })).toBe(true);
+      for (const variant of variants) {
+        expect(canShowModel({ cli, model: variant })).toBe(false);
+        expect(canShowModel({ cli, model: variant, version: '5.5' })).toBe(false);
+      }
+    }
+  });
+
   test('a duplicate name in yields is refused as the rule loads', () => {
     const rule = (yields: string) => `
 - match: '^M-([0-9]+)$'
