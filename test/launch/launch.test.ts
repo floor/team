@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { paneExcerpt } from '../../src/launch/execute.ts';
-import { downPlan, formatPlan, herdr, upPlan, type DownSeat, type UpSeat } from '../../src/launch/plan.ts';
+import { executePlan, paneExcerpt, type Host } from '../../src/launch/execute.ts';
+import { downPlan, formatPlan, herdr, upPlan, type DownSeat, type Step, type UpSeat } from '../../src/launch/plan.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
 import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, parseVersion, shellQuote, versionVerdict } from '../../src/profiles/profile.ts';
@@ -441,5 +441,74 @@ describe('the pane lines a report carries', () => {
     expect(out).toContain(`  | ${'x'.repeat(200)}…\n`);
     const longest = Math.max(...out.split('\n').map((line) => line.length));
     expect(longest).toBe('  | '.length + 200 + '…'.length);
+  });
+});
+
+describe('the row a stopped delivery prints', () => {
+  // The first mismatching row is pane text, whatever the box drew: control characters and all.
+  // It goes to the terminal alone — stripped of every control character and cut to 200 — and
+  // never to the log, which holds the report only (both reviews: a BEL would ring and a CR
+  // overwrite the report, and an unbounded row would flood the terminal).
+  const ROW_SAYED = 'coder: first row of its box that is not the rules line: ';
+
+  function stoppedOn(row: string) {
+    const said: string[] = [];
+    const logged: { who: string; what: string }[] = [];
+    const host: Host = {
+      startServer: () => true,
+      sessionUp: () => true,
+      createWorkspace: () => ({ pane: 'p1', workspace: 'w1' }),
+      paneRun: () => true,
+      typeLine: () => false,
+      deliverRules: async () => ({ stop: 'read-back', typed: true, sent: false, kind: 'unsent' as const, row }),
+      renameAgent: () => true,
+      closeWorkspace: () => true,
+      stopSession: () => true,
+      kill: () => true,
+      agentPanes: () => [],
+      classify: () => 'idle',
+      sleep: async () => {},
+      now: () => 0,
+      allow: () => null,
+      record: () => {},
+      running: () => {},
+      drop: () => {},
+      say: (line) => { said.push(line); },
+      log: (who, what) => { logged.push({ who, what }); },
+    };
+    const steps: Step[] = [{
+      kind: 'run',
+      argv: [],
+      do: {
+        do: 'deliver', seat: 'coder', label: 'coder', cli: 'codex', rules: 'Rules.',
+        path: '/x/rules/coder.md',
+        line: 'Read /x/rules/coder.md (sha256 5e1d0a9c4b2f): your standing rules for this session; reply ready and wait for your brief.',
+        seconds: 1, pane: 'p1',
+      },
+    }];
+    return { said, logged, run: () => executePlan(steps, 'acme', host) };
+  }
+
+  test('a BEL, a CR and escape sequences are stripped; the row never reaches the log', async () => {
+    const row = '\u0007bad-row\r\u001b]0;secret\u0007after\u001b[?25l';
+    const { said, logged, run } = stoppedOn(row);
+    await run();
+    expect(said.length).toBe(2);
+    expect(said[0]).toBe(`${ROW_SAYED}bad-rowafter\n`);
+    expect(said[1]).toContain("rules typed, not sent: the read-back didn't match");
+    expect(said.join('')).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+    expect(said.join('')).not.toContain('secret');
+    expect(logged).toEqual([{ who: 'coder', what: expect.stringContaining("rules typed, not sent: the read-back didn't match") }]);
+    expect(logged[0]?.what).not.toContain('bad-row');
+  });
+
+  test('a 5,000-character row is cut to 200 characters and marked', async () => {
+    const row = `${'x'.repeat(4_994)}\u0007${'y'.repeat(5)}`;
+    const { said, logged, run } = stoppedOn(row);
+    await run();
+    expect(said[0]).toBe(`${ROW_SAYED}${'x'.repeat(200)}…\n`);
+    expect(said[0]?.length).toBe(ROW_SAYED.length + 200 + '…'.length + '\n'.length);
+    expect(said.join('')).not.toContain('y'.repeat(5));
+    expect(logged[0]?.what).not.toMatch(/x{10}/);
   });
 });
