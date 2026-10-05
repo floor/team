@@ -24,7 +24,7 @@ import {
   sessionState, startServer, typeText, workspaceClose, workspaceCreate, workspaceList, workspacePanes,
   type HerdrAgent, type PaneProcesses,
 } from '../herdr.ts';
-import type { Command, Io } from '../io.ts';
+import { cleanedIo, type Command, type Io } from '../io.ts';
 import { executePlan, type Host } from '../launch/execute.ts';
 import { seatProcessVerdict } from '../launch/identity.ts';
 import { launchLineFinding } from '../launch/line.ts';
@@ -113,22 +113,25 @@ export const add: Command = (argv, io) => runAdd(argv, io, realSources);
 export default add;
 
 export async function runAdd(argv: string[], io: Io, sources: AddSources = realSources): Promise<number> {
+  // Every line this run writes goes through the cleaned writers from here; the raw pair stays
+  // reachable for the progress writer alone, which draws its own `\r\x1b[K` on a TTY.
+  const out = cleanedIo(io);
   const args = readArgs(argv, ['like', 'until', 'worktree', 'session', 'file'], ['temporary', 'dry-run']);
   if (args.error) {
-    io.stderr(`team add: ${plainText(args.error)}\n${USAGE}`);
+    out.stderr(`team add: ${plainText(args.error)}\n${USAGE}`);
     // exit: add.invocation
     return 2;
   }
   const temporary = args.flags.has('temporary');
   const dry = args.flags.has('dry-run');
   if (temporary ? args.rest.length > 0 : args.rest.length !== 1) {
-    io.stderr(`team add: ${plainText(temporary ? `unexpected "${args.rest[0]}"` : 'a seat name is required')}\n${USAGE}`);
+    out.stderr(`team add: ${plainText(temporary ? `unexpected "${args.rest[0]}"` : 'a seat name is required')}\n${USAGE}`);
     // exit: add.seat-name
     // exit: add.temporary-unexpected
     return 2;
   }
   if (!temporary && (args.values.like || args.values.until || args.values.worktree)) {
-    io.stderr('team add: --like, --until and --worktree are for --temporary\n');
+    out.stderr('team add: --like, --until and --worktree are for --temporary\n');
     // exit: add.temporary-flags
     return 2;
   }
@@ -139,7 +142,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // decide it is `fileOwnerRefusal` (caller.ts).
   const fileRefusal = fileOwnerRefusal(io, args.values.file);
   if (fileRefusal !== undefined) {
-    io.stderr(`team add: ${plainText(fileRefusal)}\n`);
+    out.stderr(`team add: ${plainText(fileRefusal)}\n`);
     // exit: add.file-owner
     return 1;
   }
@@ -151,7 +154,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   if (args.values.session !== undefined) {
     const walked = walkCaller(io);
     if (!isOwner(walked)) {
-      io.stderr(`team add: ${plainText(sessionOwnerRefusal(walked))}\n`);
+      out.stderr(`team add: ${plainText(sessionOwnerRefusal(walked))}\n`);
       // exit: add.session-owner
       return 1;
     }
@@ -159,7 +162,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
 
   const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
   if (!loaded.ok) {
-    for (const problem of loaded.errors) io.stderr(`team add: ${where(problem)}${plainText(problem.message)}\n`);
+    for (const problem of loaded.errors) out.stderr(`team add: ${where(problem)}${plainText(problem.message)}\n`);
     // exit: add.not-a-repo
     // exit: add.file
     // exit: add.file-invalid
@@ -179,22 +182,22 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const session = judged.session;
   const mayChange = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
   if (mayChange.kind === 'no-pane') {
-    io.stderr(`team add: ${plainText(noPaneRefusal(mayChange.name))}\n`);
+    out.stderr(`team add: ${plainText(noPaneRefusal(mayChange.name))}\n`);
     // exit: add.no-pane
     return 1;
   }
   if (mayChange.kind === 'another-pane') {
-    io.stderr(`team add: ${plainText(anotherPaneRefusal(mayChange.name, mayChange.recordedPane))}\n`);
+    out.stderr(`team add: ${plainText(anotherPaneRefusal(mayChange.name, mayChange.recordedPane))}\n`);
     // exit: add.another-pane
     return 1;
   }
   if (mayChange.kind === 'refused') {
-    io.stderr(`team add: only the owner, the coordinator or the operator runs it; this call is ${plainLine(describeCaller(shown))}\n`);
+    out.stderr(`team add: only the owner, the coordinator or the operator runs it; this call is ${plainLine(describeCaller(shown))}\n`);
     // exit: add.caller
     return 1;
   }
   if (session === 'default') {
-    io.stderr('team add: session can\'t be "default", herdr\'s own session\n');
+    out.stderr('team add: session can\'t be "default", herdr\'s own session\n');
     // exit: add.default-session
     return 1;
   }
@@ -202,33 +205,33 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // an approval in force, and the approved copy the seat is built from is the record's own.
   const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
   if (standing.kind !== 'verified') {
-    io.stderr(`team add: ${plainText(notInForce(standing))}\n`);
+    out.stderr(`team add: ${plainText(notInForce(standing))}\n`);
     // exit: add.never-approved
     // exit: add.ceilings
     return 1;
   }
   const differences = approvalDifferencesOf(standing, team);
   if (differences.length) {
-    io.stderr(`team add: the file is not the approved one (${plainText(differences.join('; '))}): run \`team approve\`\n`);
+    out.stderr(`team add: the file is not the approved one (${plainText(differences.join('; '))}): run \`team approve\`\n`);
     // exit: add.differs
     return 1;
   }
   const approvedText = standing.record.file;
   const approved = validateTeamFile(approvedText, { home: sources.home, fs: sources.fs, root });
   if (!approved.ok) {
-    io.stderr('team add: the approved copy can\'t be read: run `team approve`\n');
+    out.stderr('team add: the approved copy can\'t be read: run `team approve`\n');
     // exit: add.approved-copy
     return 1;
   }
 
   const live = sources.sessionState(session);
   if (live === null) {
-    io.stderr('team add: herdr doesn\'t answer\n');
+    out.stderr('team add: herdr doesn\'t answer\n');
     // exit: add.herdr
     return 1;
   }
   if (live === 'stopped') {
-    io.stderr(`team add: session ${plainLine(session)} is stopped; clear it with \`herdr session delete ${plainLine(session)}\`\n`);
+    out.stderr(`team add: session ${plainLine(session)} is stopped; clear it with \`herdr session delete ${plainLine(session)}\`\n`);
     // exit: add.stopped
     return 1;
   }
@@ -236,7 +239,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // Read so a session whose workspace list can't be read is refused. The title is not a key.
   const workspaces = live === 'running' ? sources.workspaces(session) : [];
   if (agents === null || workspaces === null) {
-    io.stderr(`team add: session ${plainLine(session)} runs, and its agents can't be read\n`);
+    out.stderr(`team add: session ${plainLine(session)} runs, and its agents can't be read\n`);
     // exit: add.agents
     return 1;
   }
@@ -249,7 +252,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     ? temporarySeat(args.values, original, approved.team, recorded, agents, root, team.workspace.base)
     : declaredSeat(args.rest[0] ?? '', original, approvedText, approved.team, sources.home, sources.fs);
   if ('error' in built) {
-    io.stderr(`team add: ${plainText(built.error)}\n`);
+    out.stderr(`team add: ${plainText(built.error)}\n`);
     // exit: add.no-seat
     // exit: add.not-restored
     // exit: add.no-like
@@ -277,24 +280,24 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     ? { pane: held.pane, workspace: held.workspace, launched: held.launched, cli: built.seat.cli }
     : undefined;
   if (!repair && agents.some((agent) => agent.name === built.name)) {
-    io.stderr(`team add: ${plainLine(built.name)} is already running\n`);
+    out.stderr(`team add: ${plainLine(built.name)} is already running\n`);
     // exit: add.already-running
     return 1;
   }
   if (!profileFor(built.seat.cli)) {
-    io.stderr(`team add: no launch profile for \`${plainLine(built.seat.cli)}\` in this version\n`);
+    out.stderr(`team add: no launch profile for \`${plainLine(built.seat.cli)}\` in this version\n`);
     // exit: add.no-profile
     return 1;
   }
 
   const prepared = validateTeamFile(built.edited, { home: sources.home, fs: sources.fs, root });
   if (!prepared.ok) {
-    for (const problem of prepared.errors) io.stderr(`team add: ${where(problem)}${plainText(problem.message)}\n`);
+    for (const problem of prepared.errors) out.stderr(`team add: ${where(problem)}${plainText(problem.message)}\n`);
     // exit: add.prepared
     return 2;
   }
   for (const problem of placedProblems(prepared.team, root, sources.home, sources.fs)) {
-    io.stderr(`team add: ${plainText(problem.message)}\n`);
+    out.stderr(`team add: ${plainText(problem.message)}\n`);
     // exit: add.placed
     return 1;
   }
@@ -317,7 +320,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     ? { problem: startProblem }
     : seatStart(prepared.team, built.seat, root, sources.home, verifiedLobby ?? undefined);
   if ('problem' in start) {
-    io.stderr(`team add: ${plainText(start.problem)}\n`);
+    out.stderr(`team add: ${plainText(start.problem)}\n`);
     // exit: add.start
     return 1;
   }
@@ -352,13 +355,15 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // One writer per run: the seat's provisional line on a terminal, its one final record either
   // way, and every other line of the run on stderr, after the record it belongs to. It exists
   // from here, before the run, because the launch-line note is one of its detail lines.
+  // It is handed the raw pair on purpose: the writer cleans its own fields and draws its own
+  // `\r\x1b[K` on a TTY, and the cleaned pair would strip those bytes.
   const records = progressWriter({ stdout: io.stdout, stderr: io.stderr, isTTY: io.stdoutIsTTY ?? false });
   // The note is the writer's detail line on a real run: one line, cleaned like a record's
   // fields, whatever the launch line's word holds. A dry run has no run, and its note goes to
   // stdout with the plan it belongs to.
   if (line?.level === 'note') {
     const note = `  note ${built.name}: ${line.why}`;
-    if (dry) io.stdout(`${plainLine(note)}\n`);
+    if (dry) out.stdout(`${plainLine(note)}\n`);
     else records.detail(note);
   }
   // The plan, the record and the log hold the reason in words (`record`); the full finding — the
@@ -384,7 +389,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       : []),
   ]) {
     if (blocksLaunch(finding)) {
-      io.stderr(`team add: ${plainLine(finding.text)}\n`);
+      out.stderr(`team add: ${plainLine(finding.text)}\n`);
       // exit: add.doctor
       return 1;
     }
@@ -396,20 +401,20 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   };
   const problem = crossed();
   if (problem) {
-    io.stderr(`team add: ${plainText(problem)}\n`);
+    out.stderr(`team add: ${plainText(problem)}\n`);
     // exit: add.machine
     return 1;
   }
   const running = runningOf(agents, prepared.team, recorded);
   const room = ceilingProblem(ceilings, running, built.seat, Boolean(built.temporary));
   if (room) {
-    io.stderr(`team add: ${plainText(room)}\n`);
+    out.stderr(`team add: ${plainText(room)}\n`);
     // exit: add.ceiling
     return 1;
   }
   const again = crossed();
   if (again) {
-    io.stderr(`team add: ${plainText(again)}\n`);
+    out.stderr(`team add: ${plainText(again)}\n`);
     // exit: add.machine-again
     return 1;
   }
@@ -433,11 +438,11 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   };
   if (dry) {
     if (decision.kind === 'refuse' && wouldLaunch) {
-      io.stdout(`${plainLine(built.name)}: would refuse: ${plainText(decision.why)}\ndry run: nothing was run\n`);
+      out.stdout(`${plainLine(built.name)}: would refuse: ${plainText(decision.why)}\ndry run: nothing was run\n`);
       // exit: add.dry-budget
       return 0;
     }
-    if (decision.kind === 'unknown') io.stdout(`${plainLine(built.name)}: ${plainText(decision.text)}\n`);
+    if (decision.kind === 'unknown') out.stdout(`${plainLine(built.name)}: ${plainText(decision.text)}\n`);
     const preview = upPlan({
       root,
       session,
@@ -445,19 +450,19 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       seats: [seatForPlan],
       watchAlive: true,
     });
-    io.stdout(plainText(formatPlan(preview)));
+    out.stdout(plainText(formatPlan(preview)));
     // exit: add.dry-run
     return 0;
   }
   if (decision.kind === 'refuse' && wouldLaunch) {
-    io.stderr(`team add: refused: ${plainText(decision.why)}\n`);
+    out.stderr(`team add: refused: ${plainText(decision.why)}\n`);
     // exit: add.budget
     return 1;
   }
   if (isMigratedTrust(prepared.team.trust) && wouldLaunch) {
     const gate = verifyLobby(sources.home, { create: true, getuid: sources.getuid, fs: sources.fs });
     if (!gate.ok) {
-      io.stderr(`team add: ${plainText(gate.text)}\n`);
+      out.stderr(`team add: ${plainText(gate.text)}\n`);
       // exit: add.lobby
       return 1;
     }
@@ -466,7 +471,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
     }
   }
-  if (decision.kind === 'unknown') io.stderr(`${plainLine(built.name)}: ${plainText(decision.text)}\n`);
+  if (decision.kind === 'unknown') out.stderr(`${plainLine(built.name)}: ${plainText(decision.text)}\n`);
   if (built.edited !== original) {
     const written = withLock(dir, () => {
       if (readFileSync(path, 'utf8') !== original) return { kind: 'changed' as const };
@@ -474,12 +479,12 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       return wrote.ok ? { kind: 'ok' as const } : { kind: 'invalid' as const, errors: wrote.errors };
     });
     if (written.kind === 'changed') {
-      io.stderr('team add: the file changed while add was checking; nothing was written\n');
+      out.stderr('team add: the file changed while add was checking; nothing was written\n');
       // exit: add.changed
       return 1;
     }
     if (written.kind === 'invalid') {
-      for (const problem of written.errors) io.stderr(`team add: ${where(problem)}${plainText(problem.message)}\n`);
+      for (const problem of written.errors) out.stderr(`team add: ${where(problem)}${plainText(problem.message)}\n`);
       // exit: add.locked
       return 2;
     }
@@ -493,7 +498,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const who = describeCaller(caller);
   const host = hostOf({
     dir, session, team: prepared.team, root, home: sources.home, ceilings, running, seat: built.seat, temporary: built.temporary,
-    caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io, standing,
+    caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io: out, standing,
     verifiedLobby, records,
     doctor: sources.doctor,
     // The lobby is read again directly before the workspace this run makes in it, with nothing

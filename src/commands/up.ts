@@ -29,7 +29,7 @@ import {
   type PaneProcesses,
   type SessionState,
 } from '../herdr.ts';
-import type { Command, Io } from '../io.ts';
+import { cleanedIo, type Command, type Io } from '../io.ts';
 import type { Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
 import { seatProcessVerdict } from '../launch/identity.ts';
@@ -248,9 +248,12 @@ function seatPlan(
 }
 
 export async function runUp(argv: string[], io: Io, sources: UpSources): Promise<number> {
+  // Every line this run writes goes through the cleaned writers from here; the raw pair stays
+  // reachable for the progress writer alone, which draws its own `\r\x1b[K` on a TTY.
+  const out = cleanedIo(io);
   const args = readArgs(argv, ['session', 'file'], ['dry-run']);
   if (args.error || args.rest.length) {
-    io.stderr(`team up: ${plainText(args.error ?? `unexpected "${args.rest[0]}"`)}\n${USAGE}`);
+    out.stderr(`team up: ${plainText(args.error ?? `unexpected "${args.rest[0]}"`)}\n${USAGE}`);
     // exit: up.invocation
     return 2;
   }
@@ -258,7 +261,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
-      io.stderr(`team up: ${problem.line ? `line ${problem.line}: ` : ''}${plainText(problem.message)}\n`);
+      out.stderr(`team up: ${problem.line ? `line ${problem.line}: ` : ''}${plainText(problem.message)}\n`);
     }
     // exit: up.not-a-repo
     // exit: up.file
@@ -353,6 +356,8 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   // One writer per run: a seat's provisional line on a terminal, its one final record either
   // way, and every other line of the run on stderr, after the record it belongs to. It exists
   // from here, before the planning pass, because the launch-line note is one of its detail lines.
+  // It is handed the raw pair on purpose: the writer cleans its own fields and draws its own
+  // `\r\x1b[K` on a TTY, and the cleaned pair would strip those bytes.
   const records = progressWriter({ stdout: io.stdout, stderr: io.stderr, isTTY: io.stdoutIsTTY ?? false });
   const seats: UpSeat[] = [];
   const refused = new Set<string>();
@@ -394,7 +399,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     // stdout with the plan it belongs to.
     if (line?.level === 'note') {
       const note = `  note ${seat.name}: ${line.why}`;
-      if (dry) io.stdout(`${plainLine(note)}\n`);
+      if (dry) out.stdout(`${plainLine(note)}\n`);
       else records.detail(note);
     }
     // The plan, the record and the log hold the reason in words (`record`); the full finding —
@@ -464,13 +469,13 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   if (dry) {
     // The same cause can reach the list twice — the gate and `doctor` both read the
     // approval — so a refusal is said once.
-    for (const refusal of [...new Set(refusals)]) io.stdout(`! up would refuse: ${plainText(refusal)}\n`);
-    io.stdout(plainText(formatPlan(plan)));
+    for (const refusal of [...new Set(refusals)]) out.stdout(`! up would refuse: ${plainText(refusal)}\n`);
+    out.stdout(plainText(formatPlan(plan)));
     // exit: up.dry-run
     return 0;
   }
   if (refusals.length) {
-    for (const refusal of [...new Set(refusals)]) io.stderr(`team up: ${plainText(refusal)}\n`);
+    for (const refusal of [...new Set(refusals)]) out.stderr(`team up: ${plainText(refusal)}\n`);
     // exit: up.not-owner
     // exit: up.never-approved
     // exit: up.differs
@@ -485,7 +490,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   }
   const launch = sources.launch;
   if (!launch) {
-    io.stderr('team up: this call has no way to reach herdr\n');
+    out.stderr('team up: this call has no way to reach herdr\n');
     // exit: up.no-launch
     return 1;
   }
@@ -592,7 +597,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     // What is not a record — a skip line, a session failure, the watch's sentence — is cleaned
     // here with the same function the records use: no escape sequence or bidi override reaches
     // the terminal from a file's word, a screen's word or a folder's name.
-    say: (line) => io.stderr(plainText(line)),
+    say: (line) => out.stderr(plainText(line)),
     progress: (seat, state) => records.progress(seat, state),
     final: (seat, record) => records.final(seat, record),
     detail: (line) => records.detail(line),
