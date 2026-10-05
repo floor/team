@@ -158,11 +158,17 @@ export type WaitingProblem = { reason: string; detail: string };
 
 /** The repair for a waiting record that can prove nothing: the record is cleared and the seat is
  *  started again by a run, so the next wait is recorded with the identity read in that same
- *  write. The text is the team file's own for this seat (`relaunchRepair`): an ordinary seat is
- *  told `team remove <seat> --keep`, then `team add <seat>`; a lead seat only `team down`, then
+ *  write. It begins with the step `team down` and `team remove` never take — they answer no
+ *  prompt and touch no agent they cannot name — read from the pane the record names: a pane the
+ *  multiplexer lists under this seat's name is a CLI at its dialog, answered or closed in its
+ *  pane; any other pane (no name, another name, or a list that cannot be read) is closed. Then
+ *  the team file's own repair for this seat (`relaunchRepair`): an ordinary seat is told
+ *  `team remove <seat> --keep`, then `team add <seat>`; a lead seat only `team down`, then
  *  `team up`, which its file would otherwise refuse. */
-function identityDetail(proof: Pick<WaitingProof, 'repairLine'>): string {
-  return `  run ${proof.repairLine}, to establish one by a run\n`;
+function identityDetail(proof: Pick<WaitingProof, 'seat' | 'pane' | 'repairLine'>, reads: WaitingReads): string {
+  const named = reads.agents()?.some((agent) => agent.pane === proof.pane && agent.name === proof.seat) ?? false;
+  const step = named ? 'answer or close its dialog in its pane' : 'close that pane';
+  return `  ${step}, then run ${proof.repairLine}, to establish one by a run\n`;
 }
 
 /**
@@ -180,7 +186,7 @@ export function waitingProblem(reads: WaitingReads, proof: WaitingProof): Waitin
   if (!proof.launched) {
     return {
       reason: 'its waiting record has no process identity',
-      detail: identityDetail(proof),
+      detail: identityDetail(proof, reads),
     };
   }
   const seats = reads.seats();

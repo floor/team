@@ -745,7 +745,7 @@ describe('team up, live', () => {
     // proof, never adopted — nothing renames it, types into it or closes it, and it is not ready.
     expect(io.out).toContain('claude-coordinator-acme: left out: its waiting record has no process identity\n');
     expect(io.out).not.toContain('claude-coordinator-acme: ready');
-    expect(io.err).toContain('  run `team down` then `team up` (to restart the whole team), to establish one by a run\n');
+    expect(io.err).toContain('  answer or close its dialog in its pane, then run `team down` then `team up` (to restart the whole team), to establish one by a run\n');
     expect(io.err).not.toContain('team remove');
     expect(made.renames).not.toContain('claude-coordinator-acme');
     expect(typed).toEqual([]);
@@ -2252,7 +2252,7 @@ describe('team up, a session that was restored', () => {
     // is never read, nothing is closed, nothing typed or focused, nothing read from a terminal.
     expect(io.out).toContain('claude-coordinator-acme: left out: its waiting record has no process identity\n');
     expect(io.err).toContain(
-      '  run `team down` then `team up` (to restart the whole team), to establish one by a run\n',
+      '  answer or close its dialog in its pane, then run `team down` then `team up` (to restart the whole team), to establish one by a run\n',
     );
     expect(calls).toEqual([]);
     expect(made.closes).toEqual([]);

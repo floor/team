@@ -263,7 +263,9 @@ carrying this seat's name; the workspace's live label is the one this seat's lau
 `up` set when it created the workspace); and the pane's process is still the recorded one. A
 waiting record with no process identity proves nothing: it is never resumed, opened, skipped or
 closed from the record, and the run fails closed with `<seat>: left out: its waiting record has no
-process identity`, the team file's own repair under the record on stderr — run `team down` then
+process identity`, the team file's own repair under the record on stderr, beginning with the
+by-hand step first — answer or close its dialog in its pane for a pane the multiplexer lists under
+the seat's name, close that pane for any other — then run `team down` then
 `team up` (to restart the whole team) for a seat the file names as its coordinator or operator, or
 `team remove <seat> --keep` then `team add <seat>` (or `team down` then `team up` for the whole
 team) for any other, to establish one by a run. A stored classification is validated on the state's

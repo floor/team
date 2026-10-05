@@ -381,14 +381,22 @@ const repair = (seat: string): string =>
     ? '`team down` then `team up` (to restart the whole team)'
     : `\`team remove ${seat} --keep\` then \`team add ${seat}\` (or \`team down\` then \`team up\` for the whole team)`;
 
+/** The step the line prints before the repair, by the state of the pane the record names: a
+ *  pane the multiplexer lists under this seat's name is a CLI at its dialog; any other pane
+ *  has no name `team` could reach and is closed. */
+const step = (pane: 'unnamed' | 'dialog'): string =>
+  pane === 'dialog' ? 'answer or close its dialog in its pane' : 'close that pane';
+
 /** A run's exit, with the run's own output printed when the code is not the one the proof needs. */
 function exitOf(code: number, want: number, io: { out: string; err: string }, what: string): void {
   if (code !== want) throw new Error(`${what}: exit ${code}, wanted ${want}\n${io.out}${io.err}`);
 }
 
-/** The whole proof for one kind of seat and one state of its pane: the refusal by a run, the
- *  named repair by a run, and the next `up` handling the seat. A seat that is both of the
- *  file's leads needs its own file; every other cell uses the two-lead shape. */
+/** The whole proof for one kind of seat and one state of its pane, in the order the brief names:
+ *  the refusal by a run, the printed line's sequence run without its first step (still failing,
+ *  as the reviewer saw) and then in its order with it (the record gone, the next `up` through).
+ *  A seat that is both of the file's leads needs its own file; every other cell uses the
+ *  two-lead shape. */
 async function prove(seat: string, pane: 'unnamed' | 'dialog', both = false): Promise<void> {
   if (both) setup(true);
   seed(seat);
@@ -396,67 +404,82 @@ async function prove(seat: string, pane: 'unnamed' | 'dialog', both = false): Pr
   made.start();
   made.plant('w1:p1', 'w1', LABEL[seat] ?? 'seat', pane === 'dialog' ? TRUST : IDLE, pane === 'dialog' ? seat : null);
 
-  // 1. The refusal: this seat cannot be resumed, and the line names this seat's own repair.
+  // 1. The refusal: this seat cannot be resumed, and the line names what comes first — the
+  //    dialog answered or the nameless pane closed by hand — then this seat's own repair.
   const first = testIo(root, { kind: 'owner-no-tty' });
   const refused = await runUp(FILE, first, made.up());
   exitOf(refused, 1, first, 'the refusal run');
   expect(first.out).toContain(`${seat}: left out: its waiting record has no process identity\n`);
-  expect(first.err).toContain(`  run ${repair(seat)}, to establish one by a run\n`);
+  expect(first.err).toContain(`  ${step(pane)}, then run ${repair(seat)}, to establish one by a run\n`);
   if (LEAD.has(seat)) expect(first.err).not.toContain('remove');
 
-  // 2. The sequence the line named, run as the owner's.
+  // 2. The same sequence without its first step: the words alone leave everything as it is,
+  //    because `down` and `remove` never answer a prompt and never touch an agent they cannot
+  //    name — so the record stays, and the next `up` fails again the way the reviewer saw.
   if (LEAD.has(seat)) {
     const down = testIo(root, { kind: 'owner' });
-    const firstDown = await runDown(FILE, down, made.down());
-    exitOf(firstDown, 0, down, 'the first down');
+    exitOf(await runDown(FILE, down, made.down()), 0, down, 'the down without its first step');
     if (pane === 'dialog') {
-      // `down` never answers a prompt: it leaves the seat running and says so on the line.
       expect(down.out).toContain(`  skip ${seat}: is blocked at a prompt, which \`team\` never answers; left running\n`);
-      expect(made.stopped).toEqual([]);
-      // The owner answers the dialog by hand; then the sequence runs.
-      made.answer('w1:p1');
     } else {
-      // `down` never touches an agent it cannot name: the pane is left, the session stays up.
-      expect(made.stopped).toEqual([]);
-      // The owner closes that pane by hand; then the sequence runs.
-      made.closeByHand('w1:p1');
+      expect(down.out).toContain(`session ${SESSION}: not stopped, 1 agent left in it\n`);
     }
-    const again = testIo(root, { kind: 'owner' });
-    const secondDown = await runDown(FILE, again, made.down());
-    exitOf(secondDown, 0, again, 'the second down');
-    expect(again.out).toContain(`session ${SESSION}: stopped and cleared\n`);
-    const up = testIo(root, { kind: 'owner' });
-    exitOf(await runUp(FILE, up, made.up()), 0, up, 'the up after the sequence');
+    expect(made.stopped).toEqual([]);
+    const stuck = testIo(root, { kind: 'owner-no-tty' });
+    exitOf(await runUp(FILE, stuck, made.up()), 1, stuck, 'the up without its first step');
+    expect(stuck.out).toContain(`${seat}: left out: its waiting record has no process identity\n`);
+    expect(stateOf(seat)?.waiting).toEqual({ state: 'waiting-owner', classification: 'trust' });
   } else {
     const remove = testIo(root, { kind: 'owner' });
     const code = await runRemove([seat, '--keep', ...FILE], remove, made.remove());
     if (pane === 'dialog') {
-      // `remove` never answers a prompt either: it refuses with exit 1, and the owner answers
-      // by hand before the sequence is run again.
-      exitOf(code, 1, remove, 'the remove at the dialog');
+      exitOf(code, 1, remove, 'the remove without its first step');
       expect(remove.err).toContain(`team remove: ${seat} is blocked at a prompt, which team never answers\n`);
-      made.answer('w1:p1');
-      const retry = testIo(root, { kind: 'owner' });
-      exitOf(await runRemove([seat, '--keep', ...FILE], retry, made.remove()), 0, retry, 'the remove after the answer');
+      const stuck = testIo(root, { kind: 'owner-no-tty' });
+      exitOf(await runUp(FILE, stuck, made.up()), 1, stuck, 'the up after the refused remove');
+      expect(stuck.out).toContain(`${seat}: left out: its waiting record has no process identity\n`);
+      expect(stateOf(seat)?.waiting).toEqual({ state: 'waiting-owner', classification: 'trust' });
     } else {
-      // `remove` finds no agent by the seat's name and leaves the nameless pane: the owner
-      // closes that pane by hand, as the page says, before the next `up` reads the session.
       exitOf(code, 0, remove, 'the remove of the nameless pane');
       expect(remove.out).toContain(`stopped ${seat}\n`);
-      made.closeByHand('w1:p1');
+      const add = testIo(root, { kind: 'owner' });
+      exitOf(await runAdd([seat, ...FILE], add, made.add()), 0, add, 'the add with the pane left open');
+      // The nameless pane is still open, so `add` started a second one; the next `up` refuses
+      // the whole session for the agent this file's state doesn't record.
+      const stuck = testIo(root, { kind: 'owner-no-tty' });
+      exitOf(await runUp(FILE, stuck, made.up()), 1, stuck, 'the up with the nameless pane left');
+      expect(stuck.err).toContain(`team up: session ${SESSION} has 1 agent this file's state doesn't record: \`up\` never touches a running team\n`);
     }
-    const add = testIo(root, { kind: 'owner' });
-    exitOf(await runAdd([seat, ...FILE], add, made.add()), 0, add, 'the add');
   }
 
-  // 3. The record is cleared or replaced.
+  // 3. The sequence the line names, in its order, first step included: the dialog answered or
+  //    the pane closed by the owner's hand on the fake host, then — and only then — this seat's
+  //    own repair. A fresh table, seeded again: step 2 left a second pane behind for an
+  //    ordinary seat whose pane had no name.
+  seed(seat);
+  const hand = table();
+  hand.start();
+  hand.plant('w1:p1', 'w1', LABEL[seat] ?? 'seat', pane === 'dialog' ? TRUST : IDLE, pane === 'dialog' ? seat : null);
+  if (pane === 'dialog') hand.answer('w1:p1'); else hand.closeByHand('w1:p1');
+  if (LEAD.has(seat)) {
+    const down = testIo(root, { kind: 'owner' });
+    exitOf(await runDown(FILE, down, hand.down()), 0, down, 'the down with its first step');
+    expect(down.out).toContain(`session ${SESSION}: stopped and cleared\n`);
+    const up = testIo(root, { kind: 'owner' });
+    exitOf(await runUp(FILE, up, hand.up()), 0, up, 'the up after the sequence');
+  } else {
+    const remove = testIo(root, { kind: 'owner' });
+    exitOf(await runRemove([seat, '--keep', ...FILE], remove, hand.remove()), 0, remove, 'the remove with its first step');
+    const add = testIo(root, { kind: 'owner' });
+    exitOf(await runAdd([seat, ...FILE], add, hand.add()), 0, add, 'the add after the sequence');
+  }
+
+  // 4. The record is cleared or replaced, and the next `up` handles the seat.
   const after = stateOf(seat);
   expect(after?.waiting).toBeUndefined();
   expect(after?.pane).not.toBe('w1:p1');
-
-  // 4. The next `up` handles the seat.
   const next = testIo(root, { kind: 'owner' });
-  exitOf(await runUp(FILE, next, made.up()), 0, next, 'the next up');
+  exitOf(await runUp(FILE, next, hand.up()), 0, next, 'the next up');
   expect(next.out + next.err).not.toContain(`${seat}: left out`);
 }
 

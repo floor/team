@@ -445,7 +445,7 @@ describe('the waiting proof: the state is a hint, never an authority', () => {
     const result = await runPause(input(), f.host);
     expect(result).toMatchObject({ kind: 'left out', reason: 'its waiting record has no process identity' });
     expect((result as { detail: string }).detail).toContain(
-      'run `team remove beta --keep` then `team add beta` (or `team down` then `team up` for the whole team), to establish one by a run',
+      'close that pane, then run `team remove beta --keep` then `team add beta` (or `team down` then `team up` for the whole team), to establish one by a run',
     );
     expect(f.calls).not.toContain('focus');
     expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
@@ -469,8 +469,18 @@ describe('the waiting proof: the state is a hint, never an authority', () => {
       f.host,
     );
     expect(result).toMatchObject({ kind: 'left out', reason: 'its waiting record has no process identity' });
-    expect((result as { detail: string }).detail).toContain('run `team down` then `team up` (to restart the whole team), to establish one by a run');
+    expect((result as { detail: string }).detail).toContain('close that pane, then run `team down` then `team up` (to restart the whole team), to establish one by a run');
     expect((result as { detail: string }).detail).not.toContain('remove');
+  });
+
+  test('a record with no process identity whose pane carries its name asks for the dialog first', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o'], process: null, agents: [agent('w2:p1', 'beta')] });
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: 'its waiting record has no process identity' });
+    expect((result as { detail: string }).detail).toContain(
+      'answer or close its dialog in its pane, then run `team remove beta --keep` then `team add beta` (or `team down` then `team up` for the whole team), to establish one by a run',
+    );
   });
 
   test('(a) another seat recorded on the same pane refuses it: nothing renamed, nothing closed', async () => {
