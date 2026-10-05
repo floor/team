@@ -971,7 +971,14 @@ describe('a refused folder is refused under every spelling that names it', () =>
     mkdirSync(agents, { recursive: true });
     const variant = join(base, 'pb');
     const folds = foldsSpellings(variant, join(base, 'PB'));
-    const text = migratedTeamYaml().replaceAll(root, project).replace('trust:\n', `trust:\n  - ${variant}\n`);
+    // The project moved, so its worktrees folder moved with it: the fixture's worktrees entry has
+    // to move too, or the load refuses `workspace.path ... outside trust` for a reason that is not
+    // the entry under test — on a volume that keeps "pb" apart from "PB" the variant entry used to
+    // cover that path only by folding, which is exactly the volume this case is not about.
+    const text = migratedTeamYaml()
+      .replaceAll(root, project)
+      .replace(join(base, 'worktrees'), join(base, 'PB', 'worktrees'))
+      .replace('trust:\n', `trust:\n  - ${variant}\n`);
     writeFileSync(join(agents, 'team.yaml'), text);
     const loaded = loadTeamFile(project, { file: join(agents, 'team.yaml'), home });
     expect(loaded.ok).toBe(!folds);
