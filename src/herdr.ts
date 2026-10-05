@@ -251,6 +251,10 @@ export function setPaneExec(exec: PaneExec | null): void {
   paneExec = exec ?? shellPaneExec;
 }
 
+// The visible-line window `status` and the watch both read: one value, so a report and the watch
+// can't classify different windows of the same pane.
+export const PANE_WINDOW = 14;
+
 // The visible lines of a pane, or null. `session` undefined reaches the caller's own server.
 // The lines keep their ANSI styling, CRLF folded to LF: a greyed suggestion and typed text
 // read the same as plain text, and only their styling tells them apart, so the readers that
