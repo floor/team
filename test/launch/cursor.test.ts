@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
-import { classify, classifyComposer, readBox, readFold, readScreen } from '../../src/watch/screen.ts';
+import { classify, classifyComposer, readBox, readFold, readScreen, screenData } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
 import { boxHoldsText, deliverRules, type Delivery } from '../../src/launch/deliver.ts';
 import { NUDGE_TEXT } from '../../src/watch/pass.ts';
@@ -782,5 +782,168 @@ describe('the person\'s own box, captured (Cursor)', () => {
       rows: ['    → zeta glyph second'],
       wrap: { continuation: 'text-column', kind: 'word' },
     });
+  });
+});
+
+describe('the closed Cursor status row (round 2)', () => {
+  // Every reading kept here is a reviewer probe from the round-2 verdicts under this branch.
+  // On main each of these screens read `unknown`, with the model unread; this tree must read
+  // them the same way. The six new captures are the only readings that differ from main, and
+  // a row that keeps every closed token — `Run Everything` included — is a real row by every
+  // test the screen offers, so it is accepted and the model it names is the model read.
+  const GROK = '  Grok 4.7 256K High                 Run Everything';
+  const GPT_ROW = '  GPT-5.6 Sol 272K High              Run Everything';
+  const rows = (name: string) => fixture(name).replace(/\n+$/, '').split('\n');
+  const text = (lines: string[]) => lines.join('\n');
+  const read = (screen: string) => {
+    const lines = screen.split('\n');
+    return `${classify('cursor', lines).kind} / ${classifyComposer('cursor', lines).kind}`;
+  };
+  const model = (screen: string) => runningModel('cursor', screen);
+  const put = (name: string, n: number, line: string) => {
+    const lines = rows(name);
+    lines[n - 1] = line;
+    return text(lines);
+  };
+  const footer = (name: string, line: string) =>
+    put(name, rows(name).findIndex((row) => /^ {2}(?:Grok|GPT-|Gemini |Composer )/.test(row)) + 1, line);
+
+  test('ordinary output where the footer was reads unknown, as main read it', () => {
+    const lines = [
+      '  Step 2',
+      '  Version 1.2 Released',
+      '  HTTP 200 OK',
+      '  Added 2 Files',
+      '  Item 2',
+      '  Release 2',
+      '  NODE22.log',
+      '  Python 3.12 · 45%',
+      '  Node 22',
+      '  3 files edited',
+      '  A1',
+      '  Run Everything',
+      '  Report 2 Run Everything',
+    ];
+    for (const line of lines) {
+      const screen = footer('idle', line);
+      expect(read(screen)).toBe('unknown / unknown');
+      expect(model(screen)).toBeNull();
+    }
+  });
+
+  test('a model-shaped line missing its closed tokens is not a status row', () => {
+    const gpt = footer('idle', '  GPT-5.6 Sol 272K High'); // output text, no `Run Everything`
+    expect(read(gpt)).toBe('unknown / unknown');
+    expect(model(gpt)).toBeNull();
+    const composer = footer('gpt-sol-idle', '  Composer 2.5');
+    expect(read(composer)).toBe('unknown / unknown');
+    expect(model(composer)).toBeNull();
+    const muse = footer('idle', '  Muse Spark 1.3                    Run Everything'); // family unknown
+    expect(read(muse)).toBe('unknown / unknown');
+    expect(model(muse)).toBeNull();
+    const big = footer('idle', '  GPT-5.6 Sol 1M High                Run Everything'); // context unknown
+    expect(read(big)).toBe('unknown / unknown');
+    expect(model(big)).toBeNull();
+  });
+
+  test('a painted running screen stays working, and gains no status row', () => {
+    const screen = footer('working', '  Step 2');
+    expect(read(screen)).toBe('working / unknown');
+    expect(model(screen)).toBeNull();
+  });
+
+  test('a running frame with its spinner and ctrl+c removed is unknown, never idle', () => {
+    const lines = rows('working')
+      .filter((line) => !/^\s*[⠀-⣿]/.test(line))
+      .map((line) => line.replace(/\s*ctrl\+c to stop\s*$/, ''));
+    lines[lines.findIndex((row) => row === GROK)] = '  Step 2';
+    const screen = text(lines);
+    expect(read(screen)).toBe('unknown / unknown');
+    expect(model(screen)).toBeNull();
+  });
+
+  test('a finished turn and an exited shell with the footer replaced are unknown', () => {
+    expect(read(footer('rules-accepted', '  Step 2'))).toBe('unknown / unknown');
+    const exited = put('idle', 12, '  Step 2').split('\n');
+    exited[12] = '❯';
+    expect(read(text(exited))).toBe('unknown / unknown');
+  });
+
+  test('a false footer with no input row above it is unknown', () => {
+    const lines = rows('idle').filter((_, i) => i !== 8);
+    lines[lines.findIndex((row) => row === GROK)] = '  Step 2';
+    expect(read(text(lines))).toBe('unknown / unknown');
+  });
+
+  test('the trust dialog closes as trust with output below its anchor', () => {
+    expect(read(`${text(rows('trust'))}\n  Step 2`)).toBe('trust / unknown');
+    const inside = rows('trust');
+    inside.splice(inside.findIndex((row) => /Use arrow keys to navigate, Enter to/.test(row)), 0, '  Step 2');
+    expect(read(text(inside))).toBe('trust / unknown');
+  });
+
+  test('a quiet follow-up queue reads idle exactly as main read it', () => {
+    const lines = rows('follow-up-queue-hint').filter((line) => !/^\s*[⠀-⣿]/.test(line));
+    lines.splice(lines.findIndex((row) => /enter interrupt and send/.test(row)) + 1, 0, '  Step 2');
+    const screen = text(lines);
+    expect(read(screen)).toBe('idle / idle');
+    expect(model(screen)).toEqual({ model: 'Grok', version: '4.7' });
+  });
+
+  test('prose below the footer names no model; the footer still does', () => {
+    const prose = `${text(rows('idle'))}\n  GPT-5.6 Sol completed the task`;
+    expect(read(prose)).toBe('unknown / unknown');
+    expect(model(prose)).toEqual({ model: 'Grok', version: '4.7' });
+  });
+
+  test('a working screen with a line appended stays working and unknown', () => {
+    const screen = `${text(rows('working'))}\n  Step 2`;
+    expect(read(screen)).toBe('working / unknown');
+    expect(model(screen)).toEqual({ model: 'Grok', version: '4.7' });
+  });
+
+  test('a full status row is taken by its position: the lowest one wins', () => {
+    const above = rows('idle');
+    above.splice(above.findIndex((row) => /^ {2}→/.test(row)) - 2, 0, GROK); // a full row in the transcript
+    expect(read(text(above))).toBe('idle / idle'); // the real footer below it wins
+    expect(model(text(above))).toEqual({ model: 'Grok', version: '4.7' });
+    // Below the real footer the appended row is the status row, and the footer above it reads
+    // as text left in the box — main reads it the same way, and it is a position gap, not a row gap.
+    const below = `${text(rows('idle'))}\n${GROK}`;
+    expect(read(below)).toBe('unsent / unsent');
+    expect(model(below)).toEqual({ model: 'Grok', version: '4.7' });
+    // The status row needs no workspace line under it, and tolerates exactly one.
+    expect(read(text(rows('idle').slice(0, -1)))).toBe('idle / idle');
+    expect(read(`${text(rows('idle'))}\n  extra`)).toBe('unknown / unknown');
+  });
+
+  test('a full row in the status position is a real row; the model it names is read', () => {
+    const gpt = footer('idle', GPT_ROW);
+    expect(read(gpt)).toBe('idle / idle');
+    expect(model(gpt)).toEqual({ model: 'GPT Sol', version: '5.6' });
+    const typed = put('gpt-sol-idle', 9, `  → ${GPT_ROW.slice(2)}`);
+    expect(read(typed)).toBe('unsent / unsent');
+    expect(model(typed)).toEqual({ model: 'GPT Sol', version: '5.6' });
+  });
+
+  test('the Grok model rule is anchored to the status row', () => {
+    // Main's rule was `(?:^|\s)Grok\s+…`: it read a family name mid-sentence. The anchored rule
+    // keeps every row main accepted (this one included) and drops prose that is not a row.
+    expect(model('x Grok 4.7 wrote it')).toBeNull();
+    expect(model('  Grok 4.7 wrote this answer in the transcript')).toEqual({ model: 'Grok', version: '4.7' });
+  });
+
+  test('one expression, used in the three places', () => {
+    const data = screenData('cursor');
+    if (!data || data.composer.mode !== 'status-then-one' || !data.trust || !data.working) {
+      throw new Error('cursor profile shape changed');
+    }
+    const status = data.composer.statusLine;
+    const trustRow = data.trust.rules[0]?.noneAfter?.patterns[1]?.match;
+    const workingRow = data.working.rules[1]?.noneAfter?.patterns[0]?.except.find((re) => re.source === status.source);
+    expect(trustRow?.source).toBe(status.source);
+    expect(workingRow).toBeDefined();
+    expect(status.source).toContain('Run Everything');
+    expect(status.source).toContain('GPT-');
   });
 });

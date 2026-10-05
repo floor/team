@@ -592,7 +592,9 @@ describe('team up, live', () => {
   test.each([
     ['another model', 'gpt-sol-idle', 'drift'],
     ['the file\'s model', 'idle', 'equal'],
-    ['an unreadable model', 'unread', 'unread'],
+    ['a family the grammar does not know', 'unknown-family', 'refused'],
+    ['an output line where the footer was', 'spoof', 'refused'],
+    ['a full status row where the footer was', 'full-row', 'drift'],
   ] as const)('cursor launch, screen shows %s', async (_label, screen, expectCase) => {
     const path = join(root, '.agents/team.yaml');
     const cursorSeat = [
@@ -613,14 +615,21 @@ describe('team up, live', () => {
       .replace(/  - role: implementer\n    name: codex-acme[\s\S]*?stopped: true\n/, `${cursorSeat}\n`));
     await approve();
     const home = readFileSync(join(import.meta.dir, '../fixtures/cursor/2026.10.01/idle.txt'), 'utf8');
+    const footer = '  Grok 4.7 256K High                 Run Everything';
+    // Muse Spark is a family the closed grammar does not know, and `  GPT-5.6 Sol 272K High`
+    // without `Run Everything` is output shaped like a row: both screens read `unknown`, the
+    // idle wait times out, and the seat is never renamed. A row that keeps every token —
+    // `Run Everything` included — is a real row by every test the screen offers, so it is
+    // accepted and the model check reads it.
     const shown = screen === 'idle'
       ? home
       : screen === 'gpt-sol-idle'
         ? readFileSync(join(import.meta.dir, '../fixtures/cursor/2026.10.01/gpt-sol-idle.txt'), 'utf8')
-        : home.replace(
-          '  Grok 4.7 256K High                 Run Everything',
-          '  Muse Spark 1.3                    Run Everything',
-        );
+        : screen === 'unknown-family'
+          ? home.replace(footer, '  Muse Spark 1.3                    Run Everything')
+          : screen === 'spoof'
+            ? home.replace(footer, '  GPT-5.6 Sol 272K High')
+            : home.replace(footer, '  GPT-5.6 Sol 272K High              Run Everything');
     const made = world((_pane, label) => (label === 'grok 4.7' ? shown : IDLE));
     made.launch.agentStatus = () => 'idle';
     const sent: string[] = [];
@@ -639,14 +648,18 @@ describe('team up, live', () => {
       );
       return;
     }
+    if (expectCase === 'refused') {
+      expect(code).toBe(1);
+      expect(sent).toEqual([]);
+      expect(made.renames).not.toContain('cursor-acme');
+      expect(seat?.stage).toBe('launched');
+      expect(io.out).toContain('cursor-acme: timed out waiting for its idle prompt; left at launched\n');
+      return;
+    }
     expect(made.renames).toContain('cursor-acme');
     expect(sent.length).toBeGreaterThan(0);
     expect(io.out).not.toContain('left at launched, not named');
-    if (expectCase === 'unread') {
-      expect(io.out).toContain("cursor-acme: its screen doesn't show a model this version knows; not checked\n");
-    } else {
-      expect(io.out).not.toContain('not checked');
-    }
+    expect(io.out).not.toContain('not checked');
   });
 
 describe('team down, live', () => {
