@@ -8,10 +8,6 @@ export const trust: Section = {
   after: [],
   validate(entry, ctx) {
     const trustItems = ctx.check.list(entry, 'trust');
-    if (entry && trustItems.length === 0) {
-      ctx.check.fail(entry.value.line, 'trust must not be empty');
-      return [];
-    }
     const hasLegacy = trustItems.some((item) => isLegacyTrustEntry(item.value));
     const hasAbsolute = trustItems.some((item) => !isLegacyTrustEntry(item.value));
     if (hasLegacy && hasAbsolute) {
@@ -28,7 +24,7 @@ export const trust: Section = {
     } else if (hasAbsolute) {
       const home = ctx.home ?? homedir();
       for (const item of trustItems) {
-        const problem = absoluteTrustProblem(item.value, home);
+        const problem = absoluteTrustProblem(item.value, home, ctx.fs);
         if (problem) ctx.check.fail(item.line, `trust: "${item.value}" ${problem}`);
       }
     }
@@ -36,7 +32,6 @@ export const trust: Section = {
   },
   schema: {
     type: 'array',
-    minItems: 1,
     items: { type: 'string', minLength: 1 },
     $comment: 'absolute paths the seats may work in, including the machine lobby ~/.config/team/lobby and the project root',
   },

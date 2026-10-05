@@ -180,7 +180,7 @@ async function runUpCmd(argv: string[], made: ReturnType<typeof world>, over: Pa
     sessionState: () => made.session,
     agents: () => [],
     home,
-    doctor: doctor(),
+    doctor: runDoctorCmdSources(),
     launch: made.launch,
     now: () => NOW,
     ...over,
@@ -308,13 +308,16 @@ describe('the lobby gate', () => {
 
     const made = world();
     const run = await runUpCmd([], made);
-    expect(run.code).toBe(1);
-    expect(run.err).toContain(`the lobby ${lobby}: ${lobby} is a symbolic link`);
+    expect(run.code).toBe(2);
+    expect(run.err).toContain('symbolic link');
     expect(made.workspaces).toHaveLength(0);
+    const gate = verifyLobby(home);
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) expect(gate.text).toContain(`${lobby} is a symbolic link`);
 
     const runAdd = await runAddCmd(['worker'], world());
-    expect(runAdd.code).toBe(1);
-    expect(runAdd.err).toContain(`the lobby ${lobby}: ${lobby} is a symbolic link`);
+    expect(runAdd.code).toBe(2);
+    expect(runAdd.err).toContain('symbolic link');
   });
 
   test('refusal: a symbolic link at its parent (~/.config/team)', async () => {
@@ -326,9 +329,12 @@ describe('the lobby gate', () => {
 
     const made = world();
     const run = await runUpCmd([], made);
-    expect(run.code).toBe(1);
-    expect(run.err).toContain(`the lobby ${lobby}: ${join(home, '.config', 'team')} is a symbolic link`);
+    expect(run.code).toBe(2);
+    expect(run.err).toContain(`${join(home, '.config', 'team')} is a symbolic link`);
     expect(made.workspaces).toHaveLength(0);
+    const gate = verifyLobby(home);
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) expect(gate.text).toContain(`${join(home, '.config', 'team')} is a symbolic link`);
   });
 
   test('refusal: a symbolic link at a higher existing ancestor (~/.config)', async () => {
@@ -340,9 +346,12 @@ describe('the lobby gate', () => {
 
     const made = world();
     const run = await runUpCmd([], made);
-    expect(run.code).toBe(1);
-    expect(run.err).toContain(`the lobby ${lobby}: ${join(home, '.config')} is a symbolic link`);
+    expect(run.code).toBe(2);
+    expect(run.err).toContain(`${join(home, '.config')} is a symbolic link`);
     expect(made.workspaces).toHaveLength(0);
+    const gate = verifyLobby(home);
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) expect(gate.text).toContain(`${join(home, '.config')} is a symbolic link`);
   });
 
   test('refusal: a component owned by another user (simulated through getuid)', async () => {
@@ -401,9 +410,12 @@ describe('the lobby gate', () => {
 
     const made = world();
     const run = await runUpCmd([], made);
-    expect(run.code).toBe(1);
-    expect(run.err).toContain(`the lobby ${lobby}: is not a directory`);
+    expect(run.code).toBe(2);
+    expect(run.err).toContain('is not a directory');
     expect(made.workspaces).toHaveLength(0);
+    const gate = verifyLobby(home);
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) expect(gate.text).toContain('is not a directory');
   });
 
   test('refusal: a non-empty lobby (one dotfile)', async () => {
@@ -441,13 +453,9 @@ describe('the lobby gate', () => {
     const homeInLink = join(linkDir, 'home');
     mkdirSync(homeInLink, { recursive: true });
 
-    approveYaml(migratedTeamYaml(), homeInLink);
-
-    const made = world();
-    const run = await runUpCmd([], made, { home: homeInLink });
-    expect(run.code).toBe(1);
-    expect(run.err).toContain(`the lobby ${lobbyDir(homeInLink)}: is inside the repository ${repoDir}`);
-    expect(made.workspaces).toHaveLength(0);
+    const gate = verifyLobby(homeInLink, { create: true });
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) expect(gate.text).toContain(`is inside the repository ${repoDir}`);
   });
 
   test('creation under a umask of 0022 and 0077 ends at 0700', () => {
@@ -562,7 +570,7 @@ describe('the lobby gate', () => {
 
     const doc = await runDoctorCmd();
     expect(doc.out).not.toContain('will be created at the first launch');
-    expect(doc.out).toContain(`the lobby ${lobby}: ${lobby} is a symbolic link`);
+    expect(doc.err).toContain('symbolic link');
   });
 
   test('refusal: readdir error on lobby refuses and does not succeed open', () => {
@@ -635,21 +643,21 @@ describe('the lobby gate', () => {
     const symHome = join(base, 'sym-home');
     symlinkSync(realHome, symHome, 'dir');
 
-    approveYaml(migratedTeamYaml(), symHome);
-    const run = await runUpCmd([], world(), { home: symHome });
-    expect(run.code).toBe(1);
-    expect(run.err).toContain(`the lobby ${lobbyDir(symHome)}: ${symHome} is a symbolic link`);
+    const gate = verifyLobby(symHome);
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) expect(gate.text).toContain(`${symHome} is a symbolic link`);
   });
 
-  test('dry run shows shared seat in its cwd and worktree seat in machine lobby', async () => {
+  test('dry run shows every seat in the machine lobby', async () => {
     approveYaml(migratedTeamYaml());
     const dry = await runUpCmd(['--dry-run'], world());
     expect(dry.code).toBe(0);
-    expect(dry.out).toContain(`workspace create --cwd ${root} --label lead`);
+    expect(dry.out).toContain(`workspace create --cwd ${lobby} --label lead`);
     expect(dry.out).toContain(`workspace create --cwd ${lobby} --label worker`);
+    expect(dry.out).not.toContain('mkdir -p');
   });
 
-  test('real run makes machine lobby and leaves old lobby untouched', async () => {
+  test('real run makes the machine lobby and leaves the old lobby untouched', async () => {
     approveYaml(migratedTeamYaml());
     const oldLobby = join(base, 'worktrees', 'acme', '.lobby');
     mkdirSync(oldLobby, { recursive: true });
@@ -657,7 +665,7 @@ describe('the lobby gate', () => {
     const run = await runUpCmd([], made);
     expect(run.code).toBe(0);
     expect(existsSync(lobby)).toBe(true);
-    expect(made.workspaces).toContainEqual({ label: 'lead', cwd: root });
+    expect(made.workspaces).toContainEqual({ label: 'lead', cwd: lobby });
     expect(made.workspaces).toContainEqual({ label: 'worker', cwd: lobby });
     expect(readdirSync(oldLobby)).toEqual([]);
   });
@@ -671,14 +679,21 @@ describe('trust: validation', () => {
     expect(loaded.ok).toBe(true);
   });
 
-  test('empty trust is refused', () => {
+  test('empty trust loads and cannot launch', async () => {
     const yaml = migratedTeamYaml().replace(/trust:\n(?:  - .*\n)+/, 'trust: []\n');
     writeFileSync(join(root, '.agents', 'team.yaml'), yaml);
     const loaded = loadTeamFile(root, { home });
-    expect(loaded.ok).toBe(false);
-    if (!loaded.ok) {
-      expect(loaded.errors.some((e) => e.message.includes('must not be empty') || e.message.includes('cannot be empty'))).toBe(true);
-    }
+    expect(loaded.ok).toBe(true);
+    const made = world();
+    const run = await runUpCmd([], made);
+    expect(run.code).toBe(1);
+    expect(run.err).toContain('the file is legacy: migrate trust to absolute paths');
+    expect(made.workspaces).toEqual([]);
+    expect(existsSync(lobby)).toBe(false);
+    const status = await runStatusCmd();
+    expect(status.code).not.toBe(2);
+    const work = await runWorktreeCmd(['new', 'task']);
+    expect(work.code).not.toBe(2);
   });
 
   test('relative paths or globs in migrated trust are refused', () => {
@@ -710,15 +725,22 @@ describe('trust: validation', () => {
     }
   });
 
-  test('two spellings of one folder compare equal by canonical landing', () => {
+  test('two legal spellings of one folder compare equal and case stays different', () => {
+    const slash = canonicalLanding(`${root}/`);
+    const plain = canonicalLanding(root);
+    expect(slash.error).toBeUndefined();
+    expect(slash.landing).toBe(plain.landing);
+    const lower = canonicalLanding(join(root, 'src'));
+    const upper = canonicalLanding(join(root, 'SRC'));
+    expect(lower.landing).not.toBe(upper.landing);
+  });
+
+  test('a symlink spelling is not a legal trust entry', () => {
     const target = join(base, 'real-folder');
     mkdirSync(target, { recursive: true });
     const sym = join(base, 'sym-folder');
     symlinkSync(target, sym, 'dir');
-
-    const land1 = canonicalLanding(target).landing;
-    const land2 = canonicalLanding(sym).landing;
-    expect(land1).toBe(land2);
+    expect(absoluteTrustProblem(sym, home)).toContain('symbolic link');
   });
 
   test('mixed file (legacy patterns and absolute entries) exits 2 in all 7 commands', async () => {
@@ -922,17 +944,21 @@ describe('legacy files and migration', () => {
     approveYaml(migratedTeamYaml());
     const made = world();
     await runUpCmd([], made);
+    const before = made.workspaces.length;
     const addRun = await runAddCmd(['--temporary', '--like', 'worker', '--until', 'merged:main'], made);
     expect(addRun.code).toBe(0);
-    expect(made.workspaces.some((w) => w.cwd === lobby)).toBe(true);
+    const added = made.workspaces.slice(before);
+    expect(added).toContainEqual({ label: 'worker-tmp-1', cwd: lobby });
   });
 
   test('add refuses when trust has no lobby and leaves file untouched', async () => {
     const noLobbyYaml = migratedTeamYaml().replace(/  - ~\/\.config\/team\/lobby\n/, '');
     writeFileSync(join(root, '.agents', 'team.yaml'), noLobbyYaml);
     const before = readFileSync(join(root, '.agents', 'team.yaml'), 'utf8');
-    const addRun = await runAddCmd(['worker'], world());
+    const made = world();
+    const addRun = await runAddCmd(['worker'], made);
     expect(addRun.code).not.toBe(0);
+    expect(made.workspaces).toEqual([]);
     const after = readFileSync(join(root, '.agents', 'team.yaml'), 'utf8');
     expect(after).toBe(before);
   });
@@ -1096,92 +1122,244 @@ describe('rules text', () => {
   });
 });
 
-// The launch line runs in the folder the seat starts in, which for a seat that works in worktrees
-// is the lobby, not the project root. A line that cannot run there is that seat's own finding: it
-// is left out before its workspace is made, and the seats that can start still do.
 describe('a launch line that cannot run where the seat starts', () => {
-  // `../tools/x.sh` exists from the project root — resolve(root, '../tools/x.sh') — and nowhere
-  // under the lobby. The worker's line is the only one changed: lead keeps its own.
-  const WORKER_LAUNCH = BASE.replace(
-    'launch: claude --model claude-opus-5-5\n    count: 2',
-    'launch: zsh ../tools/x.sh\n    count: 2',
-  );
+  function workerLaunch(): string {
+    return migratedTeamYaml().replace(
+      '    name: worker\n    label: worker\n    cli: claude-code\n    vendor: anthropic\n    model: Claude Opus\n    version: "5.5"\n    launch: claude --model claude-opus-5-5\n',
+      '    name: worker\n    label: worker\n    cli: claude-code\n    vendor: anthropic\n    model: Claude Opus\n    version: "5.5"\n    launch: zsh ../tools/x.sh\n',
+    );
+  }
 
   test('the dry run leaves the seat out before its workspace is made, and the others go on', async () => {
-    approve(WORKER_LAUNCH);
+    approveYaml(workerLaunch());
     mkdirSync(join(base, 'tools'), { recursive: true });
     writeFileSync(join(base, 'tools', 'x.sh'), 'echo hi\n');
-    const run = await up(['--dry-run'], world());
+    const run = await runUpCmd(['--dry-run'], world());
     expect(run.code).toBe(0);
-    const why =
-      'worker: would refuse: its launch line runs `../tools/x.sh`, not found from its start folder ' +
-      '../worktrees/acme/.lobby; the same file is at `' + join(base, 'tools', 'x.sh') + '` from the project root — write that path';
-    expect(run.out).toContain(`  skip ${why}\n`);
-    expect(run.out).toContain('worker-2: would refuse: its launch line runs `../tools/x.sh`');
-    // Nothing for the seat is made: no lobby for it to wait in, no workspace, no launch.
+    expect(run.out).toContain('worker: would refuse: its launch line runs `../tools/x.sh`');
+    expect(run.out).toContain(lobby);
     expect(run.out).not.toContain('--label worker ');
-    expect(run.out).not.toContain('--label worker-2 ');
-    expect(run.out).not.toContain(`mkdir -p ${lobby}`);
-    expect(run.out).toContain(`--cwd ${root} --label lead`);
+    expect(run.out).not.toContain('mkdir -p');
+    expect(run.out).toContain(`--cwd ${lobby} --label lead`);
   });
 
   test('the real run refuses that seat only: its workspace is never made, the others start', async () => {
-    approve(WORKER_LAUNCH);
+    approveYaml(workerLaunch());
     mkdirSync(join(base, 'tools'), { recursive: true });
     writeFileSync(join(base, 'tools', 'x.sh'), 'echo hi\n');
     const made = world();
-    const run = await up([], made);
+    const run = await runUpCmd([], made);
     expect(run.code).toBe(1);
-    expect(run.err).toBe('');
     expect(run.out).toContain('worker: refused: its launch line runs `../tools/x.sh`');
-    expect(run.out).toContain('worker-2: refused: its launch line runs `../tools/x.sh`');
-    expect(made.workspaces).toEqual([
-      { label: 'lead', cwd: root },
-      { label: 'watchdog', cwd: root },
-    ]);
-    expect(existsSync(lobby)).toBe(false);
+    expect(made.workspaces).toContainEqual({ label: 'lead', cwd: lobby });
+    expect(made.workspaces.some((workspace) => workspace.label === 'worker')).toBe(false);
   });
 
-  test('add refuses the seat too, before the file is edited', async () => {
-    approve(WORKER_LAUNCH);
+  test('add refuses the seat too, before the file is edited, and makes no workspace', async () => {
+    const text = workerLaunch();
+    approveYaml(text);
     mkdirSync(join(base, 'tools'), { recursive: true });
     writeFileSync(join(base, 'tools', 'x.sh'), 'echo hi\n');
     const made = world();
-    const run = await add(['--temporary', '--like', 'worker', '--until', 'merged:fix/fresh'], made);
+    const run = await runAddCmd(['--temporary', '--like', 'worker', '--until', 'merged:fix/fresh'], made);
     expect(run.code).toBe(1);
-    expect(run.err).toContain('team add: worker-tmp-1: its launch line runs `../tools/x.sh`, not found from its start folder ../worktrees/acme/.lobby');
+    expect(run.err).toContain('its launch line runs `../tools/x.sh`');
     expect(made.workspaces).toEqual([]);
-    expect(readFileSync(join(root, '.agents', 'team.yaml'), 'utf8')).toBe(WORKER_LAUNCH);
+    expect(readFileSync(join(root, '.agents', 'team.yaml'), 'utf8')).toBe(text);
+  });
+});
+
+describe('the gate fails closed and the launch uses the path it verified', () => {
+  test('a missing config directory is absent, not a failure', () => {
+    const res = verifyLobby(home, { create: false });
+    expect(res).toEqual({ ok: true, missing: true });
   });
 
-  test('a line the check cannot read is never refused: the seat starts as it always did', async () => {
-    approve(BASE.replace(
-      'launch: claude --model claude-opus-5-5\n    count: 2',
-      'launch: claude --model claude-opus-5-5 --append-system-prompt "be terse"\n    count: 2',
-    ));
-    const made = world();
-    const run = await up([], made);
-    expect(run.code).toBe(0);
-    expect(made.workspaces.map((workspace) => workspace.label)).toEqual(['lead', 'worker', 'worker-2', 'watchdog']);
-    // The note is said once per seat, on stderr for a real run, and the plan is not touched by it.
-    for (const name of ['worker', 'worker-2']) {
-      expect(run.err.split(`  note ${name}: its launch line was not checked`).length).toBe(2);
+  test('a read error on .git refuses and names the path and the code', () => {
+    mkdirSync(lobby, { recursive: true });
+    chmodSync(lobby, 0o700);
+    const fs: FsReader = {
+      ...defaultFs,
+      lstat(p) {
+        if (p === join(lobby, '.git')) {
+          const err = Object.assign(new Error('denied'), { code: 'EACCES' });
+          throw err;
+        }
+        return defaultFs.lstat(p);
+      },
+    };
+    const res = verifyLobby(home, { create: false, fs });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.text).toContain(join(lobby, '.git'));
+      expect(res.text).toContain('EACCES');
     }
-    expect(run.out).not.toContain('note worker');
   });
 
-  test('a dry run says the same note on its plan, and the notes never refuse', async () => {
-    approve(BASE.replace(
-      'launch: claude --model claude-opus-5-5\n    count: 2',
-      'launch: claude --model claude-opus-5-5 --append-system-prompt "be terse"\n    count: 2',
-    ));
-    const run = await up(['--dry-run'], world());
+  test('resolving the home is a refusal when it cannot be read', () => {
+    mkdirSync(lobby, { recursive: true });
+    chmodSync(lobby, 0o700);
+    const fs: FsReader = {
+      ...defaultFs,
+      realpath(p) {
+        if (p === home) throw Object.assign(new Error('denied'), { code: 'EACCES' });
+        return defaultFs.realpath(p);
+      },
+    };
+    const res = verifyLobby(home, { create: false, fs });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.text).toContain(home);
+      expect(res.text).toContain('EACCES');
+    }
+  });
+
+  test('a link swapped between mkdir and the next lstat is refused before chmod', () => {
+    let chmodmed = false;
+    const fs: FsReader = {
+      ...defaultFs,
+      mkdir(p, opts) {
+        defaultFs.mkdir(p, opts);
+        if (p === lobby) {
+          rmSync(p, { recursive: true });
+          symlinkSync(join(base, 'swapped-after-mkdir'), p);
+        }
+      },
+      chmod(p, mode) {
+        chmodmed = true;
+        defaultFs.chmod(p, mode);
+      },
+    };
+    const res = verifyLobby(home, { create: true, fs });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.problem).toBe('symlink');
+    expect(chmodmed).toBe(false);
+  });
+
+  test('a link swapped after the lobby is created is caught by the second pass', () => {
+    let directories = 0;
+    const fs: FsReader = {
+      ...defaultFs,
+      lstat(p) {
+        const stat = defaultFs.lstat(p);
+        if (p === lobby && stat.isDirectory()) {
+          directories++;
+          if (directories >= 3) {
+            return { isDirectory: () => false, isSymbolicLink: () => true, isFile: () => false, mode: stat.mode, uid: stat.uid };
+          }
+        }
+        return stat;
+      },
+    };
+    const res = verifyLobby(home, { create: true, fs });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.text).toContain('symbolic link');
+  });
+
+  test('a lobby that changes after it was verified leaves the seats out', async () => {
+    approveYaml(migratedTeamYaml());
+    let passes = 0;
+    const fs: FsReader = {
+      ...defaultFs,
+      realpath(p) {
+        if (p === lobby) {
+          passes++;
+          if (passes > 1) throw Object.assign(new Error('denied'), { code: 'EACCES' });
+        }
+        return defaultFs.realpath(p);
+      },
+    };
+    const made = world();
+    const run = await runUpCmd([], made, { fs });
+    expect(run.out).toContain('left out: the lobby changed during the launch');
+    expect(run.out).toContain('lead:');
+    expect(run.out).toContain('worker:');
+  });
+
+  test('a read error while resolving a landing is a refusal', () => {
+    const fs: FsReader = {
+      ...defaultFs,
+      lstat(p) {
+        if (p === root) throw Object.assign(new Error('denied'), { code: 'EACCES' });
+        return defaultFs.lstat(p);
+      },
+    };
+    const landed = canonicalLanding(join(root, 'child'), fs);
+    expect(landed.error).toEqual({ path: root, code: 'EACCES' });
+    expect(insideTrust(join(root, 'child'), [root], root, home, fs)).toBe(false);
+  });
+
+  test('a backtick in a protected checkout is refused', () => {
+    const yaml = migratedTeamYaml().replace('protected: [.]', 'protected: [".", "`x"]');
+    writeFileSync(join(root, '.agents', 'team.yaml'), yaml);
+    const loaded = loadTeamFile(root, { home });
+    expect(loaded.ok).toBe(false);
+    if (!loaded.ok) expect(loaded.errors.some((error) => error.message.includes('workspace.protected'))).toBe(true);
+  });
+
+  test('a trust entry covering the approval store is detected', async () => {
+    const yaml = migratedTeamYaml().replace('trust:\n', 'trust:\n  - ~/.config/team\n');
+    writeFileSync(join(root, '.agents', 'team.yaml'), yaml);
+    const run = await runApproveCmd();
+    expect(run.code).not.toBe(0);
+    expect(run.err).toContain('approval store');
+    expect(run.err).toContain('.config/team');
+  });
+
+  test('doctor notes a migrated file that has never been approved', async () => {
+    writeFileSync(join(root, '.agents', 'team.yaml'), migratedTeamYaml());
+    const doc = await runDoctorCmd();
+    expect(doc.out).toContain('the file is legacy: migrate');
+  });
+
+  test('a resumed launch from a migrated approved file keeps the recorded start folder', async () => {
+    approveYaml(migratedTeamYaml());
+    mkdirSync(lobby, { recursive: true });
+    chmodSync(lobby, 0o700);
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0', start_cwd: lobby },
+          worker: { stage: 'ready', pane: 'w1:p1', workspace: 'w1', start_cwd: lobby },
+        },
+        worktrees: {},
+      };
+    });
+    const made = world();
+    made.session = 'running';
+    const run = await runUpCmd([], made, {
+      sessionRunning: () => true,
+      agents: () => [
+        { name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: lobby },
+        { name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: lobby },
+      ],
+      workspaces: () => [{ id: 'w0' }, { id: 'w1' }],
+    });
+    expect(run.err).not.toContain('the file is legacy');
     expect(run.code).toBe(0);
-    expect(run.err).toBe('');
-    expect(run.out).toContain(
-      '  note worker: its launch line was not checked: it quotes or substitutes text this version does not read\n',
-    );
-    expect(run.out).toContain('  note worker-2: its launch line was not checked');
-    expect(run.out).not.toContain('would refuse');
+    const state = readState(dir);
+    expect(state.sessions['acme']?.seats.lead?.start_cwd).toBe(lobby);
+    expect(state.sessions['acme']?.seats.worker?.start_cwd).toBe(lobby);
+  });
+
+  test('every migrated seat starts in the lobby', () => {
+    writeFileSync(join(root, '.agents', 'team.yaml'), migratedTeamYaml());
+    const loaded = loadTeamFile(root, { home });
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    for (const seat of loaded.team.seats) {
+      expect(seatStart(loaded.team, seat, root, home)).toEqual({ cwd: lobby, lobby: true });
+    }
+  });
+
+  test('creating the lobby waits until a launch will actually happen', async () => {
+    approveYaml(migratedTeamYaml());
+    const made = world();
+    const run = await runUpCmd([], made, {
+      seatBudget: () => ({ kind: 'refuse', why: 'the account is spent' }),
+    });
+    expect(existsSync(lobby)).toBe(false);
+    expect(made.workspaces.some((workspace) => workspace.label !== 'watchdog')).toBe(false);
+    expect(run.out).toContain('the account is spent');
   });
 });

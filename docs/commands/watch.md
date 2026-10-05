@@ -285,7 +285,9 @@ coordinator: claude-keeper
 operator: claude-keeper
 
 trust:
-  - .
+  - ~/.config/team/lobby
+  - ~/Code/beacon
+  - ~/Code/other
 
 workspace:
   mode: shared
@@ -386,7 +388,7 @@ $ team approve ; echo "exit $?"
   + 11:   interval: 120s
   + 12:   checks:
   + 13:     memory: off
-  + 14: 
+  + 14:
 
 Needs a new approval: `watch.checks` changed.
 Ceilings this approval fixes: 4 seats at most, 2 temporary.

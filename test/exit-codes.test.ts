@@ -22,6 +22,7 @@ import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import { runWorktree, type WorktreeSources } from '../src/commands/worktree.ts';
 import { main, reportFailure, version } from '../src/cli.ts';
 import { loadTeamFile } from '../src/file/load.ts';
+import { defaultFs } from '../src/lobby/gate.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import { overridesPath } from '../src/profiles/overrides.ts';
 import { emptySession, updateState } from '../src/state.ts';
@@ -559,6 +560,16 @@ scene('add.placed', async (place) => {
       return 'absent';
     },
   })), "names the project's parent");
+});
+scene('add.lobby', async (place) => {
+  approve(place, TWO);
+  const fs = {
+    ...defaultFs,
+    mkdir() {
+      throw Object.assign(new Error('denied'), { code: 'EACCES' });
+    },
+  };
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { fs })), 'failed to create');
 });
 scene('add.start', async (place) => {
   approve(place, narrow(place));

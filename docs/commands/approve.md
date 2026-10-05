@@ -179,14 +179,14 @@ $ team approve --show ; echo "exit $?"
   2: project: beacon
   3: coordinator: claude-keeper
   4: operator: claude-keeper
-  5: 
+  5:
   6: trust:
   7:   - ~/.config/team/lobby
   8:   - ~/Code/beacon
-  9: 
+  9:
   10: workspace:
   11:   mode: shared
-  12: 
+  12:
   13: seats:
   14:   - role: coordinator
   15:     name: claude-keeper
@@ -213,14 +213,14 @@ $ team approve
   2: project: beacon
   3: coordinator: claude-keeper
   4: operator: claude-keeper
-  5: 
+  5:
   6: trust:
   7:   - ~/.config/team/lobby
   8:   - ~/Code/beacon
-  9: 
+  9:
   10: workspace:
   11:   mode: shared
-  12: 
+  12:
   13: seats:
   14:   - role: coordinator
   15:     name: claude-keeper

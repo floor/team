@@ -1,4 +1,4 @@
-import { mkdirSync, realpathSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -313,12 +313,6 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     refusals.push(
       `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
     );
-  } else {
-    const shouldCreate = !dry && refusals.length === 0;
-    const gate = verifyLobby(sources.home, { create: shouldCreate, getuid: sources.getuid, fs: sources.fs });
-    if (!gate.ok) {
-      refusals.push(gate.text);
-    }
   }
 
   const recorded = readState(dir).sessions[session];
@@ -392,6 +386,26 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       ...(budget.kind === 'clear' ? {} : { budget }),
     });
   }
+  let verifiedLobby: string | null = null;
+  if (isMigratedTrust(team.trust)) {
+    const launching = seats.some((seat) => {
+      if (seat.stopped || seat.launchProblem) return false;
+      if (!profileFor(seat.cli)) return false;
+      const fresh = seat.stage === undefined || !seat.pane || (seat.stage === 'launched' && !seat.agentLive);
+      if (!fresh) return false;
+      return seat.budget?.kind !== 'refuse';
+    });
+    const gate = verifyLobby(sources.home, {
+      create: !dry && refusals.length === 0 && launching,
+      getuid: sources.getuid,
+      fs: sources.fs,
+    });
+    if (!gate.ok) refusals.push(gate.text);
+    else if ('path' in gate) {
+      verifiedLobby = gate.path;
+      for (const seat of seats) if (seat.lobby) seat.cwd = gate.path;
+    }
+  }
   const watch = recorded?.watch;
   const plan = upPlan({
     root,
@@ -460,6 +474,12 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       }
     },
     createWorkspace: launch.createWorkspace,
+    confirmLobby() {
+      if (!verifiedLobby) return null;
+      const again = verifyLobby(sources.home, { create: false, getuid: sources.getuid, fs: sources.fs });
+      if (!again.ok || !('path' in again) || again.path !== verifiedLobby) return 'left out: the lobby changed during the launch';
+      return null;
+    },
     paneRun: launch.paneRun,
     typeLine: () => false,
     deliverRules: (session, pane, cli, text, seconds) => deliverRules(cli, text, seconds, {
@@ -497,13 +517,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
         // The CLI the seat was launched with: `down` needs it when the file no longer names the seat.
         const cli = team.seats.find((seat) => seat.name === name)?.cli;
         let start_cwd = prior.start_cwd;
-        if (!start_cwd && patch.createdWorkspace && isMigratedTrust(team.trust)) {
-          try {
-            start_cwd = realpathSync(lobbyDir(sources.home));
-          } catch {
-            start_cwd = lobbyDir(sources.home);
-          }
-        }
+        if (!start_cwd && patch.createdWorkspace && verifiedLobby) start_cwd = verifiedLobby;
         current.seats[name] = { ...prior, ...patch, ...(cli ? { cli } : {}), ...(start_cwd ? { start_cwd } : {}) };
       });
     },

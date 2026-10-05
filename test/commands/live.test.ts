@@ -624,7 +624,9 @@ describe('team up, live', () => {
     // says so, and the reading names that folder — the same line, a different folder, a different end.
     writeFileSync(
       join(root, '.agents/team.yaml'),
-      EXAMPLE.replace('launch: team-deepseek\n    count: 2', 'launch: zsh ../tools/x.sh\n    count: 2'),
+      EXAMPLE
+        .replace('launch: team-deepseek\n    count: 2', 'launch: zsh ../tools/x.sh\n    count: 2')
+        .replace(/trust:.*\n(?:  - .*\n)+/, `trust:\n  - ~/.config/team/lobby\n  - ${root}\n  - ${join(base, 'worktrees')}\n`),
     );
     await approve();
     mkdirSync(join(base, 'tools'), { recursive: true });
@@ -688,7 +690,9 @@ describe('team up, live', () => {
   test('a resumed seat whose state records no start folder is not checked at all', async () => {
     writeFileSync(
       join(root, '.agents/team.yaml'),
-      EXAMPLE.replace('launch: team-deepseek\n    count: 2', 'launch: zsh ../tools/x.sh\n    count: 2'),
+      EXAMPLE
+        .replace('launch: team-deepseek\n    count: 2', 'launch: zsh ../tools/x.sh\n    count: 2')
+        .replace(/trust:.*\n(?:  - .*\n)+/, `trust:\n  - ~/.config/team/lobby\n  - ${root}\n  - ${join(base, 'worktrees')}\n`),
     );
     await approve();
     writeFileSync(

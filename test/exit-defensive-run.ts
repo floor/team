@@ -115,7 +115,7 @@ const plan: Record<string, { failAt: number; failure: string }> = {
   // the prepared-edit check, after the seat was accepted
   'add.prepared': { failAt: 5, failure: 'the prepared edit does not validate' },
   // writeTeamFile's check, after doctor and the budget read
-  'add.locked': { failAt: 12, failure: 'the locked edit does not validate' },
+  'add.locked': { failAt: 11, failure: 'the locked edit does not validate' },
   // approve's second read of the text load just accepted
   'approve.revalidate': { failAt: 2, failure: 'the file does not validate' },
   'approve.placed': { failAt: 0, failure: '' },

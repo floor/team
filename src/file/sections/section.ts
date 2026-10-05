@@ -1,4 +1,5 @@
 import type { YamlEntry, YamlNode } from '../../yaml.ts';
+import type { FsReader } from '../../lobby/gate.ts';
 import type { Check, Fields } from '../check.ts';
 
 /** What a section reads and writes while the file is validated. */
@@ -15,6 +16,8 @@ export interface Ctx {
   values: Map<string, unknown>;
   /** Injected home for path validation. */
   home?: string;
+  /** Injected filesystem for path validation. The gate uses the same reader. */
+  fs?: FsReader;
 }
 
 /** A section's value, once every section it names in `after` has run. */

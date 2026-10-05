@@ -91,12 +91,23 @@ export function absoluteTrustProblem(entry: string, home: string = homedir(), fs
     return 'must not contain "." or ".."';
   }
   const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
-  if (expanded === lobbyDir(home)) {
-    return null;
-  }
-  const segments = expanded.split(sep).filter(Boolean);
-  let built = expanded.startsWith(sep) ? sep : '';
+  const homeResolved = resolve(home);
+  const underHome = expanded === homeResolved || expanded.startsWith(homeResolved.endsWith(sep) ? homeResolved : homeResolved + sep);
+  // Ancestors of the home are not the lobby chain. A volume symlink above the home
+  // (macOS `/var`) is not a link in the entry.
+  const segments = (underHome ? expanded.slice(homeResolved.length) : expanded).split(sep).filter(Boolean);
+  let built = underHome ? homeResolved : expanded.startsWith(sep) ? sep : '';
   let hitMissing = false;
+  if (underHome) {
+    try {
+      const stat = fs.lstat(homeResolved);
+      if (stat.isSymbolicLink()) return `${homeResolved} is a symbolic link`;
+      if (!stat.isDirectory()) return `${homeResolved} is not a directory`;
+    } catch (err: any) {
+      if (err?.code !== 'ENOENT') return `cannot read ${homeResolved}: ${err?.code ?? err?.message}`;
+      hitMissing = true;
+    }
+  }
 
   for (const seg of segments) {
     built = join(built, seg);
@@ -155,7 +166,9 @@ export function protectedBy(path: string, checkouts: readonly string[]): string 
  * Resolves the deepest existing ancestor with realpath, and appends the non-existent tail unchanged.
  * If any component (including dangling links) along the path is a symbolic link, returns symlink.
  */
-export function canonicalLanding(path: string, fs: FsReader = defaultFs): { landing: string; symlink?: string } {
+export function canonicalLanding(
+  path: string, fs: FsReader = defaultFs,
+): { landing: string; symlink?: string; error?: { path: string; code: string } } {
   const logical = resolve(path);
   const segments = logical.split(sep).filter(Boolean);
   let built = logical.startsWith(sep) ? sep : '';
@@ -164,35 +177,39 @@ export function canonicalLanding(path: string, fs: FsReader = defaultFs): { land
   let foundSymlink: string | undefined;
   let hitMissing = false;
 
+  const fail = (at: string, err: unknown) => ({
+    landing: logical,
+    error: { path: at, code: String((err as { code?: string; message?: string })?.code ?? (err as { message?: string })?.message ?? 'unknown') },
+  });
+
   for (const seg of segments) {
     built = join(built, seg);
     if (!hitMissing) {
       try {
         const stat = fs.lstat(built);
-        if (stat.isSymbolicLink()) {
-          foundSymlink = built;
-        }
+        if (stat.isSymbolicLink()) foundSymlink = built;
         deepestExisting = built;
-      } catch {
+      } catch (err) {
+        if ((err as { code?: string })?.code !== 'ENOENT') return fail(built, err);
         hitMissing = true;
         tail.push(seg);
       }
     } else {
       try {
         const stat = fs.lstat(built);
-        if (stat.isSymbolicLink()) {
-          if (!foundSymlink) foundSymlink = built;
-        }
-      } catch {}
+        if (stat.isSymbolicLink() && !foundSymlink) foundSymlink = built;
+      } catch (err) {
+        if ((err as { code?: string })?.code !== 'ENOENT') return fail(built, err);
+      }
       tail.push(seg);
     }
   }
 
   let real: string;
   try {
-    real = fs.realpath(deepestExisting);
-  } catch {
-    real = deepestExisting;
+    real = deepestExisting === sep || deepestExisting === '' ? deepestExisting || sep : fs.realpath(deepestExisting);
+  } catch (err) {
+    return fail(deepestExisting, err);
   }
   return {
     landing: tail.length ? join(real, ...tail) : real,
@@ -208,11 +225,11 @@ export function insideTrust(path: string, patterns: readonly string[], root?: st
       ? resolve(root, path)
       : resolve(path.replace(/^~(?=$|\/)/, home));
     const targetLanding = canonicalLanding(target, fs);
-    if (targetLanding.symlink) return false;
+    if (targetLanding.error || targetLanding.symlink) return false;
     return patterns.some((pattern) => {
       const expanded = resolve(pattern.replace(/^~(?=$|\/)/, home));
       const patternLanding = canonicalLanding(expanded, fs);
-      if (patternLanding.symlink) return false;
+      if (patternLanding.error || patternLanding.symlink) return false;
       const t = targetLanding.landing;
       const p = patternLanding.landing;
       return t === p || t.startsWith(p.endsWith(sep) ? p : p + sep);

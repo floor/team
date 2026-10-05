@@ -109,7 +109,6 @@ export function upPlan(input: UpInput): Step[] {
     });
   }
 
-  const lobbies = new Set<string>();
   for (const seat of input.seats) {
     if (seat.stopped) {
       steps.push({ kind: 'skip', text: `${seat.name}: stopped in the file; start it with \`team add ${seat.name}\`` });
@@ -158,16 +157,6 @@ export function upPlan(input: UpInput): Step[] {
       return text;
     };
     if (fresh) {
-      // The lobby is one folder for the team, made before the first seat waits in it.
-      if (seat.lobby && !lobbies.has(cwd)) {
-        lobbies.add(cwd);
-        steps.push({
-          kind: 'run',
-          argv: ['mkdir', '-p', cwd],
-          note: 'the lobby: where a seat that works in worktrees waits, outside every protected checkout',
-          do: { do: 'lobby', path: cwd },
-        });
-      }
       const said = takeNotice();
       steps.push({
         kind: 'run',

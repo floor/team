@@ -24,8 +24,6 @@ export type SeatState = {
   // `own_commits` is the home for a temporary seat whose end is `merged:` and that has no worktree.
   // A seat in a worktree keeps that record on the worktree instead.
   temporary?: { like: string; until: string; task?: string; own_commits?: boolean };
-  /** Canonical start folder recorded at launch for a migrated file. */
-  start_cwd?: string;
   waiting?: unknown;
 };
 

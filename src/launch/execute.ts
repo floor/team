@@ -6,8 +6,13 @@ export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question
 export type Host = {
   startServer(session: string): boolean;
   sessionUp(session: string): boolean | null;
-  /** Makes a folder and the parents it needs. Present on `up` and `add`, whose plans carry a lobby. */
+  /** Makes a folder and the parents it needs. Present on `up` and `add`. */
   makeDir?(path: string): boolean;
+  /**
+   * Run once after the first workspace is created. A string leaves this seat and every
+   * later seat out: the lobby changed between the gate and the create.
+   */
+  confirmLobby?(): string | null;
   createWorkspace(session: string, cwd: string, label: string): { pane: string; workspace: string } | null;
   paneRun(session: string, pane: string, command: string): boolean;
   typeLine(session: string, pane: string, text: string): boolean | 'no-agent';
@@ -119,6 +124,8 @@ export async function executePlan(steps: readonly Step[], session: string, host:
   let watchFailed = false;
   let held = false;
   let abort = false;
+  let lobbyChecked = false;
+  let lobbyLeftOut: string | null = null;
 
   // The reading is what is logged: screen text may follow it on the terminal (`detail`), and
   // never reaches the log file.
@@ -181,6 +188,11 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'create': {
+        if (lobbyLeftOut && op.seat) {
+          dropped.add(op.seat);
+          finish(op.seat, lobbyLeftOut);
+          break;
+        }
         if (op.seat && op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         if (op.seat) {
           const why = host.allow(op.seat);
@@ -212,6 +224,17 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         if (op.seat) {
           host.record(op.seat, { stage: 'launched', pane: made.pane, workspace: made.workspace, createdWorkspace: true });
           host.running(op.seat);
+        }
+        if (!lobbyChecked && host.confirmLobby) {
+          lobbyChecked = true;
+          const changed = host.confirmLobby();
+          if (changed) {
+            lobbyLeftOut = changed;
+            if (op.seat) {
+              dropped.add(op.seat);
+              finish(op.seat, changed);
+            }
+          }
         }
         break;
       }

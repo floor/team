@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce, recordSeatDigestOf } from '../approve/approval.ts';
@@ -11,7 +11,7 @@ import { rulesOf, type Launch } from '../commands/up.ts';
 import { branchPresent, readMerge } from '../end/condition.ts';
 import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines.ts';
 import { loadTeamFile, placedProblems } from '../file/load.ts';
-import { canonicalLanding, isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
+import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
 import type { Problem, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
@@ -162,7 +162,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 1;
   }
   const approvedText = standing.record.file;
-  const approved = validateTeamFile(approvedText);
+  const approved = validateTeamFile(approvedText, { home: sources.home, fs: sources.fs });
   if (!approved.ok) {
     io.stderr('team add: the approved copy can\'t be read: run `team approve`\n');
     // exit: add.approved-copy
@@ -196,7 +196,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const original = readFileSync(path, 'utf8');
   const built = temporary
     ? temporarySeat(args.values, original, approved.team, recorded, agents, root, team.workspace.base)
-    : declaredSeat(args.rest[0] ?? '', original, approvedText, approved.team);
+    : declaredSeat(args.rest[0] ?? '', original, approvedText, approved.team, sources.home, sources.fs);
   if ('error' in built) {
     io.stderr(`team add: ${built.error}\n`);
     // exit: add.no-seat
@@ -222,30 +222,31 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 1;
   }
 
-  const prepared = validateTeamFile(built.edited);
+  const prepared = validateTeamFile(built.edited, { home: sources.home, fs: sources.fs });
   if (!prepared.ok) {
     for (const problem of prepared.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
     // exit: add.prepared
     return 2;
   }
-  for (const problem of placedProblems(prepared.team, root, sources.home)) {
+  for (const problem of placedProblems(prepared.team, root, sources.home, sources.fs)) {
     io.stderr(`team add: ${problem.message}\n`);
     // exit: add.placed
     return 1;
   }
-  const dry = args.flags.has('dry-run');
   const lobby = lobbyDir(sources.home);
   let startProblem: string | null = null;
+  let verifiedLobby: string | null = null;
   if (!prepared.team.trust || prepared.team.trust.length === 0 || isLegacyTrust(prepared.team.trust)) {
     startProblem = `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`;
   } else {
-    const gate = verifyLobby(sources.home, { create: !dry, getuid: sources.getuid, fs: sources.fs });
-    if (!gate.ok) {
-      startProblem = gate.text;
-    }
+    const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid, fs: sources.fs });
+    if (!gate.ok) startProblem = gate.text;
+    else if ('path' in gate) verifiedLobby = gate.path;
   }
-  // Where the seat waits: its own folder, the lobby, or a refusal — before the file is edited.
-  const start: SeatStart = startProblem ? { problem: startProblem } : seatStart(prepared.team, built.seat, root, sources.home);
+  // Where the seat waits: the lobby the gate verified, or a refusal — before the file is edited.
+  const start: SeatStart = startProblem
+    ? { problem: startProblem }
+    : seatStart(prepared.team, built.seat, root, sources.home, verifiedLobby ?? undefined);
   if ('problem' in start) {
     io.stderr(`team add: ${start.problem}\n`);
     // exit: add.start
@@ -361,6 +362,15 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     // exit: add.budget
     return 1;
   }
+  if (isMigratedTrust(prepared.team.trust) && wouldLaunch) {
+    const gate = verifyLobby(sources.home, { create: true, getuid: sources.getuid, fs: sources.fs });
+    if (!gate.ok) {
+      io.stderr(`team add: ${gate.text}\n`);
+      // exit: add.lobby
+      return 1;
+    }
+    if ('path' in gate) verifiedLobby = gate.path;
+  }
   if (decision.kind === 'unknown') io.stdout(`${built.name}: ${decision.text}\n`);
   if (built.edited !== original) {
     const written = withLock(dir, () => {
@@ -378,17 +388,24 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       // exit: add.locked
       return 2;
     }
-    const parsed = validateTeamFile(built.edited);
+    const parsed = validateTeamFile(built.edited, { home: sources.home, fs: sources.fs });
     // The amendment re-signs from the command's own one snapshot, read at its gate.
     if (parsed.ok) recordSeatDigestOf(standing, parsed.team, root, built.name, sources.home);
   }
 
-  const plan = upPlan({ root, session, sessionRunning: live === 'running', seats: [seatForPlan], watchAlive: true });
+  const planSeat = verifiedLobby && seatForPlan.lobby ? { ...seatForPlan, cwd: verifiedLobby } : seatForPlan;
+  const plan = upPlan({ root, session, sessionRunning: live === 'running', seats: [planSeat], watchAlive: true });
   const who = describeCaller(caller);
   const host = hostOf({
     dir, session, team: prepared.team, root, ceilings, running, seat: built.seat, temporary: built.temporary,
     caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io,
-    home: sources.home,
+    home: sources.home, verifiedLobby,
+    confirmLobby() {
+      if (!verifiedLobby) return null;
+      const again = verifyLobby(sources.home, { create: false, getuid: sources.getuid, fs: sources.fs });
+      if (!again.ok || !('path' in again) || again.path !== verifiedLobby) return 'left out: the lobby changed during the launch';
+      return null;
+    },
   });
   const report = await executePlan(plan, session, host);
   const afterwards = readState(dir).sessions[session]?.seats[built.name];
@@ -404,13 +421,13 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
 }
 
 function declaredSeat(
-  name: string, current: string, approvedText: string, approved: TeamFile,
+  name: string, current: string, approvedText: string, approved: TeamFile, home: string, fs?: FsReader,
 ): { name: string; seat: Seat; edited: string; temporary?: undefined } | { error: string } {
   const seat = approved.seats.find((item) => item.name === name);
   if (!seat) return { error: `the approved file has no seat ${JSON.stringify(name)}` };
   let edited = hasSeat(current, name) ? current : restoreSeat(current, approvedText, name);
   if (seat.stopped || seatIsStopped(edited, name)) edited = clearStopped(edited, name);
-  const again = validateTeamFile(edited);
+  const again = validateTeamFile(edited, { home, fs });
   const restored = again.ok ? again.team.seats.find((item) => item.name === name) : undefined;
   if (!restored) return { error: `couldn't put ${name} back from the approved copy` };
   return { name, seat: { ...restored, stopped: false }, edited, temporary: undefined };
@@ -524,6 +541,8 @@ function hostOf(input: {
   seat: Seat; temporary?: SeatState['temporary']; caller: string; now(): Date; launch: Launch;
   readMachine?: (root: string) => Machine; samples: SwapSample[]; limits: TeamFile['machine']; io: Io;
   home: string;
+  verifiedLobby: string | null;
+  confirmLobby(): string | null;
 }): Host {
   const { dir, session, launch, seat, temporary } = input;
   const running = [...input.running];
@@ -539,6 +558,7 @@ function hostOf(input: {
       }
     },
     createWorkspace: launch.createWorkspace,
+    confirmLobby: input.confirmLobby,
     paneRun: launch.paneRun,
     typeLine: () => false,
     renameAgent: launch.renameAgent,
@@ -564,13 +584,7 @@ function hostOf(input: {
         const current = (file.sessions[session] ??= emptySession());
         const prior = current.seats[name] ?? { stage: patch.stage };
         let start_cwd = prior.start_cwd;
-        if (!start_cwd && patch.createdWorkspace && isMigratedTrust(input.team.trust)) {
-          try {
-            start_cwd = realpathSync(lobbyDir(input.home));
-          } catch {
-            start_cwd = lobbyDir(input.home);
-          }
-        }
+        if (!start_cwd && patch.createdWorkspace && input.verifiedLobby) start_cwd = input.verifiedLobby;
         current.seats[name] = { ...prior, ...patch, ...(temporary && name === seat.name ? { temporary } : {}), ...(start_cwd ? { start_cwd } : {}) };
       });
     },

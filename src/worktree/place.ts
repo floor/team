@@ -76,19 +76,14 @@ export type SeatStart = { cwd: string; lobby?: true } | { problem: string; once?
 // Where a seat starts. In a migrated file, every seat (shared and worktree-mode alike)
 // starts in the machine lobby ~/.config/team/lobby. In a legacy file, a shared seat starts
 // in its cwd, and a worktree seat starts in the old derived lobby.
-export function seatStart(team: Pick<TeamFile, 'project' | 'workspace' | 'trust'>, seat: Seat, root: string, home: string = homedir()): SeatStart {
+export function seatStart(
+  team: Pick<TeamFile, 'project' | 'workspace' | 'trust'>, seat: Seat, root: string, home: string = homedir(), verifiedLobby?: string,
+): SeatStart {
   if (!team.trust || team.trust.length === 0) {
-    const lobby = lobbyPath(team);
-    if (lobby === null) {
-      return {
-        problem: 'a seat that works in worktrees has no lobby to wait in: workspace.path must name the folder {task} goes under',
-        once: true,
-      };
-    }
+    const lobby = lobbyDir(home);
     return {
       problem:
-        `the lobby ${lobby} matches no trust pattern (none): ` +
-        'add one that covers it and run `team approve`',
+        `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
       once: true,
     };
   }
@@ -133,7 +128,6 @@ export function seatStart(team: Pick<TeamFile, 'project' | 'workspace' | 'trust'
   }
 
   if (isMigratedTrust(team.trust)) {
-    if (seat.mode === 'shared') return { cwd: seat.cwd };
     if (seat.cwd !== '.') {
       const hit = protectedLanding(root, seat.cwd, team.workspace.protected);
       if (hit) {
@@ -143,7 +137,6 @@ export function seatStart(team: Pick<TeamFile, 'project' | 'workspace' | 'trust'
             "a seat that isn't `mode: shared` never starts in one",
         };
       }
-      return { cwd: seat.cwd };
     }
     if (team.workspace.path) {
       const folder = team.workspace.path.split('/').slice(0, -1).join('/').replaceAll('{repo}', team.project) || '.';
@@ -156,8 +149,7 @@ export function seatStart(team: Pick<TeamFile, 'project' | 'workspace' | 'trust'
         };
       }
     }
-    const lobby = lobbyDir(home);
-    return { cwd: lobby, lobby: true };
+    return { cwd: verifiedLobby ?? lobbyDir(home), lobby: true };
   }
 
   return { problem: 'trust configuration is invalid', once: true };

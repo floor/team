@@ -319,6 +319,10 @@ ok    claude-code: logged in
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
+--    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
+trust:
+  - ~/.config/team/lobby
+  - .
 team doctor: 2 missing, 1 warning: 2 of them block `up` and `add`
 exit 1
 ```
@@ -385,6 +389,10 @@ warn  claude-beacon: the launch starts Claude Opus 5.5, the file says Claude Son
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
+--    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
+trust:
+  - ~/.config/team/lobby
+  - .
 team doctor: 2 missing, 2 warnings: 2 of them block `up` and `add`
 exit 1
 ```
@@ -464,6 +472,10 @@ ok    codex: logged in
 warn  codex-scribe: the launch runs team-codex, not codex, and names no model: if the launcher chooses the model, say so with model_from: launcher
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
+--    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
+trust:
+  - ~/.config/team/lobby
+  - .
 team doctor: 1 missing, 2 warnings: 1 of them block `up` and `add`
 exit 1
 ```
@@ -543,6 +555,10 @@ ok    codex: logged in
 --    codex-scribe: the model is chosen by its launcher; checked on the running seat
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
+--    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
+trust:
+  - ~/.config/team/lobby
+  - .
 team doctor: 1 missing, 1 warning: 1 of them block `up` and `add`
 exit 1
 ```

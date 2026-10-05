@@ -55,12 +55,22 @@ function readWorkspace(
     const problem = worktreePathProblem(path, project, trust);
     if (problem) check.fail(at, `workspace.path ${problem}`);
   }
-  const protectedPaths = fields.get('protected') ? check.list(fields.get('protected'), 'workspace.protected').map((item) => item.value) : ['.'];
+  const protectedItems = fields.get('protected') ? check.list(fields.get('protected'), 'workspace.protected') : [];
+  for (const item of protectedItems) {
+    if (/[\x00-\x1f\x7f`]/.test(item.value)) {
+      check.fail(item.line, 'workspace.protected must not contain control characters or backticks');
+    }
+  }
+  const protectedPaths = fields.get('protected') ? protectedItems.map((item) => item.value) : ['.'];
+  const branch = check.text(fields.get('branch'), 'workspace.branch') ?? '{task}';
+  if (/[\x00-\x1f\x7f`]/.test(branch)) {
+    check.fail(fields.get('branch')?.value.line ?? line, 'workspace.branch must not contain control characters or backticks');
+  }
 
   return {
     mode,
     path,
-    branch: check.text(fields.get('branch'), 'workspace.branch') ?? '{task}',
+    branch,
     base,
     setup: check.list(fields.get('setup'), 'workspace.setup').map((item) => item.value),
     remove: check.oneOf(fields.get('remove'), 'workspace.remove', ['on-merge', 'manual']) ?? 'on-merge',

@@ -12,7 +12,10 @@ the next `up` starts from the beginning.
 Every seat, shared and worktree-mode alike, starts in `~/.config/team/lobby`. It is shared
 by all projects on the machine. Before creating anything, `team` verifies the lobby gate:
 ownership by the invoking user, no symbolic links anywhere in the chain, directory mode exactly
-`0700`, empty, and not inside a git repository or worktree.
+`0700`, empty, and not inside a git repository or worktree. The launch uses that verified
+path. A swap between the gate's last check and herdr creating the workspace cannot be prevented
+from this process; after the workspaces are created the gate runs once more, and a change leaves
+the seats out with `left out: the lobby changed during the launch`.
 
 A seat goes to its real folder itself: a worktree seat to the worktree its brief names; a shared
 seat to its configured `cwd` before any project work.

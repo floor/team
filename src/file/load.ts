@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
-import { lobbyDir } from '../lobby/gate.ts';
+import { lobbyDir, type FsReader } from '../lobby/gate.ts';
 import { protectedLanding } from '../worktree/place.ts';
 import { canonicalLanding, fixedFolder, isLegacyTrust, isMigratedTrust } from './paths.ts';
 import type { LoadResult, Problem, TeamFile } from './types.ts';
@@ -27,7 +27,7 @@ export function findRoot(cwd: string): string | null {
 
 // Finds, reads and validates the team file. With `file`, the root is the folder that holds the
 // file's `.agents/`, or the file's own folder when it sits elsewhere.
-export function loadTeamFile(cwd: string, options: { file?: string; home?: string; checkOnly?: boolean } = {}): LoadResult {
+export function loadTeamFile(cwd: string, options: { file?: string; home?: string; checkOnly?: boolean; fs?: FsReader } = {}): LoadResult {
   let path: string;
   let root: string;
   if (options.file) {
@@ -54,10 +54,10 @@ export function loadTeamFile(cwd: string, options: { file?: string; home?: strin
   }
   // One read. Callers that store the text (approve) use this string, the one that was validated.
   const text = readFileSync(path, 'utf8');
-  const result = validateTeamFile(text, { home: options.home });
+  const result = validateTeamFile(text, { home: options.home, fs: options.fs });
   if (!result.ok) return { ...result, path };
   if (options.checkOnly) return { ...result, root, path, text };
-  const errors = placedProblems(result.team, root, options.home);
+  const errors = placedProblems(result.team, root, options.home, options.fs);
   return errors.length ? { ok: false, errors, path } : { ...result, root, path, text };
 }
 
@@ -72,8 +72,13 @@ function real(path: string): string {
 // What only shows once the root is known: a folder named by its own name can still be the
 // project's parent, as "../../Code/*" is for a project at ~/Code/acme. Validation on the text
 // alone can't see that; here every fixed folder is resolved, symlinks included.
-export function placedProblems(team: TeamFile, root: string, home: string = homedir()): Problem[] {
+export function placedProblems(team: TeamFile, root: string, home: string = homedir(), fs?: FsReader): Problem[] {
   const problems: Problem[] = [];
+  const readLanding = (path: string) => {
+    const res = canonicalLanding(path, fs);
+    if (res.error) return { error: `cannot read ${res.error.path}: ${res.error.code}` as const };
+    return res;
+  };
   const project = real(root);
   const holdsProject = (folder: string) => {
     const full = real(resolve(project, folder));
@@ -111,32 +116,35 @@ export function placedProblems(team: TeamFile, root: string, home: string = home
 
   if (isMigratedTrust(team.trust)) {
     const lobby = lobbyDir(home);
-    const lobbyLanding = canonicalLanding(lobby).landing;
+    const lobbyRead = readLanding(lobby);
+    const lobbyLanding = 'error' in lobbyRead ? null : lobbyRead.landing;
+    if ('error' in lobbyRead) problems.push({ line: 0, message: `trust: ${lobbyRead.error}` });
 
-    // Check symlinks in trust entries (the lobby chain is checked by the gate)
     for (const entry of team.trust) {
       const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
-      if (expanded === lobby || lobby.startsWith(expanded + sep)) {
-        continue;
-      }
-      const res = canonicalLanding(expanded);
-      if (res.symlink) {
-        problems.push({ line: 0, message: `trust: "${entry}": ${res.symlink} is a symbolic link` });
-      }
+      if (expanded === lobby || lobby.startsWith(expanded + sep)) continue;
+      const res = readLanding(expanded);
+      if ('error' in res) problems.push({ line: 0, message: `trust: "${entry}": ${res.error}` });
+      else if (res.symlink) problems.push({ line: 0, message: `trust: "${entry}": ${res.symlink} is a symbolic link` });
     }
 
-    const hasLobby = team.trust.some((entry) => {
+    const hasLobby = lobbyLanding !== null && team.trust.some((entry) => {
       const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
-      return canonicalLanding(expanded).landing === lobbyLanding;
+      const res = readLanding(expanded);
+      return !('error' in res) && res.landing === lobbyLanding;
     });
-    if (!hasLobby) {
+    if (!hasLobby && lobbyLanding !== null) {
       problems.push({ line: 0, message: `trust: must list the lobby ${lobby}` });
     }
 
     // Every seat's cwd must equal an approved entry or be a descendant of one
     for (const seat of team.seats) {
       const seatPath = resolve(root, seat.cwd);
-      const res = canonicalLanding(seatPath);
+      const res = readLanding(seatPath);
+      if ('error' in res) {
+        problems.push({ line: seat.line, message: `seat ${seat.name}: cwd "${seat.cwd}": ${res.error}` });
+        continue;
+      }
       if (res.symlink) {
         problems.push({ line: seat.line, message: `seat ${seat.name}: cwd "${seat.cwd}" follows a symbolic link: ${res.symlink}` });
         continue;
@@ -144,8 +152,9 @@ export function placedProblems(team: TeamFile, root: string, home: string = home
       const seatLanding = res.landing;
       const trusted = team.trust.some((entry) => {
         const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
-        const entryLanding = canonicalLanding(expanded).landing;
-        return seatLanding === entryLanding || seatLanding.startsWith(entryLanding.endsWith(sep) ? entryLanding : entryLanding + sep);
+        const landed = readLanding(expanded);
+        if ('error' in landed) return false;
+        return seatLanding === landed.landing || seatLanding.startsWith(landed.landing.endsWith(sep) ? landed.landing : landed.landing + sep);
       });
       if (!trusted) {
         problems.push({ line: seat.line, message: `seat ${seat.name}: cwd "${seat.cwd}" is outside trust` });
@@ -156,18 +165,20 @@ export function placedProblems(team: TeamFile, root: string, home: string = home
     if (team.workspace.path) {
       const sample = team.workspace.path.replaceAll('{repo}', team.project).replace('{task}', 'task');
       const wtPath = resolve(root, sample);
-      const res = canonicalLanding(wtPath);
-      if (res.symlink) {
+      const res = readLanding(wtPath);
+      if ('error' in res) {
+        problems.push({ line: 0, message: `workspace.path: "${team.workspace.path}": ${res.error}` });
+      } else if (res.symlink) {
         problems.push({ line: 0, message: `workspace.path: "${team.workspace.path}" follows a symbolic link: ${res.symlink}` });
-      }
-      const wtLanding = res.landing;
-      const trusted = team.trust.some((entry) => {
-        const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
-        const entryLanding = canonicalLanding(expanded).landing;
-        return wtLanding === entryLanding || wtLanding.startsWith(entryLanding.endsWith(sep) ? entryLanding : entryLanding + sep);
-      });
-      if (!trusted) {
-        problems.push({ line: 0, message: `workspace.path: "${team.workspace.path}" is outside trust` });
+      } else {
+        const wtLanding = res.landing;
+        const trusted = team.trust.some((entry) => {
+          const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
+          const landed = readLanding(expanded);
+          if ('error' in landed) return false;
+          return wtLanding === landed.landing || wtLanding.startsWith(landed.landing.endsWith(sep) ? landed.landing : landed.landing + sep);
+        });
+        if (!trusted) problems.push({ line: 0, message: `workspace.path: "${team.workspace.path}" is outside trust` });
       }
     }
   }

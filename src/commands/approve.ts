@@ -58,9 +58,15 @@ function inside(path: string, folder: string): boolean {
 }
 
 // The store must stay out of the project and of every folder a seat may work in.
-function storeProblem(store: string, root: string, team: TeamFile): string | null {
+function expandTrustEntry(pattern: string, root: string, home: string): string {
+  const trimmed = pattern.replace(/\/?\*$/, '');
+  if (trimmed.startsWith('/') || trimmed.startsWith('~')) return resolve(trimmed.replace(/^~(?=$|\/)/, home));
+  return resolve(root, trimmed);
+}
+
+function storeProblem(store: string, root: string, team: TeamFile, home: string): string | null {
   const place = real(dirname(store));
-  const folders = [root, ...team.trust.map((pattern) => resolve(root, pattern.replace(/\/?\*$/, '')))];
+  const folders = [root, ...team.trust.map((pattern) => expandTrustEntry(pattern, root, home))];
   const holder = folders.map(real).find((folder) => inside(place, folder) || inside(store, folder));
   return holder === undefined ? null : `the approval store ${store} is inside ${holder}, where seats work`;
 }
@@ -115,7 +121,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     // exit: approve.overrides
     return 2;
   }
-  const problem = storeProblem(store, root, team);
+  const problem = storeProblem(store, root, team, sources.home);
   if (problem) {
     io.stderr(`team approve: ${problem}\n`);
     // exit: approve.store
@@ -147,7 +153,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
       `${text
         .replace(/\n$/, '')
         .split('\n')
-        .map((line, index) => `  ${index + 1}: ${line}`)
+        .map((line, index) => (line.length ? `  ${index + 1}: ${line}` : `  ${index + 1}:`))
         .join('\n')}\n\n`,
     );
   } else {

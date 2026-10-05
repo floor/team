@@ -56,9 +56,6 @@ const WORKTREE_FILE = `format: 1
 project: acme
 coordinator: lead
 operator: lead
-trust:
-  - .
-  - ../worktrees/acme/*
 workspace:
   mode: worktree
   path: ../worktrees/{repo}/{task}
@@ -99,7 +96,7 @@ function approve(text: string = FILE): void {
   const trustPath = project.startsWith(home) ? project.replace(home, '~') : project;
   const yaml = text.includes('trust:')
     ? text
-    : text.replace('coordinator: lead\n', `coordinator: lead\ntrust:\n  - ~/.config/team/lobby\n  - ${trustPath}\n`);
+    : text.replace('coordinator: lead\n', `coordinator: lead\ntrust:\n  - ~/.config/team/lobby\n  - ${trustPath}\n  - ${join(home, 'worktrees')}\n`);
   writeFileSync(join(project, '.agents', 'team.yaml'), yaml);
   const loaded = loadTeamFile(project, { home });
   if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
