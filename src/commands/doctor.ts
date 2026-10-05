@@ -13,6 +13,9 @@ import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
 import { HERDR_TESTED, herdrVersion, sessionRunning } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { profileFor } from '../profiles/index.ts';
+import { validateTeamFile } from '../file/validate.ts';
+import { checkRulesFile, rulesFilePath } from '../launch/rules-file.ts';
+import { rulesOf } from '../launch/rules.ts';
 import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
 import { readState } from '../state.ts';
@@ -338,6 +341,20 @@ export function doctorFindings(
     ...checkFindings(standing, team),
     ...budgetChecks,
   );
+  // The rules file each message seat runs by, only when there is an approval that writes one.
+  // A file that differs is warned about, never rewritten here. A stopped seat is not checked:
+  // `up` writes the file only at a delivery, so the repair could not fix a stopped seat's file.
+  if (standing.kind === 'verified') {
+    // The seats of the file as approved, against the approved rules text: a seat the approval
+    // does not hold has no approved rules to check, and `up` refuses a drifted file anyway.
+    const ofRecord = validateTeamFile(standing.record.file);
+    const seats = ofRecord.ok ? ofRecord.team.seats : [];
+    for (const seat of seats) {
+      if (seat.stopped || profileFor(seat.cli)?.rulesOption != null) continue;
+      const check = checkRulesFile(rulesFilePath(ofRecord.ok ? ofRecord.team.project : approved.project, root, sources.home, seat.name), rulesOf(ofRecord.ok ? ofRecord.team : approved, seat));
+      if (!check.ok) findings.push({ level: 'warn', text: `${seat.name}: ${check.what}; run \`team up\`` });
+    }
+  }
 
   const herdr = sources.herdrVersion();
   const running = herdr === null ? null : sources.sessionRunning(session);

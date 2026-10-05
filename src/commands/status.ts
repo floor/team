@@ -7,12 +7,16 @@ import { readArgs } from '../args.ts';
 import { budgetLine, budgetTable, type BudgetRow } from '../budgets/table.ts';
 import { recall } from '../budgets/readings.ts';
 import { currentTeam } from '../file/current.ts';
+import { validateTeamFile } from '../file/validate.ts';
 import type { Problem, TeamFile } from '../file/types.ts';
 import { agentList, PANE_WINDOW, paneRead, sessionRunning, workspaceList } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { emptySession, readState } from '../state.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
 import { approvalStanding, type Standing } from '../store/store.ts';
+import { checkRulesFile, rulesFilePath } from '../launch/rules-file.ts';
+import { rulesOf } from '../launch/rules.ts';
+import { profileFor } from '../profiles/index.ts';
 import { APPROVAL_REPAIR, compare, orderAndAnnotateDifferences } from '../status/compare.ts';
 import type { Comparison, Difference, Live } from '../status/compare.ts';
 
@@ -140,6 +144,8 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     ...protectedCheckouts(team, root, sources),
     ...approvalDrift(approvalCase(standing, team)),
     ...overrideDrift(overrides),
+    // The approved file's own rules files, only when there is an approval to write them.
+    ...rulesFileDifferences(standing, root, sources.home),
   ]);
 
   if (args.flags.has('json')) {
@@ -187,6 +193,31 @@ export function approvalDrift(approval: { differences: string[] | null; reason: 
   if (approval.reason !== null) return [withApproval(approval.reason)];
   if (approval.differences === null) return [withApproval('the file was never approved on this machine')];
   return approval.differences.map((line) => withApproval(`the file differs from the approved one: ${line}`));
+}
+
+
+/** Every message-rules seat's file, against the rules the approved file gives it. A file that
+ *  differs is a difference for the owner to repair with `up` — never rewritten here. An option
+ *  seat has no file, and a seat whose rules can't travel at all is `up`'s to refuse. */
+function rulesFileDifferences(standing: Standing, root: string, home: string | undefined): Difference[] {
+  // Like the overrides: no home set is a test that stands in for no store at all.
+  if (home === undefined || standing.kind !== 'verified') return [];
+  // The seats of the file as approved, against the approved rules text: a file the current
+  // file added has no approved rules, and `up` itself refuses a drifted file.
+  const approved = validateTeamFile(standing.record.file);
+  if (!approved.ok) return [];
+  const out: Difference[] = [];
+  for (const seat of approved.team.seats) {
+    // A stopped seat is not checked: `up` writes the file only at a delivery, so the repair
+    // below could not fix a stopped seat's file. An unstopped seat's file is rewritten the
+    // next time it launches, so no stale file outlives one.
+    if (seat.stopped) continue;
+    if (profileFor(seat.cli)?.rulesOption != null) continue;
+    const text = rulesOf(approved.team, seat);
+    const check = checkRulesFile(rulesFilePath(approved.team.project, root, home, seat.name), text);
+    if (!check.ok) out.push({ what: `${seat.name}: ${check.what}`, repair: 'the owner runs team up', owner: true });
+  }
+  return out;
 }
 
 function protectedCheckouts(team: TeamFile, root: string, sources: StatusSources): Difference[] {
