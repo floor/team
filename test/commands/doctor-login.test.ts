@@ -110,6 +110,8 @@ describe('checkLogin with fake command results', () => {
       exitTimeout: 10,
       lastUsedModel: false,
       modelOf: () => null,
+      startsOnLastModel: false,
+      modelFlag: () => ({ option: '--model', id: null }),
       answers: [],
     };
     let ran = false;

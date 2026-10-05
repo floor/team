@@ -488,7 +488,7 @@ describe('codex, cursor and antigravity through the screen core', () => {
     // the pane's second column, as unsent.txt draws it, under the blank frame row every
     // capture keeps against the input row. The suffix on the prompt is the running turn.
     // The composer strips it, and the words typed under it are unsent.
-    const text = '\n  → ship the fix   ctrl+c to stop\n  Grok 4.7 medium\n';
+    const text = '\n  → ship the fix   ctrl+c to stop\n  Grok 4.7 256K High\n';
     expect(classifyComposer('cursor', text.split('\n')).kind).toBe('unsent');
     expect(classify('cursor', text.split('\n')).kind).toBe('working');
   });
@@ -524,6 +524,12 @@ describe('codex, cursor and antigravity through the screen core', () => {
         // Captured dialogs main had no rule for, so they fell through to unknown. The profile
         // now names them. Their own test follows the loop.
         if (name === 'permission-plan.txt' || name === 'question.txt') continue;
+        // Captured under other models. Main's status row matched Grok only, so each of these
+        // read unknown. The profile now reads the row by its shape. Their own test is in
+        // test/launch/cursor.test.ts.
+        if (name === 'composer-idle.txt' || name === 'composer-unsent.txt'
+          || name === 'gemini-flash-idle.txt' || name === 'gemini-flash-unsent.txt'
+          || name === 'gpt-sol-idle.txt' || name === 'gpt-sol-unsent.txt') continue;
         // Captured 2026-10-04, and the four screens the antigravity profile's round-2 rules are
         // meant to read differently: main had no rule for the file-creation, file-edit, question
         // or unsent-comments dialogs and read each unknown. Their own test follows the loop.
@@ -988,6 +994,74 @@ ${composer}
           - match: '^done\\.$'
             ignore_case: true
         kind: idle`))).not.toThrow();
+  });
+
+  test('a status line may be a list, read as the union of its patterns', () => {
+    // Where one pattern per family would not fit the dialect's length cap, `status_line`
+    // takes a non-empty list instead: a line is a candidate when it matches any entry,
+    // and an empty list names no row at all and is refused in words.
+    const text = (statusLine: string) => `
+format: 1
+cli: sample
+screen:
+  composer:
+    mode: status-last
+    status_line: ${statusLine}
+    prompt: '^>'
+    placeholders:
+      - equals: ''
+`;
+    const data = loadScreen(text(`['^alpha$', '^beta$']`));
+    if (data.composer.mode !== 'status-last') throw new Error('composer mode changed');
+    expect(data.composer.statusLine).toHaveLength(2);
+    expect(classifyLines(data, ['', '> ', 'alpha']).kind).toBe('idle');
+    expect(classifyLines(data, ['', '> ', 'beta']).kind).toBe('idle');
+    expect(classifyLines(data, ['', '> ', 'gamma']).kind).toBe('unknown');
+    expect(() => loadScreen(text('[]'))).toThrow('"status_line" must be a string or a non-empty list of strings');
+  });
+
+  test('a status row may pin its place above a workspace line; exempt rows keep their grammar-only reading', () => {
+    // `status_below` names the line directly under the row — the workspace line — which must
+    // then be the pane's last non-blank one, and the row must sit within the distance the
+    // captures show of the input row. A grammar line anywhere else is ordinary text: here it
+    // opens no fallback and reads unknown. `except` keeps a row's old grammar-only reading.
+    const text = (below: string) => `
+format: 1
+cli: sample
+screen:
+  composer:
+    mode: status-then-one
+    status_line: '^(?:STATUS|EXEMPT)$'
+    status_below: ${below}
+    prompt: '^>'
+    placeholders:
+      - equals: ''
+    fallback: []
+`;
+    const data = loadScreen(text(`'^work$'`));
+    if (data.composer.mode !== 'status-then-one') throw new Error('composer mode changed');
+    expect(data.composer.statusBelow).toBeDefined();
+    expect(classifyLines(data, ['', '> ', 'STATUS', 'work']).kind).toBe('idle');
+    // No workspace line under it: the line is not the row, and a grammar line that is not the
+    // row is ordinary text, so the fallback stays closed and the screen reads unknown.
+    expect(classifyLines(data, ['', '> ', 'STATUS']).kind).toBe('unknown');
+    // A blank line between the row and the workspace line: the workspace line is not directly
+    // below the row, so the line is not the row and the screen reads unknown.
+    expect(classifyLines(data, ['', '> ', 'STATUS', '', 'work']).kind).toBe('unknown');
+    // A non-blank line under the workspace line means the workspace line is not the pane's last.
+    expect(classifyLines(data, ['', '> ', 'STATUS', 'work', 'more']).kind).toBe('unknown');
+    // The row must reach the input row within the captured distance: five blank rows between
+    // them hold, six do not.
+    expect(classifyLines(data, ['', '> ', '', '', '', '', 'STATUS', 'work']).kind).toBe('idle');
+    expect(classifyLines(data, ['', '> ', '', '', '', '', '', 'STATUS', 'work']).kind).toBe('unknown');
+    // A row the profile exempts is read by its grammar alone, wherever it is — the reading it
+    // had before the field existed.
+    const exempt = loadScreen(text(`{ line: '^work$', except: '^EXEMPT' }`));
+    expect(classifyLines(exempt, ['', '> ', 'EXEMPT']).kind).toBe('idle');
+    expect(classifyLines(exempt, ['', '> ', 'EXEMPT', 'work']).kind).toBe('idle');
+    expect(classifyLines(exempt, ['', '> ', 'STATUS']).kind).toBe('unknown');
+    // The map takes `line` and `except`, nothing else.
+    expect(() => loadScreen(text(`{ line: '^work$', wat: '^x$' }`))).toThrow('unknown key "wat"');
   });
 
   test('ignore_case folds ASCII letters only, as the hand-spelled classes did', () => {

@@ -102,6 +102,22 @@ and otherwise read as the plain captures do.
 
 No trust, login, or settings dialog was answered, and no vendor configuration was edited.
 
+## Other models
+
+Captured on 2026-10-05 from `cursor-agent` `2026.10.01-14929f9` with herdr 0.7.1,
+`pane read --source visible`, in a scratch session started for these captures. The pane
+was 54 columns by 23 rows. Each launch was one seat, in a folder that showed no trust
+dialog, and was left with `/exit` after the box was read back as exactly `/exit`. The
+shell scrollback before the Cursor Agent header is removed, and the workspace path is
+`<workspace>`. No trust, login, permission, or question dialog appeared, and none was
+answered.
+
+- `gpt-sol-idle.txt` and `gpt-sol-unsent.txt`: `cursor-agent --model gpt-5.6-sol-high --force --sandbox disabled`. The status row read `GPT-5.6 Sol 272K High` and `Run Everything`. `alpha typed line one` was typed into the box and not sent, then the box was cleared with ctrl+c.
+- `gemini-flash-idle.txt` and `gemini-flash-unsent.txt`: the same flags with `--model gemini-3.8-flash-high`. The status row read `Gemini 3.8 Flash High` and `Run Everything`. `beta typed line two` was typed and not sent.
+- `composer-idle.txt` and `composer-unsent.txt`: the same flags with `--model composer-2.5`. The status row read `Composer 2.5` and `Run Everything`. `gamma typed line three` was typed and not sent.
+
+A later launch of `cursor-agent --force --sandbox disabled` with no `--model`, after the GPT launch, showed `GPT-5.6 Sol 272K High`. The same model-less launch after the Gemini launch showed `Gemini 3.8 Flash High`.
+
 ## Constructed
 
 - `working-no-spinner.txt`: constructed from `working.txt` by removing the braille spinner line. Not a capture. That line sits several lines above the prompt, so a longer tool transcript pushes it out of the 20-line window. The prompt still ends in `ctrl+c to stop`.

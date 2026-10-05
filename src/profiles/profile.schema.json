@@ -231,7 +231,8 @@
           "description": "Ignore ASCII case only: each letter matches its other case; no other character folds (a long s or a Kelvin sign reads as itself)."
         },
         "model": { "type": "string", "minLength": 1 },
-        "version": { "type": "string", "minLength": 1 }
+        "version": { "type": "string", "minLength": 1 },
+        "flag": { "type": "string", "minLength": 1, "description": "The model id to suggest for this model and version. \"{version}\" is the seat's version." }
       }
     },
     "models": {
@@ -240,6 +241,7 @@
       "required": ["option", "ids"],
       "properties": {
         "option": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "absent": { "const": "last-used", "description": "What a launch that names no model does. last-used: the CLI starts on whatever model it used last." },
         "ids": { "type": "array", "items": { "$ref": "#/$defs/modelRule" }, "minItems": 1 }
       }
     },
@@ -251,7 +253,28 @@
         "mode": { "enum": ["box-to-rule", "status-last", "status-then-one", "two-rules-footer-below"] },
         "prompt": { "$ref": "#/$defs/patternString" },
         "rule": { "$ref": "#/$defs/patternString" },
-        "status_line": { "$ref": "#/$defs/patternString" },
+        "status_line": {
+          "description": "The status line's patterns: one string, or a list where one pattern per family would not fit the dialect's length cap. A line is a candidate when it matches any entry.",
+          "oneOf": [
+            { "$ref": "#/$defs/patternString" },
+            { "type": "array", "items": { "$ref": "#/$defs/patternString" }, "minItems": 1 }
+          ]
+        },
+        "status_below": {
+          "description": "Where the status row must sit, declared only for a CLI whose captures show the pane drawing a workspace line under it. The line directly under the row must match `line` and be the pane's last non-blank one, and the `  →` input row must sit above the row within the distance the captures show; a grammar line anywhere else is ordinary text. A row matching `except` keeps its grammar-only reading, wherever it is — the reading it had before this field existed. A bare string is `line` with no exemption.",
+          "oneOf": [
+            { "$ref": "#/$defs/patternString" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["line"],
+              "properties": {
+                "line": { "$ref": "#/$defs/patternString" },
+                "except": { "$ref": "#/$defs/patternString" }
+              }
+            }
+          ]
+        },
         "strip_suffix": { "$ref": "#/$defs/patternString" },
         "ignore_case": {
           "type": "boolean",
@@ -294,7 +317,8 @@
         { "if": { "properties": { "mode": { "const": "status-last" } }, "required": ["mode"] }, "then": { "required": ["status_line"] } },
         { "if": { "properties": { "mode": { "const": "status-then-one" } }, "required": ["mode"] }, "then": { "required": ["status_line", "fallback"] } },
         { "if": { "properties": { "mode": { "const": "two-rules-footer-below" } }, "required": ["mode"] }, "then": { "required": ["rule", "footers"] } },
-        { "if": { "required": ["ignore_case"] }, "then": { "properties": { "mode": { "const": "two-rules-footer-below" } } } }
+        { "if": { "required": ["ignore_case"] }, "then": { "properties": { "mode": { "const": "two-rules-footer-below" } } } },
+        { "if": { "required": ["status_below"] }, "then": { "properties": { "mode": { "enum": ["status-last", "status-then-one"] } } } }
       ]
     }
   }

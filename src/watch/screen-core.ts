@@ -21,10 +21,54 @@ const FLOOR_PHRASES = ['do you want to', 'esc to cancel', 'enter confirm', 'ente
 export type ReadClock = { now(): number; budgetMs: number };
 
 /**
+ * The furthest the `  →` input row may sit above the status row. Measured over every Cursor
+ * fixture that draws a composer — the idle, startup, unsent, working, thinking, queue and typed
+ * frames, old and new — the row is three to five lines above the status row (idle three, unsent
+ * four, the wrapped and blank-middle boxes five); no captured frame draws more. A row further
+ * above is not the input row the frame draws, and the position test fails closed.
+ */
+const MAX_STATUS_INPUT_GAP = 5;
+
+/** A line matches the composer's status grammar — any of the status line's patterns. */
+function statusMatches(composer: Extract<ScreenData['composer'], { mode: 'status-last' | 'status-then-one' }>, line: string): boolean {
+  return composer.statusLine.some((pattern) => pattern.test(line));
+}
+
+/**
+ * Whether the line at `at` is the composer's status row. Where the profile pins the row's place
+ * (`status_below`), a line that carries the grammar is the row only when the line directly under
+ * it matches the workspace pattern and is the pane's last non-empty one, and the `  →` input row
+ * sits above it within the captured distance. A line matching the field's `except` is read as the
+ * profile read it before the field existed — by its grammar, wherever it is. Everywhere else (no
+ * `status_below` in the profile) the grammar alone decides, as before.
+ */
+function statusRowAt(
+  composer: Extract<ScreenData['composer'], { mode: 'status-last' | 'status-then-one' }>,
+  lines: string[],
+  at: number,
+): boolean {
+  const line = lines[at] ?? '';
+  if (!statusMatches(composer, line)) return false;
+  const below = composer.statusBelow;
+  if (!below) return true;
+  if (below.except?.test(line)) return true;
+  const under = lines[at + 1];
+  if (under === undefined || !below.line.test(under)) return false;
+  for (let i = at + 2; i < lines.length; i++) if ((lines[i] ?? '').trim()) return false;
+  let low = at - 1;
+  while (low >= 0 && !composer.prompt.test(lines[low] ?? '')) low--;
+  return low >= 0 && at - low <= MAX_STATUS_INPUT_GAP;
+}
+
+/**
  * The index of the composer's status line in the window, or -1. A `status-last` composer pins it
- * as the last non-blank line; a `status-then-one` composer allows one chrome line below it. The
- * classification and the quota read both take their line from here, so the two cannot disagree
- * about which line the composer's status line is.
+ * as the last non-blank line; a `status-then-one` composer allows one chrome line below it. Where
+ * the profile pins the row's place, a candidate that is not in its place is ordinary text: the
+ * scan skips it (the lines below a lower candidate are then not the frame a place needs, so a
+ * higher one fails too). A row the profile exempts from the place test keeps the trailing rule
+ * the other profiles read it by. The classification and the quota read both take their line
+ * from here,
+ * so the two cannot disagree about which line the composer's status line is.
  */
 function statusIndex(
   composer: Extract<ScreenData['composer'], { mode: 'status-last' | 'status-then-one' }>,
@@ -34,7 +78,11 @@ function statusIndex(
 ): number | 'stop' {
   for (let i = lines.length - 1; i >= 0; i--) {
     if (tick()) return 'stop';
-    if (!composer.statusLine.test(lines[i] ?? '')) continue;
+    if (!statusMatches(composer, lines[i] ?? '')) continue;
+    if (composer.statusBelow && !composer.statusBelow.except?.test(lines[i] ?? '')) {
+      if (statusRowAt(composer, lines, i)) return i;
+      continue;
+    }
     const trailing = lines.slice(i + 1).filter((line) => line.trim());
     if (allowOneTrailing) {
       if (trailing.length > 0 && (trailing.length > 1 || composer.prompt.test(trailing[0] ?? ''))) return -1;
@@ -392,14 +440,15 @@ export function composerBox(data: ScreenData, lines: string[]): Box | null {
 
 function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => boolean): boolean | 'stop' {
   const where = rule.onFooter ? [footerLine(data, lines)] : lines;
+  const inWindow = where === lines;
   if (rule.any) {
-    const hit = anyLine(where, rule.any, tick);
+    const hit = anyLine(data, where, rule.any, tick, inWindow);
     if (hit === 'stop') return 'stop';
     if (!hit) return false;
   }
   if (rule.all) {
     for (const pattern of rule.all) {
-      const hit = lineSomewhere(where, pattern, tick);
+      const hit = lineSomewhere(data, where, pattern, tick, inWindow);
       if (hit === 'stop') return 'stop';
       if (!hit) return false;
     }
@@ -423,32 +472,34 @@ function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => 
   if (rule.noneAfter) {
     let anchor = -1;
     for (let i = 0; i < lines.length; i++) {
-      const hit = matches(lines[i] ?? '', rule.noneAfter.anchor, tick);
+      const hit = matches(data, lines, i, rule.noneAfter.anchor, tick, true);
       if (hit === 'stop') return 'stop';
       if (hit) anchor = i;
     }
     if (anchor < 0) return false;
     for (let i = anchor + 1; i < lines.length; i++) {
-      const later = anyLine([lines[i] ?? ''], rule.noneAfter.patterns, tick);
-      if (later === 'stop') return 'stop';
-      if (later) return false;
+      for (const pattern of rule.noneAfter.patterns) {
+        const later = matches(data, lines, i, pattern, tick, true);
+        if (later === 'stop') return 'stop';
+        if (later) return false;
+      }
     }
   }
   return true;
 }
 
-function anyLine(lines: string[], patterns: LinePattern[], tick: () => boolean): boolean | 'stop' {
+function anyLine(data: ScreenData, lines: string[], patterns: LinePattern[], tick: () => boolean, inWindow = true): boolean | 'stop' {
   for (const pattern of patterns) {
-    const hit = lineSomewhere(lines, pattern, tick);
+    const hit = lineSomewhere(data, lines, pattern, tick, inWindow);
     if (hit === 'stop') return 'stop';
     if (hit) return true;
   }
   return false;
 }
 
-function lineSomewhere(lines: string[], pattern: LinePattern, tick: () => boolean): boolean | 'stop' {
-  for (const line of lines) {
-    const hit = matches(line, pattern, tick);
+function lineSomewhere(data: ScreenData, lines: string[], pattern: LinePattern, tick: () => boolean, inWindow = true): boolean | 'stop' {
+  for (let i = 0; i < lines.length; i++) {
+    const hit = matches(data, lines, i, pattern, tick, inWindow);
     if (hit === 'stop') return 'stop';
     if (hit) return true;
   }
@@ -465,18 +516,36 @@ function footerLine(data: ScreenData, lines: string[]): string {
   const nonBlank = lines.filter((line) => line.trim());
   const last = nonBlank[nonBlank.length - 1] ?? '';
   const composer = data.composer;
-  if (composer.mode === 'status-last' && composer.statusLine.test(last)) {
+  if (composer.mode === 'status-last' && statusMatches(composer, last)) {
     return (nonBlank[nonBlank.length - 2] ?? '').trim();
   }
   return last.trim();
 }
 
-function matches(line: string, pattern: LinePattern, tick: () => boolean): boolean | 'stop' {
+/** Whether the pattern is one of the composer's status line patterns of a profile that pins the
+ *  row's place: such a pattern is read by the row's place, in a rule's patterns and in its
+ *  `except` list alike — a grammar-looking line that is not the row is ordinary text. */
+function placedStatus(data: ScreenData, pattern: RegExp): boolean {
+  const composer = data.composer;
+  if (composer.mode !== 'status-last' && composer.mode !== 'status-then-one') return false;
+  if (!composer.statusBelow) return false;
+  return composer.statusLine.some((re) => re.source === pattern.source && re.flags === pattern.flags);
+}
+
+function placedComposer(data: ScreenData): Extract<ScreenData['composer'], { mode: 'status-last' | 'status-then-one' }> {
+  return data.composer as Extract<ScreenData['composer'], { mode: 'status-last' | 'status-then-one' }>;
+}
+
+function matches(data: ScreenData, lines: string[], at: number, pattern: LinePattern, tick: () => boolean, inWindow: boolean): boolean | 'stop' {
   if (tick()) return 'stop';
+  const line = lines[at] ?? '';
+  if (inWindow && placedStatus(data, pattern.match)) return statusRowAt(placedComposer(data), lines, at);
   if (!pattern.match.test(line)) return false;
   for (const except of pattern.except) {
     if (tick()) return 'stop';
-    if (except.test(line)) return false;
+    if (inWindow && placedStatus(data, except)) {
+      if (statusRowAt(placedComposer(data), lines, at)) return false;
+    } else if (except.test(line)) return false;
   }
   return true;
 }
@@ -485,8 +554,8 @@ function matches(line: string, pattern: LinePattern, tick: () => boolean): boole
 function compose(data: ScreenData, plain: string[], styled: string[], tick: () => boolean): Hit {
   const composer = data.composer;
   if (composer.mode === 'box-to-rule') return boxToRule(plain, styled, composer, tick);
-  if (composer.mode === 'status-last') return statusLast(plain, styled, composer, tick, false);
-  if (composer.mode === 'status-then-one') return statusThenOne(plain, styled, composer, tick);
+  if (composer.mode === 'status-last') return statusLast(data, plain, styled, composer, tick, false);
+  if (composer.mode === 'status-then-one') return statusThenOne(data, plain, styled, composer, tick);
   return twoRules(plain, styled, composer, tick);
 }
 
@@ -573,6 +642,7 @@ function boxToRule(lines: string[], styled: string[], composer: Extract<ScreenDa
 }
 
 function statusLast(
+  data: ScreenData,
   lines: string[],
   styled: string[],
   composer: Extract<ScreenData['composer'], { mode: 'status-last' | 'status-then-one' }>,
@@ -628,16 +698,18 @@ function statusLast(
   return { kind: placeholder(stripTyped(lines[input] ?? '', composer), composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from: input, input, rows };
 }
 
-function statusThenOne(lines: string[], styled: string[], composer: Extract<ScreenData['composer'], { mode: 'status-then-one' }>, tick: () => boolean): Hit {
-  const found = statusLast(lines, styled, composer, tick, true);
+function statusThenOne(data: ScreenData, lines: string[], styled: string[], composer: Extract<ScreenData['composer'], { mode: 'status-then-one' }>, tick: () => boolean): Hit {
+  const found = statusLast(data, lines, styled, composer, tick, true);
   if (found.kind !== 'unknown') return found;
-  // No status line: the fallback rules decide. Anything they don't name is unknown.
-  const hasStatus = lines.some((line) => composer.statusLine.test(line));
+  // No status line: the fallback rules decide. Anything they don't name is unknown. A line
+  // carrying the grammar but not in its place is text like any other here: it fails the read
+  // closed, it does not open the fallback, and it is never one of the fallback's own patterns.
+  const hasStatus = lines.some((line) => statusMatches(composer, line));
   if (hasStatus) return { kind: 'unknown' };
   for (const rule of composer.fallback) {
     let ok = true;
     for (const pattern of rule.all) {
-      const hit = lineSomewhere(lines, pattern, tick);
+      const hit = lineSomewhere(data, lines, pattern, tick);
       if (hit === 'stop') return { kind: 'stop' };
       if (!hit) { ok = false; break; }
     }
