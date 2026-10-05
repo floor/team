@@ -61,7 +61,12 @@ export function mergeScreen(base: ScreenData, added: ProfileOverride): ScreenDat
   return next;
 }
 
-const KEPT = new Set<Screen['kind']>(['permission', 'trust', 'question']);
+// A shipped vendor notice is never weakened by an override: an added pattern may move a reading
+// toward caution, never away from the one record that names a screen the owner must act on.
+const KEPT = new Set<Screen['kind']>(['permission', 'trust', 'question', 'vendor notice']);
+// `vendor notice` is not here on purpose: an override can never add that stage (DIALOG_STAGES
+// names the stages it may add patterns to), so a merged reading can never gain one. A shipped
+// one is pinned by KEPT above.
 const DIALOG = new Set<Screen['kind']>(['unknown', 'trust', 'permission', 'question']);
 
 /**

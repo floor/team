@@ -6,15 +6,15 @@ import { createRequire } from 'node:module';
 import { isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DialectError, compilePattern } from './dialect.ts';
-import type { Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage, StatusBelow, Wrap } from './screen-data.ts';
+import type { Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage, StatusBelow, VersionRange, Wrap } from './screen-data.ts';
 import type { ScreenProfile } from './screen-profile.ts';
 import type { Screen } from './screen.ts';
 import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts';
 
 const require = createRequire(import.meta.url);
 
-const STAGES = ['unknown', 'trust', 'permission', 'question', 'working'] as const;
-const KINDS = ['idle', 'working', 'unsent', 'permission', 'trust', 'question', 'unknown'] as const;
+const STAGES = ['unknown', 'trust', 'permission', 'question', 'vendor_notice', 'working'] as const;
+const KINDS = ['idle', 'working', 'unsent', 'permission', 'trust', 'question', 'vendor notice', 'unknown'] as const;
 // The lines a dialog draws for its choices, built from their parts: the mark on the choice
 // the cursor is on (claude-code ❯, codex ›, antigravity >) or the indent of the others, the
 // number, and the labels the profiles' rules and fixtures show, run-on forms included — the
@@ -220,6 +220,8 @@ function loadScreenModule(specifier: string, baseDir: string | undefined, line: 
       return typeof val === 'function' ? val : undefined;
     };
 
+    // `vendor_notice` is deliberately not read from a module: a vendor notice is never a reading
+    // without a record, and an export carries no `tested` range. No record, no vendor notice.
     const snapshot: ScreenProfile = Object.freeze({
       unknown: readExport('unknown'),
       trust: readExport('trust'),
@@ -266,7 +268,7 @@ function screenOf(node: YamlNode, topScreenModule?: YamlEntry, baseDir?: string,
 
   for (const name of STAGES) {
     const entry = optional(entries, name);
-    if (entry) data[name] = stageOf(entry.value);
+    if (entry) data[name] = stageOf(entry.value, name);
   }
   return data;
 }
@@ -282,7 +284,22 @@ export function addedRules(node: YamlNode): Rule[] {
   return node.items.map((item) => ruleOf(item, false, false));
 }
 
-function stageOf(node: YamlNode): Stage {
+function stageOf(node: YamlNode, name: (typeof STAGES)[number]): Stage {
+  // A vendor notice is never a reading without a record: its map carries the `tested` range it
+  // was captured on, and nothing else may. The list form, which carries no range, is refused
+  // here rather than read as a stage a version could not be checked against.
+  if (name === 'vendor_notice') {
+    const entries = mapping(node, 'a "vendor_notice" stage');
+    only(entries, ['ignore_case', 'rules', 'tested']);
+    const flag = optional(entries, 'ignore_case');
+    const ignoreCase = flag ? boolOf(flag.value, 'ignore_case') : false;
+    const rules = required(entries, 'rules', node.line);
+    if (rules.value.kind !== 'seq') fail(rules.line, '"rules" must be a list');
+    return {
+      rules: rules.value.items.map((item) => ruleOf(item, ignoreCase)),
+      tested: testedOf(required(entries, 'tested', node.line)),
+    };
+  }
   if (node.kind === 'seq') return { rules: node.items.map((item) => ruleOf(item, false)) };
   const entries = mapping(node, 'a stage');
   only(entries, ['ignore_case', 'rules']);
@@ -291,6 +308,19 @@ function stageOf(node: YamlNode): Stage {
   const rules = required(entries, 'rules', node.line);
   if (rules.value.kind !== 'seq') fail(rules.line, '"rules" must be a list');
   return { rules: rules.value.items.map((item) => ruleOf(item, ignoreCase)) };
+}
+
+/** The `tested:` range of a vendor notice: `from` and `to`, both required. */
+function testedOf(entry: YamlEntry): VersionRange {
+  const entries = mapping(entry.value, 'tested');
+  only(entries, ['from', 'to']);
+  const from = required(entries, 'from', entry.line);
+  const to = required(entries, 'to', entry.line);
+  const a = stringOf(from.value);
+  const b = stringOf(to.value);
+  if (a === null) fail(from.line, '"from" must be a string');
+  if (b === null) fail(to.line, '"to" must be a string');
+  return { from: a, to: b };
 }
 
 function ruleOf(node: YamlNode, ignoreCase: boolean, allowCase = true): Rule {

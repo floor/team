@@ -2,6 +2,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { profileFor } from '../profiles/index.ts';
 import { launchCommand, shellQuote } from '../profiles/profile.ts';
 import type { LaunchedIdentity } from './identity.ts';
+import type { FinalRecord } from './progress.ts';
 
 /**
  * What running a step does. The printed command stays in `argv`; this is how the live command
@@ -13,6 +14,9 @@ export type Op =
   | { do: 'create'; seat?: string; label: string; cwd: string; notice?: string; lobby?: true }
   | { do: 'launch'; seat: string; label: string; command: string; pane?: string; notice?: string }
   | { do: 'refuse'; seat: string; why: string }
+  /** A seat's final record, decided by the plan: no profile, already ready. The step's printed
+   *  text stays for the dry run; `detail` is the stderr lines said after the record. */
+  | { do: 'record'; seat: string; record: FinalRecord; detail?: string }
   | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; command: string; pane?: string; workspace?: string; notice?: string; model?: string; version?: string }
   | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
   | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; path: string; line: string; seconds: number; pane?: string; notice?: string }
@@ -142,11 +146,20 @@ export function upPlan(input: UpInput): Step[] {
       steps.push({
         kind: 'skip',
         text: `${seat.name}: no launch profile for \`${seat.cli}\` in this version; left out`,
+        do: {
+          do: 'record',
+          seat: seat.name,
+          record: { kind: 'left out', reason: `no launch profile for \`${seat.cli}\` in this version; left out` },
+        },
       });
       continue;
     }
     if (seat.stage === 'ready') {
-      steps.push({ kind: 'skip', text: `${seat.name}: already ready; left as it is` });
+      steps.push({
+        kind: 'skip',
+        text: `${seat.name}: already ready; left as it is`,
+        do: { do: 'record', seat: seat.name, record: { kind: 'ready' }, detail: '  already ready; left as it is\n' },
+      });
       continue;
     }
     const pane = seat.pane ?? paneOf(seat.name);

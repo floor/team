@@ -1352,7 +1352,7 @@ describe('a launch line that cannot run where the seat starts', () => {
     const made = world();
     const run = await runUpCmd([], made);
     expect(run.code).toBe(1);
-    expect(run.out).toContain('worker: refused: its launch line runs `../tools/x.sh`');
+    expect(run.out).toContain('worker: left out: refused: its launch line runs `../tools/x.sh`');
     expect(made.workspaces).toContainEqual({ label: 'lead', cwd: lobby });
     expect(made.workspaces.some((workspace) => workspace.label === 'worker')).toBe(false);
   });
@@ -1498,7 +1498,7 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     expect(made.paneIds()).toEqual([]);
     expect(made.runs).toEqual([]);
     expect(made.typed).toEqual([]);
-    expect(run.out).toContain(`lead: the lobby ${lobby}: it is not the folder the gate read`);
+    expect(run.out).toContain(`lead: left out: the lobby ${lobby}: it is not the folder the gate read`);
     expect(Object.keys(readState(dir).sessions['acme']?.seats ?? {})).toEqual([]);
   });
 
@@ -1514,7 +1514,7 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     expect(made.paneIds()).toEqual([]);
     expect(made.runs).toEqual([]);
     expect(made.typed).toEqual([]);
-    expect(run.out).toContain(`worker: the lobby ${lobby}: canonical path`);
+    expect(run.out).toContain(`worker: left out: the lobby ${lobby}: canonical path`);
     expect(readdirSync(outside)).toEqual([]);
     expect(statSync(outside).mode & 0o777).toBe(0o755);
   });
@@ -1528,7 +1528,7 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     expect(run.code).toBe(1);
     expect(made.workspaces).toEqual([{ label: 'lead', cwd: lobby }]);
     expect(run.out).toContain('lead: ready');
-    expect(run.out).toContain(`worker: the lobby ${lobby}: it is not the folder the gate read`);
+    expect(run.out).toContain(`worker: left out: the lobby ${lobby}: it is not the folder the gate read`);
     // The first seat was created while the path was the verified lobby; nothing closes it.
     expect(made.closed).toEqual([]);
     expect(made.launch.agentPanes('acme')).toEqual(['w1:p1']);

@@ -27,7 +27,7 @@ describe('Codex launch and captured screens', () => {
     ['idle', 'idle'], ['unsent', 'unsent'], ['working', 'working'],
     ['typed-two-lines', 'unsent'], ['pasted-two-lines', 'unsent'], ['second-line-glyph', 'unsent'],
     ['second-line-gt', 'unsent'], ['wrapped-line', 'unsent'], ['blank-middle', 'unsent'],
-    ['rules-accepted', 'idle'], ['startup', 'question'], ['startup-loading', 'unknown'], ['trust', 'trust'],
+    ['rules-accepted', 'idle'], ['startup', 'vendor notice'], ['startup-loading', 'unknown'], ['trust', 'trust'],
     ['exit-typed', 'unsent'], ['exit', 'unknown'], ['permission', 'permission'],
   ] as const)('%s capture has %s composer shape', (file, kind) => {
     // A working screen never permits input, even if herdr's status has not caught up.
@@ -265,6 +265,19 @@ describe('Codex rules delivery', () => {
     const d = delivery(screen);
     expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
     expect(d.calls).toEqual([]);
+  });
+  test('a vendor notice at the first frame is refused at once, not waited out', async () => {
+    // The reading is the first read's, and the refusal follows it before any wait: without the
+    // vendor-notice branch the loop would poll the same screen to the deadline and report the
+    // same reading from there. No sleep, no text, no key.
+    const d = delivery('startup');
+    let naps = 0;
+    const napping = d.io.sleep;
+    d.io.sleep = async (ms) => { naps++; return napping(ms); };
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
+    expect(naps).toBe(0);
+    expect(d.calls).toEqual([]);
+    expect(d.refusals.at(-1)?.kind).toBe('vendor notice');
   });
   test('working screen with a stale idle status still receives nothing', async () => {
     const d = delivery('working'); d.status('idle');

@@ -87,6 +87,7 @@ export function testIo(cwd: string, caller?: Caller): TestIo {
     cwd,
     env: {},
     stdinIsTTY: false,
+    stdoutIsTTY: false,
     ...(caller ? { caller } : {}),
   };
   return io;

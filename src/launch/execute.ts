@@ -1,11 +1,13 @@
 import type { HerdrAgent, PaneProcesses } from '../herdr.ts';
 import { refusalReport, type Refusal } from './deliver.ts';
-import { profileFor } from '../profiles/profile.ts';
+import { profileFor, versionVerdict } from '../profiles/profile.ts';
 import { modelDiffers, seatModel, type Running } from '../status/statusline.ts';
 import { launchedIdentity, seatProcessVerdict, type LaunchedIdentity } from './identity.ts';
 import type { Step } from './plan.ts';
+import { recordWhat, type FinalRecord, type ProgressState } from './progress.ts';
+import { vendorNoticeRange } from '../watch/screen.ts';
 
-export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'unsent' | 'unknown';
+export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'vendor notice' | 'unsent' | 'unknown';
 
 /** What a live `up` or `down` can do, apart from deciding it. Tests stand in for all of it. */
 export type Host = {
@@ -73,6 +75,15 @@ export type Host = {
   drop(seat: string): void;
   say(line: string): void;
   log(who: string, what: string): void;
+  /** The seat's line: first drawn before its workspace is created, rewritten in place as it
+   *  advances. Present on `up` and `add`; `down` has none, and its records keep their old lines. */
+  progress?(seat: string, state: ProgressState): void;
+  /** The seat's one final record, and the detail lines that follow it on stderr. Present
+   *  wherever `progress` is. */
+  final?(seat: string, record: FinalRecord, detail: string): void;
+  /** What the installed `<cli>` reports as its version, for a vendor notice's `untested on`
+   *  detail. Null when it can't be read. */
+  cliVersion?(cli: string): string | null;
 };
 
 export type Report = {
@@ -258,7 +269,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
   let abort = false;
 
   // The reading is what is logged: screen text may follow it on the terminal (`detail`), and
-  // never reaches the log file.
+  // never reaches the log file. `down`'s records keep this line exactly.
   const finish = (seat: string, what: string, detail = '') => {
     if (logged.has(seat)) return;
     logged.add(seat);
@@ -266,15 +277,45 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     host.log(seat, what);
   };
 
+  // The lines a run says about a seat between its line's first draw and its final record are
+  // held and said right after the record: while a seat's line is provisional, that line is the
+  // only one open on the terminal.
+  const pending = new Map<string, string[]>();
+  const hold = (seat: string, line: string) => {
+    const lines = pending.get(seat);
+    if (lines) lines.push(line);
+    else pending.set(seat, [line]);
+  };
+  const release = (seat: string): string => {
+    const lines = (pending.get(seat) ?? []).join('');
+    pending.delete(seat);
+    return lines;
+  };
+
+  // A seat's one final record: the record line, then its detail on stderr. A host without
+  // `final` (no `up` or `add` record path reaches it) says the record's own words as one line.
+  const final = (seat: string, record: FinalRecord, detail = '') => {
+    if (logged.has(seat)) return;
+    logged.add(seat);
+    const what = recordWhat(record);
+    const rest = detail + release(seat);
+    if (host.final) host.final(seat, record, rest);
+    else host.say(`${seat}: ${what}\n${rest}`);
+    host.log(seat, what);
+  };
+
   // A seat whose pane no longer held the process team launched is closed without input and
-  // launched again; its one line says both, when it is ready. Any other end of that seat keeps
-  // its own line, and the close is what the plan and the state already show.
+  // launched again; it is ready when it reaches its prompt, and the detail says why it was
+  // launched. Any other end of that seat keeps its own record, and the close is what the plan
+  // and the state already show.
   const relaunched = new Map<string, 'gone' | 'replaced'>();
   const finishReady = (seat: string) => {
     const verdict = relaunched.get(seat);
-    if (verdict === 'gone') finish(seat, 'its pane held no CLI; closed without input and launched again');
-    else if (verdict === 'replaced') finish(seat, 'its pane held a process team did not launch; closed without input and launched again');
-    else finish(seat, 'ready');
+    if (verdict === 'gone') {
+      final(seat, { kind: 'ready' }, '  its pane held no CLI; closed without input and launched again\n');
+    } else if (verdict === 'replaced') {
+      final(seat, { kind: 'ready' }, '  its pane held a process team did not launch; closed without input and launched again\n');
+    } else final(seat, { kind: 'ready' });
   };
   // The identity read after the idle prompt, to carry into every later record of the seat.
   const identities = new Map<string, LaunchedIdentity>();
@@ -296,12 +337,14 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     if (seat && dropped.has(seat)) continue;
 
     if (step.kind === 'skip') {
-      if (op?.do === 'ready' && op.seat) {
-        if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
+      if (op?.do === 'record' && op.seat) {
+        final(op.seat, op.record, op.detail ?? '');
+      } else if (op?.do === 'ready' && op.seat) {
+        if (op.notice) hold(op.seat, `${op.seat}: ${op.notice}\n`);
         host.record(op.seat, { stage: 'ready', rules: op.rules });
         finishReady(op.seat);
       } else if (op?.do === 'refuse') {
-        finish(op.seat, `refused: ${op.why}`);
+        final(op.seat, { kind: 'left out', reason: `refused: ${op.why}` });
       } else host.say(`  skip ${step.text}\n`);
       continue;
     }
@@ -326,12 +369,15 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'create': {
-        if (op.seat && op.notice) host.say(`${op.seat}: ${op.notice}\n`);
+        // Before the allow and lobby checks, and before the workspace: the seat's line is drawn
+        // whole, and nothing sits between the lobby's last look and the create it guards.
+        if (op.seat) host.progress?.(op.seat, 'launching');
+        if (op.seat && op.notice) hold(op.seat, `${op.seat}: ${op.notice}\n`);
         if (op.seat) {
           const why = host.allow(op.seat);
           if (why) {
             dropped.add(op.seat);
-            finish(op.seat, why);
+            final(op.seat, { kind: 'left out', reason: why });
             break;
           }
         }
@@ -344,7 +390,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
             abort = true;
             if (op.seat) {
               dropped.add(op.seat);
-              finish(op.seat, why);
+              final(op.seat, { kind: 'left out', reason: why });
             } else {
               watchFailed = true;
               host.say(`watch: ${why}\n`);
@@ -358,7 +404,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           if (op.seat) {
             host.record(op.seat, { stage: 'launched' });
             dropped.add(op.seat);
-            finish(op.seat, 'its workspace was not created; left at launched');
+            final(op.seat, { kind: 'left out', reason: 'its workspace was not created; left at launched' });
           } else {
             watchFailed = true;
             host.say('watch: its workspace was not created\n');
@@ -374,34 +420,36 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'launch': {
-        if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
+        host.progress?.(op.seat, 'launching');
+        if (op.notice) hold(op.seat, `${op.seat}: ${op.notice}\n`);
         const why = host.allow(op.seat);
         if (why) {
           dropped.add(op.seat);
-          finish(op.seat, why);
+          final(op.seat, { kind: 'left out', reason: why });
           break;
         }
         const here = place(op.seat, op.pane);
         if (!here || !host.paneRun(session, here.pane, op.command)) {
           dropped.add(op.seat);
-          finish(op.seat, 'its launch command did not run; left at launched');
+          final(op.seat, { kind: 'left out', reason: 'its launch command did not run; left at launched' });
           break;
         }
         host.running(op.seat);
         break;
       }
       case 'idle': {
-        if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
+        host.progress?.(op.seat, 'waiting for its prompt');
+        if (op.notice) hold(op.seat, `${op.seat}: ${op.notice}\n`);
         const here = place(op.seat, op.pane, op.workspace);
         if (!here) {
           dropped.add(op.seat);
-          finish(op.seat, 'has no pane to read; left at launched');
+          final(op.seat, { kind: 'left out', reason: 'has no pane to read; left at launched' });
           break;
         }
         const startedAt = host.now();
         const deadline = startedAt + op.seconds * 1000;
         const pollMs = 2000;
-        let outcome: 'idle' | 'permission' | 'trust' | 'question' | 'ended' | 'timeout' = 'timeout';
+        let outcome: 'idle' | 'permission' | 'trust' | 'question' | 'vendor notice' | 'ended' | 'timeout' = 'timeout';
         let last: ScreenKind = 'unknown';
         let endedRead: string | null = null;
         let endedFor = 0;
@@ -437,7 +485,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
               }
             }
           } else shellBackSince = null;
-          if (kind === 'idle' || kind === 'permission' || kind === 'trust' || kind === 'question') {
+          if (kind === 'idle' || kind === 'permission' || kind === 'trust' || kind === 'question' || kind === 'vendor notice') {
             outcome = kind;
             break;
           }
@@ -455,12 +503,12 @@ export async function executePlan(steps: readonly Step[], session: string, host:
             const declared = { model: op.model, version: op.version };
             if (modelDiffers(running, declared)) {
               dropped.add(op.seat);
-              finish(op.seat, modelLeft(running, declared, op.cli));
+              final(op.seat, { kind: 'left out', reason: modelLeft(running, declared, op.cli) });
               break;
             }
             if (!running) {
               const note = "its screen doesn't show a model this version knows; not checked";
-              host.say(`${op.seat}: ${note}\n`);
+              hold(op.seat, `${op.seat}: ${note}\n`);
               host.log(op.seat, note);
             }
           }
@@ -480,21 +528,27 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           break;
         }
         const workspace = here.workspace ?? places.get(op.seat)?.workspace;
-        if (outcome === 'permission' || outcome === 'trust' || outcome === 'question') {
-          // A trust question is closed with no key and no text. The same for a permission or a question.
-          const reading = outcome === 'trust' ? 'trust question' : outcome;
+        if (outcome === 'permission' || outcome === 'trust' || outcome === 'question' || outcome === 'vendor notice') {
+          // A trust question is closed with no key and no text. The same for a permission or a
+          // question, and for a vendor notice: it is never answered here, or anywhere.
+          const reading = outcome === 'trust' ? 'trust' : outcome;
+          // The installed version is read only after the close: nothing sits between the reading
+          // and the act it decides. A version outside the record's range never changes the
+          // reading — a reading is never made less cautious by a version — it is what the
+          // detail adds.
+          const untested = () => (outcome === 'vendor notice' ? untestedOn(op.cli, host.cliVersion?.(op.cli) ?? null) : '');
           if (workspace && !host.closeWorkspace(session, workspace)) {
             // The close did not happen: nothing may claim it did, and the seat keeps its state
             // exactly as it is — a later `up` finds it where this run left it.
             held = true;
             dropped.add(op.seat);
-            finish(op.seat, `${reading}; its workspace did not close; left as it is`);
+            final(op.seat, { kind: 'left out', reason: `${reading}; its workspace did not close; left as it is` }, untested());
             break;
           }
           host.drop(op.seat);
           dropped.add(op.seat);
-          const why = `${reading}; its workspace was closed without ${outcome === 'trust' ? 'an answer' : 'input'} and the seat left out`;
-          finish(op.seat, why);
+          const closed = `  its workspace was closed without ${outcome === 'trust' ? 'an answer' : 'input'} and the seat left out\n`;
+          final(op.seat, { kind: 'left out', reason: reading }, untested() + closed);
           break;
         }
         dropped.add(op.seat);
@@ -504,26 +558,28 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           // program for `endedFor` seconds and no CLI prompt is on the screen. The workspace is
           // left open; the seat stays at launched, and a later `up` resumes it — the same
           // reading covers a CLI that exited and one that never began.
-          finish(
+          final(
             op.seat,
-            `its pane has been back at its shell for ${endedFor} s and shows no CLI prompt; left at launched`,
+            { kind: 'left out', reason: `its pane has been back at its shell for ${endedFor} s and shows no CLI prompt; left at launched` },
             `${paneExcerpt(read, op.command)}  run \`team up\` again to resume it\n`,
           );
           break;
         }
         const waited = Math.round((host.now() - startedAt) / 1000);
-        finish(
+        final(
           op.seat,
-          `timed out after ${waited} s waiting for its idle prompt; the screen last read ${last}; left at launched`,
-          `${paneExcerpt(read, op.command)}  run \`team up\` again to resume it\n`,
+          { kind: 'left out', reason: 'timeout' },
+          `  timed out after ${waited} s waiting for its idle prompt; the screen last read ${last}; left at launched\n`
+            + `${paneExcerpt(read, op.command)}  run \`team up\` again to resume it\n`,
         );
         break;
       }
       case 'rename': {
+        host.progress?.(op.seat, 'naming');
         const here = place(op.seat, op.pane);
         if (!here) {
           dropped.add(op.seat);
-          finish(op.seat, 'has no pane to name; left at launched');
+          final(op.seat, { kind: 'left out', reason: 'has no pane to name; left at launched' });
           break;
         }
         const seen = await until(
@@ -534,7 +590,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         );
         if (!seen || !host.renameAgent(session, here.pane, op.seat)) {
           dropped.add(op.seat);
-          finish(op.seat, 'was not in the agent list in time; left at launched');
+          final(op.seat, { kind: 'left out', reason: 'was not in the agent list in time; left at launched' });
           break;
         }
         host.record(op.seat, {
@@ -556,28 +612,29 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'deliver': {
-        if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
+        host.progress?.(op.seat, 'sending its rules');
+        if (op.notice) hold(op.seat, `${op.seat}: ${op.notice}\n`);
         const here = place(op.seat, op.pane);
         const file = { text: op.rules, path: op.path, line: op.line, seat: op.seat };
         const delivered = here ? await host.deliverRules?.(session, here.pane, op.cli, file, op.seconds) : false;
         if (delivered === 'no-agent') {
           dropped.add(op.seat);
-          finish(op.seat, 'no live agent in its pane; its rules were not delivered');
+          final(op.seat, { kind: 'left out', reason: 'no live agent in its pane; its rules were not delivered' });
           break;
         }
         if (typeof delivered === 'object') {
-          // The specific reading goes into the log; a row of the screen itself is printed to
-          // the terminal alone, stripped and cut, never logged.
+          // The specific reading goes into the log; a row of the screen itself is said on the
+          // terminal alone, stripped and cut, never logged.
           dropped.add(op.seat);
           if (delivered.row !== null) {
-            host.say(`${op.seat}: first row of its box that is not the rules line: ${plainPaneText(delivered.row)}\n`);
+            hold(op.seat, `${op.seat}: first row of its box that is not the rules line: ${plainPaneText(delivered.row)}\n`);
           }
-          finish(op.seat, refusalReport(delivered));
+          final(op.seat, { kind: 'left out', reason: refusalReport(delivered) });
           break;
         }
         if (!here || !delivered) {
           dropped.add(op.seat);
-          finish(op.seat, 'its rules were not delivered; left at named');
+          final(op.seat, { kind: 'left out', reason: 'its rules were not delivered; left at named' });
           break;
         }
         host.record(op.seat, {
@@ -631,6 +688,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'repair': {
+        host.progress?.(op.seat, 'launching');
         // The pane holds a process team did not launch (or no CLI at all): the workspace is
         // closed with no key and no text sent into it, the seat's launch state is cleared, and
         // the steps after this one launch the seat fresh, exactly as for a seat never launched.
@@ -646,32 +704,32 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         if (!listed || listed.pane !== op.pane || listed.workspace !== op.workspace) {
           held = true;
           dropped.add(op.seat);
-          finish(op.seat, 'herdr no longer shows this seat on its recorded pane; nothing closed; run team status');
+          final(op.seat, { kind: 'left out', reason: 'herdr no longer shows this seat on its recorded pane; nothing closed; run team status' });
           break;
         }
         const panes = host.workspacePanes ? host.workspacePanes(session, op.workspace) : null;
         if (panes === null || panes.length === 0) {
           held = true;
           dropped.add(op.seat);
-          finish(op.seat, 'its pane could not be read; nothing closed');
+          final(op.seat, { kind: 'left out', reason: 'its pane could not be read; nothing closed' });
           break;
         }
         if (panes.length !== 1 || panes[0] !== op.pane) {
           held = true;
           dropped.add(op.seat);
-          finish(op.seat, 'its workspace holds other panes; nothing closed (close its pane there, then run team up)');
+          final(op.seat, { kind: 'left out', reason: 'its workspace holds other panes; nothing closed (close its pane there, then run team up)' });
           break;
         }
         const verdict = seatProcessVerdict(op.launched, host.processInfo?.(session, op.pane));
         if (verdict === 'same') {
           dropped.add(op.seat);
-          finish(op.seat, "its pane is the seat's again; left as it is");
+          final(op.seat, { kind: 'left out', reason: "its pane is the seat's again; left as it is" });
           break;
         }
         if (verdict === 'unknown') {
           held = true;
           dropped.add(op.seat);
-          finish(op.seat, 'its pane could not be read; nothing closed');
+          final(op.seat, { kind: 'left out', reason: 'its pane could not be read; nothing closed' });
           break;
         }
         if (verdict === 'replaced') {
@@ -679,26 +737,26 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           if (kind === 'unknown') {
             held = true;
             dropped.add(op.seat);
-            finish(op.seat, 'its pane could not be read; nothing closed');
+            final(op.seat, { kind: 'left out', reason: 'its pane could not be read; nothing closed' });
             break;
           }
           if (kind === 'working') {
             held = true;
             dropped.add(op.seat);
-            finish(op.seat, `the process in its pane is working; nothing closed (stop it there, or run team remove ${op.seat})`);
+            final(op.seat, { kind: 'left out', reason: `the process in its pane is working; nothing closed (stop it there, or run team remove ${op.seat})` });
             break;
           }
           if (kind === 'unsent') {
             held = true;
             dropped.add(op.seat);
-            finish(op.seat, `the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove ${op.seat})`);
+            final(op.seat, { kind: 'left out', reason: `the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove ${op.seat})` });
             break;
           }
         }
         if (!host.closeWorkspace(session, op.workspace)) {
           held = true;
           dropped.add(op.seat);
-          finish(op.seat, 'its workspace did not close; left as it is');
+          final(op.seat, { kind: 'left out', reason: 'its workspace did not close; left as it is' });
           break;
         }
         host.drop(op.seat);
@@ -746,6 +804,17 @@ export async function executePlan(steps: readonly Step[], session: string, host:
   }
 
   return { serverFailed, watchFailed, held, dropped: [...dropped] };
+}
+
+// A vendor notice is classified by its predicate whatever version the CLI reports — a reading is
+// never made less cautious by a version — and the record's detail says the reading was not tested
+// there. Nothing is added while the record's own range covers the installed version, and nothing
+// when the version cannot be read.
+function untestedOn(cli: string, version: string | null): string {
+  const range = vendorNoticeRange(cli);
+  if (range === null || version === null) return '';
+  const verdict = versionVerdict(version, range);
+  return verdict === 'older' || verdict === 'newer' ? `  untested on ${version}\n` : '';
 }
 
 // The owner adds the CLI's model flag for the file's model, or corrects the file and approves it.

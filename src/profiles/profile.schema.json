@@ -135,6 +135,7 @@
         "trust": { "$ref": "#/$defs/stage" },
         "permission": { "$ref": "#/$defs/stage" },
         "question": { "$ref": "#/$defs/stage" },
+        "vendor_notice": { "$ref": "#/$defs/vendorNotice" },
         "working": { "$ref": "#/$defs/stage" },
         "composer": { "$ref": "#/$defs/composer" },
         "screen_module": { "$ref": "#/$defs/screenModule" }
@@ -156,6 +157,28 @@
           }
         }
       ]
+    },
+    "vendorNotice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rules", "tested"],
+      "description": "A vendor's own notice — an update screen, for one. Never answered, and never a reading without a record: the `tested` range is the version the capture was taken on, and the loader requires it. The list form is refused.",
+      "properties": {
+        "ignore_case": {
+          "type": "boolean",
+          "description": "Ignore ASCII case only: each letter matches its other case; no other character folds. The flag reaches every rule of the stage, the exceptions written beside a match included."
+        },
+        "rules": { "type": "array", "items": { "$ref": "#/$defs/rule" }, "minItems": 1 },
+        "tested": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "to"],
+          "properties": {
+            "from": { "type": "string" },
+            "to": { "type": "string" }
+          }
+        }
+      }
     },
     "rule": {
       "type": "object",
@@ -333,7 +356,7 @@
             "required": ["all", "kind"],
             "properties": {
               "all": { "$ref": "#/$defs/patterns" },
-              "kind": { "enum": ["idle", "working", "unsent", "permission", "trust", "question", "unknown"] }
+              "kind": { "enum": ["idle", "working", "unsent", "permission", "trust", "question", "vendor notice", "unknown"] }
             }
           }
         }

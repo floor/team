@@ -86,11 +86,19 @@ screen:
         - '^\s*›?\s*1\. Yes, proceed \(y\)\s*$'
         - '^\s*›?\s*2\. No, and tell Codex what to do differently \(esc\)\s*$'
       footer: 'Press enter to confirm or esc to cancel'
-  question:
-    - all:
-        - 'Update available ·'
-        - '^\s*›?\s*1\. Update now\b'
-      footer: 'enter continue · esc skip'
+  # Codex's own update screen, drawn at startup before any composer (startup.txt, 0.157.0).
+  # A vendor notice, not a question the agent asked: never answered, and the `tested` range
+  # says the version the capture was taken on. Codex has no `question` stage: a screen that
+  # reads as one is a dialog, and a dialog is never a vendor notice.
+  vendor_notice:
+    tested:
+      from: '0.157.0'
+      to: '0.157.0'
+    rules:
+      - all:
+          - 'Update available ·'
+          - '^\s*›?\s*1\. Update now\b'
+        footer: 'enter continue · esc skip'
   working:
     - any: ['esc to interrupt']
   composer:

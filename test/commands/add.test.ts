@@ -410,6 +410,8 @@ describe('team add', () => {
     const io = testIo(project, owner);
     const code = await runAdd(['--temporary', '--like', 'worker', '--until', 'merged:fix/fresh'], io, sources(made));
     expect(code).toBe(0);
+    // A redirected stdout holds the seat's one record, and records alone.
+    expect(io.out).toBe('worker-tmp-1: ready\n');
     expect(made.renames).toEqual(['worker-tmp-1']);
     const text = readFileSync(join(project, '.agents', 'team.yaml'), 'utf8');
     const loaded = loadTeamFile(project, { home });
@@ -434,7 +436,8 @@ describe('team add', () => {
     const file = rulesFilePath('acme', project, home, 'scribe-tmp-1') as string;
     const io = testIo(project, owner);
     expect(await runAdd(['--temporary', '--like', 'scribe', '--until', 'merged:fix/fresh'], io, sources(made))).toBe(1);
-    expect(io.out).toContain('scribe-tmp-1: trust question; its workspace was closed without an answer and the seat left out');
+    expect(io.out).toContain('scribe-tmp-1: left out: trust\n');
+    expect(io.err).toContain('  its workspace was closed without an answer and the seat left out\n');
     expect(existsSync(file)).toBe(false);
     expect(readState(join(project, '.agents')).sessions.acme?.seats['scribe-tmp-1']).toBeUndefined();
   });
@@ -517,8 +520,9 @@ describe('team add', () => {
     const io = testIo(project, owner);
     const code = await runAdd(['worker'], io, sources(made));
     expect(code).toBe(1);
-    const line = 'worker: permission; its workspace was closed without input and the seat left out';
+    const line = 'worker: left out: permission';
     expect(io.out).toContain(`${line}\n`);
+    expect(io.err).toContain('  its workspace was closed without input and the seat left out\n');
     expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8')).toContain(line);
     expect(closed).toEqual(['w1']);
   });
@@ -558,7 +562,7 @@ describe('team add', () => {
     expect(keys).toEqual([]);
     expect(closes).toEqual(['w9']);
     expect(made.creates).toEqual(['worker']);
-    expect(io.out).toContain('worker: its pane held a process team did not launch; closed without input and launched again\n');
+    expect(io.err).toContain('  its pane held a process team did not launch; closed without input and launched again\n');
     const seats = readState(join(project, '.agents')).sessions.acme?.seats ?? {};
     expect(seats.worker?.stage).toBe('ready');
     expect(seats.worker?.pane).toBe('w1:p1');
@@ -593,7 +597,7 @@ describe('team add', () => {
         workspaces: () => [{ id: 'w9' }],
       }));
       expect(code).toBe(1);
-      expect(io.out).toContain('worker: herdr no longer shows this seat on its recorded pane; nothing closed; run team status\n');
+      expect(io.out).toContain('worker: left out: herdr no longer shows this seat on its recorded pane; nothing closed; run team status\n');
       expect(closes).toEqual([]);
       expect(made.creates).toEqual([]);
       expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
@@ -610,7 +614,7 @@ describe('team add', () => {
         workspaces: () => [{ id: 'w9' }],
       }));
       expect(code).toBe(1);
-      expect(io.out).toContain('worker: its workspace holds other panes; nothing closed (close its pane there, then run team up)\n');
+      expect(io.out).toContain('worker: left out: its workspace holds other panes; nothing closed (close its pane there, then run team up)\n');
       expect(closes).toEqual([]);
       expect(made.creates).toEqual([]);
       expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
@@ -627,7 +631,7 @@ describe('team add', () => {
         workspaces: () => [{ id: 'w9' }],
       }));
       expect(code).toBe(1);
-      expect(io.out).toContain('worker: its pane could not be read; nothing closed\n');
+      expect(io.out).toContain('worker: left out: its pane could not be read; nothing closed\n');
       expect(closes).toEqual([]);
       expect(made.creates).toEqual([]);
       expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
@@ -647,7 +651,7 @@ describe('team add', () => {
         workspaces: () => [{ id: 'w9' }],
       }));
       expect(code).toBe(1);
-      expect(io.out).toContain('worker: its pane could not be read; nothing closed\n');
+      expect(io.out).toContain('worker: left out: its pane could not be read; nothing closed\n');
       expect(closes).toEqual([]);
       expect(made.creates).toEqual([]);
       expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
@@ -664,7 +668,7 @@ describe('team add', () => {
         workspaces: () => [{ id: 'w9' }],
       }));
       expect(code).toBe(1);
-      expect(io.out).toContain('worker: the process in its pane is working; nothing closed (stop it there, or run team remove worker)\n');
+      expect(io.out).toContain('worker: left out: the process in its pane is working; nothing closed (stop it there, or run team remove worker)\n');
       expect(closes).toEqual([]);
       expect(made.creates).toEqual([]);
       expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
@@ -682,7 +686,7 @@ describe('team add', () => {
         workspaces: () => [{ id: 'w9' }],
       }));
       expect(code).toBe(1);
-      expect(io.out).toContain('worker: the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove worker)\n');
+      expect(io.out).toContain('worker: left out: the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove worker)\n');
       expect(closes).toEqual([]);
       expect(made.creates).toEqual([]);
       expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);

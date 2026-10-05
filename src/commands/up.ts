@@ -35,6 +35,7 @@ import { executePlan } from '../launch/execute.ts';
 import { seatProcessVerdict } from '../launch/identity.ts';
 import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
+import { progressWriter } from '../launch/progress.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { rulesFileHash, rulesFileHolds, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
 import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
@@ -485,6 +486,9 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     }
   }
   const now = () => sources.now?.() ?? launch.now();
+  // One writer per run: a seat's provisional line on a terminal, its one final record either
+  // way, and every other line of the run on stderr, after the record it belongs to.
+  const records = progressWriter({ stdout: io.stdout, stderr: io.stderr, isTTY: io.stdoutIsTTY ?? false });
   const host: Host = {
     startServer: launch.startServer,
     sessionUp: launch.sessionUp,
@@ -568,7 +572,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
         if (seats) delete seats[name];
       });
     },
-    say: (line) => io.stdout(line),
+    say: (line) => io.stderr(line),
+    progress: (seat, state) => records.progress(seat, state),
+    final: (seat, record, detail) => records.final(seat, record, detail),
+    cliVersion(cli) {
+      const profile = profileFor(cli);
+      if (!profile || !sources.doctor) return null;
+      return sources.doctor.version(profile.binary);
+    },
     log: (who, what) => logLine(dir, 'up', describeCaller(caller), `${who}: ${what}`, now()),
   };
 

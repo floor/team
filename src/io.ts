@@ -7,6 +7,9 @@ export type Io = {
   cwd: string;
   env: Record<string, string | undefined>;
   stdinIsTTY: boolean;
+  /** Whether stdout is a terminal: only then does `up` or `add` draw a seat's provisional line.
+   *  Absent counts as false — a caller that never reads it may leave it out. */
+  stdoutIsTTY?: boolean;
   // Set by tests only. A command asks `callerOf(io)`, which otherwise reads the processes.
   caller?: Caller;
 };

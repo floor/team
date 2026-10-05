@@ -486,7 +486,7 @@
     {
       "file": "codex/0.157.0/startup.txt",
       "cli": "codex",
-      "classify": "question",
+      "classify": "vendor notice",
       "composer": "unknown",
       "provenance": "capture"
     },

@@ -195,6 +195,7 @@ const SCREEN_KINDS: ReadonlySet<string> = new Set<Screen['kind']>([
   'permission',
   'trust',
   'question',
+  'vendor notice',
   'unknown',
 ]);
 
@@ -262,7 +263,13 @@ function callComposer(composer: unknown, lines: string[]): Hit {
   }
 }
 
-type StageName = 'unknown' | 'trust' | 'permission' | 'question' | 'working';
+type StageName = 'unknown' | 'trust' | 'permission' | 'question' | 'vendor_notice' | 'working';
+
+/** The kind a stage reads as. A stage is named for the profile (vendor_notice); a screen kind is
+ *  what the run prints (vendor notice). */
+function kindOfStage(name: StageName): Screen['kind'] {
+  return name === 'vendor_notice' ? 'vendor notice' : name;
+}
 
 /** `lines` is already the window: the last 20 lines, each trimmed at the end. */
 export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClock): Screen {
@@ -274,18 +281,21 @@ export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClo
     const plain = plainLines(lines);
 
     // Rule (a): Every hatch predicate is monotone toward caution: hatch OR data, for working,
-    // every dialog (trust, permission, question) and unknown. The data stage of a profile always runs;
-    // a hatch predicate can only add a match. A hatch can only add caution, never remove it.
+    // every dialog (trust, permission, question, a vendor notice) and unknown. The data stage of a
+    // profile always runs; a hatch predicate can only add a match. A hatch can only add caution,
+    // never remove it.
     const cautionStages: [StageName, ScreenData['trust']][] = [
       ['unknown', data.unknown],
       ['trust', data.trust],
       ['permission', data.permission],
       ['question', data.question],
+      ['vendor_notice', data.vendor_notice],
       ['working', data.working],
     ];
-    for (const [kind, stage] of cautionStages) {
+    for (const [name, stage] of cautionStages) {
+      const kind = kindOfStage(name);
       if (tick()) return { kind: 'unknown' };
-      const fn = getProfileFn(data.profile, kind);
+      const fn = getProfileFn(data.profile, name);
       if (fn !== undefined) {
         const outcome = evalPredicate(fn, plain);
         if (outcome === 'match') return { kind };
@@ -342,6 +352,7 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
         ['trust', data.trust],
         ['permission', data.permission],
         ['question', data.question],
+        ['vendor_notice', data.vendor_notice],
         ['working', data.working],
       ];
       for (const [kind, stage] of stages) {
@@ -368,7 +379,7 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
 
     // Profile has a DATA composer.
     // Check hatch dialog predicates:
-    const dialogKinds: StageName[] = ['unknown', 'trust', 'permission', 'question'];
+    const dialogKinds: StageName[] = ['unknown', 'trust', 'permission', 'question', 'vendor_notice'];
     for (const kind of dialogKinds) {
       if (tick()) return { kind: 'unknown' };
       const fn = getProfileFn(data.profile, kind);

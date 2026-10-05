@@ -29,6 +29,7 @@ import { executePlan, type Host } from '../launch/execute.ts';
 import { seatProcessVerdict } from '../launch/identity.ts';
 import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
+import { progressWriter } from '../launch/progress.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock, type SeatState, type SessionState } from '../state.ts';
@@ -407,7 +408,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
     }
   }
-  if (decision.kind === 'unknown') io.stdout(`${built.name}: ${decision.text}\n`);
+  if (decision.kind === 'unknown') io.stderr(`${built.name}: ${decision.text}\n`);
   if (built.edited !== original) {
     const written = withLock(dir, () => {
       if (readFileSync(path, 'utf8') !== original) return { kind: 'changed' as const };
@@ -436,6 +437,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     dir, session, team: prepared.team, root, home: sources.home, ceilings, running, seat: built.seat, temporary: built.temporary,
     caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io, standing,
     verifiedLobby,
+    doctor: sources.doctor,
     // The lobby is read again directly before the workspace this run makes in it, with nothing
     // in between (`execute.ts`). Null when it is still the folder the gate read.
     confirmLobby() {
@@ -589,10 +591,14 @@ function hostOf(input: {
   readMachine?: (root: string) => Machine; samples: SwapSample[]; limits: TeamFile['machine']; io: Io;
   standing: Standing;
   verifiedLobby: string | null;
+  doctor: DoctorSources;
   confirmLobby(): string | null;
 }): Host {
   const { dir, session, launch, seat, temporary } = input;
   const running = [...input.running];
+  // One writer per run: a seat's provisional line on a terminal, its one final record either
+  // way, and every other line of the run on stderr, after the record it belongs to.
+  const records = progressWriter({ stdout: input.io.stdout, stderr: input.io.stderr, isTTY: input.io.stdoutIsTTY ?? false });
   return {
     startServer: launch.startServer,
     sessionUp: launch.sessionUp,
@@ -666,12 +672,20 @@ function hostOf(input: {
         if (seats) delete seats[name];
       });
     },
-    say: (line) => {
-      if (line.startsWith(`${input.seat.name}: its pane is the seat's again;`)) {
+    say: (line) => input.io.stderr(line),
+    progress: (name, state) => records.progress(name, state),
+    final(name, record, detail) {
+      // `add` on a pane that is the seat's again: nothing was launched and nothing closed. The
+      // record says so, and this is the line the owner gets instead — the same one main prints.
+      if (record.kind === 'left out' && record.reason === "its pane is the seat's again; left as it is") {
         input.io.stderr(`team add: ${input.seat.name} is already running\n`);
         return;
       }
-      input.io.stdout(line);
+      records.final(name, record, detail);
+    },
+    cliVersion(cli) {
+      const profile = profileFor(cli);
+      return profile ? input.doctor.version(profile.binary) : null;
     },
     log: (who, what) => logLine(dir, 'add', input.caller, `${who}: ${what}`, input.now()),
   };

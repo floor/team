@@ -724,9 +724,11 @@ describe('the row a stopped delivery prints', () => {
     const row = '\u0007bad-row\r\u001b]0;secret\u0007after\u001b[?25l';
     const { said, logged, run } = stoppedOn(row);
     await run();
-    expect(said.length).toBe(2);
-    expect(said[0]).toBe(`${ROW_SAYED}bad-rowafter\n`);
-    expect(said[1]).toContain("rules typed, not sent: the read-back didn't match");
+    // One say for the seat: its record, then — on the next line, as the record's detail — the row.
+    expect(said.length).toBe(1);
+    const lines = (said[0] ?? '').split('\n');
+    expect(lines[0]).toContain("rules typed, not sent: the read-back didn't match");
+    expect(lines[1]).toBe(`${ROW_SAYED}bad-rowafter`);
     expect(said.join('')).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
     expect(said.join('')).not.toContain('secret');
     expect(logged).toEqual([{ who: 'coder', what: expect.stringContaining("rules typed, not sent: the read-back didn't match") }]);
@@ -737,8 +739,9 @@ describe('the row a stopped delivery prints', () => {
     const row = `${'x'.repeat(4_994)}\u0007${'y'.repeat(5)}`;
     const { said, logged, run } = stoppedOn(row);
     await run();
-    expect(said[0]).toBe(`${ROW_SAYED}${'x'.repeat(200)}…\n`);
-    expect(said[0]?.length).toBe(ROW_SAYED.length + 200 + '…'.length + '\n'.length);
+    const lines = (said[0] ?? '').split('\n');
+    expect(lines[1]).toBe(`${ROW_SAYED}${'x'.repeat(200)}…`);
+    expect(lines[1]?.length).toBe(ROW_SAYED.length + 200 + '…'.length);
     expect(said.join('')).not.toContain('y'.repeat(5));
     expect(logged[0]?.what).not.toMatch(/x{10}/);
   });

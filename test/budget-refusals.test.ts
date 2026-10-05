@@ -241,7 +241,7 @@ describe('a stored reading refuses one seat', () => {
 
     const live = await up([], world());
     expect(live.code).toBe(1);
-    expect(live.out).toContain(`worker: ${WHY}\n`);
+    expect(live.out).toContain(`worker: left out: ${WHY}\n`);
     expect(live.out).toContain('lead: ready\n');
     expect(live.out).not.toContain('worker: ready');
     expect(live.labels).toContain('lead');
@@ -265,7 +265,7 @@ describe('a stored reading refuses one seat', () => {
     expect(first.out).toContain('--label worker');
     const firstLive = await up([], world());
     expect(firstLive.code).toBe(0);
-    expect(firstLive.out).toContain('worker: openai: first sight only, not yet counted\n');
+    expect(firstLive.err).toContain('worker: openai: first sight only, not yet counted\n');
     expect(firstLive.out).toContain('worker: ready\n');
 
     store([reading('anthropic', 80)]);
@@ -346,7 +346,7 @@ describe('a stored reading refuses one seat', () => {
       workspaces: () => [{ id: 'w7' }],
     });
     expect(live.code).toBe(0);
-    expect(live.out).toContain(`worker: ${TAIL}\n`);
+    expect(live.err).toContain(`worker: ${TAIL}\n`);
     expect(live.out).not.toContain('refused');
     expect(live.out).toContain('worker: ready\n');
     expect(live.labels).not.toContain('worker');
@@ -375,7 +375,7 @@ describe('a stored reading refuses one seat', () => {
     store([reading('anthropic', 80)]);
     const live = await up([], world());
     expect(live.code).toBe(0);
-    expect(live.out).toContain('worker: openai is unknown\n');
+    expect(live.err).toContain('worker: openai is unknown\n');
     expect(live.out).toContain('worker: ready\n');
     expect(live.labels).toContain('worker');
   });
@@ -452,7 +452,7 @@ describe('a spend floor refuses one seat', () => {
 
     const live = await up([], world());
     expect(live.code).toBe(1);
-    expect(live.out).toContain(`worker: ${SPEND_WHY}\n`);
+    expect(live.out).toContain(`worker: left out: ${SPEND_WHY}\n`);
     expect(live.out).toContain('lead: ready\n');
     expect(live.labels).toContain('lead');
     expect(live.labels).not.toContain('worker');
@@ -483,7 +483,7 @@ describe('a spend floor refuses one seat', () => {
 
     const live = await up([], world());
     expect(live.code).toBe(1);
-    expect(live.out).toContain(`worker: refused: ${tail}\n`);
+    expect(live.out).toContain(`worker: left out: refused: ${tail}\n`);
 
     const added = await add(['worker'], world());
     expect(added.code).toBe(1);
@@ -523,7 +523,7 @@ describe('a spend floor refuses one seat', () => {
     storeSpend([spend('openai', 4.2, now, { currency: 'EUR' })]);
     const live = await up([], world());
     expect(live.code).toBe(0);
-    expect(live.out).toContain('worker: openai is unknown\n');
+    expect(live.err).toContain('worker: openai is unknown\n');
     expect(live.labels).toContain('worker');
   });
 
@@ -599,7 +599,7 @@ describe('a subscription check reading refuses one seat', () => {
 
     const live = await up([], world());
     expect(live.code).toBe(1);
-    expect(live.out).toContain(`worker: ${CHECK_WHY}\n`);
+    expect(live.out).toContain(`worker: left out: ${CHECK_WHY}\n`);
     expect(live.out).toContain('lead: ready\n');
     expect(live.labels).toContain('lead');
     expect(live.labels).not.toContain('worker');
@@ -652,7 +652,7 @@ describe('a subscription check reading refuses one seat', () => {
     expect(dry.out).toContain('  skip worker: would refuse: openai weekly left 5%, inside its 10% reserve, read 31m ago; accounts with room: anthropic\n');
     const live = await up([], world());
     expect(live.code).toBe(1);
-    expect(live.out).toContain('worker: refused: openai weekly left 5%, inside its 10% reserve, read 31m ago; accounts with room: anthropic\n');
+    expect(live.out).toContain('worker: left out: refused: openai weekly left 5%, inside its 10% reserve, read 31m ago; accounts with room: anthropic\n');
     expect(live.labels).not.toContain('worker');
 
     // A fresh lower source still wins: the status line's own figure clears the account.
@@ -807,7 +807,7 @@ describe('two accounts on one vendor', () => {
 
     const live = await up([], world());
     expect(live.code).toBe(1);
-    expect(live.out).toContain('work: refused: openai-work weekly left 5%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic, openai-home\n');
+    expect(live.out).toContain('work: left out: refused: openai-work weekly left 5%, inside its 10% reserve, changed 1m ago; accounts with room: anthropic, openai-home\n');
     expect(live.out).toContain('lead: ready\n');
     expect(live.out).toContain('home: ready\n');
     expect(live.labels).toContain('lead');

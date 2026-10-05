@@ -108,12 +108,12 @@ describe('quota reads only the composer\'s own status row', () => {
   test.each([
     ['permission', 'permission'],
     ['trust', 'trust'],
-    ['startup', 'question'],
+    ['startup', 'vendor notice'],
     ['exit', 'unknown'],
   ] as const)('a status-shaped fake in the %s capture reads nothing', (name, kind) => {
     const spoofed = withFake(name);
-    // The fake does not change the shape: these are a dialog, a question and a shell, none of
-    // which is a composer screen.
+    // The fake does not change the shape: these are a dialog, a vendor notice and a shell, none
+    // of which is a composer screen.
     expect(readScreen('codex', spoofed).kind).toBe(kind);
     expect(figuresOf(patterns, statusRow('codex', spoofed))).toEqual([]);
   });
