@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { executePlan, type Host, type ScreenKind } from '../../src/launch/execute.ts';
 import type { Step } from '../../src/launch/plan.ts';
-import { progressWriter, recordText, recordWhat, type ProgressSink, type ProgressState } from '../../src/launch/progress.ts';
+import { progressWriter, recordText, recordWhat, type Classification, type ProgressSink, type ProgressState } from '../../src/launch/progress.ts';
 
 function sink(isTTY: boolean): { out: string[]; err: string[]; sink: ProgressSink } {
   const out: string[] = [];
@@ -122,6 +122,20 @@ describe('the writer', () => {
     // A detail that cleans to nothing is not written at all.
     records.final('beta', { kind: 'ready' }, '\x1b[2J');
     expect(out.join('')).toBe('alpha: left out: unknown\nunknown: ready\nbeta: ready\n');
+    expect(err).toEqual([]);
+  });
+
+  test('the waiting record’s classification is the reason slot too: cleaned, and unknown when empty', () => {
+    const { out, err, sink: s } = sink(false);
+    const records = progressWriter(s);
+    // The classification is where the next slice prints a screen reading from: it is cleaned at
+    // the writer like the stage word, whatever a caller cast into it.
+    records.final('alpha', { kind: 'waiting for owner', classification: 'question\r\x1b[2J\x07' as Classification }, '');
+    records.final('beta', { kind: 'waiting for owner', classification: '\r\x1b[2J' as Classification }, '');
+    expect(out.join('')).toBe('alpha: waiting for owner (question)\nbeta: waiting for owner (unknown)\n');
+    expect(out.join('').includes('\x0d')).toBe(false);
+    expect(out.join('').includes('\x1b')).toBe(false);
+    expect(out.join('').includes('\x07')).toBe(false);
     expect(err).toEqual([]);
   });
 });

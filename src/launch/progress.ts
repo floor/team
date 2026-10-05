@@ -65,7 +65,7 @@ export type Progress = {
    *  On a redirected stdout this writes nothing at all. */
   progress(seat: string, state: ProgressState): void;
   /** The seat's one final record — the newline-terminated line — and, after it, the detail the
-   *  run says about it: the lines are written to stderr verbatim, already indented. */
+   *  run says about it: cleaned like everything else the writer writes, already indented. */
   final(seat: string, record: FinalRecord, detail: string): void;
 };
 
@@ -87,8 +87,15 @@ export function progressWriter(sink: ProgressSink): Progress {
       sink.stdout(`\r\x1b[K${said(seat)}: ${said(state)}`);
     },
     final(seat, record, detail) {
+      // The classification is the reason slot of the `waiting for owner` form — the one the next
+      // slice prints from here — so it is cleaned like the stage word, whatever a caller cast
+      // into it; a classification the cleaning leaves empty is said as `unknown`.
       const clean: FinalRecord =
-        record.kind === 'left out' ? { kind: 'left out', reason: said(record.reason) } : record;
+        record.kind === 'left out'
+          ? { kind: 'left out', reason: said(record.reason) }
+          : record.kind === 'waiting for owner'
+            ? { kind: 'waiting for owner', classification: said(record.classification) as Classification }
+            : record;
       const text = recordText(said(seat), clean);
       sink.stdout(sink.isTTY ? `\r\x1b[K${text}\n` : `${text}\n`);
       const rest = plainText(detail);
