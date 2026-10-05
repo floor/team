@@ -44,7 +44,7 @@ team never stops the coordinator's or the operator's seat — only the owner doe
 
 | Flag | Meaning |
 | --- | --- |
-| `--dry-run` | print the plan, and the refusals the real run would stop on, and exit 0 |
+| `--dry-run` | print the plan, and the refusals the real run would stop on, and exit 0 — except a non-owner's `--session`, refused at once with no plan |
 | `--wait` | give a working seat up to 120 seconds to come free, then stop it |
 | `--abandon` | the owner's: close the workspace of a seat that can't be asked, typing nothing into it |
 | `--session <name>` | the herdr session to stop, instead of `team.session`; the owner's alone |
