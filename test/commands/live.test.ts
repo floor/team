@@ -1035,7 +1035,7 @@ describe('team up, a session that was restored', () => {
     writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
-    const made = world((_pane, label) => (label === 'gpt sol 6' ? capture('idle') : IDLE));
+    const made = world((_pane, label) => (label === 'gpt sol 6' ? fileModel(capture('idle')) : IDLE));
     made.launch.agentStatus = () => 'idle';
     made.launch.processInfo = () => ({ shell: 400, foreground: [400, 401] });
     // The first message is never typed: the seat stays at named, with the identity recorded.
