@@ -792,8 +792,10 @@ describe('the closed Cursor status row', () => {
   // anchor — and each must read what the same screen without that row reads, never idle or
   // unsent the pane does not show. A row that keeps every closed token and sits in the
   // footer's place is a real row: it is accepted, and the model it names is the model read.
-  // The six captured panes (see the fixtures README) are the only screens whose reading
-  // differs from what main read.
+  // The six captured panes (see the fixtures README) are the only shipped fixtures whose
+  // reading differs from what main read: a constructed screen below moves only where this
+  // block pins it — a complete frame reproduced in place, a model narrowed to unread when
+  // the real footer is out of place, or a row the closed grammar refuses.
   const GROK = '  Grok 4.7 256K High                 Run Everything';
   const GPT_ROW = '  GPT-5.6 Sol 272K High              Run Everything';
   const COMPOSER_ROW = '  Composer 2.5                       Run Everything';
@@ -933,6 +935,18 @@ describe('the closed Cursor status row', () => {
     // The appended line sits under the workspace line, so the footer above it is not the row:
     // no row, no model.
     expect(model(screen)).toBeNull();
+  });
+
+  test('a Grok row the closed grammar does not spell is not a row, whatever main read', () => {
+    // Main accepted any leading whitespace before the family (`^\s+Grok\s+[0-9]`). The
+    // captures draw exactly two spaces, and the closed grammar keeps only that: a row with
+    // one space, three spaces or a tab is ordinary text — no row, no model. The narrowing
+    // can only take a reading away, never invent one.
+    for (const lead of [' ', '   ', '\t']) {
+      const screen = footer('idle', `${lead}Grok 4.7 256K High                 Run Everything`);
+      expect(read(screen)).toBe('unknown / unknown');
+      expect(model(screen)).toBeNull();
+    }
   });
 
   test('a spoofed row names no model, and the same rows in place still name theirs', () => {
