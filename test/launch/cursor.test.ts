@@ -237,6 +237,43 @@ describe('Cursor launch and captured screens', () => {
     expect(runningModel('cursor', fixture('rules-accepted'))).toEqual({ model: 'Grok', version: '4.7' });
     expect(runningModel('cursor', fixture('trust'))).toBeNull();
     expect(runningModel('cursor', fixture('exit'))).toBeNull();
+    expect(cursor.modelOf('cursor-agent --model gpt-5.6-sol-high')).toEqual({ model: 'GPT Sol', version: '5.6' });
+    expect(cursor.modelOf('cursor-agent --model gemini-3.8-flash-high')).toEqual({ model: 'Gemini Flash', version: '3.8' });
+    expect(cursor.modelOf('cursor-agent --model composer-2.5')).toEqual({ model: 'Composer', version: '2.5' });
+    expect(cursor.modelOf('cursor-agent --model gpt-5.2')).toBeNull();
+    expect(cursor.modelFlag('Grok', '4.7')).toEqual({ option: '--model', id: 'grok-4.7-high' });
+    expect(cursor.modelFlag('GPT Sol', '5.6')).toEqual({ option: '--model', id: 'gpt-5.6-sol-high' });
+    expect(cursor.modelFlag('Gemini Flash', '3.8')).toEqual({ option: '--model', id: 'gemini-3.8-flash-high' });
+    expect(cursor.modelFlag('Composer', '2.5')).toEqual({ option: '--model', id: 'composer-2.5' });
+    expect(cursor.modelFlag('Grok', '4.5')).toEqual({ option: '--model', id: null });
+    expect(cursor.startsOnLastModel).toBe(true);
+  });
+
+  test('the home and a typed line are read under other model families', () => {
+    expect(readScreen('cursor', fixture('gpt-sol-idle')).kind).toBe('idle');
+    expect(readScreen('cursor', fixture('gpt-sol-unsent')).kind).toBe('unsent');
+    expect(runningModel('cursor', fixture('gpt-sol-idle'))).toEqual({ model: 'GPT Sol', version: '5.6' });
+    expect(runningModel('cursor', fixture('gpt-sol-unsent'))).toEqual({ model: 'GPT Sol', version: '5.6' });
+    expect(readScreen('cursor', fixture('gemini-flash-idle')).kind).toBe('idle');
+    expect(readScreen('cursor', fixture('gemini-flash-unsent')).kind).toBe('unsent');
+    expect(runningModel('cursor', fixture('gemini-flash-idle'))).toEqual({ model: 'Gemini Flash', version: '3.8' });
+    expect(runningModel('cursor', fixture('gemini-flash-unsent'))).toEqual({ model: 'Gemini Flash', version: '3.8' });
+    expect(readScreen('cursor', fixture('composer-idle')).kind).toBe('idle');
+    expect(readScreen('cursor', fixture('composer-unsent')).kind).toBe('unsent');
+    expect(runningModel('cursor', fixture('composer-idle'))).toEqual({ model: 'Composer', version: '2.5' });
+    expect(runningModel('cursor', fixture('composer-unsent'))).toEqual({ model: 'Composer', version: '2.5' });
+    const swapped = fixture('idle').replace('Grok 4.7 256K High', 'GPT-5.6 Sol 272K High');
+    expect(readScreen('cursor', swapped).kind).toBe('idle');
+    expect(runningModel('cursor', swapped)).toEqual({ model: 'GPT Sol', version: '5.6' });
+  });
+
+  test('a line of output that names a model is not a status row', () => {
+    const prose = fixture('idle').replace(
+      '  Grok 4.7 256K High                 Run Everything',
+      '  the agent wrote that GPT-5.6 Sol is ready',
+    );
+    expect(readScreen('cursor', prose).kind).toBe('unknown');
+    expect(runningModel('cursor', prose)).toBeNull();
   });
 
   test('the plan delivers through the guarded first-message path, never a config file', () => {

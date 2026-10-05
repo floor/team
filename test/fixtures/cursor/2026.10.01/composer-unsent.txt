@@ -1,0 +1,12 @@
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Use /run-everything to skip all approvals.
+
+
+
+
+  → gamma typed line three
+
+
+  Composer 2.5                       Run Everything
+  <workspace>

@@ -24,14 +24,57 @@ timeouts:
 models:
   option:
     - --model
+  # A launch that names no model starts on whatever model this CLI used last.
+  absent: last-used
   ids:
+    - match: '^grok-4\.7(?:-(?:xhigh|high|medium|low)(?:-fast)?|-fast)?$'
+      ignore_case: true
+      model: Grok
+      version: '4.7'
+      flag: grok-4.7-high
     - match: '^(?:cursor-)?grok-([0-9]+(?:\.[0-9]+)*)(?:-(?:xhigh|high|medium|low)(?:-fast)?|-fast)?$'
       ignore_case: true
       model: Grok
       version: '{1}'
+    - match: '^gpt-5\.6-sol(?:-(?:none|low|medium|high|xhigh|max)(?:-fast)?|-fast)?$'
+      ignore_case: true
+      model: 'GPT Sol'
+      version: '5.6'
+      flag: gpt-5.6-sol-high
+    - match: '^gpt-([0-9]+(?:\.[0-9]+)*)-sol(?:-(?:none|low|medium|high|xhigh|max)(?:-fast)?|-fast)?$'
+      ignore_case: true
+      model: 'GPT Sol'
+      version: '{1}'
+    - match: '^gemini-3\.8-flash(?:-(?:low|medium|high))?$'
+      ignore_case: true
+      model: 'Gemini Flash'
+      version: '3.8'
+      flag: gemini-3.8-flash-high
+    - match: '^gemini-([0-9]+(?:\.[0-9]+)*)-flash(?:-(?:low|medium|high))?$'
+      ignore_case: true
+      model: 'Gemini Flash'
+      version: '{1}'
+    - match: '^composer-2\.5(?:-fast)?$'
+      ignore_case: true
+      model: Composer
+      version: '2.5'
+      flag: composer-2.5
+    - match: '^composer-([0-9]+(?:\.[0-9]+)*)(?:-fast)?$'
+      ignore_case: true
+      model: Composer
+      version: '{1}'
 status_model:
   - match: '(?:^|\s)Grok\s+([0-9]+(?:\.[0-9]+)*)\b'
     model: Grok
+    version: '{1}'
+  - match: '^\s+GPT-([0-9]+(?:\.[0-9]+)*) Sol\b'
+    model: 'GPT Sol'
+    version: '{1}'
+  - match: '^\s+Gemini\s+([0-9]+(?:\.[0-9]+)*) Flash\b'
+    model: 'Gemini Flash'
+    version: '{1}'
+  - match: '^\s+Composer\s+([0-9]+(?:\.[0-9]+)*)\b'
+    model: Composer
     version: '{1}'
 screen:
   unknown:
@@ -46,7 +89,7 @@ screen:
         anchor: 'Use arrow keys to navigate, Enter to'
         patterns:
           - '^\s*→'
-          - '^\s+Grok\s+[0-9]'
+          - '^\s{2}(?:[A-Z][\w.+-]* )*[A-Z0-9.+-]*\d[\w.+-]*(?: [A-Z0-9][\w.+-]*)*(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?(?:\s{2,}Run Everything)?\s*$'
   # A plan-mode switch. The bar is the dialog's own rule; the title, the selected
   # row, the reject row and the footer sit under it, in that order. The same
   # words in a transcript or typed into the box are not this dialog.
@@ -105,13 +148,17 @@ screen:
               - '^\s*[⠀-⣿]'
               - '^\s*Tip:'
               - '^\s*→\s*(?:Add a follow-up|Plan, search, build anything)?\s*$'
-              - '^\s+Grok\s'
+              - '^\s{2}(?:[A-Z][\w.+-]* )*[A-Z0-9.+-]*\d[\w.+-]*(?: [A-Z0-9][\w.+-]*)*(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?(?:\s{2,}Run Everything)?\s*$'
               - '^\s*<workspace>'
               - '^\s*~/'
               - '^\s*❯'
   composer:
     mode: status-then-one
-    status_line: '^\s+Grok\s+[0-9]'
+    # The status row is its shape: an indented line whose tokens are a model, a
+    # version (a digit), then optional context, effort, a quota and "N files
+    # edited", then the sandbox mode. A vendor's name is not the test, so a
+    # sentence that merely mentions a model is not this row.
+    status_line: '^\s{2}(?:[A-Z][\w.+-]* )*[A-Z0-9.+-]*\d[\w.+-]*(?: [A-Z0-9][\w.+-]*)*(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?(?:\s{2,}Run Everything)?\s*$'
     # The input row carries the prompt at the pane's second column — unsent.txt and
     # follow-up-queue-typed.txt draw `  → Plan, search, build anything` there, continuations at
     # the fourth — and a prompt glyph on a content or popup row is never the input row. The

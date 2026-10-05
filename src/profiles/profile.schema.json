@@ -194,7 +194,8 @@
           "description": "Ignore ASCII case only: each letter matches its other case; no other character folds (a long s or a Kelvin sign reads as itself)."
         },
         "model": { "type": "string", "minLength": 1 },
-        "version": { "type": "string", "minLength": 1 }
+        "version": { "type": "string", "minLength": 1 },
+        "flag": { "type": "string", "minLength": 1, "description": "The model id to suggest for this model and version. \"{version}\" is the seat's version." }
       }
     },
     "models": {
@@ -203,6 +204,7 @@
       "required": ["option", "ids"],
       "properties": {
         "option": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "absent": { "const": "last-used", "description": "What a launch that names no model does. last-used: the CLI starts on whatever model it used last." },
         "ids": { "type": "array", "items": { "$ref": "#/$defs/modelRule" }, "minItems": 1 }
       }
     },
