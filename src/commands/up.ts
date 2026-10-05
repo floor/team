@@ -16,6 +16,7 @@ import {
   paneForeground,
   paneRead,
   paneRun,
+  paneShellBack,
   typeText,
   pressEnter,
   sessionRunning,
@@ -30,6 +31,7 @@ import {
 import type { Command, Io } from '../io.ts';
 import type { Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
+import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { rulesText } from '../launch/rules.ts';
 import { deliverRules } from '../launch/deliver.ts';
@@ -86,6 +88,8 @@ export type Launch = {
   agentStatus?(session: string, pane: string): string | null;
   /** Foreground argv0 names, or null when the pane can't be read. */
   foreground(session: string, pane: string): string[] | null;
+  /** Whether the pane's foreground program is back to its shell; null when herdr can't tell. */
+  shellBack?(session: string, pane: string): boolean | null;
   sleep(ms: number): Promise<void>;
   now(): Date;
 };
@@ -119,6 +123,7 @@ const realLaunch: Launch = {
   pressEnter: (session, pane) => pressEnter(pane, aim(session)),
   agentStatus: (session, pane) => agentStatus(pane, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
+  shellBack: (session, pane) => paneShellBack(pane, aim(session)),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now: () => new Date(),
 };
@@ -339,9 +344,35 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       continue;
     }
     const placed = planned.stage === undefined || !planned.pane;
+    // The seat's own launch line, checked where the seat starts: a `miss` leaves this seat out
+    // before its workspace is made, and the other seats go on. A note is told, never refused —
+    // once, on the terminal, and on stderr on a real run as `doctor` says it. A seat resumed
+    // into an existing pane is checked where that pane runs, when the state records it
+    // (`start_cwd`); without it the line is not checked at all — the file's folder is not
+    // where that pane is, so refusing or passing on it would be a guess.
+    const doctor = sources.doctor;
+    const resumeCwd = recorded?.seats[seat.name]?.start_cwd;
+    const line = doctor
+      ? placed
+        ? launchLineFinding(team, seat, root, { onPath: (binary) => doctor.onPath(binary), home: doctor.home })
+        : typeof resumeCwd === 'string' && resumeCwd !== ''
+          ? launchLineFinding(
+              team,
+              seat,
+              root,
+              { onPath: (binary) => doctor.onPath(binary), home: doctor.home },
+              { cwd: resolve(root, resumeCwd), folder: resumeCwd },
+            )
+          : {
+              level: 'note' as const,
+              why: 'its launch line was not checked: the seat is resumed and its state records no start folder',
+            }
+      : null;
+    if (line?.level === 'note') (dry ? io.stdout : io.stderr)(`  note ${seat.name}: ${line.why}\n`);
+    const launchProblem = line?.level === 'miss' ? { launchProblem: line.why } : {};
     if (!placed) {
       const budget = budgetOf(seat);
-      seats.push({ ...planned, ...(budget.kind === 'clear' ? {} : { budget }) });
+      seats.push({ ...planned, ...launchProblem, ...(budget.kind === 'clear' ? {} : { budget }) });
       continue;
     }
     const start = seatStart(team, seat, root, sources.home);
@@ -357,6 +388,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       ...planned,
       cwd: start.cwd,
       ...(start.lobby ? { lobby: true } : {}),
+      ...launchProblem,
       ...(budget.kind === 'clear' ? {} : { budget }),
     });
   }
@@ -445,6 +477,8 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     kill: () => false,
     agentPanes: launch.agentPanes,
     classify: (name, pane, cli) => readScreen(cli, launch.paneText(name, pane) ?? undefined).kind,
+    paneText: (session, pane) => launch.paneText(session, pane),
+    shellBack: (session, pane) => launch.shellBack?.(session, pane) ?? null,
     sleep: sources.sleep ?? launch.sleep,
     now: () => now().getTime(),
     allow(name) {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { paneExcerpt } from '../../src/launch/execute.ts';
 import { downPlan, formatPlan, herdr, upPlan, type DownSeat, type UpSeat } from '../../src/launch/plan.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
 import { profileFor } from '../../src/profiles/index.ts';
@@ -286,5 +287,159 @@ describe('down --dry-run', () => {
       kind: 'skip',
       text: 'grok-acme: no launch profile for `grok` in this version; left running',
     });
+  });
+});
+
+describe('the pane lines a report carries', () => {
+  const command =
+    "AGENT_UNATTENDED=1 claude --model claude-opus-5-5 'Run the tests your change touches, not the whole suite.'";
+
+  test("starts at the launch line's own echo when it is within reach", () => {
+    const screen = `❯ ${command}\nzsh: no such file or directory\n~ ❯`;
+    expect(paneExcerpt(screen, command)).toBe(
+      `  | ❯ ${command}\n  | zsh: no such file or directory\n  | ~ ❯\n`,
+    );
+  });
+
+  test('a failure naming the program is not taken for the echo', () => {
+    // The launch line of the capture behind this: the error repeats its program and its path,
+    // the echo holds the line itself.
+    const short = 'zsh ../tools/x.sh --agent';
+    const screen = `❯ ${short}\nzsh: can't open input file: ../tools/x.sh\n~ ❯`;
+    expect(paneExcerpt(screen, short)).toBe(
+      `  | ❯ ${short}\n  | zsh: can't open input file: ../tools/x.sh\n  | ~ ❯\n`,
+    );
+  });
+
+  test('keeps the newest six lines when the echo scrolled out of reach', () => {
+    const lines = ['one', 'two', command, 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+    const newest = lines.slice(-6).map((line) => `  | ${line}\n`).join('');
+    expect(paneExcerpt(lines.join('\n'), command)).toBe(newest);
+    expect(paneExcerpt(lines.join('\n'), command)).toContain('  | four\n');
+  });
+
+  test('styling is stripped and empty lines are dropped', () => {
+    expect(paneExcerpt(`\n\n\u001b[31m❯ ${command}\u001b[0m\n \n`, command)).toBe(`  | ❯ ${command}\n`);
+  });
+
+  test('nothing to show reads as an empty excerpt', () => {
+    expect(paneExcerpt(null, command)).toBe('');
+    expect(paneExcerpt('', command)).toBe('');
+    expect(paneExcerpt('\n \t\n', command)).toBe('');
+  });
+
+  test('a command too short to look for leaves the screen as it is', () => {
+    expect(paneExcerpt('one\ntwo', 'x')).toBe('  | one\n  | two\n');
+  });
+
+  test('every control character and escape sequence is out of the lines', () => {
+    // The reviewer's probe, one sample each: a carriage return would overwrite the report on the
+    // terminal, and a private CSI, a backspace, a bell, a two-character escape and a DCS payload
+    // must not survive as control or as the sequence's own text.
+    const screens = [
+      `❯ ${command}\rfake-overwrite`,
+      `❯ ${command}\n\u001b[?25lhidden\u001b[?25h`,
+      `❯ ${command}\n\u0008\u0008\u0008gone`,
+      `❯ ${command}\n\u0007bell`,
+      `❯ ${command}\n\u001b=keypad`,
+      `❯ ${command}\n\u001bP1;2|payload\u001b\\after`,
+    ];
+    for (const screen of screens) {
+      const out = paneExcerpt(screen, command);
+      expect(out).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+      expect(out).not.toContain('?25l');
+      expect(out).not.toContain('payload');
+    }
+  });
+
+  test('string sequences are removed whole whichever introducer and terminator are mixed', () => {
+    // The reviewer's mixed probe: an ESC-introduced OSC or DCS ended by the C1 ST, and a
+    // C1-introduced one ended by `ESC \`, each left its payload behind. Every string sequence —
+    // OSC, DCS, APC, PM, SOS — is removed with its payload whichever introducer began it
+    // (7-bit `ESC x` or the 8-bit C1) and whichever terminator ends it (`ESC \`, the C1 ST, or
+    // BEL for an OSC), in any mix.
+    const cases = [
+      '\u001b]0;secret\u009cafter', // ESC OSC, C1 ST
+      '\u009d0;secret\u001b\\after', // C1 OSC, ESC \
+      '\u001bP1|secret\u009cafter', // ESC DCS, C1 ST
+      '\u0090q|secret\u001b\\after', // C1 DCS, ESC \
+      '\u001b]0;secret\u0007after', // ESC OSC, BEL
+      '\u009d0;secret\u0007after', // C1 OSC, BEL
+      '\u001bP1|secret\u001b\\after', // ESC DCS, ESC \
+      '\u0090q|secret\u009cafter', // C1 DCS, C1 ST
+      '\u001b_q|secret\u001b\\after', // ESC APC
+      '\u009eQ|secret\u009cafter', // C1 PM
+      '\u001bXq|secret\u001b\\after', // ESC SOS
+      '\u0098Q|secret\u009cafter', // C1 SOS
+    ];
+    for (const one of cases) {
+      const out = paneExcerpt(`❯ ${command}\n${one}\n~ ❯`, command);
+      expect(out).not.toContain('secret');
+      expect(out).toContain('  | after\n');
+    }
+  });
+
+  test('a string sequence spanning the six-line cut is removed whole', () => {
+    // The reviewer's cut-spanning probe: an OSC begins before the eventual six-line tail and ends
+    // with `ESC \` in the tail. The entire sequence and its payload must be removed whole.
+    const lines = [
+      `❯ ${command}`,
+      'old line',
+      '\u001b]0;secret-one',
+      'secret-two',
+      'secret-three',
+      'secret-four',
+      'secret-five',
+      'secret-six\u001b\\after',
+    ];
+    const out = paneExcerpt(lines.join('\n'), command);
+    expect(out).not.toContain('secret');
+    expect(out).toContain('  | after\n');
+  });
+
+  test('an opener in the dropped part and its terminator in the kept part are removed whole', () => {
+    const lines = [
+      'dropped line 1',
+      '\u001b]0;secret-dropped',
+      'dropped line 2',
+      'dropped line 3',
+      'dropped line 4',
+      'dropped line 5',
+      `❯ ${command}`,
+      'kept line 1',
+      'kept line 2\u001b\\after-terminator',
+    ];
+    const out = paneExcerpt(lines.join('\n'), command);
+    expect(out).not.toContain('secret');
+    expect(out).toContain('  | after-terminator\n');
+  });
+
+  test('an opener in the kept part with no terminator is removed to the end of the text', () => {
+    const lines = [
+      `❯ ${command}`,
+      'kept line 1',
+      '\u001b]0;secret-unterminated',
+      'kept line 2',
+      'kept line 3',
+    ];
+    const out = paneExcerpt(lines.join('\n'), command);
+    expect(out).not.toContain('secret');
+    expect(out).not.toContain('kept line 2');
+    expect(out).not.toContain('kept line 3');
+    expect(out).toContain('  | kept line 1\n');
+  });
+
+  test('an unterminated string sequence is removed to the end of the text', () => {
+    const out = paneExcerpt(`❯ ${command}\n\u001b]0;secret-no-end\nnext line\n~ ❯`, command);
+    expect(out).not.toContain('secret-no-end');
+    expect(out).not.toContain('next line');
+    expect(out).toBe(`  | ❯ ${command}\n`);
+  });
+
+  test('a line longer than the bound is cut to 200 characters and marked', () => {
+    const out = paneExcerpt(`❯ ${command}\n${'x'.repeat(200_000)}\n~ ❯`, command);
+    expect(out).toContain(`  | ${'x'.repeat(200)}…\n`);
+    const longest = Math.max(...out.split('\n').map((line) => line.length));
+    expect(longest).toBe('  | '.length + 200 + '…'.length);
   });
 });

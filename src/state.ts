@@ -13,6 +13,11 @@ export type SeatState = {
   pane?: string;
   /** The herdr workspace, so a later command can close it without listing agents. */
   workspace?: string;
+  /**
+   * The folder the seat's launch line was run in, when the state records it. A resumed seat's
+   * pane keeps that folder, so its launch line is checked there, never against the file's.
+   */
+  start_cwd?: string;
   cli_version?: string;
   rules?: 'option' | 'message' | 'undelivered';
   worked?: boolean;

@@ -16,6 +16,7 @@ import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
 import { HERDR_TESTED, herdrVersion, sessionRunning, agentList, type HerdrAgent } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { lobbyDir, verifyLobby } from '../lobby/gate.ts';
+import { launchBinary, launchLineFindings } from '../launch/line.ts';
 import { profileFor } from '../profiles/index.ts';
 import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
@@ -116,16 +117,6 @@ function versionFinding(name: string, printed: string, tested: { from: string; t
   // Only a CLI has screens to misread; herdr's version line says just where it sits.
   const tail = cli ? ": its screens are untested with this version; a seat that isn't read at launch is left out, never typed into" : '';
   return { level: 'warn', text: `${name} ${printed} is ${verdict} than the tested ${range(tested)}${tail}` };
-}
-
-// The command a launch line starts: its first word that is not a variable assignment.
-function launchBinary(launch: string): string | null {
-  return (
-    launch
-      .trim()
-      .split(/\s+/)
-      .find((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) ?? null
-  );
 }
 
 // The approved bytes rule, as the watch applies it (budgets/checks.ts): a check whose file no
@@ -262,10 +253,6 @@ function cliFindings(cli: string, seats: Seat[], sources: DoctorSources): Findin
   else findings.push({ level: 'ok', text: `${cli}: logged in` });
 
   for (const seat of seats) {
-    const binary = launchBinary(seat.launch);
-    if (binary !== null && binary !== profile.binary && !sources.onPath(binary)) {
-      findings.push({ level: 'miss', text: `${seat.name}: its launcher \`${binary}\` is not on the PATH` });
-    }
     const named = profile.modelOf(seat.launch);
     if (named === null) {
       const finding = modelFlagFinding(seat, profile);
@@ -374,6 +361,9 @@ export function doctorFindings(
   approved: TeamFile = team,
   /** The budget-check lines, which only the report runs: `up` and `add` scan, they never run a check. */
   budgetChecks: Finding[] = [],
+  /** The per-seat launch-line findings. `up` and `add` hand them in so a seat's own line can leave
+   *  that seat out before its workspace is made; the report prints them as they come. */
+  launchLines: Finding[] = [],
 ): Finding[] {
   const findings: Finding[] = warnings.map((warning) => ({
     level: 'warn',
@@ -407,6 +397,8 @@ export function doctorFindings(
       ),
     );
   }
+
+  findings.push(...launchLines);
 
   findings.push(...watchFindings(watchInForceOf(standing, team), dir, session, running, sources.now()));
 
@@ -535,6 +527,7 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
         standing,
         undefined,
         budgetCheckFindings(team, standing, root, sources, callerOf(io)),
+        launchLineFindings(team, root, { onPath: (binary) => sources.onPath(binary), home: sources.home }),
       );
 
   const label: Record<Level, string> = { ok: 'ok  ', warn: 'warn', miss: 'MISS', note: '--  ' };

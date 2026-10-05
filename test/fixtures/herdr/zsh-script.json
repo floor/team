@@ -1,0 +1,21 @@
+{
+  "process_info": {
+    "foreground_process_group_id": 4300,
+    "foreground_processes": [
+      {
+        "argv": [
+          "zsh",
+          "<arg withheld>"
+        ],
+        "argv0": "zsh",
+        "cmdline": "<withheld: may carry secrets>",
+        "cwd": "/home/owner/project",
+        "name": "zsh",
+        "pid": 4300
+      }
+    ],
+    "pane_id": "w0:p1",
+    "shell_pid": 4242
+  },
+  "type": "pane_process_info"
+}

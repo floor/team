@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { foregroundArgv0 } from '../src/herdr.ts';
+import { foregroundArgv0, shellBackOf } from '../src/herdr.ts';
 import { reportedLiveAgent } from '../src/launch/agent.ts';
 import { profileFor } from '../src/profiles/index.ts';
 
@@ -33,5 +33,29 @@ describe('a live agent is every foreground argv0', () => {
     expect(names).toEqual(['node']);
     expect(reportedLiveAgent(argv0, profileFor('cursor')?.processNames ?? [])).toBe(true);
     expect(reportedLiveAgent(names, profileFor('cursor')?.processNames ?? [])).toBe(false);
+  });
+});
+
+describe('a pane back at its shell', () => {
+  test('the shell process itself is the foreground program', () => {
+    expect(shellBackOf(body('shell-back.json'))).toBe(true);
+  });
+
+  test('a program in front is not the shell, even when its argv0 is zsh', () => {
+    expect(shellBackOf(body('claude-plain.json'))).toBe(false);
+    expect(shellBackOf(body('zsh-script.json'))).toBe(false);
+  });
+
+  test("an herdr that can't say reads null, never a guess", () => {
+    expect(shellBackOf(null)).toBeNull();
+    expect(shellBackOf({})).toBeNull();
+    expect(shellBackOf({ process_info: {} })).toBeNull();
+    expect(shellBackOf({ process_info: { foreground_processes: [{ pid: 1 }] } })).toBeNull();
+    expect(shellBackOf({ process_info: { shell_pid: 1, foreground_processes: [] } })).toBeNull();
+    expect(shellBackOf({ process_info: { shell_pid: 1, foreground_processes: [{ pid: '1' }] } })).toBeNull();
+    expect(shellBackOf({ process_info: { shell_pid: '1', foreground_processes: [{ pid: 1 }] } })).toBeNull();
+    expect(
+      shellBackOf({ process_info: { shell_pid: 1, foreground_processes: [{ pid: 2 }, { pid: null }] } }),
+    ).toBeNull();
   });
 });
