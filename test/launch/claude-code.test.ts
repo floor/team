@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { boxHoldsText, deliverRules, type Delivery } from '../../src/launch/deliver.ts';
+import { boxHoldsText, deliverRules, refusalReport, type Delivery, type Refusal } from '../../src/launch/deliver.ts';
 import { readScreen } from '../../src/watch/screen.ts';
 import { claudeBox } from '../helpers.ts';
 
@@ -15,9 +15,12 @@ function delivery() {
   let status = 'idle';
   let clock = 0;
   const calls: string[] = [];
+  const refusals: Refusal[] = [];
   const io: Delivery = {
     screen: () => raw,
     status: () => status,
+    report: (why) => { refusals.push(why); },
+    file: () => true, // the delivery tests prove the line, not the file
     // The paste renders as the box the CLI draws for its text.
     type(text) { calls.push(text); raw = claudeBox(text); return true; },
     enter() { calls.push('Enter'); raw = busy; status = 'working'; return true; },
@@ -25,7 +28,7 @@ function delivery() {
     now: () => clock,
     sleep: async (ms) => { clock += ms; },
   };
-  return { io, calls, showText: (screen: string) => { raw = screen; } };
+  return { io, calls, refusals, showText: (screen: string) => { raw = screen; } };
 }
 
 const ROGUE = '─'.repeat(40);
@@ -74,18 +77,21 @@ describe('Claude Code rules delivery', () => {
     expect(d.calls).toEqual([typed]);
   });
 
-  test('a typed text whose own row is the rule shape is the box and is entered', async () => {
-    // The pane draws the second line at the content column — two spaces, the prompt row's own
+  test('a rule-shaped row at the content column is content, and a newline never reads back', async () => {
+    // The pane draws a second line at the content column — two spaces, the prompt row's own
     // width — and a rule-looking row there is content, told from the box's closing rule by its
-    // column (unsent-typed-ansi.txt: both rules start at the pane's first column). The box
-    // holds the text, so the Enter is the delivery's.
+    // column (unsent-typed-ansi.txt: both rules start at the pane's first column). The
+    // delivery is one line and a row break may stand for at most one space, never a newline:
+    // a two-line text is refused whatever its rows look like, fail closed.
     const typed = `alpha beta\n${ROGUE}`;
     const screen = claudeBox(typed);
-    expect(boxHoldsText('claude-code', typed, screen)).toBe(true);
+    expect(readScreen('claude-code', screen).kind).toBe('unsent');
+    expect(boxHoldsText('claude-code', typed, screen)).toBe(false);
     const d = delivery();
     d.io.type = (text) => { d.calls.push(text); d.showText(screen); return true; };
-    expect(await deliverRules('claude-code', typed, 1, d.io)).toBe(true);
-    expect(d.calls).toEqual([typed, 'Enter']);
+    expect(await deliverRules('claude-code', typed, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([typed]);
+    expect(refusalReport(d.refusals.at(-1)!)).toContain("the read-back didn't match");
   });
 
   test('a box holding a person\'s own text gets no Enter', async () => {
@@ -149,7 +155,10 @@ describe('the prompt-glyph continuation row', () => {
     const rule = ROGUE;
     const clipped = [`❯ person text`, '  more of theirs', rule, status1, status2].join('\n') + '\n';
     expect(readScreen('claude-code', clipped).kind).toBe('unsent');
-    expect(boxHoldsText('claude-code', 'person text\nmore of theirs', clipped)).toBe(true);
+    // The frame reads; a text with a newline in it does not — a row break may stand for at
+    // most one space, never the newline between two lines.
+    expect(boxHoldsText('claude-code', 'person text\nmore of theirs', clipped)).toBe(false);
+    expect(boxHoldsText('claude-code', 'person text more of theirs', clipped)).toBe(true);
     // A non-blank row above the input row that the frame does not explain — with the opening
     // rule gone the reader cannot tell it from box content — and the read fails closed.
     const stray = ['  stray content', '❯ person text', '  more of theirs', rule, status1, status2].join('\n') + '\n';

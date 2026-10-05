@@ -1,6 +1,32 @@
 import { readFileSync } from 'node:fs';
 import type { Caller } from '../src/caller.ts';
 import type { Io } from '../src/io.ts';
+import { rulesText } from '../src/launch/rules.ts';
+
+/** The seven-rule message the Codex 0.160.0 and Cursor 2026.10.01 captures were typed with:
+ *  `rulesText` for a sample team file, 17 lines and 1193 characters (see the two fixtures
+ *  READMEs). Its shape is what `team` composes for a seat; no real seat or person is in it. */
+export const SAMPLE_RULES = rulesText(
+  {
+    coordinator: 'coordinator',
+    rules: [
+      'Do not use tools or edit files.',
+      'Do not change trust or configuration.',
+      'Reply only RULES_RECEIVED, then wait.',
+      'Keep every change on a branch; never commit to main.',
+      'Open one pull request per change; the coordinator merges it.',
+      'Never force-push a shared branch.',
+      "Run the project's test command before you push.",
+    ],
+    signature: {
+      commit: 'Agent: Sample Model · implementer',
+      pullRequest: '**Agent:** Sample Model · implementer',
+      commitPosition: 'trailer',
+    },
+    workspace: { mode: 'worktree', protected: ['.'], branch: '{kind}/{task}' },
+  },
+  'message',
+);
 
 export type TestIo = Io & { out: string; err: string };
 

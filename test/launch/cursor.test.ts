@@ -4,10 +4,11 @@ import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, statusOnLine, versionVerdict } from '../../src/profiles/profile.ts';
 import { classify, classifyComposer, readBox, readFold, readScreen, screenData } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
-import { boxHoldsText, deliverRules, type Delivery } from '../../src/launch/deliver.ts';
+import { boxHoldsText, deliverRules, refusalReport, type Delivery, type Refusal } from '../../src/launch/deliver.ts';
+import { rulesLine } from '../../src/launch/rules-file.ts';
 import { NUDGE_TEXT } from '../../src/watch/pass.ts';
 import { upPlan } from '../../src/launch/plan.ts';
-import { wordWrap } from '../helpers.ts';
+import { SAMPLE_RULES, wordWrap } from '../helpers.ts';
 
 const fixture = (name: string) =>
   readFileSync(new URL(`../fixtures/cursor/2026.10.01/${name}.txt`, import.meta.url), 'utf8');
@@ -276,7 +277,8 @@ describe('Cursor launch and captured screens', () => {
     expect(runningModel('cursor', prose)).toBeNull();
   });
 
-  test('the plan delivers through the guarded first-message path, never a config file', () => {
+  test('the plan delivers the one line through the guarded path, never a config file', () => {
+    const line = rulesLine('/home/owner/.config/team/demo-3f9c2a8e1d7b/rules/grok.md', '5e1d0a9c4b2f');
     const plan = upPlan({
       root: '.',
       session: 'scratch',
@@ -290,14 +292,18 @@ describe('Cursor launch and captured screens', () => {
         label: 'grok',
         stopped: false,
         rules: 'Rules.',
+        rulesFile: { path: '/home/owner/.config/team/demo-3f9c2a8e1d7b/rules/grok.md', line },
       }],
     });
     expect(plan.find((step) => step.do?.do === 'deliver')?.do).toMatchObject({
       do: 'deliver',
       cli: 'cursor',
       rules: 'Rules.',
+      line,
       seconds: 90,
     });
+    const deliverStep = plan.find((step) => step.do?.do === 'deliver');
+    expect(deliverStep?.kind === 'run' ? deliverStep.argv.at(-1) : undefined).toBe(line);
     const launched = plan.find((step) => step.kind === 'run' && step.do?.do === 'launch');
     const command = launched?.kind === 'run' ? launched.argv.join(' ') : '';
     expect(command).toContain('cursor-agent --force --sandbox disabled');
@@ -345,9 +351,12 @@ function delivery(initial = 'idle') {
   let status = initial === 'working' || initial === 'thinking' ? 'working' : 'idle';
   let clock = 0;
   const calls: string[] = [];
+  const refusals: Refusal[] = [];
   const io: Delivery = {
     screen: () => raw,
     status: () => status,
+    report: (why) => { refusals.push(why); },
+    file: () => true, // the delivery tests prove the line, not the file
     // The paste renders as the box the CLI draws for its text.
     type(text) { calls.push(text); raw = boxed(text); return true; },
     enter() { calls.push('Enter'); raw = fixture('working'); status = 'working'; return true; },
@@ -355,7 +364,7 @@ function delivery(initial = 'idle') {
     now: () => clock,
     sleep: async (ms) => { clock += ms; },
   };
-  return { io, calls, show: (name: string) => { raw = fixture(name); }, showText: (screen: string) => { raw = screen; }, status: (value: string) => { status = value; } };
+  return { io, calls, refusals, show: (name: string) => { raw = fixture(name); }, showText: (screen: string) => { raw = screen; }, status: (value: string) => { status = value; } };
 }
 
 describe('Cursor rules delivery', () => {
@@ -446,13 +455,15 @@ describe('Cursor rules delivery', () => {
     expect(boxHoldsText('cursor', NUDGE_TEXT, box([firstRow, '', ...rest]))).toBe(false);
   });
 
-  test('a blank row the typed text itself has is entered', async () => {
-    // The one place a blank row is the text's own: the typed text has that blank line there.
+  test('a blank row the typed text itself has is refused: a blank row is never the text\'s', async () => {
+    // A blank row was the pane's drawing of a blank line the text had, when texts could hold
+    // newlines. A row break may stand for at most one space, never a newline, so the blank row
+    // never reads back and there is no Enter.
     const typed = 'alpha beta\n\ngamma delta';
     const d = delivery();
     d.io.type = (text) => { d.calls.push(text); d.showText(boxed(typed)); return true; };
-    expect(await deliverRules('cursor', typed, 1, d.io)).toBe(true);
-    expect(d.calls).toEqual([typed, 'Enter']);
+    expect(await deliverRules('cursor', typed, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([typed]);
   });
 
   test('two spaces typed, one shown, gets no Enter — the delivery path and the gate', async () => {
@@ -499,19 +510,18 @@ describe('Cursor rules delivery', () => {
     expect(d.calls).toEqual([CAPTURED_WRAP]);
   });
 
-  test('a typed text whose own last line is empty: the box shows the row, or no Enter', async () => {
-    // The text ends with a newline, so its last line is empty and the pane draws a row for it,
-    // above the two frame rows it draws under every box. That screen and the one with the extra
-    // blank row are the same layout: only the typed text tells them apart. With the row the box
-    // holds the text; without it the box stops at the sentence and the trailing newline is
-    // unaccounted for.
+  test('a typed text whose own last line is empty: no Enter, with the row or without it', async () => {
+    // The text ends with a newline, so its last line is empty and the pane once drew a row for
+    // it. A row break may stand for at most one space, never a newline, and a blank row is
+    // never the text's own: the trailing newline is unaccounted for either way, and the box
+    // never verifies.
     const typed = CAPTURED_WRAP + '\n';
     const rows = wordWrap(CAPTURED_WRAP, 51 - 4);
     const [firstRow = '', ...rest] = rows;
     const body = [`  → ${firstRow}`, ...rest.map((row) => `    ${row}`)];
     const withRow = fixture('idle').replace('  → Plan, search, build anything', [...body, ''].join('\n'));
     const withoutRow = fixture('idle').replace('  → Plan, search, build anything', body.join('\n'));
-    expect(boxHoldsText('cursor', typed, withRow)).toBe(true);
+    expect(boxHoldsText('cursor', typed, withRow)).toBe(false);
     expect(boxHoldsText('cursor', typed, withoutRow)).toBe(false);
     const d = delivery();
     d.io.type = (text) => { d.calls.push(text); d.showText(withoutRow); return true; };
@@ -541,10 +551,12 @@ describe('Cursor rules delivery', () => {
     expect(d.calls).toEqual(['Rules.']);
   });
 
-  test('a boxed multi-line paste reads back row for row and is entered', async () => {
+  test('a boxed multi-line paste no longer reads back: typed, not sent', async () => {
+    // A row break may stand for at most one space, never the newline between the lines, so a
+    // multi-line text never verifies and the Enter is never the delivery's to send.
     const d = delivery();
-    expect(await deliverRules('cursor', 'Rules.\nOne more line.', 1, d.io)).toBe(true);
-    expect(d.calls).toEqual(['Rules.\nOne more line.', 'Enter']);
+    expect(await deliverRules('cursor', 'Rules.\nOne more line.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual(['Rules.\nOne more line.']);
   });
 
   test('the typed exit read back from the captured completion frame is entered', async () => {
@@ -759,10 +771,19 @@ describe('the person\'s own box, captured (Cursor)', () => {
     ['typed-blank-middle', 'kappa first line\n\nlambda third line'],
   ];
 
-  test.each(CAPTURES)('%s reads unsent and holds exactly its text', (name, text) => {
+  test.each(CAPTURES.filter(([name]) => name !== 'typed-wrap'))('%s reads unsent; its multi-line text no longer reads back', (name, text) => {
+    // These captures stay as documentation of the continuation column; a row break may stand
+    // for at most one space, never a newline, so no multi-line text reads back.
     const screen = fixture(name);
     expect(readScreen('cursor', screen).kind).toBe('unsent');
     expect(classifyComposer('cursor', screen.split('\n')).kind).toBe('unsent');
+    expect(boxHoldsText('cursor', text, screen)).toBe(false);
+  });
+
+  test('typed-wrap reads unsent and holds exactly its one line', () => {
+    const text = 'iota long line that wraps at the pane width through several words to show the continuation column of a wrapped row on this screen';
+    const screen = fixture('typed-wrap');
+    expect(readScreen('cursor', screen).kind).toBe('unsent');
     expect(boxHoldsText('cursor', text, screen)).toBe(true);
   });
 
@@ -792,6 +813,236 @@ describe('the person\'s own box, captured (Cursor)', () => {
       rows: ['    → zeta glyph second'],
       wrap: { continuation: 'text-column', kind: 'word' },
     });
+  });
+});
+
+// The captures taken on 2026-10-05 at 54 by 23, the pane `up` creates (cursor-agent
+// 2026.10.01, the flags the fixtures README names). The captures of the whole message stay as
+// documentation of the box's six-row limit and the paste marker; the delivery itself is the
+// one line of rules-line.txt.
+
+/** The fitted texts these captures were typed with: numbered rows of a sample line. */
+const fitted = (rows: number) => Array.from({ length: rows }, (_, i) => `probe line ${i + 1} of this sample`).join('\n');
+
+/** A box Cursor draws for `text` at the pane's 47 content columns: the line word-wrapped, the
+ *  first row after the prompt, the rest at the four-column continuation column. */
+function drawnAt(text: string): string {
+  const [first = '', ...rest] = wordWrap(text, 47);
+  return [`  → ${first}`, ...rest.map((row) => `    ${row}`)].join('\n');
+}
+
+test('the box limits and the paste marker, as the captures show them', () => {
+  // rules-fit-6.txt draws six typed rows whole; rules-fit-7.txt has scrolled the first typed row
+  // out of the box. The fitted texts are multi-line, and no multi-line text reads back at
+  // any height — the captures stay as documentation of the box's own edge.
+  expect(readScreen('cursor', fixture('rules-fit-6')).kind).toBe('unsent');
+  expect(readScreen('cursor', fixture('rules-fit-7')).kind).toBe('unsent');
+  expect(boxHoldsText('cursor', fitted(6), fixture('rules-fit-6'))).toBe(false);
+  expect(boxHoldsText('cursor', fitted(7), fixture('rules-fit-7'))).toBe(false);
+  // A paste over 800 characters is hidden behind the marker; nothing of it reads back.
+  expect(readBox('cursor', fixture('rules-pasted-short'))?.first).toBe('[Pasted text #1 +10 lines]');
+  expect(readBox('cursor', fixture('rules-pasted-medium'))?.first).toBe('[Pasted text #1 +14 lines]');
+  expect(readBox('cursor', fixture('rules-pasted'))?.first).toBe('[Pasted text #1 +17 lines]');
+  for (const file of ['rules-pasted-short', 'rules-pasted-medium', 'rules-pasted']) {
+    expect(readScreen('cursor', fixture(file)).kind).toBe('unsent');
+  }
+  expect(boxHoldsText('cursor', SAMPLE_RULES, fixture('rules-pasted'))).toBe(false);
+  // 800 characters are drawn as words, 801 are the marker (rules-threshold-800/801.txt).
+  const words = `${'word '.repeat(159)}wordx`;
+  expect(words.length).toBe(800);
+  expect(readBox('cursor', fixture('rules-threshold-800'))?.first.startsWith('word ')).toBe(true);
+  expect(boxHoldsText('cursor', words, fixture('rules-threshold-800'))).toBe(false);
+  const over = `${'word '.repeat(160)}w`;
+  expect(over.length).toBe(801);
+  expect(readBox('cursor', fixture('rules-threshold-801'))?.first).toBe('[Pasted text #1 +1 lines]');
+  expect(boxHoldsText('cursor', over, fixture('rules-threshold-801'))).toBe(false);
+});
+
+// The line the 2026-10-05 capture holds, as `team` composes it: the same path and hash the
+// fixtures README names, through the function that builds it. The box draws it as four rows on
+// the six it has: the break after the hash's `):` and the break after `reply` each hide the
+// line's own single space, and the break after the project hash hides nothing (the path simply
+// continues on the next row).
+const CAPTURED_PATH = '/home/owner/.config/team/demo-3f9c2a8e1d7b/rules/implementer.md';
+const capturedLine = rulesLine(CAPTURED_PATH, '5e1d0a9c4b2f');
+
+/** A Cursor pane 54 by 23 that answers the typed line with the real capture and a submitted
+ *  line like the captured turn: the turn paints the pane while it runs. */
+function lineDelivery() {
+  let raw = fixture('idle');
+  let status = 'idle';
+  let clock = 0;
+  const calls: string[] = [];
+  const refusals: Refusal[] = [];
+  const io: Delivery = {
+    screen: () => raw,
+    status: () => status,
+    report: (why) => { refusals.push(why); },
+    file: () => true, // the delivery tests prove the line, not the file
+    type(text) {
+      calls.push(text);
+      raw = text === capturedLine ? fixture('rules-line') : drawnAt(text);
+      return true;
+    },
+    enter() {
+      calls.push('Enter');
+      raw = fixture('working');
+      status = 'working';
+      return true;
+    },
+    foreground: () => ['cursor-agent'],
+    now: () => clock,
+    sleep: async (ms) => { clock += ms; },
+  };
+  return { io, calls, refusals, show: (screen: string) => { raw = screen; }, status: (value: string) => { status = value; } };
+}
+
+describe('Cursor rules delivery of the one line (2026.10.01 capture)', () => {
+  test('the captured line reads unsent and holds exactly the line', () => {
+    const screen = fixture('rules-line');
+    expect(readScreen('cursor', screen).kind).toBe('unsent');
+    expect(boxHoldsText('cursor', capturedLine, screen)).toBe(true);
+    // Anything the seat might hold instead: one character more, the line without its final
+    // full stop, another seat's path, an older hash of the same rules.
+    expect(boxHoldsText('cursor', `${capturedLine} again`, screen)).toBe(false);
+    expect(boxHoldsText('cursor', capturedLine.slice(0, -1), screen)).toBe(false);
+    expect(boxHoldsText('cursor', rulesLine(CAPTURED_PATH.replace('implementer', 'scribe'), '5e1d0a9c4b2f'), screen)).toBe(false);
+    expect(boxHoldsText('cursor', rulesLine(CAPTURED_PATH, '4d0c9f8b3a2e'), screen)).toBe(false);
+  });
+
+  test('the line is typed once at an empty prompt, read back row by row, and entered once', async () => {
+    const d = lineDelivery();
+    expect(await deliverRules('cursor', capturedLine, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([capturedLine, 'Enter']);
+  });
+
+  test.each([
+    ['in the path', ['3f9c2a8e1d7b', '3f9c2a8e1d7c']],
+    ['in the hash', ['5e1d0a9c4b2f', '5e1d0a9c4b2e']],
+    ['in a word of the line', ['standing rules', 'stunding rules']],
+    ['in the final full stop', ['wait for your brief.', 'wait for your brief!']],
+  ] as const)('one character changed %s gets no Enter', async (what, [from, to]) => {
+    const d = lineDelivery();
+    d.io.type = (text) => { d.calls.push(text); d.show(fixture('rules-line').replace(from, to)); return true; };
+    expect(await deliverRules('cursor', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([capturedLine]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('read-back');
+    expect(why?.typed).toBe(true);
+    expect(why?.sent).toBe(false);
+    expect(why?.row).not.toBeNull();
+    expect(refusalReport(why!)).toContain("the read-back didn't match");
+  });
+
+  test('a row of the line with one character more than the line has gets no Enter', async () => {
+    const d = lineDelivery();
+    d.io.type = (text) => { d.calls.push(text); d.show(fixture('rules-line').replace('wait for your brief.', 'wait for your brief. x')); return true; };
+    expect(await deliverRules('cursor', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([capturedLine]);
+  });
+
+  test('the line with one character more than the box shows gets no Enter', async () => {
+    // The other way round: the box draws the line's own four rows, and the text claims a
+    // fifth the pane never drew.
+    const d = lineDelivery();
+    d.io.type = (text) => { d.calls.push(text); d.show(fixture('rules-line')); return true; };
+    expect(await deliverRules('cursor', `${capturedLine} x`, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([`${capturedLine} x`]);
+  });
+
+  test('two spaces in the line where the row break hides one get no Enter', async () => {
+    // The captured break after `):` hides the line's single space before `your`. A line with
+    // two spaces there draws the same rows — the read-back refuses it: a break may stand for
+    // exactly one space, never a run of them.
+    const doubled = capturedLine.replace('): your', '):  your');
+    expect(boxHoldsText('cursor', doubled, fixture('rules-line'))).toBe(false);
+    const d = lineDelivery();
+    d.io.type = (text) => { d.calls.push(text); d.show(fixture('rules-line')); return true; };
+    expect(await deliverRules('cursor', doubled, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([doubled]);
+  });
+
+  test('a tab in the line gets no Enter', async () => {
+    const tabbed = capturedLine.replace('Read ', 'Read\t');
+    expect(boxHoldsText('cursor', tabbed, fixture('rules-line'))).toBe(false);
+    const d = lineDelivery();
+    d.io.type = (text) => { d.calls.push(text); d.show(fixture('rules-line')); return true; };
+    expect(await deliverRules('cursor', tabbed, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([tabbed]);
+  });
+
+  test('a trust dialog at the final re-read gets no Enter', async () => {
+    // The other way round: the line reads back in the loop, and the re-read that immediately
+    // precedes the Enter sees the dialog. Without that re-read the Enter goes to the dialog's
+    // first choice.
+    const d = lineDelivery();
+    d.io.type = (text) => {
+      d.calls.push(text);
+      let reads = 0;
+      d.io.screen = () => (++reads <= 1 ? fixture('rules-line') : fixture('trust'));
+      return true;
+    };
+    expect(await deliverRules('cursor', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([capturedLine]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('read-back');
+    expect(why?.sent).toBe(false);
+    expect(why?.kind).toBe('trust');
+  });
+
+  test('the file changing after it was written gets no Enter', async () => {
+    // The line read back as its own rows; between that and the key, the file at its path no
+    // longer holds the text whose hash the line names. Nothing is sent, and the report says
+    // the file changed — the seat is never pointed at a file team cannot vouch for.
+    const d = lineDelivery();
+    d.io.file = () => false;
+    expect(await deliverRules('cursor', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([capturedLine]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('file-changed');
+    expect(why?.sent).toBe(false);
+    expect(refusalReport(why!)).toBe('rules typed, not sent: the rules file changed after it was written');
+  });
+
+  test('a seat mid-turn is reported as working; nothing is typed', async () => {
+    const d = lineDelivery();
+    d.status('working');
+    expect(await deliverRules('cursor', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('working');
+    expect(refusalReport(why!)).toBe('rules not confirmed: the seat is working; run up again when it is idle');
+  });
+
+  test('a box already holding the person\'s own text is left alone', async () => {
+    const d = lineDelivery();
+    d.show(fixture('idle').replace('  → Plan, search, build anything', drawnAt('the person\'s own message')));
+    expect(await deliverRules('cursor', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('leftover');
+    expect(refusalReport(why!)).toContain('its box already holds text that is not the rules line');
+  });
+
+  test('a resumed seat whose box already holds the line is verified and entered, never typed onto', async () => {
+    const d = lineDelivery();
+    d.show(fixture('rules-line'));
+    expect(await deliverRules('cursor', capturedLine, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual(['Enter']);
+  });
+
+  test('a resumed seat whose box holds another seat\'s line is refused, nothing typed', async () => {
+    const d = lineDelivery();
+    d.show(fixture('rules-line').replace('implementer', 'scribe'));
+    expect(await deliverRules('cursor', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+    expect(d.refusals.at(-1)?.stop).toBe('leftover');
+  });
+
+  test('a resumed seat with an empty box is typed once, verified and sent', async () => {
+    const d = lineDelivery();
+    expect(await deliverRules('cursor', capturedLine, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([capturedLine, 'Enter']);
   });
 });
 
@@ -1363,16 +1614,26 @@ describe('a border anywhere else stays unknown (Cursor)', () => {
     const withPrompt = `${screen}\n❯`;
     unknown(withPrompt);
 
+    // A shell holding the pane over that screen is never the CLI: the delivery waits it out to
+    // the deadline, types nothing into the shell, and gives up naming the reading it saw (the
+    // `no-agent` the old whole-paste delivery returned at once is gone with it).
+    let clock = 0;
+    const typed: string[] = [];
+    const refusals: Refusal[] = [];
     const shellIo: Delivery = {
       screen: () => screen,
       status: () => 'idle',
-      type: () => true,
-      enter: () => true,
+      type: (text) => { typed.push(text); return true; },
+      enter: () => { typed.push('Enter'); return true; },
       foreground: () => ['zsh'],
-      now: () => 0,
-      sleep: async () => {},
+      report: (why) => { refusals.push(why); },
+      now: () => clock,
+      sleep: async (ms) => { clock += ms; },
     };
-    expect(await deliverRules('cursor', 'Rules.', 1, shellIo)).toBe('no-agent');
+    expect(await deliverRules('cursor', 'Rules.', 1, shellIo)).toBe(false);
+    expect(refusals).toEqual([{ stop: 'launch', typed: false, sent: false, kind: 'idle', row: null }]);
+    expect(typed).toEqual([]);
+    expect(clock).toBe(1000);
   });
 });
 
@@ -1439,14 +1700,20 @@ describe('the border inserted around every other capture (Cursor)', () => {
     const lines = fixture(name).replace(/\n+$/, '').split('\n');
     const input = lines.findLastIndex((line) => /^ {2}→/.test(line));
     const status = lines.findLastIndex((line) => /^ {2}(?:Grok|GPT-|Gemini |Composer )/.test(line));
+    // The frame rows sit at the capture's own width: the reader pins the border to the status
+    // row beside it, and the registry holds captures of two pane widths (the 53-column bordered
+    // day, the 54-column rules day), so one fixed pair cannot fit them all.
+    const width = status > input ? (lines[status] ?? '').length : TOP.length - 1;
+    const TOP_HERE = ` ${'▄'.repeat(width)}`;
+    const BOTTOM_HERE = ` ${'▀'.repeat(width)}`;
     const out = [...lines];
-    out[input - 1] = TOP; // the row above every capture's input row is one of its frame's empty rows
+    out[input - 1] = TOP_HERE; // the row above every capture's input row is one of its frame's empty rows
     if (status > input) {
       let last = status - 1;
       while (last > input && (out[last] ?? '').trim() === '') last--;
-      out.splice(last + 1, status - 1 - last, BOTTOM); // the frame's empty rows give way to the row
+      out.splice(last + 1, status - 1 - last, BOTTOM_HERE); // the frame's empty rows give way to the row
     } else {
-      out.splice(input + 1, 1, BOTTOM); // no status row: the row sits directly under the input row
+      out.splice(input + 1, 1, BOTTOM_HERE); // no status row: the row sits directly under the input row
     }
     return out.join('\n');
   };
@@ -1470,7 +1737,7 @@ describe('the border inserted around every other capture (Cursor)', () => {
       if (after !== before) differed.push(`${name}: ${before} -> ${after}`);
     }
     expect(differed).toEqual([]);
-    expect(NAMES.length).toBe(29);
+    expect(NAMES.length).toBe(39);
     expect(NAMES).toContain('idle');
     expect(NAMES).toContain('working');
     expect(NAMES).toContain('trust');
@@ -1482,7 +1749,8 @@ describe('the border inserted around every other capture (Cursor)', () => {
 describe('the bordered box read back (Cursor)', () => {
   // The read-back over the three-row capture: the box the reader takes must be the rows
   // between the frame's own rows — the typed text, not the border — so `deliver.ts` reads a
-  // bordered box unchanged. The text read back is exactly what was typed.
+  // bordered box unchanged. The delivery holds one line, exactly as typed (a row break
+  // standing for the line's own single space); a multi-row paste is refused, not read.
   const TYPED = ['alpha bordered line one', 'beta bordered line two', 'gamma bordered line three'];
   const TEXT = TYPED.join('\n');
 
@@ -1496,7 +1764,10 @@ describe('the bordered box read back (Cursor)', () => {
       rows: ['    beta bordered line two', '    gamma bordered line three'],
       wrap: { continuation: 'text-column', kind: 'word' },
     });
-    expect(boxHoldsText('cursor', TEXT, screen)).toBe(true);
+    // The one-line read-back holds single lines: a multi-row paste is not a delivery target,
+    // so the three rows together no longer read back as one held text — the frame's box still
+    // reads them row for row (readBox above), and one row still holds (below).
+    expect(boxHoldsText('cursor', TEXT, screen)).toBe(false);
     expect(boxHoldsText('cursor', 'alpha bordered line one', fixture('bordered-typed-one'))).toBe(true);
   });
 
@@ -1506,14 +1777,26 @@ describe('the bordered box read back (Cursor)', () => {
     expect(boxHoldsText('cursor', NUDGE_TEXT, fixture('bordered-typed-three'))).toBe(false);
   });
 
-  test('rules delivery types the three rows into the bordered box, reads them back and enters', async () => {
+  test('rules delivery types the one line into the bordered box, reads it back and enters', async () => {
+    const d = delivery('bordered-idle');
+    d.io.type = (text) => {
+      d.calls.push(text);
+      d.showText(borderedBox(wordWrap(text, 47)));
+      return true;
+    };
+    expect(await deliverRules('cursor', capturedLine, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([capturedLine, 'Enter']);
+  });
+
+  test('a multi-row paste is refused at the read-back, typed and not sent', async () => {
     const d = delivery('bordered-idle');
     d.io.type = (text) => {
       d.calls.push(text);
       d.showText(borderedBox(text.split('\n')));
       return true;
     };
-    expect(await deliverRules('cursor', TEXT, 1, d.io)).toBe(true);
-    expect(d.calls).toEqual([TEXT, 'Enter']);
+    expect(await deliverRules('cursor', TEXT, 1, d.io)).toBe(false);
+    expect(d.refusals).toEqual([{ stop: 'read-back', typed: true, sent: false, kind: 'unsent', row: 'beta bordered line two' }]);
+    expect(d.calls).toEqual([TEXT]);
   });
 });

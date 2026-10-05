@@ -1,0 +1,23 @@
+
+
+› Model · implementer
+  - Your signature in a
+  pull request body, as
+  its last line:
+  **Agent:** Sample Model
+  · implementer
+  - Protected checkouts,
+  relative to the project
+  root: .
+  - Work on the code in
+  the worktree your brief
+  names, never in the
+  checkout you started in.
+  Branches are named
+  {kind}/{task}.
+  These are standing
+  rules, not a task: reply
+  ready and wait for your
+  brief.
+
+  GPT-5.6-Terra medium · C…

@@ -161,8 +161,25 @@ function sources(extra: Partial<UpSources>, made: World): UpSources {
   };
 }
 
+/** The one line as a box the pane would draw: wrapped at `width`, broken after a `/` or a
+ *  space where one falls, mid-word otherwise, so no row break hides a character. */
+function wrappedRows(text: string, width = 50): string[] {
+  const rows: string[] = [];
+  let rest = text;
+  while (rest.length > width) {
+    const cut = rest.slice(0, width + 1);
+    const slash = cut.lastIndexOf('/');
+    const space = cut.lastIndexOf(' ');
+    const at = Math.max(slash, space, 0) || width;
+    rows.push(rest.slice(0, at + 1));
+    rest = rest.slice(at + 1);
+  }
+  rows.push(rest);
+  return rows;
+}
+
 describe('team up, live', () => {
-  test('rules are not typed into a pane with no live agent', async () => {
+  test('rules are not typed into a pane the CLI never appears in', async () => {
     const path = join(root, '.agents/team.yaml');
     writeFileSync(path, EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
     await approve();
@@ -170,6 +187,8 @@ describe('team up, live', () => {
     const made = world((_pane, label) => (label === 'gpt sol 6' ? fileModel(capture('idle')) : IDLE));
     const sent: string[] = [];
     made.launch.agentStatus = () => 'idle';
+    // A shell holds the pane and never hands it to the CLI: the delivery waits it out, types
+    // nothing into the shell, and gives up at the deadline saying the CLI never appeared.
     made.launch.foreground = () => ['zsh'];
     made.launch.typeText = (_session, _pane, text) => { sent.push(text); return true; };
     made.launch.pressEnter = () => { sent.push('Enter'); return true; };
@@ -177,7 +196,11 @@ describe('team up, live', () => {
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
     expect(sent).toEqual([]);
-    expect(io.out).toContain('codex-acme: no live agent in its pane; its rules were not delivered');
+    expect(io.out).toContain(
+      'codex-acme: rules not typed: the CLI never appeared as its pane\'s foreground process '
+        + '(the screen read idle); check the seat\'s launch line — the wrapper it starts through, '
+        + 'or the command itself — then run up again',
+    );
   });
 
   test.each(['accepted', 'trust', 'startup', 'swallowed'] as const)('Codex first-message rules: %s', async (outcome) => {
@@ -193,10 +216,10 @@ describe('team up, live', () => {
     const read = made.launch.paneText;
     let pasted = false;
     let typed = '';
-    // The pane with the paste rendered: the idle frame's placeholder row replaced by the typed
-    // message, later lines at the prompt's own column, as the fixtures README describes.
+    // The pane with the line rendered: the idle frame's placeholder row replaced by the line's
+    // first row, its continuation rows at the prompt's own column, wrapped as the pane wraps.
     const boxed = () => {
-      const [first = '', ...rest] = typed.split('\n');
+      const [first = '', ...rest] = wrappedRows(typed);
       return capture('idle').replace('› Ask Codex to do anything', [`› ${first}`, ...rest.map((line) => `  ${line}`)].join('\n'));
     };
     made.launch.agentStatus = () => status;
@@ -210,16 +233,25 @@ describe('team up, live', () => {
     if (outcome === 'accepted') {
       expect(code).toBe(0);
       expect(seat).toMatchObject({ stage: 'ready', rules: 'message' });
-      expect(sent[0]).toContain('Agent: GPT-6 Sol · implementer');
-      // The typed first message is answered once, so it asks for the ready reply.
-      expect(sent[0]).toEndWith(CLOSING_MESSAGE);
+      // The pane sees the one line: the file's path and its hash, never the rules themselves.
+      expect(sent[0]).toStartWith('Read ');
+      expect(sent[0]).toContain(`rules/codex-acme.md`);
+      expect(sent[0]).toMatch(/\(sha256 [0-9a-f]{12}\)/);
+      expect(sent[0]).toEndWith('your standing rules for this session; reply ready and wait for your brief.');
       expect(sent[1]).toBe('Enter');
+      // The rules travel in the file the line points at, owner-only, the approved text itself.
+      const file = readFileSync(join(store(), 'rules', 'codex-acme.md'), 'utf8');
+      expect(file).toContain('Agent: GPT-6 Sol · implementer');
+      expect(file).toEndWith(CLOSING_MESSAGE);
       expect(made.runs.some(({ command }) => command.startsWith('Rules for this session'))).toBe(false);
     } else if (outcome === 'swallowed') {
       expect(code).toBe(1);
       expect(seat?.stage).toBe('named');
       expect(seat?.rules).toBeUndefined();
-      expect(io.out).toContain('its rules were not delivered; left at named');
+      // The line was typed and Enter was pressed, and the box still holds it: the report says
+      // the rules sit unsent and names what to do, instead of a generic failure.
+      expect(io.out).toContain('codex-acme: rules typed, not sent: its box still holds the line after Enter; '
+        + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again');
     } else {
       expect(code).toBe(1);
       expect(sent).toEqual([]);
@@ -263,7 +295,7 @@ describe('team up, live', () => {
     // The pane with the paste rendered: the idle frame's bare prompt row replaced by the typed
     // message, later lines at the prompt's own column, as the fixtures README describes.
     const boxed = () => {
-      const [first = '', ...rest] = typed.split('\n');
+      const [first = '', ...rest] = wrappedRows(typed);
       const body = [`> ${first}`, ...rest.map((line) => `  ${line}`)].join('\n');
       return capture('idle').replace('\n>\n', `\n${body}\n`);
     };
@@ -278,16 +310,23 @@ describe('team up, live', () => {
     if (outcome === 'accepted') {
       expect(code).toBe(0);
       expect(seat).toMatchObject({ stage: 'ready', rules: 'message' });
-      expect(sent[0]).toContain('Agent: Gemini 3.8 Flash · implementer');
-      // The typed first message is answered once, so it asks for the ready reply.
-      expect(sent[0]).toEndWith(CLOSING_MESSAGE);
+      // The pane sees the one line; the rules travel in the file it points at.
+      expect(sent[0]).toStartWith('Read ');
+      expect(sent[0]).toContain(`rules/gemini-acme.md`);
+      expect(sent[0]).toMatch(/\(sha256 [0-9a-f]{12}\)/);
+      expect(sent[0]).toEndWith('your standing rules for this session; reply ready and wait for your brief.');
       expect(sent[1]).toBe('Enter');
+      const file = readFileSync(join(store(), 'rules', 'gemini-acme.md'), 'utf8');
+      expect(file).toContain('Agent: Gemini 3.8 Flash · implementer');
+      expect(file).toEndWith(CLOSING_MESSAGE);
       expect(made.runs.some(({ command }) => command.startsWith('Rules for this session'))).toBe(false);
     } else if (outcome === 'swallowed') {
       expect(code).toBe(1);
       expect(seat?.stage).toBe('named');
       expect(seat?.rules).toBeUndefined();
-      expect(io.out).toContain('its rules were not delivered; left at named');
+      // Same reading as the Codex case: the box still shows the line, unsent.
+      expect(io.out).toContain('gemini-acme: rules typed, not sent: its box still holds the line after Enter; '
+        + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again');
     } else {
       expect(code).toBe(1);
       expect(sent).toEqual([]);
@@ -725,10 +764,13 @@ describe('team up, live', () => {
     made.launch.pressEnter = () => { sent.push('Enter'); return true; };
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, resumed(made));
-    // The box reads `unsent`: nothing is typed, no key is sent, no workspace is closed, and the
-    // seat's state is left byte for byte as it was.
+    // The box reads `unsent` and does not hold the rules line: nothing is typed, no key is
+    // sent, no workspace is closed, and the seat's state is left byte for byte as it was.
     expect(code).toBe(1);
-    expect(io.out).toContain('codex-acme: its rules were not delivered; left at named');
+    expect(io.out).toContain(
+      'codex-acme: rules not typed: its box already holds text that is not the rules line; '
+      + 'press Enter in its pane to send what is there, or clear its box (Ctrl-C), then run up again',
+    );
     expect(sent).toEqual([]);
     expect(made.closes).toEqual([]);
     expect(JSON.parse(readFileSync(join(root, '.agents/team.state.json'), 'utf8'))).toEqual(namedState());
@@ -764,8 +806,11 @@ describe('team up, live', () => {
     expect(made.closes).toEqual([]);
     const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['codex-acme'];
     expect(seat).toMatchObject({ stage: 'ready', rules: 'message', pane: 'w2:p1', workspace: 'w2' });
-    // Main's order of host calls: the pane's program, its status and its box are read first, the
-    // message is typed into the empty box and read back, one key is sent, then the closing readings.
+    // The delivery's order of host calls: the pane's program, its status — one read, the
+    // mid-turn gate and freedom together — and its box; the line is typed into the empty box,
+    // the status and the box are read again before the re-check, the re-check reads the
+    // program, the status and the box again, the file gets its last look, one Enter is sent,
+    // then the closing readings.
     expect(calls).toEqual([
       'foreground w2:p1',
       'agentStatus w2:p1',
@@ -782,7 +827,7 @@ describe('team up, live', () => {
     ]);
   });
 
-  test('a named seat whose box holds exactly what team would type now is left as it is', async () => {
+  test('a named seat whose box holds exactly what team would type now is sent, never typed onto', async () => {
     const made = incident(captureCodex('idle'));
     await approve();
     // The message team would type now, taken from team itself: the empty box is delivered to once.
@@ -814,15 +859,37 @@ describe('team up, live', () => {
     const reread = again.launch.paneText;
     again.launch.paneText = (session, pane) => { calls.push(`paneText ${pane}`); return reread(session, pane); };
     again.launch.typeText = (_session, _pane, text) => { sent.push(text); return true; };
-    again.launch.pressEnter = () => { sent.push('Enter'); return true; };
+    again.launch.pressEnter = (_session, pane) => { calls.push(`pressEnter ${pane}`); sent.push('Enter'); return true; };
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, resumed(again));
     expect(code).toBe(1);
-    expect(io.out).toContain('codex-acme: its rules were not delivered; left at named');
-    expect(sent).toEqual([]);
+    expect(io.out).toContain(
+      'codex-acme: rules typed, not sent: its box still holds the line after Enter; '
+      + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again',
+    );
+    // The resume verifies the box and sends the one Enter; this stub's pane never takes the
+    // key — the box is read again after it, to the deadline, and nothing else is ever typed.
+    expect(sent).toEqual(['Enter']);
     expect(again.closes).toEqual([]);
     expect(JSON.parse(readFileSync(join(root, '.agents/team.state.json'), 'utf8'))).toEqual(namedState());
-    expect(calls).toEqual(['foreground w2:p1', 'agentStatus w2:p1', 'paneText w2:p1']);
+    const enter = calls.indexOf('pressEnter w2:p1');
+    expect(enter).toBeGreaterThan(-1);
+    expect(calls.slice(0, enter + 1)).toEqual([
+      'foreground w2:p1',
+      'agentStatus w2:p1',
+      'paneText w2:p1',
+      'paneText w2:p1',
+      'agentStatus w2:p1',
+      'paneText w2:p1',
+      'foreground w2:p1',
+      'agentStatus w2:p1',
+      'paneText w2:p1',
+      'pressEnter w2:p1',
+    ]);
+    const after = calls.slice(enter + 1);
+    expect(after).not.toContain('typeText w2:p1');
+    expect(after).not.toContain('pressEnter w2:p1');
+    expect([...new Set(after)].sort()).toEqual(['agentStatus w2:p1', 'paneText w2:p1']);
   });
 
   test('a resumed seat is checked where its pane runs, not where the file would put it', async () => {
@@ -1574,7 +1641,11 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
-    expect(io.out).toContain('codex-acme: its rules were not delivered; left at named\n');
+    // The reading is the delivery's own — the pane took no text — and the seat it leaves at
+    // named is the record the identity rides in.
+    expect(io.out).toContain(
+      'codex-acme: rules not typed: the pane took no text (the screen read idle); run up again\n',
+    );
     expect(readState(join(root, '.agents')).sessions['acme-web']?.seats['codex-acme'])
       .toMatchObject({ stage: 'named', launched: { shell: 400, cli: [401] } });
   });

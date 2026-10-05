@@ -16,7 +16,7 @@ export type Op =
   | { do: 'refuse'; seat: string; why: string }
   | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; command: string; pane?: string; workspace?: string; notice?: string; model?: string; version?: string }
   | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
-  | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; seconds: number; pane?: string; notice?: string }
+  | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; path: string; line: string; seconds: number; pane?: string; notice?: string }
   | { do: 'ready'; seat: string; rules: 'option' | 'message'; notice?: string }
   | { do: 'repair'; seat: string; cli: string; pane: string; workspace: string; launched: LaunchedIdentity }
   | { do: 'watch'; label: string; command: string }
@@ -43,8 +43,13 @@ export interface UpSeat {
   cwd: string;
   label: string;
   stopped: boolean;
-  /** The seat's rules, as one text. */
+  /** The seat's rules, as one text: what a launch option embeds and what its file holds. */
   rules: string;
+  /** For a seat whose rules travel as a first message: the file its rules are written to and the
+   *  one line typed in its pane. Absent when the path can't be typed safely. */
+  rulesFile?: { path: string; line: string };
+  /** Why the seat's rules can't be delivered; set instead of `rulesFile`. */
+  rulesRefusal?: string;
   /** The file's model and version, compared with the screen after the idle wait. */
   model?: string;
   version?: string;
@@ -252,19 +257,31 @@ export function upPlan(input: UpInput): Step[] {
       });
     }
     if (profile.rulesOption === null) {
+      if (seat.rulesRefusal || !seat.rulesFile) {
+        const why = seat.rulesRefusal ?? "its rules file's path can't be typed safely";
+        steps.push({
+          kind: 'skip',
+          text: `${seat.name}: would refuse: ${why}`,
+          do: { do: 'refuse', seat: seat.name, why },
+        });
+        continue;
+      }
       const said = takeNotice();
+      const file = seat.rulesFile;
       steps.push({
         kind: 'run',
-        argv: herdr(session, 'pane', 'send-text', pane, seat.rules),
+        argv: herdr(session, 'pane', 'send-text', pane, file.line),
         note: said
-          ? `${said}; the rules, only at an empty idle prompt; re-read before Enter, then wait for working with empty input`
-          : 'the rules, only at an empty idle prompt; re-read before Enter, then wait for working with empty input',
+          ? `${said}; the rules go to a per-seat file in the project state folder first; the line that points at it is typed only at an empty idle prompt, read back row by row, then Enter`
+          : 'the rules go to a per-seat file in the project state folder first; the line that points at it is typed only at an empty idle prompt, read back row by row, then Enter',
         do: {
           do: 'deliver',
           seat: seat.name,
           label: seat.label,
           cli: seat.cli,
           rules: seat.rules,
+          path: file.path,
+          line: file.line,
           seconds: profile.idleTimeout,
           pane: seat.pane,
           ...(said ? { notice: said } : {}),

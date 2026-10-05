@@ -19,7 +19,9 @@ seat out is not a change the owner has to approve.
 
 Writes the team file (the seat's entry taken out, or `stopped: true` added to it),
 `.agents/team.state.json` (the seat's record is dropped), `.agents/team.log`, and, through herdr:
-the exit typed into the pane, the wait for its shell, and the workspace closed. A file edit that
+the exit typed into the pane, the wait for its shell, and the workspace closed. A temporary seat's
+rules file goes with it, out of the project state folder; a seat left in the file as stopped keeps
+its file for the next `up`. A file edit that
 would not validate is refused before the seat is stopped, so a broken file never costs a live seat.
 
 ## Who may run it

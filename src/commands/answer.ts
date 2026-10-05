@@ -6,14 +6,13 @@ import { readArgs } from '../args.ts';
 import { callerOf, type Caller } from '../caller.ts';
 import { canonicalLanding, folderOf, listFolder, lobbyPath } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
-import { renderSignature } from '../file/signature.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { agentList, agentRename, agentStatus, paneForeground, paneForegroundCwd, paneProcesses, paneRead, pressEnter, sendKey as herdrSendKey, typeText, type PaneProcesses } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { deliverRules, type Delivery } from '../launch/deliver.ts';
 import { seatProcessVerdict, type LaunchedIdentity } from '../launch/identity.ts';
-import { rulesText } from '../launch/rules.ts';
+import { rulesDeliveryOf, rulesFileHash, rulesFileHolds, writeRulesFile } from '../launch/rules-file.ts';
 import { acquireSeatLock } from '../launch/seat-lock.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -138,7 +137,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
     const waiting = recorded?.waiting;
     if (waiting?.manual === true) return refused({ class: 'state', message: `${seatName}: the owner has the pane open` });
     if (waiting?.state === 'trust-sent-recovery') {
-      return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace, recorded?.launched);
+      return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace, root, standing, recorded?.launched);
     }
     if (waiting?.state !== 'waiting-owner' || waiting.classification !== 'trust') {
       return refused({ class: 'state', message: `${seatName}: it is not waiting at a trust dialog` });
@@ -182,7 +181,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
       logLine(dir, 'answer', who, `${seatName}: refused trust: action`, host.now());
       return recovery(io, json, seatName, 'its key could not be sent', `${seatName}: the key could not be sent; recovery required`);
     }
-    return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace, recorded?.launched);
+    return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace, root, standing, recorded?.launched);
   } finally {
     lock.release();
   }
@@ -367,6 +366,8 @@ async function finish(
   configured: Seat | undefined,
   pane: string,
   workspace: string | undefined,
+  root: string,
+  standing: Standing,
   launched?: LaunchedIdentity,
 ): Promise<number> {
   const seatState = readState(dir).sessions[session]?.seats[name];
@@ -374,7 +375,7 @@ async function finish(
   const seat = configured ?? team.seats.find((item) => item.name === like);
   const profile = seat ? profileFor(seat.cli) : null;
   const launchIdentity = launched ?? seatState?.launched;
-  const ready = profile ? await recover(host, session, pane, name, profile, seat as Seat, team, launchIdentity) : 'idle';
+  const ready = profile ? await recover(host, session, pane, name, profile, seat as Seat, team, root, standing, launchIdentity) : 'idle';
   if (typeof ready === 'object' && 'class' in ready) {
     return refuse(io, json, dir, who, name, host, ready);
   }
@@ -409,31 +410,27 @@ async function recover(
   profile: Profile,
   seat: Seat,
   team: TeamFile,
+  root: string,
+  standing: Standing,
   launched?: LaunchedIdentity,
 ): Promise<true | Refusal | 'idle' | 'rule delivery'> {
   if (!(await waitIdle(host, session, pane, profile))) return 'idle';
   const named = host.agents(session)?.some((agent) => agent.name === name && agent.pane === pane) === true;
   if (!named && !host.rename(session, pane, name)) return 'rule delivery';
   if (profile.rulesOption !== null) return true;
-  const text = rulesText(
-    {
-      coordinator: team.coordinator,
-      rules: team.rules,
-      signature: {
-        commit: renderSignature(team.identity.signature.commits.template, seat),
-        pullRequest: renderSignature(team.identity.signature.pullRequests.template, seat),
-        commitPosition: team.identity.signature.commits.position,
-      },
-      workspace: { mode: seat.mode, protected: team.workspace.protected, branch: team.workspace.branch },
-    },
-    'message',
-  );
+  // The rules are delivered exactly as `up` delivers them: written to the seat's per-seat
+  // file first — from the approved copy of the team file, as `up`'s are — then the one line
+  // that points at it, the only shape of rules a read-back can prove; this command shares
+  // that delivery.
+  const delivery = rulesDeliveryOf(standing, team, seat, root, host.home);
+  if ('refusal' in delivery) return 'rule delivery';
+  if (!writeRulesFile(standing, seat.name, root, host.home, delivery.text, rulesFileHash(delivery.text)).ok) return 'rule delivery';
   let processRefusal: Refusal | null = null;
   const delivered = await deliverRules(
     profile.cli,
-    text,
+    delivery.line,
     profile.idleTimeout,
-    deliveryOf(host, session, pane, (action) => {
+    deliveryOf(host, session, pane, () => rulesFileHolds(delivery.path, rulesFileHash(delivery.text)), (action) => {
       const problem = checkProcess(name, host, session, pane, launched);
       if (!problem) return true;
       processRefusal = action === 'enter'
@@ -461,6 +458,7 @@ function deliveryOf(
   host: AnswerHost,
   session: string,
   pane: string,
+  file: () => boolean,
   beforeInput?: (action: 'type' | 'enter') => boolean,
 ): Delivery {
   return {
@@ -468,6 +466,8 @@ function deliveryOf(
     status: () => host.status(session, pane),
     type: (text) => host.type(session, pane, text),
     enter: () => host.enter(session, pane),
+    // The last look before Enter, the same no-follow read `up`'s delivery makes.
+    file,
     foreground: () => host.foreground(session, pane),
     now: () => host.now().getTime(),
     sleep: (ms) => host.sleep(ms),

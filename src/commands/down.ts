@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, mayChangeTeam, type Caller } from '../caller.ts';
 import { currentTeam } from '../file/current.ts';
@@ -20,6 +21,8 @@ import { executePlan } from '../launch/execute.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
 import { downPlan, formatPlan, type DownSeat } from '../launch/plan.ts';
 import { boxHoldsText } from '../launch/deliver.ts';
+import { removeRulesFile } from '../launch/rules-file.ts';
+import { approvalStanding } from '../store/store.ts';
 import { profileFor } from '../profiles/index.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
@@ -40,6 +43,8 @@ export type DownSources = {
   foreground(session: string, pane: string): string[] | null;
   now(): Date;
   sleep?(ms: number): Promise<void>;
+  /** Approval store home. The real command uses the owner's home. */
+  home?: string;
   // Present on the shipped command. A dry run never calls it.
   launch?: DownLaunch;
 };
@@ -102,6 +107,7 @@ export const realSources: DownSources = {
   foreground: (session, pane) => paneForeground(pane, aim(session)),
   now: () => new Date(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  home: homedir(),
   launch: realLaunch,
 };
 
@@ -153,7 +159,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     return 2;
   }
   if (current.notice) io.stdout(`${current.notice}\n`);
-  const { team, dir } = current;
+  const { team, dir, root } = current;
   const session = args.values.session ?? team.session;
 
   const running = sources.sessionRunning(session);
@@ -325,6 +331,12 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
         const seatsOf = (file.sessions[session] ??= emptySession()).seats;
         delete seatsOf[name];
       });
+      // A temporary seat's rules file goes with the seat, as `remove` takes one; a declared
+      // seat's stays, ready for the next `up`. No home set is a test with no store at all. The
+      // remover builds the path itself, from the approval in force and the seat's name.
+      if (state?.seats[name]?.temporary && sources.home) {
+        removeRulesFile(approvalStanding(root, sources.home), name, root, sources.home);
+      }
     },
     say: (line) => io.stdout(line),
     log: (who, what) => logLine(dir, 'down', describeCaller(caller), `${who}: ${what}`, now()),

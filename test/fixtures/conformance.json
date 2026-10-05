@@ -85,6 +85,13 @@
       "provenance": "capture"
     },
     {
+      "file": "antigravity/1.2.16/rules-line.txt",
+      "cli": "antigravity",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "antigravity/1.2.16/trust-54.txt",
       "cli": "antigravity",
       "classify": "trust",
@@ -533,6 +540,97 @@
       "provenance": "capture"
     },
     {
+      "file": "codex/0.160.0/idle.txt",
+      "cli": "codex",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-12.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-16.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-17.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-19.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-20.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-5.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-line.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-medium.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-part-16-after-reply.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-scrolled-narrow.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-scrolled.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-short.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
       "file": "cursor/2026.10.01/bordered-after-exit.txt",
       "cli": "cursor",
       "classify": "unknown",
@@ -701,6 +799,76 @@
       "provenance": "capture"
     },
     {
+      "file": "cursor/2026.10.01/rules-fit-6.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-fit-7.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-line.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-part-6-after-reply.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-pasted-medium.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-pasted-narrow.txt",
+      "cli": "cursor",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-pasted-short.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-pasted.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-threshold-800.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-threshold-801.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "cursor/2026.10.01/startup.txt",
       "cli": "cursor",
       "classify": "idle",
@@ -783,136 +951,6 @@
       "classify": "working",
       "composer": "idle",
       "provenance": "capture"
-    }
-  ],
-  "yaml": [
-    {
-      "file": "yaml/a-complex-key.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-deeper-line-with-no-parent.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-directive.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-document-marker.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-duplicate-key-in-a-flow-map.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-duplicate-key-in-a-nested-map.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-duplicate-key.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-duplicate-quoted-key.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-flow-list-left-open.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-flow-map-across-lines.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-folded-block.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-line-that-is-no-key.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-list-inside-a-list-item.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-list-item-among-keys.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-list-on-its-key-s-line.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-literal-block.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-merge-key.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-second-document.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-second-key-on-a-key-s-line.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-tab-in-the-indentation.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-tag.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-value-that-ends-with-a-colon.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/a-value-that-starts-with.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-alias.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-anchor.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-empty-file.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-indented-first-line.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-unclosed-double-quote.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-unclosed-single-quote.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/an-unknown-escape.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/text-after-a-flow-list.yaml",
-      "ok": false
-    },
-    {
-      "file": "yaml/text-after-a-quoted-string.yaml",
-      "ok": false
     }
   ]
 }

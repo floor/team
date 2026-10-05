@@ -28,7 +28,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 2,
+        "real": 3,
         "constructed": 0,
         "undocumented": 0
       },
@@ -92,7 +92,7 @@
     },
     "codex": {
       "idle": {
-        "real": 2,
+        "real": 3,
         "constructed": 1,
         "undocumented": 0
       },
@@ -102,7 +102,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 8,
+        "real": 13,
         "constructed": 0,
         "undocumented": 0
       },
@@ -122,7 +122,7 @@
         "undocumented": 0
       },
       "unknown": {
-        "real": 2,
+        "real": 9,
         "constructed": 1,
         "undocumented": 0
       }
@@ -139,7 +139,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 13,
+        "real": 22,
         "constructed": 0,
         "undocumented": 0
       },
@@ -159,7 +159,7 @@
         "undocumented": 0
       },
       "unknown": {
-        "real": 2,
+        "real": 3,
         "constructed": 0,
         "undocumented": 0
       }
@@ -242,6 +242,12 @@
       "file": "antigravity/1.2.16/rules-accepted.txt",
       "cli": "antigravity",
       "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/rules-line.txt",
+      "cli": "antigravity",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
@@ -629,6 +635,84 @@
       "provenance": "capture"
     },
     {
+      "file": "codex/0.160.0/idle.txt",
+      "cli": "codex",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-12.txt",
+      "cli": "codex",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-16.txt",
+      "cli": "codex",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-17.txt",
+      "cli": "codex",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-19.txt",
+      "cli": "codex",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-20.txt",
+      "cli": "codex",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-5.txt",
+      "cli": "codex",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-line.txt",
+      "cli": "codex",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-medium.txt",
+      "cli": "codex",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-part-16-after-reply.txt",
+      "cli": "codex",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-scrolled-narrow.txt",
+      "cli": "codex",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-scrolled.txt",
+      "cli": "codex",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-short.txt",
+      "cli": "codex",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
       "file": "cursor/2026.10.01/bordered-after-exit.txt",
       "cli": "cursor",
       "kind": "unknown",
@@ -770,6 +854,66 @@
       "file": "cursor/2026.10.01/rules-accepted.txt",
       "cli": "cursor",
       "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-fit-6.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-fit-7.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-line.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-part-6-after-reply.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-pasted-medium.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-pasted-narrow.txt",
+      "cli": "cursor",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-pasted-short.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-pasted.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-threshold-800.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-threshold-801.txt",
+      "cli": "cursor",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
