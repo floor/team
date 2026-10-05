@@ -205,7 +205,10 @@ describe('team up, live', () => {
       expect(code).toBe(1);
       expect(seat?.stage).toBe('named');
       expect(seat?.rules).toBeUndefined();
-      expect(io.out).toContain('its rules were not delivered; left at named');
+      // The message was typed and Enter was pressed, and the box still holds it: the report says
+      // the rules sit unsent and names what to do, instead of a generic failure.
+      expect(io.out).toContain('codex-acme: rules typed, not sent: its box still holds them after Enter (the screen read unsent); '
+        + 'press Enter in its pane to send them, or clear the box (Ctrl-C), then run up again');
     } else {
       expect(code).toBe(1);
       expect(sent).toEqual([]);
@@ -266,7 +269,9 @@ describe('team up, live', () => {
       expect(code).toBe(1);
       expect(seat?.stage).toBe('named');
       expect(seat?.rules).toBeUndefined();
-      expect(io.out).toContain('its rules were not delivered; left at named');
+      // Same reading as the Codex case: the box still shows the message, unsent.
+      expect(io.out).toContain('gemini-acme: rules typed, not sent: its box still holds them after Enter (the screen read unsent); '
+        + 'press Enter in its pane to send them, or clear the box (Ctrl-C), then run up again');
     } else {
       expect(code).toBe(1);
       expect(sent).toEqual([]);
