@@ -9,7 +9,9 @@
 // are not written anywhere and stay hidden. Positionals are the <name> tokens
 // of the usage lines; one that a line omits or wraps in brackets is optional.
 // A bare word after the command is a subcommand, and the command must compare
-// its first positional to that word. Nothing is repeatable: each parser stores
+// its first positional to that word. One required word after a positional is a
+// literal, and the command must compare the positional after that one
+// (`args.rest[1]`) to it. Nothing is repeatable: each parser stores
 // one value per name.
 //
 //   bun scripts/contract.ts
@@ -31,6 +33,8 @@ type Node = {
   flags: Flag[];
   positionals: Positional[];
   subcommands: Node[];
+  /** A required word after a positional. Omitted when the command has none, so other commands' keys stay as they are. */
+  literals?: string[];
 };
 type Contract = { program: Node; commands: Node[] };
 
@@ -44,6 +48,7 @@ type ParsedLine = {
   subcommand: string | null;
   flags: { name: string; takesValue: boolean }[];
   positionals: { name: string; optional: boolean }[];
+  literals: string[];
 };
 
 function cmp(a: string, b: string): number {
@@ -139,13 +144,17 @@ function optionLists(source: ts.SourceFile, rel: string): { valued: string[]; fl
   return read;
 }
 
-function isRestZero(expr: ts.Expression): boolean {
+function isRest(expr: ts.Expression, index: string): boolean {
   const node = unwrap(expr);
   if (!ts.isElementAccessExpression(node) || !node.argumentExpression) return false;
   const prop = node.expression;
   if (!ts.isPropertyAccessExpression(prop) || !ts.isIdentifier(prop.expression)) return false;
   if (prop.expression.text !== 'args' || prop.name.text !== 'rest') return false;
-  return ts.isNumericLiteral(node.argumentExpression) && node.argumentExpression.text === '0';
+  return ts.isNumericLiteral(node.argumentExpression) && node.argumentExpression.text === index;
+}
+
+function isRestZero(expr: ts.Expression): boolean {
+  return isRest(expr, '0');
 }
 
 /** Words the command compares to the variable holding its first positional. */
@@ -153,6 +162,35 @@ function sourceSubcommands(source: ts.SourceFile): Set<string> {
   const holders = new Set<string>();
   const collect = (node: ts.Node): void => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isRestZero(node.initializer)) {
+      holders.add(node.name.text);
+    }
+    ts.forEachChild(node, collect);
+  };
+  collect(source);
+  const names = new Set<string>();
+  const compare = (node: ts.Node): void => {
+    if (
+      ts.isBinaryExpression(node) &&
+      (node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+        node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken)
+    ) {
+      const left = unwrap(node.left);
+      const right = unwrap(node.right);
+      const literal = ts.isStringLiteral(left) ? left : ts.isStringLiteral(right) ? right : null;
+      const ident = ts.isIdentifier(left) ? left : ts.isIdentifier(right) ? right : null;
+      if (literal && ident && holders.has(ident.text) && literal.text !== '') names.add(literal.text);
+    }
+    ts.forEachChild(node, compare);
+  };
+  compare(source);
+  return names;
+}
+
+/** Words the command compares to the variable holding `args.rest[1]`. */
+function sourceRestLiterals(source: ts.SourceFile): Set<string> {
+  const holders = new Set<string>();
+  const collect = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isRest(node.initializer, '1')) {
       holders.add(node.name.text);
     }
     ts.forEachChild(node, collect);
@@ -258,12 +296,19 @@ function parseCommandLine(line: string, command: string, rel: string): ParsedLin
   }
   const flags: ParsedLine['flags'] = [];
   const positionals: ParsedLine['positionals'] = [];
+  const literals: string[] = [];
   for (const part of parts.slice(start)) {
-    if (part.kind === 'word') throw new Error(`${rel}: unexpected "${part.text}" in ${line}`);
+    if (part.kind === 'word') {
+      if (positionals.length === 0) throw new Error(`${rel}: unexpected "${part.text}" in ${line}`);
+      if (part.optional) throw new Error(`${rel}: bracketed word "${part.text}" in ${line}`);
+      if (literals.length > 0) throw new Error(`${rel}: unexpected "${part.text}" in ${line}`);
+      literals.push(part.text);
+      continue;
+    }
     if (part.kind === 'flag') flags.push({ name: part.name, takesValue: part.takesValue });
     else positionals.push({ name: part.name, optional: part.optional });
   }
-  return { line, subcommand, flags, positionals };
+  return { line, subcommand, flags, positionals, literals };
 }
 
 function parseProgramLine(line: string, rel: string): { flags: ParsedLine['flags']; positionals: ParsedLine['positionals'] } {
@@ -392,6 +437,11 @@ function commandNode(
   for (const sub of fromUsage) {
     if (!fromSource.has(sub)) throw new Error(`${rel}: usage names subcommand "${sub}" but the command never compares its first positional to it`);
   }
+  const literals = [...new Set(lines.flatMap((line) => line.literals))].sort(cmp);
+  const fromLiterals = sourceRestLiterals(source);
+  for (const word of literals) {
+    if (!fromLiterals.has(word)) throw new Error(`${rel}: usage names literal "${word}" but the command never compares args.rest[1] to it`);
+  }
 
   const seen = new Map<string, boolean>();
   for (const line of lines) {
@@ -422,7 +472,7 @@ function commandNode(
     };
   });
 
-  return {
+  const node: Node = {
     name,
     hidden,
     usage: lines.map((line) => line.line),
@@ -430,6 +480,8 @@ function commandNode(
     positionals: mergePositionals(ownLines),
     subcommands,
   };
+  if (literals.length > 0) node.literals = literals;
+  return node;
 }
 
 function nameEquals(expr: ts.Expression): string[] {
@@ -609,6 +661,7 @@ function renderNode(node: Node, level: number): string[] {
   lines.push(`${'#'.repeat(level)} \`${node.name}\``, '', `Hidden: ${yn(node.hidden)}`, '');
   if (node.usage.length === 0) lines.push('Usage: none', '');
   else lines.push('Usage:', '', ...node.usage.map((line) => `    ${line}`), '');
+  if (node.literals && node.literals.length > 0) lines.push(`Literal: ${node.literals.map((word) => `\`${word}\``).join(', ')}`, '');
   lines.push(`${'#'.repeat(level + 1)} Flags`, '');
   if (node.flags.length === 0) lines.push('None.', '');
   else {

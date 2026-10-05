@@ -268,8 +268,13 @@ export function typeText(pane: string, text: string, session?: string): boolean 
 }
 
 export function pressEnter(pane: string, session?: string): boolean {
+  return sendKey(pane, 'enter', session);
+}
+
+/** One key, by the name `herdr pane send-keys` takes. The same call `pressEnter` uses. */
+export function sendKey(pane: string, key: string, session?: string): boolean {
   try {
-    execFileSync('herdr', [...(session ? ['--session', session] : []), 'pane', 'send-keys', pane, 'enter'], { stdio: 'ignore', timeout: 10_000 });
+    execFileSync('herdr', [...(session ? ['--session', session] : []), 'pane', 'send-keys', pane, key], { stdio: 'ignore', timeout: 10_000 });
     return true;
   } catch {
     return false;

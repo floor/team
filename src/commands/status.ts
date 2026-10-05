@@ -146,7 +146,7 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
       format: 1,
       project: team.project,
       session,
-      rows: comparison.rows,
+      rows: comparison.rows.map((row) => ({ name: row.name, state: row.stored ?? row.state, model: row.model, pane: row.pane })),
       notes: comparison.notes,
       differences: comparison.differences,
       notice: current.notice ?? null,

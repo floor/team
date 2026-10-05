@@ -8,16 +8,19 @@ import { readArgs } from '../args.ts';
 import { callerOf, isOwner, type Caller } from '../caller.ts';
 import { checkCommands, type ApprovedCheck } from '../budgets/checks.ts';
 import { parseOutput, runCommand, type CheckReading } from '../budgets/run.ts';
+import { canonicalLanding, lobbyPath } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
-import { HERDR_TESTED, herdrVersion, sessionRunning } from '../herdr.ts';
+import { HERDR_TESTED, herdrVersion, paneRead, sessionRunning } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { profileFor } from '../profiles/index.ts';
 import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
-import { readState } from '../state.ts';
+import { extractFolder, isEligible } from '../profiles/trust-answer.ts';
+import { readState, type SeatState } from '../state.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
 import { approvalStanding, LEGACY_LINE, type Standing } from '../store/store.ts';
+import { readScreen } from '../watch/screen.ts';
 
 // What `doctor` reads from the machine, so tests can stand in for it.
 export type DoctorSources = {
@@ -37,6 +40,8 @@ export type DoctorSources = {
   // The approval store's one read, overridable so a test can count it or swap the record
   // after the gate. Absent: the real read.
   standing?(root: string): Standing;
+  /** A pane's visible text. Absent in a test that does not read panes; the real command reads them. */
+  paneText?(session: string, pane: string): string | undefined;
 };
 
 export type CommandRunner = (binary: string, args: string[]) => { status: number | null; stdout: string } | null;
@@ -79,6 +84,7 @@ export const realSources: DoctorSources = {
   now: () => new Date(),
   home: homedir(),
   runCheck: (path) => runCommand(path),
+  paneText: (session, pane) => paneRead(pane, 40, session) ?? undefined,
 };
 
 export const USAGE = 'Usage: team doctor [--session <name>] [--file <path>] [--login]\n';
@@ -312,6 +318,61 @@ function quoted(values: string[]): string {
   return values.map((value) => `"${value}"`).join(' and ');
 }
 
+/** A waiting trust dialog, and a trust key already sent. A warn blocks `answer`, not the owner's `up`. */
+function trustFindings(team: TeamFile, dir: string, session: string, sources: DoctorSources): Finding[] {
+  if (!sources.paneText) return [];
+  const seats = readState(dir).sessions[session]?.seats ?? {};
+  const findings: Finding[] = [];
+  for (const [name, recorded] of Object.entries(seats)) {
+    const waiting = recorded.waiting;
+    if (!waiting) continue;
+    if (waiting.state === 'trust-sent-recovery') {
+      findings.push({ level: 'warn', text: `${name}: trust sent; recovery required; the owner runs team up` });
+      continue;
+    }
+    if (waiting.state !== 'waiting-owner' || waiting.classification !== 'trust') continue;
+    const pane = recorded.pane;
+    if (!pane) {
+      findings.push({ level: 'warn', text: `${name}: waiting at trust; its pane can't be read` });
+      continue;
+    }
+    const screen = sources.paneText(session, pane);
+    if (screen === undefined) {
+      findings.push({ level: 'warn', text: `${name}: waiting at trust; its pane can't be read` });
+      continue;
+    }
+    const cli = cliOf(team, name, recorded);
+    const profile = cli ? profileFor(cli) : null;
+    const kind = profile ? readScreen(profile.cli, screen).kind : 'unknown';
+    if (kind !== 'trust') {
+      findings.push({ level: 'warn', text: `${name}: waiting at trust; the pane is not the trust dialog` });
+      continue;
+    }
+    findings.push({ level: 'note', text: `${name}: waiting for owner at trust` });
+    const printed = profile ? sources.version(profile.binary) : null;
+    const inRange = printed && profile
+      ? profile.answers.find((item) => versionVerdict(printed, { from: item.from, to: item.to }) === 'tested')
+      : undefined;
+    const eligible = inRange && profile ? isEligible(profile.cli, inRange) : false;
+    if (!eligible) findings.push({ level: 'warn', text: `${name}: waiting at trust; this version has no trust answer` });
+    if (inRange) {
+      const shown = extractFolder(inRange.extract, screen);
+      const landed = shown ? canonicalLanding(shown) : null;
+      const lobby = canonicalLanding(lobbyPath(sources.home));
+      if (!landed || !lobby || landed !== lobby) {
+        findings.push({ level: 'warn', text: `${name}: waiting at trust; the folder is not the lobby` });
+      }
+    }
+  }
+  return findings;
+}
+
+function cliOf(team: TeamFile, name: string, recorded: SeatState): string | null {
+  return team.seats.find((seat) => seat.name === name)?.cli
+    ?? team.seats.find((seat) => seat.name === recorded.temporary?.like)?.cli
+    ?? null;
+}
+
 export function doctorFindings(
   team: TeamFile,
   root: string,
@@ -360,6 +421,7 @@ export function doctorFindings(
   }
 
   findings.push(...watchFindings(watchInForceOf(standing, team), dir, session, running, sources.now()));
+  findings.push(...trustFindings(team, dir, session, sources));
   if (team.trust.length) {
     findings.push({ level: 'note', text: 'trust: not applied or checked by this version; trust each folder by hand' });
   }

@@ -1,7 +1,7 @@
 import type { Seat, TeamFile } from '../file/types.ts';
 import type { HerdrAgent, HerdrWorkspace } from '../herdr.ts';
 import { herdrCommand } from '../herdr.ts';
-import type { SessionState } from '../state.ts';
+import type { SeatState, SessionState } from '../state.ts';
 import { seatModel } from './statusline.ts';
 
 // What herdr shows of a session. `screens` holds a pane's visible text, where it could be read.
@@ -12,11 +12,33 @@ export type Live = {
   screens: Record<string, string>;
 };
 
-export type Row = { name: string; state: string; model: string; pane: string };
+export type Row = { name: string; state: string; model: string; pane: string; stored?: string };
 export type Difference = { what: string; repair: string };
 export type Comparison = { rows: Row[]; differences: Difference[]; notes: string[] };
 
 export const WATCH_LABEL = 'watchdog';
+
+/** The one row a seat shows while it waits, ahead of the ordinary launch-stopped and unnamed rows. */
+function waitingView(
+  name: string,
+  recorded: SeatState | undefined,
+  team: TeamFile,
+): { state: string; stored: string; difference: Difference } | null {
+  const waiting = recorded?.waiting;
+  if (!waiting) return null;
+  if (waiting.state === 'trust-sent-recovery') {
+    return {
+      state: 'trust sent; recovery required',
+      stored: 'trust-sent-recovery',
+      difference: { what: `${name}: trust sent; recovery required`, repair: 'the owner runs team up' },
+    };
+  }
+  const phrase = `waiting for owner (${waiting.classification})`;
+  const repair = team.dialogs.trust === 'coordinator' && waiting.classification === 'trust'
+    ? `team answer ${name} trust`
+    : 'the owner runs team up';
+  return { state: phrase, stored: 'waiting-owner', difference: { what: `${name}: ${phrase}`, repair } };
+}
 
 // Compares the file and the state with the live session. Pure: every input is handed in.
 // `watch` is the watch values in force — the approved ones — so an unapproved edit can't move a verdict.
@@ -41,6 +63,18 @@ export function compare(
     if (agent) {
       claimed.add(agent.pane);
       const model = modelOf(seat, agent, live, differences, notes);
+      const held = waitingView(seat.name, recorded, team);
+      if (held) {
+        rows.push({ name: seat.name, state: held.state, stored: held.stored, model, pane: agent.pane });
+        differences.push(held.difference);
+        if (seat.stopped) {
+          differences.push({
+            what: `${seat.name} is marked stopped in the file and is running`,
+            repair: `team remove ${seat.name} --keep, or take "stopped: true" off the seat`,
+          });
+        }
+        continue;
+      }
       rows.push({ name: seat.name, state: seat.parked ? `${agent.status}, parked` : agent.status, model, pane: agent.pane });
       if (seat.stopped) {
         differences.push({
@@ -58,6 +92,12 @@ export function compare(
     }
     if (seat.stopped) {
       rows.push({ name: seat.name, state: 'stopped', model: seat.display, pane: '-' });
+      continue;
+    }
+    const held = recorded?.pane ? waitingView(seat.name, recorded, team) : null;
+    if (held && recorded?.pane) {
+      rows.push({ name: seat.name, state: held.state, stored: held.stored, model: seat.display, pane: recorded.pane });
+      differences.push(held.difference);
       continue;
     }
     // An agent sits in the workspace recorded for this name, under another name or under none.
@@ -87,6 +127,13 @@ export function compare(
     const agent = live.agents.find((candidate) => candidate.name === name);
     if (agent) {
       claimed.add(agent.pane);
+      const held = waitingView(name, recorded, team);
+      if (held) {
+        rows.push({ name, state: held.state, stored: held.stored, model: `like ${recorded.temporary.like}`, pane: agent.pane });
+        differences.push(held.difference);
+        notes.push(`${name} is temporary, until ${recorded.temporary.until}`);
+        continue;
+      }
       rows.push({ name, state: `${agent.status}, temporary`, model: `like ${recorded.temporary.like}`, pane: agent.pane });
       notes.push(`${name} is temporary, until ${recorded.temporary.until}`);
     } else {
