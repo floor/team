@@ -771,8 +771,8 @@ describe('team up, live', () => {
 
   test('the wrapper that draws its CLI on the fourth poll is not reported as ended', async () => {
     await approve();
-    // The reviewer's slow-start probe: a wrapper keeps the shell in front for three polls and
-    // the CLI draws on the fourth. The shell-back reading must hold through the fourth reading —
+    // A slow start: a wrapper keeps the shell in front for three polls and the CLI draws on the
+    // fourth. The shell-back reading must hold through the fourth reading —
     // three full poll intervals — before an end is said; two readings ended it at the second.
     const made = world();
     const commands = new Map<string, string>();
@@ -885,7 +885,12 @@ describe('team up, live', () => {
     );
     expect(code).toBe(0);
     expect(io.out).toContain('claude-coordinator-acme: ready\n');
-    expect(io.err).toContain('  already ready; left as it is\n');
+    // The state records no process for it, so the detail carries the note main added: how to
+    // relaunch it. It is the coordinator, so the repair is the whole team's.
+    expect(io.err).toContain(
+      '  already ready; left as it is; a relaunch records its process: ' +
+        'team down, then team up (to restart the whole team)\n',
+    );
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(made.creates).not.toContain('deepseek flash v4.1');
     expect(made.renames).toContain('deepseek-acme');
@@ -1212,6 +1217,39 @@ describe('team up, live', () => {
     const log = readFileSync(join(root, '.agents/team.log'), 'utf8');
     expect(log).not.toContain('\x1b');
     expect(log).not.toContain('./aab');
+  });
+
+  test('a file error carries the file\'s own string cleaned: no escape byte reaches the terminal', async () => {
+    // The coordinator names no declared seat, refused while the file is loaded. The name the file
+    // holds carries ESC — a YAML escape inside the double-quoted scalar — and the sentence the
+    // terminal shows is the name cleaned: the writers clean by construction, not by what the
+    // message's own caller remembered to do.
+    writeFileSync(
+      join(root, '.agents/team.yaml'),
+      makeExample(base, root, EXAMPLE.replace('coordinator: claude-coordinator-acme', 'coordinator: "x\\u001b[31my"')),
+    );
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({ doctor: doctor() }, world()));
+    expect(code).toBe(2);
+    expect(io.err).toBe('team up: line 5: coordinator "xy" names no declared seat\n');
+    expect(io.err).not.toContain('\x1b');
+    expect(io.out).toBe('');
+  });
+
+  test('a dry run plan carries the file\'s own launch word cleaned: no escape byte in the plan', async () => {
+    // The launch line's last word holds ESC (again a YAML escape) and is only an argument, so the
+    // seat launches and the plan prints its `pane run` command: the plan holds the word cleaned.
+    writeFileSync(
+      join(root, '.agents/team.yaml'),
+      makeExample(base, root, EXAMPLE.replace('launch: claude --model claude-opus-5-5', 'launch: "claude --model claude-opus-5-5 ./aa\\ebb"')),
+    );
+    await approve();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(['--dry-run', ...FILE], io, sources({ doctor: doctor() }, world()));
+    expect(code).toBe(0);
+    expect(io.out).toContain('./aab');
+    expect(io.out).not.toContain('\x1b');
+    expect(io.out).toContain('dry run: nothing was run\n');
   });
 
   test('a resumed seat whose state records no start folder is not checked at all', async () => {

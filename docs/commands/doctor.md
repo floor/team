@@ -81,7 +81,10 @@ account reads unknown, and `up` and `add` still
 run), the budget checks, then each seat of the approved file whose rules travel as a first
 message: its file in the project state folder — missing, a symbolic link, not a regular file,
 wider than `0600`, not the owner's, unreadable, or holding something other than the approved
-rules text — is one `warn` (`codex-scribe: its rules file differs from the approved rules; run \`team up\``),
+rules text — is one `warn` (`codex-scribe: its rules file differs from the approved rules; run
+\`team remove codex-scribe --keep\` then \`team add codex-scribe\` (or \`team down\` then \`team up\` for
+the whole team)` — for a coordinator or operator, `team down` then `team up` (to restart the whole team) —
+`up` skips a ready seat, so only the relaunch writes the file),
 never a rewrite. herdr, one CLI at a time (its
 version, its login, then each of its seats' launchers and models), one line per seat whose launch
 line can't run where the seat starts (the `MISS` names the start folder, the program that is missing
@@ -89,7 +92,11 @@ or not executable, and when the same file resolves from the project root, its pa
 instead; a line only said to be unchecked, or a relative path that exists nowhere yet, is a `--  `
 note — `not checked: the command may create it`), one note per seat the state records from a launch
 that predates the process identity — `--    <seat>: launched before team recorded its process; run
-team up after the next restart`, so the owner can have the seat compared again — the watch, and the
+\`team remove <seat> --keep\` then \`team add <seat>\` (or \`team down\` then \`team up\` for the whole
+team) to launch it again` (for a coordinator or operator, `team down` then `team up` (to restart the whole
+team)), the relaunch being what records the identity — one note per live seat
+whose file still carries the placeholder `version: "0"` `init` writes, saying what it runs and the
+one edit that pins it (or a warning when the model family differs, so the one edit covers both) — the watch, and the
 `trust` note. A seat the file
 stops is left out of the CLI findings and the launch lines. A CLI outside its tested range keeps its
 `warn` and says what that means: its screens are untested with this version, and a seat that isn't
@@ -99,6 +106,17 @@ how many of the missing ones block those commands, when any do:
 
     team doctor: nothing missing, 1 warning
     team doctor: 2 missing, 0 warnings: 2 of them block `up` and `add`
+
+The `trust` note is the one finding that carries a whole block. A file whose `trust` still holds the
+relative entries an earlier release wrote — or none at all — is told every absolute entry the next
+`up` will require, as a block to paste under `trust:`: the lobby, the project root, the folder
+`workspace.path` places worktrees in, each seat's start folder when it sits outside the project, and
+every entry the owner added by hand, kept in absolute form. One line after the entries says which
+key of the file each one comes from and which old entry it replaces, and nothing the block lists
+widens what the old file trusted. An entry a rule of `trust` refuses — a folder that would cover the
+home, or the lobby and the approval store — is never suggested: one line names the key that forces
+it and leaves the choice of folder to the owner. The note is told only while the file really is
+legacy; once the absolute entries are written, the approval finding carries the next step.
 
 A seat's model is judged by what can check it, and a launch that names none is judged by two
 questions. First, does the launch run the CLI's own binary, bare: the first word that is not a
@@ -124,6 +142,16 @@ chosen by its launcher (declared in the file); this version can't read <declared
 screen, so nothing checks it`. A real multi-vendor file may still warn; every one of these lines
 names what the owner can do. The model the file declares is spelled by the seat's `display` in
 every line that names it.
+
+The placeholder `version: "0"` a fresh `init` writes before the owner fills the release number no
+longer stops a seat's first launch — the launch compares the model family only — so a seat that
+runs despite it is said as information: `--    <seat>: runs Claude Opus 5.5; the file's version "0"
+is the placeholder init writes — write "5.5" into the file, then run \`team approve\``. The note is
+said only for a live seat whose screen names a model of the family the file declares; a seat on
+another family keeps the launch's own line. No other spelling is the placeholder: `version: "0.0"`
+stops the launch as any mismatch would. Nothing is lost by it — a "0" never pinned a release — and
+the file's approval still covers the version as written, so pinning the number is one edit and one
+`team approve`.
 
 A seat the state records waiting at **trust** gets one line of its own. A fresh read of its pane
 must show the recorded trust dialog — the same reading `team answer` checks, and the reason the
@@ -342,10 +370,6 @@ ok    claude-code: logged in
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
---    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
-trust:
-  - ~/.config/team/lobby
-  - ~/Code/beacon
 team doctor: 2 missing, 1 warning: 2 of them block `up` and `add`
 exit 1
 ```
@@ -412,10 +436,6 @@ warn  claude-beacon: the launch starts Claude Opus 5.5, the file says Claude Son
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
---    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
-trust:
-  - ~/.config/team/lobby
-  - ~/Code/beacon
 team doctor: 2 missing, 2 warnings: 2 of them block `up` and `add`
 exit 1
 ```
@@ -495,10 +515,6 @@ ok    codex: logged in
 warn  codex-scribe: the launch runs team-codex, not codex, and names no model: if the launcher chooses the model, say so with model_from: launcher
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
---    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
-trust:
-  - ~/.config/team/lobby
-  - ~/Code/beacon
 team doctor: 1 missing, 2 warnings: 1 of them block `up` and `add`
 exit 1
 ```
@@ -578,10 +594,6 @@ ok    codex: logged in
 --    codex-scribe: the model is chosen by its launcher; checked on the running seat
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
---    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
-trust:
-  - ~/.config/team/lobby
-  - ~/Code/beacon
 team doctor: 1 missing, 1 warning: 1 of them block `up` and `add`
 exit 1
 ```

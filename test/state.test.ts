@@ -159,6 +159,39 @@ describe('the log', () => {
     expect(readFileSync(join(dir, LOG_FILE), 'utf8')).toBe('2026-10-03T14:00:00.000Z init [owner] wrote the file\n');
   });
 
+  test('the line is cleaned at the function: the gate reason\'s CR and escape bytes, and each class of the rule', () => {
+    // A caller that logs a gate reason holding a carriage return and `ESC[31m` used to write
+    // the escape sequence raw — the file's bytes held `1b 5b 33 31 6d`, the CR alone being
+    // folded to a space by the old whitespace collapse. The cleaning is here now, at the one
+    // sink every command logs through, so the same call writes the cleaned words whatever
+    // calls it.
+    logLine(dir, 'watch', 'watch', 'gate\r\x1b[31mWORD', new Date('2026-10-03T14:00:00Z'));
+    // Each class of the rule: the soft hyphen U+00AD, U+180E, the tag characters, a bidi
+    // override — all gone; U+2028/U+2029 fold to one space as a line feed does.
+    logLine(dir, 'init', 'owner', 'soft\u00adhyphen U+180E:\u180e tag \u{e0001}\u{e0020}\u{e007f} rlo \u202e bidi\u2028sep\u2029end', new Date('2026-10-03T14:00:01Z'));
+    // The variation selectors stay: they only choose how the character before them is drawn.
+    logLine(dir, 'up', 'owner', 'keeps \u{fe0f}\u{e0100} selectors', new Date('2026-10-03T14:00:02Z'));
+    const log = readFileSync(join(dir, LOG_FILE), 'utf8');
+    expect(log).toBe(
+      '2026-10-03T14:00:00.000Z watch [watch] gateWORD\n'
+        + '2026-10-03T14:00:01.000Z init [owner] softhyphen U+180E: tag rlo bidi sep end\n'
+        + '2026-10-03T14:00:02.000Z up [owner] keeps \u{fe0f}\u{e0100} selectors\n',
+    );
+    for (const byte of Buffer.from(log, 'utf8')) expect(byte === 0x0a || byte >= 0x20).toBe(true);
+  });
+
+  test('the caller is cleaned like the text, and ordinary text is written byte for byte', () => {
+    // The caller is a caller-built string too (`describeCaller` reads the environment), so it
+    // is cleaned with the text; and a line that holds none of the removed characters is the
+    // bytes it always was.
+    logLine(dir, 'up', 'own\u202eer', 'ready', new Date('2026-10-03T14:00:00Z'));
+    logLine(dir, 'add', 'owner', 'worker-tmp-1: ready', new Date('2026-10-03T14:00:01Z'));
+    expect(readFileSync(join(dir, LOG_FILE), 'utf8')).toBe(
+      '2026-10-03T14:00:00.000Z up [owner] ready\n'
+        + '2026-10-03T14:00:01.000Z add [owner] worker-tmp-1: ready\n',
+    );
+  });
+
   test('rotates at 1 MB and keeps three files', () => {
     const path = join(dir, LOG_FILE);
     for (let round = 1; round <= 4; round++) {

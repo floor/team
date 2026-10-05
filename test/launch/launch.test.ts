@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { executePlan, paneExcerpt, type Host } from '../../src/launch/execute.ts';
-import { plainPaneText, stripControlStrings } from '../../src/launch/plain.ts';
+import { plainLine, plainPaneText, plainText, stripControlStrings } from '../../src/launch/plain.ts';
 import { downPlan, formatPlan, herdr, upPlan, type DownSeat, type Step, type UpSeat } from '../../src/launch/plan.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
 import { profileFor } from '../../src/profiles/index.ts';
@@ -534,6 +534,27 @@ describe('the pane lines a report carries', () => {
     for (const character of invisible) expect(plainPaneText(character)).toBe('');
     expect(plainPaneText('مراجعة: لا صلاحية للكتابة')).toBe('مراجعة: لا صلاحية للكتابة');
     expect(plainPaneText('ביקורת: לא אושר')).toBe('ביקורת: לא אושר');
+  });
+
+  test('the rule’s newer classes: soft hyphen, U+180E, the tag block, the separators folded like LF, selectors kept', () => {
+    // The rule at `plainText` rather than a list of characters: every Cf character goes — the
+    // soft hyphen U+00AD and U+180E among them, and the assigned tag characters U+E0001–U+E007F
+    // — and the tag block goes whole, because U+E0000 and U+E001F are unassigned, not Cf. U+2028
+    // and U+2029 fold to LF exactly as a line feed does, so `plainLine` folds all three alike.
+    // The variation selectors stay: they only choose how the character before them is drawn.
+    // U+200D goes with the Cf class: a joiner-joined emoji prints as the parts the string holds.
+    const tags = '\u{e0000}\u{e0001}\u{e001f}\u{e0020}\u{e007f}';
+    expect(plainPaneText(`before\u00ad\u180e${tags}after`)).toBe('beforeafter');
+    expect(plainPaneText('a\u2028b\u2029c')).toBe('a\nb\nc');
+    expect(plainLine('a\u2028b\u2029c')).toBe('a b c');
+    expect(plainLine('a\n\u2028\u2029b')).toBe('a b');
+    expect(plainPaneText('a\u{fe0e}b\u{fe0f}c\u{e0100}d')).toBe('a\u{fe0e}b\u{fe0f}c\u{e0100}d');
+    expect(plainPaneText('👩\u200d💻')).toBe('👩💻');
+    // The cleaning is idempotent: over its own output a second pass changes nothing, so a value
+    // cleaned at the call site and again at the writer (or at the log) is cleaned once, really.
+    const mixed = 'a\u00ad\u2028\x1b[31mb\u202ec\u{e0001}\u{fe0f}d\r';
+    expect(plainLine(plainLine(mixed))).toBe(plainLine(mixed));
+    expect(plainText(plainText(mixed))).toBe(plainText(mixed));
   });
 
   test('stress test: 200-line 2 MB text with unterminated openers finishes in well under 1000 ms', () => {

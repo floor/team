@@ -264,6 +264,57 @@ describe('the writer', () => {
     expect(Buffer.from(written, 'utf8').every((byte) => byte < 0x80)).toBe(true);
   });
 
+  // The rule's newer classes, on purpose: the soft hyphen, U+180E, the whole tag block (its
+  // edges U+E0000 and U+E001F are unassigned, not Cf), and U+2028/U+2029, folded like a line
+  // feed. The variation selectors stay: they only choose how the character before them is drawn.
+  const RULE_CLASSES = '\u00ad\u180e\u{e0000}\u{e0001}\u{e001f}\u{e0020}\u{e007f}';
+
+  test('the rule’s newer classes are removed from every field, on a pipe and on a terminal', () => {
+    const pipe = sink(false);
+    const redirected = progressWriter(pipe.sink);
+    redirected.progress(`a${RULE_CLASSES}b`, `launching${RULE_CLASSES}` as ProgressState);
+    redirected.final(`a${RULE_CLASSES}b`, { kind: 'left out', reason: `reason${RULE_CLASSES}X` });
+    redirected.detail(`  d${RULE_CLASSES}etail`);
+    redirected.final(`c${RULE_CLASSES}d`, { kind: 'waiting for owner', classification: `login${RULE_CLASSES}` as Classification });
+    expect(pipe.out.join('')).toBe('ab: left out: reasonX\ncd: waiting for owner (login)\n');
+    expect(pipe.err.join('')).toBe('  detail\n');
+
+    const drawn = sink(true);
+    const terminal = progressWriter(drawn.sink);
+    terminal.progress(`a${RULE_CLASSES}b`, 'launching');
+    terminal.final(`a${RULE_CLASSES}b`, { kind: 'left out', reason: `reason${RULE_CLASSES}X` });
+    expect(drawn.out.join('')).toBe('\r\x1b[Kab: launching\r\x1b[Kab: left out: reasonX\n');
+
+    const written = (pipe.out.join('') + pipe.err.join('') + drawn.out.join('')).replaceAll('\r\x1b[K', '');
+    for (const character of RULE_CLASSES) expect(written.includes(character)).toBe(false);
+  });
+
+  test('the line separators fold like a line feed in every field, and the variation selectors stay', () => {
+    // U+2028 and U+2029 are line breaks to Unicode and to the log's own whitespace collapse:
+    // they become LF on the spot, and a field's run of line breaks becomes one space exactly as
+    // a line feed's does — the record's bytes are one line, the same on the log and the screen.
+    const { out, err, sink: s } = sink(false);
+    const records = progressWriter(s);
+    records.final('a\u2028b', { kind: 'left out', reason: 'reason\u2029forged' });
+    records.final('c', { kind: 'waiting for owner', classification: 'log\u2028in' as Classification });
+    records.detail('  one\u2029two');
+    expect(out.join('')).toBe('a b: left out: reason forged\nc: waiting for owner (log in)\n');
+    expect(err.join('')).toBe('  one two\n');
+
+    const pipe = sink(false);
+    progressWriter(pipe.sink).final('a\u{fe0e}b\u{fe0f}c\u{e0100}d', { kind: 'ready' });
+    expect(pipe.out.join('')).toBe('a\u{fe0e}b\u{fe0f}c\u{e0100}d: ready\n');
+    const drawn = sink(true);
+    progressWriter(drawn.sink).final('a\u{fe0e}b\u{fe0f}c\u{e0100}d', { kind: 'ready' });
+    expect(drawn.out.join('')).toBe('\r\x1b[Ka\u{fe0e}b\u{fe0f}c\u{e0100}d: ready\n');
+  });
+
+  test('a joiner-joined emoji prints as its parts: U+200D goes with the Cf class, accepted', () => {
+    const { out, sink: s } = sink(false);
+    progressWriter(s).final('👩\u200d💻', { kind: 'ready' });
+    expect(out.join('')).toBe('👩💻: ready\n');
+  });
+
   test('a reason in Arabic prints as written', () => {
     const { out, sink: s } = sink(false);
     const records = progressWriter(s);

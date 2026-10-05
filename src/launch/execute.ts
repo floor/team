@@ -593,7 +593,13 @@ export async function executePlan(steps: readonly Step[], session: string, host:
             const screen = host.paneText?.(session, here.pane) ?? null;
             const running = screen === null ? null : seatModel({ cli: op.cli, model: op.model }, screen);
             const declared = { model: op.model, version: op.version };
-            if (modelDiffers(running, declared)) {
+            // `init` writes version "0" — the placeholder before the owner fills the release
+            // number in — and the release before this one left whole teams carrying it. Exactly
+            // that literal is read as "no version declared": the family is still compared, and
+            // any other value ("0.0", "00", a real number) is compared as today.
+            const differs = running !== null
+              && (op.version === '0' ? running.model !== op.model : modelDiffers(running, declared));
+            if (differs) {
               dropped.add(op.seat);
               final(op.seat, { kind: 'left out', reason: modelLeft(running, declared, op.cli) });
               return;
@@ -647,7 +653,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         // `pane run node -e …`, `pane process-info` listed the pane's shell (`shell_pid` 11915)
         // beside the shell's own startup child, and 600 ms later listed the program alone; a
         // launch line whose relative path was missing listed the shell at once, and 400 ms later
-        // still. A slow wrapper looks the same for longer: the reviewer's drew its CLI on the
+        // still. A slow wrapper looks the same for longer: one drew its CLI on the
         // fourth poll, so a stretch of one or two polls is not an end. The end is said only on
         // what was read: the shell's own process is the pane's foreground program for three
         // full polls on end — one reading starts the stretch and three more carry it past
