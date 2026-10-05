@@ -209,6 +209,24 @@ describe('writing the file', () => {
     }
   });
 
+  test('a regular file pre-planted at the temporary\'s own name is refused and its bytes left alone', () => {
+    // The exclusive flag's own probe: without it the open would land in the planted file —
+    // overwriting its head, keeping its tail — and the rename would move someone else's file
+    // into the final name. With it, the name being taken is a refusal, nothing written.
+    const { home, path, text } = fresh();
+    try {
+      const planted = join(dirname(path), `${basename(path)}.planted.tmp`);
+      mkLadder(path);
+      writeFileSync(planted, 'someone else\'s bytes, longer than any text the writer would put here\n');
+      const written = writeRulesFile(path, text, rulesFileHash(text), () => 'planted');
+      expect(written).toEqual({ ok: false, why: 'not-written' });
+      expect(readFileSync(planted, 'utf8')).toBe('someone else\'s bytes, longer than any text the writer would put here\n');
+      expect(() => lstatSync(path)).toThrow();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test('a wider mode at the final name is refused, not replaced or chmod\'d — the reviewers\' second probe', () => {
     const { home, path, text } = fresh();
     try {
