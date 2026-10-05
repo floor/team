@@ -435,6 +435,7 @@ describe('team remove', () => {
     const ownerIo = testIo(dir, owner);
     expect(await runRemove(['worker', '--file', file], ownerIo, made.sources)).toBe(1);
     expect(ownerIo.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (team remove worker --abandon closes its workspace without typing)\n');
+    recordLead();
     const leadIo = testIo(dir, lead);
     expect(await runRemove(['worker'], leadIo, made.sources)).toBe(1);
     expect(leadIo.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (the owner can close it: team remove worker --abandon)\n');
@@ -444,6 +445,7 @@ describe('team remove', () => {
   test('--abandon closes an unknown screen without typing; a coordinator may not', async () => {
     const made = world({ kind: 'unknown' }, 'idle');
     made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    recordLead();
     const seat = testIo(dir, lead);
     expect(await runRemove(['worker', '--abandon'], seat, made.sources)).toBe(1);
     expect(seat.err).toContain('only the owner abandons');
