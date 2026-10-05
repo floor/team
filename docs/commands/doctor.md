@@ -39,7 +39,8 @@ is parsed and dropped, never shown. It writes nothing.
 
 Anyone, in any terminal. It needs no approval of its own — reporting on the approval is its work.
 The budget checks run only for the owner, whose approvals they are; any other caller gets the same
-report without the readings.
+report without the readings. `--file` may be aimed by any caller: `doctor` writes nothing at all,
+whoever runs it and whatever file it reads.
 
 ## Flags
 

@@ -78,7 +78,9 @@ afterEach(() => {
 });
 
 async function status(...argv: string[]) {
-  const io = testIo(dir);
+  // Every run here aims `--file` at the fixture, and that flag is the owner's: the io carries the
+  // owner, as a terminal run of the command would.
+  const io = testIo(dir, { kind: 'owner' });
   const code = await runStatus(['--file', file, ...argv], io, sources);
   return { code, out: io.out, err: io.err };
 }

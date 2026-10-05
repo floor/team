@@ -203,6 +203,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `up.not-a-repo` | `up` | 2 | not inside a git repository | `team up` |
 | `watch.stopped` | `watch` | 0 | the watch ran and stopped | `team watch` |
 | `watch.already` | `watch` | 1 | a watch already runs | `team watch` |
+| `watch.file-owner` | `watch` | 1 | --file is the owner's | `team watch --file .agents/team.yaml` |
 | `watch.no-notify` | `watch` | 1 | a seat passed --no-notify | `team watch --no-notify` |
 | `watch.no-nudge` | `watch` | 1 | a seat passed --no-nudge | `team watch --no-nudge` |
 | `watch.file` | `watch` | 2 | the team file can't be read | `team watch --file missing.yaml` |

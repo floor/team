@@ -324,7 +324,7 @@ describe('a seat the approval lists as changed', () => {
     expect(approvalDifferences(team(edited), root, home)).toEqual(['seat codex-work changed']);
 
     const scene = { 'codex-work': CODEX(39), 'codex-home': CODEX(20) };
-    const io = testIo(root);
+    const io = testIo(root, { kind: 'owner' });
     expect(await runWatch(['--file', '.agents/team.yaml'], io, watchSources(scene))).toBe(0);
     expect(io.out).toContain('seat codex-work changed');
     // codex-home still folds onto its own approved account; codex-work's figure is stored under
@@ -334,7 +334,7 @@ describe('a seat the approval lists as changed', () => {
 
     // Approved, the seat's figures fold again — into the account the file now names.
     expect(await approve()).toBe(0);
-    const after = testIo(root);
+    const after = testIo(root, { kind: 'owner' });
     expect(await runWatch(['--file', '.agents/team.yaml'], after, watchSources(scene))).toBe(0);
     expect(loadReadings(join(root, '.agents')).map(({ account, seat, left }) => ({ account, seat, left })))
       .toEqual([
@@ -360,7 +360,7 @@ describe('a seat the approval lists as changed', () => {
     expect(approvalDifferences(team(edited), root, home)).toEqual(['seat codex-work changed']);
 
     const scene = { 'codex-temp': CODEX(12) };
-    const io = testIo(root);
+    const io = testIo(root, { kind: 'owner' });
     expect(await runWatch(['--file', '.agents/team.yaml'], io, watchSources(scene))).toBe(0);
 
     // codex-temp's figure is not stored under either openai-work or openai-home
@@ -368,7 +368,7 @@ describe('a seat the approval lists as changed', () => {
 
     // Approved, the temporary seat's figure folds into the approved account
     expect(await approve()).toBe(0);
-    const after = testIo(root);
+    const after = testIo(root, { kind: 'owner' });
     expect(await runWatch(['--file', '.agents/team.yaml'], after, watchSources(scene))).toBe(0);
     expect(loadReadings(join(root, '.agents')).map(({ account, seat, left }) => ({ account, seat, left })))
       .toEqual([{ account: 'openai-home', seat: 'codex-temp', left: 12 }]);
@@ -392,7 +392,7 @@ describe('a seat the approval lists as changed', () => {
     expect(approvalDifferences(team(edited), root, home)).toEqual(['seat codex-work changed']);
 
     const scene = { 'codex-temp-home': CODEX(25) };
-    const io = testIo(root);
+    const io = testIo(root, { kind: 'owner' });
     expect(await runWatch(['--file', '.agents/team.yaml'], io, watchSources(scene))).toBe(0);
 
     // codex-temp-home's like-seat (codex-home) is not in drift, so its figure folds normally

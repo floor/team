@@ -149,7 +149,7 @@ describe('a threshold edit, and the approval', () => {
       now: () => NOW,
     };
     const status = async () => {
-      const io = testIo(root);
+      const io = testIo(root, { kind: 'owner' });
       await runStatus(['--file', '.agents/team.yaml'], io, sources);
       return io.out;
     };
