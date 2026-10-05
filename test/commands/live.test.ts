@@ -1114,7 +1114,7 @@ describe('team up, live', () => {
 // launches the seat fresh; a seat still holding its recorded process is skipped as ready.
 describe('team up, a session that was restored', () => {
   test('four seats: one same, one gone, one replaced, one whose pane is missing', async () => {
-    writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+    writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root, EXAMPLE.replace('stopped: true\n', 'parked: true\n')));
     await approve();
     // Every seat was ready before the power went. codex-acme is the one whose recorded process is
     // still in its pane; the coordinator's runs no CLI; deepseek-acme's runs another CLI; and
@@ -1231,7 +1231,7 @@ describe('team up, a session that was restored', () => {
   });
 
   test('a workspace that does not close leaves the seat out with a line', async () => {
-    writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+    writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root, EXAMPLE.replace('stopped: true\n', 'parked: true\n')));
     await approve();
     writeFileSync(
       join(root, '.agents/team.state.json'),
@@ -1320,7 +1320,7 @@ describe('team up, a session that was restored', () => {
     doctor: doctor(),
   });
   // The file the four-seat test writes: codex-acme parked back in, so only grok-acme stays stopped.
-  const restoredFile = () => writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+  const restoredFile = () => writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root, EXAMPLE.replace('stopped: true\n', 'parked: true\n')));
   const seatState = (name: string) => (readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {})[name];
 
   test('the owner restarts the CLI between the plan and the close: nothing is closed', async () => {
@@ -1578,7 +1578,7 @@ describe('team up, a session that was restored', () => {
   test('a seat left at named records the process identity too', async () => {
     // Its idle prompt was read — the identity's moment — and the rename went through, but the
     // rules never landed: the record that stands is the named one, and the identity rides in it.
-    writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+    writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root, EXAMPLE.replace('stopped: true\n', 'parked: true\n')));
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
     const made = world((_pane, label) => (label === 'gpt sol 6' ? fileModel(capture('idle')) : IDLE));
@@ -1617,7 +1617,7 @@ describe('team up, a session that was restored', () => {
     // This test confirms that for a seat with a waiting record and no launched record,
     // up's ordered host calls and output are byte-identical.
     const calls: string[] = [];
-    writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE);
+    writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root));
     await approve();
     writeFileSync(
       join(root, '.agents/team.state.json'),
