@@ -72,17 +72,30 @@ has no screens). The last line counts them:
     team doctor: nothing missing, 1 warning
     team doctor: 2 missing, 0 warnings: `up` and `add` refuse until the missing ones are done
 
-A seat's model is judged by what can check it. A launch that names a model the profile knows is
-compared with the file's, and a mismatch is the warning above. A launch that names none is left to
-the running seat whenever the CLI's screen shows the model it runs: a launcher — a script or
-program that runs the CLI and picks the model itself, told by the launch line's first words, or by
-the seat's `model_from: launcher` — gets the note `--    <seat>: the model is chosen by its
-launcher; checked on the running seat`, and the CLI's own binary started bare prints nothing, since
-`status` and the watch read the model off its screen. Two cases nothing can check stay warnings: a
-CLI that keeps no model on its screen (`<seat>: no model flag and this CLI doesn't show its model;
-nothing checks that it runs <declared>`), and a CLI this version knows to start on its last-used
-model, which keeps its `warn` for another change to reword. The model the file declares is spelled
-by the seat's `display` in every line that names it.
+A seat's model is judged by what can check it, and a launch that names none is judged by two
+questions. First, does the launch run the CLI's own binary, bare: the first word that is not a
+variable assignment is the binary's own name, with no path, wrapper or shell in front of it —
+`claude` and `VAR=1 claude` do; `/opt/x/claude`, `env claude`, `npx claude` and `zsh -c claude` run
+another program, whose choices are not the CLI's own. Second, can the CLI's screen name the model
+the file declares — asked with the same rules `status` reads the running seat's model with, so a
+model another maker spells may be unread on it. Both yes, and nothing prints: `status` and the
+watch read the model off the running seat's screen and flag a seat that runs something else.
+Either no, and one warning names what the owner can do:
+
+    warn  <seat>: the launch runs <first>, not <binary>, and names no model: if the launcher chooses the model, say so with model_from: launcher
+    warn  <seat>: no model flag, and this version can't read <declared> on this CLI's screen: nothing checks that it runs it
+    warn  <seat>: the launch names no model this version knows; the file says <declared>
+
+The first is a launch that runs another program; the second, the CLI's own binary under a screen
+that cannot name the declared model, so nothing would flag a seat that runs something else; the
+third, a CLI this version knows to start on its last-used model. A seat may say outright that its
+launcher chooses the model, with `model_from: launcher`: the owner wrote the key and approved it,
+and the finding is a note — `--    <seat>: the model is chosen by its launcher; checked on the
+running seat`, or, when the screen cannot name the declared model, `--    <seat>: the model is
+chosen by its launcher (declared in the file); this version can't read <declared> on this CLI's
+screen, so nothing checks it`. A real multi-vendor file may still warn; every one of these lines
+names what the owner can do. The model the file declares is spelled by the seat's `display` in
+every line that names it.
 
 The key's fingerprint is the first twelve hex digits of the signing key's public half. What it
 proves is narrow: an owner who noted it sees a *replaced* key — a process that only reads the
@@ -339,9 +352,10 @@ exit 1
 ```
 
 A launch that names no model is not warned for its own sake: what the seat really runs is read off
-its screen by `status` and the watch, and `doctor` says only what that reading cannot cover. A
-launcher — here a wrapper script — gets the note; the CLI's own binary started bare prints nothing
-at all, its model checked the same way:
+its screen by `status` and the watch, and `doctor` says only what that reading cannot cover. Here
+one seat launches through a wrapper script and gets the warning, with the repair in it; the other
+starts the CLI's own binary bare, under a screen that can name the model the file declares, and
+prints nothing at all:
 
 ```yaml file=.agents/team.yaml
 format: 1
@@ -405,16 +419,89 @@ ok    claude 2.1.288
 ok    claude-code: logged in
 ok    codex 0.157.0
 ok    codex: logged in
+warn  codex-scribe: the launch runs team-codex, not codex, and names no model: if the launcher chooses the model, say so with model_from: launcher
+ok    the watch is running
+team doctor: 1 missing, 2 warnings: `up` and `add` refuse until the missing ones are done
+exit 1
+```
+
+The wrapper is told by the launch line's first words: none of them is the CLI's own binary, so the
+line runs something whose choices are not the CLI's own — but when the owner says so, with
+`model_from: launcher` on the seat, the same launch is a note instead, saying what really checks
+the model:
+
+```yaml file=.agents/team.yaml
+format: 1
+project: beacon
+coordinator: claude-keeper
+operator: claude-keeper
+
+workspace:
+  mode: shared
+
+budgets:                       # owner-only; the checks run from the approved copy
+  accounts:
+    openai: { kind: subscription, reserve: 10%, sources: [check], check: .agents/openai-quota }
+
+seats:
+  - role: coordinator
+    name: claude-keeper
+    label: coordinator
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+
+  - role: implementer
+    name: claude-beacon
+    label: implementer
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+
+  - role: researcher
+    name: codex-scribe
+    label: researcher
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    launch: team-codex          # the wrapper picks the model and runs codex
+    model_from: launcher
+
+  - role: implementer
+    name: codex-reader
+    label: implementer
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    launch: codex
+```
+
+```console tools="codex=fine"
+$ team doctor ; echo "exit $?"
+warn  claude-beacon: its name repeats "beacon"; the session already carries it
+MISS  run `team approve`: `limits` changed; seat codex-scribe is not in the approved file; seat codex-reader is not in the approved file
+ok    the check for openai reads weekly 40% used
+ok    herdr 0.7.1
+--    session beacon is running
+ok    claude 2.1.288
+ok    claude-code: logged in
+ok    codex 0.157.0
+ok    codex: logged in
 --    codex-scribe: the model is chosen by its launcher; checked on the running seat
 ok    the watch is running
 team doctor: 1 missing, 1 warning: `up` and `add` refuse until the missing ones are done
 exit 1
 ```
 
-The launcher is told by the launch line's first words: none of them is the CLI's own binary (or a
-path ending in it), so the line runs something that chooses the model itself. A seat may say so
-outright with `model_from: launcher`, which wins over the launch line's shape; the key is part of
-the seat's approval, as any seat key is.
+`model_from: launcher` wins over the launch line's shape, whatever the shape is; the key is part of
+the seat's approval, as any seat key is. When the CLI's screen cannot name the declared model, the
+note says that instead — nothing checks the model, whatever the launcher does with it.
 
 `--login` answers the one question that needs no herdr, no session and no machine — which CLIs have
 an account to run under. Two seats share a CLI, so it is said once:
