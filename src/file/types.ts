@@ -67,6 +67,8 @@ export type TeamFile = {
   };
   rules: string[];
   trust: string[];
+  /** Who may answer a folder-trust dialog. Omitted in the file means owner. */
+  dialogs: { trust: 'owner' | 'coordinator' };
   workspace: {
     mode: Mode;
     path: string | null;
