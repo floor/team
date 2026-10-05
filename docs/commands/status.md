@@ -12,21 +12,22 @@ changes nothing, and names the command that repairs each difference.
 
 Reads the team file (or the one `--file` names), this machine's approval store, the session's state
 (`.agents/team.state.json`), and herdr: the agents, their panes, their workspaces, and each pane's
-visible text, from which the running model is read. It writes nothing.
+visible text, from which the running model is read. It writes nothing but the `last_valid` copy of
+the file it read — and a run that is not the owner's writes nothing at all.
 
 ## Who may run it
 
 Anyone, in any terminal, and it needs no approval of its own. It does need herdr to answer: without
-it, `status` can't say anything and exits 2. `--file` is the owner's alone, from a terminal outside
-herdr: `status` finds the project's own file through the git walk, so no seat needs the flag, and a
-non-owner aiming it at another project is refused before that file is read.
+it, `status` can't say anything and exits 2. `--file` may be aimed by any caller — a plain folder's
+project has no git walk to find the file, so its own seats carry the flag — and a run that is not
+the owner's writes nothing at all, beside the file it read or in its own project.
 
 ## Flags
 
 | Flag | Meaning |
 | --- | --- |
 | `--session <name>` | the herdr session to read, instead of `team.session` |
-| `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone |
+| `--file <path>` | the team file, instead of `.agents/team.yaml`; a run that is not the owner's writes nothing |
 | `--json` | print the same reading as one JSON document instead of the table, the notes and the repairs |
 | `--help`, `-h` | the usage, and exit 0 |
 
@@ -92,7 +93,7 @@ An old figure with no known reset reads unknown while it could still matter — 
 or within the reserve again outside it. Further out — more than the reserve again — it is still
 shown, its when column saying `last seen 40m ago`: the room the figure last held.
 A named account with no reading is unknown. The table is left out when there is nothing
-to show. `status` still writes nothing; the watch is what records a reading.
+to show. `status` records no reading; the watch is what records one.
 
 An openai account can take its figure from a check instead of the status line. Copy
 `examples/checks/codex-quota` onto `PATH` and name it as that account's `check`, with
@@ -172,7 +173,6 @@ code is the same as without `--json`, and the file's warnings still go to stderr
 | `team status: unexpected "x"` (with the usage) | 2 |
 | `team status: team.yaml line <n>: <message>` | 2 |
 | `team status: herdr doesn't answer; is it installed and running?` | 2 |
-| `team status: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 
 A team file that loads with warnings prints them on stderr as
 `team status: warning, line <n>: <message>` and goes on.
@@ -180,8 +180,7 @@ A team file that loads with warnings prints them on stderr as
 ## Exit codes
 
 - `0` — no difference: the file, the state and the live session agree.
-- `1` — at least one difference; each is printed with its repair. Or `--file` was aimed by a
-  caller that is not the owner.
+- `1` — at least one difference; each is printed with its repair.
 - `2` — the invocation or the team file can't be read, or herdr doesn't answer.
 
 ## Examples

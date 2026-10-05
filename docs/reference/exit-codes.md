@@ -170,7 +170,6 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `remove.not-a-repo` | `remove` | 2 | not inside a git repository | `team remove worker` |
 | `status.agrees` | `status` | 0 | the file, the state and the session agree | `team status` |
 | `status.difference` | `status` | 1 | there is a difference | `team status` |
-| `status.file-owner` | `status` | 1 | --file is the owner's | `team status --file .agents/team.yaml` |
 | `status.file` | `status` | 2 | the team file can't be read | `team status --file missing.yaml` |
 | `status.file-invalid` | `status` | 2 | the team file can't be parsed | `team status --file team.yaml` |
 | `status.herdr` | `status` | 2 | herdr doesn't answer | `team status` |

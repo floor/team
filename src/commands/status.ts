@@ -6,7 +6,7 @@ import { overridesInForceOf, type OverrideForce } from '../profiles/overrides.ts
 import { readArgs } from '../args.ts';
 import { budgetLine, budgetTable, type BudgetRow } from '../budgets/table.ts';
 import { recall } from '../budgets/readings.ts';
-import { fileOwnerRefusal } from '../caller.ts';
+import { isOwner, walkCaller } from '../caller.ts';
 import { currentTeam } from '../file/current.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import type { Problem, TeamFile } from '../file/types.ts';
@@ -119,18 +119,15 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     // exit: status.invocation
     return 2;
   }
-  // The `--file` check is the walk's too, and it runs before `currentTeam` reads that file or
-  // writes beside it: a non-owner aiming `--file` must not make this command read and validate
-  // another project's team file, nor leave its `last_valid` in that project's state. The one
-  // place every command that takes the flag decides it is `fileOwnerRefusal` (caller.ts).
-  const fileRefusal = fileOwnerRefusal(io, args.values.file);
-  if (fileRefusal !== undefined) {
-    io.stderr(`team status: ${fileRefusal}\n`);
-    // exit: status.file-owner
-    return 1;
-  }
+  // A read is a read: the report below is the same for every caller, and anyone may aim `--file`
+  // — a plain folder's own seats must, for its project has no git walk to find the file. What a
+  // run that is not the owner's must not do is write anywhere, and the one write on this path is
+  // the `last_valid` copy `currentTeam` keeps beside the file it read, so the walk decides here,
+  // once, whether that copy is written. (`watch`, which writes a log and a heartbeat of its own,
+  // still refuses the flag outright: fileOwnerRefusal in caller.ts.)
+  const owner = isOwner(walkCaller(io));
 
-  const current = currentTeam(io.cwd, args.values.file, sources.now(), sources.home);
+  const current = currentTeam(io.cwd, args.values.file, sources.now(), sources.home, owner);
   if (!current.ok) {
     printProblems(io, current.errors);
     // exit: status.not-a-repo

@@ -1,15 +1,17 @@
 // A command that only reads must not write into a project its caller has nothing to do with.
 // `status --file <another project's team.yaml>` opened that file and left a new
 // `.agents/team.state.json` beside it, its `last_valid` holding the file's own bytes; `watch
-// --file` did the same and more (its log line, its heartbeat, its readings) — from a command
-// whose own page says "It writes nothing". The rule the commands that change a team already hold
-// (`--file is the owner's`, decided by the walk alone, before that file is read) is the smaller
-// of the two fixes: nothing legitimate carries the flag as a non-owner — the watch pane `up`
-// starts runs `team watch --session <name>` from the project root, never `--file`, and a seat's
-// `status` finds the file through the git walk — so the refusal breaks no one, and the probes
-// below hold the other read-and-report commands (`doctor`, `check`, `release check`, and the
-// owner's `approve` and `up`; `init` takes no flag) to the same: nothing written beside a
-// foreign file.
+// --file` did the same and more (its log line, its heartbeat, its readings) — from commands
+// whose own pages say "It writes nothing". Round 1 held both to the rule the commands that
+// change a team already hold (`--file is the owner's`, decided by the walk alone, before that
+// file is read); round 2 split them by what the command does with the file: `watch` writes
+// state of its own, so its refusal stands, while `status` only reports, so the flag went back to
+// any caller — a plain folder's own seats must carry it, for their project has no git walk to
+// find the file — and the one write on its path (`currentTeam`'s `last_valid` copy) is made
+// conditional on the walk instead: a run that is not the owner's writes nothing at all, beside
+// the file it read or in its own project. The probes below hold the other read-and-report
+// commands (`doctor`, `check`, `release check`, and the owner's `approve` and `up`; `init` takes
+// no flag) to the same: nothing written beside a foreign file.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -169,7 +171,11 @@ const FLAGGED_STATES: { name: string; setUp: (path: string) => void; seal?: (pat
   { name: 'unreadable', setUp: (path) => writeFileSync(path, FILE), seal: (path) => chmodSync(path, 0o000), open: (path) => chmodSync(path, 0o600) },
 ];
 
-function flaggedProject(stateName = 'valid'): {
+// The flagged project stands in two shapes: a plain folder (`git: false`, the default — a
+// project whose owner runs `team` with `--file` because no git walk can find the file there) and
+// a git project (`git: true`). `--file` resolves either way; the flagless commands need the git
+// one.
+function flaggedProject(stateName = 'valid', git = false): {
   root: string;
   file: string;
   listing: () => string[];
@@ -182,6 +188,7 @@ function flaggedProject(stateName = 'valid'): {
   if (!state) throw new Error(`no flagged state named ${stateName}`);
   const root = mkdtempSync(join(tmpdir(), 'team-flagged-'));
   mkdirSync(join(root, '.agents'));
+  if (git) execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
   const flagged = join(root, '.agents', 'team.yaml');
   state.setUp(flagged);
   return {
@@ -286,11 +293,11 @@ async function outputOf(runner: (io: TestIo) => Promise<number>, caller?: Caller
   return { code, out: io.out, err: io.err };
 }
 
-// The rule, against one state of the flagged path: the walk refuses the flag before the file is
-// read — the run places nobody, because placing a caller would read a session — and neither
-// project moves: the flagged project's folder listing and every file's bytes unchanged, the
-// caller's own project's file, state and log unchanged too.
-async function refusedBeforeRead(command: 'status' | 'watch', stateName: string): Promise<void> {
+// The rule `watch` keeps, against one state of the flagged path: the walk refuses the flag
+// before the file is read — the run places nobody, because placing a caller would read a
+// session — and neither project moves: the flagged project's folder listing and every file's
+// bytes unchanged, the caller's own project's file, state and log unchanged too.
+async function refusedBeforeRead(stateName: string): Promise<void> {
   const flagged = flaggedProject(stateName);
   try {
     const beforeListing = flagged.listing();
@@ -303,14 +310,12 @@ async function refusedBeforeRead(command: 'status' | 'watch', stateName: string)
     const io = testIo(dir);
     io.callerSources = sourcesUnderHerdr(OTHER, COORDINATOR, COORDINATOR_PANE);
     const argv = ['--file', flagged.file];
-    const code = command === 'status'
-      ? await runStatus(argv, io, statusSources())
-      : await runWatch(argv, io, watchSources());
+    const code = await runWatch(argv, io, watchSources());
     flagged.open();
     expect({ code, out: io.out, err: io.err }).toEqual({
       code: 1,
       out: '',
-      err: FILE_OWNER(command, 'unplaced (it runs under herdr)'),
+      err: FILE_OWNER('watch', 'unplaced (it runs under herdr)'),
     });
     expect(flagged.listing()).toEqual(beforeListing);
     expect(flagged.bytes()).toBe(beforeBytes);
@@ -323,62 +328,233 @@ async function refusedBeforeRead(command: 'status' | 'watch', stateName: string)
   }
 }
 
-for (const command of ['status', 'watch'] as const) {
-  describe(`${command}: --file is the owner's`, () => {
-    // The reported write, as the failing test first: a non-owner's `--file` against a valid file
-    // of another project. On main `status` answers as a reader and leaves a new
-    // `team.state.json` beside that file, its `last_valid` holding the file's own bytes; `watch`
-    // answers as a reader and leaves the state file, its log line, its heartbeat and its
-    // readings there.
-    test("a non-owner's --file against a valid foreign file is refused, and writes nothing", async () => {
-      const flagged = flaggedProject('valid');
-      try {
-        const beforeListing = flagged.listing();
-        const run = await call((io) =>
-          command === 'status'
-            ? runStatus(['--file', flagged.file], io, statusSources())
-            : runWatch(['--file', flagged.file], io, watchSources()), placed(OTHER, COORDINATOR, COORDINATOR_PANE));
-        expect({ code: run.code, out: run.out, err: run.err }).toEqual({
-          code: 1,
-          out: '',
-          err: FILE_OWNER(command, COORDINATOR),
-        });
-        expect(flagged.listing()).toEqual(beforeListing);
-        expect(readFileSync(file, 'utf8')).toBe(run.before);
-        expect(readFileSync(stateFile, 'utf8')).toBe(run.beforeState);
-        expect(existsSync(join(dir, '.agents', 'team.log'))).toBe(false);
-        expect(existsSync(join(flagged.root, '.agents', 'team.log'))).toBe(false);
-      } finally {
-        flagged.cleanup();
-      }
-    });
-
-    // The same refusal through the sources a real run reads: decided by the walk alone, so the
-    // same bytes and the same exit whatever is at the flagged path — no `no team file at …`, no
-    // YAML problem, no report — and no session is read on the way (the fixture would answer for
-    // its own, and nothing asks).
-    for (const state of FLAGGED_STATES) {
-      test(`the walk alone refuses it, before the file is read: the flagged path is ${state.name}`, async () => {
-        await refusedBeforeRead(command, state.name);
+describe("watch: --file is the owner's", () => {
+  // The reported write, as the failing test first: a non-owner's `--file` against a valid file
+  // of another project. On main `watch` answers as a reader and leaves the state file, its log
+  // line, its heartbeat and its readings there; round 1 refused the flag, and round 2 keeps the
+  // refusal — a watch writes state of its own, so a read is not a read.
+  test("a non-owner's --file against a valid foreign file is refused, and writes nothing", async () => {
+    const flagged = flaggedProject('valid');
+    try {
+      const beforeListing = flagged.listing();
+      const run = await call((io) => runWatch(['--file', flagged.file], io, watchSources()), placed(OTHER, COORDINATOR, COORDINATOR_PANE));
+      expect({ code: run.code, out: run.out, err: run.err }).toEqual({
+        code: 1,
+        out: '',
+        err: FILE_OWNER('watch', COORDINATOR),
       });
+      expect(flagged.listing()).toEqual(beforeListing);
+      expect(readFileSync(file, 'utf8')).toBe(run.before);
+      expect(readFileSync(stateFile, 'utf8')).toBe(run.beforeState);
+      expect(existsSync(join(dir, '.agents', 'team.log'))).toBe(false);
+      expect(existsSync(join(flagged.root, '.agents', 'team.log'))).toBe(false);
+    } finally {
+      flagged.cleanup();
     }
-
-    test('the owner may aim --file: the gate lets it through', async () => {
-      writeFileSync(file, fileText);
-      writeFileSync(stateFile, `${JSON.stringify(STATE, null, 2)}\n`);
-      const sources = command === 'status' ? statusSources() : watchSources();
-      const flagged = command === 'status'
-        ? await outputOf((io) => runStatus(['--file', file], io, sources as StatusSources), { kind: 'owner' })
-        : await outputOf((io) => runWatch(['--file', file], io, sources as WatchSources), { kind: 'owner' });
-      writeFileSync(file, fileText);
-      writeFileSync(stateFile, `${JSON.stringify(STATE, null, 2)}\n`);
-      const plain = command === 'status'
-        ? await outputOf((io) => runStatus([], io, sources as StatusSources), { kind: 'owner' })
-        : await outputOf((io) => runWatch([], io, sources as WatchSources), { kind: 'owner' });
-      expect(flagged).toEqual(plain);
-    });
   });
-}
+
+  // The same refusal through the sources a real run reads: decided by the walk alone, so the
+  // same bytes and the same exit whatever is at the flagged path — no `no team file at …`, no
+  // YAML problem, no report — and no session is read on the way (the fixture would answer for
+  // its own, and nothing asks).
+  for (const state of FLAGGED_STATES) {
+    test(`the walk alone refuses it, before the file is read: the flagged path is ${state.name}`, async () => {
+      await refusedBeforeRead(state.name);
+    });
+  }
+
+  test('the owner may aim --file: the gate lets it through', async () => {
+    writeFileSync(file, fileText);
+    writeFileSync(stateFile, `${JSON.stringify(STATE, null, 2)}\n`);
+    const flagged = await outputOf((io) => runWatch(['--file', file], io, watchSources()), { kind: 'owner' });
+    writeFileSync(file, fileText);
+    writeFileSync(stateFile, `${JSON.stringify(STATE, null, 2)}\n`);
+    const plain = await outputOf((io) => runWatch([], io, watchSources()), { kind: 'owner' });
+    expect(flagged).toEqual(plain);
+  });
+});
+
+// The round-2 rule for `status`: the flag is any caller's — the report is the same for every
+// caller — and the write is the owner's alone. A non-owner's run writes nothing at all, beside
+// the file it read (its `last_valid` copy is not its project's to accept) or in its own project;
+// the owner's run keeps the copy, as it always did. By caller, not by flag: a non-owner's bare
+// run in its own project writes nothing either.
+describe('status: --file reads for any caller, and writes for the owner alone', () => {
+  // One flagged world, two runs against the same file: a seat's `--file` first, then the
+  // owner's. The report must be the same bytes for both; only the owner's run may leave the
+  // `last_valid` copy. Returns what each printed and what the world holds after each.
+  async function aimed(git: boolean): Promise<{
+    seat: { code: number; out: string; err: string };
+    owner: { code: number; out: string; err: string };
+    listingAfterSeat: string[];
+    listingAfterOwner: string[];
+    bytes: string | null;
+    beforeBytes: string | null;
+    stateAfterSeat: string | null;
+    stateAfterOwner: string | null;
+  }> {
+    const flagged = flaggedProject('valid', git);
+    try {
+      const beforeBytes = flagged.bytes();
+      const statePath = join(flagged.root, '.agents', 'team.state.json');
+      const seatIo = testIo(flagged.root, placed(OTHER, COORDINATOR, COORDINATOR_PANE));
+      const seatCode = await runStatus(['--file', flagged.file], seatIo, statusSources());
+      const listingAfterSeat = flagged.listing();
+      const stateAfterSeat = existsSync(statePath) ? readFileSync(statePath, 'utf8') : null;
+      const ownerIo = testIo(flagged.root, { kind: 'owner' });
+      const ownerCode = await runStatus(['--file', flagged.file], ownerIo, statusSources());
+      return {
+        seat: { code: seatCode, out: seatIo.out, err: seatIo.err },
+        owner: { code: ownerCode, out: ownerIo.out, err: ownerIo.err },
+        listingAfterSeat,
+        listingAfterOwner: flagged.listing(),
+        bytes: flagged.bytes(),
+        beforeBytes,
+        stateAfterSeat,
+        stateAfterOwner: existsSync(statePath) ? readFileSync(statePath, 'utf8') : null,
+      };
+    } finally {
+      flagged.cleanup();
+    }
+  }
+
+  test("a non-owner's --file prints the owner's report and writes nothing — a git project's file", async () => {
+    const run = await aimed(true);
+    // The same report the owner would get for that file: byte for byte, exit and stderr too.
+    expect(run.seat).toEqual(run.owner);
+    expect(run.seat.code).toBe(1); // the report itself: differences, each with its repair
+    expect(run.seat.out).toContain('team acme');
+    // And the flagged project after the seat's run is untouched: no state, the bytes it held.
+    expect(run.listingAfterSeat).toEqual(['team.yaml']);
+    expect(run.bytes).toBe(run.beforeBytes);
+    expect(run.stateAfterSeat).toBe(null);
+    // The owner's run on the same world: the same report, and the copy it alone may keep.
+    expect(run.listingAfterOwner).toEqual(['team.state.json', 'team.yaml']);
+    const state = JSON.parse(run.stateAfterOwner ?? '{}') as { last_valid?: { file?: string } };
+    expect(state.last_valid?.file ?? null).toBe(run.beforeBytes);
+  });
+
+  test("a non-owner's --file prints the owner's report and writes nothing — a plain folder's file", async () => {
+    // The plain folder is the round-2 case itself: a project with no git walk to find the file,
+    // whose own seats carry `--file` by necessity. The caller runs from the flagged root, and
+    // the owner's runs there keep behaving as they did before the round (the copy included).
+    const run = await aimed(false);
+    expect(run.seat).toEqual(run.owner);
+    expect(run.seat.out).toContain('team acme');
+    expect(run.listingAfterSeat).toEqual(['team.yaml']);
+    expect(run.bytes).toBe(run.beforeBytes);
+    expect(run.stateAfterSeat).toBe(null);
+    expect(run.listingAfterOwner).toEqual(['team.state.json', 'team.yaml']);
+    const state = JSON.parse(run.stateAfterOwner ?? '{}') as { last_valid?: { file?: string } };
+    expect(state.last_valid?.file ?? null).toBe(run.beforeBytes);
+  });
+
+  test("the fallback serves a non-owner while the owner edits, and its read writes nothing", async () => {
+    // The owner's run left the copy; the file breaks; a seat's `--file` reads the copy — the
+    // notice, then the report — and the state's bytes do not move.
+    const flagged = flaggedProject('valid', true);
+    try {
+      const owner = testIo(flagged.root, { kind: 'owner' });
+      await runStatus(['--file', flagged.file], owner, statusSources());
+      const statePath = join(flagged.root, '.agents', 'team.state.json');
+      const stateBefore = readFileSync(statePath, 'utf8');
+      writeFileSync(flagged.file, 'format: [\n');
+      const seat = testIo(flagged.root, placed(OTHER, COORDINATOR, COORDINATOR_PANE));
+      const code = await runStatus(['--file', flagged.file], seat, statusSources());
+      expect(code).toBe(1);
+      expect(seat.out.split('\n')[0]).toBe('team.yaml is invalid (line 1: "[" is not closed on its line); using the copy of 1970-01-01T00:00:00.000Z');
+      expect(seat.out).toContain('team acme');
+      expect(readFileSync(statePath, 'utf8')).toBe(stateBefore);
+      expect(flagged.bytes()).toBe('format: [\n');
+    } finally {
+      flagged.cleanup();
+    }
+  });
+
+  test("a seat's bare status in its own project: the owner's report, and nothing written", async () => {
+    // The rule is by caller, not by flag: a non-owner's run writes nothing with or without
+    // `--file`. Before round 2 the seat's own run refreshed `last_valid` in its own project;
+    // now only the owner's does, and the copy the fallback reads is the owner's last one.
+    writeFileSync(file, fileText);
+    writeFileSync(stateFile, `${JSON.stringify(STATE, null, 2)}\n`);
+    const stateBefore = readFileSync(stateFile, 'utf8');
+    const seat = await outputOf((io) => runStatus([], io, statusSources()), {
+      kind: 'seat',
+      name: COORDINATOR,
+      pane: COORDINATOR_PANE,
+      session: SESSION,
+    });
+    expect(seat.code).toBe(1);
+    expect(readFileSync(stateFile, 'utf8')).toBe(stateBefore);
+    // The owner's bare run prints the same report — and does refresh the copy, as before.
+    writeFileSync(file, fileText);
+    writeFileSync(stateFile, `${JSON.stringify(STATE, null, 2)}\n`);
+    const ownerRun = await outputOf((io) => runStatus([], io, statusSources()), { kind: 'owner' });
+    expect({ code: seat.code, out: seat.out, err: seat.err }).toEqual({ code: ownerRun.code, out: ownerRun.out, err: ownerRun.err });
+    expect(JSON.parse(readFileSync(stateFile, 'utf8')).last_valid?.file).toBe(fileText);
+  });
+});
+
+// `doctor` never writes — for any caller, any file. Its report differs from the owner's in one
+// place only (the budget checks, which run for the owner alone); this file has no budgets, so
+// the runs below print the same bytes.
+describe('doctor: --file reads for any caller, and writes nothing', () => {
+  function doctorHome(): DoctorSources {
+    return {
+      version: () => '2.1.288',
+      onPath: () => true,
+      loggedIn: () => true,
+      herdrVersion: () => '0.7.1',
+      sessionRunning: () => false,
+      now: () => new Date(0),
+      home,
+    };
+  }
+
+  // One flagged world, both callers against it: doctor writes nothing for either, so the world
+  // cannot move between the runs and the two reports are byte-comparable (the trust line names
+  // the flagged root).
+  async function doctored(git: boolean): Promise<{
+    seat: { code: number; out: string; err: string };
+    owner: { code: number; out: string; err: string };
+    listing: string[];
+    stateBytes: string | null;
+  }> {
+    const flagged = flaggedProject('valid', git);
+    try {
+      const statePath = join(flagged.root, '.agents', 'team.state.json');
+      const seatIo = testIo(flagged.root, placed(OTHER, COORDINATOR, COORDINATOR_PANE));
+      const seatCode = await runDoctor(['--file', flagged.file], seatIo, doctorHome());
+      const ownerIo = testIo(flagged.root, { kind: 'owner' });
+      const ownerCode = await runDoctor(['--file', flagged.file], ownerIo, doctorHome());
+      return {
+        seat: { code: seatCode, out: seatIo.out, err: seatIo.err },
+        owner: { code: ownerCode, out: ownerIo.out, err: ownerIo.err },
+        listing: flagged.listing(),
+        stateBytes: existsSync(statePath) ? readFileSync(statePath, 'utf8') : null,
+      };
+    } finally {
+      flagged.cleanup();
+    }
+  }
+
+  test("a non-owner's --file prints the report and writes nothing — a git project's file", async () => {
+    const run = await doctored(true);
+    expect(run.seat).toEqual(run.owner);
+    expect(run.seat.code).toBe(1);
+    expect(run.seat.out).toContain('this file was never approved');
+    expect(run.listing).toEqual(['team.yaml']);
+    expect(run.stateBytes).toBe(null);
+  });
+
+  test("a non-owner's --file prints the report and writes nothing — a plain folder's file", async () => {
+    const run = await doctored(false);
+    expect(run.seat).toEqual(run.owner);
+    expect(run.seat.out).toContain('this file was never approved');
+    expect(run.listing).toEqual(['team.yaml']);
+    expect(run.stateBytes).toBe(null);
+  });
+});
 
 // The watch the pane runs carries no flag, and a seat's `status` needs none: the refusal the
 // rule adds breaks neither. `up --file` starts its watch from the project root, the line built
@@ -433,20 +609,22 @@ describe('a team whose owner ran up --file', () => {
   test("its seats' status still works in their own project: no flag, the same report the owner reads", async () => {
     writeFileSync(file, fileText);
     writeFileSync(stateFile, `${JSON.stringify(STATE, null, 2)}\n`);
+    const stateBefore = readFileSync(stateFile, 'utf8');
     const seat = await outputOf((io) => runStatus([], io, statusSources()), {
       kind: 'seat',
       name: COORDINATOR,
       pane: COORDINATOR_PANE,
       session: SESSION,
     });
+    // Round 2: the seat's own run writes nothing either — the rule is by caller, not by flag.
+    expect(readFileSync(stateFile, 'utf8')).toBe(stateBefore);
     writeFileSync(file, fileText);
     writeFileSync(stateFile, `${JSON.stringify(STATE, null, 2)}\n`);
     const owner = await outputOf((io) => runStatus([], io, statusSources()), { kind: 'owner' });
     expect(seat).toEqual(owner);
     expect(seat.code).toBe(1);
-    // And its own project's state holds the fallback copy, as before: a project's own readers
-    // still record `last_valid` — the copy `status`, `watch` and `down` fall back to while the
-    // owner edits the file — in the one project that is theirs.
+    // The copy the fallback reads while the owner edits is the owner's alone now; the owner's
+    // run above left it, as it always did.
     const state = JSON.parse(readFileSync(stateFile, 'utf8')) as { last_valid?: { file?: string } };
     expect(state.last_valid?.file).toBe(fileText);
   });

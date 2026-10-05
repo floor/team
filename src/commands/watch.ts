@@ -127,7 +127,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
   // The `--file` check is the walk's too, and it runs before `currentTeam` reads that file or
   // writes beside it: a non-owner aiming `--file` must not make this command read and validate
   // another project's team file, nor leave its `last_valid`, its log line or its heartbeat in
-  // that project's state. The one place every command that takes the flag decides it is
+  // that project's state. The one place every command whose `--file` is the owner's decides it is
   // `fileOwnerRefusal` (caller.ts) — and the watch `up` starts carries no flag at all.
   const fileRefusal = fileOwnerRefusal(io, args.values.file);
   if (fileRefusal !== undefined) {

@@ -1150,13 +1150,6 @@
       "trigger": "team status"
     },
     {
-      "code": 1,
-      "command": "status",
-      "id": "status.file-owner",
-      "meaning": "--file is the owner's",
-      "trigger": "team status --file .agents/team.yaml"
-    },
-    {
       "code": 2,
       "command": "status",
       "id": "status.file",
