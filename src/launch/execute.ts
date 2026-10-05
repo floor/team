@@ -318,27 +318,26 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     workspacePanes: (workspace) => host.workspacePanes?.(session, workspace) ?? null,
   });
 
-  /** The identity a dialog is judged by. `launched` is the seat's process as this run judges the
-   *  close, read when the dialog was found and never read again; `recorded` is the identity the
-   *  seat's own records carry — what a refused close writes back, and never the fresh read,
-   *  which proves nothing about a changed process. */
-  const dialogIdentity = (seat: string, pane: string): { launched?: LaunchedIdentity; recorded?: LaunchedIdentity } => {
+  /** The identity a dialog is judged by, and the one a refused close writes back: the identity
+   *  this run recorded when it launched the seat — its records' own, where an earlier run left
+   *  one, else the read taken when the dialog was found. Read once, here, and never read again;
+   *  the close's own fresh read of a changed process is never the identity kept. */
+  const dialogIdentity = (seat: string, pane: string): LaunchedIdentity | undefined => {
     const recorded = identities.get(seat) ?? host.seatStates?.(session)?.[seat]?.launched;
-    const launched = recorded ?? launchedIdentity(host.processInfo?.(session, pane) ?? null) ?? undefined;
-    return { ...(launched ? { launched } : {}), ...(recorded ? { recorded } : {}) };
+    return recorded ?? launchedIdentity(host.processInfo?.(session, pane) ?? null) ?? undefined;
   };
 
   /** A seat left behind by a close this run refused. Its waiting record — with the reading that
    *  stopped it — and the identity recorded at launch go back into its state, so the next `up`
    *  reads it as a waiting seat instead of adopting a pane it finds idle, or refusing the whole
-   *  session over state that records none. The identity just read from the pane is not written:
+   *  session over state that records none. The identity the close itself reads is never written:
    *  it is the changed process the close was refused for, and proves nothing. */
-  const keepWaiting = (seat: string, here: Place, classification: Classification, recorded?: LaunchedIdentity): void => {
+  const keepWaiting = (seat: string, here: Place, classification: Classification, launched?: LaunchedIdentity): void => {
     host.record(seat, {
       stage: 'launched',
       pane: here.pane,
       ...(here.workspace ? { workspace: here.workspace } : {}),
-      ...(recorded ? { launched: recorded } : {}),
+      ...(launched ? { launched } : {}),
       waiting: { state: 'waiting-owner', classification },
     });
   };
@@ -352,7 +351,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     here: Place,
     label: string,
     classification: Classification,
-    identity: { launched?: LaunchedIdentity; recorded?: LaunchedIdentity },
+    identity: LaunchedIdentity | undefined,
     repairLine: string,
   ): Promise<'idle' | 'settled'> => {
     const dialog = host.dialog;
@@ -383,15 +382,15 @@ export async function executePlan(steps: readonly Step[], session: string, host:
       // process must still be the one read when the dialog was found — a pane whose process
       // changed is not closed, and neither is one with no identity to prove it by. A close that
       // cannot be proven leaves everything as it is — and, so the next `up` can read the seat,
-      // writes its waiting record and its recorded identity back.
+      // writes its waiting record and the launch identity the close was judged by back.
       if (here.workspace) {
-        const target = closeTarget(waitingReads(here.pane), { seat, pane: here.pane, workspace: here.workspace, repairLine, ...(identity.launched ? { launched: identity.launched } : {}) });
+        const target = closeTarget(waitingReads(here.pane), { seat, pane: here.pane, workspace: here.workspace, repairLine, ...(identity ? { launched: identity } : {}) });
         if ('problem' in target) {
-          keepWaiting(seat, here, classification, identity.recorded);
+          keepWaiting(seat, here, classification, identity);
           return leftOut(seat, target.problem.reason, target.problem.detail);
         }
         if (!host.closeWorkspace(session, target.workspace)) {
-          keepWaiting(seat, here, classification, identity.recorded);
+          keepWaiting(seat, here, classification, identity);
           return leftOut(seat, `${classification}; its workspace did not close; left as it is`);
         }
       }
@@ -748,8 +747,8 @@ export async function executePlan(steps: readonly Step[], session: string, host:
             // no-terminal owner's) is judged against this read: a pane whose process changed
             // while the owner looked is not closed. This run's own read wins; the state's record
             // is the fallback for a seat an earlier run launched; a live read is all that is left
-            // for a dialog found before the seat was ever recorded — the one read a refused
-            // close never writes back.
+            // for a dialog found before the seat was ever recorded — and it is the identity a
+            // refused close writes back, so the next `up` has one to compare against.
             const settled = await atDialog(op.seat, here, op.label, reading, dialogIdentity(op.seat, here.pane), op.repairLine);
             if (settled === 'idle') idleOnwards();
             break;
