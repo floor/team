@@ -58,7 +58,11 @@ A seat that reaches its idle prompt with its rules delivered prints `<seat>: rea
 seat prints `<name>: ready` under the name it was given. Everything else a launch can print is the
 same as `up`'s, with the seat's name in front: `its workspace was not created; left at launched`,
 `timed out waiting for its idle prompt; left at launched`, `permission; its workspace was closed
-without input and the seat left out`, and the rest of the table on the [team up](up.md) page.
+without input and the seat left out`, and the rest of the table on the [team up](up.md) page —
+first-message rules go to the seat's file in the project state folder and arrive as the one line
+`up` types, read back and enters, exactly as that page describes. A seat `add` leaves out takes
+its rules file with it; a temporary seat removed with `team remove` or stopped by `team down`
+loses its file with the seat, while a declared seat's file stays for the next `up`.
 
 ## Refusals
 

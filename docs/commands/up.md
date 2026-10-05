@@ -62,11 +62,31 @@ A seat that reaches its idle prompt with its rules delivered prints `<seat>: rea
 ready, stopped in the file, or on a CLI with no launch profile prints one `  skip` line and is left
 as it is. The watch prints `watch: started`.
 
-A message taller than its box draws is typed in parts of whole lines — its header in the first
-part, its closing line in the last — each part verified to sit in the box before its own Enter,
-and the next typed only once the seat is back at its idle prompt. A box that already holds
-exactly the message (a run that stopped after typing it) is verified and sent, never typed onto
-again. `up` never clears a box it could not verify: a stop leaves the text where it is.
+A seat whose rules travel as a first message (codex, cursor, antigravity) gets them from a file:
+`up` writes the approved rules text to `<project state folder>/rules/<seat>.md` — owner-only,
+mode `0600`, beside the approval store, never inside a worktree, the lobby or the project — and
+types one line into the pane at an empty idle prompt:
+
+    Read /home/owner/.config/team/demo-3f9c2a8e1d7b/rules/implementer.md (sha256 5e1d0a9c4b2f): your standing rules for this session; reply ready and wait for your brief.
+
+The line carries the file's absolute path and the first 12 hex digits of its SHA-256, so the
+seat — and the read-back — can tell exactly which text is meant. A path that holds whitespace or
+a character outside letters, digits and `. _ / @ + -` is never typed: nothing is quoted or
+escaped, and the report says the path can't be typed safely. The line is read back row by row —
+every visible character in order, a row break allowed to stand for at most one space or nothing —
+and only then is Enter pressed, once. A box that already holds exactly today's line (a run that
+stopped after typing it) is verified and sent, never typed onto again. `up` never clears a box it
+could not verify: a stop leaves the text where it is.
+
+### Known limits
+
+- The final read of the box and the pressing of Enter are two separate `herdr` calls. Something
+  can change the pane in the gap between them; `team` reads the pane again right before the
+  Enter, but it cannot make the two one action. Closing that needs a key herdr itself does not
+  offer today.
+- A row break may hide at most one space, and no read can prove what a pane folds into a break:
+  the check requires every other visible character to match exactly, and refuses anything looser
+  rather than guess.
 
 A seat that doesn't get there is printed once with what stopped it, and `up` exits 1:
 
@@ -76,10 +96,14 @@ A seat that doesn't get there is printed once with what stopped it, and `up` exi
 | `<seat>: permission; its workspace was closed without input and the seat left out` | a permission dialog, or a question, was left for its owner to answer |
 | `<seat>: timed out waiting for its idle prompt; left at launched` | the prompt never came |
 | `<seat>: was not in the agent list in time; left at launched` | herdr listed no agent in the pane to name |
-| `<seat>: rules not typed: <what stopped it>; <what to do>` | nothing was typed: the screen was not an empty idle prompt, the box already held text that is not the rules message, or a line of the message is taller than its box draws |
-| `<seat>: rules typed, not sent: <part X of Y:>the read-back didn't match (<reading>); <what to do>` | the message was typed and its box did not read back as the message; the rules sit in its box, unsent, and `up` does not clear it. When the box drew a row that is not the message's own, the first such row is printed above this line |
-| `<seat>: rules typed, not sent: <part X of Y:>its box still holds them after Enter (<reading>); <what to do>` | Enter was pressed and the box still shows the rules: the key did not take, and nothing was sent |
-| `<seat>: <parts 1-N of M were sent; ><part X of Y:>the seat did not come back to its idle prompt (<reading>); <what to do>` | a part was submitted and the seat never came back to its idle prompt — a running turn, or a dialog to answer |
+| `<seat>: rules not typed: its rules file, or the folder that holds it, is a symbolic link; remove the link, then run up again` | the file would have been written through a link; nothing was |
+| `<seat>: rules not typed: its rules file could not be written; check the project state folder, then run up again` | the write failed; nothing was typed |
+| `<seat>: rules not typed: its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -; rename the seat or move the project, then run up again` | the path holds a character the read-back cannot prove; nothing was typed, nothing quoted |
+| `<seat>: rules not confirmed: the seat is working; run up again when it is idle` | the seat is mid-turn; nothing was typed |
+| `<seat>: rules not typed: <what stopped it>; <what to do>` | nothing was typed: the screen was not an empty idle prompt, or the box already held text that is not the rules line |
+| `<seat>: rules typed, not sent: the read-back didn't match; the line sits in its box, unsent: <what to do>` | the line was typed and its box did not read back as the line; `up` does not clear it. When the box drew a row that is not the line's own, the first such row is printed above this line, stripped of control characters and cut to 200 characters |
+| `<seat>: rules typed, not sent: its box still holds the line after Enter; <what to do>` | Enter was pressed and the box still shows the line: the key did not take, and nothing was sent |
+| `<seat>: the seat did not come back to its idle prompt (<reading>); <what to do>` | the line was submitted and the seat never came back to its idle prompt — a running turn, or a dialog to answer |
 | `<seat>: its rules were not delivered; left at named` | the pane could not be read at all; nothing was typed |
 | `<seat>: its workspace was not created; left at launched` | herdr made no workspace for it |
 | `<seat>: its lobby folder was not created; left out` | the folder a seat that works in worktrees waits in could not be made |
@@ -102,10 +126,10 @@ reading would refuse, and that this run would launch, is `  skip <seat>: would r
 in the commands. The words after `would refuse:` are the same as the words after `refused:`. A seat
 already running keeps its setup, with that reading in a note. A seat whose account is unknown
 carries `(<account> is unknown; would launch)` under its first command. A first sight carries
-`(<account>: first sight only, not yet counted; would launch)`. A launch carries the seat's rules,
-so its line is long. Rules delivered as a launch option (claude-code) close with `These are standing
-rules, not a task.`; rules typed as a first message (codex, cursor and antigravity) close with
-`These are standing rules, not a task: reply ready and wait for your brief.`
+`(<account>: first sight only, not yet counted; would launch)`. A launch carries the seat's rules
+when they travel as a launch option (claude-code), so its line is long; a first-message seat's
+launch is the plain CLI command, and the plan shows the one line it types at the seat's idle
+prompt, with the note that the rules go to a per-seat file in the project state folder first.
 
 ## Refusals
 

@@ -61,7 +61,11 @@ missing line either way: `up` and `add` refuse, and the approved copy stays in f
 shipped profiles, when nothing was approved), each account whose `check`
 command is unapproved, or no longer matches the file hashed at approval (a warning either way: that
 account reads unknown, and `up` and `add` still
-run), the budget checks, herdr, one CLI at a time (its
+run), the budget checks, then each seat of the approved file whose rules travel as a first
+message: its file in the project state folder — missing, a symbolic link, not a regular file,
+wider than `0600`, not the owner's, unreadable, or holding something other than the approved
+rules text — is one `warn` (`codex-scribe: its rules file differs from the approved rules; run \`team up\``),
+never a rewrite. herdr, one CLI at a time (its
 version, its login, then each of its seats' launchers and models), the watch, and the `trust` note.
 A seat the file stops is left out of the CLI findings. The last line counts them, and — the same
 rule `up` and `add` refuse on — says how many of the missing ones block those commands, when any do:
