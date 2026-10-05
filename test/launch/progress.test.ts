@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { executePlan, type Host, type ScreenKind } from '../../src/launch/execute.ts';
 import type { Step } from '../../src/launch/plan.ts';
-import { progressWriter, recordText, recordWhat, type ProgressSink } from '../../src/launch/progress.ts';
+import { progressWriter, recordText, recordWhat, type Classification, type ProgressSink, type ProgressState } from '../../src/launch/progress.ts';
 
 function sink(isTTY: boolean): { out: string[]; err: string[]; sink: ProgressSink } {
   const out: string[] = [];
@@ -96,9 +96,74 @@ describe('the writer', () => {
     records.progress('beta', 'launching');
     records.final('beta', { kind: 'left out', reason: 'trust' }, '  its workspace was closed without an answer and the seat left out\n');
     expect(out.join('')).toBe('alpha: ready\nbeta: left out: trust\n');
-    expect(out.join('')).not.toContain('\r');
-    expect(out.join('')).not.toContain('\x1b');
+    expect(out.join('').includes('\x0d')).toBe(false);
+    expect(out.join('').includes('\x1b')).toBe(false);
     expect(err.join('')).toBe('  its workspace was closed without an answer and the seat left out\n');
+  });
+
+  // The reviewers' probe: a seat, a stage word, a reason and a detail line each carrying a
+  // carriage return, `ESC[2J`, `ESC[31m` and a bell. On the unfixed writer a pipe wrote
+  // `610d1b5b324a623a206c656674206f75743a20726561736f6e0d1b5b33316d580a` — the raw bytes, seat
+  // and reason as given. The writer is the boundary: the same call now writes the cleaned bytes,
+  // and the only 0d and 1b bytes in the stream are the writer's own in-place rewrite, `\r\x1b[K`
+  // (a carriage return and a clear-to-end, one per draw) — asserted exactly, byte for byte.
+  const dirtySeat = 'a\r\x1b[2Jb';
+  const dirtyReason = 'reason\r\x1b[31mX';
+  const dirtyDetail = '  d\r\x1b[2Jet\x1b[31mail\x07\n';
+
+  test('a terminal writes the cleaned bytes: the caller’s carriage returns, escapes and bell are gone', () => {
+    const { out, err, sink: s } = sink(true);
+    const records = progressWriter(s);
+    records.progress(dirtySeat, 'launch\x1b[31ming' as ProgressState);
+    records.final(dirtySeat, { kind: 'left out', reason: dirtyReason }, dirtyDetail);
+    expect(out.join('')).toBe('\r\x1b[Kab: launching\r\x1b[Kab: left out: reasonX\n');
+    expect(err.join('')).toBe('  detail\n');
+    const mine = out.join('').replaceAll('\r\x1b[K', '');
+    expect(mine.includes('\x0d')).toBe(false);
+    expect(mine.includes('\x1b')).toBe(false);
+    expect(out.join('').includes('\x07')).toBe(false);
+    expect(err.join('').includes('\x07')).toBe(false);
+  });
+
+  test('a redirected stdout writes the cleaned record alone: no carriage return, no escape, no bell', () => {
+    const { out, err, sink: s } = sink(false);
+    const records = progressWriter(s);
+    records.progress(dirtySeat, 'launching');
+    records.final(dirtySeat, { kind: 'left out', reason: dirtyReason }, dirtyDetail);
+    expect(out.join('')).toBe('ab: left out: reasonX\n');
+    expect(out.join('').includes('\x0d')).toBe(false);
+    expect(out.join('').includes('\x1b')).toBe(false);
+    expect(out.join('').includes('\x07')).toBe(false);
+    expect(err.join('')).toBe('  detail\n');
+    expect(err.join('').includes('\x07')).toBe(false);
+  });
+
+  test('a reason, a seat or a detail the cleaning leaves empty is said as unknown, or not said', () => {
+    const { out, err, sink: s } = sink(false);
+    const records = progressWriter(s);
+    // The reason cleans to nothing: the record keeps its grammar and says the one word these
+    // records use for a reading this version cannot make.
+    records.final('alpha', { kind: 'left out', reason: '\r\x1b[2J\x07' }, '');
+    // The seat cleans to nothing: the same word stands where the seat would.
+    records.final('\x1b[2J\r', { kind: 'ready' }, '');
+    // A detail that cleans to nothing is not written at all.
+    records.final('beta', { kind: 'ready' }, '\x1b[2J');
+    expect(out.join('')).toBe('alpha: left out: unknown\nunknown: ready\nbeta: ready\n');
+    expect(err).toEqual([]);
+  });
+
+  test('the waiting record’s classification is the reason slot too: cleaned, and unknown when empty', () => {
+    const { out, err, sink: s } = sink(false);
+    const records = progressWriter(s);
+    // The classification is where the next slice prints a screen reading from: it is cleaned at
+    // the writer like the stage word, whatever a caller cast into it.
+    records.final('alpha', { kind: 'waiting for owner', classification: 'question\r\x1b[2J\x07' as Classification }, '');
+    records.final('beta', { kind: 'waiting for owner', classification: '\r\x1b[2J' as Classification }, '');
+    expect(out.join('')).toBe('alpha: waiting for owner (question)\nbeta: waiting for owner (unknown)\n');
+    expect(out.join('').includes('\x0d')).toBe(false);
+    expect(out.join('').includes('\x1b')).toBe(false);
+    expect(out.join('').includes('\x07')).toBe(false);
+    expect(err).toEqual([]);
   });
 });
 

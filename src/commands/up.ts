@@ -427,7 +427,15 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
             }
       : null;
     if (line?.level === 'note') (dry ? io.stdout : io.stderr)(`  note ${seat.name}: ${line.why}\n`);
-    const launchProblem = line?.level === 'miss' ? { launchProblem: line.why } : {};
+    // The plan, the record and the log hold the reason in words (`record`); the full finding —
+    // the start folder it names — rides along as the record's stderr detail only.
+    const launchProblem =
+      line?.level === 'miss'
+        ? {
+            launchProblem: line.record ?? line.why,
+            ...(line.record ? { launchProblemDetail: line.why } : {}),
+          }
+        : {};
     if (!placed) {
       const budget = budgetOf(seat);
       seats.push({ ...planned, ...launchProblem, ...(budget.kind === 'clear' ? {} : { budget }) });

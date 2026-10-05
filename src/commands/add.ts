@@ -18,7 +18,7 @@ import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
 import type { Problem, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
-import { lobbyDir, recheckLobby, verifyLobby, type FsReader, type LobbySeen } from '../lobby/gate.ts';
+import { lobbyDir, recheckLobby, verifyLobby, type FsReader, type LobbyRefusal, type LobbySeen } from '../lobby/gate.ts';
 import {
   agentList, agentRename, agentStatus, paneForeground, paneProcesses, paneRead, paneRun, paneShellBack, pressEnter, sessionRunning,
   sessionState, startServer, typeText, workspaceClose, workspaceCreate, workspaceList, workspacePanes,
@@ -311,7 +311,11 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
           why: 'its launch line was not checked: the seat is resumed and its state records no start folder',
         };
   if (line?.level === 'note') (dry ? io.stdout : io.stderr)(`  note ${built.name}: ${line.why}\n`);
-  const launchProblem = line?.level === 'miss' ? line.why : null;
+  // The plan, the record and the log hold the reason in words (`record`); the full finding — the
+  // start folder it names — is the record's stderr detail and the doctor line below, both for a
+  // terminal. Without a `record` the words are the whole finding.
+  const launchProblem = line?.level === 'miss' ? line.record ?? line.why : null;
+  const launchProblemDetail = line?.level === 'miss' && line.record ? line.why : undefined;
   const doctorTeam = built.temporary
     ? { ...prepared.team, seats: prepared.team.seats.map((item) => item.name === built.temporary?.like ? { ...item, stopped: false } : item) }
     : prepared.team;
@@ -325,7 +329,9 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // and its miss is left out here exactly as `up` leaves one out of the plan for a resumed seat.
   for (const finding of [
     ...doctorFindings(doctorTeam, root, dir, session, sources.doctor, prepared.warnings, standing, team),
-    ...(launchProblem && !dry && !stray ? [{ level: 'miss' as const, text: `${built.name}: ${launchProblem}` }] : []),
+    ...(launchProblem && !dry && !stray
+      ? [{ level: 'miss' as const, text: `${built.name}: ${launchProblemDetail ?? launchProblem}` }]
+      : []),
   ]) {
     if (blocksLaunch(finding)) {
       io.stderr(`team add: ${finding.text}\n`);
@@ -370,7 +376,9 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const wouldLaunch = planned.stage === undefined || !planned.pane || (planned.stage === 'launched' && !planned.agentLive);
   const seatForPlan = {
     ...planned,
-    ...(launchProblem && wouldLaunch ? { launchProblem } : {}),
+    ...(launchProblem && wouldLaunch
+      ? { launchProblem, ...(launchProblemDetail ? { launchProblemDetail } : {}) }
+      : {}),
     ...(decision.kind === 'refuse' && !wouldLaunch ? { budget: decision } : {}),
   };
   if (dry) {
@@ -450,7 +458,6 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   if (launched && built.temporary) {
     recordLedger(storePath(team.project, root, sources.home), [built.seat]);
   }
-  if (launched) logLine(dir, 'add', who, `started ${built.name}${built.temporary ? ` like ${built.temporary.like} until ${built.temporary.until}` : ''}`, sources.now());
   // exit: add.ready
   // exit: add.not-ready
   // exit: add.server
@@ -592,7 +599,7 @@ function hostOf(input: {
   standing: Standing;
   verifiedLobby: string | null;
   doctor: DoctorSources;
-  confirmLobby(): string | null;
+  confirmLobby(): LobbyRefusal | null;
 }): Host {
   const { dir, session, launch, seat, temporary } = input;
   const running = [...input.running];

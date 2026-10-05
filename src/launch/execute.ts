@@ -5,7 +5,9 @@ import { modelDiffers, seatModel, type Running } from '../status/statusline.ts';
 import { launchedIdentity, seatProcessVerdict, type LaunchedIdentity } from './identity.ts';
 import { IDLE_POLL_MS, type Step } from './plan.ts';
 import { paneProblem, goneDetail, type PauseInput, type PauseResult, type PaneReads } from './pause.ts';
+import { plainPaneText } from './plain.ts';
 import { recordWhat, type Classification, type FinalRecord, type ProgressState } from './progress.ts';
+import type { LobbyRefusal } from '../lobby/gate.ts';
 import type { WaitingRecord } from '../state.ts';
 import { vendorNoticeRange } from '../watch/screen.ts';
 
@@ -17,10 +19,11 @@ export type Host = {
   sessionUp(session: string): boolean | null;
   /**
    * Confirms the starting folder of an `op.lobby` create is still the lobby the gate verified,
-   * run directly before `createWorkspace` with nothing in between. A string refuses: nothing is
-   * created, that seat is left out with this line, and the rest of the plan is stopped.
+   * run directly before `createWorkspace` with nothing in between. A refusal stops everything:
+   * nothing is created, that seat (or the watch) is left out — its record and the log hold the
+   * reason in words — and the fuller sentence, the folder it names, is stderr detail alone.
    */
-  confirmLobby?(): string | null;
+  confirmLobby?(): LobbyRefusal | null;
   createWorkspace(session: string, cwd: string, label: string): { pane: string; workspace: string } | null;
   paneRun(session: string, pane: string, command: string): boolean;
   typeLine(session: string, pane: string, text: string): boolean | 'no-agent';
@@ -119,129 +122,6 @@ export type Report = {
 };
 
 type Place = { pane: string; workspace?: string };
-
-/** Strips string sequences (OSC, DCS, APC, PM, SOS) and their payloads in one linear pass.
- *  OSC sequences terminate at BEL (\x07) or ST (7-bit ESC \ or 8-bit C1 \x9c).
- *  DCS, APC, PM and SOS sequences terminate only at ST (7-bit ESC \ or 8-bit C1 \x9c).
- *  An unterminated sequence drops everything to the end of the text. */
-export function stripControlStrings(text: string): string {
-  const slices: string[] = [];
-  let plainStart = 0;
-  // States: 0: PLAIN, 1: PLAIN_ESC, 2: IN_OSC, 3: IN_OSC_ESC, 4: IN_OTHER, 5: IN_OTHER_ESC
-  let state = 0;
-  let escCount = 0;
-
-  // Invariant, both halves:
-  // - No output character comes from inside a string sequence.
-  // - No plain input character outside every sequence is missing from the scanner's output.
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    switch (state) {
-      case 0: // PLAIN
-        if (c === '\x1b') {
-          if (i > plainStart) slices.push(text.slice(plainStart, i));
-          state = 1;
-          escCount = 1;
-        } else if (c === '\x9d') {
-          if (i > plainStart) slices.push(text.slice(plainStart, i));
-          state = 2;
-        } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
-          if (i > plainStart) slices.push(text.slice(plainStart, i));
-          state = 4;
-        }
-        break;
-      case 1: // PLAIN_ESC
-        if (c === ']') {
-          state = 2;
-          escCount = 0;
-        } else if (c === 'P' || c === 'X' || c === '^' || c === '_') {
-          state = 4;
-          escCount = 0;
-        } else if (c === '\x1b') {
-          escCount++;
-        } else if (c === '\x9d') {
-          // Drop pending ESC: it was followed by a string opener and must not reach across the removed string.
-          state = 2;
-          escCount = 0;
-        } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
-          // Drop pending ESC: it was followed by a string opener and must not reach across the removed string.
-          state = 4;
-          escCount = 0;
-        } else {
-          slices.push('\x1b'.repeat(escCount));
-          escCount = 0;
-          plainStart = i;
-          state = 0;
-        }
-        break;
-      case 2: // IN_OSC
-        if (c === '\x07' || c === '\x9c') {
-          state = 0;
-          plainStart = i + 1;
-        } else if (c === '\x1b') {
-          state = 3;
-        }
-        break;
-      case 3: // IN_OSC_ESC
-        if (c === '\\' || c === '\x07' || c === '\x9c') {
-          state = 0;
-          plainStart = i + 1;
-        } else if (c === '\x1b') {
-          // stay in 3 (IN_OSC_ESC)
-        } else {
-          state = 2;
-        }
-        break;
-      case 4: // IN_OTHER
-        if (c === '\x9c') {
-          state = 0;
-          plainStart = i + 1;
-        } else if (c === '\x1b') {
-          state = 5;
-        }
-        break;
-      case 5: // IN_OTHER_ESC
-        if (c === '\\' || c === '\x9c') {
-          state = 0;
-          plainStart = i + 1;
-        } else if (c === '\x1b') {
-          // stay in 5 (IN_OTHER_ESC)
-        } else {
-          state = 4;
-        }
-        break;
-    }
-  }
-
-  if (state === 0) {
-    if (plainStart === 0 && slices.length === 0) return text;
-    if (plainStart < text.length) slices.push(text.slice(plainStart));
-  } else if (state === 1) {
-    slices.push('\x1b'.repeat(escCount));
-  }
-  return slices.join('');
-}
-
-/** Pane text as it is safe to show, each line cut to `limit` characters: every escape sequence
- *  is removed whole — a CSI's private parameters among them, and the payload of a string
- *  sequence (OSC, DCS, APC, PM, SOS), whichever introducer and terminator are mixed, 7-bit
- *  `ESC x` or its one-byte C1 form, `ESC \` or C1 ST, or BEL to close an OSC; one left
- *  unterminated goes to the end of the text — and every
- *  control character but the line break, carriage return, backspace, bell and escape among
- *  them. Pane text is the one text `team` says that it did not write itself: a carriage return
- *  in it would overwrite the report that carries it. */
-export function plainPaneText(text: string, limit = 200): string {
-  return stripControlStrings(
-    text
-      .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-      .replace(/\x9b[0-?]*[ -/]*[@-~]/g, ''),
-  )
-    .replace(/\x1b./g, '')
-    .replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, '')
-    .split('\n')
-    .map((line) => (line.length > limit ? `${line.slice(0, limit)}…` : line))
-    .join('\n');
-}
 
 /** Where the launch line's echo sits among the lines, or -1 when it is not there. A prompt may
  *  stand in front of the echo and the command may wrap after it, so only the command's first
@@ -529,7 +409,9 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         host.record(op.seat, { stage: 'ready', rules: op.rules });
         finishReady(op.seat);
       } else if (op?.do === 'refuse') {
-        final(op.seat, { kind: 'left out', reason: `refused: ${op.why}` });
+        // The record carries the reason in words; the full finding — the start folder it names —
+        // follows as the record's detail, on stderr alone.
+        final(op.seat, { kind: 'left out', reason: `refused: ${op.why}` }, op.detail ? `  ${op.detail}\n` : '');
       } else host.say(`  skip ${step.text}\n`);
       continue;
     }
@@ -572,14 +454,16 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           // that window is left, and the page says exactly which.
           const why = host.confirmLobby();
           if (why) {
+            // The record (and the log) hold the reason in words; the folder the fuller sentence
+            // names is stderr detail, under the record, for the owner's terminal alone.
             abort = true;
             if (op.seat) {
               dropped.add(op.seat);
-              final(op.seat, { kind: 'left out', reason: why });
+              final(op.seat, { kind: 'left out', reason: why.reason }, `  ${why.detail}\n`);
             } else {
               watchFailed = true;
-              host.say(`watch: ${why}\n`);
-              host.log('watch', why);
+              host.say(`watch: ${why.reason}\n  ${why.detail}\n`);
+              host.log('watch', why.reason);
             }
             break;
           }
@@ -651,9 +535,9 @@ export async function executePlan(steps: readonly Step[], session: string, host:
               return;
             }
             if (!running) {
-              const note = "its screen doesn't show a model this version knows; not checked";
-              hold(op.seat, `${op.seat}: ${note}\n`);
-              host.log(op.seat, note);
+              // The note is not a record: it is held and said as the seat's record's detail —
+              // stderr alone — and the log keeps the one line the record writes, `ready`.
+              hold(op.seat, `${op.seat}: its screen doesn't show a model this version knows; not checked\n`);
             }
           }
           // The seat's own process, read now that its idle prompt is on the screen: the pane's

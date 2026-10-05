@@ -16,7 +16,8 @@ ownership by the invoking user, no symbolic links anywhere in the chain, directo
 path. The lobby is checked again — the gate's checks, plus that it is still the folder the gate
 read: the same canonical path, device and inode — directly before every workspace this run creates
 in it, with nothing between that confirmation and herdr's create call. A failed confirmation
-creates nothing: the seat is left out with the gate's own refusal line, and the rest of the
+creates nothing: the seat is left out with the gate's cause in words — the gate's own line, the
+folders it resolved, is written under the record on stderr — and the rest of the
 launch stops, so no further workspace is made, not even the watchdog's. A seat created earlier
 in the same run is left running: its workspace was created while the path was the verified
 lobby, and `up` never closes a workspace it may already have started a CLI in. One window
@@ -128,7 +129,7 @@ record in state (one launched before this version recorded process identity, or 
 herdr could not read when it stopped: the reading is taken once, after the idle prompt and after the
 launch model check) keeps today's behaviour: nothing checks its pane.
 
-When the idle screen names no model this version can read, `up` writes `<seat>: its screen doesn't show a model this version knows; not checked` to stderr, after the seat's record, and continues. Nothing is assumed about which model is running.
+When the idle screen names no model this version can read, `up` writes `<seat>: its screen doesn't show a model this version knows; not checked` to stderr, after the seat's record, and continues. It is detail, not a record: the log keeps the seat's one line, the record `ready`. Nothing is assumed about which model is running.
 
 A seat whose rules travel as a first message (codex, cursor, antigravity) gets them from a file:
 `up` writes the approved rules text to `<project state folder>/rules/<seat>.md` — owner-only,
@@ -251,7 +252,12 @@ but the line breaks removed, each line cut to 200 characters with `…` — each
 A wait that runs out with the owner at a terminal is not left there: it meets the pause as
 `timeout` and is the owner's to open, skip or stop (above); the recorded timeout and the detail
 above are what a run without a terminal keeps.
-Those lines go to the terminal only: the log file gets the record, never the screen's text.
+Those lines go to the terminal only: the log file gets the record, never the screen's text. The
+same holds for every folder the run resolves: a refusal's record holds the finding in words — the
+start folder a launch line was looked for in, the lobby a failed confirmation names — and the
+sentence with the folder is written under the record, on stderr, for this terminal alone. One line
+per final record, in file order, is the whole of what the log gets: a defect in the seat's file, or
+a note like the unread-model one below, is stderr detail and never a log line.
 
 The records are what stdout gets; a line below that is not a record is written to stderr, after the
 record it belongs to, as its meaning says.
@@ -289,8 +295,8 @@ record it belongs to, as its meaning says.
 | `<seat>: left out: the approval allows 3 seats; 4 would be running` | the approval's ceiling, from the record, not the file |
 | `<seat>: left out: refused: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | a counted reading is inside that account's reserve and this run would launch the seat; this seat is not started, and the others still are. `accounts with room: none` when no other account has room |
 | `<seat>: left out: refused: <account> spend <amount> <CUR>, at or below its <floor> <CUR> floor, read <age> ago; accounts with room: <accounts>` | the money its check counted is at or below the account's floor, and this run would launch the seat; this seat is not started, and the others still are |
-| `<seat>: left out: refused: its launch line starts `<word>`, which is not on the PATH` / `…, which does not exist` / `…, which is not executable` / `…, not found from `~`` / `…, not found from its start folder <folder>` | the program the line starts is missing where the seat starts — the lobby for a seat that works in worktrees. A first word that is one fully quoted literal (`"claude"`, `'zcash'`) is checked with the quotes removed, the way a shell would run it, and `<word>` is the word as written, quotes and all — a quoted `"~/x"` is a pathname with a literal `~` folder, resolved from the start folder, never the home. A path written as the program is read as main's launcher check read it: it must be there and executable, not merely there. This seat is not started, and the others still are |
-| `<seat>: left out: refused: its launch line runs `<path>`, not found from its start folder <folder>; the same file is at `<absolute>` from the project root — write that path` | the line runs a shell — `sh`, `bash` or `zsh`, by name or by path — whose first argument is a relative script path, not an option, and that script resolves from the project root but not from the folder the line will run in: the shell exits 127 without starting anything. This seat is not started, and the others still are |
+| `<seat>: left out: refused: its launch line starts `<word>`, which is not on the PATH` / `…, which does not exist` / `…, which is not executable` / `…, not found from `~`` / `…, not found from its start folder` | the program the line starts is missing where the seat starts — the lobby for a seat that works in worktrees. When the check looked in a folder it resolved, the record's reason stops at `…, not found from its start folder` and the sentence naming the folder is written under the record, on stderr. A first word that is one fully quoted literal (`"claude"`, `'zcash'`) is checked with the quotes removed, the way a shell would run it, and `<word>` is the word as written, quotes and all — a quoted `"~/x"` is a pathname with a literal `~` folder, resolved from the start folder, never the home. A path written as the program is read as main's launcher check read it: it must be there and executable, not merely there. This seat is not started, and the others still are |
+| `<seat>: left out: refused: its launch line runs `<path>`, not found from its start folder` | the line runs a shell — `sh`, `bash` or `zsh`, by name or by path — whose first argument is a relative script path, not an option, and that script resolves from the project root but not from the folder the line will run in: the shell exits 127 without starting anything. The record's reason stops at `…, not found from its start folder`; the sentence naming the folder it looked in and the absolute path to write is written under the record, on stderr. This seat is not started, and the others still are |
 | `<seat>: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | the same reading, and the seat is already running; setup continues and the line is only a notice — on a real run it is written to stderr, under the seat's record |
 | `<seat>: <account> spend <amount> <CUR>, at or below its <floor> <CUR> floor, read <age> ago; accounts with room: <accounts>` | the same money reading, and the seat is already running; setup continues and the line is only a notice — on a real run it is written to stderr, under the seat's record |
 | `<seat>: <account> is unknown` | the account is in the file and its figure is unknown — a subscription with no counted reading, or a spend account whose money reading is missing, older than `budgets.stale_after`, or in another currency than the floor's. A subscription figure with no known reset is unknown while it could still matter — inside its reserve, or within the reserve again outside it; further out — more than the reserve again — it counts, the room the figure last held, and the launch decision is clear: no unknown line. The seat still starts, and the line is a notice written to stderr, under the seat's record, on a real run |

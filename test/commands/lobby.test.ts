@@ -1487,7 +1487,7 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     };
   }
 
-  test('a lobby swapped after the gate creates no workspace, no pane and no typed input', async () => {
+  test('a lobby swapped after the gate creates no workspace, no pane and no typed input: the record and the log hold the reason in words', async () => {
     approveYaml(migratedTeamYaml());
     const made = world();
     // The replacement is a real folder of the same owner, mode and emptiness: no link, no mode
@@ -1498,11 +1498,17 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     expect(made.paneIds()).toEqual([]);
     expect(made.runs).toEqual([]);
     expect(made.typed).toEqual([]);
-    expect(run.out).toContain(`lead: left out: the lobby ${lobby}: it is not the folder the gate read`);
+    // The record holds the words; the folder it names is stderr detail, for the owner alone.
+    expect(run.out).toContain('lead: left out: the lobby: it is not the folder the gate read\n');
+    expect(run.out).not.toContain(lobby);
+    expect(run.err).toContain(`  the lobby ${lobby}: it is not the folder the gate read\n`);
+    const log = readFileSync(join(dir, 'team.log'), 'utf8');
+    expect(log).toContain('lead: left out: the lobby: it is not the folder the gate read');
+    expect(log).not.toContain(lobby);
     expect(Object.keys(readState(dir).sessions['acme']?.seats ?? {})).toEqual([]);
   });
 
-  test('add creates nothing for the same swap, and leaves the folder it names unchanged', async () => {
+  test('add creates nothing for the same swap, and leaves the folder it names unchanged: the log holds no folder', async () => {
     approveYaml(migratedTeamYaml());
     const outside = join(base, 'outside');
     mkdirSync(outside, { recursive: true });
@@ -1514,12 +1520,19 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     expect(made.paneIds()).toEqual([]);
     expect(made.runs).toEqual([]);
     expect(made.typed).toEqual([]);
-    expect(run.out).toContain(`worker: left out: the lobby ${lobby}: canonical path`);
+    // The record holds the words; the canonical paths the check compared are stderr detail.
+    expect(run.out).toContain('worker: left out: the lobby: its canonical path leads somewhere else\n');
+    expect(run.out).not.toContain(lobby);
+    expect(run.err).toContain('  the lobby ');
+    expect(run.err).toContain('canonical path');
+    const log = readFileSync(join(dir, 'team.log'), 'utf8');
+    expect(log).toContain('worker: left out: the lobby: its canonical path leads somewhere else');
+    expect(log).not.toContain(lobby);
     expect(readdirSync(outside)).toEqual([]);
     expect(statSync(outside).mode & 0o777).toBe(0o755);
   });
 
-  test('a swap between two seats stops the next one and leaves the first running', async () => {
+  test('a swap between two seats stops the next one and leaves the first running: the stopped seat’s record and log hold no folder', async () => {
     approveYaml(migratedTeamYaml());
     const made = world();
     // The gate reads first, the lead's confirmation second (the swap is not there yet), the
@@ -1528,7 +1541,12 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     expect(run.code).toBe(1);
     expect(made.workspaces).toEqual([{ label: 'lead', cwd: lobby }]);
     expect(run.out).toContain('lead: ready');
-    expect(run.out).toContain(`worker: left out: the lobby ${lobby}: it is not the folder the gate read`);
+    expect(run.out).toContain('worker: left out: the lobby: it is not the folder the gate read\n');
+    expect(run.out).not.toContain(lobby);
+    expect(run.err).toContain(`  the lobby ${lobby}: it is not the folder the gate read\n`);
+    const log = readFileSync(join(dir, 'team.log'), 'utf8');
+    expect(log).toContain('worker: left out: the lobby: it is not the folder the gate read');
+    expect(log).not.toContain(lobby);
     // The first seat was created while the path was the verified lobby; nothing closes it.
     expect(made.closed).toEqual([]);
     expect(made.launch.agentPanes('acme')).toEqual(['w1:p1']);
