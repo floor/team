@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { approvalOf } from '../../src/approve/approval.ts';
 import { runAdd, type AddSources } from '../../src/commands/add.ts';
 import { runApprove, type ApproveSources } from '../../src/commands/approve.ts';
@@ -12,6 +12,7 @@ import { runStatus, standingSource, type StatusSources } from '../../src/command
 import { runUp, type Launch, type UpSources } from '../../src/commands/up.ts';
 import { runWorktree, type WorktreeSources } from '../../src/commands/worktree.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
+import { validateTeamFile } from '../../src/file/validate.ts';
 import { absoluteTrustProblem, canonicalLanding, insideTrust } from '../../src/file/paths.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
 import { defaultFs, findRepoRoot, lobbyDir, verifyLobby, type FsReader } from '../../src/lobby/gate.ts';
@@ -885,6 +886,120 @@ seats:
     if (!loaded.ok) {
       expect(loaded.errors.some((e) => e.message.includes('inside the protected checkout'))).toBe(true);
     }
+  });
+});
+
+// A volume either folds two spellings of one name into one folder or keeps them apart. The probe
+// uses raw syscalls on folders this test made; each expectation below is the answer for the volume
+// the suite runs on, so every test states a definite verdict and none of them is skipped.
+function foldsSpellings(variant: string, real: string): boolean {
+  try {
+    lstatSync(variant);
+  } catch {
+    return false;
+  }
+  try {
+    return realpathSync(variant) === realpathSync(real);
+  } catch {
+    return false;
+  }
+}
+
+describe('a refused folder is refused under every spelling that names it', () => {
+  const only = (entry: string) => migratedTeamYaml().replace(/trust:\n(?:  - .*\n)+/, `trust:\n  - ${entry}\n`);
+  // The same file with the entry added to a trust list that covers the lobby, the root and the
+  // worktrees, so a load failure names the entry, never the coverage a single-entry file lacks.
+  const plus = (entry: string) => migratedTeamYaml().replace('trust:\n', `trust:\n  - ${entry}\n`);
+
+  const verdicts = (entry: string, homeDir = home, rootDir = root): string[] => {
+    const result = validateTeamFile(only(entry), { home: homeDir, root: rootDir });
+    return result.ok ? [] : result.errors.map((problem) => problem.message);
+  };
+
+  test('a second spelling of the home is refused where it names the home', () => {
+    const variant = join(base, 'HOME');
+    const folds = foldsSpellings(variant, home);
+    const found = verdicts(variant);
+    if (folds) {
+      expect(found.join('\n')).toContain('is the home itself');
+    } else {
+      expect(found).toEqual([]);
+    }
+    writeFileSync(join(root, '.agents', 'team.yaml'), plus(variant));
+    const loaded = loadTeamFile(root, { home });
+    expect(loaded.ok).toBe(!folds);
+    if (!loaded.ok) expect(loaded.errors.map((e) => e.message).join('\n')).toContain('is the home itself');
+  });
+
+  test("a second spelling of the project's parent is refused where it names the parent", () => {
+    const project = join(base, 'PB', 'proj');
+    mkdirSync(project, { recursive: true });
+    const variant = join(base, 'pb');
+    const folds = foldsSpellings(variant, join(base, 'PB'));
+    const found = verdicts(variant, home, project);
+    if (folds) {
+      expect(found.join('\n')).toContain('is a parent of the project');
+    } else {
+      expect(found).toEqual([]);
+    }
+  });
+
+  test("a second spelling of the parent that holds the project is refused at load", () => {
+    const variant = join(dirname(base), basename(base).toUpperCase());
+    const folds = foldsSpellings(variant, base);
+    writeFileSync(join(root, '.agents', 'team.yaml'), plus(variant));
+    const loaded = loadTeamFile(root, { home });
+    expect(loaded.ok).toBe(!folds);
+    if (!loaded.ok) expect(loaded.errors.map((e) => e.message).join('\n')).toContain('is a parent of the project');
+  });
+
+  test('a second spelling of the folders that hold the lobby and the approval store is refused', () => {
+    mkdirSync(join(home, '.config', 'team'), { recursive: true });
+    const folds = foldsSpellings(join(base, 'HOME'), home);
+    const found = [
+      join(base, 'HOME', '.config'),
+      join(base, 'HOME', '.config', 'team'),
+    ].flatMap((entry) => verdicts(entry));
+    if (folds) {
+      expect(found).toHaveLength(2);
+      for (const message of found) expect(message).toContain('would cover');
+    } else {
+      expect(found).toEqual([]);
+    }
+  });
+
+  test('another normalisation form of the home is refused where it names the home', () => {
+    const homeUni = join(base, 'Hómé');
+    mkdirSync(homeUni);
+    const variant = join(base, 'Hómé');
+    const folds = foldsSpellings(variant, homeUni);
+    const found = verdicts(variant, homeUni);
+    if (folds) {
+      expect(found.join('\n')).toContain('is the home itself');
+    } else {
+      expect(found).toEqual([]);
+    }
+  });
+
+  test('an entry that does not exist yet resolves as far as it exists and keeps the rest as written', () => {
+    const variant = join(base, 'HOME');
+    const folds = foldsSpellings(variant, home);
+    const under = join(variant, 'seat');
+    expect(canonicalLanding(under).landing).toBe(folds ? join(realpathSync(home), 'seat') : under);
+    expect(verdicts(under)).toEqual([]);
+    writeFileSync(join(root, '.agents', 'team.yaml'), plus(under));
+    expect(loadTeamFile(root, { home }).ok).toBe(true);
+  });
+
+  test("the spellings that name a refused folder exactly still refuse, and the team's own folders still accept", () => {
+    expect(verdicts('/').join('\n')).toContain('is the root of the filesystem');
+    expect(verdicts(home).join('\n')).toContain('is the home itself');
+    expect(verdicts(join(home, '.config', 'team')).join('\n')).toContain('would cover');
+    expect(verdicts(root, home, root)).toEqual([]);
+    expect(verdicts(join(root, 'work'), home, root)).toEqual([]);
+    expect(verdicts(lobbyDir(home))).toEqual([]);
+    expect(verdicts(join(base, 'worktrees'))).toEqual([]);
+    expect(verdicts(join(base, 'elsewhere'))).toEqual([]);
   });
 });
 
