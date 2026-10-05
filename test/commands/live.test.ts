@@ -147,6 +147,23 @@ function sources(extra: Partial<UpSources>, made: World): UpSources {
   };
 }
 
+/** The one line as a box the pane would draw: wrapped at `width`, broken after a `/` or a
+ *  space where one falls, mid-word otherwise, so no row break hides a character. */
+function wrappedRows(text: string, width = 50): string[] {
+  const rows: string[] = [];
+  let rest = text;
+  while (rest.length > width) {
+    const cut = rest.slice(0, width + 1);
+    const slash = cut.lastIndexOf('/');
+    const space = cut.lastIndexOf(' ');
+    const at = Math.max(slash, space, 0) || width;
+    rows.push(rest.slice(0, at + 1));
+    rest = rest.slice(at + 1);
+  }
+  rows.push(rest);
+  return rows;
+}
+
 describe('team up, live', () => {
   test('rules are not typed into a pane with no live agent', async () => {
     const path = join(root, '.agents/team.yaml');
@@ -179,10 +196,10 @@ describe('team up, live', () => {
     const read = made.launch.paneText;
     let pasted = false;
     let typed = '';
-    // The pane with the paste rendered: the idle frame's placeholder row replaced by the typed
-    // message, later lines at the prompt's own column, as the fixtures README describes.
+    // The pane with the line rendered: the idle frame's placeholder row replaced by the line's
+    // first row, its continuation rows at the prompt's own column, wrapped as the pane wraps.
     const boxed = () => {
-      const [first = '', ...rest] = typed.split('\n');
+      const [first = '', ...rest] = wrappedRows(typed);
       return capture('idle').replace('› Ask Codex to do anything', [`› ${first}`, ...rest.map((line) => `  ${line}`)].join('\n'));
     };
     made.launch.agentStatus = () => status;
@@ -196,19 +213,25 @@ describe('team up, live', () => {
     if (outcome === 'accepted') {
       expect(code).toBe(0);
       expect(seat).toMatchObject({ stage: 'ready', rules: 'message' });
-      expect(sent[0]).toContain('Agent: GPT-6 Sol · implementer');
-      // The typed first message is answered once, so it asks for the ready reply.
-      expect(sent[0]).toEndWith(CLOSING_MESSAGE);
+      // The pane sees the one line: the file's path and its hash, never the rules themselves.
+      expect(sent[0]).toStartWith('Read ');
+      expect(sent[0]).toContain(`rules/codex-acme.md`);
+      expect(sent[0]).toMatch(/\(sha256 [0-9a-f]{12}\)/);
+      expect(sent[0]).toEndWith('your standing rules for this session; reply ready and wait for your brief.');
       expect(sent[1]).toBe('Enter');
+      // The rules travel in the file the line points at, owner-only, the approved text itself.
+      const file = readFileSync(join(store(), 'rules', 'codex-acme.md'), 'utf8');
+      expect(file).toContain('Agent: GPT-6 Sol · implementer');
+      expect(file).toEndWith(CLOSING_MESSAGE);
       expect(made.runs.some(({ command }) => command.startsWith('Rules for this session'))).toBe(false);
     } else if (outcome === 'swallowed') {
       expect(code).toBe(1);
       expect(seat?.stage).toBe('named');
       expect(seat?.rules).toBeUndefined();
-      // The message was typed and Enter was pressed, and the box still holds it: the report says
+      // The line was typed and Enter was pressed, and the box still holds it: the report says
       // the rules sit unsent and names what to do, instead of a generic failure.
-      expect(io.out).toContain('codex-acme: rules typed, not sent: its box still holds them after Enter (the screen read unsent); '
-        + 'press Enter in its pane to send them, or clear the box (Ctrl-C), then run up again');
+      expect(io.out).toContain('codex-acme: rules typed, not sent: its box still holds the line after Enter; '
+        + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again');
     } else {
       expect(code).toBe(1);
       expect(sent).toEqual([]);
@@ -245,7 +268,7 @@ describe('team up, live', () => {
     // The pane with the paste rendered: the idle frame's bare prompt row replaced by the typed
     // message, later lines at the prompt's own column, as the fixtures README describes.
     const boxed = () => {
-      const [first = '', ...rest] = typed.split('\n');
+      const [first = '', ...rest] = wrappedRows(typed);
       const body = [`> ${first}`, ...rest.map((line) => `  ${line}`)].join('\n');
       return capture('idle').replace('\n>\n', `\n${body}\n`);
     };
@@ -260,18 +283,23 @@ describe('team up, live', () => {
     if (outcome === 'accepted') {
       expect(code).toBe(0);
       expect(seat).toMatchObject({ stage: 'ready', rules: 'message' });
-      expect(sent[0]).toContain('Agent: Gemini 3.8 Flash · implementer');
-      // The typed first message is answered once, so it asks for the ready reply.
-      expect(sent[0]).toEndWith(CLOSING_MESSAGE);
+      // The pane sees the one line; the rules travel in the file it points at.
+      expect(sent[0]).toStartWith('Read ');
+      expect(sent[0]).toContain(`rules/gemini-acme.md`);
+      expect(sent[0]).toMatch(/\(sha256 [0-9a-f]{12}\)/);
+      expect(sent[0]).toEndWith('your standing rules for this session; reply ready and wait for your brief.');
       expect(sent[1]).toBe('Enter');
+      const file = readFileSync(join(store(), 'rules', 'gemini-acme.md'), 'utf8');
+      expect(file).toContain('Agent: Gemini 3.8 Flash · implementer');
+      expect(file).toEndWith(CLOSING_MESSAGE);
       expect(made.runs.some(({ command }) => command.startsWith('Rules for this session'))).toBe(false);
     } else if (outcome === 'swallowed') {
       expect(code).toBe(1);
       expect(seat?.stage).toBe('named');
       expect(seat?.rules).toBeUndefined();
-      // Same reading as the Codex case: the box still shows the message, unsent.
-      expect(io.out).toContain('gemini-acme: rules typed, not sent: its box still holds them after Enter (the screen read unsent); '
-        + 'press Enter in its pane to send them, or clear the box (Ctrl-C), then run up again');
+      // Same reading as the Codex case: the box still shows the line, unsent.
+      expect(io.out).toContain('gemini-acme: rules typed, not sent: its box still holds the line after Enter; '
+        + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again');
     } else {
       expect(code).toBe(1);
       expect(sent).toEqual([]);

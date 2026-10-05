@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
 import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
 import { storePath, writeApproval } from '../../src/store/store.ts';
+import { rulesFilePath, writeRulesFile } from '../../src/launch/rules-file.ts';
 import type { DownLaunch } from '../../src/commands/down.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { emptySession, readState, updateState } from '../../src/state.ts';
@@ -459,14 +460,18 @@ describe('team remove', () => {
     expect(readFileSync(file, 'utf8')).toContain('name: lead');
   });
 
-  test('a temporary seat is stopped and not written into the file', async () => {
+  test('a temporary seat is stopped, its rules file goes with it, and it is not written into the file', async () => {
     updateState(join(dir, '.agents'), (state) => {
       const session = (state.sessions.acme ??= emptySession());
       session.seats['worker-tmp-1'] = { stage: 'ready', temporary: { like: 'worker', until: 'result:done.md' } };
     });
     const made = world();
+    made.sources.home = dir;
+    const rulesFile = rulesFilePath('acme', dir, dir, 'worker-tmp-1');
+    writeRulesFile(rulesFile, 'Rules.\n');
     made.agents.push({ name: 'worker-tmp-1', agent: 'claude', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null });
     expect(await runRemove(['worker-tmp-1', '--file', file], testIo(dir, owner), made.sources)).toBe(0);
+    expect(existsSync(rulesFile)).toBe(false);
     expect(readFileSync(file, 'utf8')).not.toContain('tmp');
     expect(readState(join(dir, '.agents')).sessions.acme?.seats['worker-tmp-1']).toBeUndefined();
     updateState(join(dir, '.agents'), (state) => {
