@@ -420,7 +420,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           dropped.add(op.seat);
           const why =
             outcome === 'trust'
-              ? 'left out: trust question'
+              ? 'trust question; its workspace was closed without an answer and the seat left out'
               : `${outcome}; its workspace was closed without input and the seat left out`;
           finish(op.seat, why);
           break;
