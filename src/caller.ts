@@ -176,11 +176,35 @@ export function noPaneRefusal(name: string): string {
  * or the operator's name — the two this refusal can name — is refused by the file's own
  * validation (`names no declared seat` / `can't be a stopped seat`, exit 2); with the recorded
  * pane gone (unreadable) `team up` alone does launch the seat afresh. `team down` then `team up`
- * repairs all three: the stop clears the session and its records, the start launches the seat
- * again and records the pane it starts on (exit 0, 0; the caller then passes the gate).
+ * repairs all three: the stop stops every seat it reaches and clears the session, the start
+ * launches the seat again and records the pane it starts on (exit 0, 0; the caller then passes
+ * the gate). A seat the stop cannot reach — the gone case, whose name is not in the agent list —
+ * keeps its old record through the stop, and the start overwrites it by launching. (Round 4's
+ * safety review read the state file after each step of the gone case: still the old pane after
+ * `down`, the launched pane after `up`.)
  */
 export function anotherPaneRefusal(name: string, recordedPane: string): string {
   return `the state records pane ${recordedPane} for seat ${name} in this session, not the pane this call is on: the owner stops the team and starts it again (\`team down\`, then \`team up\`)`;
+}
+
+/**
+ * The refusal a command prints when a non-owner aimed `--file`: decided by the walk alone, before
+ * that file is read, so every state of the flagged path — no file at all, an unparsable file, a
+ * valid team file, a folder, an unreadable file — answers with these same bytes and the same
+ * exit, and nothing of the flagged project and no session is read. `undefined` when the flag is
+ * absent or the walk places the owner. Every command that takes `--file` (add, remove, worktree
+ * new / remove, answer, down) asks this before it reads anything; it lives here, beside
+ * `walkCaller`, so a seventh command cannot forget it. (Round 5: `add`, `remove` and `worktree`
+ * read the flagged file and asked the host for its session before their own `--file` check; the
+ * runs that showed it are in the round's result.)
+ */
+export function fileOwnerRefusal(
+  io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>,
+  file: string | undefined,
+): string | undefined {
+  if (!file) return undefined;
+  const walked = walkCaller(io);
+  return isOwner(walked) ? undefined : `--file is the owner's, from a terminal outside herdr; this call is ${describeCaller(walked)}`;
 }
 
 /** The one refusal a non-owner aiming `--session` meets, decided and printed before any session

@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce, recordSeatDigestOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { anotherPaneRefusal, describeCaller, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller } from '../caller.ts';
+import { anotherPaneRefusal, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller } from '../caller.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from '../commands/doctor.ts';
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
@@ -131,6 +131,17 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 2;
   }
 
+  // The `--file` check is the walk's, and it runs before that file is read: a non-owner aiming
+  // `--file` must not make this command read and validate another project's team file, nor leave
+  // its `last_valid` in that project's state. The one place the six commands that take the flag
+  // decide it is `fileOwnerRefusal` (caller.ts).
+  const fileRefusal = fileOwnerRefusal(io, args.values.file);
+  if (fileRefusal !== undefined) {
+    io.stderr(`team add: ${fileRefusal}\n`);
+    // exit: add.file-owner
+    return 1;
+  }
+
   // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
   // `--session` is refused here, before the flag's session is read — no agent list, no pane root,
   // no state write, no log line. (A seat cannot be named in this refusal: placing it would read a
@@ -164,11 +175,6 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     : judgeCallerIn(io, dir, team);
   const { caller, shown } = judged;
   const session = judged.session;
-  if (args.values.file && !isOwner(caller)) {
-    io.stderr(`team add: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(shown)}\n`);
-    // exit: add.file-owner
-    return 1;
-  }
   const mayChange = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
   if (mayChange.kind === 'no-pane') {
     io.stderr(`team add: ${noPaneRefusal(mayChange.name)}\n`);

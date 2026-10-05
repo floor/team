@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { notInForce, worktreeTeamInForceOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { anotherPaneRefusal, callerOf, describeCaller, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller } from '../caller.ts';
+import { anotherPaneRefusal, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller } from '../caller.ts';
 import { insideTrust } from '../file/paths.ts';
 import { loadTeamFile, placedProblems } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -71,6 +71,18 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     return 2;
   }
 
+  // The `--file` check is the walk's, and it runs before that file is read: a non-owner aiming
+  // `--file` must not make this command read and validate another project's team file, nor ask
+  // the host about that file's session — the one place the six commands that take the flag decide
+  // it is `fileOwnerRefusal` (caller.ts). Both subcommands (`worktree new`, `worktree remove`)
+  // run this same gate before the load below.
+  const fileRefusal = fileOwnerRefusal(io, args.values.file);
+  if (fileRefusal !== undefined) {
+    io.stderr(`team worktree: ${fileRefusal}\n`);
+    // exit: worktree.file-owner
+    return 1;
+  }
+
   // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
   // `--session` is refused here, before the flag's session is read — no agent list, no pane root,
   // no state write, no log line. (A seat cannot be named in this refusal: placing it would read a
@@ -105,15 +117,6 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     return 2;
   }
   const { team, root } = loaded;
-  // The --file check reads the caller's own placement, where main read it.
-  if (args.values.file) {
-    const caller = callerOf(io);
-    if (!isOwner(caller)) {
-      io.stderr(`team worktree: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
-      // exit: worktree.file-owner
-      return 1;
-    }
-  }
   // One verified snapshot for the whole command, read once: every value the two subcommands read
   // from the file is the approved copy's, including when the fingerprints match. The caller's
   // gate below is judged on those values too — a seat the file added to `coordinator` is not one

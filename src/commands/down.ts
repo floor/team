@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { readArgs } from '../args.ts';
-import { anotherPaneRefusal, callerOf, describeCaller, isOwner, judgeCallerIn, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller } from '../caller.ts';
+import { anotherPaneRefusal, callerOf, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller } from '../caller.ts';
 import { currentTeam } from '../file/current.ts';
 import {
   agentList,
@@ -150,16 +150,13 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   const dry = args.flags.has('dry-run');
   // The `--file` check is the walk's too, and it runs before `currentTeam` reads that file or
   // writes beside it: a non-owner aiming `--file` must not make this command read and validate
-  // another project's team file, nor leave its `last_valid` in that project's state. The line is
-  // the one `add`, `remove` and `worktree` refuse with; the walk reads no session, no state and
-  // no log, so nothing but the process chain decides this.
-  if (args.values.file) {
-    const walked = walkCaller(io);
-    if (!isOwner(walked)) {
-      io.stderr(`team down: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(walked)}\n`);
-      // exit: down.file-owner
-      return 1;
-    }
+  // another project's team file, nor leave its `last_valid` in that project's state. The one
+  // place the six commands that take the flag decide it is `fileOwnerRefusal` (caller.ts).
+  const fileRefusal = fileOwnerRefusal(io, args.values.file);
+  if (fileRefusal !== undefined) {
+    io.stderr(`team down: ${fileRefusal}\n`);
+    // exit: down.file-owner
+    return 1;
   }
   // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
   // `--session` is refused here, before `currentTeam` writes anything and before the flag's
