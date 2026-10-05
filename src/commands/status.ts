@@ -8,7 +8,7 @@ import { budgetLine, budgetTable, type BudgetRow } from '../budgets/table.ts';
 import { recall } from '../budgets/readings.ts';
 import { currentTeam } from '../file/current.ts';
 import type { Problem, TeamFile } from '../file/types.ts';
-import { agentList, paneRead, sessionRunning, workspaceList } from '../herdr.ts';
+import { agentList, PANE_WINDOW, paneRead, sessionRunning, workspaceList } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { emptySession, readState } from '../state.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
@@ -48,7 +48,7 @@ export const realSources: StatusSources = {
     const screens: Record<string, string> = {};
     for (const agent of agents) {
       if (!team.seats.some((seat) => seat.name === agent.name)) continue;
-      const screen = paneRead(agent.pane, 12, session);
+      const screen = paneRead(agent.pane, PANE_WINDOW, session);
       if (screen !== null) screens[agent.pane] = screen;
     }
     return { running: true, agents, workspaces, screens };
