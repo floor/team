@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, delimiter, dirname, isAbsolute, join } from 'node:path';
+import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { approvalDifferencesOf, budgetsInForceOf, watchInForceOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, isOwner, type Caller } from '../caller.ts';
@@ -17,6 +17,7 @@ import { profileFor } from '../profiles/index.ts';
 import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
 import { readState } from '../state.ts';
+import { canShowModel } from '../status/statusline.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
 import { approvalStanding, LEGACY_LINE, type Standing } from '../store/store.ts';
 
@@ -117,20 +118,6 @@ function launchBinary(launch: string): string | null {
       .split(/\s+/)
       .find((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) ?? null
   );
-}
-
-// Whether a launch line runs the CLI's own binary, so any model flag in it is the CLI's own, or
-// runs a launcher — a script or program that chooses the model itself. Decided from the first two
-// words that are not variable assignments: a launcher names none of the profile's binary or
-// process names, as itself or as the basename of a path.
-function runsOwnBinary(launch: string, profile: Pick<Profile, 'binary' | 'processNames'>): boolean {
-  const words = launch
-    .trim()
-    .split(/\s+/)
-    .filter((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word))
-    .slice(0, 2);
-  const known = [profile.binary, ...profile.processNames];
-  return words.some((word) => known.some((name) => word === name || basename(word) === name));
 }
 
 // The approved bytes rule, as the watch applies it (budgets/checks.ts): a check whose file no
@@ -285,26 +272,43 @@ function cliFindings(cli: string, seats: Seat[], sources: DoctorSources): Findin
   return findings;
 }
 
-// What `doctor` says of a seat whose launch names no model the profile knows. Nothing, when the
-// model is checked on the running seat instead: a screen the profile reads settles it, and a
-// launcher that runs the CLI names the model itself. The one case nothing can check — a CLI that
-// keeps no model on its screen — stays a warning; so does a CLI that starts on its last-used
-// model, whose warning another change rewords.
+// What `doctor` says of a seat whose launch names no model the profile knows. Silence only when
+// the running seat will really be checked: the launch runs the CLI's own binary, bare — no path,
+// no wrapper in front of it — and the profile's screen can name the model the file declares, so
+// `status` and the watch would flag a seat that runs something else. Every other shape names
+// what the owner can do: declare `model_from` for a launcher that chooses the model, add a model
+// flag, or know that nothing checks the model. The last-used case keeps its warning, whose text
+// another change rewords.
 export function modelFlagFinding(
-  seat: Pick<Seat, 'name' | 'launch' | 'display' | 'modelFrom'>,
-  profile: Pick<Profile, 'binary' | 'processNames' | 'readsModel' | 'lastUsedModel'>,
+  seat: Pick<Seat, 'name' | 'cli' | 'launch' | 'display' | 'model' | 'modelFrom'>,
+  profile: Pick<Profile, 'binary' | 'lastUsedModel'>,
 ): Finding | null {
   const declared = declaredModel(seat);
-  if (!profile.readsModel) {
-    return { level: 'warn', text: `${seat.name}: no model flag and this CLI doesn't show its model; nothing checks that it runs ${declared}` };
+  // The first word that is not a variable assignment: the program the launch runs. Bare — equal
+  // to the binary's own name — is the one shape whose model flag is certainly the CLI's own.
+  const first = launchBinary(seat.launch) ?? seat.launch.trim().split(/\s+/)[0] ?? '';
+  const bare = first === profile.binary;
+  const shows = canShowModel(seat);
+  if (seat.modelFrom === 'launcher') {
+    // The owner wrote the key and approved it: that is what makes a note enough, and the note
+    // says the truth for the seat — checked on the running seat, or nothing checks it.
+    return shows
+      ? { level: 'note', text: `${seat.name}: the model is chosen by its launcher; checked on the running seat` }
+      : {
+          level: 'note',
+          text: `${seat.name}: the model is chosen by its launcher (declared in the file); this version can't read ${declared} on this CLI's screen, so nothing checks it`,
+        };
   }
-  if (seat.modelFrom === 'launcher' || !runsOwnBinary(seat.launch, profile)) {
-    return { level: 'note', text: `${seat.name}: the model is chosen by its launcher; checked on the running seat` };
-  }
-  if (profile.lastUsedModel) {
+  if (bare && profile.lastUsedModel) {
     return { level: 'warn', text: `${seat.name}: the launch names no model this version knows; the file says ${declared}` };
   }
-  return null;
+  if (bare) {
+    return shows ? null : { level: 'warn', text: `${seat.name}: no model flag, and this version can't read ${declared} on this CLI's screen: nothing checks that it runs it` };
+  }
+  return {
+    level: 'warn',
+    text: `${seat.name}: the launch runs ${first}, not ${profile.binary}, and names no model: if the launcher chooses the model, say so with model_from: launcher`,
+  };
 }
 
 // `watch` is the watch values in force — the approved ones — so an unapproved interval edit can't

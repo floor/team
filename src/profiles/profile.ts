@@ -30,8 +30,6 @@ export interface Profile {
   idleTimeout: number;
   /** Seconds to wait for the pane's shell after the exit command. */
   exitTimeout: number;
-  /** Whether the CLI's screen shows the model it runs, so the running seat can be checked. */
-  readsModel: boolean;
   /** Whether the CLI starts on its last-used model when a launch names none. */
   lastUsedModel: boolean;
   /** The model and version a launch line's model id means, or null when unknown. */
@@ -122,6 +120,39 @@ export function statusOnLine(cli: string, line: string): { model: string; versio
   return apply(rules, line);
 }
 
+/**
+ * Whether some `status_model` rule of the CLI could yield this model: the rule's model template,
+ * with each `"{n}"` as a capture's worth of anything, names it. The template's literal text
+ * decides — a rule that yields `GPT …` can never name `Grok`, so a model another maker spells is
+ * not readable on this CLI's screen. A rule whose templates cannot fill at all (their `"{n}"`
+ * names a group the pattern does not have — the unreadable-line rules are exactly that) can never
+ * yield a model. The captures could still be narrower than the model, so a yes here means the
+ * running seat is compared against the file, not that the comparison can pass.
+ */
+export function statusYields(cli: string, model: string): boolean {
+  const rules = SHIPPED[cli]?.status;
+  if (!rules) return false;
+  return rules.some((rule) => fills(rule) && templateYields(rule.model, model));
+}
+
+// Whether a rule's templates can fill at all: every `"{n}"` names a group the pattern has.
+function fills(rule: ModelRule): boolean {
+  // `source + "|"` matches the empty string, so the result's length is one past the capture count.
+  const groups = (new RegExp(`${rule.match.source}|`, 'u').exec('') ?? []).length - 1;
+  return [rule.model, rule.version].every((template) =>
+    [...template.matchAll(/\{(\d+)(?::title)?\}/g)].every((hole) => Number(hole[1]) <= groups),
+  );
+}
+
+// Whether a template could produce the model: its literal parts, each `"{n}"` any capture.
+function templateYields(template: string, model: string): boolean {
+  const source = template
+    .split(/\{\d+(?::title)?\}/)
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('[\\s\\S]*');
+  return new RegExp(`^(?:${source})$`, 'u').test(model);
+}
+
 function loadShipped(): Record<string, Shipped> {
   const out: Record<string, Shipped> = {};
   for (const name of NAMES) {
@@ -160,7 +191,6 @@ function launchOf(root: YamlNode): Shipped {
       exit: text(required(entries, 'exit', root.line), 'exit'),
       idleTimeout: seconds(timeouts, 'idle'),
       exitTimeout: seconds(timeouts, 'exit'),
-      readsModel: statusEntry !== undefined,
       lastUsedModel: lastUsedEntry ? boolOf(lastUsedEntry.value, 'last_used_model') : false,
       modelOf: (launch) => modelOf(models, launch),
     },
