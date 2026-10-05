@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { findRoot, loadTeamFile } from '../src/file/load.ts';
+import { findRoot, loadTeamFile, NOT_A_REPO } from '../src/file/load.ts';
 
 const example = new URL('./fixtures/example.yaml', import.meta.url).pathname;
 let base: string;
@@ -100,7 +100,7 @@ describe('loading the file', () => {
   test('outside a repository and without --file', () => {
     const result = loadTeamFile(base);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors[0]?.message).toMatch(/not inside a git repository/);
+    if (!result.ok) expect(result.errors[0]?.message).toBe(NOT_A_REPO);
   });
 
   test('a folder with no git reads .agents/team.yaml in that folder', () => {
@@ -118,7 +118,7 @@ describe('loading the file', () => {
     expect(missing.ok).toBe(false);
     if (!missing.ok) {
       expect(missing.path).toBeUndefined();
-      expect(missing.errors[0]?.message).toMatch(/not inside a git repository: run team from a project, or pass --file/);
+      expect(missing.errors[0]?.message).toBe(NOT_A_REPO);
     }
   });
 
@@ -132,7 +132,7 @@ describe('loading the file', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.path).toBeUndefined();
-    expect(result.errors[0]?.message).toMatch(/not inside a git repository/);
+    expect(result.errors[0]?.message).toBe(NOT_A_REPO);
   });
 });
 
