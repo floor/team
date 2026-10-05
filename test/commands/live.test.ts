@@ -750,10 +750,13 @@ describe('team up, live', () => {
     made.launch.pressEnter = () => { sent.push('Enter'); return true; };
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, resumed(made));
-    // The box reads `unsent`: nothing is typed, no key is sent, no workspace is closed, and the
-    // seat's state is left byte for byte as it was.
+    // The box reads `unsent` and does not hold the rules line: nothing is typed, no key is
+    // sent, no workspace is closed, and the seat's state is left byte for byte as it was.
     expect(code).toBe(1);
-    expect(io.out).toContain('codex-acme: its rules were not delivered; left at named');
+    expect(io.out).toContain(
+      'codex-acme: rules not typed: its box already holds text that is not the rules line; '
+      + 'press Enter in its pane to send what is there, or clear its box (Ctrl-C), then run up again',
+    );
     expect(sent).toEqual([]);
     expect(made.closes).toEqual([]);
     expect(JSON.parse(readFileSync(join(root, '.agents/team.state.json'), 'utf8'))).toEqual(namedState());
@@ -789,14 +792,16 @@ describe('team up, live', () => {
     expect(made.closes).toEqual([]);
     const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['codex-acme'];
     expect(seat).toMatchObject({ stage: 'ready', rules: 'message', pane: 'w2:p1', workspace: 'w2' });
-    // Main's order of host calls: the pane's program, its status and its box are read first, the
-    // message is typed into the empty box and read back, one key is sent, then the closing readings.
+    // The delivery's order of host calls: the pane's program and its box are read, then its
+    // status twice — the mid-turn gate, then freedom — the line is typed into the empty box
+    // and read back, the re-check reads the program, the status and the box again, the file
+    // gets its last look, one Enter is sent, then the closing readings.
     expect(calls).toEqual([
       'foreground w2:p1',
-      'agentStatus w2:p1',
       'paneText w2:p1',
-      'typeText w2:p1',
       'agentStatus w2:p1',
+      'agentStatus w2:p1',
+      'typeText w2:p1',
       'paneText w2:p1',
       'foreground w2:p1',
       'agentStatus w2:p1',
@@ -807,7 +812,7 @@ describe('team up, live', () => {
     ]);
   });
 
-  test('a named seat whose box holds exactly what team would type now is left as it is', async () => {
+  test('a named seat whose box holds exactly what team would type now is sent, never typed onto', async () => {
     const made = incident(captureCodex('idle'));
     await approve();
     // The message team would type now, taken from team itself: the empty box is delivered to once.
@@ -839,15 +844,37 @@ describe('team up, live', () => {
     const reread = again.launch.paneText;
     again.launch.paneText = (session, pane) => { calls.push(`paneText ${pane}`); return reread(session, pane); };
     again.launch.typeText = (_session, _pane, text) => { sent.push(text); return true; };
-    again.launch.pressEnter = () => { sent.push('Enter'); return true; };
+    again.launch.pressEnter = (_session, pane) => { calls.push(`pressEnter ${pane}`); sent.push('Enter'); return true; };
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, resumed(again));
     expect(code).toBe(1);
-    expect(io.out).toContain('codex-acme: its rules were not delivered; left at named');
-    expect(sent).toEqual([]);
+    expect(io.out).toContain(
+      'codex-acme: rules typed, not sent: its box still holds the line after Enter; '
+      + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again',
+    );
+    // The resume verifies the box and sends the one Enter; this stub's pane never takes the
+    // key — the box is read again after it, to the deadline, and nothing else is ever typed.
+    expect(sent).toEqual(['Enter']);
     expect(again.closes).toEqual([]);
     expect(JSON.parse(readFileSync(join(root, '.agents/team.state.json'), 'utf8'))).toEqual(namedState());
-    expect(calls).toEqual(['foreground w2:p1', 'agentStatus w2:p1', 'paneText w2:p1']);
+    const enter = calls.indexOf('pressEnter w2:p1');
+    expect(enter).toBeGreaterThan(-1);
+    expect(calls.slice(0, enter + 1)).toEqual([
+      'foreground w2:p1',
+      'paneText w2:p1',
+      'agentStatus w2:p1',
+      'agentStatus w2:p1',
+      'paneText w2:p1',
+      'paneText w2:p1',
+      'foreground w2:p1',
+      'agentStatus w2:p1',
+      'paneText w2:p1',
+      'pressEnter w2:p1',
+    ]);
+    const after = calls.slice(enter + 1);
+    expect(after).not.toContain('typeText w2:p1');
+    expect(after).not.toContain('pressEnter w2:p1');
+    expect([...new Set(after)].sort()).toEqual(['agentStatus w2:p1', 'paneText w2:p1']);
   });
 
   test('a resumed seat is checked where its pane runs, not where the file would put it', async () => {
