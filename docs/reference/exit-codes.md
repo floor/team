@@ -11,6 +11,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `add.ready` | `add` | 0 | the seat is ready | `team add worker` |
 | `add.agents` | `add` | 1 | the agents can't be read | `team add worker` |
 | `add.already-running` | `add` | 1 | the seat is already running | `team add worker` |
+| `add.another-pane` | `add` | 1 | the state records another pane for the caller's seat | `team add worker` |
 | `add.approved-copy` | `add` | 1 | the approved copy can't be read | `team add worker` |
 | `add.branch-missing` | `add` | 1 | the merged branch doesn't exist | `team add --temporary --like lead --until merged:missing` |
 | `add.budget` | `add` | 1 | the budget refuses the seat | `team add worker` |
@@ -29,6 +30,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `add.merged-base` | `add` | 1 | workspace.base is required to read a merged end | `team add --temporary --like lead --until merged:topic` |
 | `add.never-approved` | `add` | 1 | the file was never approved | `team add worker` |
 | `add.no-like` | `add` | 1 | the approved file has no seat to copy | `team add --temporary --like missing --until result:out.md` |
+| `add.no-pane` | `add` | 1 | the state records no pane for the caller's seat | `team add worker` |
 | `add.no-profile` | `add` | 1 | the seat has no launch profile | `team add worker` |
 | `add.no-seat` | `add` | 1 | the approved file has no such seat | `team add missing` |
 | `add.not-ready` | `add` | 1 | the launch finished without a ready seat | `team add worker` |
@@ -37,6 +39,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `add.result-absolute` | `add` | 1 | a result path is absolute | `team add --temporary --like lead --until result:/tmp/out.md` |
 | `add.result-exists` | `add` | 1 | the result path already exists | `team add --temporary --like lead --until result:README.md` |
 | `add.server` | `add` | 1 | the session's server did not start | `team add worker` |
+| `add.session-owner` | `add` | 1 | --session is the owner's | `team add worker --session other` |
 | `add.start` | `add` | 1 | the seat has nowhere to start | `team add worker` |
 | `add.stopped` | `add` | 1 | the session is stopped | `team add worker` |
 | `add.until` | `add` | 1 | --until is not a result path or a merged branch | `team add --temporary --like lead --until nope` |
@@ -53,13 +56,17 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `add.temporary-unexpected` | `add` | 2 | an unexpected argument was passed to --temporary | `team add extra --temporary` |
 | `answer.ready` | `answer` | 0 | the trust dialog was answered and the seat is ready | `team answer lead trust` |
 | `answer.action` | `answer` | 1 | the recorded key was not sent | `team answer lead trust` |
+| `answer.another-pane` | `answer` | 1 | the state records another pane for the caller's seat | `team answer lead trust` |
 | `answer.caller` | `answer` | 1 | the caller may not answer a trust dialog | `team answer lead trust` |
+| `answer.file-owner` | `answer` | 1 | --file is the owner's | `team answer lead trust --file .agents/team.yaml` |
 | `answer.folder` | `answer` | 1 | the dialog's folder is not the lobby's exact trust entry | `team answer lead trust` |
 | `answer.label` | `answer` | 1 | the trust choice is not the recorded one | `team answer lead trust` |
+| `answer.no-pane` | `answer` | 1 | the state records no pane for the caller's seat | `team answer lead trust` |
 | `answer.policy` | `answer` | 1 | the file leaves trust dialogs to the owner | `team answer lead trust` |
 | `answer.process` | `answer` | 1 | the process in the pane is not the one team launched | `team answer lead trust` |
 | `answer.recovery` | `answer` | 1 | the trust answer did not complete: the seat stays in recovery | `team answer lead trust` |
 | `answer.screen` | `answer` | 1 | the pane is not the trust dialog | `team answer lead trust` |
+| `answer.session-owner` | `answer` | 1 | --session is the owner's | `team answer lead trust --session other` |
 | `answer.state` | `answer` | 1 | the seat is not waiting at a trust dialog | `team answer lead trust` |
 | `answer.version` | `answer` | 1 | this version has no trust answer | `team answer lead trust` |
 | `answer.configuration` | `answer` | 2 | the team file cannot be read | `team answer lead trust --file missing.yaml` |
@@ -105,9 +112,13 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `down.idle` | `down` | 0 | there was nothing to stop | `team down` |
 | `down.stopped` | `down` | 0 | the seats that could be stopped were stopped | `team down` |
 | `down.abandon` | `down` | 1 | only the owner abandons a team | `team down --abandon` |
+| `down.another-pane` | `down` | 1 | the state records another pane for the caller's seat | `team down` |
 | `down.caller` | `down` | 1 | the caller may not change the team | `team down` |
+| `down.file-owner` | `down` | 1 | --file is the owner's | `team down --file .agents/team.yaml` |
 | `down.held` | `down` | 1 | a step was held | `team down` |
 | `down.no-launch` | `down` | 1 | this call has no way to reach herdr | `team down` |
+| `down.no-pane` | `down` | 1 | the state records no pane for the caller's seat | `team down` |
+| `down.session-owner` | `down` | 1 | --session is the owner's | `team down --session other` |
 | `down.agents` | `down` | 2 | the agents can't be read | `team down` |
 | `down.file` | `down` | 2 | the team file can't be read | `team down --file missing.yaml` |
 | `down.file-invalid` | `down` | 2 | the team file can't be parsed | `team down --file team.yaml` |
@@ -136,6 +147,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `remove.temporary` | `remove` | 0 | a temporary seat was removed | `team remove worker` |
 | `remove.abandon` | `remove` | 1 | only the owner abandons a seat | `team remove worker --abandon` |
 | `remove.agents` | `remove` | 1 | the agents can't be read | `team remove worker` |
+| `remove.another-pane` | `remove` | 1 | the state records another pane for the caller's seat | `team remove worker` |
 | `remove.busy` | `remove` | 1 | the seat is not free | `team remove worker` |
 | `remove.caller` | `remove` | 1 | the caller may not change the team | `team remove worker` |
 | `remove.coordinator` | `remove` | 1 | only the owner removes the coordinator's or the operator's seat | `team remove lead` |
@@ -143,9 +155,12 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `remove.file-owner` | `remove` | 1 | --file is the owner's | `team remove worker --file .agents/team.yaml` |
 | `remove.herdr` | `remove` | 1 | herdr doesn't answer | `team remove worker` |
 | `remove.keep-temporary` | `remove` | 1 | a temporary seat is not kept in the file | `team remove worker --keep` |
+| `remove.never-approved` | `remove` | 1 | the file was never approved | `team remove worker` |
 | `remove.no-launch` | `remove` | 1 | this call has no way to reach herdr | `team remove worker` |
+| `remove.no-pane` | `remove` | 1 | the state records no pane for the caller's seat | `team remove worker` |
 | `remove.no-profile` | `remove` | 1 | the running seat has no launch profile | `team remove worker` |
 | `remove.no-seat` | `remove` | 1 | the team has no such seat | `team remove missing` |
+| `remove.session-owner` | `remove` | 1 | --session is the owner's | `team remove worker --session other` |
 | `remove.stop-failed` | `remove` | 1 | the seat could not be stopped | `team remove worker` |
 | `remove.edit` | `remove` | 2 | the edit would not validate | `team remove lead` |
 | `remove.file` | `remove` | 2 | the team file can't be read | `team remove worker --file missing.yaml` |
@@ -197,6 +212,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `worktree.created` | `worktree` | 0 | the worktree was created | `team worktree new task --kind fix` |
 | `worktree.record-gone` | `worktree` | 0 | the record was removed after the folder was already gone | `team worktree remove task` |
 | `worktree.removed` | `worktree` | 0 | the worktree was removed | `team worktree remove task` |
+| `worktree.another-pane` | `worktree` | 1 | the state records another pane for the caller's seat | `team worktree new task` |
 | `worktree.approved-copy` | `worktree` | 1 | the approved copy can't be read | `team worktree new task --kind fix` |
 | `worktree.base` | `worktree` | 1 | workspace.base is not a branch here | `team worktree new task --kind fix` |
 | `worktree.branch` | `worktree` | 1 | the branch already exists | `team worktree new task --kind fix` |
@@ -217,6 +233,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `worktree.limit` | `worktree` | 1 | the worktree limit is reached | `team worktree new task --kind fix` |
 | `worktree.missing` | `worktree` | 1 | no worktree with that name is recorded | `team worktree remove task` |
 | `worktree.never-approved` | `worktree` | 1 | the file was never approved | `team worktree new task` |
+| `worktree.no-pane` | `worktree` | 1 | the state records no pane for the caller's seat | `team worktree new task` |
 | `worktree.occupied` | `worktree` | 1 | a seat is recorded in the worktree | `team worktree remove task` |
 | `worktree.path-kind` | `worktree` | 1 | workspace.path must not contain {kind} | `team worktree new task` |
 | `worktree.placeholder` | `worktree` | 1 | the branch or path pattern has an unknown placeholder | `team worktree new task` |
@@ -227,6 +244,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `worktree.remove-task` | `worktree` | 1 | the task name is not a single segment | `team worktree remove ../task` |
 | `worktree.seat` | `worktree` | 1 | --seat names no declared seat | `team worktree new task --kind fix --seat missing` |
 | `worktree.seat-unapproved` | `worktree` | 1 | --seat names a seat only the file declares | `team worktree new task --kind fix --seat added-later` |
+| `worktree.session-owner` | `worktree` | 1 | --session is the owner's | `team worktree new task --session other` |
 | `worktree.setup` | `worktree` | 1 | setup failed | `team worktree new task --kind fix` |
 | `worktree.shared` | `worktree` | 1 | the workspace is shared | `team worktree new task` |
 | `worktree.symlink` | `worktree` | 1 | the worktree follows a symlink outside the trust paths | `team worktree new task --kind fix` |

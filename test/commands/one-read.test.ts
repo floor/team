@@ -272,7 +272,7 @@ describe('one read of the approval store per command', () => {
     expect(loaded.ok && approvalDifferences(loaded.team, project, home)).toEqual([]);
   });
 
-  test('remove without --keep never reads the store, and a broken one stops nothing', async () => {
+  test('remove without --keep reads the store once, and a broken one stops it with nothing written', async () => {
     poison();
     const io = testIo(project, owner);
     const code = await runRemove(['worker', '--file', file], io, {
@@ -286,8 +286,12 @@ describe('one read of the approval store per command', () => {
       foreground: () => [],
       home,
     } satisfies RemoveSources);
-    expect(code).toBe(0);
-    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+    // Stopping a seat and editing the file need an approval in force: a store that can't be
+    // read refuses, and the seat is left in the file.
+    expect(code).toBe(1);
+    expect(io.err).toContain('team remove: ');
+    expect(io.err).toContain('run `team approve`');
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
   test('down never reads the store, and a broken one stops nothing', async () => {

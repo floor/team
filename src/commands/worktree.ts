@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { notInForce, worktreeTeamInForceOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner, mayChangeTeam } from '../caller.ts';
+import { anotherPaneRefusal, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller } from '../caller.ts';
 import { insideTrust } from '../file/paths.ts';
 import { loadTeamFile, placedProblems } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -71,6 +71,31 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     return 2;
   }
 
+  // The `--file` check is the walk's, and it runs before that file is read: a non-owner aiming
+  // `--file` must not make this command read and validate another project's team file, nor ask
+  // the host about that file's session — the one place the six commands that take the flag decide
+  // it is `fileOwnerRefusal` (caller.ts). Both subcommands (`worktree new`, `worktree remove`)
+  // run this same gate before the load below.
+  const fileRefusal = fileOwnerRefusal(io, args.values.file);
+  if (fileRefusal !== undefined) {
+    io.stderr(`team worktree: ${fileRefusal}\n`);
+    // exit: worktree.file-owner
+    return 1;
+  }
+
+  // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
+  // `--session` is refused here, before the flag's session is read — no agent list, no pane root,
+  // no state write, no log line. (A seat cannot be named in this refusal: placing it would read a
+  // session, and that is what must not happen yet.)
+  if (args.values.session !== undefined) {
+    const walked = walkCaller(io);
+    if (!isOwner(walked)) {
+      io.stderr(`team worktree: ${sessionOwnerRefusal(walked)}\n`);
+      // exit: worktree.session-owner
+      return 1;
+    }
+  }
+
   const loaded = loadTeamFile(io.cwd, {
     ...(args.values.file ? { file: args.values.file } : {}),
     home: sources.home,
@@ -92,12 +117,6 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     return 2;
   }
   const { team, root } = loaded;
-  const caller = callerOf(io);
-  if (args.values.file && !isOwner(caller)) {
-    io.stderr(`team worktree: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
-    // exit: worktree.file-owner
-    return 1;
-  }
   // One verified snapshot for the whole command, read once: every value the two subcommands read
   // from the file is the approved copy's, including when the fingerprints match. The caller's
   // gate below is judged on those values too — a seat the file added to `coordinator` is not one
@@ -109,12 +128,33 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     return 1;
   }
   const reading = inForce.team;
-  if (!mayChangeTeam(caller, reading)) {
-    io.stderr(`team worktree: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(caller)}\n`);
+  const dir = dirname(loaded.path);
+  // The gate judges the caller placed in the session this command asks about — the proof its pane
+  // is that session's. With no `--session` the session judged is the caller's own placement: the
+  // approved file's session first, then a session the state records this caller's pane in (`team
+  // up --session <other>`) — never one a non-owner chose. The refusal names the caller's own
+  // placement, exactly as main described it.
+  const judged = args.values.session !== undefined
+    ? { ...judgeCallerOf(io, args.values.session === 'default' ? undefined : args.values.session), session: args.values.session }
+    : judgeCallerIn(io, dir, reading);
+  const { caller, shown } = judged;
+  const session = judged.session;
+  const verdict = mayChangeTeamVerdict(caller, reading, standingOf(dir, session, caller));
+  if (verdict.kind === 'no-pane') {
+    io.stderr(`team worktree: ${noPaneRefusal(verdict.name)}\n`);
+    // exit: worktree.no-pane
+    return 1;
+  }
+  if (verdict.kind === 'another-pane') {
+    io.stderr(`team worktree: ${anotherPaneRefusal(verdict.name, verdict.recordedPane)}\n`);
+    // exit: worktree.another-pane
+    return 1;
+  }
+  if (verdict.kind === 'refused') {
+    io.stderr(`team worktree: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(shown)}\n`);
     // exit: worktree.caller
     return 1;
   }
-  const session = args.values.session ?? reading.session;
   if (session === 'default') {
     io.stderr('team worktree: session can\'t be "default", herdr\'s own session\n');
     // exit: worktree.default-session
@@ -131,7 +171,6 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     io.stderr('team worktree: using the approved workspace settings; the file has unapproved changes: run `team approve`\n');
   }
 
-  const dir = dirname(loaded.path);
   const who = describeCaller(caller);
   if (sub === 'new') return create(io, sources, reading, team, root, dir, session, task, args.values.kind, args.values.seat, who);
   return removeWorktree(io, sources, reading, root, dir, session, task, who);
