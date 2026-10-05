@@ -17,6 +17,7 @@ export type Op =
   | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
   | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; seconds: number; pane?: string; notice?: string }
   | { do: 'ready'; seat: string; rules: 'option' | 'message'; notice?: string }
+  | { do: 'repair'; seat: string; verdict: 'gone' | 'replaced'; workspace: string }
   | { do: 'watch'; label: string; command: string }
   | { do: 'type'; seat: string; pane: string; text: string }
   | { do: 'gone'; seat: string; pane: string; seconds: number }
@@ -51,6 +52,12 @@ export interface UpSeat {
   agentLive?: boolean;
   /** The seat works in worktrees: it waits in the lobby until a brief names its worktree. */
   lobby?: boolean;
+  /**
+   * Set when the seat's pane no longer holds the process team launched: its workspace is closed
+   * without input, its launch state cleared, and the seat launched fresh. The plan step that
+   * does the closing comes before everything else for this seat.
+   */
+  repair?: { verdict: 'gone' | 'replaced'; workspace: string };
   /**
    * Set when the seat's own launch line can't run where the seat starts — the program is not
    * there, or a relative path in it resolves from neither the start folder nor the root. The
@@ -158,6 +165,17 @@ export function upPlan(input: UpInput): Step[] {
       return text;
     };
     if (fresh) {
+      // A seat whose pane stopped holding the process team launched: what is in it now is not
+      // the seat, so it is closed with no key and no text, and everything after this step
+      // launches the seat from the beginning, in a workspace of its own.
+      if (seat.repair) {
+        steps.push({
+          kind: 'run',
+          argv: herdr(session, 'workspace', 'close', seat.repair.workspace),
+          note: 'closed without input: its pane no longer holds the process team launched',
+          do: { do: 'repair', seat: seat.name, verdict: seat.repair.verdict, workspace: seat.repair.workspace },
+        });
+      }
       // The lobby is one folder for the team, made before the first seat waits in it.
       if (seat.lobby && !lobbies.has(cwd)) {
         lobbies.add(cwd);

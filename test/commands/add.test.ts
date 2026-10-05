@@ -469,4 +469,40 @@ describe('team add', () => {
     expect(made.creates).toEqual([]);
     expect(made.renames).toEqual(['lead']);
   });
+
+  test('a replaced seat is closed without input and launched fresh, not refused as running', async () => {
+    // The recorded pane holds a CLI, and it is not the one team launched: the seat's name in
+    // herdr's list is not the seat. `add` does what `up` does — closes that workspace without a
+    // key or a text, clears the record, and launches fresh with the rules.
+    updateState(join(project, '.agents'), (state) => {
+      const session = state.sessions.acme ?? emptySession();
+      session.seats.worker = { stage: 'launched', workspace: 'w9', pane: 'w9:p1', launched: { shell: 400, cli: [401] } };
+      state.sessions.acme = session;
+    });
+    const made = world();
+    const closes: string[] = [];
+    const keys: string[] = [];
+    made.launch.closeWorkspace = (_session, workspace) => { closes.push(workspace); return true; };
+    made.launch.processInfo = () => ({ shell: 400, foreground: [500] });
+    made.launch.typeText = (_session, pane, text) => { keys.push(`type ${pane} ${text}`); return true; };
+    made.launch.pressEnter = (_session, pane) => { keys.push(`enter ${pane}`); return true; };
+    const listed: HerdrAgent = { name: 'worker', agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null };
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker'], io, sources(made, {
+      sessionState: () => 'running',
+      agents: () => [listed],
+      workspaces: () => [{ id: 'w9' }],
+    }));
+    expect(code).toBe(0);
+    expect(io.err).not.toContain('already running');
+    // The wrong process was typed into with nothing, and the workspace it sat in was closed; the
+    // seat was launched in a fresh one, its rules carried by the launch line.
+    expect(keys).toEqual([]);
+    expect(closes).toEqual(['w9']);
+    expect(made.creates).toEqual(['worker']);
+    expect(io.out).toContain('worker: its pane held a process team did not launch; closed without input and launched again\n');
+    const seats = readState(join(project, '.agents')).sessions.acme?.seats ?? {};
+    expect(seats.worker?.stage).toBe('ready');
+    expect(seats.worker?.pane).toBe('w1:p1');
+  });
 });

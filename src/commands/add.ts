@@ -15,11 +15,12 @@ import type { Problem, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
 import {
-  agentList, agentRename, paneForeground, paneRead, paneRun, paneShellBack, sessionRunning, sessionState, startServer, workspaceClose, workspaceCreate,
-  workspaceList, type HerdrAgent,
+  agentList, agentRename, paneForeground, paneProcesses, paneRead, paneRun, paneShellBack, sessionRunning, sessionState, startServer, workspaceClose, workspaceCreate,
+  workspaceList, type HerdrAgent, type PaneProcesses,
 } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { executePlan, type Host } from '../launch/execute.ts';
+import { seatProcessVerdict } from '../launch/identity.ts';
 import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { logLine } from '../log.ts';
@@ -62,6 +63,7 @@ const realLaunch: Launch = {
   paneText: (session, pane) => paneRead(pane, 200, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
   shellBack: (session, pane) => paneShellBack(pane, aim(session)),
+  processInfo: (session, pane) => paneProcesses(pane, aim(session)),
   sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
   now: () => new Date(),
 };
@@ -206,7 +208,19 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     // exit: add.worktree-failed
     return 1;
   }
-  if (agents.some((agent) => agent.name === built.name)) {
+  // The pane is the seat only while the process team launched is still in it. A recorded seat
+  // whose pane runs no CLI, or a process team did not launch, is not "already running": its
+  // workspace is closed without input and the seat is launched fresh, exactly as `up` does.
+  // A seat with no record, or a herdr that can't tell, keeps today's reading.
+  const held = recorded.seats[built.name];
+  const verdict = seatProcessVerdict(
+    held?.launched,
+    held?.launched && held.pane && sources.launch.processInfo ? sources.launch.processInfo(session, held.pane) : null,
+  );
+  const repair = (verdict === 'gone' || verdict === 'replaced') && held?.workspace
+    ? { verdict, workspace: held.workspace }
+    : undefined;
+  if (!repair && agents.some((agent) => agent.name === built.name)) {
     io.stderr(`team add: ${built.name} is already running\n`);
     // exit: add.already-running
     return 1;
@@ -242,7 +256,9 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // own launch line is checked before the file is edited and before any workspace is made. A
   // note is told, never refused: once, on the terminal, and on stderr on a real run as `doctor`
   // says it. A `miss` joins the doctor findings below, for a seat this `add` would launch.
-  const stray = unnamedIn(recorded.seats[built.name]?.workspace, agents);
+  // A seat whose pane holds a process team did not launch is never adopted into that pane:
+  // it is closed and launched fresh, so no stray is looked for.
+  const stray = repair ? undefined : unnamedIn(recorded.seats[built.name]?.workspace, agents);
   const resumeCwd = recorded.seats[built.name]?.start_cwd;
   const line = !stray
     ? launchLineFinding(prepared.team, built.seat, root, {
@@ -313,9 +329,11 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const budgets = budgetsInForceOf(standing, prepared.team);
   const decision = (sources.seatBudget ?? seatBudget)(budgets, loadReadings(dir), built.seat, sources.now().getTime(), loadSpendReadings(dir));
   const starting = seatPlan(prepared.team, built.seat, start);
-  const planned = stray
-    ? { ...starting, stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
-    : starting;
+  const planned = repair
+    ? { ...starting, repair }
+    : stray
+      ? { ...starting, stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
+      : starting;
   const wouldLaunch = planned.stage === undefined || !planned.pane || (planned.stage === 'launched' && !planned.agentLive);
   const seatForPlan = {
     ...planned,
@@ -531,6 +549,7 @@ function hostOf(input: {
     classify: (_name, pane, cli) => readScreen(cli, launch.paneText(session, pane) ?? undefined).kind,
     paneText: (_name, pane) => launch.paneText(session, pane),
     shellBack: (_name, pane) => launch.shellBack?.(session, pane) ?? null,
+    processInfo: (_name, pane) => launch.processInfo?.(session, pane) ?? null,
     sleep: launch.sleep,
     now: () => input.now().getTime(),
     allow(name) {

@@ -93,6 +93,32 @@ export function paneShellBack(pane: string, session?: string): boolean | null {
   }
 }
 
+// A pane's process identity as `pane process-info` reports it: the pane's own shell process and
+// the foreground processes herdr lists, as pids. Pids only: never an argv, an argument or an
+// environment, which can hold secrets.
+export type PaneProcesses = { shell: number; foreground: number[] };
+
+/** A `pane process-info` result as process pids, or null when herdr can't say: no `shell_pid`
+ *  (an older herdr), no foreground list, an entry without a pid, an empty list. */
+export function paneProcessesOf(result: unknown): PaneProcesses | null {
+  const info = (result as { process_info?: { shell_pid?: unknown; foreground_processes?: { pid?: unknown }[] } } | null)
+    ?.process_info;
+  if (!info || typeof info.shell_pid !== 'number') return null;
+  const list = info.foreground_processes;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const pids = list.map((proc) => (typeof proc?.pid === 'number' ? proc.pid : null));
+  if (pids.some((pid) => pid === null)) return null;
+  return { shell: info.shell_pid, foreground: pids as number[] };
+}
+
+export function paneProcesses(pane: string, session?: string): PaneProcesses | null {
+  try {
+    return paneProcessesOf(run(['pane', 'process-info', '--pane', pane], session));
+  } catch {
+    return null;
+  }
+}
+
 export type HerdrWorkspace = { id: string; label: string };
 
 export function workspaceList(session?: string): HerdrWorkspace[] | null {

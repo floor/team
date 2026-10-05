@@ -1,3 +1,5 @@
+import type { PaneProcesses } from '../herdr.ts';
+import { launchedIdentity, type LaunchedIdentity } from './identity.ts';
 import type { Step } from './plan.ts';
 
 export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'unsent' | 'unknown';
@@ -25,13 +27,21 @@ export type Host = {
   paneText?(session: string, pane: string): string | null;
   /** Whether the pane's foreground program is back to its shell; null when herdr can't tell. */
   shellBack?(session: string, pane: string): boolean | null;
+  /** The pane's process identity, read to record it for the seat; null when herdr can't tell. */
+  processInfo?(session: string, pane: string): PaneProcesses | null;
   sleep(ms: number): Promise<void>;
   now(): number;
   /** Null when this seat may launch. A string is the reason it may not. */
   allow(seat: string): string | null;
   record(
     seat: string,
-    patch: { stage: 'launched' | 'named' | 'ready'; pane?: string; workspace?: string; rules?: 'option' | 'message' },
+    patch: {
+      stage: 'launched' | 'named' | 'ready';
+      pane?: string;
+      workspace?: string;
+      rules?: 'option' | 'message';
+      launched?: LaunchedIdentity;
+    },
   ): void;
   /** The seat is really running, so the next seat's ceiling check counts it. */
   running(seat: string): void;
@@ -129,6 +139,19 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     host.log(seat, what);
   };
 
+  // A seat whose pane no longer held the process team launched is closed without input and
+  // launched again; its one line says both, when it is ready. Any other end of that seat keeps
+  // its own line, and the close is what the plan and the state already show.
+  const relaunched = new Map<string, 'gone' | 'replaced'>();
+  const finishReady = (seat: string) => {
+    const verdict = relaunched.get(seat);
+    if (verdict === 'gone') finish(seat, 'its pane held no CLI; closed without input and launched again');
+    else if (verdict === 'replaced') finish(seat, 'its pane held a process team did not launch; closed without input and launched again');
+    else finish(seat, 'ready');
+  };
+  // The identity read after the idle prompt, to carry into every later record of the seat.
+  const identities = new Map<string, LaunchedIdentity>();
+
   // The display label may be shared. The seat's name is the only key; the watch has no seat.
   const place = (key: string, pane?: string, workspace?: string): Place | null => {
     const have = places.get(key);
@@ -149,7 +172,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
       if (op?.do === 'ready' && op.seat) {
         if (op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         host.record(op.seat, { stage: 'ready', rules: op.rules });
-        finish(op.seat, 'ready');
+        finishReady(op.seat);
       } else if (op?.do === 'refuse') {
         finish(op.seat, `refused: ${op.why}`);
       } else host.say(`  skip ${step.text}\n`);
@@ -288,7 +311,22 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           await host.sleep(pollMs);
           if (host.now() <= before) break;
         }
-        if (outcome === 'idle') break;
+        if (outcome === 'idle') {
+          // The seat's own process, read now that its idle prompt is on the screen: the pane's
+          // shell and the pids in front of it that are not the shell. Nothing is recorded when
+          // herdr can't tell: a seat without the record keeps today's behaviour.
+          const identity = launchedIdentity(host.processInfo?.(session, here.pane) ?? null);
+          if (identity) {
+            identities.set(op.seat, identity);
+            host.record(op.seat, {
+              stage: 'launched',
+              pane: here.pane,
+              launched: identity,
+              ...(here.workspace ? { workspace: here.workspace } : {}),
+            });
+          }
+          break;
+        }
         const workspace = here.workspace ?? places.get(op.seat)?.workspace;
         if (outcome === 'permission' || outcome === 'trust' || outcome === 'question') {
           // A trust question is closed with no key and no text. The same for a permission or a question.
@@ -342,10 +380,21 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           finish(op.seat, 'was not in the agent list in time; left at launched');
           break;
         }
-        host.record(op.seat, { stage: 'named', pane: here.pane, workspace: here.workspace });
+        host.record(op.seat, {
+          stage: 'named',
+          pane: here.pane,
+          ...(here.workspace ? { workspace: here.workspace } : {}),
+          ...(identities.has(op.seat) ? { launched: identities.get(op.seat) } : {}),
+        });
         if (op.rules === 'option') {
-          host.record(op.seat, { stage: 'ready', rules: 'option', pane: here.pane, workspace: here.workspace });
-          finish(op.seat, 'ready');
+          host.record(op.seat, {
+            stage: 'ready',
+            rules: 'option',
+            pane: here.pane,
+            ...(here.workspace ? { workspace: here.workspace } : {}),
+            ...(identities.has(op.seat) ? { launched: identities.get(op.seat) } : {}),
+          });
+          finishReady(op.seat);
         }
         break;
       }
@@ -363,8 +412,13 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           finish(op.seat, 'its rules were not delivered; left at named');
           break;
         }
-        host.record(op.seat, { stage: 'ready', rules: 'message', pane: here.pane });
-        finish(op.seat, 'ready');
+        host.record(op.seat, {
+          stage: 'ready',
+          rules: 'message',
+          pane: here.pane,
+          ...(identities.has(op.seat) ? { launched: identities.get(op.seat) } : {}),
+        });
+        finishReady(op.seat);
         break;
       }
       case 'watch': {
@@ -406,6 +460,20 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           dropped.add(op.seat);
           finish(op.seat, 'timed out leaving its pane; left as it is');
         }
+        break;
+      }
+      case 'repair': {
+        // The pane holds a process team did not launch (or no CLI at all): the workspace is
+        // closed with no key and no text sent into it, the seat's launch state is cleared, and
+        // the steps after this one launch the seat fresh, exactly as for a seat never launched.
+        if (!host.closeWorkspace(session, op.workspace)) {
+          held = true;
+          dropped.add(op.seat);
+          finish(op.seat, 'its workspace did not close; left as it is');
+          break;
+        }
+        host.drop(op.seat);
+        relaunched.set(op.seat, op.verdict);
         break;
       }
       case 'close': {

@@ -29,6 +29,24 @@ describe('the state file', () => {
     expect(readdirSync(dir)).toEqual([STATE_FILE]);
   });
 
+  test('a seat record from before the process identity loads as it is, and is written back without one', () => {
+    // The field is additive: an old file — a seat with a pane and a workspace, no `launched` —
+    // reads name by name, and a command that writes another field leaves it with no identity.
+    writeFileSync(
+      join(dir, STATE_FILE),
+      JSON.stringify({
+        format: 1,
+        sessions: { one: { seats: { a: { stage: 'ready', pane: 'w1:p1', workspace: 'w1' } }, worktrees: {} } },
+      }),
+    );
+    expect(readState(dir).sessions.one?.seats.a).toEqual({ stage: 'ready', pane: 'w1:p1', workspace: 'w1' });
+    updateState(dir, (state) => {
+      const seat = state.sessions.one?.seats.a;
+      if (seat) seat.worked = true;
+    });
+    expect(readState(dir).sessions.one?.seats.a).toEqual({ stage: 'ready', pane: 'w1:p1', workspace: 'w1', worked: true });
+  });
+
   test('a file that is not a state is an error, never replaced', () => {
     writeFileSync(join(dir, STATE_FILE), '{"format": 2}');
     expect(() => readState(dir)).toThrow(/not a team state of format 1/);
