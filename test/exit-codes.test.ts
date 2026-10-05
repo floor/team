@@ -1268,9 +1268,9 @@ scene('watch.stopped', async (place) => {
   return show(await watched(place, [], owner), 'stopped');
 });
 
-async function worktree(place: Place, argv: string[], caller: Caller = owner): Promise<Ran> {
+async function worktree(place: Place, argv: string[], caller: Caller = owner, sources?: WorktreeSources): Promise<Ran> {
   const io = testIo(place.root, caller);
-  return { code: await runWorktree(argv, io, worktreeSources(place)), out: io.out, err: io.err };
+  return { code: await runWorktree(argv, io, sources ?? worktreeSources(place)), out: io.out, err: io.err };
 }
 
 scene('worktree.invocation', async (place) => show(await worktree(place, ['--nope']), 'unknown option'));
@@ -1300,10 +1300,18 @@ scene('worktree.never-approved', async (place) => {
   write(place, worktreeText());
   return show(await worktree(place, ['new', 'task']), 'never approved');
 });
-scene('worktree.differs', async (place) => {
+scene('worktree.approved-copy', async (place) => {
   approve(place, worktreeText());
+  // The file differs from the approval, and the copy the record stored is one this version
+  // can't read: there is no approved value to run with.
   write(place, worktreeText({ limit: 4 }));
-  return show(await worktree(place, ['new', 'task']), 'not the approved one');
+  const standing = approvalStanding(place.root, place.home);
+  if (standing.kind !== 'verified') throw new Error(standing.kind);
+  const broken = { ...standing, record: { ...standing.record, file: 'nope: [[[' } };
+  return show(
+    await worktree(place, ['new', 'task', '--kind', 'fix'], owner, { ...worktreeSources(place), standing: () => broken }),
+    "approved copy can't be read",
+  );
 });
 scene('worktree.task', async (place) => {
   approve(place, worktreeText());
@@ -1356,6 +1364,19 @@ scene('worktree.seat', async (place) => {
   publish(place);
   approve(place, worktreeText());
   return show(await worktree(place, ['new', 'task', '--kind', 'fix', '--seat', 'missing']), 'names no declared seat');
+});
+scene('worktree.seat-unapproved', async (place) => {
+  approve(place, worktreeText());
+  write(place, `${worktreeText()}  - role: implementer
+    name: added-later
+    label: later
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+`);
+  return show(await worktree(place, ['new', 'task', '--kind', 'fix', '--seat', 'added-later']), 'is not in the approved file');
 });
 scene('worktree.limit', async (place) => {
   approve(place, worktreeText({ limit: 1 }));

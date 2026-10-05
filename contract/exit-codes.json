@@ -1327,6 +1327,13 @@
     {
       "code": 1,
       "command": "worktree",
+      "id": "worktree.approved-copy",
+      "meaning": "the approved copy can't be read",
+      "trigger": "team worktree new task --kind fix"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
       "id": "worktree.base",
       "meaning": "workspace.base is not a branch here",
       "trigger": "team worktree new task --kind fix"
@@ -1372,13 +1379,6 @@
       "id": "worktree.default-session",
       "meaning": "the session can't be \"default\"",
       "trigger": "team worktree new task --session default"
-    },
-    {
-      "code": 1,
-      "command": "worktree",
-      "id": "worktree.differs",
-      "meaning": "the file differs from its approval",
-      "trigger": "team worktree new task"
     },
     {
       "code": 1,
@@ -1526,6 +1526,13 @@
       "id": "worktree.seat",
       "meaning": "--seat names no declared seat",
       "trigger": "team worktree new task --kind fix --seat missing"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.seat-unapproved",
+      "meaning": "--seat names a seat only the file declares",
+      "trigger": "team worktree new task --kind fix --seat added-later"
     },
     {
       "code": 1,
