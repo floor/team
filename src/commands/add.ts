@@ -29,7 +29,8 @@ import { executePlan, type Host } from '../launch/execute.ts';
 import { seatProcessVerdict } from '../launch/identity.ts';
 import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
-import { progressWriter } from '../launch/progress.ts';
+import { plainLine, plainText } from '../launch/plain.ts';
+import { progressWriter, type Progress } from '../launch/progress.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock, type SeatState, type SessionState } from '../state.ts';
@@ -114,14 +115,14 @@ export default add;
 export async function runAdd(argv: string[], io: Io, sources: AddSources = realSources): Promise<number> {
   const args = readArgs(argv, ['like', 'until', 'worktree', 'session', 'file'], ['temporary', 'dry-run']);
   if (args.error) {
-    io.stderr(`team add: ${args.error}\n${USAGE}`);
+    io.stderr(`team add: ${plainText(args.error)}\n${USAGE}`);
     // exit: add.invocation
     return 2;
   }
   const temporary = args.flags.has('temporary');
   const dry = args.flags.has('dry-run');
   if (temporary ? args.rest.length > 0 : args.rest.length !== 1) {
-    io.stderr(`team add: ${temporary ? `unexpected "${args.rest[0]}"` : 'a seat name is required'}\n${USAGE}`);
+    io.stderr(`team add: ${plainText(temporary ? `unexpected "${args.rest[0]}"` : 'a seat name is required')}\n${USAGE}`);
     // exit: add.seat-name
     // exit: add.temporary-unexpected
     return 2;
@@ -138,7 +139,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // decide it is `fileOwnerRefusal` (caller.ts).
   const fileRefusal = fileOwnerRefusal(io, args.values.file);
   if (fileRefusal !== undefined) {
-    io.stderr(`team add: ${fileRefusal}\n`);
+    io.stderr(`team add: ${plainText(fileRefusal)}\n`);
     // exit: add.file-owner
     return 1;
   }
@@ -150,7 +151,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   if (args.values.session !== undefined) {
     const walked = walkCaller(io);
     if (!isOwner(walked)) {
-      io.stderr(`team add: ${sessionOwnerRefusal(walked)}\n`);
+      io.stderr(`team add: ${plainText(sessionOwnerRefusal(walked))}\n`);
       // exit: add.session-owner
       return 1;
     }
@@ -158,7 +159,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
 
   const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
   if (!loaded.ok) {
-    for (const problem of loaded.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
+    for (const problem of loaded.errors) io.stderr(`team add: ${where(problem)}${plainText(problem.message)}\n`);
     // exit: add.not-a-repo
     // exit: add.file
     // exit: add.file-invalid
@@ -178,17 +179,17 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const session = judged.session;
   const mayChange = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
   if (mayChange.kind === 'no-pane') {
-    io.stderr(`team add: ${noPaneRefusal(mayChange.name)}\n`);
+    io.stderr(`team add: ${plainText(noPaneRefusal(mayChange.name))}\n`);
     // exit: add.no-pane
     return 1;
   }
   if (mayChange.kind === 'another-pane') {
-    io.stderr(`team add: ${anotherPaneRefusal(mayChange.name, mayChange.recordedPane)}\n`);
+    io.stderr(`team add: ${plainText(anotherPaneRefusal(mayChange.name, mayChange.recordedPane))}\n`);
     // exit: add.another-pane
     return 1;
   }
   if (mayChange.kind === 'refused') {
-    io.stderr(`team add: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(shown)}\n`);
+    io.stderr(`team add: only the owner, the coordinator or the operator runs it; this call is ${plainLine(describeCaller(shown))}\n`);
     // exit: add.caller
     return 1;
   }
@@ -201,14 +202,14 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // an approval in force, and the approved copy the seat is built from is the record's own.
   const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
   if (standing.kind !== 'verified') {
-    io.stderr(`team add: ${notInForce(standing)}\n`);
+    io.stderr(`team add: ${plainText(notInForce(standing))}\n`);
     // exit: add.never-approved
     // exit: add.ceilings
     return 1;
   }
   const differences = approvalDifferencesOf(standing, team);
   if (differences.length) {
-    io.stderr(`team add: the file is not the approved one (${differences.join('; ')}): run \`team approve\`\n`);
+    io.stderr(`team add: the file is not the approved one (${plainText(differences.join('; '))}): run \`team approve\`\n`);
     // exit: add.differs
     return 1;
   }
@@ -227,7 +228,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 1;
   }
   if (live === 'stopped') {
-    io.stderr(`team add: session ${session} is stopped; clear it with \`herdr session delete ${session}\`\n`);
+    io.stderr(`team add: session ${plainLine(session)} is stopped; clear it with \`herdr session delete ${plainLine(session)}\`\n`);
     // exit: add.stopped
     return 1;
   }
@@ -235,7 +236,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // Read so a session whose workspace list can't be read is refused. The title is not a key.
   const workspaces = live === 'running' ? sources.workspaces(session) : [];
   if (agents === null || workspaces === null) {
-    io.stderr(`team add: session ${session} runs, and its agents can't be read\n`);
+    io.stderr(`team add: session ${plainLine(session)} runs, and its agents can't be read\n`);
     // exit: add.agents
     return 1;
   }
@@ -248,7 +249,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     ? temporarySeat(args.values, original, approved.team, recorded, agents, root, team.workspace.base)
     : declaredSeat(args.rest[0] ?? '', original, approvedText, approved.team, sources.home, sources.fs);
   if ('error' in built) {
-    io.stderr(`team add: ${built.error}\n`);
+    io.stderr(`team add: ${plainText(built.error)}\n`);
     // exit: add.no-seat
     // exit: add.not-restored
     // exit: add.no-like
@@ -276,24 +277,24 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     ? { pane: held.pane, workspace: held.workspace, launched: held.launched, cli: built.seat.cli }
     : undefined;
   if (!repair && agents.some((agent) => agent.name === built.name)) {
-    io.stderr(`team add: ${built.name} is already running\n`);
+    io.stderr(`team add: ${plainLine(built.name)} is already running\n`);
     // exit: add.already-running
     return 1;
   }
   if (!profileFor(built.seat.cli)) {
-    io.stderr(`team add: no launch profile for \`${built.seat.cli}\` in this version\n`);
+    io.stderr(`team add: no launch profile for \`${plainLine(built.seat.cli)}\` in this version\n`);
     // exit: add.no-profile
     return 1;
   }
 
   const prepared = validateTeamFile(built.edited, { home: sources.home, fs: sources.fs, root });
   if (!prepared.ok) {
-    for (const problem of prepared.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
+    for (const problem of prepared.errors) io.stderr(`team add: ${where(problem)}${plainText(problem.message)}\n`);
     // exit: add.prepared
     return 2;
   }
   for (const problem of placedProblems(prepared.team, root, sources.home, sources.fs)) {
-    io.stderr(`team add: ${problem.message}\n`);
+    io.stderr(`team add: ${plainText(problem.message)}\n`);
     // exit: add.placed
     return 1;
   }
@@ -316,7 +317,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     ? { problem: startProblem }
     : seatStart(prepared.team, built.seat, root, sources.home, verifiedLobby ?? undefined);
   if ('problem' in start) {
-    io.stderr(`team add: ${start.problem}\n`);
+    io.stderr(`team add: ${plainText(start.problem)}\n`);
     // exit: add.start
     return 1;
   }
@@ -348,7 +349,18 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
           level: 'note' as const,
           why: 'its launch line was not checked: the seat is resumed and its state records no start folder',
         };
-  if (line?.level === 'note') (dry ? io.stdout : io.stderr)(`  note ${built.name}: ${line.why}\n`);
+  // One writer per run: the seat's provisional line on a terminal, its one final record either
+  // way, and every other line of the run on stderr, after the record it belongs to. It exists
+  // from here, before the run, because the launch-line note is one of its detail lines.
+  const records = progressWriter({ stdout: io.stdout, stderr: io.stderr, isTTY: io.stdoutIsTTY ?? false });
+  // The note is the writer's detail line on a real run: one line, cleaned like a record's
+  // fields, whatever the launch line's word holds. A dry run has no run, and its note goes to
+  // stdout with the plan it belongs to.
+  if (line?.level === 'note') {
+    const note = `  note ${built.name}: ${line.why}`;
+    if (dry) io.stdout(`${plainLine(note)}\n`);
+    else records.detail(note);
+  }
   // The plan, the record and the log hold the reason in words (`record`); the full finding — the
   // start folder it names — is the record's stderr detail and the doctor line below, both for a
   // terminal. Without a `record` the words are the whole finding.
@@ -372,7 +384,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       : []),
   ]) {
     if (blocksLaunch(finding)) {
-      io.stderr(`team add: ${finding.text}\n`);
+      io.stderr(`team add: ${plainLine(finding.text)}\n`);
       // exit: add.doctor
       return 1;
     }
@@ -384,20 +396,20 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   };
   const problem = crossed();
   if (problem) {
-    io.stderr(`team add: ${problem}\n`);
+    io.stderr(`team add: ${plainText(problem)}\n`);
     // exit: add.machine
     return 1;
   }
   const running = runningOf(agents, prepared.team, recorded);
   const room = ceilingProblem(ceilings, running, built.seat, Boolean(built.temporary));
   if (room) {
-    io.stderr(`team add: ${room}\n`);
+    io.stderr(`team add: ${plainText(room)}\n`);
     // exit: add.ceiling
     return 1;
   }
   const again = crossed();
   if (again) {
-    io.stderr(`team add: ${again}\n`);
+    io.stderr(`team add: ${plainText(again)}\n`);
     // exit: add.machine-again
     return 1;
   }
@@ -421,11 +433,11 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   };
   if (dry) {
     if (decision.kind === 'refuse' && wouldLaunch) {
-      io.stdout(`${built.name}: would refuse: ${decision.why}\ndry run: nothing was run\n`);
+      io.stdout(`${plainLine(built.name)}: would refuse: ${plainText(decision.why)}\ndry run: nothing was run\n`);
       // exit: add.dry-budget
       return 0;
     }
-    if (decision.kind === 'unknown') io.stdout(`${built.name}: ${decision.text}\n`);
+    if (decision.kind === 'unknown') io.stdout(`${plainLine(built.name)}: ${plainText(decision.text)}\n`);
     const preview = upPlan({
       root,
       session,
@@ -433,19 +445,19 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       seats: [seatForPlan],
       watchAlive: true,
     });
-    io.stdout(formatPlan(preview));
+    io.stdout(plainText(formatPlan(preview)));
     // exit: add.dry-run
     return 0;
   }
   if (decision.kind === 'refuse' && wouldLaunch) {
-    io.stderr(`team add: refused: ${decision.why}\n`);
+    io.stderr(`team add: refused: ${plainText(decision.why)}\n`);
     // exit: add.budget
     return 1;
   }
   if (isMigratedTrust(prepared.team.trust) && wouldLaunch) {
     const gate = verifyLobby(sources.home, { create: true, getuid: sources.getuid, fs: sources.fs });
     if (!gate.ok) {
-      io.stderr(`team add: ${gate.text}\n`);
+      io.stderr(`team add: ${plainText(gate.text)}\n`);
       // exit: add.lobby
       return 1;
     }
@@ -454,7 +466,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
     }
   }
-  if (decision.kind === 'unknown') io.stderr(`${built.name}: ${decision.text}\n`);
+  if (decision.kind === 'unknown') io.stderr(`${plainLine(built.name)}: ${plainText(decision.text)}\n`);
   if (built.edited !== original) {
     const written = withLock(dir, () => {
       if (readFileSync(path, 'utf8') !== original) return { kind: 'changed' as const };
@@ -467,7 +479,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       return 1;
     }
     if (written.kind === 'invalid') {
-      for (const problem of written.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
+      for (const problem of written.errors) io.stderr(`team add: ${where(problem)}${plainText(problem.message)}\n`);
       // exit: add.locked
       return 2;
     }
@@ -482,7 +494,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const host = hostOf({
     dir, session, team: prepared.team, root, home: sources.home, ceilings, running, seat: built.seat, temporary: built.temporary,
     caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io, standing,
-    verifiedLobby,
+    verifiedLobby, records,
     doctor: sources.doctor,
     // The lobby is read again directly before the workspace this run makes in it, with nothing
     // in between (`execute.ts`). Null when it is still the folder the gate read.
@@ -636,14 +648,17 @@ function hostOf(input: {
   readMachine?: (root: string) => Machine; samples: SwapSample[]; limits: TeamFile['machine']; io: Io;
   standing: Standing;
   verifiedLobby: string | null;
+  /** The run's writer, made by the caller before the launch-line note is said. */
+  records: Progress;
   doctor: DoctorSources;
   confirmLobby(): LobbyRefusal | null;
 }): Host {
   const { dir, session, launch, seat, temporary } = input;
   const running = [...input.running];
-  // One writer per run: a seat's provisional line on a terminal, its one final record either
-  // way, and every other line of the run on stderr, after the record it belongs to.
-  const records = progressWriter({ stdout: input.io.stdout, stderr: input.io.stderr, isTTY: input.io.stdoutIsTTY ?? false });
+  const records = input.records;
+  // Set while the one record whose line is replaced by `team add:`'s own sentence is said: its
+  // detail lines go unspoken with it.
+  let swallowed = false;
   return {
     startServer: launch.startServer,
     sessionUp: launch.sessionUp,
@@ -717,16 +732,25 @@ function hostOf(input: {
         if (seats) delete seats[name];
       });
     },
-    say: (line) => input.io.stderr(line),
+    // What is not a record — a skip line, a session failure, the watch's sentence — is cleaned
+    // here with the same function the records use: no escape sequence or bidi override reaches
+    // the terminal from a file's word, a screen's word or a folder's name.
+    say: (line) => input.io.stderr(plainText(line)),
     progress: (name, state) => records.progress(name, state),
-    final(name, record, detail) {
+    final(name, record) {
       // `add` on a pane that is the seat's again: nothing was launched and nothing closed. The
       // record says so, and this is the line the owner gets instead — the same one main prints.
+      // The record's detail lines go unspoken with it.
       if (record.kind === 'left out' && record.reason === "its pane is the seat's again; left as it is") {
-        input.io.stderr(`team add: ${input.seat.name} is already running\n`);
+        swallowed = true;
+        input.io.stderr(`team add: ${plainLine(input.seat.name)} is already running\n`);
         return;
       }
-      records.final(name, record, detail);
+      swallowed = false;
+      records.final(name, record);
+    },
+    detail(line) {
+      if (!swallowed) records.detail(line);
     },
     cliVersion(cli) {
       const profile = profileFor(cli);

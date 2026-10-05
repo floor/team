@@ -35,6 +35,7 @@ import { executePlan } from '../launch/execute.ts';
 import { seatProcessVerdict } from '../launch/identity.ts';
 import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
+import { plainLine, plainText } from '../launch/plain.ts';
 import { progressWriter } from '../launch/progress.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { rulesFileHash, rulesFileHolds, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
@@ -249,7 +250,7 @@ function seatPlan(
 export async function runUp(argv: string[], io: Io, sources: UpSources): Promise<number> {
   const args = readArgs(argv, ['session', 'file'], ['dry-run']);
   if (args.error || args.rest.length) {
-    io.stderr(`team up: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
+    io.stderr(`team up: ${plainText(args.error ?? `unexpected "${args.rest[0]}"`)}\n${USAGE}`);
     // exit: up.invocation
     return 2;
   }
@@ -257,7 +258,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
-      io.stderr(`team up: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
+      io.stderr(`team up: ${problem.line ? `line ${problem.line}: ` : ''}${plainText(problem.message)}\n`);
     }
     // exit: up.not-a-repo
     // exit: up.file
@@ -349,6 +350,10 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const budgetGate = sources.seatBudget ?? seatBudget;
   const budgetOf = (seat: (typeof team.seats)[number]) =>
     standing.kind === 'verified' ? budgetGate(budgets, readings, seat, readAt(), spend) : { kind: 'clear' as const };
+  // One writer per run: a seat's provisional line on a terminal, its one final record either
+  // way, and every other line of the run on stderr, after the record it belongs to. It exists
+  // from here, before the planning pass, because the launch-line note is one of its detail lines.
+  const records = progressWriter({ stdout: io.stdout, stderr: io.stderr, isTTY: io.stdoutIsTTY ?? false });
   const seats: UpSeat[] = [];
   const refused = new Set<string>();
   for (const seat of team.seats) {
@@ -384,7 +389,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
               why: 'its launch line was not checked: the seat is resumed and its state records no start folder',
             }
       : null;
-    if (line?.level === 'note') (dry ? io.stdout : io.stderr)(`  note ${seat.name}: ${line.why}\n`);
+    // The note is the writer's detail line on a real run: one line, cleaned like a record's
+    // fields, whatever the launch line's word holds. A dry run has no run, and its note goes to
+    // stdout with the plan it belongs to.
+    if (line?.level === 'note') {
+      const note = `  note ${seat.name}: ${line.why}`;
+      if (dry) io.stdout(`${plainLine(note)}\n`);
+      else records.detail(note);
+    }
     // The plan, the record and the log hold the reason in words (`record`); the full finding —
     // the start folder it names — rides along as the record's stderr detail only.
     const launchProblem =
@@ -452,13 +464,13 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   if (dry) {
     // The same cause can reach the list twice — the gate and `doctor` both read the
     // approval — so a refusal is said once.
-    for (const refusal of [...new Set(refusals)]) io.stdout(`! up would refuse: ${refusal}\n`);
-    io.stdout(formatPlan(plan));
+    for (const refusal of [...new Set(refusals)]) io.stdout(`! up would refuse: ${plainText(refusal)}\n`);
+    io.stdout(plainText(formatPlan(plan)));
     // exit: up.dry-run
     return 0;
   }
   if (refusals.length) {
-    for (const refusal of [...new Set(refusals)]) io.stderr(`team up: ${refusal}\n`);
+    for (const refusal of [...new Set(refusals)]) io.stderr(`team up: ${plainText(refusal)}\n`);
     // exit: up.not-owner
     // exit: up.never-approved
     // exit: up.differs
@@ -494,9 +506,6 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     }
   }
   const now = () => sources.now?.() ?? launch.now();
-  // One writer per run: a seat's provisional line on a terminal, its one final record either
-  // way, and every other line of the run on stderr, after the record it belongs to.
-  const records = progressWriter({ stdout: io.stdout, stderr: io.stderr, isTTY: io.stdoutIsTTY ?? false });
   const host: Host = {
     startServer: launch.startServer,
     sessionUp: launch.sessionUp,
@@ -580,9 +589,13 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
         if (seats) delete seats[name];
       });
     },
-    say: (line) => io.stderr(line),
+    // What is not a record — a skip line, a session failure, the watch's sentence — is cleaned
+    // here with the same function the records use: no escape sequence or bidi override reaches
+    // the terminal from a file's word, a screen's word or a folder's name.
+    say: (line) => io.stderr(plainText(line)),
     progress: (seat, state) => records.progress(seat, state),
-    final: (seat, record, detail) => records.final(seat, record, detail),
+    final: (seat, record) => records.final(seat, record),
+    detail: (line) => records.detail(line),
     cliVersion(cli) {
       const profile = profileFor(cli);
       if (!profile || !sources.doctor) return null;

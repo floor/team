@@ -1003,11 +1003,64 @@ describe('team up, live', () => {
     expect(atLobby.err).toContain(
       `  ${words} ${lobby}; the same file is at \`${join(base, 'tools', 'x.sh')}\` from the project root — write that path\n`,
     );
-    // The log's bytes hold the words and no folder: the reviewer's `/private/…` probe, as a run.
+    // The log's bytes: the record's words and no folder — not the one the check looked in, not
+    // the one to write — because the folder is terminal detail alone, whatever the terminal
+    // prints just above.
     const log = readFileSync(join(root, '.agents/team.log'), 'utf8');
     expect(log).toContain(`deepseek-acme: left out: refused: ${words}`);
     expect(log).not.toContain(lobby);
     expect(log).not.toContain(join(base, 'tools'));
+  });
+
+  test('a launch-line miss is cleaned once, before the log and the writer: no control, escape or bidi byte is logged', async () => {
+    // A launch word holding ESC and U+202E — both written as YAML escapes in a double-quoted
+    // scalar, so the file holds them. The record, the log line and the terminal line are the
+    // same cleaned words; before this, the log was written from the raw record, and its bytes
+    // held `1b` (and `e2 80 ae`).
+    writeFileSync(
+      join(root, '.agents/team.yaml'),
+      makeExample(base, root, EXAMPLE.replace('launch: claude --model claude-opus-5-5', 'launch: "./aa\\ebb\\u202ecc"')),
+    );
+    await approve();
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({ doctor: doctor() }, made));
+    expect(code).toBe(1);
+    // The record the seat's machine printed, and the terminal line: the same words.
+    expect(io.out).toContain(
+      'claude-coordinator-acme: left out: refused: its launch line starts `./aabcc`, not found from its start folder\n',
+    );
+    expect(io.err).toContain('  its launch line starts `./aabcc`, not found from its start folder .\n');
+    expect(io.out).not.toContain('\x1b');
+    expect(io.err).not.toContain('\x1b');
+    expect(io.err).not.toContain('\u202e');
+    const log = readFileSync(join(root, '.agents/team.log'), 'utf8');
+    expect(log).toContain('up [owner] claude-coordinator-acme: left out: refused: its launch line starts `./aabcc`, not found from its start folder\n');
+    expect(log).not.toContain('\x1b');
+    expect(log).not.toContain('\u202e');
+    for (const byte of Buffer.from(log, 'utf8')) expect(byte === 0x0a || byte >= 0x20).toBe(true);
+  });
+
+  test('the launch-line note is the writer’s detail line: an escape byte in the word is cleaned at the writer', async () => {
+    // The note carries the file's own word (an argument this time, so the line is told, never
+    // refused). The word reaches the terminal only through the writer's detail line, cleaned.
+    writeFileSync(
+      join(root, '.agents/team.yaml'),
+      makeExample(base, root, EXAMPLE.replace('launch: claude --model claude-opus-5-5', 'launch: "claude --model claude-opus-5-5 ./aa\\ebb"')),
+    );
+    await approve();
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({ doctor: doctor() }, made));
+    expect(code).toBe(0);
+    expect(io.err).toContain(
+      '  note claude-coordinator-acme: its launch line runs `./aab`, not found from its start folder .; not checked: the command may create it\n',
+    );
+    expect(io.err).not.toContain('\x1b');
+    expect(io.out).toContain('claude-coordinator-acme: ready\n');
+    const log = readFileSync(join(root, '.agents/team.log'), 'utf8');
+    expect(log).not.toContain('\x1b');
+    expect(log).not.toContain('./aab');
   });
 
   test('a resumed seat whose state records no start folder is not checked at all', async () => {
