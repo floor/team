@@ -11,9 +11,11 @@ import type { Caller } from '../../src/caller.ts';
 import { runApprove } from '../../src/commands/approve.ts';
 import { modelFlagFinding, runDoctor, type DoctorSources, type Finding } from '../../src/commands/doctor.ts';
 import { profileFor } from '../../src/profiles/index.ts';
-import type { Profile } from '../../src/profiles/profile.ts';
+import { statusModelRules, statusModelRulesOf, statusOnLine, type ModelRule, type Profile } from '../../src/profiles/profile.ts';
 import { canShowModel, runningModel, type Running } from '../../src/status/statusline.ts';
 import { installKey } from '../../src/store/keys.ts';
+import { screenData, statusRow } from '../../src/watch/screen.ts';
+import { YamlError } from '../../src/yaml.ts';
 import { testIo } from '../helpers.ts';
 
 const FIXTURE = readFileSync(join(import.meta.dir, '../fixtures/doctor-models.yaml'), 'utf8');
@@ -254,8 +256,8 @@ describe('modelFlagFinding', () => {
   // exactly this model — and this version when the seat has one. A yes here is a reading the
   // reader really gives, never a claim about what a template might spell.
   test('what the screen can name is what the reader reads back, and nothing else', () => {
-    // The review's probe: the shipped rule knows Opus, Sonnet, Haiku and Fable, so the reader
-    // can never return Terra, and no line the pattern accepts can round-trip to it.
+    // The shipped rule reads Opus, Sonnet, Haiku and Fable; Terra is a name it cannot spell, so
+    // the reader never returns it and no line the pattern accepts reads it back.
     expect(runningModel('claude-code', 'Opus 5.5')).toEqual({ model: 'Claude Opus', version: '5.5' });
     expect(runningModel('claude-code', 'Terra 5.5')).toBeNull();
     expect(canShowModel({ cli: 'claude-code', model: 'Claude Terra' })).toBe(false);
@@ -300,5 +302,245 @@ describe('modelFlagFinding', () => {
       expect(shown.length).toBeGreaterThan(0);
       for (const running of shown) expect(canShowModel({ cli, model: running.model, version: running.version })).toBe(true);
     }
+  });
+});
+
+// The declaration's promises, kept on real screens. `yields` says exactly which names the rule
+// reads; the reader itself is the judge: the declared name's own words put into the row the reader
+// reads, on a captured fixture's own text, must read back as exactly that name — a name no capture
+// carries fails naming the rule instead of passing unproven. `version_like` says the version
+// shapes the rule can spell: a shape a carried row admits and the declaration accepts must read
+// back as that version, and the shapes the captures themselves show must all be accepted.
+describe('the declared models and versions, on the captured screens', () => {
+  const DIRS: [string, string][] = [
+    ['claude-code', 'claude-code/2.1.289'],
+    ['codex', 'codex/0.157.0'],
+    ['cursor', 'cursor/2026.10.01'],
+    ['antigravity', 'antigravity/1.2.16'],
+  ];
+  const VERSIONS = ['9.8.7', '9.8', '9'];
+
+  type Carried = { file: string; screen: string; row: string; index: number; hit: Running };
+
+  // The row the reader reads, its line in the capture, and what it reads. A placed profile goes
+  // through its own row; the rest walk the last six lines as `runningModel` does, last hit
+  // winning and a line the rules claim but cannot name clearing the earlier one. Null when the
+  // screen names no model at all.
+  function readRow(cli: string, screen: string): { row: string; index: number; hit: Running } | null {
+    const lines = screen.split('\n');
+    const data = screenData(cli);
+    const composer = data?.composer;
+    const placed = composer && (composer.mode === 'status-last' || composer.mode === 'status-then-one') && composer.statusBelow;
+    let index = -1;
+    if (placed) {
+      const row = statusRow(data, screen);
+      if (row !== null) index = lines.lastIndexOf(row);
+    } else {
+      for (let i = Math.max(0, lines.length - 6); i < lines.length; i++) {
+        const hit = statusOnLine(cli, lines[i] as string);
+        if (hit === 'unreadable') index = -1;
+        else if (hit) index = i;
+      }
+    }
+    if (index < 0) return null;
+    const row = lines[index] as string;
+    const hit = statusOnLine(cli, row);
+    if (hit === null || hit === 'unreadable') return null;
+    return { row, index, hit };
+  }
+
+  // The first rule that claims the row, the one `statusOnLine` reads it through. -1 when none does.
+  function ruleOf(cli: string, row: string): number {
+    return statusModelRules(cli).findIndex((rule) => rule.match.test(row));
+  }
+
+  // A captured fixture whose screen names a model through this rule: the first in name order,
+  // carrying the reading the whole screen carries. Plain captures only — the row is rebuilt in
+  // the capture's own text, so nothing may have to be stripped to find it.
+  function carrierFor(cli: string, dir: string, wanted: number): Carried | null {
+    const root = join(import.meta.dir, '../fixtures', dir);
+    for (const file of readdirSync(root).filter((name) => name.endsWith('.txt')).sort()) {
+      const screen = readFileSync(join(root, file), 'utf8');
+      if (screen.includes('\u001b')) continue;
+      const read = readRow(cli, screen);
+      if (read === null || ruleOf(cli, read.row) !== wanted) continue;
+      const overall = runningModel(cli, screen);
+      if (overall === null || overall.model !== read.hit.model || overall.version !== read.hit.version) continue;
+      return { file, screen, ...read };
+    }
+    return null;
+  }
+
+  // The words a template pins to one capture, read from the declared text: the text around the
+  // `{n}` must fit the template's literal parts, and what remains is the capture's. None when the
+  // template has no hole — the row already reads the template's own literal, and the assertion on
+  // the reading is what keeps that literal the declared name. `{n:title}` folds the words, so the
+  // remainder must be exactly what it reads back.
+  function pin(template: string, text: string, what: string): { group: number; words: string } | null {
+    const holes = [...template.matchAll(/\{(\d+)(?::title)?\}/g)];
+    if (holes.length === 0) return null;
+    if (holes.length > 1) throw new Error(`${what}: template "${template}" pins more than one capture`);
+    const hole = holes[0] as RegExpMatchArray;
+    const at = hole.index ?? 0;
+    const head = template.slice(0, at);
+    const tail = template.slice(at + hole[0].length);
+    if (!text.startsWith(head) || !text.endsWith(tail) || text.length < head.length + tail.length) {
+      throw new Error(`${what}: "${text}" does not fit template "${template}"`);
+    }
+    const words = text.slice(head.length, text.length - tail.length);
+    if (words === '') throw new Error(`${what}: "${text}" leaves the capture empty`);
+    if (hole[0].includes(':title')) {
+      const titled = `${words.slice(0, 1).toUpperCase()}${words.slice(1).toLowerCase()}`;
+      if (titled !== words) throw new Error(`${what}: "${words}" does not read back through ":title"`);
+    }
+    return { group: Number(hole[1]), words };
+  }
+
+  // The row with the declared text's words in the capture its template names, and nothing else
+  // changed. Null when the rebuilt row is not one the rule claims — a shape the rule's own
+  // pattern refuses; the caller reads that as "the row cannot carry this text", never as a pass.
+  function substitute(row: string, rule: ModelRule, template: string, text: string, what: string): string | null {
+    const pinned = pin(template, text, what);
+    if (pinned === null) return row;
+    const match = new RegExp(rule.match.source, 'ud').exec(row);
+    const span = match?.indices?.[pinned.group];
+    if (!span) throw new Error(`${what}: the pattern has no capture the template names`);
+    const rebuilt = row.slice(0, span[0]) + pinned.words + row.slice(span[1]);
+    return rule.match.test(rebuilt) ? rebuilt : null;
+  }
+
+  function replaceLine(screen: string, index: number, row: string): string {
+    const lines = screen.split('\n');
+    lines[index] = row;
+    return lines.join('\n');
+  }
+
+  test('every declared name really reads on a captured screen, or the rule is named', () => {
+    for (const [cli, dir] of DIRS) {
+      const rules = statusModelRules(cli);
+      for (let at = 0; at < rules.length; at++) {
+        const rule = rules[at] as ModelRule;
+        if (rule.yields.length === 0) continue;
+        const carrier = carrierFor(cli, dir, at);
+        if (carrier === null) throw new Error(`no capture carries rule ${at} of ${cli}: ${rule.match.source}`);
+        for (const name of rule.yields) {
+          const what = `${cli} rule ${at} (${rule.match.source}), name "${name}", ${carrier.file}`;
+          const row = substitute(carrier.row, rule, rule.model, name, what);
+          if (row === null) throw new Error(`${what}: the row refuses the declared name`);
+          const read = runningModel(cli, replaceLine(carrier.screen, carrier.index, row));
+          if (read === null || read.model !== name || read.version !== carrier.hit.version) {
+            throw new Error(`${what}: read ${JSON.stringify(read)}`);
+          }
+        }
+      }
+    }
+  });
+
+  test('every version shape the row can carry and the declaration accepts reads back as that version', () => {
+    for (const [cli, dir] of DIRS) {
+      const rules = statusModelRules(cli);
+      for (let at = 0; at < rules.length; at++) {
+        const rule = rules[at] as ModelRule;
+        if (rule.versionLike === null) continue;
+        const carrier = carrierFor(cli, dir, at);
+        if (carrier === null) throw new Error(`no capture carries rule ${at} of ${cli}: ${rule.match.source}`);
+        // The shape the capture itself shows is one the rule must accept, or a real reading would
+        // be refused.
+        if (!rule.versionLike.test(carrier.hit.version)) {
+          throw new Error(`${cli} rule ${at} (${rule.match.source}) refuses the shown version ${carrier.hit.version}`);
+        }
+        for (const version of VERSIONS) {
+          const what = `${cli} rule ${at} (${rule.match.source}), version "${version}", ${carrier.file}`;
+          const row = substitute(carrier.row, rule, rule.version, version, what);
+          if (row === null || !rule.versionLike.test(version)) continue;
+          const read = runningModel(cli, replaceLine(carrier.screen, carrier.index, row));
+          if (read === null || read.model !== carrier.hit.model || read.version !== version) {
+            throw new Error(`${what}: read ${JSON.stringify(read)}`);
+          }
+        }
+      }
+    }
+  });
+
+  test('version_like is refused as the rule loads unless anchored at both ends', () => {
+    const rule = (versionLike: string) => `
+- match: '^M-([0-9]+)$'
+  model: 'M {1}'
+  version: '{1}'
+  yields: [M]
+  version_like: '${versionLike}'
+`;
+    for (const loose of ['[0-9]+', '^[0-9]+', '[0-9]+$']) {
+      expect(() => statusModelRulesOf(rule(loose))).toThrow(YamlError);
+      expect(() => statusModelRulesOf(rule(loose))).toThrow(/anchored at both ends/);
+    }
+  });
+
+  test('the version check is the rule\'s own: a shape the rule cannot spell is not readable', () => {
+    // One shipped rule spells a single optional dot, another any number of them; the same model
+    // name is readable with one version shape and not the other, and a shape with a stray space
+    // is refused however many digits it has.
+    expect(canShowModel({ cli: 'codex', model: 'GPT Terra' })).toBe(true);
+    expect(canShowModel({ cli: 'codex', model: 'GPT Terra', version: '5.6' })).toBe(true);
+    expect(canShowModel({ cli: 'codex', model: 'GPT Terra', version: '5.6.1' })).toBe(false);
+    expect(canShowModel({ cli: 'claude-code', model: 'Claude Opus', version: '5.5.1' })).toBe(true);
+    expect(canShowModel({ cli: 'claude-code', model: 'Claude Opus', version: '5.5 ' })).toBe(false);
+  });
+
+  // A declared name is a name, not a family of spellings: `canShowModel` compares the seat's
+  // model with `yields` exactly, so case, an edge space or a doubled space is a different string —
+  // one no rule lists, and a seat running it is not one its screen can name. A truthy here would
+  // silence `doctor`'s warning for a seat whose screen cannot show what the file declares.
+  test('a declared name is exact: case and spaces are not the name', () => {
+    const CASES: [string, string, string[]][] = [
+      ['claude-code', 'Claude Opus', ['claude opus', 'CLAUDE OPUS', 'Claude Opus ', ' Claude Opus', 'Claude  Opus']],
+      ['codex', 'GPT Sol', ['gpt sol', 'GPT SOL', 'GPT Sol ', ' GPT Sol', 'GPT  Sol']],
+      // cursor spells single words: its doubled-space case is its other multi-word name
+      ['cursor', 'Grok', ['grok', 'GROK', 'Grok ', ' Grok', 'GPT  Sol']],
+      ['antigravity', 'Gemini Flash', ['gemini flash', 'GEMINI FLASH', 'Gemini Flash ', ' Gemini Flash', 'Gemini  Flash']],
+    ];
+    for (const [cli, declared, variants] of CASES) {
+      expect(canShowModel({ cli, model: declared })).toBe(true);
+      for (const variant of variants) {
+        expect(canShowModel({ cli, model: variant })).toBe(false);
+        expect(canShowModel({ cli, model: variant, version: '5.5' })).toBe(false);
+      }
+    }
+  });
+
+  test('a duplicate name in yields is refused as the rule loads', () => {
+    const rule = (yields: string) => `
+- match: '^M-([0-9]+)$'
+  model: 'M {1}'
+  version: '{1}'
+  yields: ${yields}
+`;
+    expect(() => statusModelRulesOf(rule('[M, M]'))).toThrow(YamlError);
+    expect(() => statusModelRulesOf(rule('[M, M]'))).toThrow(/"yields" lists "M" twice/);
+    // a trailing space makes the string a different name, not a duplicate
+    expect(statusModelRulesOf(rule('[M, "M "]')).flatMap((one) => one.yields)).toEqual(['M', 'M ']);
+  });
+
+  test('a constructed rule carries its version shapes, and one without the keys yields nothing', () => {
+    const declared = statusModelRulesOf(`
+- match: '^M-([0-9]+(?:\\.[0-9]+)*)$'
+  model: 'M {1}'
+  version: '{1}'
+  yields: [M]
+  version_like: '^[0-9]+(?:\\.[0-9]+)*$'
+`);
+    const rule = declared[0] as ModelRule;
+    expect(rule.versionLike?.test('5')).toBe(true);
+    expect(rule.versionLike?.test('5.5.1')).toBe(true);
+    expect(rule.versionLike?.test('5x')).toBe(false);
+    expect(rule.versionLike?.test('dev')).toBe(false);
+    expect(rule.versionLike?.test('x5')).toBe(false);
+    const bare = statusModelRulesOf(`
+- match: '^M-([0-9]+)$'
+  model: 'M {1}'
+  version: '{1}'
+`);
+    expect((bare[0] as ModelRule).yields).toEqual([]);
+    expect((bare[0] as ModelRule).versionLike).toBeNull();
   });
 });
