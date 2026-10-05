@@ -76,8 +76,14 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     home: sources.home,
     checkOnly: true,
   });
-  if (!loaded.ok) {
-    for (const problem of loaded.errors) {
+  const standing = loaded.ok ? (sources.standing?.(loaded.root) ?? approvalStanding(loaded.root, sources.home)) : null;
+  const inForce = loaded.ok && standing ? worktreeTeamInForceOf(standing, loaded.team) : null;
+  // Placement is judged on the file the command will use. A verified run uses the approved
+  // copy, so an unapproved protected list on the live file does not refuse the load.
+  const placed = loaded.ok ? placedProblems(inForce?.team ?? loaded.team, loaded.root, sources.home) : [];
+  if (!loaded.ok || placed.length) {
+    const problems = loaded.ok ? placed : loaded.errors;
+    for (const problem of problems) {
       io.stderr(`team worktree: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
     }
     // exit: worktree.not-a-repo
@@ -86,18 +92,6 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     return 2;
   }
   const { team, root } = loaded;
-  // Placement is judged on the file the command will use. A verified run uses the approved
-  // copy, so an unapproved protected list on the live file does not refuse the load.
-  const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
-  const inForce = worktreeTeamInForceOf(standing, team);
-  const placed = placedProblems(inForce?.team ?? team, root, sources.home);
-  if (placed.length) {
-    for (const problem of placed) {
-      io.stderr(`team worktree: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
-    }
-    // exit: worktree.file-invalid
-    return 2;
-  }
   const caller = callerOf(io);
   if (args.values.file && !isOwner(caller)) {
     io.stderr(`team worktree: --file is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`);
@@ -109,7 +103,7 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
   // gate below is judged on those values too — a seat the file added to `coordinator` is not one
   // until the owner approves it. With nothing verified the file's own values are read, exactly
   // as before, so the refusals are still main's. `project` on the snapshot is the live file's.
-  if (inForce === null) {
+  if (standing === null || inForce === null) {
     io.stderr('team worktree: the approved copy can\'t be read: run `team approve`\n');
     // exit: worktree.approved-copy
     return 1;
