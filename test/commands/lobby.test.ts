@@ -144,6 +144,7 @@ async function up(argv: string[], made: ReturnType<typeof world>) {
     sessionState: () => made.session,
     agents: () => [],
     home,
+    doctor: doctor(),
     launch: made.launch,
   };
   const code = await runUp([...argv, ...FILE], io, sources);
@@ -287,5 +288,95 @@ describe('the lobby', () => {
     expect(run.err).toContain('team add: the lobby ../worktrees/acme/.lobby matches no trust pattern');
     expect(made.workspaces).toEqual([]);
     expect(readFileSync(join(root, '.agents', 'team.yaml'), 'utf8')).toBe(text);
+  });
+});
+
+// The launch line runs in the folder the seat starts in, which for a seat that works in worktrees
+// is the lobby, not the project root. A line that cannot run there is that seat's own finding: it
+// is left out before its workspace is made, and the seats that can start still do.
+describe('a launch line that cannot run where the seat starts', () => {
+  // `../tools/x.sh` exists from the project root — resolve(root, '../tools/x.sh') — and nowhere
+  // under the lobby. The worker's line is the only one changed: lead keeps its own.
+  const WORKER_LAUNCH = BASE.replace(
+    'launch: claude --model claude-opus-5-5\n    count: 2',
+    'launch: zsh ../tools/x.sh\n    count: 2',
+  );
+
+  test('the dry run leaves the seat out before its workspace is made, and the others go on', async () => {
+    approve(WORKER_LAUNCH);
+    mkdirSync(join(base, 'tools'), { recursive: true });
+    writeFileSync(join(base, 'tools', 'x.sh'), 'echo hi\n');
+    const run = await up(['--dry-run'], world());
+    expect(run.code).toBe(0);
+    const why =
+      'worker: would refuse: its launch line runs `../tools/x.sh`, not found from its start folder ' +
+      '../worktrees/acme/.lobby; the same file is at `' + join(base, 'tools', 'x.sh') + '` from the project root — write that path';
+    expect(run.out).toContain(`  skip ${why}\n`);
+    expect(run.out).toContain('worker-2: would refuse: its launch line runs `../tools/x.sh`');
+    // Nothing for the seat is made: no lobby for it to wait in, no workspace, no launch.
+    expect(run.out).not.toContain('--label worker ');
+    expect(run.out).not.toContain('--label worker-2 ');
+    expect(run.out).not.toContain(`mkdir -p ${lobby}`);
+    expect(run.out).toContain(`--cwd ${root} --label lead`);
+  });
+
+  test('the real run refuses that seat only: its workspace is never made, the others start', async () => {
+    approve(WORKER_LAUNCH);
+    mkdirSync(join(base, 'tools'), { recursive: true });
+    writeFileSync(join(base, 'tools', 'x.sh'), 'echo hi\n');
+    const made = world();
+    const run = await up([], made);
+    expect(run.code).toBe(1);
+    expect(run.err).toBe('');
+    expect(run.out).toContain('worker: refused: its launch line runs `../tools/x.sh`');
+    expect(run.out).toContain('worker-2: refused: its launch line runs `../tools/x.sh`');
+    expect(made.workspaces).toEqual([
+      { label: 'lead', cwd: root },
+      { label: 'watchdog', cwd: root },
+    ]);
+    expect(existsSync(lobby)).toBe(false);
+  });
+
+  test('add refuses the seat too, before the file is edited', async () => {
+    approve(WORKER_LAUNCH);
+    mkdirSync(join(base, 'tools'), { recursive: true });
+    writeFileSync(join(base, 'tools', 'x.sh'), 'echo hi\n');
+    const made = world();
+    const run = await add(['--temporary', '--like', 'worker', '--until', 'merged:fix/fresh'], made);
+    expect(run.code).toBe(1);
+    expect(run.err).toContain('team add: worker-tmp-1: its launch line runs `../tools/x.sh`, not found from its start folder ../worktrees/acme/.lobby');
+    expect(made.workspaces).toEqual([]);
+    expect(readFileSync(join(root, '.agents', 'team.yaml'), 'utf8')).toBe(WORKER_LAUNCH);
+  });
+
+  test('a line the check cannot read is never refused: the seat starts as it always did', async () => {
+    approve(BASE.replace(
+      'launch: claude --model claude-opus-5-5\n    count: 2',
+      'launch: claude --model claude-opus-5-5 --append-system-prompt "be terse"\n    count: 2',
+    ));
+    const made = world();
+    const run = await up([], made);
+    expect(run.code).toBe(0);
+    expect(made.workspaces.map((workspace) => workspace.label)).toEqual(['lead', 'worker', 'worker-2', 'watchdog']);
+    // The note is said once per seat, on stderr for a real run, and the plan is not touched by it.
+    for (const name of ['worker', 'worker-2']) {
+      expect(run.err.split(`  note ${name}: its launch line was not checked`).length).toBe(2);
+    }
+    expect(run.out).not.toContain('note worker');
+  });
+
+  test('a dry run says the same note on its plan, and the notes never refuse', async () => {
+    approve(BASE.replace(
+      'launch: claude --model claude-opus-5-5\n    count: 2',
+      'launch: claude --model claude-opus-5-5 --append-system-prompt "be terse"\n    count: 2',
+    ));
+    const run = await up(['--dry-run'], world());
+    expect(run.code).toBe(0);
+    expect(run.err).toBe('');
+    expect(run.out).toContain(
+      '  note worker: its launch line was not checked: it quotes or substitutes text this version does not read\n',
+    );
+    expect(run.out).toContain('  note worker-2: its launch line was not checked');
+    expect(run.out).not.toContain('would refuse');
   });
 });
