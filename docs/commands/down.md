@@ -35,7 +35,8 @@ records no pane for, or records on another pane than this call is on; those two 
 seat and the repair. What that proves is placement, and no more: the state file is in the project,
 and a process of the same user that writes its own pane there under the coordinator's name, and
 renames its pane, passes. The check guards a mistaken agent, not a hostile process running as the
-same user. `--file` and `--session` are the owner's alone, from a terminal outside herdr.
+same user. `--file` and `--session` are the owner's alone, from a terminal outside herdr: a
+non-owner aiming either is refused before the flagged file or session is read at all.
 A seat's
 own call is refused by the `--abandon` flag, which only the owner may use. A seat that may stop the
 team never stops the coordinator's or the operator's seat — only the owner does.

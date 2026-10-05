@@ -39,7 +39,8 @@ renames its pane, passes. The check guards a mistaken agent, not a hostile proce
 same user.
 The
 coordinator's and the operator's own seats are the owner's alone to remove, and so is `--abandon`.
-`--file` and `--session` are the owner's alone, from a terminal outside herdr.
+`--file` and `--session` are the owner's alone, from a terminal outside herdr: a non-owner aiming
+either is refused before the flagged file or session is read at all.
 
 ## Flags
 

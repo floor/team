@@ -77,7 +77,9 @@ seat and the repair. What that proves is placement, and no more: the state file 
 and a process of the same user that writes its own pane there under the coordinator's name, and
 renames its pane, passes. The check guards a mistaken agent, not a hostile process running as the
 same user.
-`--file` and `--session` are the owner's alone, from a terminal outside herdr.
+`--file` and `--session` are the owner's alone, from a terminal outside herdr: a non-owner aiming
+either is refused before the flagged file or session is read at all. Both subcommands refuse the
+same way.
 
 ## Flags
 
