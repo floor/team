@@ -1640,6 +1640,28 @@ scene('answer.policy', async (place) => {
   approve(place, cursorTeam(lobby, 'owner'));
   return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, answerHost(place, '')), 'use team up and [o]');
 });
+scene('answer.process', async (place) => {
+  const lobby = lobbyPath(place.home);
+  mkdirSync(lobby, { recursive: true });
+  approve(place, cursorTeam(lobby, 'coordinator'));
+  updateState(dirname(place.file), (state) => {
+    state.sessions.acme = {
+      seats: {
+        lead: {
+          stage: 'launched',
+          pane: 'w1:p1',
+          launched: { shell: 400, cli: [401] },
+          waiting: { state: 'waiting-owner', classification: 'trust' },
+        },
+      },
+      worktrees: {},
+    };
+  });
+  const screen = CURSOR_TRUST.replace('<untrusted-directory>', lobby);
+  const host = answerHost(place, screen);
+  host.processInfo = () => ({ shell: 400, foreground: [500] });
+  return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, host), 'not the one team launched');
+});
 scene('answer.state', async (place) => {
   const lobby = lobbyPath(place.home);
   mkdirSync(lobby, { recursive: true });

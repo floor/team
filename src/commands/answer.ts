@@ -9,9 +9,10 @@ import { loadTeamFile } from '../file/load.ts';
 import { renderSignature } from '../file/signature.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
-import { agentList, agentRename, agentStatus, paneForeground, paneForegroundCwd, paneRead, pressEnter, sendKey as herdrSendKey, typeText } from '../herdr.ts';
+import { agentList, agentRename, agentStatus, paneForeground, paneForegroundCwd, paneProcesses, paneRead, pressEnter, sendKey as herdrSendKey, typeText, type PaneProcesses } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { deliverRules, type Delivery } from '../launch/deliver.ts';
+import { seatProcessVerdict, type LaunchedIdentity } from '../launch/identity.ts';
 import { rulesText } from '../launch/rules.ts';
 import { acquireSeatLock } from '../launch/seat-lock.ts';
 import { logLine } from '../log.ts';
@@ -39,6 +40,8 @@ export type AnswerHost = {
   status(session: string, pane: string): string | null;
   type(session: string, pane: string, text: string): boolean;
   enter(session: string, pane: string): boolean;
+  /** The pane's process identity; null when herdr can't tell. */
+  processInfo?(session: string, pane: string): PaneProcesses | null;
   now(): Date;
   sleep(ms: number): Promise<void>;
   home: string;
@@ -63,13 +66,14 @@ export const realHost: AnswerHost = {
   status: (session, pane) => agentStatus(pane, session),
   type: (session, pane, text) => typeText(pane, text, session),
   enter: (session, pane) => pressEnter(pane, session),
+  processInfo: (session, pane) => paneProcesses(pane, session),
   now: () => new Date(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   home: homedir(),
   standing: (root) => approvalStanding(root, homedir()),
 };
 
-type Reason = 'caller' | 'policy' | 'state' | 'screen' | 'version' | 'label' | 'folder' | 'action' | 'idle' | 'rule delivery';
+type Reason = 'caller' | 'policy' | 'state' | 'screen' | 'version' | 'label' | 'folder' | 'action' | 'process' | 'idle' | 'rule delivery';
 
 type Refusal = { class: Reason; message: string };
 
@@ -111,6 +115,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
     // exit: answer.label
     // exit: answer.folder
     // exit: answer.action
+    // exit: answer.process
     return 1;
   };
 
@@ -155,9 +160,9 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
 
     const cli = configured?.cli ?? team.seats.find((seat) => seat.name === temporary?.like)?.cli ?? '';
     const profile = profileFor(cli);
-    const checked = inspect(seatName, host, session, pane, profile, approved.team.trust, root);
+    const checked = inspect(seatName, host, session, pane, profile, approved.team.trust, root, recorded?.launched);
     if ('class' in checked) return refused(checked);
-    const again = inspect(seatName, host, session, pane, profile, approved.team.trust, root);
+    const again = inspect(seatName, host, session, pane, profile, approved.team.trust, root, recorded?.launched);
     if ('class' in again) return refused(again);
     if (again.folder !== checked.folder) return refused({ class: 'folder', message: `${seatName}: ${OUTSIDE}` });
     if (again.record.from !== checked.record.from || again.record.to !== checked.record.to || again.record.action !== checked.record.action) {
@@ -228,8 +233,15 @@ function inspect(
   profile: Profile | null,
   trust: readonly string[],
   root: string,
+  launched?: LaunchedIdentity,
 ): Seen | Refusal {
   const say = (reason: Reason, text: string): Refusal => ({ class: reason, message: `${seat}: ${text}` });
+  if (launched) {
+    const info = host.processInfo ? host.processInfo(session, pane) : null;
+    const verdict = seatProcessVerdict(launched, info);
+    if (verdict === 'unknown') return say('process', 'its pane could not be read');
+    if (verdict !== 'same') return say('process', 'the process in its pane is not the one team launched');
+  }
   if (!profile) return say('version', 'this version has no trust answer');
   const printed = host.version(profile.binary);
   const record = printed

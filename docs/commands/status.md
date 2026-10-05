@@ -53,8 +53,9 @@ again after a first message. Wherever `status` reads the seat as running, the tw
 team` a pane held by another process. The comparison is pids only, and it accepts the seat while
 **any** recorded CLI pid is still in front: an extra pid beside them, or another order, changes
 nothing. A restored row's model is `-`, never the file's: nothing checks what that process runs. A
-seat launched before this record existed — or one whose pane herdr can't read — is shown as it
-always was; `team doctor` says which seats those are.
+seat with no `launched` record — a seat launched before this record existed, or one of this version
+stopped at a dialog before its idle prompt (the reading is taken after idle), or one whose pane
+herdr can't read — is shown as it always was; `team doctor` says which seats those are.
 
 The comparison is wrong in the safe direction, but it is wrong: a CLI that replaces its own process
 — an updater that re-executes, a wrapper that hands over — changes the foreground pids, and the

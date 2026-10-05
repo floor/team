@@ -473,6 +473,134 @@ describe('team answer', () => {
     expect(movedIo.err).toBe('lead: ask the owner to approve this exact folder and answer through team up\n');
   });
 
+  describe('process identity checks before sending key', () => {
+    function setupIdentitySeat() {
+      const { root, home, lobby, dir } = world();
+      writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+      updateState(dir, (state) => {
+        state.sessions.acme = {
+          seats: {
+            lead: {
+              stage: 'launched',
+              pane: 'w1:p1',
+              workspace: 'w1',
+              launched: { shell: 400, cli: [401] },
+              waiting: { state: 'waiting-owner', classification: 'trust' },
+            },
+          },
+          worktrees: {},
+        };
+      });
+      const trust = withPath(cursorTrust, '<untrusted-directory>', lobby);
+      const host = fake(home, root, trust, 'cursor');
+      return { root, home, lobby, dir, trust, host };
+    }
+
+    test('same: ordered calls include processInfo on both reads and sends key', async () => {
+      const { root, home, dir, host } = setupIdentitySeat();
+      await approve(root, home);
+      const calls: string[] = [];
+      const origAgents = host.agents.bind(host);
+      host.agents = (session) => { calls.push('agents'); return origAgents(session); };
+      host.processInfo = (_session, pane) => {
+        calls.push(`processInfo:${pane}`);
+        return { shell: 400, foreground: [400, 401] };
+      };
+      const origVersion = host.version.bind(host);
+      host.version = (bin) => { calls.push(`version:${bin}`); return origVersion(bin); };
+      const origPane = host.pane.bind(host);
+      host.pane = (session, pane) => { calls.push(`pane:${pane}`); return origPane(session, pane); };
+      const origCwd = host.foregroundCwd.bind(host);
+      host.foregroundCwd = (session, pane) => { calls.push(`foregroundCwd:${pane}`); return origCwd(session, pane); };
+      const origList = host.list.bind(host);
+      host.list = (d) => { calls.push('list'); return origList(d); };
+      const origSendKey = host.sendKey.bind(host);
+      host.sendKey = (session, pane, key) => { calls.push(`sendKey:${key}`); return origSendKey(session, pane, key); };
+
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(0);
+      expect(io.out).toBe('lead: trust answered; ready\n');
+      expect(host.keys).toEqual(['a']);
+      expect(calls.slice(0, 12)).toEqual([
+        'agents',
+        'processInfo:w1:p1',
+        'version:cursor-agent',
+        'pane:w1:p1',
+        'foregroundCwd:w1:p1',
+        'list',
+        'processInfo:w1:p1',
+        'version:cursor-agent',
+        'pane:w1:p1',
+        'foregroundCwd:w1:p1',
+        'list',
+        'sendKey:a',
+      ]);
+      expect(readState(dir).sessions.acme?.seats.lead?.stage).toBe('ready');
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting).toBeUndefined();
+    });
+
+    test('replaced process refuses and sends no key', async () => {
+      const { root, home, dir, host } = setupIdentitySeat();
+      await approve(root, home);
+      host.processInfo = () => ({ shell: 400, foreground: [500] });
+      const before = readFileSync(join(dir, 'team.state.json'), 'utf8');
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(io.err).toBe('lead: the process in its pane is not the one team launched\n');
+      expect(host.keys).toEqual([]);
+      expect(readFileSync(join(dir, 'team.state.json'), 'utf8')).toBe(before);
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+    });
+
+    test('gone process refuses and sends no key', async () => {
+      const { root, home, dir, host } = setupIdentitySeat();
+      await approve(root, home);
+      host.processInfo = () => ({ shell: 400, foreground: [400] });
+      const before = readFileSync(join(dir, 'team.state.json'), 'utf8');
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(io.err).toBe('lead: the process in its pane is not the one team launched\n');
+      expect(host.keys).toEqual([]);
+      expect(readFileSync(join(dir, 'team.state.json'), 'utf8')).toBe(before);
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+    });
+
+    test('unreadable process refuses and sends no key', async () => {
+      const { root, home, dir, host } = setupIdentitySeat();
+      await approve(root, home);
+      host.processInfo = () => null;
+      const before = readFileSync(join(dir, 'team.state.json'), 'utf8');
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(io.err).toBe('lead: its pane could not be read\n');
+      expect(host.keys).toEqual([]);
+      expect(readFileSync(join(dir, 'team.state.json'), 'utf8')).toBe(before);
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+    });
+
+    test('same on first read then replaced on second read refuses and sends no key', async () => {
+      const { root, home, dir, host } = setupIdentitySeat();
+      await approve(root, home);
+      let reads = 0;
+      host.processInfo = () => {
+        reads += 1;
+        return reads === 1 ? { shell: 400, foreground: [400, 401] } : { shell: 400, foreground: [500] };
+      };
+      const before = readFileSync(join(dir, 'team.state.json'), 'utf8');
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(io.err).toBe('lead: the process in its pane is not the one team launched\n');
+      expect(host.keys).toEqual([]);
+      expect(readFileSync(join(dir, 'team.state.json'), 'utf8')).toBe(before);
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+    });
+  });
+
   test('a lobby path in another case sends nothing', async () => {
     const { root, home, lobby, dir } = world();
     writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
