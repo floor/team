@@ -89,13 +89,16 @@ export function placedProblems(team: TeamFile, root: string, home: string = home
     return full === project || full.startsWith(project.endsWith(sep) ? project : project + sep);
   };
 
-  // Check workspace.path for ANY file
+  // What the workspace.path itself must never do: put worktrees in the project's parent or above.
   const path = team.workspace.path;
-  if (path) {
-    const folder = path.split('/').slice(0, -1).join('/').replaceAll('{repo}', team.project) || '.';
-    if (holdsProject(folder)) {
-      problems.push({ line: 0, message: `workspace.path: "${path}" puts worktrees in the project's parent or a folder above it: give them a folder of their own` });
-    }
+  const folder = path ? path.split('/').slice(0, -1).join('/').replaceAll('{repo}', team.project) || '.' : null;
+  if (path && folder && holdsProject(folder)) {
+    problems.push({ line: 0, message: `workspace.path: "${path}" puts worktrees in the project's parent or a folder above it: give them a folder of their own` });
+  }
+  // A migrated file's worktrees are held to the same containment as its seats: never inside the
+  // project, never inside a protected checkout. Main loaded legacy files and refused the seat at
+  // placement, so these two checks stay off legacy files and seatStart keeps refusing them.
+  if (path && folder && isMigratedTrust(team.trust)) {
     if (insideProj(folder)) {
       problems.push({ line: 0, message: `workspace.path: "${path}" puts worktrees inside the project: give them a folder of their own` });
     }
