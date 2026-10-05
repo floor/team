@@ -26,7 +26,7 @@ import {
 } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { executePlan, type Host } from '../launch/execute.ts';
-import { seatProcessVerdict } from '../launch/identity.ts';
+import { launchedIdentity, seatProcessVerdict } from '../launch/identity.ts';
 import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { progressWriter } from '../launch/progress.ts';
@@ -633,6 +633,28 @@ function hostOf(input: {
     renameAgent: launch.renameAgent,
     closeWorkspace: launch.closeWorkspace,
     stopSession: () => false,
+    /**
+     * §6: `add` has no prompt. A seat that meets a dialog keeps its workspace, is recorded
+     * `waiting-owner` with the classification, and is reported left out — its owner finishes
+     * it with `team up`.
+     */
+    dialog: { mode: 'keep' },
+    recordWaiting(name, waiting, pane, workspace) {
+      updateState(dir, (file) => {
+        const current = (file.sessions[session] ??= emptySession());
+        const prior = current.seats[name] ?? { stage: 'launched' as const };
+        // The process identity goes in the same write, so the owner's later `team up` — and
+        // `team answer` — can tell a pane that is still the seat's from one that is not.
+        const identity = launchedIdentity(launch.processInfo?.(session, pane) ?? null);
+        current.seats[name] = {
+          ...prior,
+          waiting,
+          pane,
+          ...(workspace ? { workspace } : {}),
+          ...(identity ? { launched: identity } : {}),
+        };
+      });
+    },
     kill: () => false,
     agentPanes: launch.agentPanes,
     agentList: launch.agents,
@@ -657,7 +679,12 @@ function hostOf(input: {
         const prior = current.seats[name] ?? { stage: patch.stage };
         let start_cwd = prior.start_cwd;
         if (!start_cwd && patch.createdWorkspace && input.verifiedLobby) start_cwd = input.verifiedLobby;
-        current.seats[name] = { ...prior, ...patch, ...(temporary && name === seat.name ? { temporary } : {}), ...(start_cwd ? { start_cwd } : {}) };
+        // `waiting: null` removes the field alone; anything else written replaces it.
+        const { waiting: written, ...rest } = patch;
+        const seatState: SeatState = { ...prior, ...rest, ...(temporary && name === seat.name ? { temporary } : {}), ...(start_cwd ? { start_cwd } : {}) };
+        if (written === null) delete seatState.waiting;
+        else if (written) seatState.waiting = written;
+        current.seats[name] = seatState;
       });
     },
     running(name) {
