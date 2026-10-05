@@ -119,7 +119,14 @@ export function compare(
       const model = modelOf(seat, agent, live, differences, notes);
       const held = waitingView(seat.name, recorded, team);
       if (held) {
-        rows.push({ name: seat.name, state: held.state, stored: held.stored, model, pane: agent.pane });
+        rows.push({
+          name: seat.name,
+          state: held.state,
+          stored: held.stored,
+          model,
+          pane: agent.pane,
+          ...(recorded?.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+        });
         differences.push(held.difference);
         if (seat.stopped) {
           differences.push({
@@ -196,7 +203,14 @@ export function compare(
     }
     const held = recorded?.pane ? waitingView(seat.name, recorded, team) : null;
     if (held && recorded?.pane) {
-      rows.push({ name: seat.name, state: held.state, stored: held.stored, model: seat.display, pane: recorded.pane });
+      rows.push({
+        name: seat.name,
+        state: held.state,
+        stored: held.stored,
+        model: seat.display,
+        pane: recorded.pane,
+        ...(recorded.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+      });
       differences.push(held.difference);
       continue;
     }
