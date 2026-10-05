@@ -4,9 +4,9 @@ import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, versionVerdict } from '../../src/profiles/profile.ts';
 import { classify, classifyComposer, readScreen } from '../../src/watch/screen.ts';
 import { runningModel } from '../../src/status/statusline.ts';
-import { boxHoldsText, deliverRules, type Delivery } from '../../src/launch/deliver.ts';
+import { boxHoldsText, deliverRules, refusalReport, type Delivery, type Refusal } from '../../src/launch/deliver.ts';
 import { upPlan } from '../../src/launch/plan.ts';
-import { wordWrap } from '../helpers.ts';
+import { SAMPLE_RULES, wordWrap } from '../helpers.ts';
 
 const fixture = (name: string) => readFileSync(new URL(`../fixtures/codex/0.157.0/${name}.txt`, import.meta.url), 'utf8');
 
@@ -130,15 +130,17 @@ function delivery(initial = 'idle') {
   let status = initial === 'working' ? 'working' : 'idle';
   let clock = 0;
   const calls: string[] = [];
+  const refusals: Refusal[] = [];
   const io: Delivery = {
     screen: () => raw, status: () => status,
+    report: (why) => { refusals.push(why); },
     // The paste renders as the box the CLI draws for its text.
     type(text) { calls.push(text); raw = boxed(text); return true; },
     enter() { calls.push('Enter'); raw = fixture('working'); status = 'working'; return true; },
     foreground: () => ['codex'],
     now: () => clock, sleep: async (ms) => { clock += ms; },
   };
-  return { io, calls, show: (name: string) => { raw = fixture(name); }, showText: (screen: string) => { raw = screen; }, status: (value: string) => { status = value; } };
+  return { io, calls, refusals, show: (name: string) => { raw = fixture(name); }, showText: (screen: string) => { raw = screen; }, status: (value: string) => { status = value; } };
 }
 
 describe('Codex rules delivery', () => {
@@ -458,5 +460,247 @@ describe('the box\'s top frame (Codex)', () => {
     expect(readScreen('codex', screen).kind).toBe('unsent');
     expect(boxHoldsText('codex', '/exit', screen)).toBe(true);
     expect(boxHoldsText('codex', 'Rules.', screen)).toBe(false);
+  });
+});
+
+// The captures taken on 2026-10-05 at 54 by 23, the pane `up` creates (codex-cli 0.160.0, the
+// flags the fixtures README names). They are what sizes the split delivery: the box's own row
+// limit, the pane's scroll, and the reading window's own edge.
+const capture = (name: string) => readFileSync(new URL(`../fixtures/codex/0.160.0/${name}.txt`, import.meta.url), 'utf8');
+
+/** The fitted texts the captures were typed with: numbered rows of a sample line, one row per
+ *  drawn row at the pane's 50 content columns. */
+const fitted = (rows: number) => Array.from({ length: rows }, (_, i) => `row ${i + 1} of the fitted sample text`).join('\n');
+
+/** A box Codex draws for `text` at those 50 columns: the line word-wrapped, the first row after
+ *  the prompt, the rest at the two-column continuation column (the typed-newline captures). */
+function drawn(text: string): string {
+  const [first = '', ...rest] = wordWrap(text, 50);
+  return [`› ${first}`, ...rest.map((row) => `  ${row}`)].join('\n');
+}
+
+/** A capture with its box emptied: the typed rows replaced by the placeholder row. */
+function emptied(text: string): string {
+  const lines = text.split('\n');
+  const at = lines.findIndex((line) => line.startsWith('› '));
+  let end = at + 1;
+  while (end < lines.length && lines[end] !== '') end += 1;
+  lines.splice(at, end - at, '› Ask Codex to do anything');
+  return lines.join('\n');
+}
+
+/** A Codex pane 54 by 23 that draws a paste the way the captures do and answers a submitted part
+ *  like the captured turn: the turn paints the pane while it runs, then the seat is idle again
+ *  with the exchange above the box (rules-part-16-after-reply.txt). */
+function paneDelivery() {
+  let frame = capture('idle');
+  let raw = frame;
+  let status = 'idle';
+  let clock = 0;
+  let running = false;
+  const calls: string[] = [];
+  const refusals: Refusal[] = [];
+  const io: Delivery = {
+    screen: () => raw,
+    status: () => status,
+    size: () => ({ width: 54, height: 23 }),
+    report: (why) => { refusals.push(why); },
+    type(part) {
+      calls.push(part);
+      raw = frame.replace('› Ask Codex to do anything', drawn(part));
+      return true;
+    },
+    enter() {
+      calls.push('Enter');
+      running = true;
+      raw = fixture('working');
+      status = 'working';
+      return true;
+    },
+    foreground: () => ['codex'],
+    now: () => clock,
+    sleep: async (ms) => {
+      clock += ms;
+      if (!running || status !== 'working') return;
+      running = false;
+      frame = emptied(capture('rules-part-16-after-reply'));
+      raw = frame;
+      status = 'idle';
+    },
+  };
+  return {
+    io,
+    calls,
+    refusals,
+    show: (screen: string) => { raw = screen; },
+    frame: () => frame,
+    place: (body: string) => { raw = frame.replace('› Ask Codex to do anything', body); },
+  };
+}
+
+describe('Codex rules delivery on a 54 by 23 pane (0.160.0 captures)', () => {
+  test('the box limits: 16 rows read back, 17 and more read unknown', () => {
+    // rules-fit-16.txt is the tallest box whose input row, frame and status row all fit the
+    // reading window; from 17 rows the window starts at the input row itself and the core reads
+    // unknown, however complete the screen looks (rules-fit-17.txt) — and at 19 the pane's own
+    // scroll begins (rules-fit-19.txt is complete but unknown, rules-fit-20.txt has dropped its
+    // first typed row). The real message draws 30 rows at 50 columns (rules-scrolled.txt), so it
+    // can never be verified as one paste.
+    for (const rows of [5, 12, 16]) {
+      expect(readScreen('codex', capture(`rules-fit-${rows}`)).kind).toBe('unsent');
+      expect(boxHoldsText('codex', fitted(rows), capture(`rules-fit-${rows}`))).toBe(true);
+    }
+    for (const rows of [17, 19, 20]) {
+      expect(readScreen('codex', capture(`rules-fit-${rows}`)).kind).toBe('unknown');
+      expect(boxHoldsText('codex', fitted(rows), capture(`rules-fit-${rows}`))).toBe(false);
+    }
+    expect(readScreen('codex', capture('rules-scrolled')).kind).toBe('unknown');
+    expect(boxHoldsText('codex', SAMPLE_RULES, capture('rules-scrolled'))).toBe(false);
+    // A part typed after a sent and answered turn reads back the same: the transcript above the
+    // box does not stop the read-back (rules-part-16-after-reply.txt).
+    expect(readScreen('codex', capture('rules-part-16-after-reply')).kind).toBe('unsent');
+    expect(boxHoldsText('codex', fitted(16), capture('rules-part-16-after-reply'))).toBe(true);
+  });
+
+  test('the seven-rule message goes in parts, each verified before its own Enter', async () => {
+    const d = paneDelivery();
+    expect(await deliverRules('codex', SAMPLE_RULES, 1, d.io)).toBe(true);
+    const parts = d.calls.filter((call) => call !== 'Enter');
+    expect(parts.length).toBeGreaterThan(1);
+    // Whole lines in order: nothing lost, nothing typed twice, no part entered twice.
+    expect(parts.join('\n')).toBe(SAMPLE_RULES);
+    expect(d.calls).toEqual(parts.flatMap((part) => [part, 'Enter']));
+    // The header opens the first part and the closing line ends the last.
+    expect(parts[0]?.split('\n')[0]).toBe('Rules for this session, from the team file:');
+    expect(parts.at(-1)?.split('\n').at(-1)).toBe('These are standing rules, not a task: reply ready and wait for your brief.');
+    // Every part is sized to the window the reading can show: 16 rows at the planner's 48
+    // columns, two fewer than the pane draws in.
+    for (const part of parts) expect(wordWrap(part, 48).length).toBeLessThanOrEqual(16);
+  });
+
+  test.each(['first', 'middle', 'last'] as const)('one character changed in the %s drawn row of the first part gets no Enter', async (where) => {
+    const d = paneDelivery();
+    d.io.type = (part) => {
+      d.calls.push(part);
+      const rows = drawn(part).split('\n');
+      const at = where === 'first' ? 0 : where === 'middle' ? Math.floor(rows.length / 2) : rows.length - 1;
+      const row = rows[at] ?? '';
+      rows[at] = row.replace('e', '3');
+      expect(rows[at]).not.toBe(row);
+      d.place(rows.join('\n'));
+      return true;
+    };
+    expect(await deliverRules('codex', SAMPLE_RULES, 1, d.io)).toBe(false);
+    expect(d.calls).not.toContain('Enter');
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('read-back');
+    expect(why?.typed).toBe(true);
+    expect(why?.row).not.toBeNull();
+    expect(refusalReport(why!)).toContain("the read-back didn't match");
+  });
+
+  test('a box taller than the window shows no first part: unknown, no Enter', async () => {
+    // Two rows more than the window can show under the status line: the input row leaves the
+    // window, the screen reads unknown, and nothing about the paste can be verified.
+    const d = paneDelivery();
+    d.io.type = (part) => {
+      d.calls.push(part);
+      d.place([...drawn(part).split('\n'), '  and a row the person added after it', '  and another'].join('\n'));
+      return true;
+    };
+    expect(await deliverRules('codex', SAMPLE_RULES, 1, d.io)).toBe(false);
+    expect(d.calls).not.toContain('Enter');
+    expect(d.refusals.at(-1)?.stop).toBe('read-back');
+    expect(d.refusals.at(-1)?.kind).toBe('unknown');
+  });
+
+  test('a box already holding the person\'s own text is left alone', async () => {
+    const d = paneDelivery();
+    d.show(d.frame().replace('› Ask Codex to do anything', drawn('the person\'s own message')));
+    expect(await deliverRules('codex', SAMPLE_RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('leftover');
+    expect(refusalReport(why!)).toContain('its box already holds text that is not the rules message');
+  });
+
+  test.each([
+    ['working', 'working'], ['trust', 'trust'], ['permission', 'permission'], ['startup', 'question'],
+  ] as const)('a %s screen arriving while the paste renders gets no Enter', async (file, kind) => {
+    const d = paneDelivery();
+    d.io.type = (part) => { d.calls.push(part); d.show(fixture(file)); return true; };
+    expect(await deliverRules('codex', SAMPLE_RULES, 1, d.io)).toBe(false);
+    expect(d.calls).not.toContain('Enter');
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('read-back');
+    expect(why?.kind).toBe(kind);
+    expect(refusalReport(why!)).toContain(`the screen read ${kind}`);
+  });
+
+  test('a trust dialog arriving after Enter is not a send, and the report names it', async () => {
+    const d = paneDelivery();
+    d.io.enter = () => { d.calls.push('Enter'); d.show(fixture('trust')); return true; };
+    expect(await deliverRules('codex', SAMPLE_RULES, 1, d.io)).toBe(false);
+    expect(d.calls.length).toBe(2);
+    expect(d.calls[1]).toBe('Enter');
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('ack');
+    expect(why?.kind).toBe('trust');
+    expect(refusalReport(why!)).toBe(
+      'part 1 of 2: the seat did not come back to its idle prompt (the screen read trust); answer it in its pane, then run up again',
+    );
+  });
+
+  test('with no readable pane size the message goes whole and the tall box is refused', async () => {
+    // The pane size is what makes the split possible. Without one the message travels in one
+    // paste, exactly as it always has; the real capture of that paste reads unknown, so the
+    // delivery stops with the specific report and presses nothing.
+    const d = delivery();
+    d.io.type = (text) => { d.calls.push(text); d.showText(capture('rules-scrolled')); return true; };
+    d.io.report = (why) => { d.refusals.push(why); };
+    expect(await deliverRules('codex', SAMPLE_RULES, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([SAMPLE_RULES]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('read-back');
+    expect(why?.kind).toBe('unknown');
+    expect(refusalReport(why!)).toContain('rules typed, not sent: the read-back didn\'t match');
+  });
+
+  test('a line no part can hold is refused before anything is typed', async () => {
+    const d = paneDelivery();
+    const message = `${SAMPLE_RULES}\n${'x'.repeat(900)}`;
+    expect(await deliverRules('codex', message, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('line');
+    expect(why?.line).toBe(18);
+    expect(refusalReport(why!)).toBe(
+      'rules not typed: line 18 of the message is taller than its box draws; shorten that line in the team file, then run up again',
+    );
+  });
+
+  test('a resumed seat whose box already holds the message is entered once, never typed again', async () => {
+    // A message of one part (the real one always splits at this pane, so a short one stands in):
+    // the box the stopped run left holds exactly the message, and the proof is the same one
+    // every delivery makes — the rows read back as the text.
+    const d = paneDelivery();
+    const brief = 'Rules.';
+    d.show(d.frame().replace('› Ask Codex to do anything', drawn(brief)));
+    expect(await deliverRules('codex', brief, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual(['Enter']);
+  });
+
+  test('a resumed seat whose box holds something else is refused without typing', async () => {
+    const d = paneDelivery();
+    d.show(d.frame().replace('› Ask Codex to do anything', drawn('the person\'s own message')));
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+    expect(d.refusals.at(-1)?.stop).toBe('leftover');
+  });
+
+  test('a resumed seat with an empty box is typed once, verified and sent', async () => {
+    const d = paneDelivery();
+    expect(await deliverRules('codex', 'Rules.', 1, d.io)).toBe(true);
+    expect(d.calls).toEqual(['Rules.', 'Enter']);
   });
 });
