@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce, recordSeatDigestOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { describeCaller, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, standingOf } from '../caller.ts';
+import { anotherPaneRefusal, describeCaller, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller } from '../caller.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from '../commands/doctor.ts';
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
@@ -126,6 +126,19 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 2;
   }
 
+  // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
+  // `--session` is refused here, before the flag's session is read — no agent list, no pane root,
+  // no state write, no log line. (A seat cannot be named in this refusal: placing it would read a
+  // session, and that is what must not happen yet.)
+  if (args.values.session !== undefined) {
+    const walked = walkCaller(io);
+    if (!isOwner(walked)) {
+      io.stderr(`team add: ${sessionOwnerRefusal(walked)}\n`);
+      // exit: add.session-owner
+      return 1;
+    }
+  }
+
   const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
   if (!loaded.ok) {
     for (const problem of loaded.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
@@ -151,17 +164,15 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     // exit: add.file-owner
     return 1;
   }
-  // The session a seat is judged in is the team file's; --session is the owner's to choose, so a
-  // non-owner can't aim the check at a session where its pane holds the seat's name.
-  if (args.values.session && !isOwner(caller)) {
-    io.stderr(`team add: --session is the owner's, from a terminal outside herdr; this call is ${describeCaller(shown)}\n`);
-    // exit: add.session-owner
-    return 1;
-  }
   const mayChange = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
   if (mayChange.kind === 'no-pane') {
     io.stderr(`team add: ${noPaneRefusal(mayChange.name)}\n`);
     // exit: add.no-pane
+    return 1;
+  }
+  if (mayChange.kind === 'another-pane') {
+    io.stderr(`team add: ${anotherPaneRefusal(mayChange.name, mayChange.recordedPane)}\n`);
+    // exit: add.another-pane
     return 1;
   }
   if (mayChange.kind === 'refused') {

@@ -8,7 +8,7 @@
 // to each command's real run function, so the gate under test is the shipped one.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalOf } from '../../src/approve/approval.ts';
@@ -178,6 +178,32 @@ function sourcesOf(session: string, name: string, pane: string): (asked: string 
   });
 }
 
+// The same sources again, with every read that names a session written down in order: each agent
+// list and pane root the command asks about. A run that reads a session it must not read — the
+// flag's, before the refusal — leaves its name here, however its output would read.
+function recordingSources(
+  calls: string[],
+  session: string,
+  name: string,
+  pane: string,
+): (asked: string | undefined) => CallerSources {
+  const base = sourcesOf(session, name, pane);
+  return (asked) => {
+    const real = base(asked);
+    return {
+      ...real,
+      agents: () => {
+        calls.push(`agents(${asked ?? 'no session'})`);
+        return real.agents();
+      },
+      paneRootPid: (which) => {
+        calls.push(`paneRoot(${which})`);
+        return real.paneRootPid(which);
+      },
+    };
+  };
+}
+
 // How a run's caller is handed to the command: placed the way the callers above are (a Caller),
 // or placed through the fake sources, asked about the session the command judges in.
 type Placement = Caller | { sources: (session: string | undefined) => CallerSources };
@@ -274,6 +300,11 @@ const NEVER_APPROVED = 'the file was never approved on this machine: run `team a
 const NO_PANE = (name: string) =>
   `no pane is recorded for seat ${name} in this session: the owner stops that seat and runs \`team up\``;
 const OWNER_ONLY = (who: string) => `--session is the owner's, from a terminal outside herdr; this call is ${who}`;
+// The refusal for the right name, in the right session, on the wrong pane: the state records
+// another pane for the seat, so that record is not this call's — and the repair that re-records
+// the pane a seat now runs on is the same stop the no-pane case names.
+const ANOTHER_PANE = (name: string, pane: string) =>
+  `the state records pane ${pane} for seat ${name} in this session, not the pane this call is on: the owner stops that seat and runs \`team up\``;
 
 type Case = {
   name: string;
@@ -284,6 +315,9 @@ type Case = {
   // cause, and the repair. For `answer` only the coordinator is ever a caller, so the operator
   // meets the ordinary refusal there instead of this line.
   noPane: (name: string) => string;
+  // The refusal for the seat's name in the seat's session, on any pane but the one the state
+  // records for it: the recorded pane is named, and so is the repair.
+  anotherPane: (name: string, pane: string) => string;
   // The refusal for a non-owner aiming `--session` elsewhere: the owner's flag alone.
   sessionOwner: (who: string) => string;
   // The owner's run: what the gate lets through, when nothing else refuses.
@@ -296,6 +330,7 @@ const COMMANDS: Case[] = [
     run: (caller, argv = [], options) => call((io) => runAdd(['probe-seat', ...argv], io, addSources()), caller, options),
     refusal: (who) => `team add: only the owner, the coordinator or the operator runs it; this call is ${who}\n`,
     noPane: (name) => `team add: ${NO_PANE(name)}\n`,
+    anotherPane: (name, pane) => `team add: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team add: ${OWNER_ONLY(who)}\n`,
     owner: `team add: ${NEVER_APPROVED}\n`,
   },
@@ -304,6 +339,7 @@ const COMMANDS: Case[] = [
     run: (caller, argv = [], options) => call((io) => runRemove([SEAT, ...argv], io, removeSources()), caller, options),
     refusal: (who) => `team remove: only the owner, the coordinator or the operator runs it; this call is ${who}\n`,
     noPane: (name) => `team remove: ${NO_PANE(name)}\n`,
+    anotherPane: (name, pane) => `team remove: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team remove: ${OWNER_ONLY(who)}\n`,
     owner: '',
   },
@@ -313,6 +349,7 @@ const COMMANDS: Case[] = [
       call((io) => runWorktree(['new', 'probe-task', ...argv], io, worktreeSources()), caller, options),
     refusal: (who) => `team worktree: only the owner, the coordinator or the operator runs it; this call is ${who}\n`,
     noPane: (name) => `team worktree: ${NO_PANE(name)}\n`,
+    anotherPane: (name, pane) => `team worktree: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team worktree: ${OWNER_ONLY(who)}\n`,
     owner: `team worktree: ${NEVER_APPROVED}\n`,
   },
@@ -322,6 +359,7 @@ const COMMANDS: Case[] = [
       call((io) => runWorktree(['remove', 'probe-task', ...argv], io, worktreeSources()), caller, options),
     refusal: (who) => `team worktree: only the owner, the coordinator or the operator runs it; this call is ${who}\n`,
     noPane: (name) => `team worktree: ${NO_PANE(name)}\n`,
+    anotherPane: (name, pane) => `team worktree: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team worktree: ${OWNER_ONLY(who)}\n`,
     owner: `team worktree: ${NEVER_APPROVED}\n`,
   },
@@ -330,6 +368,7 @@ const COMMANDS: Case[] = [
     run: (caller, argv = [], options) => call((io) => runDown([...argv], io, downSources()), caller, options),
     refusal: (who) => `team down: only the owner, the coordinator or the operator stops the team; this call is ${who}\n`,
     noPane: (name) => `team down: ${NO_PANE(name)}\n`,
+    anotherPane: (name, pane) => `team down: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team down: ${OWNER_ONLY(who)}\n`,
     owner: 'team down: this call has no way to reach herdr\n',
   },
@@ -338,6 +377,7 @@ const COMMANDS: Case[] = [
     run: (caller, argv = [], options) => call((io) => runAnswer([SEAT, 'trust', ...argv], io, answerHost()), caller, options),
     refusal: () => `${SEAT}: only the owner, or the coordinator from its own seat, can answer\n`,
     noPane: (name) => `team answer: ${NO_PANE(name)}\n`,
+    anotherPane: (name, pane) => `team answer: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team answer: ${OWNER_ONLY(who)}\n`,
     owner: `${NEVER_APPROVED}\n`,
   },
@@ -365,7 +405,24 @@ for (const command of COMMANDS) {
 
     test('a pane merely renamed, in the team\'s own session, is refused: the state records another pane', async () => {
       const run = await command.run(placed(SESSION, COORDINATOR, 'w9:p1'));
-      expect({ code: run.code, out: run.out, err: run.err }).toEqual({ code: 1, out: '', err: command.refusal(COORDINATOR) });
+      // exit 1: <command>.another-pane, the case's own id (docs/reference/exit-codes.md).
+      expect({ code: run.code, out: run.out, err: run.err }).toEqual({
+        code: 1,
+        out: '',
+        err: command.anotherPane(COORDINATOR, COORDINATOR_PANE),
+      });
+      expect(readFileSync(file, 'utf8')).toBe(run.before);
+    });
+
+    // The same seat, placed the way a command places its caller through the sources: the
+    // record the state holds for it is the one read, and that record names another pane.
+    test('the same caller placed through the sources meets the same another-pane refusal', async () => {
+      const run = await command.run({ sources: sourcesOf(SESSION, COORDINATOR, 'w9:p1') });
+      expect({ code: run.code, out: run.out, err: run.err }).toEqual({
+        code: 1,
+        out: '',
+        err: command.anotherPane(COORDINATOR, COORDINATOR_PANE),
+      });
       expect(readFileSync(file, 'utf8')).toBe(run.before);
     });
 
@@ -430,6 +487,39 @@ for (const command of COMMANDS) {
       // exit 1: <command>.session-owner, the case's own id (docs/reference/exit-codes.md).
       expect({ code: run.code, out: run.out, err: run.err }).toEqual({ code: 1, out: '', err: command.sessionOwner(COORDINATOR) });
       expect(readFileSync(file, 'utf8')).toBe(run.before);
+    });
+
+    // The same refusal through the sources a real run reads: decided by the walk alone, so it
+    // names no seat — placing the caller would read a session, and that is what must not happen.
+    // The fixture answers the flag's session, so a run that judges with the flag before it
+    // refuses records a call below and fails; `down` would also reach `currentTeam`, which
+    // writes its `last_valid` into the state, and the state bytes are that regression's probe.
+    test('a non-owner aiming --session is refused at once, before that session is read', async () => {
+      const calls: string[] = [];
+      const run = await command.run(
+        { sources: recordingSources(calls, OTHER, COORDINATOR, COORDINATOR_PANE) },
+        ['--session', OTHER],
+      );
+      // exit 1: <command>.session-owner, the case's own id (docs/reference/exit-codes.md).
+      expect({ code: run.code, out: run.out, err: run.err }).toEqual({
+        code: 1,
+        out: '',
+        err: command.sessionOwner('unplaced (it runs under herdr)'),
+      });
+      // The ordered host calls that name that session: none at all.
+      expect(calls).toEqual([]);
+      expect(readFileSync(file, 'utf8')).toBe(run.before);
+      // No state write either.
+      expect(readFileSync(stateFile, 'utf8')).toBe(run.beforeState);
+      const log = join(dir, '.agents', 'team.log');
+      // The refusal's own line only: `answer` writes one, the other five write none at all.
+      if (command.name === 'answer') {
+        const lines = readFileSync(log, 'utf8').trimEnd().split('\n');
+        expect(lines.length).toBe(1);
+        expect(lines[0]!.endsWith(`answer [unplaced] ${SEAT}: refused trust: caller`)).toBe(true);
+      } else {
+        expect(existsSync(log)).toBe(false);
+      }
     });
 
     test('the owner may aim --session: the gate lets it through', async () => {
@@ -503,9 +593,56 @@ describe('the renamed pane in another session', () => {
   });
 });
 
-// The dry runs fail the same way as the real runs: the refusal itself where the dry run sits
-// behind the gate (`add`), and the `! down would refuse:` line over the plan where `down`
-// prints it, still exiting 0.
+// The sessions the check will try are this project's own state's, one key at a time: a session
+// no key of it records grants no standing — whatever a host would answer — and a state outside
+// this project is never read. (The positive side, a session this project's state does record, is
+// `a team run under another session` below: the same state, in this project's own `.agents`, is
+// what lets that caller through.)
+describe('the sessions the check lets in', () => {
+  test('a session this project\'s state does not record grants no standing', async () => {
+    // This project's state records `acme-web` alone; the fixture host would list the caller in
+    // `other-web` if anything asked it about that session, and nothing does. The caller is not
+    // placed at all, and the refusal names it without a seat's name.
+    const run = await byName('remove').run({ sources: sourcesOf(OTHER, COORDINATOR, COORDINATOR_PANE) });
+    expect({ code: run.code, out: run.out, err: run.err }).toEqual({
+      code: 1,
+      out: '',
+      err: byName('remove').refusal('unplaced (it runs in a herdr pane without an agent)'),
+    });
+    expect(readFileSync(file, 'utf8')).toBe(run.before);
+  });
+
+  test('another project\'s state is never read: its session grants no standing here', async () => {
+    // A second project holds a state that records this very caller's pane under `other-web`.
+    // This run's project holds only `acme-web`, and the run is the refused one above, unchanged:
+    // the state read is the one beside the team file being judged, never a state elsewhere.
+    const elsewhere = mkdtempSync(join(tmpdir(), 'team-elsewhere-'));
+    try {
+      mkdirSync(join(elsewhere, '.agents'));
+      writeFileSync(
+        join(elsewhere, '.agents', 'team.state.json'),
+        `${JSON.stringify(
+          { format: 1, sessions: { [OTHER]: { seats: { [COORDINATOR]: { stage: 'ready', pane: COORDINATOR_PANE } }, worktrees: {} } } },
+          null,
+          2,
+        )}\n`,
+      );
+      const run = await byName('remove').run({ sources: sourcesOf(OTHER, COORDINATOR, COORDINATOR_PANE) });
+      expect({ code: run.code, out: run.out, err: run.err }).toEqual({
+        code: 1,
+        out: '',
+        err: byName('remove').refusal('unplaced (it runs in a herdr pane without an agent)'),
+      });
+      expect(readFileSync(file, 'utf8')).toBe(run.before);
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+});
+
+// The dry runs fail the same way as the real runs: the refusal itself where the gate sits before
+// the plan (`add`, and any `--session` the caller may not aim), and the `! down would refuse:`
+// line over the plan where `down` prints a refusal the plan stage found, still exiting 0.
 describe('a dry run of the no-pane refusal', () => {
   test('add --dry-run is refused: the gate sits before the dry run', async () => {
     const run = await byName('add').run(placed(SESSION, COORDINATOR, COORDINATOR_PANE), ['--dry-run'], { state: null });
@@ -528,17 +665,33 @@ describe('a dry run of the no-pane refusal', () => {
     expect(readFileSync(file, 'utf8')).toBe(run.before);
   });
 
-  test('down --dry-run would refuse a non-owner --session the same way', async () => {
-    const run = await byName('down').run(placed(SESSION, COORDINATOR, COORDINATOR_PANE), ['--dry-run', '--session', OTHER]);
+  test('down --dry-run from a non-owner aiming --session: the refusal itself, that session unread', async () => {
+    // The plan a dry run prints would be that session's, so aiming it is not the caller's to do:
+    // the refusal is the walk's, before the plan is built. Nothing of the flag's session is read
+    // — not the session's running state, not its agents, not its panes — so the dry run cannot
+    // leak its plan either.
+    const calls: string[] = [];
+    const run = await call(
+      (io) =>
+        runDown(['--dry-run', '--session', OTHER], io, downSources({
+          sessionRunning: (which) => {
+            calls.push(`sessionRunning(${which})`);
+            return true;
+          },
+          agents: (which) => {
+            calls.push(`agents(${which})`);
+            return [];
+          },
+        })),
+      { sources: recordingSources(calls, OTHER, COORDINATOR, COORDINATOR_PANE) },
+    );
     expect({ code: run.code, out: run.out, err: run.err }).toEqual({
-      code: 0,
-      out:
-        `! down would refuse: ${OWNER_ONLY(COORDINATOR)}\n` +
-        `+ herdr session stop ${OTHER}\n` +
-        '    (stopped, then cleared: the session this run stopped, so a later `up` starts from the beginning)\n' +
-        'dry run: nothing was run\n',
-      err: '',
+      code: 1,
+      out: '',
+      err: `team down: ${OWNER_ONLY('unplaced (it runs under herdr)')}\n`,
     });
+    expect(calls).toEqual([]);
+    expect(readFileSync(stateFile, 'utf8')).toBe(run.beforeState);
   });
 });
 
@@ -571,6 +724,7 @@ function upHost(): { counts: Record<'starts' | 'creates' | 'runs' | 'renames' | 
       return false;
     },
     agentPanes: () => [],
+    // Never read: no run over these worlds plans a repair, and only a repair reads this list.
     agents: () => [],
     paneText: () => null,
     foreground: () => null,
@@ -741,6 +895,7 @@ function launching(): Launch {
     renameAgent: () => true,
     closeWorkspace: () => true,
     agentPanes: () => [...panes].filter(([, one]) => one.agent).map(([id]) => id),
+    // Never read: these runs launch into a fresh session, so no repair is ever planned.
     agents: () => [],
     paneText: (_session, pane) => panes.get(pane)?.text ?? '',
     // The codex seat's rules are its first message: typing shows them in its composer, and the
@@ -820,10 +975,17 @@ describe('a team run under another session', () => {
     expect(readFileSync(file, 'utf8')).toContain(`name: ${SEAT}`);
   });
 
-  test('a caller on another pane of that session: refused, and the file is untouched', async () => {
-    const { state } = await upUnderOther();
+  test('a caller on another pane of that session: the another-pane refusal, and the file untouched', async () => {
+    // The state records the coordinator's seat of that session on the pane `up` launched it on;
+    // the caller sits elsewhere. The name and the session are right, the pane is not, and the
+    // refusal names both the record and the repair.
+    const { state, pane } = await upUnderOther();
     const run = await byName('remove').run({ sources: sourcesOf(OTHER, COORDINATOR, 'w9:p1') }, [], { state });
-    expect({ code: run.code, out: run.out, err: run.err }).toEqual({ code: 1, out: '', err: byName('remove').refusal(COORDINATOR) });
+    expect({ code: run.code, out: run.out, err: run.err }).toEqual({
+      code: 1,
+      out: '',
+      err: byName('remove').anotherPane(COORDINATOR, pane),
+    });
     expect(readFileSync(file, 'utf8')).toBe(run.before);
     expect(readFileSync(file, 'utf8')).toContain(`name: ${SEAT}`);
   });

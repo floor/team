@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 import { recordSeatDigestOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { describeCaller, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, standingOf } from '../caller.ts';
+import { anotherPaneRefusal, describeCaller, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { markStopped, takeOut } from '../file/lines.ts';
 import type { Problem } from '../file/types.ts';
@@ -71,6 +71,18 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     return 2;
   }
   const name = args.rest[0] ?? '';
+  // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
+  // `--session` is refused here, before the flag's session is read — no agent list, no pane root,
+  // no state write, no log line. (A seat cannot be named in this refusal: placing it would read a
+  // session, and that is what must not happen yet.)
+  if (args.values.session !== undefined) {
+    const walked = walkCaller(io);
+    if (!isOwner(walked)) {
+      io.stderr(`team remove: ${sessionOwnerRefusal(walked)}\n`);
+      // exit: remove.session-owner
+      return 1;
+    }
+  }
   const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
   if (!loaded.ok) {
     for (const problem of loaded.errors) io.stderr(`team remove: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
@@ -96,17 +108,15 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     // exit: remove.file-owner
     return 1;
   }
-  // The session a seat is judged in is the team file's; --session is the owner's to choose, so a
-  // non-owner can't aim the check at a session where its pane holds the seat's name.
-  if (args.values.session && !isOwner(caller)) {
-    io.stderr(`team remove: --session is the owner's, from a terminal outside herdr; this call is ${describeCaller(shown)}\n`);
-    // exit: remove.session-owner
-    return 1;
-  }
   const verdict = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
   if (verdict.kind === 'no-pane') {
     io.stderr(`team remove: ${noPaneRefusal(verdict.name)}\n`);
     // exit: remove.no-pane
+    return 1;
+  }
+  if (verdict.kind === 'another-pane') {
+    io.stderr(`team remove: ${anotherPaneRefusal(verdict.name, verdict.recordedPane)}\n`);
+    // exit: remove.another-pane
     return 1;
   }
   if (verdict.kind === 'refused') {

@@ -465,6 +465,13 @@ scene('add.session-owner', async (place) => {
   write(place, TWO);
   return show(await added(place, ['worker', '--session', 'other'], leadSeat, addSources(place)), "--session is the owner's");
 });
+scene('add.another-pane', async (place) => {
+  write(place, TWO);
+  updateState(join(place.root, '.agents'), (state) => {
+    (state.sessions.acme ??= emptySession()).seats.lead = { stage: 'ready', pane: 'w2:p1' };
+  });
+  return show(await added(place, ['worker'], leadSeat, addSources(place)), 'the state records pane w2:p1 for seat lead');
+});
 scene('add.default-session', async (place) => {
   write(place, TWO);
   return show(await added(place, ['worker', '--session', 'default', '--file', place.file], owner, addSources(place)), 'can\'t be "default"');
@@ -846,6 +853,13 @@ scene('down.session-owner', async (place) => {
   write(place, TEAM);
   return show(await down(place, ['--session', 'other'], leadSeat, downSources({ sessionRunning: () => true, agents: () => [] })), "--session is the owner's");
 });
+scene('down.another-pane', async (place) => {
+  write(place, TEAM);
+  updateState(join(place.root, '.agents'), (state) => {
+    (state.sessions.acme ??= emptySession()).seats.lead = { stage: 'ready', pane: 'w2:p1' };
+  });
+  return show(await down(place, [], leadSeat, downSources({ sessionRunning: () => true, agents: () => [] })), 'the state records pane w2:p1 for seat lead');
+});
 scene('down.abandon', async (place) => {
   write(place, TEAM);
   return show(await down(place, ['--abandon'], leadSeat, downSources({ sessionRunning: () => true, agents: () => [] })), 'only the owner abandons');
@@ -979,6 +993,13 @@ scene('remove.no-pane', async (place) => {
 scene('remove.session-owner', async (place) => {
   write(place, TWO);
   return show(await removed(place, ['worker', '--session', 'other'], leadSeat, downSources({ home: place.home })), "--session is the owner's");
+});
+scene('remove.another-pane', async (place) => {
+  write(place, TWO);
+  updateState(join(place.root, '.agents'), (state) => {
+    (state.sessions.acme ??= emptySession()).seats.lead = { stage: 'ready', pane: 'w2:p1' };
+  });
+  return show(await removed(place, ['worker'], leadSeat, downSources({ home: place.home })), 'the state records pane w2:p1 for seat lead');
 });
 scene('remove.default-session', async (place) => {
   write(place, TWO);
@@ -1335,6 +1356,13 @@ scene('worktree.session-owner', async (place) => {
   approve(place, worktreeText());
   return show(await worktree(place, ['new', 'task', '--session', 'other'], leadSeat), "--session is the owner's");
 });
+scene('worktree.another-pane', async (place) => {
+  approve(place, worktreeText());
+  updateState(join(place.root, '.agents'), (state) => {
+    (state.sessions.acme ??= emptySession()).seats.lead = { stage: 'ready', pane: 'w2:p1' };
+  });
+  return show(await worktree(place, ['new', 'task'], leadSeat), 'the state records pane w2:p1 for seat lead');
+});
 scene('worktree.default-session', async (place) => {
   approve(place, worktreeText());
   return show(await worktree(place, ['new', 'task', '--session', 'default']), 'can\'t be "default"');
@@ -1687,6 +1715,15 @@ scene('answer.session-owner', async (place) => {
   mkdirSync(lobby, { recursive: true });
   approve(place, cursorTeam(lobby, 'coordinator'));
   return show(await answered(place, ['lead', 'trust', '--session', 'other', '--file', place.file], leadSeat, answerHost(place, '')), "--session is the owner's");
+});
+scene('answer.another-pane', async (place) => {
+  const lobby = lobbyPath(place.home);
+  mkdirSync(lobby, { recursive: true });
+  approve(place, cursorTeam(lobby, 'coordinator'));
+  updateState(join(place.root, '.agents'), (state) => {
+    (state.sessions.acme ??= emptySession()).seats.lead = { stage: 'ready', pane: 'w2:p1' };
+  });
+  return show(await answered(place, ['lead', 'trust', '--file', place.file], leadSeat, answerHost(place, '')), 'the state records pane w2:p1 for seat lead');
 });
 scene('answer.policy', async (place) => {
   const lobby = lobbyPath(place.home);

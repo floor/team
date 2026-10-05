@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { basename, dirname } from 'node:path';
 import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, callerVerdict, describeCaller, judgeCallerIn, noPaneRefusal, standingOf, type Caller, type SeatStanding } from '../caller.ts';
+import { anotherPaneRefusal, callerOf, callerVerdict, isOwner, judgeCallerIn, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller, type SeatStanding } from '../caller.ts';
 import { canonicalLanding, folderOf, listFolder, lobbyPath } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
@@ -98,6 +98,19 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
   }
   const { team, root } = loaded;
   const dir = dirname(loaded.path);
+  // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
+  // `--session` is refused here, before the flag's session is read — no agent list, no pane root,
+  // no state write; the refusal's own log line is the only line written. (A seat cannot be named
+  // in this refusal: placing it would read a session, and that is what must not happen yet.)
+  if (args.values.session !== undefined) {
+    const walked = walkCaller(io);
+    if (!isOwner(walked)) {
+      return refuse(io, json, dir, logWho(walked, team), seatName, host, {
+        class: 'caller',
+        message: `team answer: ${sessionOwnerRefusal(walked)}`,
+      });
+    }
+  }
   // The gate judges the caller placed in the session this command asks about. With no `--session`
   // the session judged is the caller's own placement: the file's session first, then a session
   // the state records this caller's pane in (`team up --session <other>`) — never one a non-owner
@@ -111,11 +124,6 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
 
   const refused = (reason: Refusal): number => refuse(io, json, dir, who, seatName, host, reason);
 
-  // The session a seat is judged in is the team file's; --session is the owner's to choose, so a
-  // non-owner can't aim the check at a session where its pane holds the seat's name.
-  if (args.values.session && caller.kind !== 'owner') {
-    return refused({ class: 'caller', message: `team answer: --session is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}` });
-  }
   const callerProblem = callerProblemOf(caller, team, seatName, standingOf(dir, session, caller));
   if (callerProblem) return refused(callerProblem);
   const standing = host.standing(root);
@@ -213,6 +221,9 @@ function callerProblemOf(caller: Caller, team: TeamFile, seat: string, at?: Seat
   const verdict = callerVerdict(caller, team.coordinator, at);
   if (verdict.kind === 'ok') return null;
   if (verdict.kind === 'no-pane') return { class: 'caller', message: `team answer: ${noPaneRefusal(verdict.name)}` };
+  if (verdict.kind === 'another-pane') {
+    return { class: 'caller', message: `team answer: ${anotherPaneRefusal(verdict.name, verdict.recordedPane)}` };
+  }
   if (caller.kind === 'unplaced') return { class: 'caller', message: caller.reason };
   return { class: 'caller', message: `${seat}: only the owner, or the coordinator from its own seat, can answer` };
 }
@@ -360,6 +371,7 @@ function refuse(
   else io.stderr(`${reason.message}\n`);
   // exit: answer.caller
   // exit: answer.no-pane
+  // exit: answer.another-pane
   // exit: answer.policy
   // exit: answer.session-owner
   // exit: answer.state

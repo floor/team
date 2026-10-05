@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner, judgeCallerIn, mayChangeTeamVerdict, noPaneRefusal, standingOf, type Caller } from '../caller.ts';
+import { anotherPaneRefusal, callerOf, describeCaller, isOwner, judgeCallerIn, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller } from '../caller.ts';
 import { currentTeam } from '../file/current.ts';
 import {
   agentList,
@@ -148,6 +148,20 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     return 2;
   }
   const dry = args.flags.has('dry-run');
+  // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
+  // `--session` is refused here, before `currentTeam` writes anything and before the flag's
+  // session is read — no agent list, no pane root, no `last_valid`, no log line. The dry run
+  // refuses the same way: the plan it would print is that session's, which is not its to aim.
+  // (A seat cannot be named in this refusal: placing it would read a session, and that is what
+  // must not happen yet.)
+  if (args.values.session !== undefined) {
+    const walked = walkCaller(io);
+    if (!isOwner(walked)) {
+      io.stderr(`team down: ${sessionOwnerRefusal(walked)}\n`);
+      // exit: down.session-owner
+      return 1;
+    }
+  }
   const current = currentTeam(io.cwd, args.values.file, sources.now());
   if (!current.ok) {
     for (const problem of current.errors) {
@@ -189,19 +203,15 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   }
 
   const refusals: string[] = [];
-  // The session a seat is judged in is the team file's; --session is the owner's to choose, so a
-  // non-owner can't aim the check at a session where its pane holds the seat's name.
-  if (args.values.session && !isOwner(caller)) {
-    refusals.push(`--session is the owner's, from a terminal outside herdr; this call is ${describeCaller(caller)}`);
-  } else {
-    const verdict = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
-    if (verdict.kind === 'no-pane') {
-      refusals.push(noPaneRefusal(verdict.name));
-    } else if (verdict.kind === 'refused') {
-      refusals.push(
-        `only the owner, the coordinator or the operator stops the team; this call is ${describeCaller(caller)}`,
-      );
-    }
+  const verdict = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
+  if (verdict.kind === 'no-pane') {
+    refusals.push(noPaneRefusal(verdict.name));
+  } else if (verdict.kind === 'another-pane') {
+    refusals.push(anotherPaneRefusal(verdict.name, verdict.recordedPane));
+  } else if (verdict.kind === 'refused') {
+    refusals.push(
+      `only the owner, the coordinator or the operator stops the team; this call is ${describeCaller(caller)}`,
+    );
   }
   const abandon = args.flags.has('abandon');
   if (abandon && !callerOwns(caller)) {
@@ -277,7 +287,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     // exit: down.caller
     // exit: down.abandon
     // exit: down.no-pane
-    // exit: down.session-owner
+    // exit: down.another-pane
     return 1;
   }
   const launch = sources.launch;

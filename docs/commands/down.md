@@ -27,10 +27,15 @@ file that no longer validates is replaced by the last copy that did, with a noti
 
 ## Who may run it
 
-The owner, the coordinator's seat, and the operator's seat. The seat is that name's in the session
-the team file names, on the pane the state records for it: a seat of another session, or a pane
+The owner, the coordinator's seat, and the operator's seat. The seat is that name's, in a session
+this project's state records — the file's session, or one the state records the caller's pane in —
+on the pane the state records for that name in that session: a seat of another session, or a pane
 merely renamed to the coordinator's or the operator's name, is refused — and so is a seat the state
-records no pane for, a coordinator `team` never launched; its refusal names the seat and the repair.
+records no pane for, or records on another pane than this call is on; each refusal names the seat
+and the repair. What that proves is placement, and no more: the state file is in the project, and a
+process of the same user that writes its own pane there under the coordinator's name, and renames
+its pane, passes. The check guards a mistaken agent, not a hostile process running as the same
+user.
 A seat's
 own call is refused by the `--abandon` flag, which only the owner may use. A seat that may stop the
 team never stops the coordinator's or the operator's seat — only the owner does.
@@ -89,6 +94,7 @@ stop at all.
 | `team down: only the owner abandons a team, from a terminal outside herdr` | 1 |
 | `team down: --session is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | ``team down: no pane is recorded for seat <name> in this session: the owner stops that seat and runs `team up` `` | 1 |
+| ``team down: the state records pane <pane> for seat <name> in this session, not the pane this call is on: the owner stops that seat and runs `team up` `` | 1 |
 
 ## Exit codes
 

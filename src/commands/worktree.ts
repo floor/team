@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { notInForce, worktreeTeamInForceOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, standingOf } from '../caller.ts';
+import { anotherPaneRefusal, callerOf, describeCaller, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller } from '../caller.ts';
 import { insideTrust } from '../file/paths.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
@@ -71,6 +71,19 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     return 2;
   }
 
+  // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
+  // `--session` is refused here, before the flag's session is read — no agent list, no pane root,
+  // no state write, no log line. (A seat cannot be named in this refusal: placing it would read a
+  // session, and that is what must not happen yet.)
+  if (args.values.session !== undefined) {
+    const walked = walkCaller(io);
+    if (!isOwner(walked)) {
+      io.stderr(`team worktree: ${sessionOwnerRefusal(walked)}\n`);
+      // exit: worktree.session-owner
+      return 1;
+    }
+  }
+
   const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
@@ -115,17 +128,15 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     : judgeCallerIn(io, dir, reading);
   const { caller, shown } = judged;
   const session = judged.session;
-  // The session a seat is judged in is the team file's; --session is the owner's to choose, so a
-  // non-owner can't aim the check at a session where its pane holds the seat's name.
-  if (args.values.session && !isOwner(caller)) {
-    io.stderr(`team worktree: --session is the owner's, from a terminal outside herdr; this call is ${describeCaller(shown)}\n`);
-    // exit: worktree.session-owner
-    return 1;
-  }
   const verdict = mayChangeTeamVerdict(caller, reading, standingOf(dir, session, caller));
   if (verdict.kind === 'no-pane') {
     io.stderr(`team worktree: ${noPaneRefusal(verdict.name)}\n`);
     // exit: worktree.no-pane
+    return 1;
+  }
+  if (verdict.kind === 'another-pane') {
+    io.stderr(`team worktree: ${anotherPaneRefusal(verdict.name, verdict.recordedPane)}\n`);
+    // exit: worktree.another-pane
     return 1;
   }
   if (verdict.kind === 'refused') {

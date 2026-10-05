@@ -11,6 +11,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `add.ready` | `add` | 0 | the seat is ready | `team add worker` |
 | `add.agents` | `add` | 1 | the agents can't be read | `team add worker` |
 | `add.already-running` | `add` | 1 | the seat is already running | `team add worker` |
+| `add.another-pane` | `add` | 1 | the state records another pane for the caller's seat | `team add worker` |
 | `add.approved-copy` | `add` | 1 | the approved copy can't be read | `team add worker` |
 | `add.branch-missing` | `add` | 1 | the merged branch doesn't exist | `team add --temporary --like lead --until merged:missing` |
 | `add.budget` | `add` | 1 | the budget refuses the seat | `team add worker` |
@@ -54,6 +55,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `add.temporary-unexpected` | `add` | 2 | an unexpected argument was passed to --temporary | `team add extra --temporary` |
 | `answer.ready` | `answer` | 0 | the trust dialog was answered and the seat is ready | `team answer lead trust` |
 | `answer.action` | `answer` | 1 | the recorded key was not sent | `team answer lead trust` |
+| `answer.another-pane` | `answer` | 1 | the state records another pane for the caller's seat | `team answer lead trust` |
 | `answer.caller` | `answer` | 1 | the caller may not answer a trust dialog | `team answer lead trust` |
 | `answer.folder` | `answer` | 1 | the dialog's folder is not the lobby's exact trust entry | `team answer lead trust` |
 | `answer.label` | `answer` | 1 | the trust choice is not the recorded one | `team answer lead trust` |
@@ -108,6 +110,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `down.idle` | `down` | 0 | there was nothing to stop | `team down` |
 | `down.stopped` | `down` | 0 | the seats that could be stopped were stopped | `team down` |
 | `down.abandon` | `down` | 1 | only the owner abandons a team | `team down --abandon` |
+| `down.another-pane` | `down` | 1 | the state records another pane for the caller's seat | `team down` |
 | `down.caller` | `down` | 1 | the caller may not change the team | `team down` |
 | `down.held` | `down` | 1 | a step was held | `team down` |
 | `down.no-launch` | `down` | 1 | this call has no way to reach herdr | `team down` |
@@ -141,6 +144,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `remove.temporary` | `remove` | 0 | a temporary seat was removed | `team remove worker` |
 | `remove.abandon` | `remove` | 1 | only the owner abandons a seat | `team remove worker --abandon` |
 | `remove.agents` | `remove` | 1 | the agents can't be read | `team remove worker` |
+| `remove.another-pane` | `remove` | 1 | the state records another pane for the caller's seat | `team remove worker` |
 | `remove.busy` | `remove` | 1 | the seat is not free | `team remove worker` |
 | `remove.caller` | `remove` | 1 | the caller may not change the team | `team remove worker` |
 | `remove.coordinator` | `remove` | 1 | only the owner removes the coordinator's or the operator's seat | `team remove lead` |
@@ -205,6 +209,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `worktree.created` | `worktree` | 0 | the worktree was created | `team worktree new task --kind fix` |
 | `worktree.record-gone` | `worktree` | 0 | the record was removed after the folder was already gone | `team worktree remove task` |
 | `worktree.removed` | `worktree` | 0 | the worktree was removed | `team worktree remove task` |
+| `worktree.another-pane` | `worktree` | 1 | the state records another pane for the caller's seat | `team worktree new task` |
 | `worktree.approved-copy` | `worktree` | 1 | the approved copy can't be read | `team worktree new task --kind fix` |
 | `worktree.base` | `worktree` | 1 | workspace.base is not a branch here | `team worktree new task --kind fix` |
 | `worktree.branch` | `worktree` | 1 | the branch already exists | `team worktree new task --kind fix` |
