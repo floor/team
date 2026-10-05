@@ -1192,8 +1192,8 @@ scene('release.configuration', async (place) => {
 });
 scene('release.usage', async (place) => show(await released(place, [], new Map()), 'a subcommand is required'));
 
-async function status(place: Place, argv: string[], sources: StatusSources): Promise<Ran> {
-  const io = testIo(place.root, owner);
+async function status(place: Place, argv: string[], sources: StatusSources, caller: Caller = owner): Promise<Ran> {
+  const io = testIo(place.root, caller);
   return { code: await runStatus(argv, io, sources), out: io.out, err: io.err };
 }
 
@@ -1228,6 +1228,10 @@ scene('status.agrees', async (place) => {
 scene('status.difference', async (place) => {
   write(place, TEAM);
   return show(await status(place, [], statusSources(quiet)), 'is in the file and is not running');
+});
+scene('status.file-owner', async (place) => {
+  write(place, TEAM);
+  return show(await status(place, ['--file', '.agents/team.yaml'], statusSources(quiet), other), "--file is the owner's");
 });
 
 async function up(place: Place, argv: string[], caller: Caller, sources: UpSources): Promise<Ran> {
@@ -1323,6 +1327,10 @@ scene('watch.file', async (place) => show(await watched(place, ['--file', 'missi
 scene('watch.file-invalid', async (place) => {
   invalid(place);
   return show(await watched(place, ['--file', 'team.yaml'], owner), 'line');
+});
+scene('watch.file-owner', async (place) => {
+  write(place, TEAM);
+  return show(await watched(place, ['--file', '.agents/team.yaml'], other), "--file is the owner's");
 });
 scene('watch.no-nudge', async (place) => {
   write(place, TEAM);

@@ -6,6 +6,7 @@ import { overridesInForceOf, type OverrideForce } from '../profiles/overrides.ts
 import { readArgs } from '../args.ts';
 import { budgetLine, budgetTable, type BudgetRow } from '../budgets/table.ts';
 import { recall } from '../budgets/readings.ts';
+import { fileOwnerRefusal } from '../caller.ts';
 import { currentTeam } from '../file/current.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import type { Problem, TeamFile } from '../file/types.ts';
@@ -117,6 +118,16 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     io.stderr(`team status: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
     // exit: status.invocation
     return 2;
+  }
+  // The `--file` check is the walk's too, and it runs before `currentTeam` reads that file or
+  // writes beside it: a non-owner aiming `--file` must not make this command read and validate
+  // another project's team file, nor leave its `last_valid` in that project's state. The one
+  // place every command that takes the flag decides it is `fileOwnerRefusal` (caller.ts).
+  const fileRefusal = fileOwnerRefusal(io, args.values.file);
+  if (fileRefusal !== undefined) {
+    io.stderr(`team status: ${fileRefusal}\n`);
+    // exit: status.file-owner
+    return 1;
   }
 
   const current = currentTeam(io.cwd, args.values.file, sources.now(), sources.home);

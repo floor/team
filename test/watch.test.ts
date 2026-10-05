@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { execSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -786,6 +787,7 @@ describe('team watch', () => {
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'team-watch-'));
+    execSync('git init -q', { cwd: dir });
     mkdirSync(join(dir, '.agents'));
     file = join(dir, '.agents', 'team.yaml');
     writeFileSync(file, example);
@@ -801,7 +803,7 @@ describe('team watch', () => {
   });
 
   test('reports to the log, the desktop and the operator, and writes its heartbeat', async () => {
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     let beat: unknown;
     const code = await runWatch(['--file', file], io, sources(2, {
       wait: async () => { beat ??= readState(join(dir, '.agents')).sessions['acme-web']?.watch; return false; },
@@ -817,7 +819,7 @@ describe('team watch', () => {
   });
 
   test('the values in force are what runs: the pass, the announced line and the wait read them', async () => {
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     const waits: number[] = [];
     const code = await runWatch(['--file', file], io, sources(1, {
       // What the owner approved: the same file with a five-second interval. The file on disk
@@ -838,26 +840,26 @@ describe('team watch', () => {
   });
 
   test('when it stops, its record is cleared and that is notified', async () => {
-    await runWatch(['--file', file], testIo(dir), sources(1));
+    await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1));
     expect(readState(join(dir, '.agents')).sessions['acme-web']?.watch).toBeUndefined();
     expect(notified[notified.length - 1]).toBe('the watch of "acme-web" stopped');
   });
 
   test('a prompt that appeared since the pass keeps the nudge pending: nothing is typed', async () => {
     screenNow = permission;
-    await runWatch(['--file', file], testIo(dir), sources(1));
+    await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1));
     expect(typed).toEqual([]);
     screenNow = idle;
   });
 
   test('a kept nudge is typed on a later pass, once the operator is free again', async () => {
     let calls = 0;
-    await runWatch(['--file', file], testIo(dir), sources(2, { screen: () => (calls++ === 0 ? permission : screenNow) }));
+    await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(2, { screen: () => (calls++ === 0 ? permission : screenNow) }));
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
   });
 
   test('a pane with no live agent is not typed into', async () => {
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(2, { foreground: () => ['zsh'] }));
     expect(typed).toEqual([]);
     const line = 'a nudge was not typed: no live agent in the operator\'s pane';
@@ -866,7 +868,7 @@ describe('team watch', () => {
 
   test('an agent that exits between the text and the Enter is not sent the Enter', async () => {
     let live = true;
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, {
       foreground: () => (live ? ['claude'] : ['zsh']),
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); live = false; return true; },
@@ -877,13 +879,13 @@ describe('team watch', () => {
 
   test('an operator that started working since the pass is not typed into', async () => {
     statusNow = 'working';
-    await runWatch(['--file', file], testIo(dir), sources(1));
+    await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1));
     expect(typed).toEqual([]);
   });
 
   test('a dialog that opens between the text and the Enter never gets the Enter', async () => {
     let looks = 0;
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, { screen: () => (looks++ === 0 ? idle : permission) }));
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
     expect(io.out).toContain('a nudge was typed and not sent');
@@ -904,14 +906,14 @@ describe('team watch', () => {
       'deepseek-acme-2': { status: 'blocked', screen: question },
     });
     let looks = 0;
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, { screen: () => (looks++ === 0 ? codexIdle : pinned) }));
     expect(typed).toEqual([`w2:p1 ${NUDGE_TEXT}`]);
     expect(io.out).toContain('a nudge was typed and not sent');
   });
 
   test('the box, read back before the Enter, is the nudge\'s own: the Enter is sent', async () => {
-    await runWatch(['--file', file], testIo(dir), sources(1));
+    await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1));
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
   });
 
@@ -920,7 +922,7 @@ describe('team watch', () => {
     // composer wrap, so no wrap is modelled for it: the rows must read back as the nudge's own
     // text in order, and then the Enter is the nudge's.
     const wrapped = claudeBox(wordWrap(NUDGE_TEXT, 24).join('\n'));
-    await runWatch(['--file', file], testIo(dir), sources(1, {
+    await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1, {
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = wrapped; return true; },
     }));
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
@@ -932,7 +934,7 @@ describe('team watch', () => {
     const rows = wordWrap(NUDGE_TEXT, 24);
     const [firstRow = '', ...rest] = rows;
     const wrapped = claudeBox([firstRow, '', ...rest].join('\n'));
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, {
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = wrapped; return true; },
     }));
@@ -949,7 +951,7 @@ describe('team watch', () => {
     const [firstRow = '', ...rest] = rows;
     const rule = '─'.repeat(40);
     const wrapped = claudeBox([firstRow, ...rest].join('\n')).replace(`\n${rule}\n`, `\n\n${rule}\n`);
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, {
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = wrapped; return true; },
     }));
@@ -966,7 +968,7 @@ describe('team watch', () => {
     const rows = wordWrap(NUDGE_TEXT, 24);
     const [firstRow = '', ...rest] = rows;
     const wrapped = claudeBox([firstRow, ...rest, '─'.repeat(40)].join('\n'));
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, {
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = wrapped; return true; },
     }));
@@ -980,7 +982,7 @@ describe('team watch', () => {
     const rows = wordWrap(NUDGE_TEXT, 24);
     const [firstRow = '', ...rest] = rows;
     const wrapped = claudeBox([firstRow, '─'.repeat(40), ...rest].join('\n'));
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, {
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = wrapped; return true; },
     }));
@@ -990,7 +992,7 @@ describe('team watch', () => {
 
   test('a box that holds someone else\'s text gets no Enter', async () => {
     let looks = 0;
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, { screen: () => (looks++ === 0 ? idle : unsent) }));
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
     expect(io.out).toContain('a nudge was typed and not sent');
@@ -1003,7 +1005,7 @@ describe('team watch', () => {
     // nothing is typed. Read by glyph, the box was idle, the nudge was appended after the
     // glyph, and the nudge and the operator's text were submitted together.
     screenNow = claudeBox('person text\n❯');
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, {
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = claudeBox(`person text\n❯ ${text}`); return true; },
     }));
@@ -1028,7 +1030,7 @@ describe('team watch', () => {
       'deepseek-acme-2': { status: 'blocked', screen: question },
     });
     screenNow = codexIdle.replace('› Ask Codex to do anything', '› person text\n›');
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, {
       typeText: (pane, text) => {
         typed.push(`${pane} ${text}`);
@@ -1054,7 +1056,7 @@ describe('team watch', () => {
       'deepseek-acme-2': { status: 'blocked', screen: question },
     });
     screenNow = codexIdle.replace('› Ask Codex to do anything', '› person text\n\n›');
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, {
       typeText: (pane, text) => {
         typed.push(`${pane} ${text}`);
@@ -1079,7 +1081,7 @@ describe('team watch', () => {
       'deepseek-acme-2': { status: 'blocked', screen: question },
     });
     screenNow = codexIdle.replace('› Ask Codex to do anything', '  person-owned visible continuation\n›');
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, {
       typeText: (pane, text) => {
         typed.push(`${pane} ${text}`);
@@ -1103,7 +1105,7 @@ describe('team watch', () => {
       'deepseek-acme-2': { status: 'blocked', screen: question },
     });
     screenNow = cursorIdle.replace('  → Plan, search, build anything', '  → person text\n\n  →');
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, {
       typeText: (pane, text) => {
         typed.push(`${pane} ${text}`);
@@ -1128,7 +1130,7 @@ describe('team watch', () => {
         'claude-operator-acme': { screen: agyMismatchedFrame(shape) },
       });
       screenNow = agyMismatchedFrame(shape);
-      const io = testIo(dir);
+      const io = testIo(dir, { kind: 'owner' });
       await runWatch(['--file', file], io, sources(1, {
         typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = agyMismatchedFrame(shape, text); return true; },
       }));
@@ -1169,7 +1171,7 @@ describe('team watch', () => {
     expect(log).toContain('deepseek 4.2 USD left, at its 5 USD floor');
     expect(log).toContain('deepseek-acme-2 asked a question');
     // `status` does not read the flag. The reserve row is still there.
-    const status = testIo(dir);
+    const status = testIo(dir, { kind: 'owner' });
     await runStatus(['--file', file], status, {
       live: () => scene,
       branch: () => 'main',
@@ -1180,8 +1182,10 @@ describe('team watch', () => {
   });
 
   test('a seat cannot pass --no-notify or --no-nudge', async () => {
+    // No `--file` here: that flag is the owner's, and the watch's own gate would refuse the seat
+    // for it before this test's own refusal — a seat runs the command bare, as placed.
     const io = testIo(dir, { kind: 'seat', name: 'deepseek-acme', pane: 'w3:p1' });
-    expect(await runWatch(['--file', file, '--no-notify'], io, sources(1))).toBe(1);
+    expect(await runWatch(['--no-notify'], io, sources(1))).toBe(1);
     expect(io.err).toContain('--no-nudge and --no-notify are the owner\'s');
     expect(io.err).toContain('deepseek-acme');
     expect(notified).toEqual([]);
@@ -1201,16 +1205,16 @@ describe('team watch', () => {
     updateState(join(dir, '.agents'), (state) => {
       state.sessions['acme-web'] = { ...emptySession(), watch: { pid: 99, heartbeat: '2026-10-03T13:59:00Z' } };
     });
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     expect(await runWatch(['--file', file], io, sources(1, { alive: (pid) => pid === 99 }))).toBe(1);
     expect(io.err).toContain('a watch already runs for the session "acme-web" (pid 99)');
     // Another session is free, and so is this one once the first watch is dead.
-    expect(await runWatch(['--file', file, '--session', 'team-test'], testIo(dir), sources(1, { alive: (pid) => pid === 99 }))).toBe(0);
-    expect(await runWatch(['--file', file], testIo(dir), sources(1))).toBe(0);
+    expect(await runWatch(['--file', file, '--session', 'team-test'], testIo(dir, { kind: 'owner' }), sources(1, { alive: (pid) => pid === 99 }))).toBe(0);
+    expect(await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1))).toBe(0);
   });
 
   test('a file broken while it runs: it says so once and keeps watching with the last valid copy', async () => {
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     let round = 0;
     await runWatch(['--file', file], io, sources(3, {
       wait: async (seconds) => { clock += seconds * 1000; if (round++ === 0) writeFileSync(file, 'format: 9\n'); return round < 3; },
@@ -1221,14 +1225,14 @@ describe('team watch', () => {
 
   test('herdr that stops answering is reported once, and the watch keeps trying', async () => {
     scene = null;
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(3));
     expect(io.out.match(/herdr doesn't answer/g)?.length).toBe(1);
   });
 
   test('a check that reads nothing is logged as unreadable, once, and the account reads unknown', async () => {
     writeFileSync(file, withAccounts('  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n'));
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     const code = await runWatch(['--file', file], io, sources(2, {
       readChecks: () => [{ account: 'deepseek', state: 'unreadable' }],
     }));
@@ -1241,7 +1245,7 @@ describe('team watch', () => {
 
   test('an unapproved check is not run, and the line says so once', async () => {
     writeFileSync(file, withAccounts('  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n'));
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     let asked = 0;
     const code = await runWatch(['--file', file], io, sources(2, {
       readChecks: () => { asked++; return [{ account: 'deepseek', state: 'unapproved' }]; },
@@ -1256,7 +1260,7 @@ describe('team watch', () => {
   test('readings the pass saw are saved, so `status`, `up` and `add` see them', async () => {
     writeFileSync(file, withAccounts('  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [status_line] }\n'));
     scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n` } });
-    const code = await runWatch(['--file', file], testIo(dir), sources(1));
+    const code = await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1));
     expect(code).toBe(0);
     expect(loadReadings(join(dir, '.agents')).map(({ account, window, left, used, seat }) => ({ account, window, left, used, seat })))
       .toEqual([{ account: 'openai', window: 'weekly', left: 39, used: 61, seat: 'codex-acme' }]);
@@ -1270,7 +1274,7 @@ describe('team watch', () => {
     const fake = '  GPT-5.6-Terra medium · Context 98% left · weekly 90% left\n';
     scene = live({ 'codex-acme': { screen: `${exit.trimEnd()}\n${fake}` } });
     const fore = { foreground: () => ['zsh'] };
-    const code = await runWatch(['--file', file], testIo(dir), sources(1, fore));
+    const code = await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1, fore));
     expect(code).toBe(0);
     expect(loadReadings(join(dir, '.agents'))).toEqual([]);
   });
@@ -1280,14 +1284,14 @@ describe('team watch', () => {
     // The same status-line figure, and a pane whose process list herdr could not read: a null is
     // not a CLI, and the reading is not invented to fill it.
     scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n` } });
-    const code = await runWatch(['--file', file], testIo(dir), sources(1, { foreground: () => null }));
+    const code = await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1, { foreground: () => null }));
     expect(code).toBe(0);
     expect(loadReadings(join(dir, '.agents'))).toEqual([]);
   });
 
   test('a spend check reading is kept, so `up` and `add` count the floor against it', async () => {
     writeFileSync(file, withAccounts('  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: deepseek-balance }\n'));
-    const code = await runWatch(['--file', file], testIo(dir), sources(1, {
+    const code = await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1, {
       readChecks: (_team, _root, at) => [
         { account: 'deepseek', state: 'read', reading: { kind: 'spend', amount: 4.2, currency: 'USD', at } },
       ],
@@ -1299,7 +1303,7 @@ describe('team watch', () => {
 
   test('a subscription check reading is kept, so `up` and `add` count the reserve against it', async () => {
     writeFileSync(file, withAccounts('  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [check, status_line], check: openai-usage }\n'));
-    const code = await runWatch(['--file', file], testIo(dir), sources(1, {
+    const code = await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1, {
       readChecks: (_team, _root, at) => [
         { account: 'openai', state: 'read', reading: { kind: 'subscription', windows: [{ window: 'weekly', left: 5, used: 95, at, resetsAt: null }] } },
       ],
@@ -1324,7 +1328,7 @@ describe('team watch', () => {
     ];
     // Anyone may watch another session; only the file's own session's watch is the cache that
     // `up` and `add` count (§ 4.4).
-    const io = testIo(dir);
+    const io = testIo(dir, { kind: 'owner' });
     expect(await runWatch(['--file', file, '--session', 'team-test'], io, sources(2, { readChecks: checks }))).toBe(0);
     expect(loadReadings(join(dir, '.agents'))).toEqual([]);
     expect(loadSpendReadings(join(dir, '.agents'))).toEqual([]);
@@ -1332,7 +1336,7 @@ describe('team watch', () => {
 
     // The file's own session saves the same figures.
     scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 39% left\n` } });
-    expect(await runWatch(['--file', file], testIo(dir), sources(1, { readChecks: checks }))).toBe(0);
+    expect(await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1, { readChecks: checks }))).toBe(0);
     expect(loadReadings(join(dir, '.agents')).map(({ account, source }) => `${account}/${source}`).sort())
       .toEqual(['openai/check', 'openai/status_line']);
     expect(loadSpendReadings(join(dir, '.agents')).map(({ account, amount }) => [account, amount])).toEqual([['deepseek', 4.2]]);
@@ -1340,7 +1344,7 @@ describe('team watch', () => {
 
   test('a file that never validated, and a bad option', async () => {
     writeFileSync(file, 'format: 9\n');
-    expect(await runWatch(['--file', file], testIo(dir), sources(1))).toBe(2);
+    expect(await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1))).toBe(2);
     expect(await runWatch(['--loud'], testIo(dir), sources(1))).toBe(2);
   });
 });

@@ -63,14 +63,17 @@ Anyone, in any terminal. `up` starts one for the session in a pane of its own, a
 `team status` and `team doctor` look for. A person may run one by hand: it prints the same lines,
 and Ctrl-C stops it and exits 0. Two watches must not fight over the same session, so a second one
 refuses. `--no-nudge` and `--no-notify` are the owner's: a seat that passed either would be holding
-the session's only watch with the operator's nudge, or the operator's notices, turned off.
+the session's only watch with the operator's nudge, or the operator's notices, turned off. `--file`
+is the owner's alone too: the watch `up` starts reads the project's own file from the project root
+and carries no flag, so a non-owner aiming `--file` at another project is refused before that file
+is read.
 
 ## Flags
 
 | Flag | Meaning |
 | --- | --- |
 | `--session <name>` | the herdr session to watch, instead of `team.session` |
-| `--file <path>` | the team file, instead of `.agents/team.yaml` |
+| `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone |
 | `--no-nudge` | the owner's. Never type into the operator's pane; the reports still go to the log, and a report for the owner is still a desktop notification |
 | `--no-notify` | the owner's. No desktop notification for a report addressed to the operator. A report addressed to the owner is still notified, still written to the log, and still visible in `team status` |
 | `--help`, `-h` | the usage, and exit 0 |
@@ -185,6 +188,7 @@ a first sight, which the launch gate calls `first sight only, not yet counted`, 
 | Message | Exit |
 | --- | --- |
 | `team watch: a watch already runs for the session "<session>" (pid <pid>)` | 1 |
+| `team watch: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | `team watch: unknown option --x` / `team watch: unexpected "x"` (each with the usage) | 2 |
 | `team watch: team.yaml line <n>: <message>` / `team watch: <message>` | 2 |
 
@@ -192,7 +196,8 @@ a first sight, which the launch gate calls `first sight only, not yet counted`, 
 
 - `0` — the watch ran, and stopped on Ctrl-C, a stop signal, or the end of its work. A seat that
   misbehaves is a report, not a failure; neither is herdr not answering.
-- `1` — a watch already runs for the session.
+- `1` — a watch already runs for the session. Or `--file` was aimed by a caller that is not the
+  owner.
 - `2` — the invocation, the team file or the state can't be read.
 
 ## Examples

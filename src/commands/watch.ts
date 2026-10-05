@@ -1,6 +1,6 @@
 import { readArgs } from '../args.ts';
 import { approvalCase, budgetsInForceOf, watchInForceOf } from '../approve/approval.ts';
-import { callerOf, describeCaller, isOwner } from '../caller.ts';
+import { callerOf, describeCaller, fileOwnerRefusal, isOwner } from '../caller.ts';
 import { loadReadings, saveSpendReadings, updateReadings, type Seen, type SpendReading } from '../budgets/readings.ts';
 import { runChecksOf, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
@@ -123,6 +123,17 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
     io.stderr(`team watch: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
     // exit: watch.invocation
     return 2;
+  }
+  // The `--file` check is the walk's too, and it runs before `currentTeam` reads that file or
+  // writes beside it: a non-owner aiming `--file` must not make this command read and validate
+  // another project's team file, nor leave its `last_valid`, its log line or its heartbeat in
+  // that project's state. The one place every command that takes the flag decides it is
+  // `fileOwnerRefusal` (caller.ts) — and the watch `up` starts carries no flag at all.
+  const fileRefusal = fileOwnerRefusal(io, args.values.file);
+  if (fileRefusal !== undefined) {
+    io.stderr(`team watch: ${fileRefusal}\n`);
+    // exit: watch.file-owner
+    return 1;
   }
   const first = currentTeam(io.cwd, args.values.file, sources.now(), sources.home);
   if (!first.ok) {

@@ -193,10 +193,12 @@ export function anotherPaneRefusal(name: string, recordedPane: string): string {
  * valid team file, a folder, an unreadable file — answers with these same bytes and the same
  * exit, and nothing of the flagged project and no session is read. `undefined` when the flag is
  * absent or the walk places the owner. Every command that takes `--file` (add, remove, worktree
- * new / remove, answer, down) asks this before it reads anything; it lives here, beside
- * `walkCaller`, so a seventh command cannot forget it. (Round 5: `add`, `remove` and `worktree`
- * read the flagged file and asked the host for its session before their own `--file` check; the
- * runs that showed it are in the round's result.)
+ * new / remove, answer, down, status, watch) asks this before it reads anything; it lives here,
+ * beside `walkCaller`, so a ninth command cannot forget it. (Round 5: `add`, `remove` and
+ * `worktree` read the flagged file and asked the host for its session before their own `--file`
+ * check; round 6: `status` and `watch` opened the flagged file and wrote their `last_valid` —
+ * `watch` its log and heartbeat too — beside it; the runs that showed both are in the rounds'
+ * results.)
  */
 export function fileOwnerRefusal(
   io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>,

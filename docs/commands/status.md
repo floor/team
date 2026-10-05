@@ -17,14 +17,16 @@ visible text, from which the running model is read. It writes nothing.
 ## Who may run it
 
 Anyone, in any terminal, and it needs no approval of its own. It does need herdr to answer: without
-it, `status` can't say anything and exits 2.
+it, `status` can't say anything and exits 2. `--file` is the owner's alone, from a terminal outside
+herdr: `status` finds the project's own file through the git walk, so no seat needs the flag, and a
+non-owner aiming it at another project is refused before that file is read.
 
 ## Flags
 
 | Flag | Meaning |
 | --- | --- |
 | `--session <name>` | the herdr session to read, instead of `team.session` |
-| `--file <path>` | the team file, instead of `.agents/team.yaml` |
+| `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone |
 | `--json` | print the same reading as one JSON document instead of the table, the notes and the repairs |
 | `--help`, `-h` | the usage, and exit 0 |
 
@@ -170,6 +172,7 @@ code is the same as without `--json`, and the file's warnings still go to stderr
 | `team status: unexpected "x"` (with the usage) | 2 |
 | `team status: team.yaml line <n>: <message>` | 2 |
 | `team status: herdr doesn't answer; is it installed and running?` | 2 |
+| `team status: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 
 A team file that loads with warnings prints them on stderr as
 `team status: warning, line <n>: <message>` and goes on.
@@ -177,7 +180,8 @@ A team file that loads with warnings prints them on stderr as
 ## Exit codes
 
 - `0` — no difference: the file, the state and the live session agree.
-- `1` — at least one difference; each is printed with its repair.
+- `1` — at least one difference; each is printed with its repair. Or `--file` was aimed by a
+  caller that is not the owner.
 - `2` — the invocation or the team file can't be read, or herdr doesn't answer.
 
 ## Examples

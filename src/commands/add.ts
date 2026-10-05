@@ -133,7 +133,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
 
   // The `--file` check is the walk's, and it runs before that file is read: a non-owner aiming
   // `--file` must not make this command read and validate another project's team file, nor leave
-  // its `last_valid` in that project's state. The one place the six commands that take the flag
+  // its `last_valid` in that project's state. The one place every command that takes the flag
   // decide it is `fileOwnerRefusal` (caller.ts).
   const fileRefusal = fileOwnerRefusal(io, args.values.file);
   if (fileRefusal !== undefined) {
