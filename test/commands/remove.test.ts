@@ -402,6 +402,33 @@ describe('team remove', () => {
     }
   });
 
+  test('the unknown refusal names the way out, to the owner and to a coordinator', async () => {
+    const made = world({ kind: 'unknown' }, 'idle');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const ownerIo = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], ownerIo, made.sources)).toBe(1);
+    expect(ownerIo.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (team remove worker --abandon closes its workspace without typing)\n');
+    const leadIo = testIo(dir, lead);
+    expect(await runRemove(['worker'], leadIo, made.sources)).toBe(1);
+    expect(leadIo.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (the owner can close it: team remove worker --abandon)\n');
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
+  test('--abandon closes an unknown screen without typing; a coordinator may not', async () => {
+    const made = world({ kind: 'unknown' }, 'idle');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const seat = testIo(dir, lead);
+    expect(await runRemove(['worker', '--abandon'], seat, made.sources)).toBe(1);
+    expect(seat.err).toContain('only the owner abandons');
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    const ownerIo = testIo(dir, owner);
+    expect(await runRemove(['worker', '--abandon', '--file', file], ownerIo, made.sources)).toBe(0);
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual(['w1']);
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+  });
+
   test('a Cursor queue screen is working: the seat is left and nothing is typed', async () => {
     // The screen is a real queue fixture, read through the profile: a turn with
     // follow-ups waiting on it is working, so its pane never gets the exit text.

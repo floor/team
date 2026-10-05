@@ -3,8 +3,8 @@
 Takes one seat out of the team: asks it to exit, waits for its pane to come back to its shell,
 closes its workspace, and edits the file so the seat is not started again. `--keep` leaves the seat
 in the file as `stopped: true` instead of taking it out. A seat that is busy — working, blocked at a
-prompt, or holding unsent text — is left as it is, unless its owner abandons it. Every other seat,
-and the session, are left alone.
+prompt, showing a screen the profile does not recognise, or holding unsent text — is left as it is,
+unless its owner abandons it. Every other seat, and the session, are left alone.
 
 ## Synopsis
 
@@ -73,7 +73,7 @@ A seat that doesn't leave cleanly is printed once with what stopped it, and `rem
 | `team remove: session <session> runs, and its agents can't be read; nothing was changed` | 1 |
 | `team remove: <seat> is working; left as it is` | 1 |
 | `team remove: <seat> is blocked at a prompt, which team never answers` | 1 |
-| `team remove: <seat> shows a screen the profile does not recognise; left as it is` | 1 |
+| `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` (the owner) or `… left as it is (the owner can close it: team remove <seat> --abandon)` (a coordinator or the operator) | 1 |
 | `team remove: <seat> holds unsent text in its input box; left as it is` | 1 |
 | ``team remove: no launch profile for `<cli>`; left as it is`` | 1 |
 
@@ -136,6 +136,21 @@ one.
 ```console screens="claude-beacon=permission"
 $ team remove claude-beacon ; echo "exit $?"
 team remove: claude-beacon is blocked at a prompt, which team never answers
+exit 1
+```
+
+A screen the profile can't read never frees itself, and only the owner may abandon it, so the
+refusal names that way out — the command itself for the owner, whose it is for anyone else:
+
+```console screens="claude-beacon=unknown"
+$ team remove claude-beacon ; echo "exit $?"
+team remove: claude-beacon shows a screen the profile does not recognise; left as it is (team remove claude-beacon --abandon closes its workspace without typing)
+exit 1
+```
+
+```console caller=claude-keeper screens="claude-beacon=unknown"
+$ team remove claude-beacon ; echo "exit $?"
+team remove: claude-beacon shows a screen the profile does not recognise; left as it is (the owner can close it: team remove claude-beacon --abandon)
 exit 1
 ```
 
