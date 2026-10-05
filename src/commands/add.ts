@@ -14,6 +14,7 @@ import { rulesOf } from '../launch/rules.ts';
 import { branchPresent, readMerge } from '../end/condition.ts';
 import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines.ts';
 import { loadTeamFile, placedProblems } from '../file/load.ts';
+import { migrationText } from '../file/migrate.ts';
 import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
 import type { Problem, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
@@ -301,7 +302,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   let verifiedLobby: string | null = null;
   let lobbySeen: LobbySeen | null = null;
   if (!prepared.team.trust || prepared.team.trust.length === 0 || isLegacyTrust(prepared.team.trust)) {
-    startProblem = `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`;
+    startProblem = `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\n${migrationText(prepared.team, root, sources.home)}`;
   } else {
     const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid, fs: sources.fs });
     if (!gate.ok) startProblem = gate.text;

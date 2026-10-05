@@ -17,3 +17,33 @@ export function readLead(
   else if (seat.stopped) check.fail(line, `${field} "${name}" can't be a stopped seat`);
   return name;
 }
+
+/** Whether a seat is declared as coordinator or operator in the team file. */
+export function isLeadSeat(
+  team: { coordinator: string; operator: string },
+  name: string,
+): boolean {
+  return name === team.coordinator || name === team.operator;
+}
+
+/**
+ * The relaunch repair command for a seat `up` leaves as it is:
+ * for a coordinator or operator, `remove --keep` is refused because leads cannot be stopped,
+ * so only `team down` then `team up` (to restart the whole team) is offered.
+ * For ordinary seats, both the per-seat and whole-team sequence are offered.
+ */
+export function relaunchRepair(
+  team: { coordinator: string; operator: string },
+  name: string,
+  mode: 'markdown' | 'plain' = 'markdown',
+): string {
+  const lead = isLeadSeat(team, name);
+  if (mode === 'markdown') {
+    return lead
+      ? '`team down` then `team up` (to restart the whole team)'
+      : `\`team remove ${name} --keep\` then \`team add ${name}\` (or \`team down\` then \`team up\` for the whole team)`;
+  }
+  return lead
+    ? 'team down, then team up (to restart the whole team)'
+    : `team remove ${name} --keep, then team add ${name} (or team down, then team up, for the whole team)`;
+}
