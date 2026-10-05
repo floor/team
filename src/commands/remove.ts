@@ -21,6 +21,7 @@ import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock } from '../state.ts';
 import { paneStillRunning, realSources as downSources, stateOf, type DownSources } from './down.ts';
 import { boxHoldsText } from '../launch/deliver.ts';
+import { removeRulesFile, rulesFilePath } from '../launch/rules-file.ts';
 
 export type RemoveSources = DownSources & {
   /** Foreground process names in the pane, or null when the pane can't be read. */
@@ -210,6 +211,10 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
       if (seats) delete seats[name];
     });
   }
+  // A temporary seat's rules file goes with the seat: nothing of it is left in the state
+  // folder. A declared seat's stays — a stopped seat comes back to its own file. No home set
+  // is a test that stands in for no store at all.
+  if (temporary && sources.home) removeRulesFile(rulesFilePath(team.project, root, sources.home, name));
   const who = describeCaller(caller);
   const what = temporary ? `removed temporary ${name}` : args.flags.has('keep') ? `stopped ${name}` : `removed ${name}`;
   logLine(dir, 'remove', who, what, sources.now());
