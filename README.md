@@ -334,8 +334,15 @@ bun run ci           # what CI runs: typecheck, tests, build, then the built com
 ```
 
 Sources import each other with `.ts` extensions and use erasable syntax only, so Node can run them
-directly; `tsc` writes `dist/` for the published command. CI also runs `team check` on every pull
-request, against the team file the repository keeps at `.github/team.yaml`.
+directly; `tsc` writes `dist/` for the published command. CI runs the Linux test job (`test (ubuntu-latest)`)
+and `team check` on every pull request, against the team file the repository keeps at `.github/team.yaml`.
+Before a merge, the author quotes their own full `bun run ci` run on the exact head in the pull request,
+and at least one reviewer who is not the author runs `bun run ci` on a macOS machine on the exact head
+under review, quoting its exit status and final line in their review; a review verdict without that quote
+is not an approval. (At least one reviewer rather than every reviewer: one test reads the host process
+table, which a sandboxed reviewer cannot do; a sandboxed reviewer quotes what failed and why, and the
+unsandboxed run carries the evidence.) The hosted macOS job is read after each merge, running on every
+push to `main`, nightly, and on manual dispatch; a red macOS run on `main` is fixed before anything else.
 
 ### The end-to-end run
 

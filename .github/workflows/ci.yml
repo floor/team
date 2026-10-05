@@ -4,18 +4,28 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # 03:00 UTC nightly: verify macOS compatibility does not rot
+    - cron: '0 3 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     # The two systems the watch reads: Linux answers from /proc, macOS from its own commands.
+    # Linux runs on pull requests and pushes to main; macOS runs on pushes to main, nightly schedule
+    # and workflow_dispatch (the author and at least one reviewer run bun run ci on macOS locally before merge).
     # Both run the same `bun run ci`, so neither path rots unseen.
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
