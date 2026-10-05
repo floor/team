@@ -244,7 +244,9 @@ exit 1
 ```
 
 A launch that names another model than the file does is a warning, not a refusal — `up` starts what
-the launch says:
+the launch says. A launch that names no model is the same kind of warning. For a CLI that then
+starts on whatever model it used last, the line says so and names the flag to add, with the id this
+version maps to the file's model when it knows one.
 
 ```yaml file=.agents/team.yaml
 format: 1

@@ -232,6 +232,12 @@ function approvalFindings(standing: Standing, team: TeamFile, home: string): Fin
   ];
 }
 
+function lastModelLine(profile: Profile, seat: Seat): string {
+  const flag = profile.modelFlag(seat.model, seat.version);
+  const id = flag.id ?? '<id>';
+  return `${seat.name}: the launch names no model; ${profile.cli} starts on whatever model it used last; add ${flag.option} ${id} to the launch. The file says ${seat.model} ${seat.version}`;
+}
+
 function cliFindings(cli: string, seats: Seat[], sources: DoctorSources): Finding[] {
   const names = seats.map((seat) => seat.name).join(', ');
   const profile = profileFor(cli);
@@ -258,7 +264,7 @@ function cliFindings(cli: string, seats: Seat[], sources: DoctorSources): Findin
     if (named === null) {
       findings.push({
         level: 'warn',
-        text: `${seat.name}: the launch names no model this version knows; the file says ${seat.model} ${seat.version}`,
+        text: profile.startsOnLastModel ? lastModelLine(profile, seat) : `${seat.name}: the launch names no model this version knows; the file says ${seat.model} ${seat.version}`,
       });
     } else if (named.model !== seat.model || named.version !== seat.version) {
       findings.push({

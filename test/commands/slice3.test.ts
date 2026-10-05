@@ -268,6 +268,69 @@ describe('team doctor', () => {
     expect(run.code).toBe(0);
   });
 
+  test('a model-less cursor launch says the seat starts on the last-used model', async () => {
+    edit((text) => text.replace(
+      `  - role: reviewer
+    name: grok-acme
+    cli: grok
+    vendor: xai
+    model: Grok
+    version: "4.7"
+    launch: grok --model grok-4.7
+    stopped: true              # kept in the file; \`up\` doesn't start it, \`add grok-acme\` does`,
+      `  - role: reviewer
+    name: cursor-acme
+    cli: cursor
+    vendor: xai
+    model: Grok
+    version: "4.7"
+    launch: cursor-agent
+  - role: implementer
+    name: agy-acme
+    cli: antigravity
+    vendor: google
+    model: Gemini Flash
+    version: "3.8"
+    launch: agy
+  - role: implementer
+    name: cursor-other
+    cli: cursor
+    vendor: xai
+    model: Muse Spark
+    version: "1.3"
+    launch: cursor-agent`,
+    ));
+    await approve([], OWNER);
+    const run = await doctor({
+      version: (binary) => binary === 'claude'
+        ? '2.1.288 (Claude Code)'
+        : binary === 'codex'
+          ? 'codex-cli 0.157.0'
+          : binary === 'cursor-agent'
+            ? '2026.10.01-14929f9'
+            : binary === 'agy'
+              ? '1.2.16'
+              : null,
+      onPath: (binary) => binary === 'team-deepseek',
+    });
+    expect(run.out).toContain(
+      'warn  cursor-acme: the launch names no model; cursor starts on whatever model it used last; add --model grok-4.7-high to the launch. The file says Grok 4.7\n',
+    );
+    expect(run.out).toContain(
+      'warn  cursor-other: the launch names no model; cursor starts on whatever model it used last; add --model <id> to the launch. The file says Muse Spark 1.3\n',
+    );
+    expect(run.out).toContain(
+      'warn  agy-acme: the launch names no model this version knows; the file says Gemini Flash 3.8\n',
+    );
+    expect(run.out).toContain(
+      'warn  deepseek-acme: the launch names no model this version knows; the file says DeepSeek Flash V4.1\n',
+    );
+    expect(run.out).toContain(
+      'warn  deepseek-acme-2: the launch names no model this version knows; the file says DeepSeek Flash V4.1\n',
+    );
+    expect(run.out).not.toContain('cursor-acme: the launch names no model this version knows');
+  });
+
   test("a launch whose model is not the file's warns", async () => {
     edit((text) => text.replace('launch: claude --model claude-opus-5-5', 'launch: claude --model claude-fable-5-1'));
     const run = await doctor();
