@@ -36,7 +36,7 @@ test('the teamcli tarball lists exactly the package manifest, the shim and the r
 });
 
 test('packed team and teamcli bins match the team cli, and a signal reaches the child', async () => {
-  const built = spawnSync('bun', ['run', 'build'], { cwd: repo, encoding: 'utf8' });
+  const built = spawnSync('bun', ['run', 'build'], { cwd: repo, encoding: 'utf8', timeout: 40_000 });
   expect(built.status).toBe(0);
 
   const dest = mkdtempSync(join(tmpdir(), 'teamcli-bins-'));
@@ -64,9 +64,11 @@ test('packed team and teamcli bins match the team cli, and a signal reaches the 
       join(dest, rootReport.filename),
       join(dest, teamcliReport.filename),
     ],
-    { cwd: prefix, encoding: 'utf8' },
+    { cwd: prefix, encoding: 'utf8', timeout: 40_000 },
   );
-  expect(installed.status, installed.stderr).toBe(0);
+  if (installed.status !== 0) {
+    throw new Error(`npm install exited ${installed.status} ${installed.signal ?? ''}: ${installed.stderr || installed.stdout}`);
+  }
 
   const own = spawnSync(process.execPath, [join(repo, 'dist/cli.js'), '--version'], { encoding: 'utf8' });
   const team = spawnSync(join(prefix, 'node_modules/.bin/team'), ['--version'], { encoding: 'utf8' });
@@ -94,4 +96,4 @@ test('packed team and teamcli bins match the team cli, and a signal reaches the 
     }),
   ]);
   expect(exit.signal).toBe('SIGTERM');
-});
+}, 90_000);
