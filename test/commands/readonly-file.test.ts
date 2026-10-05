@@ -2,9 +2,9 @@
 // `status --file <another project's team.yaml>` opened that file and left a new
 // `.agents/team.state.json` beside it, its `last_valid` holding the file's own bytes; `watch
 // --file` did the same and more (its log line, its heartbeat, its readings) — from commands
-// whose own pages say "It writes nothing". Round 1 held both to the rule the commands that
+// whose own pages say "It writes nothing". Both were first held to the rule the commands that
 // change a team already hold (`--file is the owner's`, decided by the walk alone, before that
-// file is read); round 2 split them by what the command does with the file: `watch` writes
+// file is read); the readers are then split by what the command does with the file: `watch` writes
 // state of its own, so its refusal stands, while `status` only reports, so the flag went back to
 // any caller — a plain folder's own seats must carry it, for their project has no git walk to
 // find the file — and the one write on its path (`currentTeam`'s `last_valid` copy) is made
@@ -447,6 +447,36 @@ describe('status: --file reads for any caller, and writes for the owner alone', 
     expect(run.listingAfterOwner).toEqual(['team.state.json', 'team.yaml']);
     const state = JSON.parse(run.stateAfterOwner ?? '{}') as { last_valid?: { file?: string } };
     expect(state.last_valid?.file ?? null).toBe(run.beforeBytes);
+  });
+
+  test("a non-owner's --file on a path the git walk does not resolve: the same split", async () => {
+    // The layout a review ran: `custom/team.yaml` inside a git project — a file the walk never
+    // finds, so the project's own seats reach it only with the flag, and their bare runs from the
+    // pane's folder find nothing at all. The seat's flagged run reads it and writes nothing; the
+    // owner's keeps the copy beside the file, in `custom/`.
+    const root = mkdtempSync(join(tmpdir(), 'team-custom-'));
+    try {
+      mkdirSync(join(root, 'custom'));
+      execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
+      const custom = join(root, 'custom', 'team.yaml');
+      writeFileSync(custom, FILE);
+      const bareIo = testIo(join(root, 'custom'), placed(SESSION, COORDINATOR, COORDINATOR_PANE));
+      const bareCode = await runStatus([], bareIo, statusSources());
+      expect(bareCode).toBe(2);
+      expect(bareIo.err).toContain('no team file');
+
+      const seatIo = testIo(root, placed(SESSION, COORDINATOR, COORDINATOR_PANE));
+      const seatCode = await runStatus(['--file', custom], seatIo, statusSources());
+      expect(readdirSync(join(root, 'custom')).sort()).toEqual(['team.yaml']);
+      const ownerIo = testIo(root, { kind: 'owner' });
+      const ownerCode = await runStatus(['--file', custom], ownerIo, statusSources());
+      expect({ code: seatCode, out: seatIo.out, err: seatIo.err }).toEqual({ code: ownerCode, out: ownerIo.out, err: ownerIo.err });
+      expect(readdirSync(join(root, 'custom')).sort()).toEqual(['team.state.json', 'team.yaml']);
+      const state = JSON.parse(readFileSync(join(root, 'custom', 'team.state.json'), 'utf8')) as { last_valid?: { file?: string } };
+      expect(state.last_valid?.file ?? null).toBe(FILE);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("the fallback serves a non-owner while the owner edits, and its read writes nothing", async () => {
