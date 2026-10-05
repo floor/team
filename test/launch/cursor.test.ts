@@ -796,6 +796,7 @@ describe('the closed Cursor status row', () => {
   // differs from what main read.
   const GROK = '  Grok 4.7 256K High                 Run Everything';
   const GPT_ROW = '  GPT-5.6 Sol 272K High              Run Everything';
+  const COMPOSER_ROW = '  Composer 2.5                       Run Everything';
   const rows = (name: string) => fixture(name).replace(/\n+$/, '').split('\n');
   const text = (lines: string[]) => lines.join('\n');
   const read = (screen: string) => {
@@ -917,16 +918,37 @@ describe('the closed Cursor status row', () => {
     expect(model(screen)).toEqual({ model: 'Grok', version: '4.7' });
   });
 
-  test('prose below the footer names no model; the footer still does', () => {
+  test('prose below the footer leaves the model unread: the row is out of place', () => {
     const prose = `${text(rows('idle'))}\n  GPT-5.6 Sol completed the task`;
     expect(read(prose)).toBe('unknown / unknown');
-    expect(model(prose)).toEqual({ model: 'Grok', version: '4.7' });
+    // The workspace line is no longer the pane's last non-blank one, so its footer is not the
+    // status row and names no model. Main read Grok 4.7 off that footer; a line the pane does
+    // not draw as the row is not where the model comes from.
+    expect(model(prose)).toBeNull();
   });
 
   test('a working screen with a line appended stays working and unknown', () => {
     const screen = `${text(rows('working'))}\n  Step 2`;
     expect(read(screen)).toBe('working / unknown');
-    expect(model(screen)).toEqual({ model: 'Grok', version: '4.7' });
+    // The appended line sits under the workspace line, so the footer above it is not the row:
+    // no row, no model.
+    expect(model(screen)).toBeNull();
+  });
+
+  test('a spoofed row names no model, and the same rows in place still name theirs', () => {
+    // A full row below a real footer: the spoof has no workspace line under it, and the real
+    // footer's own workspace line is no longer the pane's last — neither is the row.
+    expect(model(`${text(rows('gpt-sol-idle'))}\n${GPT_ROW}`)).toBeNull();
+    // A full row after the trust dialog's anchor: no workspace line under it.
+    expect(model(`${text(rows('trust'))}\n${GPT_ROW}`)).toBeNull();
+    // A row in the footer's place with the workspace line removed: not the row.
+    expect(model(text(rows('gpt-sol-idle').slice(0, -1)))).toBeNull();
+    // A Composer-shaped spoof below a real Grok footer names no model either: a seat running
+    // Grok is not renamed by it.
+    expect(model(`${text(rows('idle'))}\n${COMPOSER_ROW}`)).toBeNull();
+    // The rows that are in place still name their models.
+    expect(model(text(rows('gpt-sol-idle')))).toEqual({ model: 'GPT Sol', version: '5.6' });
+    expect(model(`${text(rows('idle'))}\n${GROK}`)).toEqual({ model: 'Grok', version: '4.7' });
   });
 
   test('a full status row is taken by its position: the lowest one wins', () => {
