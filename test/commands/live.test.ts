@@ -671,11 +671,15 @@ describe('team up, live', () => {
   function incident(screen: string): World {
     writeFileSync(
       join(root, '.agents/team.yaml'),
-      EXAMPLE.replace('    stopped: true\n', '')
-        .replace(
-          '    count: 2                   # deepseek-acme, deepseek-acme-2\n',
-          '    count: 2                   # deepseek-acme, deepseek-acme-2\n    stopped: true\n',
-        ),
+      makeExample(
+        base,
+        root,
+        EXAMPLE.replace('    stopped: true\n', '')
+          .replace(
+            '    count: 2                   # deepseek-acme, deepseek-acme-2\n',
+            '    count: 2                   # deepseek-acme, deepseek-acme-2\n    stopped: true\n',
+          ),
+      ),
     );
     writeFileSync(join(root, '.agents/team.state.json'), JSON.stringify(namedState()));
     const made = world();
