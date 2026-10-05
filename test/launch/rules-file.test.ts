@@ -4,6 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { validateTeamFile } from '../../src/file/validate.ts';
+import { verifiedOf } from '../../src/approve/approval.ts';
+import type { TeamFile } from '../../src/file/types.ts';
 import {
   checkRulesFile, removeRulesFile, rulesDeliveryOf, rulesFileHash, rulesFilePath, rulesLine, typeablePath, writeRulesFile,
 } from '../../src/launch/rules-file.ts';
@@ -337,8 +339,9 @@ describe('the seat name where the path is built', () => {
     const home = mkdtempSync(join(tmpdir(), 'team-rules-home-'));
     try {
       const { team, seat } = codexSeat();
+      const standing = verifiedOf(team, EXAMPLE, '/nowhere');
       for (const name of refused) {
-        expect(rulesDeliveryOf(team, { ...seat, name }, '/nowhere', home)).toEqual({
+        expect(rulesDeliveryOf(standing, team, { ...seat, name }, '/nowhere', home)).toEqual({
           refusal: "its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -",
         });
       }
@@ -383,25 +386,47 @@ describe('the seat name where the path is built', () => {
 describe('one seat\'s delivery', () => {
   test('a message seat gets the file\'s text, path and line; an option seat gets no file', () => {
     const { team, seat } = codexSeat();
+    const standing = verifiedOf(team, EXAMPLE, '/nowhere');
     const claude = team.seats.find((item) => item.cli === 'claude-code');
     if (!claude) throw new Error('the example fixture has no claude-code seat');
-    const delivery = rulesDeliveryOf(team, seat, '/nowhere', '/home/owner');
+    const delivery = rulesDeliveryOf(standing, team, seat, '/nowhere', '/home/owner');
     if ('refusal' in delivery) throw new Error(`unexpected refusal: ${delivery.refusal}`);
     expect(delivery.text).toBe(rulesOf(team, seat));
     expect(delivery.path.endsWith(join('rules', `${seat.name}.md`))).toBe(true);
     expect(delivery.line).toBe(rulesLine(delivery.path, rulesFileHash(delivery.text)));
-    expect(rulesDeliveryOf(team, claude, '/nowhere', '/home/owner')).toEqual({ refusal: 'its rules travel as a launch option' });
+    expect(rulesDeliveryOf(standing, team, claude, '/nowhere', '/home/owner')).toEqual({ refusal: 'its rules travel as a launch option' });
+  });
+
+  test('the text is the approved copy\'s, not the live file\'s, once they differ', () => {
+    // The drift gate out of the way — a live team object edited after the approval — the file
+    // and the hash the line carries are still the approved copy's. This is the test the
+    // mutation "take the rules from the live object" fails.
+    const { team, seat } = codexSeat();
+    const standing = verifiedOf(team, EXAMPLE, '/nowhere');
+    const edited: TeamFile = { ...team, rules: [...team.rules, 'A rule added after the approval.'] };
+    const approvedText = rulesOf(team, seat);
+    const delivery = rulesDeliveryOf(standing, edited, seat, '/nowhere', '/home/owner');
+    if ('refusal' in delivery) throw new Error(`unexpected refusal: ${delivery.refusal}`);
+    expect(delivery.text).toBe(approvedText);
+    expect(delivery.text).not.toBe(rulesOf(edited, seat));
+    expect(delivery.line).toBe(rulesLine(delivery.path, rulesFileHash(approvedText)));
+    // A seat the approved copy does not hold has no approved rules: refused, nothing written.
+    const added = { ...seat, name: 'added-after-approval' };
+    expect(rulesDeliveryOf(standing, { ...edited, seats: [...edited.seats, added] }, added, '/nowhere', '/home/owner')).toEqual({
+      refusal: 'its rules are not in the approved copy of the team file',
+    });
   });
 
   test('a seat whose path can\'t be typed is refused before anything is written or typed', () => {
     const home = mkdtempSync(join(tmpdir(), 'team-rules-home-'));
     try {
       const { team, seat } = codexSeat();
-      const plain = rulesDeliveryOf(team, seat, '/nowhere', home);
+      const standing = verifiedOf(team, EXAMPLE, '/nowhere');
+      const plain = rulesDeliveryOf(standing, team, seat, '/nowhere', home);
       if ('refusal' in plain) throw new Error('the plain path must be typeable here');
       // A seat name with a space makes the path untypeable: nothing is quoted, nothing typed.
       const spaced = { ...seat, name: 'codex acme' };
-      expect(rulesDeliveryOf(team, spaced, '/nowhere', home)).toEqual({
+      expect(rulesDeliveryOf(standing, team, spaced, '/nowhere', home)).toEqual({
         refusal: "its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -",
       });
     } finally {

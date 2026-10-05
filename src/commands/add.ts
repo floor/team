@@ -318,7 +318,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // changes no section of its own, and no unapproved reserve may unblock a launch (#50).
   const budgets = budgetsInForceOf(standing, prepared.team);
   const decision = (sources.seatBudget ?? seatBudget)(budgets, loadReadings(dir), built.seat, sources.now().getTime(), loadSpendReadings(dir));
-  const starting = seatPlan(prepared.team, built.seat, start, root, sources.home);
+  const starting = seatPlan(standing, prepared.team, built.seat, start, root, sources.home);
   const planned = stray
     ? { ...starting, stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
     : starting;
@@ -458,6 +458,7 @@ function parseUntil(value: string): Until | null {
 }
 
 function seatPlan(
+  standing: Standing,
   team: TeamFile,
   seat: Seat,
   start: { cwd: string; lobby?: true },
@@ -473,8 +474,10 @@ function seatPlan(
     model: seat.model,
     version: seat.version,
     stopped: false,
+    // An option seat's rules keep coming from the live file, as main's launch line does; a
+    // message seat's file and line are the approved copy's, whatever the live file says now.
     rules: rulesOf(team, seat),
-    ...seatDeliveryOf(team, seat, root, home),
+    ...seatDeliveryOf(standing, team, seat, root, home),
     ...(start.lobby ? { lobby: true } : {}),
   };
 }

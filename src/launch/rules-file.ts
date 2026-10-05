@@ -1,9 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { constants, openSync, closeSync, lstatSync, mkdirSync, readSync, renameSync, unlinkSync, writeSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { storePath } from '../store/store.ts';
+import { storePath, type Standing } from '../store/store.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { SEAT_NAME } from '../file/sections/seats.ts';
+import { worktreeTeamInForceOf } from '../approve/approval.ts';
 import { profileFor } from '../profiles/index.ts';
 import { rulesOf } from './rules.ts';
 
@@ -258,29 +259,37 @@ export function checkRulesFile(path: string, approvedText: string): RulesFileChe
 }
 
 /** One message-rules seat's delivery: the file its rules are written to, the text that goes in
- *  it, and the one line typed in its pane. A path that can't be typed safely is a refusal —
- *  before anything is written or typed. */
+ *  it, and the one line typed in its pane. The text is the **approved** one — taken from the copy
+ *  of the team file the approval record stored, through the same accessor the worktree commands
+ *  use (`worktreeTeamInForceOf`), seat looked up by name in that copy so its own signature lines
+ *  are the approved ones too. `up` and `add` refuse a file that differs from the approval, so on
+ *  a normal run both texts are equal; the invariant does not depend on that gate. A path that
+ *  can't be typed safely is a refusal — before anything is written or typed. */
 export function rulesDeliveryOf(
+  standing: Standing,
   team: TeamFile,
   seat: Seat,
   root: string,
   home: string,
 ): { text: string; path: string; line: string } | { refusal: string } {
-  const profile = profileFor(seat.cli);
-  if (profile !== null && profile.rulesOption !== null) return { refusal: 'its rules travel as a launch option' };
-  const text = rulesOf(team, seat);
+  if (profileFor(seat.cli)?.rulesOption != null) return { refusal: 'its rules travel as a launch option' };
   const path = rulesFilePath(team.project, root, home, seat.name);
   if (path === null || !typeablePath(path)) {
     return { refusal: "its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -" };
   }
+  const inForce = worktreeTeamInForceOf(standing, team);
+  if (inForce === null) return { refusal: "the approved copy of the team file can't be read" };
+  const held = inForce.team.seats.find((item) => item.name === seat.name);
+  if (held === undefined) return { refusal: 'its rules are not in the approved copy of the team file' };
+  const text = rulesOf(inForce.team, held);
   return { text, path, line: rulesLine(path, rulesFileHash(text)) };
 }
 
 /** A message seat's delivery in the plan: the file its rules go to and the line that points at
  *  it, or the refusal that stops the seat before anything is typed. An option seat has neither. */
-export function seatDeliveryOf(team: TeamFile, seat: Seat, root: string, home: string): { rulesFile?: { path: string; line: string }; rulesRefusal?: string } {
+export function seatDeliveryOf(standing: Standing, team: TeamFile, seat: Seat, root: string, home: string): { rulesFile?: { path: string; line: string }; rulesRefusal?: string } {
   if (profileFor(seat.cli)?.rulesOption != null) return {};
-  const delivery = rulesDeliveryOf(team, seat, root, home);
+  const delivery = rulesDeliveryOf(standing, team, seat, root, home);
   if ('refusal' in delivery) return { rulesRefusal: delivery.refusal };
   return { rulesFile: { path: delivery.path, line: delivery.line } };
 }

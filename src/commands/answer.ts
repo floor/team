@@ -146,7 +146,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
     const waiting = recorded?.waiting;
     if (waiting?.manual === true) return refused({ class: 'state', message: `${seatName}: the owner has the pane open` });
     if (waiting?.state === 'trust-sent-recovery') {
-      return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace, root);
+      return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace, root, standing);
     }
     if (waiting?.state !== 'waiting-owner' || waiting.classification !== 'trust') {
       return refused({ class: 'state', message: `${seatName}: it is not waiting at a trust dialog` });
@@ -188,7 +188,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
       logLine(dir, 'answer', who, `${seatName}: refused trust: action`, host.now());
       return recovery(io, json, seatName, 'its key could not be sent', `${seatName}: the key could not be sent; recovery required`);
     }
-    return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace, root);
+    return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace, root, standing);
   } finally {
     lock.release();
   }
@@ -332,11 +332,12 @@ async function finish(
   pane: string,
   workspace: string | undefined,
   root: string,
+  standing: Standing,
 ): Promise<number> {
   const like = readState(dir).sessions[session]?.seats[name]?.temporary?.like;
   const seat = configured ?? team.seats.find((item) => item.name === like);
   const profile = seat ? profileFor(seat.cli) : null;
-  const ready = profile ? await recover(host, session, pane, name, profile, seat as Seat, team, root) : 'idle';
+  const ready = profile ? await recover(host, session, pane, name, profile, seat as Seat, team, root, standing) : 'idle';
   if (ready !== true) {
     logLine(dir, 'answer', who, `${name}: refused trust: ${ready}`, host.now());
     const reason = ready === 'idle' ? 'its idle prompt did not come' : 'its rules were not delivered';
@@ -369,15 +370,17 @@ async function recover(
   seat: Seat,
   team: TeamFile,
   root: string,
+  standing: Standing,
 ): Promise<true | 'idle' | 'rule delivery'> {
   if (!(await waitIdle(host, session, pane, profile))) return 'idle';
   const named = host.agents(session)?.some((agent) => agent.name === name && agent.pane === pane) === true;
   if (!named && !host.rename(session, pane, name)) return 'rule delivery';
   if (profile.rulesOption !== null) return true;
   // The rules are delivered exactly as `up` delivers them: written to the seat's per-seat
-  // file first, then the one line that points at it — a whole pasted message stopped being
-  // provable in round 2, and this command shares that delivery.
-  const delivery = rulesDeliveryOf(team, seat, root, host.home);
+  // file first — from the approved copy of the team file, as `up`'s are — then the one line
+  // that points at it; a whole pasted message stopped being provable in round 2, and this
+  // command shares that delivery.
+  const delivery = rulesDeliveryOf(standing, team, seat, root, host.home);
   if ('refusal' in delivery) return 'rule delivery';
   if (!writeRulesFile(delivery.path, delivery.text, rulesFileHash(delivery.text)).ok) return 'rule delivery';
   const delivered = await deliverRules(profile.cli, delivery.line, profile.idleTimeout, deliveryOf(host, session, pane));

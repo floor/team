@@ -173,6 +173,7 @@ function overCeiling(ceilings: Ceilings, running: readonly Running[], seat: Seat
 }
 
 function seatPlan(
+  standing: Standing,
   team: TeamFile,
   seat: Seat,
   recorded: SeatState | undefined,
@@ -191,8 +192,10 @@ function seatPlan(
     model: seat.model,
     version: seat.version,
     stopped: seat.stopped,
+    // An option seat's rules keep coming from the live file, as main's launch line does; a
+    // message seat's file and line are the approved copy's, whatever the live file says now.
     rules: rulesOf(team, seat),
-    ...seatDeliveryOf(team, seat, root, home),
+    ...seatDeliveryOf(standing, team, seat, root, home),
   };
   if (!resume || !recorded || seat.stopped) return planned;
   const named = agents.find((agent) => agent.name === seat.name);
@@ -301,7 +304,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const seats: UpSeat[] = [];
   const refused = new Set<string>();
   for (const seat of team.seats) {
-    const planned = seatPlan(team, seat, recorded?.seats[seat.name], agents ?? [], workspaces, state === 'running', root, sources.home);
+    const planned = seatPlan(standing, team, seat, recorded?.seats[seat.name], agents ?? [], workspaces, state === 'running', root, sources.home);
     // A stopped seat, one without a profile, and one already ready are left out of the budget.
     // A seat resumed into a live workspace starts nowhere new, but its reading is still said.
     if (planned.stopped || !profileFor(seat.cli) || planned.stage === 'ready') {
