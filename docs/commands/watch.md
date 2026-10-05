@@ -34,7 +34,11 @@ may run — reads and reports, says so once, and saves no reading, budget or spe
 A pane's screen is read by the profile's own expressions — the words a CLI paints for its idle
 prompt, its working frame, its dialogs and its questions — and the reading and the live-agent check
 are separate layers. A screen that reproduces a CLI's complete idle frame (input row, status row
-and workspace line, in place) reads idle; the live-agent check is the second layer. For Cursor the
+and workspace line, in place) reads idle; the live-agent check is the second layer. Old dialog
+text standing in the scrollback above a complete idle frame does not change that reading, for the
+bordered frame as for the empty-framed one: the dialog was answered and the box redrawn below
+it, and a live dialog replaces the box — over every dialog capture of the corpus no window of
+the screen holds both. For Cursor the
 profile pins the status row's place: a line the row's grammar matches is the row only when the
 workspace line sits directly below it, that line is the pane's last non-blank one, and the input
 row sits above it within the captured distance — a grammar-looking line anywhere else is ordinary

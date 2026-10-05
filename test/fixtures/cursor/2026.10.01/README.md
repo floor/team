@@ -132,7 +132,7 @@ A later launch of `cursor-agent --force --sandbox disabled` with no `--model`, a
   never sent, cleared with ctrl+c (once clears the whole box), the box verified empty.
   The whole-message captures above stay as documentation of why a whole paste cannot
   be proved on this CLI: past this line, the rules arrive in a file the line points at.
-## Round 3: the box's own border (2026-10-05)
+## The bordered box (2026-10-05)
 
 Captured from the same installed `cursor-agent` `2026.10.01-14929f9` (the build the
 fixtures above were read from) with herdr 0.7.1, `pane read --source visible --lines 80`,
