@@ -495,6 +495,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     now,
     sleep,
     launch: downLaunch,
+    home,
   });
 
   return {

@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { renderSignature } from '../file/signature.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -13,6 +14,7 @@ export interface RulesInput {
     mode: 'worktree' | 'shared';
     protected: readonly string[];
     branch?: string;
+    cwd?: string;
   };
 }
 
@@ -48,6 +50,8 @@ export function seatRules(input: RulesInput): string[] {
       'Work on the code in the worktree your brief names, never in the checkout you started in.' +
         (workspace.branch ? ` Branches are named ${workspace.branch}.` : ''),
     );
+  } else if (workspace.mode === 'shared' && workspace.cwd) {
+    working.push(`Change to ${workspace.cwd} before any project work.`);
   }
   return [...own, ...input.rules, ...signing, ...working];
 }
@@ -76,8 +80,10 @@ export function rulesText(input: RulesInput, delivery: RulesDelivery): string {
 }
 
 /** The rules one seat gets at launch, with its own signature lines, as its delivery carries them:
- *  the text a launch option embeds and the text the seat's rules file holds, byte for byte. */
-export function rulesOf(team: TeamFile, seat: Seat): string {
+ *  the text a launch option embeds and the text the seat's rules file holds, byte for byte. A
+ *  shared seat starts in the machine lobby like every seat, so the text names its folder from
+ *  the project root — the same text every caller that checks the file must build. */
+export function rulesOf(team: TeamFile, seat: Seat, root: string): string {
   const { commits, pullRequests } = team.identity.signature;
   const profile = profileFor(seat.cli);
   const delivery = profile && profile.rulesOption !== null ? 'option' : 'message';
@@ -90,7 +96,12 @@ export function rulesOf(team: TeamFile, seat: Seat): string {
         pullRequest: renderSignature(pullRequests.template, seat),
         commitPosition: commits.position,
       },
-      workspace: { mode: seat.mode, protected: team.workspace.protected, branch: team.workspace.branch },
+      workspace: {
+        mode: seat.mode,
+        protected: team.workspace.protected,
+        branch: team.workspace.branch,
+        cwd: resolve(root, seat.cwd),
+      },
     },
     delivery,
   );

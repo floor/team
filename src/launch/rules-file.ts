@@ -361,7 +361,7 @@ export function rulesDeliveryOf(
   }
   const held = copy.team.seats.find((item) => item.name === seat.name);
   if (held === undefined) return { refusal: 'its rules are not in the approved copy of the team file' };
-  const text = rulesOf(copy.team, held);
+  const text = rulesOf(copy.team, held, root);
   return { text, path, line: rulesLine(path, rulesFileHash(text)) };
 }
 

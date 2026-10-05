@@ -123,6 +123,13 @@
     {
       "code": 1,
       "command": "add",
+      "id": "add.lobby",
+      "meaning": "the lobby could not be created for the launch",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
       "id": "add.machine",
       "meaning": "the machine is over a launch limit",
       "trigger": "team add worker"

@@ -11,8 +11,12 @@ export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question
 export type Host = {
   startServer(session: string): boolean;
   sessionUp(session: string): boolean | null;
-  /** Makes a folder and the parents it needs. Present on `up` and `add`, whose plans carry a lobby. */
-  makeDir?(path: string): boolean;
+  /**
+   * Confirms the starting folder of an `op.lobby` create is still the lobby the gate verified,
+   * run directly before `createWorkspace` with nothing in between. A string refuses: nothing is
+   * created, that seat is left out with this line, and the rest of the plan is stopped.
+   */
+  confirmLobby?(): string | null;
   createWorkspace(session: string, cwd: string, label: string): { pane: string; workspace: string } | null;
   paneRun(session: string, pane: string, command: string): boolean;
   typeLine(session: string, pane: string, text: string): boolean | 'no-agent';
@@ -60,6 +64,7 @@ export type Host = {
       pane?: string;
       workspace?: string;
       rules?: 'option' | 'message';
+      createdWorkspace?: boolean;
       launched?: LaunchedIdentity;
     },
   ): void;
@@ -247,7 +252,6 @@ export async function executePlan(steps: readonly Step[], session: string, host:
   const places = new Map<string, Place>();
   const dropped = new Set<string>();
   const logged = new Set<string>();
-  const failedDirs = new Set<string>();
   let serverFailed = false;
   let watchFailed = false;
   let held = false;
@@ -321,11 +325,6 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         }
         break;
       }
-      case 'lobby': {
-        // A seat whose lobby folder could not be made is left out at its create step.
-        if (!host.makeDir?.(op.path)) failedDirs.add(op.path);
-        break;
-      }
       case 'create': {
         if (op.seat && op.notice) host.say(`${op.seat}: ${op.notice}\n`);
         if (op.seat) {
@@ -335,16 +334,29 @@ export async function executePlan(steps: readonly Step[], session: string, host:
             finish(op.seat, why);
             break;
           }
-          if (failedDirs.has(op.cwd)) {
-            dropped.add(op.seat);
-            finish(op.seat, 'its lobby folder was not created; left out');
+        }
+        if (op.lobby && host.confirmLobby) {
+          // The last look at the starting folder, with nothing between it and the create. The
+          // host call takes a path, not a handle, so the multiplexer resolves the path itself:
+          // that window is left, and the page says exactly which.
+          const why = host.confirmLobby();
+          if (why) {
+            abort = true;
+            if (op.seat) {
+              dropped.add(op.seat);
+              finish(op.seat, why);
+            } else {
+              watchFailed = true;
+              host.say(`watch: ${why}\n`);
+              host.log('watch', why);
+            }
             break;
           }
-          host.record(op.seat, { stage: 'launched' });
         }
         const made = host.createWorkspace(session, op.cwd, op.label);
         if (!made) {
           if (op.seat) {
+            host.record(op.seat, { stage: 'launched' });
             dropped.add(op.seat);
             finish(op.seat, 'its workspace was not created; left at launched');
           } else {
@@ -356,7 +368,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         }
         places.set(op.seat ?? op.label, made);
         if (op.seat) {
-          host.record(op.seat, { stage: 'launched', pane: made.pane, workspace: made.workspace });
+          host.record(op.seat, { stage: 'launched', pane: made.pane, workspace: made.workspace, createdWorkspace: true });
           host.running(op.seat);
         }
         break;

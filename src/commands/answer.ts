@@ -4,7 +4,8 @@ import { basename, dirname } from 'node:path';
 import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, type Caller } from '../caller.ts';
-import { canonicalLanding, folderOf, listFolder, lobbyPath } from '../file/landing.ts';
+import { canonicalLanding, folderOf, listFolder } from '../file/landing.ts';
+import { lobbyDir } from '../lobby/gate.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
@@ -91,7 +92,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
     return usage(io, json, message);
   }
 
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
+  const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: host.home });
   if (!loaded.ok) {
     const message = loaded.errors.map((problem) => (problem.line ? `line ${problem.line}: ${problem.message}` : problem.message)).join('; ');
     return configuration(io, json, message || 'the team file cannot be read');
@@ -254,7 +255,7 @@ function inspect(
   // `shown` must be the lobby as team writes it, byte for byte, and canonicalise to
   // it — a trailing slash, another case, `//` or `/./` is a different spelling, and
   // the reading that sends less is to refuse it.
-  const lobby = canonicalLanding(lobbyPath(host.home));
+  const lobby = canonicalLanding(lobbyDir(host.home));
   if (!lobby) return say('folder', OUTSIDE);
   if (canonicalLanding(shown) !== lobby) return say('folder', OUTSIDE);
   if (shown !== lobby) return say('folder', 'the dialog does not show the lobby as written: the owner answers it through team up');

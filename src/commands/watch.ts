@@ -124,7 +124,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
     // exit: watch.invocation
     return 2;
   }
-  const first = currentTeam(io.cwd, args.values.file, sources.now());
+  const first = currentTeam(io.cwd, args.values.file, sources.now(), sources.home);
   if (!first.ok) {
     for (const problem of first.errors) io.stderr(`team watch: ${problem.line ? `team.yaml line ${problem.line}: ` : ''}${problem.message}\n`);
     // exit: watch.not-a-repo
@@ -178,7 +178,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
   try {
     for (;;) {
       // The file is read again on every pass, so a seat parked or stopped since is seen.
-      const current = currentTeam(io.cwd, args.values.file, sources.now());
+      const current = currentTeam(io.cwd, args.values.file, sources.now(), sources.home);
       const team = current.ok ? current.team : first.team;
       const root = current.ok ? current.root : first.root;
       // The one read of the approval store for the whole pass: the drift line, the

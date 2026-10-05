@@ -1,4 +1,3 @@
-import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,6 +5,7 @@ import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
+import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import {
   agentList,
@@ -38,6 +38,7 @@ import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { rulesFileHash, rulesFileHolds, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
 import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
+import { lobbyDir, recheckLobby, verifyLobby, type FsReader, type LobbySeen } from '../lobby/gate.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -57,6 +58,8 @@ export type UpSources = {
   agents(session: string): HerdrAgent[] | null;
   workspaces?(session: string): { id: string }[] | null;
   home: string;
+  getuid?(): number;
+  fs?: FsReader;
   doctor?: DoctorSources;
   machine?(root: string): Machine;
   now?(): Date;
@@ -143,6 +146,7 @@ export const realSources: UpSources = {
   agents: (session) => agentList(aim(session)),
   workspaces: (session) => workspaceList(aim(session)),
   home: homedir(),
+  getuid: () => process.getuid?.() ?? 0,
   doctor: doctorSources,
   machine: readMachine,
   now: () => new Date(),
@@ -208,7 +212,7 @@ function seatPlan(
     stopped: seat.stopped,
     // An option seat's rules keep coming from the live file, as main's launch line does; a
     // message seat's file and line are the approved copy's, whatever the live file says now.
-    rules: rulesOf(team, seat),
+    rules: rulesOf(team, seat, root),
     ...seatDeliveryOf(standing, team, seat, root, home),
   };
   if (!resume || !recorded || seat.stopped) return planned;
@@ -249,7 +253,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     return 2;
   }
   const dry = args.flags.has('dry-run');
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
+  const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
       io.stderr(`team up: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
@@ -316,6 +320,13 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     }
   }
 
+  const lobby = lobbyDir(sources.home);
+  if (!team.trust || team.trust.length === 0 || isLegacyTrust(team.trust)) {
+    refusals.push(
+      `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
+    );
+  }
+
   const recorded = readState(dir).sessions[session];
   const workspaces = sources.workspaces?.(session) ?? null;
   // What each recorded seat's pane holds, read from its pane: what decides whether the seat is
@@ -379,7 +390,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       seats.push({ ...planned, ...launchProblem, ...(budget.kind === 'clear' ? {} : { budget }) });
       continue;
     }
-    const start = seatStart(team, seat, root);
+    const start = seatStart(team, seat, root, sources.home);
     if ('problem' in start) {
       if (!start.once || !refused.has(start.problem)) {
         refused.add(start.problem);
@@ -395,6 +406,28 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       ...launchProblem,
       ...(budget.kind === 'clear' ? {} : { budget }),
     });
+  }
+  let verifiedLobby: string | null = null;
+  let lobbySeen: LobbySeen | null = null;
+  if (isMigratedTrust(team.trust)) {
+    const launching = seats.some((seat) => {
+      if (seat.stopped || seat.launchProblem) return false;
+      if (!profileFor(seat.cli)) return false;
+      const fresh = seat.stage === undefined || !seat.pane || (seat.stage === 'launched' && !seat.agentLive);
+      if (!fresh) return false;
+      return seat.budget?.kind !== 'refuse';
+    });
+    const gate = verifyLobby(sources.home, {
+      create: !dry && refusals.length === 0 && launching,
+      getuid: sources.getuid,
+      fs: sources.fs,
+    });
+    if (!gate.ok) refusals.push(gate.text);
+    else if ('path' in gate) {
+      verifiedLobby = gate.path;
+      lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
+      for (const seat of seats) if (seat.lobby) seat.cwd = gate.path;
+    }
   }
   const watch = recorded?.watch;
   const plan = upPlan({
@@ -455,15 +488,12 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const host: Host = {
     startServer: launch.startServer,
     sessionUp: launch.sessionUp,
-    makeDir(path) {
-      try {
-        mkdirSync(path, { recursive: true });
-        return true;
-      } catch {
-        return false;
-      }
-    },
     createWorkspace: launch.createWorkspace,
+    // The lobby is read again directly before each workspace this run makes in it, with nothing
+    // in between (`execute.ts`). Null when it is still the folder the gate read.
+    confirmLobby() {
+      return lobbySeen ? recheckLobby(sources.home, lobbySeen, { getuid: sources.getuid, fs: sources.fs }) : null;
+    },
     paneRun: launch.paneRun,
     typeLine: () => false,
     deliverRules: async (session, pane, cli, file, seconds) => {
@@ -522,7 +552,9 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
         const prior = current.seats[name] ?? { stage: patch.stage };
         // The CLI the seat was launched with: `down` needs it when the file no longer names the seat.
         const cli = team.seats.find((seat) => seat.name === name)?.cli;
-        current.seats[name] = { ...prior, ...patch, ...(cli ? { cli } : {}) };
+        let start_cwd = prior.start_cwd;
+        if (!start_cwd && patch.createdWorkspace && verifiedLobby) start_cwd = verifiedLobby;
+        current.seats[name] = { ...prior, ...patch, ...(cli ? { cli } : {}), ...(start_cwd ? { start_cwd } : {}) };
       });
     },
     running(name) {

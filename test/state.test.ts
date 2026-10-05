@@ -29,6 +29,34 @@ describe('the state file', () => {
     expect(readdirSync(dir)).toEqual([STATE_FILE]);
   });
 
+  test('an old seat record loads with neither field, with one, or with both', () => {
+    const neither = { stage: 'ready' as const };
+    const startOnly = { stage: 'ready' as const, start_cwd: '/lobby' };
+    const waitingOnly = {
+      stage: 'launched' as const,
+      waiting: { state: 'waiting-owner' as const, classification: 'trust' as const },
+    };
+    const both = {
+      stage: 'ready' as const,
+      start_cwd: '/lobby',
+      waiting: { state: 'trust-sent-recovery' as const, classification: 'trust' as const },
+    };
+    writeFileSync(join(dir, STATE_FILE), JSON.stringify({
+      format: 1,
+      sessions: {
+        neither: { seats: { a: neither }, worktrees: {} },
+        started: { seats: { a: startOnly }, worktrees: {} },
+        held: { seats: { a: waitingOnly }, worktrees: {} },
+        both: { seats: { a: both }, worktrees: {} },
+      },
+    }));
+    const state = readState(dir);
+    expect(state.sessions.neither?.seats.a).toEqual(neither);
+    expect(state.sessions.started?.seats.a).toEqual(startOnly);
+    expect(state.sessions.held?.seats.a).toEqual(waitingOnly);
+    expect(state.sessions.both?.seats.a).toEqual(both);
+  });
+
   test('a seat record from before the process identity loads as it is, and is written back without one', () => {
     // The field is additive: an old file — a seat with a pane and a workspace, no `launched` —
     // reads name by name, and a command that writes another field leaves it with no identity.

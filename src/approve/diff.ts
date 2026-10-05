@@ -44,5 +44,8 @@ export function diffLines(before: string, after: string): DiffLine[] {
 export function formatDiff(before: string, after: string): string[] {
   return diffLines(before, after)
     .filter((line) => line.kind !== 'same')
-    .map((line) => `${line.kind === 'removed' ? '-' : '+'} ${line.line}: ${line.text}`);
+    .map((line) => {
+      const mark = line.kind === 'removed' ? '-' : '+';
+      return line.text.length ? `${mark} ${line.line}: ${line.text}` : `${mark} ${line.line}:`;
+    });
 }

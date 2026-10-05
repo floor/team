@@ -33,13 +33,20 @@ let base: string;
 let root: string;
 let home: string;
 
+function makeExample(basePath: string, rootPath: string, text: string = EXAMPLE): string {
+  return text.replace(
+    /trust:[\s\S]*?workspace:/,
+    `trust:\n  - ~/.config/team/lobby\n  - ${rootPath}\n  - ${join(basePath, 'worktrees')}\n\nworkspace:`,
+  );
+}
+
 beforeEach(() => {
   base = realpathSync(mkdtempSync(join(tmpdir(), 'team-live-')));
   root = join(base, 'acme-web');
   home = join(base, 'home');
   mkdirSync(join(root, '.agents'), { recursive: true });
   mkdirSync(home);
-  writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE);
+  writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root));
 });
 
 afterEach(() => {
@@ -181,7 +188,7 @@ function wrappedRows(text: string, width = 50): string[] {
 describe('team up, live', () => {
   test('rules are not typed into a pane the CLI never appears in', async () => {
     const path = join(root, '.agents/team.yaml');
-    writeFileSync(path, EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+    writeFileSync(path, makeExample(base, root, EXAMPLE.replace('stopped: true\n', 'parked: true\n')));
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
     const made = world((_pane, label) => (label === 'gpt sol 6' ? fileModel(capture('idle')) : IDLE));
@@ -205,7 +212,7 @@ describe('team up, live', () => {
 
   test.each(['accepted', 'trust', 'startup', 'swallowed'] as const)('Codex first-message rules: %s', async (outcome) => {
     const path = join(root, '.agents/team.yaml');
-    writeFileSync(path, EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+    writeFileSync(path, makeExample(base, root, EXAMPLE.replace('stopped: true\n', 'parked: true\n')));
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
     const made = world((_pane, label) => label === 'gpt sol 6'
@@ -281,7 +288,7 @@ describe('team up, live', () => {
       '    launch: agy',
       '    parked: true',
     ].join('\n');
-    writeFileSync(path, EXAMPLE.replace(/  - role: implementer\n    name: codex-acme[\s\S]*?stopped: true\n/, `${gemini}\n`));
+    writeFileSync(path, makeExample(base, root, EXAMPLE.replace(/  - role: implementer\n    name: codex-acme[\s\S]*?stopped: true\n/, `${gemini}\n`)));
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/antigravity/1.2.16/${name}.txt`), 'utf8');
     const made = world((_pane, label) => (label === 'gemini flash 3.8'
@@ -711,11 +718,15 @@ describe('team up, live', () => {
   function incident(screen: string): World {
     writeFileSync(
       join(root, '.agents/team.yaml'),
-      EXAMPLE.replace('    stopped: true\n', '')
-        .replace(
-          '    count: 2                   # deepseek-acme, deepseek-acme-2\n',
-          '    count: 2                   # deepseek-acme, deepseek-acme-2\n    stopped: true\n',
-        ),
+      makeExample(
+        base,
+        root,
+        EXAMPLE.replace('    stopped: true\n', '')
+          .replace(
+            '    count: 2                   # deepseek-acme, deepseek-acme-2\n',
+            '    count: 2                   # deepseek-acme, deepseek-acme-2\n    stopped: true\n',
+          ),
+      ),
     );
     writeFileSync(join(root, '.agents/team.state.json'), JSON.stringify(namedState()));
     const made = world();
@@ -898,7 +909,9 @@ describe('team up, live', () => {
     // says so, and the reading names that folder — the same line, a different folder, a different end.
     writeFileSync(
       join(root, '.agents/team.yaml'),
-      EXAMPLE.replace('launch: team-deepseek\n    count: 2', 'launch: zsh ../tools/x.sh\n    count: 2'),
+      EXAMPLE
+        .replace('launch: team-deepseek\n    count: 2', 'launch: zsh ../tools/x.sh\n    count: 2')
+        .replace(/trust:.*\n(?:  - .*\n)+/, `trust:\n  - ~/.config/team/lobby\n  - ${root}\n  - ${join(base, 'worktrees')}\n`),
     );
     await approve();
     mkdirSync(join(base, 'tools'), { recursive: true });
@@ -962,7 +975,9 @@ describe('team up, live', () => {
   test('a resumed seat whose state records no start folder is not checked at all', async () => {
     writeFileSync(
       join(root, '.agents/team.yaml'),
-      EXAMPLE.replace('launch: team-deepseek\n    count: 2', 'launch: zsh ../tools/x.sh\n    count: 2'),
+      EXAMPLE
+        .replace('launch: team-deepseek\n    count: 2', 'launch: zsh ../tools/x.sh\n    count: 2')
+        .replace(/trust:.*\n(?:  - .*\n)+/, `trust:\n  - ~/.config/team/lobby\n  - ${root}\n  - ${join(base, 'worktrees')}\n`),
     );
     await approve();
     writeFileSync(
@@ -1166,7 +1181,7 @@ describe('team up, live', () => {
 // launches the seat fresh; a seat still holding its recorded process is skipped as ready.
 describe('team up, a session that was restored', () => {
   test('four seats: one same, one gone, one replaced, one whose pane is missing', async () => {
-    writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+    writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root, EXAMPLE.replace('stopped: true\n', 'parked: true\n')));
     await approve();
     // Every seat was ready before the power went. codex-acme is the one whose recorded process is
     // still in its pane; the coordinator's runs no CLI; deepseek-acme's runs another CLI; and
@@ -1283,7 +1298,7 @@ describe('team up, a session that was restored', () => {
   });
 
   test('a workspace that does not close leaves the seat out with a line', async () => {
-    writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+    writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root, EXAMPLE.replace('stopped: true\n', 'parked: true\n')));
     await approve();
     writeFileSync(
       join(root, '.agents/team.state.json'),
@@ -1372,7 +1387,7 @@ describe('team up, a session that was restored', () => {
     doctor: doctor(),
   });
   // The file the four-seat test writes: codex-acme parked back in, so only grok-acme stays stopped.
-  const restoredFile = () => writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+  const restoredFile = () => writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root, EXAMPLE.replace('stopped: true\n', 'parked: true\n')));
   const seatState = (name: string) => (readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {})[name];
 
   test('the owner restarts the CLI between the plan and the close: nothing is closed', async () => {
@@ -1630,7 +1645,7 @@ describe('team up, a session that was restored', () => {
   test('a seat left at named records the process identity too', async () => {
     // Its idle prompt was read — the identity's moment — and the rename went through, but the
     // rules never landed: the record that stands is the named one, and the identity rides in it.
-    writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+    writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root, EXAMPLE.replace('stopped: true\n', 'parked: true\n')));
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
     const made = world((_pane, label) => (label === 'gpt sol 6' ? fileModel(capture('idle')) : IDLE));
@@ -1673,7 +1688,7 @@ describe('team up, a session that was restored', () => {
     // This test confirms that for a seat with a waiting record and no launched record,
     // up's ordered host calls and output are byte-identical.
     const calls: string[] = [];
-    writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE);
+    writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root));
     await approve();
     writeFileSync(
       join(root, '.agents/team.state.json'),
@@ -1748,12 +1763,12 @@ describe('team up, a session that was restored', () => {
       '    launch: cursor-agent',
       '    mode: shared',
     ].join('\n');
-    writeFileSync(path, EXAMPLE
+    writeFileSync(path, makeExample(base, root, EXAMPLE
       .replace(
         '    count: 2                   # deepseek-acme, deepseek-acme-2\n',
         '    count: 2\n    stopped: true\n',
       )
-      .replace(/  - role: implementer\n    name: codex-acme[\s\S]*?stopped: true\n/, `${cursorSeat}\n`));
+      .replace(/  - role: implementer\n    name: codex-acme[\s\S]*?stopped: true\n/, `${cursorSeat}\n`)));
     await approve();
     const home = readFileSync(join(import.meta.dir, '../fixtures/cursor/2026.10.01/idle.txt'), 'utf8');
     const footer = '  Grok 4.7 256K High                 Run Everything';
