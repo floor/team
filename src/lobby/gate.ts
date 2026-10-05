@@ -1,4 +1,4 @@
-import { chmodSync, lstatSync, mkdirSync, readdirSync, realpathSync } from 'node:fs';
+import { lstatSync, mkdirSync, readdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -20,7 +20,6 @@ export interface FsReader {
   mkdir(path: string, options?: { mode?: number }): void;
   readdir(path: string): string[];
   realpath(path: string): string;
-  chmod(path: string, mode: number): void;
 }
 
 export const defaultFs: FsReader = {
@@ -28,7 +27,6 @@ export const defaultFs: FsReader = {
   mkdir: (p, opts) => mkdirSync(p, { recursive: false, mode: opts?.mode }),
   readdir: (p) => readdirSync(p),
   realpath: (p) => realpathSync(p),
-  chmod: (p, m) => chmodSync(p, m),
 };
 
 function codeOf(err: unknown): string {
@@ -77,10 +75,13 @@ type CompCheck = { ok: true; stat: FsStats } | { ok: false; problem: string; tex
 /**
  * Verifies the lobby folder and every component from `home` down to it.
  * When `create` is set, missing components are made one at a time, without following a link,
- * and the lobby is mode `0700` whatever the umask. The successful result's `path` is the
- * canonical path rebuilt from the components just `lstat`ed: the same string `realpath` of the
- * lobby returned. A read-only check of a lobby that is simply absent — including when `~/.config`
- * or `team` is not there yet — is `{ missing: true }`, not a failure.
+ * and the lobby is created with mode `0700` in its own mkdir call — this runtime applies that
+ * mode under umask 022 and 077 alike — and nothing chmods it afterwards: the mode is checked
+ * below and a wrong one is refused, never repaired, so no link swapped in after creation can
+ * steer a mode change at a folder the gate did not create. The successful result's `path` is
+ * the canonical path rebuilt from the components just `lstat`ed: the same string `realpath` of
+ * the lobby returned. A read-only check of a lobby that is simply absent — including when
+ * `~/.config` or `team` is not there yet — is `{ missing: true }`, not a failure.
  */
 export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGateResult {
   const lobby = lobbyDir(home);
@@ -127,14 +128,12 @@ export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGa
       const parentCheck = checkComp(parent);
       if (!parentCheck.ok) return parentCheck;
 
-      let existed = true;
       try {
         fs.lstat(comp);
       } catch (err) {
         if (codeOf(err) !== 'ENOENT') {
           return { ok: false, problem: 'read-error', text: `the lobby ${lobby}: cannot read ${comp}: ${codeOf(err)}`, component: comp };
         }
-        existed = false;
         try {
           fs.mkdir(comp, comp === lobby ? { mode: 0o700 } : undefined);
         } catch (mkErr) {
@@ -144,20 +143,6 @@ export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGa
 
       const seen = checkComp(comp);
       if (!seen.ok) return seen;
-      if (!existed && comp === lobby) {
-        // This run just created the lobby, and only then may its mode be set. Check it once more,
-        // immediately before the chmod: `chmod(2)` follows symbolic links, so a link swapped in
-        // after the check above would otherwise change the mode of a folder outside the lobby.
-        const still = checkComp(comp);
-        if (!still.ok) return still;
-        try {
-          fs.chmod(comp, 0o700);
-        } catch (err) {
-          return { ok: false, problem: 'mode', text: `the lobby ${lobby}: cannot set mode: ${codeOf(err)}`, component: comp };
-        }
-        const after = checkComp(comp);
-        if (!after.ok) return after;
-      }
     }
   } else {
     for (const comp of chain) {

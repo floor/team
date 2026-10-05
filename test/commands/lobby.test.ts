@@ -1400,7 +1400,7 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
         const stat = defaultFs.lstat(p);
         if (p === lobby && stat.isDirectory()) {
           directories++;
-          if (directories >= 3) {
+          if (directories >= 2) {
             return { isDirectory: () => false, isSymbolicLink: () => true, isFile: () => false, mode: stat.mode, uid: stat.uid };
           }
         }
@@ -1527,38 +1527,6 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     const addRun = await runAddCmd(['--temporary', '--like', 'worker', '--until', 'merged:main'], made, { home: homeLink });
     expect(addRun.code).toBe(0);
     expect(made.workspaces.slice(before)).toContainEqual({ label: 'worker-tmp-1', cwd: canonical });
-  });
-
-  test('a link swapped in before the chmod changes no folder outside the lobby', () => {
-    const outside = join(base, 'outside');
-    mkdirSync(outside, { recursive: true });
-    chmodSync(outside, 0o755);
-    const changed: string[] = [];
-    let lobbys = 0;
-    const fs: FsReader = {
-      ...defaultFs,
-      lstat(p) {
-        if (p === lobby) {
-          lobbys++;
-          // The swap lands after the lobby was created and checked once.
-          if (lobbys >= 3) {
-            const stat = defaultFs.lstat(p);
-            return { isDirectory: () => false, isSymbolicLink: () => true, isFile: () => false, mode: stat.mode, uid: stat.uid };
-          }
-        }
-        return defaultFs.lstat(p);
-      },
-      chmod(p, mode) {
-        changed.push(p);
-        // chmod(2) follows symbolic links: on the swapped path, it would reach the outside folder.
-        defaultFs.chmod(p === lobby ? outside : p, mode);
-      },
-    };
-    const res = verifyLobby(home, { create: true, fs });
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.text).toContain('symbolic link');
-    expect(changed).toEqual([]);
-    expect(statSync(outside).mode & 0o7777).toBe(0o755);
   });
 
   test('an existing lobby with a looser mode is refused, never repaired', () => {
