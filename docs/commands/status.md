@@ -36,9 +36,10 @@ it, `status` can't say anything and exits 2.
 
 The columns are the seat, its state, the model, and the pane. The state is what herdr says
 (`idle`, `working`, `blocked`…), with `, parked` added for a seat the file parks and `, temporary`
-for a temporary one; or `missing` when the seat is in the file and nothing is running for it; or
-`stopped` when the file marks it stopped; or `wrong name` when an agent sits in the seat's workspace
-under another name.
+for a temporary one; or `idle (unsent text)` when an idle seat holds text in its input box that was
+never sent; or `missing` when the seat is in the file and nothing is running for it; or `stopped`
+when the file marks it stopped; or `wrong name` when an agent sits in the seat's workspace under
+another name.
 
 The model is the seat's `display` when the running model matches the file, and
 `<model> <version> (file: <display>)` when it doesn't. A screen that doesn't show the model is a
@@ -84,21 +85,28 @@ CODEX_HOME=/path/to/codex exec /path/to/codex-quota
 
 | Difference | Repair |
 | --- | --- |
-| `<seat> is in the file and is not running` | `team add <seat>` when something else runs, `team up` when nothing does |
+| `<seat> is in the file and is not running` | `team add <seat>` when something else runs, `the owner runs team up` when nothing does |
 | `<seat>: the agent in <pane> is named "x"` | `herdr --session <s> agent rename <pane> <seat>` |
 | `<seat> runs <model> <version>; the file says <model> <version>` | restart it (`team remove <seat> --keep`, then `team add <seat>`), or correct the file and `team approve` |
 | `<seat> is marked stopped in the file and is running` | `team remove <seat> --keep`, or take `stopped: true` off the seat |
-| `<seat>: its launch stopped at "<stage>"` | `team up` (it resumes the launch) |
+| `<seat>: its launch stopped at "<stage>"` | `the owner runs team up (it resumes the launch)` |
 | `<seat>: its rules were not delivered` | `team remove <seat> --keep`, then `team add <seat>` |
+| `<seat> holds text in its input box that was never sent` | `the owner clears or sends it in the pane; team does not type into a box it can't verify` |
+| `<seat>: its launch stopped at "named", and it holds text in its input box that was never sent` | `the owner clears or sends it in the pane, then runs team up (it resumes the launch)` |
 | `<name>: a temporary seat is recorded and is not running` | `team remove <name>` |
 | `no watch has run for this session` | `team watch --session <s>` |
 | `the watch's last pass was <n> minute(s) ago` | `team watch --session <s>` |
 | `an unnamed <cli> (w1:p2) is running and is not in the file` | add the seat to the file and `team approve`, or close it |
 | `worktree <task>: its setup failed` | `team worktree remove <task>` |
-| `the protected checkout "." is on "x", not on "main"` | `git -C . switch main` |
+| `the protected checkout "." is on "x", not on "main"` | `the owner switches it back: git -C . switch main` |
 | `the file was never approved on this machine` | the owner runs `team approve` |
 | `approved before records were signed: run `team approve` once`, or the case a refused record names | the owner runs `team approve` |
 | `the file differs from the approved one: <line>` | the owner runs `team approve` |
+
+Differences are printed in runnable order so that no repair depends on one printed after it:
+an unapproved file's repair comes first, then a missing or stale watch, then the repairs they block.
+A repair blocked by a precondition marks it: `(after: …)`. When at least one repair is the owner's,
+the summary line reports `N difference(s), M for the owner`.
 
 ## The JSON
 

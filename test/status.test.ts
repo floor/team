@@ -118,7 +118,7 @@ describe('team status', () => {
     live = { running: false, agents: [], workspaces: [], screens: {} };
     const { code, out } = await status();
     expect(out).toContain('note: the herdr session "acme-web" is not running');
-    expect(out).toContain('repair: team up');
+    expect(out).toContain('repair: the owner runs team up');
     expect(out).not.toContain('grok-acme is in the file');
     expect(out).toContain('4 difference(s)');
     expect(code).toBe(1);
@@ -200,7 +200,7 @@ describe('team status', () => {
     });
     live = { ...built(), agents: [...built().agents, agent('codex-acme-tmp-1', 'w6', 'working', 'codex')] };
     const { out } = await status();
-    expect(out).toContain('codex-acme: its launch stopped at "named"\n  repair: team up');
+    expect(out).toContain('codex-acme: its launch stopped at "named"\n  repair: the owner runs team up (it resumes the launch)');
     expect(out).toContain('deepseek-acme: its rules were not delivered');
     expect(out).toContain('note: codex-acme-tmp-1 is temporary, until merged:fix/select-width');
     expect(out).toContain('codex-acme-tmp-2: a temporary seat is recorded and is not running');
@@ -446,6 +446,163 @@ describe('team status', () => {
     expect(doc.format).toBe(1);
     expect(doc.notes).toContain('the herdr session "acme-web" is not running');
     expect(doc.differences.length).toBe(4);
+  });
+
+  test('A: order: missing watch comes first and marks add repairs (after: ...); running watch has no mark; unapproved file comes first', async () => {
+    // 1. Missing watch and two seats not running
+    live = {
+      ...built(),
+      agents: built().agents.filter(
+        (one) => one.name !== 'deepseek-acme' && one.name !== 'deepseek-acme-2',
+      ),
+    };
+    updateState(join(dir, '.agents'), (state) => {
+      delete state.sessions['acme-web']?.watch;
+    });
+
+    const missingWatch = await status();
+    expect(missingWatch.code).toBe(1);
+    const watchIdx = missingWatch.out.indexOf('difference: no watch has run for this session\n  repair: team watch --session acme-web');
+    const add1Idx = missingWatch.out.indexOf('difference: deepseek-acme is in the file and is not running\n  repair: team add deepseek-acme (after: team watch --session acme-web)');
+    const add2Idx = missingWatch.out.indexOf('difference: deepseek-acme-2 is in the file and is not running\n  repair: team add deepseek-acme-2 (after: team watch --session acme-web)');
+    expect(watchIdx).toBeGreaterThanOrEqual(0);
+    expect(add1Idx).toBeGreaterThan(watchIdx);
+    expect(add2Idx).toBeGreaterThan(watchIdx);
+
+    // 2. With the watch running: no mark
+    updateState(join(dir, '.agents'), (state) => {
+      state.sessions['acme-web'] = { ...emptySession(), watch: { pid: 1, heartbeat: '2026-10-03T14:09:00Z' } };
+    });
+    const runningWatch = await status();
+    expect(runningWatch.code).toBe(1);
+    expect(runningWatch.out).not.toContain('no watch has run');
+    expect(runningWatch.out).toContain('difference: deepseek-acme is in the file and is not running\n  repair: team add deepseek-acme\n');
+    expect(runningWatch.out).toContain('difference: deepseek-acme-2 is in the file and is not running\n  repair: team add deepseek-acme-2\n');
+    expect(runningWatch.out).not.toContain('(after:');
+
+    // 3. An unapproved file: the approve difference first
+    standing = { kind: 'none' };
+    const unapproved = await status();
+    expect(unapproved.code).toBe(1);
+    const approveIdx = unapproved.out.indexOf('difference: the file was never approved on this machine\n  repair: the owner runs team approve');
+    const unapprovedAdd1 = unapproved.out.indexOf('difference: deepseek-acme is in the file and is not running');
+    expect(approveIdx).toBeGreaterThanOrEqual(0);
+    expect(unapprovedAdd1).toBeGreaterThan(approveIdx);
+    expect(unapproved.out).toContain('repair: team add deepseek-acme (after: the owner runs team approve)');
+  });
+
+  test('B: whose repair: each repair string that names an owner command asserted exactly', async () => {
+    // 1. the owner runs team approve
+    standing = { kind: 'none' };
+    const approveRun = await status();
+    expect(approveRun.out).toContain('repair: the owner runs team approve');
+
+    // 2. the owner runs team up
+    const validTeam = validateTeamFile(example);
+    if (!validTeam.ok) throw new Error('invalid example');
+    standing = verifiedOf(validTeam.team, example, dir, NOW);
+    live = { running: false, agents: [], workspaces: [], screens: {} };
+    const upRun = await status();
+    expect(upRun.out).toContain('repair: the owner runs team up');
+
+    // 3. the owner runs team up (it resumes the launch)
+    live = built();
+    updateState(join(dir, '.agents'), (state) => {
+      (state.sessions['acme-web'] ??= emptySession()).seats['codex-acme'] = { stage: 'launched' };
+    });
+    const resumeRun = await status();
+    expect(resumeRun.out).toContain('repair: the owner runs team up (it resumes the launch)');
+
+    // 4. the owner switches it back: git -C <shown> switch <base>
+    branch = 'fix/other';
+    const switchRun = await status();
+    expect(switchRun.out).toContain('repair: the owner switches it back: git -C . switch main');
+    branch = 'main';
+
+    // 5. the owner clears or sends it in the pane; team does not type into a box it can't verify
+    const codexUnsent = codexScreen('unsent');
+    live = {
+      ...built(),
+      screens: { ...built().screens, 'w2:p1': codexUnsent },
+    };
+    updateState(join(dir, '.agents'), (state) => {
+      (state.sessions['acme-web'] ??= emptySession()).seats['codex-acme'] = { stage: 'ready' };
+    });
+    const unsentRun = await status();
+    expect(unsentRun.out).toContain(
+      "repair: the owner clears or sends it in the pane; team does not type into a box it can't verify",
+    );
+
+    // 6. the owner clears or sends it in the pane, then runs team up (it resumes the launch)
+    updateState(join(dir, '.agents'), (state) => {
+      (state.sessions['acme-web'] ??= emptySession()).seats['codex-acme'] = { stage: 'named' };
+    });
+    const mergedRun = await status();
+    expect(mergedRun.out).toContain(
+      'repair: the owner clears or sends it in the pane, then runs team up (it resumes the launch)',
+    );
+  });
+
+  test('C: unsent text: table cell, difference, merged form for named seat, unchanged for unknown, read-only', async () => {
+    const codexUnsent = codexScreen('unsent');
+    let typedIntoPane = false;
+    let pressedEnterInPane = false;
+
+    // Seat reads unsent (stage: ready)
+    live = {
+      ...built(),
+      screens: { ...built().screens, 'w2:p1': codexUnsent },
+    };
+    updateState(join(dir, '.agents'), (state) => {
+      (state.sessions['acme-web'] ??= emptySession()).seats['codex-acme'] = { stage: 'ready' };
+    });
+    const unsentRes = await status();
+    expect(unsentRes.out).toMatch(/codex-acme\s+idle \(unsent text\), parked/);
+    expect(unsentRes.out).toContain('difference: codex-acme holds text in its input box that was never sent');
+    expect(unsentRes.out).toContain("repair: the owner clears or sends it in the pane; team does not type into a box it can't verify");
+
+    // merged form for a named seat
+    updateState(join(dir, '.agents'), (state) => {
+      (state.sessions['acme-web'] ??= emptySession()).seats['codex-acme'] = { stage: 'named' };
+    });
+    const namedRes = await status();
+    expect(namedRes.out).toContain('difference: codex-acme: its launch stopped at "named", and it holds text in its input box that was never sent');
+    expect(namedRes.out).toContain('repair: the owner clears or sends it in the pane, then runs team up (it resumes the launch)');
+    expect(namedRes.out).not.toContain('difference: codex-acme holds text in its input box that was never sent');
+
+    // seat that reads unknown: unchanged output
+    live = {
+      ...built(),
+      screens: { ...built().screens, 'w2:p1': 'Some unknown output without composer\n' },
+    };
+    const unknownRes = await status();
+    expect(unknownRes.out).toMatch(/codex-acme\s+idle, parked/);
+    expect(unknownRes.out).toContain('difference: codex-acme: its launch stopped at "named"\n  repair: the owner runs team up (it resumes the launch)');
+    expect(unknownRes.out).not.toContain('unsent text');
+    expect(unknownRes.out).not.toContain('holds text in its input box that was never sent');
+
+    // Assert that status sent nothing to any pane
+    expect(typedIntoPane).toBe(false);
+    expect(pressedEnterInPane).toBe(false);
+  });
+
+  test('D: summary line: with and without an owner repair', async () => {
+    // 1. Without an owner repair: only a missing seat (repair: team add <seat>)
+    live = { ...built(), agents: built().agents.filter((one) => one.name !== 'deepseek-acme-2') };
+    const noOwner = await status();
+    expect(noOwner.out).toContain('1 difference(s)\n');
+    expect(noOwner.out).not.toContain('for the owner');
+
+    // 2. With an owner repair: unapproved file (repair: the owner runs team approve)
+    live = built();
+    standing = { kind: 'none' };
+    const withOwner = await status();
+    expect(withOwner.out).toContain('1 difference(s), 1 for the owner\n');
+
+    // 3. Mixed: 1 owner repair (approve) + 1 non-owner repair (add)
+    live = { ...built(), agents: built().agents.filter((one) => one.name !== 'deepseek-acme-2') };
+    const mixed = await status();
+    expect(mixed.out).toContain('2 difference(s), 1 for the owner\n');
   });
 });
 

@@ -2,6 +2,7 @@ import type { Seat, TeamFile } from '../file/types.ts';
 import type { HerdrAgent, HerdrWorkspace } from '../herdr.ts';
 import { herdrCommand } from '../herdr.ts';
 import type { SessionState } from '../state.ts';
+import { readScreen } from '../watch/screen.ts';
 import { seatModel } from './statusline.ts';
 
 // What herdr shows of a session. `screens` holds a pane's visible text, where it could be read.
@@ -17,6 +18,58 @@ export type Difference = { what: string; repair: string };
 export type Comparison = { rows: Row[]; differences: Difference[]; notes: string[] };
 
 export const WATCH_LABEL = 'watchdog';
+
+export function isOwnerRepair(repair: string): boolean {
+  return repair.startsWith('the owner');
+}
+
+function blocksOnApprove(repair: string): boolean {
+  return repair.startsWith('team add ')
+    || repair.startsWith('the owner runs team up')
+    || (repair.startsWith('team remove ') && repair.includes(', then team add '))
+    || repair.startsWith('the owner clears or sends it in the pane, then runs team up');
+}
+
+function blocksOnWatch(repair: string): boolean {
+  return repair.startsWith('team add ')
+    || (repair.startsWith('team remove ') && repair.includes(', then team add '));
+}
+
+export function orderAndAnnotateDifferences(differences: Difference[]): Difference[] {
+  const approveDiffs: Difference[] = [];
+  const watchDiffs: Difference[] = [];
+  const otherDiffs: Difference[] = [];
+
+  for (const diff of differences) {
+    const baseRepair = diff.repair.replace(/\s+\(after: .*\)$/, '');
+    if (baseRepair === 'the owner runs team approve') {
+      approveDiffs.push({ ...diff, repair: baseRepair });
+    } else if (baseRepair.startsWith('team watch --session ')) {
+      watchDiffs.push({ ...diff, repair: baseRepair });
+    } else {
+      otherDiffs.push({ ...diff, repair: baseRepair });
+    }
+  }
+
+  const hasApprove = approveDiffs.length > 0;
+  const watchRepair = watchDiffs[0]?.repair;
+  const hasWatch = Boolean(watchRepair);
+
+  const annotatedOthers = otherDiffs.map((diff) => {
+    const repair = diff.repair;
+    const blockers: string[] = [];
+    if (hasApprove && blocksOnApprove(repair)) {
+      blockers.push('the owner runs team approve');
+    }
+    if (hasWatch && blocksOnWatch(repair)) {
+      blockers.push(watchRepair as string);
+    }
+    if (blockers.length === 0) return diff;
+    return { ...diff, repair: `${repair} (after: ${blockers.join(', ')})` };
+  });
+
+  return [...approveDiffs, ...watchDiffs, ...annotatedOthers];
+}
 
 // Compares the file and the state with the live session. Pure: every input is handed in.
 // `watch` is the watch values in force — the approved ones — so an unapproved edit can't move a verdict.
@@ -41,15 +94,34 @@ export function compare(
     if (agent) {
       claimed.add(agent.pane);
       const model = modelOf(seat, agent, live, differences, notes);
-      rows.push({ name: seat.name, state: seat.parked ? `${agent.status}, parked` : agent.status, model, pane: agent.pane });
+      const screenText = live.screens[agent.pane];
+      const screen = readScreen(seat.cli, screenText);
+      const isUnsent = agent.status === 'idle' && screen.kind === 'unsent';
+      const stateText = isUnsent
+        ? (seat.parked ? 'idle (unsent text), parked' : 'idle (unsent text)')
+        : (seat.parked ? `${agent.status}, parked` : agent.status);
+      rows.push({ name: seat.name, state: stateText, model, pane: agent.pane });
       if (seat.stopped) {
         differences.push({
           what: `${seat.name} is marked stopped in the file and is running`,
           repair: `team remove ${seat.name} --keep, or take "stopped: true" off the seat`,
         });
       }
-      if (recorded && recorded.stage !== 'ready') {
-        differences.push({ what: `${seat.name}: its launch stopped at "${recorded.stage}"`, repair: 'team up (it resumes the launch)' });
+      if (isUnsent && recorded?.stage === 'named') {
+        differences.push({
+          what: `${seat.name}: its launch stopped at "named", and it holds text in its input box that was never sent`,
+          repair: 'the owner clears or sends it in the pane, then runs team up (it resumes the launch)',
+        });
+      } else {
+        if (recorded && recorded.stage !== 'ready') {
+          differences.push({ what: `${seat.name}: its launch stopped at "${recorded.stage}"`, repair: 'the owner runs team up (it resumes the launch)' });
+        }
+        if (isUnsent) {
+          differences.push({
+            what: `${seat.name} holds text in its input box that was never sent`,
+            repair: "the owner clears or sends it in the pane; team does not type into a box it can't verify",
+          });
+        }
       }
       if (recorded?.rules === 'undelivered') {
         differences.push({ what: `${seat.name}: its rules were not delivered`, repair: `team remove ${seat.name} --keep, then team add ${seat.name}` });
@@ -78,7 +150,7 @@ export function compare(
     rows.push({ name: seat.name, state: 'missing', model: seat.display, pane: '-' });
     differences.push({
       what: `${seat.name} is in the file and is not running`,
-      repair: anyRunning ? `team add ${seat.name}` : 'team up',
+      repair: anyRunning ? `team add ${seat.name}` : 'the owner runs team up',
     });
   }
 
@@ -121,7 +193,7 @@ export function compare(
     }
   }
 
-  return { rows, differences, notes };
+  return { rows, differences: orderAndAnnotateDifferences(differences), notes };
 }
 
 function modelOf(seat: Seat, agent: HerdrAgent, live: Live, differences: Difference[], notes: string[]): string {

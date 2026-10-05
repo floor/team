@@ -13,7 +13,7 @@ import type { Command, Io } from '../io.ts';
 import { emptySession, readState } from '../state.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
 import { approvalStanding, type Standing } from '../store/store.ts';
-import { compare } from '../status/compare.ts';
+import { compare, isOwnerRepair, orderAndAnnotateDifferences } from '../status/compare.ts';
 import type { Comparison, Difference, Live } from '../status/compare.ts';
 
 // What `status` reads from outside the file and the state, so tests can stand in for it.
@@ -135,11 +135,12 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     comparison.notes.unshift(`approval #${standing.generation} (${standing.signedAt.slice(0, 10)})${ofKey}`);
   }
   if (!live.running) comparison.notes.unshift(`the herdr session "${session}" is not running`);
-  comparison.differences.push(
+  comparison.differences = orderAndAnnotateDifferences([
+    ...comparison.differences,
     ...protectedCheckouts(team, root, sources),
     ...approvalDrift(approvalCase(standing, team)),
     ...overrideDrift(overrides),
-  );
+  ]);
 
   if (args.flags.has('json')) {
     const doc: StatusJson = {
@@ -222,7 +223,12 @@ function render(team: TeamFile, session: string, comparison: Comparison, budgets
   for (const difference of comparison.differences) {
     lines.push(`difference: ${difference.what}`, `  repair: ${difference.repair}`);
   }
-  lines.push(`${comparison.differences.length} difference(s)`);
+  const ownerCount = comparison.differences.filter((d) => isOwnerRepair(d.repair)).length;
+  if (ownerCount > 0) {
+    lines.push(`${comparison.differences.length} difference(s), ${ownerCount} for the owner`);
+  } else {
+    lines.push(`${comparison.differences.length} difference(s)`);
+  }
   return `${lines.join('\n')}\n`;
 }
 
