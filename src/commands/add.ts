@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce, recordSeatDigestOf } from '../approve/approval.ts';
@@ -573,14 +573,6 @@ function hostOf(input: {
   return {
     startServer: launch.startServer,
     sessionUp: launch.sessionUp,
-    makeDir(path) {
-      try {
-        mkdirSync(path, { recursive: true });
-        return true;
-      } catch {
-        return false;
-      }
-    },
     createWorkspace: launch.createWorkspace,
     confirmLobby: input.confirmLobby,
     paneRun: launch.paneRun,

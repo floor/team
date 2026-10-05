@@ -10,7 +10,6 @@ import type { LaunchedIdentity } from './identity.ts';
 export type Op =
   | { do: 'server'; session: string }
   | { do: 'wait-session'; session: string; seconds: number }
-  | { do: 'lobby'; path: string }
   | { do: 'create'; seat?: string; label: string; cwd: string; notice?: string }
   | { do: 'launch'; seat: string; label: string; command: string; pane?: string; notice?: string }
   | { do: 'refuse'; seat: string; why: string }
