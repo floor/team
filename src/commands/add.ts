@@ -11,9 +11,11 @@ import { rulesOf, type Launch } from '../commands/up.ts';
 import { branchPresent, readMerge } from '../end/condition.ts';
 import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines.ts';
 import { loadTeamFile, placedProblems } from '../file/load.ts';
+import { canonicalLanding, isLegacyTrust } from '../file/paths.ts';
 import type { Problem, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
+import { lobbyDir, verifyLobby } from '../lobby/gate.ts';
 import {
   agentList, agentRename, paneForeground, paneRead, paneRun, sessionRunning, sessionState, startServer, workspaceClose, workspaceCreate,
   workspaceList, type HerdrAgent,
@@ -31,6 +33,7 @@ import { seatStart, type SeatStart } from '../worktree/place.ts';
 
 export type AddSources = {
   home: string;
+  getuid?(): number;
   sessionState(session: string): 'absent' | 'running' | 'stopped' | null;
   agents(session: string): HerdrAgent[] | null;
   workspaces(session: string): { id: string }[] | null;
@@ -70,6 +73,7 @@ function aim(session: string): string | undefined {
 
 export const realSources: AddSources = {
   home: homedir(),
+  getuid: () => process.getuid?.() ?? 0,
   sessionState,
   agents: (session) => agentList(aim(session)),
   workspaces(session) {
@@ -112,7 +116,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 2;
   }
 
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
+  const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
   if (!loaded.ok) {
     for (const problem of loaded.errors) io.stderr(`team add: ${where(problem)}${problem.message}\n`);
     // exit: add.not-a-repo
@@ -220,13 +224,24 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     // exit: add.prepared
     return 2;
   }
-  for (const problem of placedProblems(prepared.team, root)) {
+  for (const problem of placedProblems(prepared.team, root, sources.home)) {
     io.stderr(`team add: ${problem.message}\n`);
     // exit: add.placed
     return 1;
   }
+  const dry = args.flags.has('dry-run');
+  const lobby = lobbyDir(sources.home);
+  let startProblem: string | null = null;
+  if (isLegacyTrust(prepared.team.trust)) {
+    startProblem = `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`;
+  } else {
+    const gate = verifyLobby(sources.home, { create: !dry, getuid: sources.getuid });
+    if (!gate.ok) {
+      startProblem = gate.text;
+    }
+  }
   // Where the seat waits: its own folder, the lobby, or a refusal — before the file is edited.
-  const start: SeatStart = seatStart(prepared.team, built.seat, root);
+  const start: SeatStart = startProblem ? { problem: startProblem } : seatStart(prepared.team, built.seat, root, sources.home);
   if ('problem' in start) {
     io.stderr(`team add: ${start.problem}\n`);
     // exit: add.start
@@ -274,13 +289,12 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const budgets = budgetsInForceOf(standing, prepared.team);
   const decision = (sources.seatBudget ?? seatBudget)(budgets, loadReadings(dir), built.seat, sources.now().getTime(), loadSpendReadings(dir));
   const stray = unnamedIn(recorded.seats[built.name]?.workspace, agents);
-  const starting = seatPlan(prepared.team, built.seat, start);
+  const starting = seatPlan(prepared.team, built.seat, start, root);
   const planned = stray
     ? { ...starting, stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
     : starting;
   const wouldLaunch = planned.stage === undefined || !planned.pane || (planned.stage === 'launched' && !planned.agentLive);
   const seatForPlan = decision.kind === 'refuse' && !wouldLaunch ? { ...planned, budget: decision } : planned;
-  const dry = args.flags.has('dry-run');
   if (dry) {
     if (decision.kind === 'refuse' && wouldLaunch) {
       io.stdout(`${built.name}: would refuse: ${decision.why}\ndry run: nothing was run\n`);
@@ -331,6 +345,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const host = hostOf({
     dir, session, team: prepared.team, root, ceilings, running, seat: built.seat, temporary: built.temporary,
     caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io,
+    home: sources.home,
   });
   const report = await executePlan(plan, session, host);
   const afterwards = readState(dir).sessions[session]?.seats[built.name];
@@ -410,7 +425,7 @@ function parseUntil(value: string): Until | null {
   return null;
 }
 
-function seatPlan(team: TeamFile, seat: Seat, start: { cwd: string; lobby?: true }): UpSeat {
+function seatPlan(team: TeamFile, seat: Seat, start: { cwd: string; lobby?: true }, root: string): UpSeat {
   return {
     name: seat.name,
     cli: seat.cli,
@@ -418,7 +433,7 @@ function seatPlan(team: TeamFile, seat: Seat, start: { cwd: string; lobby?: true
     cwd: start.cwd,
     label: seat.label,
     stopped: false,
-    rules: rulesOf(team, seat),
+    rules: rulesOf(team, seat, root),
     ...(start.lobby ? { lobby: true } : {}),
   };
 }
@@ -465,6 +480,7 @@ function hostOf(input: {
   dir: string; session: string; team: TeamFile; root: string; ceilings: Ceilings; running: Running[];
   seat: Seat; temporary?: SeatState['temporary']; caller: string; now(): Date; launch: Launch;
   readMachine?: (root: string) => Machine; samples: SwapSample[]; limits: TeamFile['machine']; io: Io;
+  home: string;
 }): Host {
   const { dir, session, launch, seat, temporary } = input;
   const running = [...input.running];
@@ -502,7 +518,8 @@ function hostOf(input: {
       updateState(dir, (file) => {
         const current = (file.sessions[session] ??= emptySession());
         const prior = current.seats[name] ?? { stage: patch.stage };
-        current.seats[name] = { ...prior, ...patch, ...(temporary && name === seat.name ? { temporary } : {}) };
+        const start_cwd = prior.start_cwd ?? (!isLegacyTrust(input.team.trust) ? canonicalLanding(lobbyDir(input.home)).landing : undefined);
+        current.seats[name] = { ...prior, ...patch, ...(temporary && name === seat.name ? { temporary } : {}), ...(start_cwd ? { start_cwd } : {}) };
       });
     },
     running(name) {

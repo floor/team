@@ -1,7 +1,9 @@
 import { existsSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
-import { insideTrust, protectedBy } from '../file/paths.ts';
+import { insideTrust, isLegacyTrust, protectedBy } from '../file/paths.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
+import { lobbyDir } from '../lobby/gate.ts';
 
 // A task name is one path segment. It is also the last segment of the folder and part of the branch.
 const TASK_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -71,12 +73,14 @@ function protectedLanding(root: string, folder: string, checkouts: readonly stri
 /** Where a seat starts: the folder it waits in, or why it can't start. */
 export type SeatStart = { cwd: string; lobby?: true } | { problem: string; once?: true };
 
-// Where a seat starts. A shared seat starts in the folder the file names — usually the project
-// root — and reads there. Every other seat starts outside every protected checkout: in the lobby
-// when the file gives it no folder of its own, or in the folder it names when that one is safe.
-// A folder is outside a checkout when it is outside it on disk too, symlinks resolved. `once` marks
-// a problem that is the same for every seat, so a caller says it once.
-export function seatStart(team: Pick<TeamFile, 'project' | 'workspace' | 'trust'>, seat: Seat, root: string): SeatStart {
+// Where a seat starts. In a migrated file, every seat (shared and worktree-mode alike)
+// starts in the machine lobby ~/.config/team/lobby. In a legacy file, a shared seat starts
+// in its cwd, and a worktree seat starts in the old derived lobby.
+export function seatStart(team: Pick<TeamFile, 'project' | 'workspace' | 'trust'>, seat: Seat, root: string, home: string = homedir()): SeatStart {
+  if (!isLegacyTrust(team.trust)) {
+    const lobby = lobbyDir(home);
+    return { cwd: lobby, lobby: true };
+  }
   if (seat.mode === 'shared') return { cwd: seat.cwd };
   if (seat.cwd !== '.') {
     const hit = protectedLanding(root, seat.cwd, team.workspace.protected);

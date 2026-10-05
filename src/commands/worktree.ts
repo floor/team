@@ -68,7 +68,7 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     return 2;
   }
 
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
+  const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
       io.stderr(`team worktree: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
@@ -171,7 +171,7 @@ function create(
     // exit: worktree.forbidden
     return 1;
   }
-  if (!insideTrust(folder, team.trust)) {
+  if (!insideTrust(folder, team.trust, root, sources.home)) {
     io.stderr(`team worktree: ${folder} is outside the approved trust paths\n`);
     // exit: worktree.trust
     return 1;
@@ -179,7 +179,7 @@ function create(
   const landing = realLanding(root, folder);
   if (landing.real !== landing.logical) {
     const rel = relative(realpathSync(root), landing.real).split(sep).join('/');
-    if (!insideTrust(rel, team.trust)) {
+    if (!insideTrust(rel, team.trust, root, sources.home)) {
       io.stderr(`team worktree: ${folder} follows a symlink to ${landing.real}, which is outside the approved trust paths\n`);
       // exit: worktree.symlink
       return 1;

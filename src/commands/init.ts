@@ -54,8 +54,8 @@ ${head ? `#   since: ${head}   # check reads no commit reachable from this one\n
 #   - Run the tests your change touches.
 
 # trust:                      # applied only by the owner, with \`team trust\`
-#   - .
-#   - ../worktrees/${project}/*
+#   - ~/.config/team/lobby
+#   - /path/to/${project}
 
 workspace:
   mode: shared                # worktree | shared

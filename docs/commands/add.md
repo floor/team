@@ -88,7 +88,8 @@ without input and the seat left out`, and the rest of the table on the [team up]
 | `team add: workspace.base is required to read a merged end` / `team add: branch <branch> doesn't exist` | 1 |
 | `team add: no worktree named "<task>" is recorded` | 1 |
 | `team add: worktree <task> has a failed setup; team worktree remove <task>` | 1 |
-| ``team add: the lobby ../worktrees/beacon/.lobby matches no trust pattern (., ../worktrees/beacon/task): add one that covers it and run `team approve` `` | 1 |
+| ``team add: the lobby ~/.config/team/lobby: not in trust: add it to trust: and run `team approve` `` | 1 |
+| ``team add: the lobby ~/.config/team/lobby: <check>`` | 1 |
 | ``team add: seat beacon-qa would start in live, inside the protected checkout live; a seat that isn't `mode: shared` never starts in one`` | 1 |
 | `team add: the file changed while add was checking; nothing was written` | 1 |
 | `team add: the load is <n> per core, above <n>` / `team add: free memory is <n>%, below <n>%` | 1 |

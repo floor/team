@@ -556,7 +556,7 @@ scene('add.placed', async (place) => {
 });
 scene('add.start', async (place) => {
   approve(place, NARROW);
-  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'matches no trust');
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'the file is legacy');
 });
 scene('add.doctor', async (place) => {
   approve(place, TWO);
@@ -1208,7 +1208,7 @@ scene('up.unknown', async (place) => {
 });
 scene('up.placement', async (place) => {
   approve(place, NARROW);
-  return show(await up(place, ['--file', place.file], owner, upSources(place)), 'matches no trust');
+  return show(await up(place, ['--file', place.file], owner, upSources(place)), 'the file is legacy');
 });
 scene('up.no-launch', async (place) => {
   approve(place, TEAM);

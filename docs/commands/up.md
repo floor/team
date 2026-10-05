@@ -9,19 +9,16 @@ A session stopped in herdr is refused until its owner clears it — `up` never d
 session `team down` stopped needs no such step: `down` clears the one it stopped in the same run, so
 the next `up` starts from the beginning.
 
-A seat that isn't `mode: shared` and works in worktrees (`workspace.mode: worktree` is the default)
-starts in the lobby, never in the project root, which holds the owner's uncommitted work. The lobby
-is the folder that holds the worktrees with `.lobby` beside them — the parent of `workspace.path` —
-so it lies in the same `trust` as the worktrees and outside every protected checkout. `up` makes it
-once, before the first such seat waits in it, and refuses when it would fall outside `trust` or
-inside a protected checkout; a folder is inside one when it is inside it on disk too, symlinks
-resolved. A `mode: shared` seat, and a seat the file gives a `cwd` of its own outside every
-protected checkout, starts where the file says.
+Every seat, shared and worktree-mode alike, starts in `~/.config/team/lobby`. It is shared
+by all projects on the machine. Before creating anything, `team` verifies the lobby gate:
+ownership by the invoking user, no symbolic links anywhere in the chain, directory mode exactly
+`0700`, empty, and not inside a git repository or worktree.
 
-The lobby is a folder no CLI has seen before, and `up` reads a trust question and never answers one:
-the first `up` in worktree mode leaves each implementer out with `<seat>: left out: trust question` —
-its workspace closed without input, nothing run — until the owner trusts the lobby once in that CLI,
-as they trusted the worktrees. Then it starts.
+A seat goes to its real folder itself: a worktree seat to the worktree its brief names; a shared
+seat to its configured `cwd` before any project work.
+
+The first `up` leaves each seat out with `<seat>: left out: trust question` until the owner trusts
+the lobby once in that CLI. Then it starts.
 
 ## Synopsis
 
@@ -113,7 +110,8 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | `herdr doesn't answer` |
 | ``session beacon is stopped; clear it with `herdr session delete beacon` `` |
 | ``session beacon has 2 agents this file's state doesn't record: `up` never touches a running team`` |
-| ``the lobby ../worktrees/beacon/.lobby matches no trust pattern (., ../worktrees/beacon/task): add one that covers it and run `team approve` `` |
+| ``the lobby ~/.config/team/lobby: not in trust: add it to trust: and run `team approve` `` |
+| ``the lobby ~/.config/team/lobby: <check>`` — gate check failed (symbolic link, permissions, mode, not empty, inside git repo) |
 | ``seat beacon-qa would start in live, inside the protected checkout live; a seat that isn't `mode: shared` never starts in one`` — the folder the file gives it, or its lobby, is a protected checkout |
 
 A watch that has not run, or whose heartbeat is old, is not a reason to refuse: `up` starts the

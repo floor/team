@@ -1,11 +1,12 @@
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
+import { canonicalLanding, isLegacyTrust } from '../file/paths.ts';
 import { renderSignature } from '../file/signature.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import {
@@ -32,6 +33,7 @@ import { executePlan } from '../launch/execute.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { rulesText } from '../launch/rules.ts';
 import { deliverRules } from '../launch/deliver.ts';
+import { lobbyDir, verifyLobby } from '../lobby/gate.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -51,6 +53,7 @@ export type UpSources = {
   agents(session: string): HerdrAgent[] | null;
   workspaces?(session: string): { id: string }[] | null;
   home: string;
+  getuid?(): number;
   doctor?: DoctorSources;
   machine?(root: string): Machine;
   now?(): Date;
@@ -125,6 +128,7 @@ export const realSources: UpSources = {
   agents: (session) => agentList(aim(session)),
   workspaces: (session) => workspaceList(aim(session)),
   home: homedir(),
+  getuid: () => process.getuid?.() ?? 0,
   doctor: doctorSources,
   machine: readMachine,
   now: () => new Date(),
@@ -147,10 +151,11 @@ export const up: Command = (argv, io) => runUp(argv, io, realSources);
 export default up;
 
 /** The rules one seat gets at launch, with its own signature lines, as its delivery carries them. */
-export function rulesOf(team: TeamFile, seat: Seat): string {
+export function rulesOf(team: TeamFile, seat: Seat, root: string = '.'): string {
   const { commits, pullRequests } = team.identity.signature;
   const profile = profileFor(seat.cli);
   const delivery = profile && profile.rulesOption !== null ? 'option' : 'message';
+  const seatCwd = resolve(root, seat.cwd);
   return rulesText(
     {
       coordinator: team.coordinator,
@@ -160,7 +165,7 @@ export function rulesOf(team: TeamFile, seat: Seat): string {
         pullRequest: renderSignature(pullRequests.template, seat),
         commitPosition: commits.position,
       },
-      workspace: { mode: seat.mode, protected: team.workspace.protected, branch: team.workspace.branch },
+      workspace: { mode: seat.mode, protected: team.workspace.protected, branch: team.workspace.branch, cwd: seatCwd },
     },
     delivery,
   );
@@ -194,6 +199,7 @@ function seatPlan(
   agents: readonly HerdrAgent[],
   workspaces: { id: string }[] | null,
   resume: boolean,
+  root: string = '.',
 ): UpSeat {
   const planned: UpSeat = {
     name: seat.name,
@@ -202,7 +208,7 @@ function seatPlan(
     cwd: seat.cwd,
     label: seat.label,
     stopped: seat.stopped,
-    rules: rulesOf(team, seat),
+    rules: rulesOf(team, seat, root),
   };
   if (!resume || !recorded || seat.stopped) return planned;
   const named = agents.find((agent) => agent.name === seat.name);
@@ -229,7 +235,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     return 2;
   }
   const dry = args.flags.has('dry-run');
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
+  const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
       io.stderr(`team up: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
@@ -264,6 +270,18 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   // The budget readings the gate refuses on are the approved ones: an unapproved lower reserve
   // unblocks nothing, not even the seat a dry run would plan.
   const budgets = budgetsInForceOf(standing, team);
+
+  const lobby = lobbyDir(sources.home);
+  if (isLegacyTrust(team.trust)) {
+    refusals.push(
+      `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
+    );
+  } else {
+    const gate = verifyLobby(sources.home, { create: !dry, getuid: sources.getuid });
+    if (!gate.ok) {
+      refusals.push(gate.text);
+    }
+  }
 
   if (sources.doctor) {
     const findings = doctorFindings(team, root, dir, session, sources.doctor, loaded.warnings, standing);
@@ -311,7 +329,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const seats: UpSeat[] = [];
   const refused = new Set<string>();
   for (const seat of team.seats) {
-    const planned = seatPlan(team, seat, recorded?.seats[seat.name], agents ?? [], workspaces, state === 'running');
+    const planned = seatPlan(team, seat, recorded?.seats[seat.name], agents ?? [], workspaces, state === 'running', root);
     // A stopped seat, one without a profile, and one already ready are left out of the budget.
     // A seat resumed into a live workspace starts nowhere new, but its reading is still said.
     if (planned.stopped || !profileFor(seat.cli) || planned.stage === 'ready') {
@@ -324,7 +342,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       seats.push({ ...planned, ...(budget.kind === 'clear' ? {} : { budget }) });
       continue;
     }
-    const start = seatStart(team, seat, root);
+    const start = seatStart(team, seat, root, sources.home);
     if ('problem' in start) {
       if (!start.once || !refused.has(start.problem)) {
         refused.add(start.problem);
@@ -442,7 +460,8 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
         const prior = current.seats[name] ?? { stage: patch.stage };
         // The CLI the seat was launched with: `down` needs it when the file no longer names the seat.
         const cli = team.seats.find((seat) => seat.name === name)?.cli;
-        current.seats[name] = { ...prior, ...patch, ...(cli ? { cli } : {}) };
+        const start_cwd = prior.start_cwd ?? (!isLegacyTrust(team.trust) ? canonicalLanding(lobbyDir(sources.home)).landing : undefined);
+        current.seats[name] = { ...prior, ...patch, ...(cli ? { cli } : {}), ...(start_cwd ? { start_cwd } : {}) };
       });
     },
     running(name) {

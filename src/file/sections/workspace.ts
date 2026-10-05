@@ -1,5 +1,5 @@
 import type { YamlEntry } from '../../yaml.ts';
-import { insideTrust, normalize } from '../paths.ts';
+import { insideTrust, isMigratedTrust, normalize } from '../paths.ts';
 import type { Check } from '../check.ts';
 import type { Mode, TeamFile } from '../types.ts';
 import type { Section } from './section.ts';
@@ -78,6 +78,6 @@ function worktreePathProblem(path: string, project: string, trust: string[]): st
     return 'needs a fixed folder of its own before {task}: this one puts worktrees straight into the project or one of its parents';
   }
   const sample = normalize([...folder, 'task'].join('/'));
-  if (!insideTrust(sample, trust)) return 'matches no trust pattern';
+  if (!isMigratedTrust(trust) && !insideTrust(sample, trust)) return 'matches no trust pattern';
   return null;
 }

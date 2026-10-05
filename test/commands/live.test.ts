@@ -27,13 +27,20 @@ let base: string;
 let root: string;
 let home: string;
 
+function makeExample(basePath: string, rootPath: string, text: string = EXAMPLE): string {
+  return text.replace(
+    /trust:[\s\S]*?workspace:/,
+    `trust:\n  - ~/.config/team/lobby\n  - ${rootPath}\n  - ${join(basePath, 'worktrees')}\n\nworkspace:`,
+  );
+}
+
 beforeEach(() => {
   base = realpathSync(mkdtempSync(join(tmpdir(), 'team-live-')));
   root = join(base, 'acme-web');
   home = join(base, 'home');
   mkdirSync(join(root, '.agents'), { recursive: true });
   mkdirSync(home);
-  writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE);
+  writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root));
 });
 
 afterEach(() => rmSync(base, { recursive: true, force: true }));
@@ -150,7 +157,7 @@ function sources(extra: Partial<UpSources>, made: World): UpSources {
 describe('team up, live', () => {
   test('rules are not typed into a pane with no live agent', async () => {
     const path = join(root, '.agents/team.yaml');
-    writeFileSync(path, EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+    writeFileSync(path, makeExample(base, root, EXAMPLE.replace('stopped: true\n', 'parked: true\n')));
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
     const made = world((_pane, label) => (label === 'gpt sol 6' ? capture('idle') : IDLE));
@@ -168,7 +175,7 @@ describe('team up, live', () => {
 
   test.each(['accepted', 'trust', 'startup', 'swallowed'] as const)('Codex first-message rules: %s', async (outcome) => {
     const path = join(root, '.agents/team.yaml');
-    writeFileSync(path, EXAMPLE.replace('stopped: true\n', 'parked: true\n'));
+    writeFileSync(path, makeExample(base, root, EXAMPLE.replace('stopped: true\n', 'parked: true\n')));
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/codex/0.157.0/${name}.txt`), 'utf8');
     const made = world((_pane, label) => label === 'gpt sol 6'
@@ -228,7 +235,7 @@ describe('team up, live', () => {
       '    launch: agy',
       '    parked: true',
     ].join('\n');
-    writeFileSync(path, EXAMPLE.replace(/  - role: implementer\n    name: codex-acme[\s\S]*?stopped: true\n/, `${gemini}\n`));
+    writeFileSync(path, makeExample(base, root, EXAMPLE.replace(/  - role: implementer\n    name: codex-acme[\s\S]*?stopped: true\n/, `${gemini}\n`)));
     await approve();
     const capture = (name: string) => readFileSync(join(import.meta.dir, `../fixtures/antigravity/1.2.16/${name}.txt`), 'utf8');
     const made = world((_pane, label) => (label === 'gemini flash 3.8'

@@ -1,23 +1,26 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { accessSync, constants, readFileSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, dirname, isAbsolute, join } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import { approvalDifferencesOf, budgetsInForceOf, watchInForceOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, isOwner, type Caller } from '../caller.ts';
 import { checkCommands, type ApprovedCheck } from '../budgets/checks.ts';
 import { parseOutput, runCommand, type CheckReading } from '../budgets/run.ts';
 import { loadTeamFile } from '../file/load.ts';
+import { canonicalLanding, insideTrust, isLegacyTrust } from '../file/paths.ts';
 import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
-import { HERDR_TESTED, herdrVersion, sessionRunning } from '../herdr.ts';
+import { HERDR_TESTED, herdrVersion, sessionRunning, agentList, type HerdrAgent } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
+import { lobbyDir, verifyLobby } from '../lobby/gate.ts';
 import { profileFor } from '../profiles/index.ts';
 import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
 import { readState } from '../state.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
 import { approvalStanding, LEGACY_LINE, type Standing } from '../store/store.ts';
+import { lobbyPath } from '../worktree/place.ts';
 
 // What `doctor` reads from the machine, so tests can stand in for it.
 export type DoctorSources = {
@@ -29,8 +32,10 @@ export type DoctorSources = {
   loggedIn(profile: Profile): boolean | null;
   herdrVersion(): string | null;
   sessionRunning(session: string): boolean | null;
+  agentList?(session?: string): HerdrAgent[] | null;
   now(): Date;
   home: string;
+  getuid?(): number;
   // One approved check's raw stdout, or null when it failed or timed out. Absent: the real
   // runner, the same one the watch uses. The raw bytes are parsed and dropped, never returned.
   runCheck?(path: string): string | null;
@@ -76,8 +81,10 @@ export const realSources: DoctorSources = {
   },
   herdrVersion,
   sessionRunning,
+  agentList,
   now: () => new Date(),
   home: homedir(),
+  getuid: () => process.getuid?.() ?? 0,
   runCheck: (path) => runCommand(path),
 };
 
@@ -360,7 +367,53 @@ export function doctorFindings(
   }
 
   findings.push(...watchFindings(watchInForceOf(standing, team), dir, session, running, sources.now()));
-  if (team.trust.length) {
+
+  const lobby = lobbyDir(sources.home);
+  const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid });
+  if (!gate.ok) {
+    findings.push({ level: 'miss', text: gate.text });
+  } else if (gate.missing) {
+    findings.push({ level: 'ok', text: `the lobby ${lobby}: will be created at the first launch` });
+  } else {
+    findings.push({ level: 'ok', text: `the lobby ${lobby}: verified` });
+  }
+
+  const oldLobby = lobbyPath(team);
+  if (oldLobby) {
+    const oldLogical = resolve(root, oldLobby);
+    if (existsSync(oldLogical)) {
+      const oldLanding = canonicalLanding(oldLogical).landing;
+      const recordedSeats = Object.entries(readState(dir).sessions[session]?.seats ?? {});
+      const getAgents = sources.agentList ?? agentList;
+      const liveList = running ? getAgents(session) : [];
+      const livePanes = new Set((liveList ?? []).map((a) => a.pane));
+      const activeSeats = recordedSeats.filter(([, s]) => {
+        const isRecovery = (s as { waiting?: unknown }).waiting !== undefined;
+        const isLive = Boolean(s.pane && livePanes.has(s.pane));
+        return isLive || isRecovery;
+      });
+      const missingStart = activeSeats.find(([, s]) => !s.start_cwd);
+      if (missingStart) {
+        findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: seat ${missingStart[0]} has no recorded start_cwd; stop it before removing the folder` });
+      } else {
+        const inOld = activeSeats.find(([, s]) => s.start_cwd === oldLanding);
+        if (inOld) {
+          findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: seat ${inOld[0]} started in it; stop it before removing the folder` });
+        } else {
+          findings.push({ level: 'ok', text: `the old lobby ${oldLobby}: may be removed` });
+        }
+      }
+    }
+  }
+
+  if (isLegacyTrust(team.trust)) {
+    if (oldLobby && insideTrust(oldLobby, team.trust)) {
+      findings.push({
+        level: 'note',
+        text: `the file is legacy: migrate from ${oldLobby} to ${lobby} by writing trust:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
+      });
+    }
+  } else if (team.trust.length) {
     findings.push({ level: 'note', text: 'trust: not applied or checked by this version; trust each folder by hand' });
   }
   return findings;
@@ -397,7 +450,13 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
     // exit: doctor.invocation
     return 2;
   }
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
+  let home: string | undefined;
+  try {
+    home = sources?.home;
+  } catch {
+    // Tests may supply a proxy that throws on any read to prove no source was touched before validation.
+  }
+  const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), ...(home ? { home } : {}) });
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
       io.stderr(`team doctor: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);

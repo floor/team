@@ -162,6 +162,7 @@ ok    herdr 0.7.1
 ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
 team doctor: nothing missing, 1 warning
 exit 0
 ```
@@ -179,6 +180,7 @@ ok    herdr 0.7.1
 ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
 team doctor: nothing missing, 1 warning
 exit 0
 ```
@@ -239,6 +241,7 @@ ok    claude 2.1.288
 ok    claude-code: logged in
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
 team doctor: 2 missing, 1 warning: `up` and `add` refuse until the missing ones are done
 exit 1
 ```
@@ -300,6 +303,7 @@ ok    claude-code: logged in
 warn  claude-beacon: the launch starts Claude Opus 5.5, the file says Claude Sonnet 5.5
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
 team doctor: 2 missing, 2 warnings: `up` and `add` refuse until the missing ones are done
 exit 1
 ```
@@ -409,6 +413,7 @@ ok    herdr 0.7.1
 ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
 team doctor: nothing missing, 2 warnings
 exit 0
 ```

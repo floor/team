@@ -9,6 +9,7 @@ export interface RulesInput {
     mode: 'worktree' | 'shared';
     protected: readonly string[];
     branch?: string;
+    cwd?: string;
   };
 }
 
@@ -44,6 +45,8 @@ export function seatRules(input: RulesInput): string[] {
       'Work on the code in the worktree your brief names, never in the checkout you started in.' +
         (workspace.branch ? ` Branches are named ${workspace.branch}.` : ''),
     );
+  } else if (workspace.mode === 'shared' && workspace.cwd) {
+    working.push(`Change to ${workspace.cwd} before any project work.`);
   }
   return [...own, ...input.rules, ...signing, ...working];
 }

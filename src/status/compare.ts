@@ -12,7 +12,7 @@ export type Live = {
   screens: Record<string, string>;
 };
 
-export type Row = { name: string; state: string; model: string; pane: string };
+export type Row = { name: string; state: string; model: string; pane: string; start_cwd?: string };
 export type Difference = { what: string; repair: string };
 export type Comparison = { rows: Row[]; differences: Difference[]; notes: string[] };
 
@@ -41,7 +41,13 @@ export function compare(
     if (agent) {
       claimed.add(agent.pane);
       const model = modelOf(seat, agent, live, differences, notes);
-      rows.push({ name: seat.name, state: seat.parked ? `${agent.status}, parked` : agent.status, model, pane: agent.pane });
+      rows.push({
+        name: seat.name,
+        state: seat.parked ? `${agent.status}, parked` : agent.status,
+        model,
+        pane: agent.pane,
+        ...(recorded?.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+      });
       if (seat.stopped) {
         differences.push({
           what: `${seat.name} is marked stopped in the file and is running`,
@@ -57,7 +63,13 @@ export function compare(
       continue;
     }
     if (seat.stopped) {
-      rows.push({ name: seat.name, state: 'stopped', model: seat.display, pane: '-' });
+      rows.push({
+        name: seat.name,
+        state: 'stopped',
+        model: seat.display,
+        pane: '-',
+        ...(recorded?.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+      });
       continue;
     }
     // An agent sits in the workspace recorded for this name, under another name or under none.
@@ -68,14 +80,26 @@ export function compare(
       : undefined;
     if (stray) {
       claimed.add(stray.pane);
-      rows.push({ name: seat.name, state: 'wrong name', model: seat.display, pane: stray.pane });
+      rows.push({
+        name: seat.name,
+        state: 'wrong name',
+        model: seat.display,
+        pane: stray.pane,
+        ...(recorded?.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+      });
       differences.push({
         what: `${seat.name}: the agent in ${stray.pane} is ${stray.name ? `named "${stray.name}"` : 'unnamed'}`,
         repair: herdrCommand(session, 'agent', 'rename', stray.pane, seat.name),
       });
       continue;
     }
-    rows.push({ name: seat.name, state: 'missing', model: seat.display, pane: '-' });
+    rows.push({
+      name: seat.name,
+      state: 'missing',
+      model: seat.display,
+      pane: '-',
+      ...(recorded?.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+    });
     differences.push({
       what: `${seat.name} is in the file and is not running`,
       repair: anyRunning ? `team add ${seat.name}` : 'team up',

@@ -81,6 +81,7 @@ export interface StatusJson {
     state: string;
     model: string;
     pane: string;
+    start_cwd?: string;
   }>;
   notes: string[];
   differences: Array<{

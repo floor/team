@@ -78,7 +78,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     return 2;
   }
 
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
+  const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
       io.stderr(`team approve: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
@@ -97,7 +97,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     // exit: approve.revalidate
     return 2;
   }
-  const placed = placedProblems(checked.team, loaded.root);
+  const placed = placedProblems(checked.team, loaded.root, sources.home);
   if (placed.length) {
     for (const problem of placed) io.stderr(`team approve: ${problem.message}\n`);
     // exit: approve.placed

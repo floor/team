@@ -1,7 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
-import { fixedFolder } from './paths.ts';
+import { lobbyDir } from '../lobby/gate.ts';
+import { canonicalLanding, fixedFolder, isLegacyTrust, isMigratedTrust } from './paths.ts';
 import type { LoadResult, Problem, TeamFile } from './types.ts';
 import { validateTeamFile } from './validate.ts';
 
@@ -24,7 +26,7 @@ export function findRoot(cwd: string): string | null {
 
 // Finds, reads and validates the team file. With `file`, the root is the folder that holds the
 // file's `.agents/`, or the file's own folder when it sits elsewhere.
-export function loadTeamFile(cwd: string, options: { file?: string } = {}): LoadResult {
+export function loadTeamFile(cwd: string, options: { file?: string; home?: string } = {}): LoadResult {
   let path: string;
   let root: string;
   if (options.file) {
@@ -53,7 +55,7 @@ export function loadTeamFile(cwd: string, options: { file?: string } = {}): Load
   const text = readFileSync(path, 'utf8');
   const result = validateTeamFile(text);
   if (!result.ok) return { ...result, path };
-  const errors = placedProblems(result.team, root);
+  const errors = placedProblems(result.team, root, options.home);
   return errors.length ? { ok: false, errors, path } : { ...result, root, path, text };
 }
 
@@ -68,24 +70,83 @@ function real(path: string): string {
 // What only shows once the root is known: a folder named by its own name can still be the
 // project's parent, as "../../Code/*" is for a project at ~/Code/acme. Validation on the text
 // alone can't see that; here every fixed folder is resolved, symlinks included.
-export function placedProblems(team: TeamFile, root: string): Problem[] {
-  const project = real(root);
+export function placedProblems(team: TeamFile, root: string, home: string = homedir()): Problem[] {
   const problems: Problem[] = [];
-  const holdsProject = (folder: string) => {
-    const full = real(resolve(project, folder));
-    return full !== project && project.startsWith(full.endsWith(sep) ? full : full + sep);
-  };
-  for (const pattern of team.trust) {
-    if (holdsProject(fixedFolder(pattern))) {
-      problems.push({ line: 0, message: `trust: "${pattern}" names the project's parent or a folder above it: it would trust every folder beside the project` });
+
+  if (isLegacyTrust(team.trust)) {
+    const project = real(root);
+    const holdsProject = (folder: string) => {
+      const full = real(resolve(project, folder));
+      return full !== project && project.startsWith(full.endsWith(sep) ? full : full + sep);
+    };
+    for (const pattern of team.trust) {
+      if (holdsProject(fixedFolder(pattern))) {
+        problems.push({ line: 0, message: `trust: "${pattern}" names the project's parent or a folder above it: it would trust every folder beside the project` });
+      }
+    }
+    const path = team.workspace.path;
+    if (path) {
+      const folder = path.split('/').slice(0, -1).join('/').replaceAll('{repo}', team.project) || '.';
+      if (holdsProject(folder)) {
+        problems.push({ line: 0, message: `workspace.path: "${path}" puts worktrees in the project's parent or a folder above it: give them a folder of their own` });
+      }
+    }
+    return problems;
+  }
+
+  if (isMigratedTrust(team.trust)) {
+    const lobby = lobbyDir(home);
+    const lobbyLanding = canonicalLanding(lobby).landing;
+
+    // Check symlinks in trust entries (the lobby chain is checked by the gate)
+    for (const entry of team.trust) {
+      const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
+      if (expanded === lobby || lobby.startsWith(expanded + sep)) {
+        continue;
+      }
+      const res = canonicalLanding(expanded);
+      if (res.symlink) {
+        problems.push({ line: 0, message: `trust: "${entry}": ${res.symlink} is a symbolic link` });
+      }
+    }
+
+    const hasLobby = team.trust.some((entry) => {
+      const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
+      return canonicalLanding(expanded).landing === lobbyLanding;
+    });
+    if (!hasLobby) {
+      problems.push({ line: 0, message: `trust: must list the lobby ${lobby}` });
+    }
+
+    // Every seat's cwd must equal an approved entry or be a descendant of one
+    for (const seat of team.seats) {
+      const seatPath = resolve(root, seat.cwd);
+      const seatLanding = canonicalLanding(seatPath).landing;
+      const trusted = team.trust.some((entry) => {
+        const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
+        const entryLanding = canonicalLanding(expanded).landing;
+        return seatLanding === entryLanding || seatLanding.startsWith(entryLanding.endsWith(sep) ? entryLanding : entryLanding + sep);
+      });
+      if (!trusted) {
+        problems.push({ line: seat.line, message: `seat ${seat.name}: cwd "${seat.cwd}" is outside trust` });
+      }
+    }
+
+    // Workspace landing (workspace.path for any task)
+    if (team.workspace.path) {
+      const sample = team.workspace.path.replaceAll('{repo}', team.project).replace('{task}', 'task');
+      const wtPath = resolve(root, sample);
+      const wtLanding = canonicalLanding(wtPath).landing;
+      const trusted = team.trust.some((entry) => {
+        const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
+        const entryLanding = canonicalLanding(expanded).landing;
+        return wtLanding === entryLanding || wtLanding.startsWith(entryLanding.endsWith(sep) ? entryLanding : entryLanding + sep);
+      });
+      if (!trusted) {
+        problems.push({ line: 0, message: `workspace.path: "${team.workspace.path}" is outside trust` });
+      }
     }
   }
-  const path = team.workspace.path;
-  if (path) {
-    const folder = path.split('/').slice(0, -1).join('/').replaceAll('{repo}', team.project) || '.';
-    if (holdsProject(folder)) {
-      problems.push({ line: 0, message: `workspace.path: "${path}" puts worktrees in the project's parent or a folder above it: give them a folder of their own` });
-    }
-  }
+
   return problems;
 }
