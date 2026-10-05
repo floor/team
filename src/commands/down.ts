@@ -151,7 +151,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   // The `--file` check is the walk's too, and it runs before `currentTeam` reads that file or
   // writes beside it: a non-owner aiming `--file` must not make this command read and validate
   // another project's team file, nor leave its `last_valid` in that project's state. The one
-  // place the six commands that take the flag decide it is `fileOwnerRefusal` (caller.ts).
+  // place every command whose `--file` is the owner's decides it is `fileOwnerRefusal` (caller.ts).
   const fileRefusal = fileOwnerRefusal(io, args.values.file);
   if (fileRefusal !== undefined) {
     io.stderr(`team down: ${fileRefusal}\n`);

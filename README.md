@@ -255,8 +255,11 @@ writes, who may run it, every flag, the refusals with their exact text, the exit
 that `bun run ci` runs against a fixture team.
 
 The owner is a terminal outside herdr with no agent process above it: a seat, or a script a seat
-runs, cannot approve a file or start a team. Every command that reads the file also takes
-`--file <path>` for a file other than `.agents/team.yaml`.
+runs, cannot approve a file or start a team. With no `--file`, the file is `.agents/team.yaml` of
+the repository's main checkout, found through git's common directory. A folder that is not a git
+repository is read from `.agents/team.yaml` in that folder only, not from a parent, and a link at
+`.agents` or at the file is not followed. Every command
+that reads the file also takes `--file <path>` for a file other than `.agents/team.yaml`.
 
 `team status --json` prints the facts `status` prints as one JSON document (`format: 1`) on stdout:
 `project`, `session`, `rows` (`name`, `state`, `model`, `pane`), `notes`, `differences` (`what`, `repair`), and `notice`.
@@ -334,8 +337,15 @@ bun run ci           # what CI runs: typecheck, tests, build, then the built com
 ```
 
 Sources import each other with `.ts` extensions and use erasable syntax only, so Node can run them
-directly; `tsc` writes `dist/` for the published command. CI also runs `team check` on every pull
-request, against the team file the repository keeps at `.github/team.yaml`.
+directly; `tsc` writes `dist/` for the published command. CI runs the Linux test job (`test (ubuntu-latest)`)
+and `team check` on every pull request, against the team file the repository keeps at `.github/team.yaml`.
+Before a merge, the author quotes their own full `bun run ci` run on the exact head in the pull request,
+and at least one reviewer who is not the author runs `bun run ci` on a macOS machine on the exact head
+under review, quoting its exit status and final line in their review; a review verdict without that quote
+is not an approval. (At least one reviewer rather than every reviewer: one test reads the host process
+table, which a sandboxed reviewer cannot do; a sandboxed reviewer quotes what failed and why, and the
+unsandboxed run carries the evidence.) The hosted macOS job is read after each merge, running on every
+push to `main`, nightly, and on manual dispatch; a red macOS run on `main` is fixed before anything else.
 
 ### The end-to-end run
 

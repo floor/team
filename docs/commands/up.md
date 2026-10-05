@@ -89,6 +89,13 @@ team add <seat> (or team down, then team up, for the whole team)`, or the same w
 relaunch moves it into the lobby`. For a seat the file names as coordinator or operator, the detail
 offers only `team down, then team up (to restart the whole team)`.
 
+A command run in a folder that is not a git repository reads `.agents/team.yaml` in that folder,
+and nowhere above it. A link at `.agents` or at `team.yaml` is not followed. When `--file` names a
+file a watch started in the project folder would not read, `up` starts no watch and prints this
+instead of `watch: started`, and exits 1 even when every seat is ready:
+
+    watch: not started: a watch started there could not read this file, or would read another one under this session's name. Move the file to .agents/team.yaml in the folder the watch starts in. A fuller repair is planned.
+
 A seat is its pane only while the process `team` launched is still in it. A seat the state records
 whose pane no longer holds that process is not "already ready": its workspace is closed without a
 key and without input — its pane runs no CLI, or one team did not launch, and nothing in it is the
@@ -302,8 +309,12 @@ watch itself.
 ## Exit codes
 
 - `0` — every seat is ready and the watch is running; or `--dry-run` printed its plan.
-- `1` — the run was refused, or a seat was left out, or the server or the watch failed.
+- `1` — the run was refused, or a seat was left out, or the server or the watch failed, or the watch was not started because it could not read this file.
 - `2` — the invocation or the team file can't be read.
+
+## Known issues
+
+A team file that is not `.agents/team.yaml` in the folder the watch starts in is not watched. `up` prints `watch: not started: …` and exits 1. Move the file to that path. A fuller repair is planned.
 
 ## Examples
 

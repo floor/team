@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, realpathSync, type Stats } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { lobbyDir, type FsReader } from '../lobby/gate.ts';
@@ -9,6 +9,46 @@ import type { LoadResult, Problem, TeamFile } from './types.ts';
 import { validateTeamFile } from './validate.ts';
 
 export const TEAM_FILE = '.agents/team.yaml';
+
+export const NOT_A_REPO = 'not inside a git repository: run team from a project, or pass --file';
+
+// The no-repository refusal when `.agents` or `team.yaml` is a link. The link is not followed.
+// `--file` still opens the path it names.
+export const LINK_NOT_FOLLOWED = `${NOT_A_REPO}: a link was found and not followed`;
+
+// The team file in a folder that is not a git repository. The folder the process was given is
+// resolved first: when that path is itself a link, the real directory is the folder (the shell
+// chose it). Inside it, `.agents` must be a real directory and `team.yaml` a real file. A link at
+// either is not opened. `null` is the ordinary miss (nothing there); `'link'` is a link standing
+// where the file would be.
+function plainFolderTeam(cwd: string): { root: string; path: string } | 'link' | null {
+  let here: string;
+  try {
+    lstatSync(cwd);
+    here = realpathSync(cwd);
+  } catch {
+    return null;
+  }
+  const agents = join(here, '.agents');
+  let agentsStat: Stats;
+  try {
+    agentsStat = lstatSync(agents);
+  } catch {
+    return null;
+  }
+  if (agentsStat.isSymbolicLink()) return 'link';
+  if (!agentsStat.isDirectory()) return null;
+  const file = join(agents, 'team.yaml');
+  let fileStat: Stats;
+  try {
+    fileStat = lstatSync(file);
+  } catch {
+    return null;
+  }
+  if (fileStat.isSymbolicLink()) return 'link';
+  if (!fileStat.isFile()) return null;
+  return { root: here, path: file };
+}
 
 // The project's root: the main checkout, found through git's common directory, so a command run
 // in a subfolder or in a linked worktree reads the same `.agents/`.
@@ -36,9 +76,26 @@ export function loadTeamFile(cwd: string, options: { file?: string; home?: strin
     root = folder.endsWith('.agents') ? dirname(folder) : folder;
   } else {
     const found = findRoot(cwd);
-    if (!found) return { ok: false, errors: [{ line: 0, message: 'not inside a git repository: run team from a project, or pass --file' }] };
-    root = found;
-    path = join(root, TEAM_FILE);
+    if (!found) {
+      // No git repository, so there is no checkout this folder belongs to. The team file is
+      // `.agents/team.yaml` in this folder, and not in a parent: a walk up would read a
+      // neighboring project. A repository that has no team file is unchanged — the git root's
+      // file, present or missing, stays the one file — so a nested `.agents/team.yaml` cannot
+      // take its place. A link at `.agents` or at `team.yaml` is not that file: it is refused
+      // and not followed. `--file` still opens the path it names.
+      const plain = plainFolderTeam(cwd);
+      if (plain === 'link') {
+        return { ok: false, errors: [{ line: 0, message: LINK_NOT_FOLLOWED }] };
+      }
+      if (!plain) {
+        return { ok: false, errors: [{ line: 0, message: NOT_A_REPO }] };
+      }
+      root = plain.root;
+      path = plain.path;
+    } else {
+      root = found;
+      path = join(root, TEAM_FILE);
+    }
   }
   if (!existsSync(path)) {
     return {

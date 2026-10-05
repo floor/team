@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -109,6 +110,29 @@ export type Launch = {
 
 function aim(session: string): string | undefined {
   return session === 'default' ? undefined : session;
+}
+
+/** Said instead of `watch: started` when a flagless watch in the watchdog's start folder would
+ *  not read the file `up` was given. One line: the watch was not started, why, and what to do. */
+export const WATCH_NOT_STARTED =
+  'watch: not started: a watch started there could not read this file, or would read another one under this session\'s name. Move the file to .agents/team.yaml in the folder the watch starts in. A fuller repair is planned.';
+
+function sameFile(a: string, b: string): boolean {
+  const real = (path: string) => {
+    try {
+      return realpathSync(path);
+    } catch {
+      return path;
+    }
+  };
+  return real(a) === real(b);
+}
+
+/** Whether a flagless watch started in `start` would read `flagged`. The decision is that load,
+ *  not the shape of the path: the same function the watch runs, with no `--file`. */
+export function watchWouldRead(start: string, flagged: string, home?: string): boolean {
+  const found = loadTeamFile(start, home ? { home } : {});
+  return found.ok && sameFile(found.path, flagged);
 }
 
 /** The watchdog command, from this process and this install: `team` may not be on the PATH. */
@@ -481,21 +505,43 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     }
   }
   const watch = recorded?.watch;
+  const watchAlive = Boolean(watch && sources.alive?.(watch.pid));
+  // The watchdog starts in `root` and runs `watch` with no `--file`. Start it only when that
+  // load reads the file this command was given. Anything else would miss this file, or read
+  // another one under this session's name.
+  const startWatch = watchWouldRead(root, loaded.path, sources.home);
+  const watchMissed = !watchAlive && !startWatch;
   const plan = upPlan({
     root,
     session,
     // A stopped session is not started. The refusal above names the delete command.
     sessionRunning: state === 'running' || state === 'stopped',
     seats,
-    watchAlive: Boolean(watch && sources.alive?.(watch.pid)),
+    watchAlive,
+    startWatch,
     watchLine: (sources.watchCommand ?? watchCommand)(session),
   });
+  // Exit 1, including when every seat is ready: a team that comes up with no watch looks
+  // finished, and that is how a watch that never read its file was missed. The owner has to
+  // see it. `--dry-run` still exits 0, as every dry run does, and prints the same line.
+  // One physical line, through the cleaned writer every other line of this command uses.
+  // `plainLine` folds it. A real run writes it on stderr, where `watch: started` is: stdout
+  // is the records alone. A dry run writes it on stdout, with the plan. The sentence does not
+  // copy the path the command line named, so an escape in that path is not printed.
+  const sayWatchMissed = () => {
+    if (!watchMissed) return;
+    const line = `${plainLine(WATCH_NOT_STARTED)}\n`;
+    if (dry) out.stdout(line);
+    else out.stderr(line);
+    if (!dry) logLine(dir, 'up', describeCaller(caller), WATCH_NOT_STARTED, sources.now?.() ?? new Date());
+  };
 
   if (dry) {
     // The same cause can reach the list twice — the gate and `doctor` both read the
     // approval — so a refusal is said once.
     for (const refusal of [...new Set(refusals)]) out.stdout(`! up would refuse: ${plainText(refusal)}\n`);
     out.stdout(plainText(formatPlan(plan)));
+    sayWatchMissed();
     // exit: up.dry-run
     return 0;
   }
@@ -635,6 +681,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   };
 
   const report = await executePlan(plan, session, host);
+  sayWatchMissed();
   const afterwards = readState(dir).sessions[session]?.seats ?? {};
   const pending = team.seats.filter((seat) => {
     if (seat.stopped || !profileFor(seat.cli)) return false;
@@ -646,5 +693,5 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   // exit: up.pending
   // exit: up.server
   // exit: up.watch
-  return pending.length || report.serverFailed || report.watchFailed || report.held ? 1 : 0;
+  return pending.length || report.serverFailed || report.watchFailed || report.held || watchMissed ? 1 : 0;
 }

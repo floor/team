@@ -94,8 +94,8 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
 
   // The `--file` check is the walk's, and it runs before that file is read: a non-owner aiming
   // `--file` must not make this command read and validate another project's team file, nor leave
-  // a refusal log beside it. `fileOwnerRefusal` (caller.ts) is the one place the six commands
-  // that take the flag decide it; the walk reads no session, no state and no log.
+  // a refusal log beside it. `fileOwnerRefusal` (caller.ts) is the one place every command
+  // whose `--file` is the owner's decides it; the walk reads no session, no state and no log.
   const fileRefusal = fileOwnerRefusal(io, args.values.file);
   if (fileRefusal !== undefined) {
     io.stderr(`team answer: ${fileRefusal}\n`);

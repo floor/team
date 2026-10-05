@@ -8,16 +8,19 @@ import { validateTeamFile } from './validate.ts';
 // The team as the commands that must keep working read it: `status`, `watch`, `down`. A valid
 // file is remembered in the state; a broken one is replaced by the last copy that validated,
 // with a notice to print first. Commands that launch or change anything use loadTeamFile and
-// refuse instead.
+// refuse instead. Remembering is the owner's alone: a read that is not the owner's (`status`
+// aimed with `--file` at a project its caller has nothing to do with) must write nothing
+// anywhere, so the command passes the walk's verdict as `remember` and everything else here —
+// the load, the fallback, the notice — is a read either way.
 export type Current =
   | { ok: true; team: TeamFile; root: string; dir: string; warnings: Problem[]; notice?: string }
   | { ok: false; errors: Problem[] };
 
-export function currentTeam(cwd: string, file: string | undefined, now: Date, home?: string): Current {
+export function currentTeam(cwd: string, file: string | undefined, now: Date, home?: string, remember = true): Current {
   const loaded = loadTeamFile(cwd, { ...(file ? { file } : {}), ...(home ? { home } : {}) });
   if (loaded.ok) {
     const dir = dirname(loaded.path);
-    remember(dir, loaded.path, now);
+    if (remember) rememberLastValid(dir, loaded.path, now);
     return { ok: true, team: loaded.team, root: loaded.root, dir, warnings: loaded.warnings };
   }
   if (!loaded.path || !existsSync(loaded.path)) return { ok: false, errors: loaded.errors };
@@ -35,7 +38,7 @@ export function currentTeam(cwd: string, file: string | undefined, now: Date, ho
   };
 }
 
-function remember(dir: string, path: string, now: Date): void {
+function rememberLastValid(dir: string, path: string, now: Date): void {
   const file = readFileSync(path, 'utf8');
   try {
     if (readState(dir).last_valid?.file === file) return;

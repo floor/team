@@ -1324,6 +1324,10 @@ scene('watch.file-invalid', async (place) => {
   invalid(place);
   return show(await watched(place, ['--file', 'team.yaml'], owner), 'line');
 });
+scene('watch.file-owner', async (place) => {
+  write(place, TEAM);
+  return show(await watched(place, ['--file', '.agents/team.yaml'], other), "--file is the owner's");
+});
 scene('watch.no-nudge', async (place) => {
   write(place, TEAM);
   return show(await watched(place, ['--no-nudge'], other), '--no-nudge');

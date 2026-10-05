@@ -1383,6 +1383,13 @@
     {
       "code": 1,
       "command": "watch",
+      "id": "watch.file-owner",
+      "meaning": "--file is the owner's",
+      "trigger": "team watch --file .agents/team.yaml"
+    },
+    {
+      "code": 1,
+      "command": "watch",
       "id": "watch.no-notify",
       "meaning": "a seat passed --no-notify",
       "trigger": "team watch --no-notify"
