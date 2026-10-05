@@ -130,6 +130,14 @@ function world(): {
   workspaces: { label: string; cwd: string }[];
   renames: string[];
   session: 'absent' | 'running';
+  /** Every command typed into a pane (`pane run`), in order. */
+  runs: string[];
+  /** Every text typed into a pane (`typeText`), in order. */
+  typed: string[];
+  /** Every workspace a close was asked for, in order. */
+  closed: string[];
+  /** Every pane the world holds, with an agent in it or not. */
+  paneIds(): string[];
 } {
   const panes = new Map<string, { text: string; agent: boolean }>();
   let n = 0;
@@ -139,6 +147,10 @@ function world(): {
     workspaces: [] as { label: string; cwd: string }[],
     renames: [] as string[],
     session: 'absent' as 'absent' | 'running',
+    runs: [] as string[],
+    typed: [] as string[],
+    closed: [] as string[],
+    paneIds: () => [...panes.keys()],
   };
   made.launch = {
     sessionState: () => made.session,
@@ -153,16 +165,24 @@ function world(): {
       made.workspaces.push({ label, cwd });
       return { pane: `w${n}:p1`, workspace: `w${n}` };
     },
-    paneRun(_session, pane) {
+    paneRun(_session, pane, command) {
+      made.runs.push(command);
       const known = panes.get(pane);
       if (known) known.agent = true;
+      return true;
+    },
+    typeText(_session, _pane, text) {
+      made.typed.push(text);
       return true;
     },
     renameAgent(_session, _pane, name) {
       made.renames.push(name);
       return true;
     },
-    closeWorkspace: () => true,
+    closeWorkspace(_session, workspace) {
+      made.closed.push(workspace);
+      return true;
+    },
     agentPanes: () => [...panes].filter(([, pane]) => pane.agent).map(([id]) => id),
     agents: () => [],
     paneText: (_session, pane) => panes.get(pane)?.text ?? '',
@@ -1440,24 +1460,69 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     if (!res.ok) expect(res.text).toContain('symbolic link');
   });
 
-  test('a lobby that changes after it was verified leaves the seats out', async () => {
-    approveYaml(migratedTeamYaml());
-    let passes = 0;
-    const fs: FsReader = {
+  /** An FsReader that swaps the lobby out of the way just before the `n`th read of its canonical
+   *  path — after the gate's read, against the check that comes next: `'folder'` puts a fresh
+   *  empty folder of the same owner and mode where the lobby was, a path puts a link there. */
+  function swapLobbyAt(n: number, replacement: 'folder' | string): FsReader {
+    let seen = 0;
+    return {
       ...defaultFs,
       realpath(p) {
-        if (p === lobby) {
-          passes++;
-          if (passes > 1) throw Object.assign(new Error('denied'), { code: 'EACCES' });
+        if (p === lobby && ++seen === n) {
+          rmSync(lobby, { recursive: true });
+          if (replacement === 'folder') mkdirSync(lobby, { mode: 0o700 });
+          else symlinkSync(replacement, lobby, 'dir');
         }
         return defaultFs.realpath(p);
       },
     };
+  }
+
+  test('a lobby swapped after the gate creates no workspace, no pane and no typed input', async () => {
+    approveYaml(migratedTeamYaml());
     const made = world();
-    const run = await runUpCmd([], made, { fs });
-    expect(run.out).toContain('left out: the lobby changed during the launch');
-    expect(run.out).toContain('lead:');
-    expect(run.out).toContain('worker:');
+    // The replacement is a real folder of the same owner, mode and emptiness: no link, no mode
+    // difference, the same canonical path. Only device and inode tell it from the gate's folder.
+    const run = await runUpCmd([], made, { fs: swapLobbyAt(2, 'folder') });
+    expect(run.code).toBe(1);
+    expect(made.workspaces).toEqual([]);
+    expect(made.paneIds()).toEqual([]);
+    expect(made.runs).toEqual([]);
+    expect(made.typed).toEqual([]);
+    expect(run.out).toContain(`lead: the lobby ${lobby}: it is not the folder the gate read`);
+    expect(Object.keys(readState(dir).sessions['acme']?.seats ?? {})).toEqual([]);
+  });
+
+  test('add creates nothing for the same swap, and leaves the folder it names unchanged', async () => {
+    approveYaml(migratedTeamYaml());
+    const outside = join(base, 'outside');
+    mkdirSync(outside, { recursive: true });
+    chmodSync(outside, 0o755);
+    const made = world();
+    const run = await runAddCmd(['worker'], made, { fs: swapLobbyAt(2, outside) });
+    expect(run.code).toBe(1);
+    expect(made.workspaces).toEqual([]);
+    expect(made.paneIds()).toEqual([]);
+    expect(made.runs).toEqual([]);
+    expect(made.typed).toEqual([]);
+    expect(run.out).toContain(`worker: the lobby ${lobby}: canonical path`);
+    expect(readdirSync(outside)).toEqual([]);
+    expect(statSync(outside).mode & 0o777).toBe(0o755);
+  });
+
+  test('a swap between two seats stops the next one and leaves the first running', async () => {
+    approveYaml(migratedTeamYaml());
+    const made = world();
+    // The gate reads first, the lead's confirmation second (the swap is not there yet), the
+    // worker's confirmation third — after the lead was created, before the worker is.
+    const run = await runUpCmd([], made, { fs: swapLobbyAt(3, 'folder') });
+    expect(run.code).toBe(1);
+    expect(made.workspaces).toEqual([{ label: 'lead', cwd: lobby }]);
+    expect(run.out).toContain('lead: ready');
+    expect(run.out).toContain(`worker: the lobby ${lobby}: it is not the folder the gate read`);
+    // The first seat was created while the path was the verified lobby; nothing closes it.
+    expect(made.closed).toEqual([]);
+    expect(made.launch.agentPanes('acme')).toEqual(['w1:p1']);
   });
 
   test('a read error while resolving a landing is a refusal', () => {
