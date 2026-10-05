@@ -325,6 +325,16 @@
           "minimum": 0,
           "description": "The empty rows a capture shows the pane drawing under the text, inside the box's frame (the drop before the status line or the closing rule). The box read strips up to this many trailing empty rows as the frame; a row beyond them is one the typed text does not have, and the box is refused. Zero where no capture shows such a row: don't guess."
         },
+        "border": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["top", "bottom"],
+          "description": "The box's own border rows, declared only for a CLI whose captures draw them: `top` the row directly above the input row, `bottom` the row directly below the input rows and directly above the status row, both whole rows at one width (the captures draw them at the pane's width). The bordered frame is read beside the blank one; a frame with only one of the two rows, a row displaced from the input row or the status row, or a border-shaped row inside the box leaves the screen unknown. A composer without this field reads only the blank frame.",
+          "properties": {
+            "top": { "$ref": "#/$defs/patternString" },
+            "bottom": { "$ref": "#/$defs/patternString" }
+          }
+        },
         "fallback": {
           "type": "array",
           "items": {
@@ -344,7 +354,8 @@
         { "if": { "properties": { "mode": { "const": "status-then-one" } }, "required": ["mode"] }, "then": { "required": ["status_line", "fallback"] } },
         { "if": { "properties": { "mode": { "const": "two-rules-footer-below" } }, "required": ["mode"] }, "then": { "required": ["rule", "footers"] } },
         { "if": { "required": ["ignore_case"] }, "then": { "properties": { "mode": { "const": "two-rules-footer-below" } } } },
-        { "if": { "required": ["status_below"] }, "then": { "properties": { "mode": { "enum": ["status-last", "status-then-one"] } } } }
+        { "if": { "required": ["status_below"] }, "then": { "properties": { "mode": { "enum": ["status-last", "status-then-one"] } } } },
+        { "if": { "required": ["border"] }, "then": { "properties": { "mode": { "enum": ["status-last", "status-then-one"] } } } }
       ]
     }
   }

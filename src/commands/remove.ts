@@ -173,7 +173,15 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     const screen = sources.screen(session, agent.pane, cli);
     const where = stateOf(agent.status, screen);
     if (where !== 'free' && !abandon) {
-      io.stderr(`team remove: ${name} ${LEFT[where]}\n`);
+      // The unknown screen is the one a seat can sit on for good: no state ever frees it, and
+      // only the owner may abandon it, so the refusal names that way out. The owner gets the
+      // command itself; anyone else is told whose it is.
+      const way = where === 'unknown'
+        ? caller.kind === 'owner'
+          ? ` (team remove ${name} --abandon closes its workspace without typing)`
+          : ` (the owner can close it: team remove ${name} --abandon)`
+        : '';
+      io.stderr(`team remove: ${name} ${LEFT[where]}${way}\n`);
       // exit: remove.busy
       return 1;
     }
