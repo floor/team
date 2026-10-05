@@ -15,6 +15,9 @@ identity:
     - "\\bw[0-9A-Z]+:p[0-9]+\\b"   # pane ids the session prints (w2A:p1): an internal pane is not for a public log
     - "\\bfloor-[0-9a-f]{2}\\b"   # internal session names (floor-3a): the public name is floor/team
 
+trust:
+  - ~/.config/team/lobby
+
 workspace:
   mode: shared
 

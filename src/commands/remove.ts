@@ -70,7 +70,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     return 2;
   }
   const name = args.rest[0] ?? '';
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
+  const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), ...(sources.home ? { home: sources.home } : {}) });
   if (!loaded.ok) {
     for (const problem of loaded.errors) io.stderr(`team remove: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
     // exit: remove.not-a-repo

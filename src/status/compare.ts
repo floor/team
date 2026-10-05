@@ -189,7 +189,13 @@ export function compare(
     const agent = live.agents.find((candidate) => candidate.name === name);
     if (agent) {
       claimed.add(agent.pane);
-      rows.push({ name, state: `${agent.status}, temporary`, model: `like ${recorded.temporary.like}`, pane: agent.pane });
+      rows.push({
+        name,
+        state: `${agent.status}, temporary`,
+        model: `like ${recorded.temporary.like}`,
+        pane: agent.pane,
+        ...(recorded.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+      });
       notes.push(`${name} is temporary, until ${recorded.temporary.until}`);
     } else {
       differences.push({ what: `${name}: a temporary seat is recorded and is not running`, repair: `team remove ${name}` });

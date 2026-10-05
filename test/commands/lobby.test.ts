@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalOf } from '../../src/approve/approval.ts';
@@ -12,9 +12,10 @@ import { runStatus, standingSource, type StatusSources } from '../../src/command
 import { runUp, type Launch, type UpSources } from '../../src/commands/up.ts';
 import { runWorktree, type WorktreeSources } from '../../src/commands/worktree.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
-import { canonicalLanding } from '../../src/file/paths.ts';
+import { absoluteTrustProblem, canonicalLanding, insideTrust } from '../../src/file/paths.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
-import { lobbyDir, verifyLobby } from '../../src/lobby/gate.ts';
+import { defaultFs, findRepoRoot, lobbyDir, verifyLobby, type FsReader } from '../../src/lobby/gate.ts';
+import { seatStart } from '../../src/worktree/place.ts';
 import { readState, updateState } from '../../src/state.ts';
 import { storePath, writeApproval } from '../../src/store/store.ts';
 import { testIo } from '../helpers.ts';
@@ -501,6 +502,164 @@ describe('the lobby gate', () => {
     expect(docVerified.code).toBe(0);
     expect(docVerified.out).toContain(`the lobby ${lobby}: verified\n`);
   });
+
+  test('refusal: mode 01700 (sticky) and 02700 (setgid) refused as not 0700', async () => {
+    approveYaml(migratedTeamYaml());
+    mkdirSync(lobby, { recursive: true });
+    chmodSync(lobby, 0o1700);
+    const run1 = await runUpCmd([], world());
+    expect(run1.code).toBe(1);
+    expect(run1.err).toContain(`the lobby ${lobby}: has mode 01700, not 0700`);
+
+    const setgidFs: FsReader = {
+      ...defaultFs,
+      lstat(p) {
+        const s = defaultFs.lstat(p);
+        if (p === lobby) {
+          const m = Object.create(s);
+          m.mode = (s.mode & ~0o7777) | 0o2700;
+          return m;
+        }
+        return s;
+      },
+    };
+    const run2 = await runUpCmd([], world(), { fs: setgidFs });
+    expect(run2.code).toBe(1);
+    expect(run2.err).toContain(`the lobby ${lobby}: has mode 02700, not 0700`);
+  });
+
+  test('refusal: link swapped between parent lstat and mkdirSync using injected FsReader', async () => {
+    approveYaml(migratedTeamYaml());
+    const swappingFs: FsReader = {
+      ...defaultFs,
+      mkdir(p, opts) {
+        if (p.endsWith('lobby')) {
+          const escaped = join(base, 'escaped-lobby-target');
+          mkdirSync(escaped, { recursive: true });
+          rmSync(join(home, '.config'), { recursive: true, force: true });
+          symlinkSync(escaped, join(home, '.config'), 'dir');
+        }
+        defaultFs.mkdir(p, opts);
+      },
+    };
+    const res = verifyLobby(home, { create: true, fs: swappingFs });
+    expect(res.ok).toBe(false);
+  });
+
+  test('refusal: dangling link at lobby refused safely in both create: true and create: false', async () => {
+    approveYaml(migratedTeamYaml());
+    mkdirSync(join(home, '.config', 'team'), { recursive: true });
+    symlinkSync(join(base, 'non-existent-target'), lobby);
+
+    const resCreate = verifyLobby(home, { create: true });
+    expect(resCreate.ok).toBe(false);
+    if (!resCreate.ok) expect(resCreate.problem).toBe('symlink');
+
+    const resNoCreate = verifyLobby(home, { create: false });
+    expect(resNoCreate.ok).toBe(false);
+    if (!resNoCreate.ok) expect(resNoCreate.problem).toBe('symlink');
+
+    const doc = await runDoctorCmd();
+    expect(doc.out).not.toContain('will be created at the first launch');
+    expect(doc.out).toContain(`the lobby ${lobby}: ${lobby} is a symbolic link`);
+  });
+
+  test('refusal: readdir error on lobby refuses and does not succeed open', () => {
+    const brokenFs: FsReader = {
+      ...defaultFs,
+      readdir() {
+        const err: any = new Error('Permission denied');
+        err.code = 'EACCES';
+        throw err;
+      },
+    };
+    mkdirSync(lobby, { recursive: true });
+    chmodSync(lobby, 0o700);
+    const res = verifyLobby(home, { create: false, fs: brokenFs });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.text).toContain('cannot read directory: EACCES');
+  });
+
+  test('up gate runs after caller and approval refusals (unapproved file does not create lobby)', async () => {
+    writeFileSync(join(root, '.agents', 'team.yaml'), migratedTeamYaml());
+    const made = world();
+    const run = await runUpCmd([], made);
+    expect(run.code).toBe(1);
+    expect(run.err).toContain('the file was never approved on this machine');
+    expect(existsSync(lobby)).toBe(false);
+  });
+
+  test('refusal: component owned by foreign user via injected FsReader', () => {
+    mkdirSync(lobby, { recursive: true });
+    chmodSync(lobby, 0o700);
+    const myUid = process.getuid ? process.getuid() : 1000;
+    const foreignFs: FsReader = {
+      ...defaultFs,
+      lstat(p) {
+        const realStat = defaultFs.lstat(p);
+        if (p === lobby) {
+          const m = Object.create(realStat);
+          m.uid = myUid + 1;
+          return m;
+        }
+        return realStat;
+      },
+    };
+    const res = verifyLobby(home, { create: false, fs: foreignFs, getuid: () => myUid });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.text).toContain(`${lobby} is not owned by you`);
+  });
+
+  test('refusal: non-empty lobby with subfolder', async () => {
+    approveYaml(migratedTeamYaml());
+    mkdirSync(join(lobby, 'subfolder'), { recursive: true });
+    chmodSync(lobby, 0o700);
+    const run = await runUpCmd([], world());
+    expect(run.code).toBe(1);
+    expect(run.err).toContain(`the lobby ${lobby}: is not empty`);
+  });
+
+  test('findRepoRoot accepts .git as a file (worktree / submodule style)', () => {
+    const fakeRepo = join(base, 'fake-wt-repo');
+    mkdirSync(fakeRepo, { recursive: true });
+    writeFileSync(join(fakeRepo, '.git'), 'gitdir: /somewhere/else\n');
+    const sub = join(fakeRepo, 'sub', 'folder');
+    mkdirSync(sub, { recursive: true });
+    expect(findRepoRoot(sub)).toBe(fakeRepo);
+  });
+
+  test('refusal: symbolic link at home itself', async () => {
+    const realHome = join(base, 'real-home');
+    mkdirSync(realHome, { recursive: true });
+    const symHome = join(base, 'sym-home');
+    symlinkSync(realHome, symHome, 'dir');
+
+    approveYaml(migratedTeamYaml(), symHome);
+    const run = await runUpCmd([], world(), { home: symHome });
+    expect(run.code).toBe(1);
+    expect(run.err).toContain(`the lobby ${lobbyDir(symHome)}: ${symHome} is a symbolic link`);
+  });
+
+  test('dry run shows shared seat in its cwd and worktree seat in machine lobby', async () => {
+    approveYaml(migratedTeamYaml());
+    const dry = await runUpCmd(['--dry-run'], world());
+    expect(dry.code).toBe(0);
+    expect(dry.out).toContain(`workspace create --cwd ${root} --label lead`);
+    expect(dry.out).toContain(`workspace create --cwd ${lobby} --label worker`);
+  });
+
+  test('real run makes machine lobby and leaves old lobby untouched', async () => {
+    approveYaml(migratedTeamYaml());
+    const oldLobby = join(base, 'worktrees', 'acme', '.lobby');
+    mkdirSync(oldLobby, { recursive: true });
+    const made = world();
+    const run = await runUpCmd([], made);
+    expect(run.code).toBe(0);
+    expect(existsSync(lobby)).toBe(true);
+    expect(made.workspaces).toContainEqual({ label: 'lead', cwd: root });
+    expect(made.workspaces).toContainEqual({ label: 'worker', cwd: lobby });
+    expect(readdirSync(oldLobby)).toEqual([]);
+  });
 });
 
 describe('trust: validation', () => {
@@ -591,6 +750,102 @@ seats:
     expect((await runCheckCmd()).code).toBe(2);
     expect((await runWorktreeCmd(['new', 'task-1', '--kind', 'feat'])).code).toBe(2);
   });
+
+  test('non-directory existing ancestor is refused', () => {
+    const pkgChild = join(root, 'README.md', 'child');
+    const prob = absoluteTrustProblem(pkgChild, home);
+    expect(prob).toContain('is not a directory');
+  });
+
+  test('dangling symbolic link component is refused', () => {
+    const link = join(base, 'dangling-link');
+    symlinkSync(join(base, 'no-such-target'), link);
+    const prob = absoluteTrustProblem(join(link, 'tail'), home);
+    expect(prob).toContain('is a symbolic link');
+  });
+
+  test('grammar matrix: ~ in later component, ., trailing slash, duplicates', () => {
+    expect(absoluteTrustProblem(join(root, '~', 'more'), home)).toContain('takes "~" only as the first component');
+    expect(absoluteTrustProblem(`${root}/.`, home)).toContain('must not contain "." or ".."');
+
+    // trailing slash accepted
+    expect(absoluteTrustProblem(`${root}/`, home)).toBe(null);
+
+    // duplicates accepted in YAML
+    const dupYaml = migratedTeamYaml().replace('trust:\n', `trust:\n  - ${root}\n`);
+    writeFileSync(join(root, '.agents', 'team.yaml'), dupYaml);
+    expect(loadTeamFile(root, { home }).ok).toBe(true);
+  });
+
+  test('rules text: control character or newline in cwd or trust is refused at validation', () => {
+    const injectedYaml = migratedTeamYaml().replace('cwd: .', 'cwd: "work\\n- injected rule"');
+    writeFileSync(join(root, '.agents', 'team.yaml'), injectedYaml);
+    const loaded = loadTeamFile(root, { home });
+    expect(loaded.ok).toBe(false);
+    if (!loaded.ok) {
+      expect(loaded.errors.some((e) => e.message.includes('control character'))).toBe(true);
+    }
+  });
+
+  test('migrated file without lobby in trust is refused', () => {
+    const noLobbyYaml = migratedTeamYaml().replace(/  - ~\/\.config\/team\/lobby\n/, '');
+    writeFileSync(join(root, '.agents', 'team.yaml'), noLobbyYaml);
+    const loaded = loadTeamFile(root, { home });
+    expect(loaded.ok).toBe(false);
+    if (!loaded.ok) {
+      expect(loaded.errors.some((e) => e.message.includes('must list the lobby'))).toBe(true);
+    }
+  });
+
+  test('omitted trust refuses up and add rather than launching', async () => {
+    const omittedTrustYaml = migratedTeamYaml().replace(/trust:\n(?:  - .*\n)+/, '');
+    approveYaml(omittedTrustYaml);
+    const made = world();
+    const upRes = await runUpCmd([], made);
+    expect(upRes.code).toBe(1);
+    expect(upRes.err).toContain('the file is legacy: migrate trust to absolute paths');
+    expect(made.workspaces).toHaveLength(0);
+
+    const addRes = await runAddCmd(['worker'], world());
+    expect(addRes.code).toBe(1);
+    expect(addRes.err).toContain('the file is legacy: migrate trust to absolute paths');
+  });
+
+  test('containment: dangling linked descendant fails containment', () => {
+    const jump = join(root, 'jump');
+    symlinkSync(join(base, 'outside-missing'), jump);
+    const probe = join(jump, 'seat');
+    expect(insideTrust(probe, [root], root, home)).toBe(false);
+  });
+
+  test('containment: seat aimed at protected checkout in migrated file is refused', () => {
+    const yaml = migratedTeamYaml()
+      .replace('protected: [.]', 'protected: [., src]')
+      .replace('mode: shared\n    cwd: .', 'mode: worktree\n    cwd: src');
+    writeFileSync(join(root, '.agents', 'team.yaml'), yaml);
+    const loaded = loadTeamFile(root, { home });
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) {
+      const start = seatStart(loaded.team, loaded.team.seats[0]!, root, home);
+      expect('problem' in start && start.problem).toContain('inside the protected checkout');
+    }
+  });
+
+  test('containment: worktrees folder symlinked into project in migrated file is refused', () => {
+    const liveDir = join(root, 'live');
+    mkdirSync(liveDir, { recursive: true });
+    mkdirSync(join(base, 'worktrees'), { recursive: true });
+    symlinkSync(liveDir, join(base, 'worktrees', 'acme'), 'dir');
+
+    const yaml = migratedTeamYaml()
+      .replace('protected: [.]', 'protected: [., live]');
+    writeFileSync(join(root, '.agents', 'team.yaml'), yaml);
+    const loaded = loadTeamFile(root, { home });
+    expect(loaded.ok).toBe(false);
+    if (!loaded.ok) {
+      expect(loaded.errors.some((e) => e.message.includes('inside the protected checkout'))).toBe(true);
+    }
+  });
 });
 
 describe('legacy files and migration', () => {
@@ -638,6 +893,11 @@ describe('legacy files and migration', () => {
     expect(docBefore.code).toBe(0);
     expect(docBefore.out).toContain(`--    the file is legacy: migrate from ../worktrees/acme/.lobby to ${lobby} by writing trust:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n`);
 
+    // Migrated but unapproved: migration note still prints
+    writeFileSync(join(root, '.agents', 'team.yaml'), migratedTeamYaml());
+    const docUnapproved = await runDoctorCmd();
+    expect(docUnapproved.out).toContain('the file is legacy: migrate');
+
     approveYaml(migratedTeamYaml());
     const docAfter = await runDoctorCmd();
     expect(docAfter.code).toBe(0);
@@ -655,6 +915,25 @@ describe('legacy files and migration', () => {
     const addRes = await runAddCmd(['worker'], world());
     expect(addRes.code).toBe(1);
     expect(addRes.err).toContain('the file is not the approved one');
+  });
+
+  test('temporary add waits in machine lobby', async () => {
+    approveYaml(migratedTeamYaml());
+    const made = world();
+    await runUpCmd([], made);
+    const addRun = await runAddCmd(['--temporary', '--like', 'worker', '--until', 'merged:main'], made);
+    expect(addRun.code).toBe(0);
+    expect(made.workspaces.some((w) => w.cwd === lobby)).toBe(true);
+  });
+
+  test('add refuses when trust has no lobby and leaves file untouched', async () => {
+    const noLobbyYaml = migratedTeamYaml().replace(/  - ~\/\.config\/team\/lobby\n/, '');
+    writeFileSync(join(root, '.agents', 'team.yaml'), noLobbyYaml);
+    const before = readFileSync(join(root, '.agents', 'team.yaml'), 'utf8');
+    const addRun = await runAddCmd(['worker'], world());
+    expect(addRun.code).not.toBe(0);
+    const after = readFileSync(join(root, '.agents', 'team.yaml'), 'utf8');
+    expect(after).toBe(before);
   });
 });
 
@@ -742,6 +1021,38 @@ describe('start_cwd and removal check', () => {
       agentList: () => [{ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: lobby }],
     });
     expect(docHistorical.out).toContain(`ok    the old lobby ../worktrees/acme/.lobby: may be removed\n`);
+  });
+
+  test('resumed launch of pre-migration seat does not record or infer start_cwd', async () => {
+    approveYaml(migratedTeamYaml());
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          worker: { stage: 'ready', pane: 'w1:p1' },
+        },
+        worktrees: {},
+      };
+    });
+    const made = world();
+    made.session = 'running';
+    const upRes = await runUpCmd([], made, {
+      sessionRunning: () => true,
+      agents: () => [{ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: root }],
+    });
+    expect(upRes.code).toBe(0);
+    const state = readState(dir);
+    expect(state.sessions['acme']?.seats['worker']?.start_cwd).toBeUndefined();
+  });
+
+  test('doctor removal check fails closed when liveList is null', async () => {
+    approveYaml(migratedTeamYaml());
+    const oldLobby = join(base, 'worktrees', 'acme', '.lobby');
+    mkdirSync(oldLobby, { recursive: true });
+    const doc = await runDoctorCmd([], {
+      sessionRunning: () => true,
+      agentList: () => null,
+    });
+    expect(doc.out).toContain("can't tell if live seats are using it: herdr doesn't answer");
   });
 });
 

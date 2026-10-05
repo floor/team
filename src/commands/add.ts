@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce, recordSeatDigestOf } from '../approve/approval.ts';
@@ -11,11 +11,11 @@ import { rulesOf, type Launch } from '../commands/up.ts';
 import { branchPresent, readMerge } from '../end/condition.ts';
 import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines.ts';
 import { loadTeamFile, placedProblems } from '../file/load.ts';
-import { canonicalLanding, isLegacyTrust } from '../file/paths.ts';
+import { canonicalLanding, isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
 import type { Problem, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
-import { lobbyDir, verifyLobby } from '../lobby/gate.ts';
+import { lobbyDir, verifyLobby, type FsReader } from '../lobby/gate.ts';
 import {
   agentList, agentRename, paneForeground, paneRead, paneRun, sessionRunning, sessionState, startServer, workspaceClose, workspaceCreate,
   workspaceList, type HerdrAgent,
@@ -34,6 +34,7 @@ import { seatStart, type SeatStart } from '../worktree/place.ts';
 export type AddSources = {
   home: string;
   getuid?(): number;
+  fs?: FsReader;
   sessionState(session: string): 'absent' | 'running' | 'stopped' | null;
   agents(session: string): HerdrAgent[] | null;
   workspaces(session: string): { id: string }[] | null;
@@ -232,10 +233,10 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const dry = args.flags.has('dry-run');
   const lobby = lobbyDir(sources.home);
   let startProblem: string | null = null;
-  if (isLegacyTrust(prepared.team.trust)) {
+  if (!prepared.team.trust || prepared.team.trust.length === 0 || isLegacyTrust(prepared.team.trust)) {
     startProblem = `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`;
   } else {
-    const gate = verifyLobby(sources.home, { create: !dry, getuid: sources.getuid });
+    const gate = verifyLobby(sources.home, { create: !dry, getuid: sources.getuid, fs: sources.fs });
     if (!gate.ok) {
       startProblem = gate.text;
     }
@@ -518,7 +519,14 @@ function hostOf(input: {
       updateState(dir, (file) => {
         const current = (file.sessions[session] ??= emptySession());
         const prior = current.seats[name] ?? { stage: patch.stage };
-        const start_cwd = prior.start_cwd ?? (!isLegacyTrust(input.team.trust) ? canonicalLanding(lobbyDir(input.home)).landing : undefined);
+        let start_cwd = prior.start_cwd;
+        if (!start_cwd && patch.createdWorkspace && isMigratedTrust(input.team.trust)) {
+          try {
+            start_cwd = realpathSync(lobbyDir(input.home));
+          } catch {
+            start_cwd = lobbyDir(input.home);
+          }
+        }
         current.seats[name] = { ...prior, ...patch, ...(temporary && name === seat.name ? { temporary } : {}), ...(start_cwd ? { start_cwd } : {}) };
       });
     },

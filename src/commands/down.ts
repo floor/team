@@ -42,6 +42,7 @@ export type DownSources = {
   sleep?(ms: number): Promise<void>;
   // Present on the shipped command. A dry run never calls it.
   launch?: DownLaunch;
+  home?: string;
 };
 
 export type DownLaunch = {
@@ -142,7 +143,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     return 2;
   }
   const dry = args.flags.has('dry-run');
-  const current = currentTeam(io.cwd, args.values.file, sources.now());
+  const current = currentTeam(io.cwd, args.values.file, sources.now(), sources.home);
   if (!current.ok) {
     for (const problem of current.errors) {
       io.stderr(`team down: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);

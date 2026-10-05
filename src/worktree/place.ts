@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
-import { insideTrust, isLegacyTrust, protectedBy } from '../file/paths.ts';
+import { insideTrust, isLegacyTrust, isMigratedTrust, protectedBy } from '../file/paths.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { lobbyDir } from '../lobby/gate.ts';
 
@@ -59,7 +59,7 @@ export function realLanding(root: string, folder: string): { logical: string; re
 // The protected checkout `folder` is in, in the text and then on disk: `protectedBy` reads the path
 // as written, then the folder and the checkouts are resolved — symlinks in the ancestors that exist
 // today followed — and tested again, so a folder that is physically inside one is inside it here.
-function protectedLanding(root: string, folder: string, checkouts: readonly string[]): string | null {
+export function protectedLanding(root: string, folder: string, checkouts: readonly string[]): string | null {
   const written = protectedBy(folder, checkouts);
   if (written) return written;
   const real = realLanding(root, folder).real;
@@ -77,46 +77,90 @@ export type SeatStart = { cwd: string; lobby?: true } | { problem: string; once?
 // starts in the machine lobby ~/.config/team/lobby. In a legacy file, a shared seat starts
 // in its cwd, and a worktree seat starts in the old derived lobby.
 export function seatStart(team: Pick<TeamFile, 'project' | 'workspace' | 'trust'>, seat: Seat, root: string, home: string = homedir()): SeatStart {
-  if (!isLegacyTrust(team.trust)) {
-    const lobby = lobbyDir(home);
-    return { cwd: lobby, lobby: true };
-  }
-  if (seat.mode === 'shared') return { cwd: seat.cwd };
-  if (seat.cwd !== '.') {
-    const hit = protectedLanding(root, seat.cwd, team.workspace.protected);
-    if (hit) {
+  if (!team.trust || team.trust.length === 0) {
+    const lobby = lobbyPath(team);
+    if (lobby === null) {
       return {
-        problem:
-          `seat ${seat.name} would start in ${seat.cwd}, inside the protected checkout ${hit}; ` +
-          "a seat that isn't `mode: shared` never starts in one",
+        problem: 'a seat that works in worktrees has no lobby to wait in: workspace.path must name the folder {task} goes under',
+        once: true,
       };
     }
-    return { cwd: seat.cwd };
-  }
-  const lobby = lobbyPath(team);
-  if (lobby === null) {
-    return {
-      problem: 'a seat that works in worktrees has no lobby to wait in: workspace.path must name the folder {task} goes under',
-      once: true,
-    };
-  }
-  const hit = protectedLanding(root, lobby, team.workspace.protected);
-  if (hit) {
     return {
       problem:
-        `seat ${seat.name} would start in the lobby ${lobby}, inside the protected checkout ${hit}; ` +
-        "a seat that isn't `mode: shared` never starts in one",
-    };
-  }
-  if (!insideTrust(lobby, team.trust)) {
-    return {
-      problem:
-        `the lobby ${lobby} matches no trust pattern (${team.trust.join(', ') || 'none'}): ` +
+        `the lobby ${lobby} matches no trust pattern (none): ` +
         'add one that covers it and run `team approve`',
       once: true,
     };
   }
-  return { cwd: lobby, lobby: true };
+
+  if (isLegacyTrust(team.trust)) {
+    if (seat.mode === 'shared') return { cwd: seat.cwd };
+    if (seat.cwd !== '.') {
+      const hit = protectedLanding(root, seat.cwd, team.workspace.protected);
+      if (hit) {
+        return {
+          problem:
+            `seat ${seat.name} would start in ${seat.cwd}, inside the protected checkout ${hit}; ` +
+            "a seat that isn't `mode: shared` never starts in one",
+        };
+      }
+      return { cwd: seat.cwd };
+    }
+    const lobby = lobbyPath(team);
+    if (lobby === null) {
+      return {
+        problem: 'a seat that works in worktrees has no lobby to wait in: workspace.path must name the folder {task} goes under',
+        once: true,
+      };
+    }
+    const hit = protectedLanding(root, lobby, team.workspace.protected);
+    if (hit) {
+      return {
+        problem:
+          `seat ${seat.name} would start in the lobby ${lobby}, inside the protected checkout ${hit}; ` +
+          "a seat that isn't `mode: shared` never starts in one",
+      };
+    }
+    if (!insideTrust(lobby, team.trust)) {
+      return {
+        problem:
+          `the lobby ${lobby} matches no trust pattern (${team.trust.join(', ') || 'none'}): ` +
+          'add one that covers it and run `team approve`',
+        once: true,
+      };
+    }
+    return { cwd: lobby, lobby: true };
+  }
+
+  if (isMigratedTrust(team.trust)) {
+    if (seat.mode === 'shared') return { cwd: seat.cwd };
+    if (seat.cwd !== '.') {
+      const hit = protectedLanding(root, seat.cwd, team.workspace.protected);
+      if (hit) {
+        return {
+          problem:
+            `seat ${seat.name} would start in ${seat.cwd}, inside the protected checkout ${hit}; ` +
+            "a seat that isn't `mode: shared` never starts in one",
+        };
+      }
+      return { cwd: seat.cwd };
+    }
+    if (team.workspace.path) {
+      const folder = team.workspace.path.split('/').slice(0, -1).join('/').replaceAll('{repo}', team.project) || '.';
+      const hit = protectedLanding(root, folder, team.workspace.protected);
+      if (hit) {
+        return {
+          problem:
+            `seat ${seat.name} workspace would land in ${folder}, inside the protected checkout ${hit}; ` +
+            "a seat that isn't `mode: shared` never starts in one",
+        };
+      }
+    }
+    const lobby = lobbyDir(home);
+    return { cwd: lobby, lobby: true };
+  }
+
+  return { problem: 'trust configuration is invalid', once: true };
 }
 
 // The first name a public project's forbidden_public pattern matches, as "name matches pattern".

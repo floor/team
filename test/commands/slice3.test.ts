@@ -417,11 +417,11 @@ describe('team up', () => {
       [
         '! up would refuse: only the owner runs `up`, from a terminal outside herdr; this call is deepseek-acme',
         '! up would refuse: the file was never approved on this machine: run `team approve`',
+        "! up would refuse: session acme-web has 2 agents this file's state doesn't record: `up` never touches a running team",
         `! up would refuse: the file is legacy: migrate trust to absolute paths including the lobby ${home}/.config/team/lobby:`,
         'trust:',
         '  - ~/.config/team/lobby',
         `  - ${root}`,
-        "! up would refuse: session acme-web has 2 agents this file's state doesn't record: `up` never touches a running team",
         '+ herdr --session acme-web workspace create',
       ].join('\n'),
     );

@@ -125,19 +125,24 @@ const CHECK_ACCOUNT = `${TEAM}budgets:
 
 const WITH_BASE = TEAM.replace('  mode: shared\n', '  mode: shared\n  base: main\n');
 
-const NARROW = `format: 1
+function narrow(place: Place): string {
+  return `format: 1
 project: acme
 coordinator: lead
 operator: lead
 trust:
-  - ../worktrees/acme/task
+  - ~/.config/team/lobby
+  - ${place.root}
+  - ${join(place.base, 'worktrees', 'acme')}
 workspace:
   mode: worktree
   path: ../worktrees/{repo}/{task}
   branch: "{kind}/{task}"
   base: main
+  protected: [., live]
 seats:
-${LEAD}${WORKER.replace('    stopped: true\n', '')}`;
+${LEAD}${WORKER.replace('    stopped: true\n', '    cwd: live\n')}`;
+}
 
 type Place = { base: string; root: string; home: string; file: string };
 type Ran = { code: number; out: string; err: string };
@@ -171,12 +176,13 @@ function write(place: Place, text: string): void {
 }
 
 function approve(place: Place, text: string): void {
-  write(place, text);
-  const loaded = loadTeamFile(place.root, { file: place.file });
+  const fileText = text.includes('trust:') ? text : text.replace('workspace:\n', `trust:\n  - ~/.config/team/lobby\n  - ${place.root}\nworkspace:\n`);
+  write(place, fileText);
+  const loaded = loadTeamFile(place.root, { file: place.file, home: place.home });
   if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
   writeApproval(
     storePath(loaded.team.project, loaded.root, place.home),
-    { approval: approvalOf(loaded.team, loaded.root, NOW), file: text },
+    { approval: approvalOf(loaded.team, loaded.root, NOW), file: fileText },
     loaded.team.seats,
     place.home,
     NOW,
@@ -184,7 +190,7 @@ function approve(place: Place, text: string): void {
 }
 
 function approvalFile(place: Place): string {
-  const loaded = loadTeamFile(place.root, { file: place.file });
+  const loaded = loadTeamFile(place.root, { file: place.file, home: place.home });
   if (!loaded.ok) throw new Error('team file');
   return join(storePath(loaded.team.project, loaded.root, place.home), 'approval.json');
 }
@@ -555,8 +561,8 @@ scene('add.placed', async (place) => {
   })), "names the project's parent");
 });
 scene('add.start', async (place) => {
-  approve(place, NARROW);
-  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'the file is legacy');
+  approve(place, narrow(place));
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'inside the protected checkout');
 });
 scene('add.doctor', async (place) => {
   approve(place, TWO);
@@ -1207,8 +1213,8 @@ scene('up.unknown', async (place) => {
   })), "doesn't record");
 });
 scene('up.placement', async (place) => {
-  approve(place, NARROW);
-  return show(await up(place, ['--file', place.file], owner, upSources(place)), 'the file is legacy');
+  approve(place, narrow(place));
+  return show(await up(place, ['--file', place.file], owner, upSources(place)), 'inside the protected checkout');
 });
 scene('up.no-launch', async (place) => {
   approve(place, TEAM);

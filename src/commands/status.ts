@@ -103,7 +103,7 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     return 2;
   }
 
-  const current = currentTeam(io.cwd, args.values.file, sources.now());
+  const current = currentTeam(io.cwd, args.values.file, sources.now(), sources.home);
   if (!current.ok) {
     printProblems(io, current.errors);
     // exit: status.not-a-repo

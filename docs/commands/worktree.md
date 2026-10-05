@@ -98,8 +98,9 @@ coordinator: claude-keeper
 operator: claude-keeper
 
 trust:
-  - .
-  - ../worktrees/beacon/*
+  - ~/.config/team/lobby
+  - ~/Code/beacon
+  - ~/Code/worktrees/beacon
 
 workspace:
   mode: worktree

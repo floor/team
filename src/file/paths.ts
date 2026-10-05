@@ -1,9 +1,11 @@
-import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { defaultFs, lobbyDir, type FsReader, type FsStats } from '../lobby/gate.ts';
 
 // Paths in a team file are relative to the project's root, with "/" between segments. These
 // checks are on the text alone; symlinks are resolved when trust is applied.
+
+const CONTROL_OR_BACKTICK = /[\x00-\x1f\x7f`]/;
 
 export function normalize(path: string): string {
   const out: string[] = [];
@@ -39,6 +41,9 @@ export function isMigratedTrust(trust: readonly string[]): boolean {
 // a fixed folder that is neither the project's parent nor an ancestor; "*" matches one segment
 // and only as the last one.
 export function trustProblem(pattern: string): string | null {
+  if (CONTROL_OR_BACKTICK.test(pattern)) {
+    return 'must not contain control characters or backticks';
+  }
   if (pattern.startsWith('/') || pattern.startsWith('~') || /^[A-Za-z]:[\\/]/.test(pattern)) {
     return 'must be relative to the project';
   }
@@ -60,9 +65,13 @@ export function trustProblem(pattern: string): string | null {
 /**
  * Why an absolute trust entry is refused, or null.
  * An absolute trust entry must start with / or ~, contain no glob, no . or .. segment,
- * and its parent walk must reach an existing directory without meeting a symbolic link.
+ * no control characters or backticks, and its parent walk must reach an existing directory
+ * without meeting a symbolic link (dangling or not).
  */
-export function absoluteTrustProblem(entry: string, home: string = homedir()): string | null {
+export function absoluteTrustProblem(entry: string, home: string = homedir(), fs: FsReader = defaultFs): string | null {
+  if (CONTROL_OR_BACKTICK.test(entry)) {
+    return 'must not contain control characters or backticks';
+  }
   if (isLegacyTrustEntry(entry)) {
     return 'must be an absolute path or start with "~"';
   }
@@ -82,22 +91,39 @@ export function absoluteTrustProblem(entry: string, home: string = homedir()): s
     return 'must not contain "." or ".."';
   }
   const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
+  if (expanded === lobbyDir(home)) {
+    return null;
+  }
   const segments = expanded.split(sep).filter(Boolean);
   let built = expanded.startsWith(sep) ? sep : '';
+  let hitMissing = false;
+
   for (const seg of segments) {
     built = join(built, seg);
-    if (existsSync(built)) {
-      try {
-        const stat = lstatSync(built);
-        if (stat.isSymbolicLink()) {
-          return `${built} is a symbolic link`;
-        }
-        if (built === expanded && !stat.isDirectory()) {
-          return 'is not a directory';
-        }
-      } catch {
-        // ignore read error
+    let stat: FsStats;
+    try {
+      stat = fs.lstat(built);
+    } catch (err: any) {
+      if (err?.code === 'ENOENT') {
+        hitMissing = true;
+        continue;
       }
+      return `cannot read ${built}: ${err?.code ?? err?.message}`;
+    }
+    if (hitMissing) {
+      if (stat.isSymbolicLink()) {
+        return `${built} is a symbolic link`;
+      }
+      return `${built} is not a directory`;
+    }
+    if (stat.isSymbolicLink()) {
+      return `${built} is a symbolic link`;
+    }
+    if (!stat.isDirectory()) {
+      if (built === expanded) {
+        return 'is not a directory';
+      }
+      return `${built} is not a directory`;
     }
   }
   return null;
@@ -127,51 +153,69 @@ export function protectedBy(path: string, checkouts: readonly string[]): string 
 
 /**
  * Resolves the deepest existing ancestor with realpath, and appends the non-existent tail unchanged.
- * If any existing component along the ancestor walk is a symbolic link, returns symlink.
+ * If any component (including dangling links) along the path is a symbolic link, returns symlink.
  */
-export function canonicalLanding(path: string): { landing: string; symlink?: string } {
+export function canonicalLanding(path: string, fs: FsReader = defaultFs): { landing: string; symlink?: string } {
   const logical = resolve(path);
+  const segments = logical.split(sep).filter(Boolean);
+  let built = logical.startsWith(sep) ? sep : '';
+  let deepestExisting = built;
   const tail: string[] = [];
-  let current = logical;
-  while (!existsSync(current)) {
-    const parent = dirname(current);
-    if (parent === current) return { landing: logical };
-    tail.push(basename(current));
-    current = parent;
-  }
-  let real: string;
-  try {
-    real = realpathSync(current);
-  } catch {
-    real = current;
-  }
-  let symlink: string | undefined;
-  const segments = current.split(sep).filter(Boolean);
-  let built = current.startsWith(sep) ? sep : '';
+  let foundSymlink: string | undefined;
+  let hitMissing = false;
+
   for (const seg of segments) {
     built = join(built, seg);
-    try {
-      if (lstatSync(built).isSymbolicLink()) {
-        symlink = built;
-        break;
+    if (!hitMissing) {
+      try {
+        const stat = fs.lstat(built);
+        if (stat.isSymbolicLink()) {
+          foundSymlink = built;
+        }
+        deepestExisting = built;
+      } catch {
+        hitMissing = true;
+        tail.push(seg);
       }
-    } catch {}
+    } else {
+      try {
+        const stat = fs.lstat(built);
+        if (stat.isSymbolicLink()) {
+          if (!foundSymlink) foundSymlink = built;
+        }
+      } catch {}
+      tail.push(seg);
+    }
   }
-  return { landing: join(real, ...tail.reverse()), ...(symlink ? { symlink } : {}) };
+
+  let real: string;
+  try {
+    real = fs.realpath(deepestExisting);
+  } catch {
+    real = deepestExisting;
+  }
+  return {
+    landing: tail.length ? join(real, ...tail) : real,
+    ...(foundSymlink ? { symlink: foundSymlink } : {}),
+  };
 }
 
 // True when `path` is a trusted folder or lies under one.
-export function insideTrust(path: string, patterns: readonly string[], root?: string, home: string = homedir()): boolean {
+export function insideTrust(path: string, patterns: readonly string[], root?: string, home: string = homedir(), fs: FsReader = defaultFs): boolean {
   if (patterns.length === 0) return false;
   if (isMigratedTrust(patterns)) {
     const target = (root && !path.startsWith('/') && !path.startsWith('~') && !/^[A-Za-z]:[\\/]/.test(path))
       ? resolve(root, path)
       : resolve(path.replace(/^~(?=$|\/)/, home));
-    const targetLanding = canonicalLanding(target).landing;
+    const targetLanding = canonicalLanding(target, fs);
+    if (targetLanding.symlink) return false;
     return patterns.some((pattern) => {
       const expanded = resolve(pattern.replace(/^~(?=$|\/)/, home));
-      const patternLanding = canonicalLanding(expanded).landing;
-      return targetLanding === patternLanding || targetLanding.startsWith(patternLanding.endsWith(sep) ? patternLanding : patternLanding + sep);
+      const patternLanding = canonicalLanding(expanded, fs);
+      if (patternLanding.symlink) return false;
+      const t = targetLanding.landing;
+      const p = patternLanding.landing;
+      return t === p || t.startsWith(p.endsWith(sep) ? p : p + sep);
     });
   }
   const target = normalize(path).split('/');

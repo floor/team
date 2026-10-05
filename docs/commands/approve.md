@@ -147,6 +147,10 @@ project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
 
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
+
 workspace:
   mode: shared
 
@@ -176,18 +180,22 @@ $ team approve --show ; echo "exit $?"
   3: coordinator: claude-keeper
   4: operator: claude-keeper
   5: 
-  6: workspace:
-  7:   mode: shared
-  8: 
-  9: seats:
-  10:   - role: coordinator
-  11:     name: claude-keeper
-  12:     label: coordinator
-  13:     cli: claude-code
-  14:     vendor: anthropic
-  15:     model: Claude Opus
-  16:     version: "5.5"
-  17:     launch: claude --model claude-opus-5-5
+  6: trust:
+  7:   - ~/.config/team/lobby
+  8:   - ~/Code/beacon
+  9: 
+  10: workspace:
+  11:   mode: shared
+  12: 
+  13: seats:
+  14:   - role: coordinator
+  15:     name: claude-keeper
+  16:     label: coordinator
+  17:     cli: claude-code
+  18:     vendor: anthropic
+  19:     model: Claude Opus
+  20:     version: "5.5"
+  21:     launch: claude --model claude-opus-5-5
 
 Ceilings this approval fixes: 3 seats at most, 2 temporary.
 Seats: 1 (claude-keeper).
@@ -206,18 +214,22 @@ $ team approve
   3: coordinator: claude-keeper
   4: operator: claude-keeper
   5: 
-  6: workspace:
-  7:   mode: shared
-  8: 
-  9: seats:
-  10:   - role: coordinator
-  11:     name: claude-keeper
-  12:     label: coordinator
-  13:     cli: claude-code
-  14:     vendor: anthropic
-  15:     model: Claude Opus
-  16:     version: "5.5"
-  17:     launch: claude --model claude-opus-5-5
+  6: trust:
+  7:   - ~/.config/team/lobby
+  8:   - ~/Code/beacon
+  9: 
+  10: workspace:
+  11:   mode: shared
+  12: 
+  13: seats:
+  14:   - role: coordinator
+  15:     name: claude-keeper
+  16:     label: coordinator
+  17:     cli: claude-code
+  18:     vendor: anthropic
+  19:     model: Claude Opus
+  20:     version: "5.5"
+  21:     launch: claude --model claude-opus-5-5
 
 Ceilings this approval fixes: 3 seats at most, 2 temporary.
 Seats: 1 (claude-keeper).
@@ -251,7 +263,10 @@ coordinator: claude-keeper
 operator: claude-keeper
 
 trust:
-  - .
+  - ~/.config/team/lobby
+  - ~/Code/beacon
+  - ~/Code/worktrees/beacon
+
 workspace:
   mode: shared
 
@@ -270,8 +285,7 @@ seats:
 $ team approve --show ; echo "exit $?"
 ./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 
-  + 6: trust:
-  + 7:   - .
+  + 9:   - ~/Code/worktrees/beacon
 
 Needs a new approval: `trust` changed.
 Ceilings this approval fixes: 3 seats at most, 2 temporary.
@@ -291,7 +305,10 @@ coordinator: claude-keeper
 operator: claude-keeper
 
 trust:
-  - .
+  - ~/.config/team/lobby
+  - ~/Code/beacon
+  - ~/Code/worktrees/beacon
+
 workspace:
   mode: shared
 
@@ -318,16 +335,15 @@ seats:
 $ team approve ; echo "exit $?"
 ./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 
-  + 6: trust:
-  + 7:   - .
-  + 20:   - role: implementer
-  + 21:     name: claude-beacon
-  + 22:     label: implementer
-  + 23:     cli: claude-code
-  + 24:     vendor: anthropic
-  + 25:     model: Claude Opus
-  + 26:     version: "5.5"
-  + 27:     launch: claude --model claude-opus-5-5
+  + 9:   - ~/Code/worktrees/beacon
+  + 23:   - role: implementer
+  + 24:     name: claude-beacon
+  + 25:     label: implementer
+  + 26:     cli: claude-code
+  + 27:     vendor: anthropic
+  + 28:     model: Claude Opus
+  + 29:     version: "5.5"
+  + 30:     launch: claude --model claude-opus-5-5
 
 Needs a new approval: `trust` changed; `limits` changed; seat claude-beacon is not in the approved file.
 Ceilings approved: 3 seats at most, 2 temporary.
@@ -346,16 +362,15 @@ The answer is the number of seats, and nothing else — here, two:
 $ team approve
 ./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 
-  + 6: trust:
-  + 7:   - .
-  + 20:   - role: implementer
-  + 21:     name: claude-beacon
-  + 22:     label: implementer
-  + 23:     cli: claude-code
-  + 24:     vendor: anthropic
-  + 25:     model: Claude Opus
-  + 26:     version: "5.5"
-  + 27:     launch: claude --model claude-opus-5-5
+  + 9:   - ~/Code/worktrees/beacon
+  + 23:   - role: implementer
+  + 24:     name: claude-beacon
+  + 25:     label: implementer
+  + 26:     cli: claude-code
+  + 27:     vendor: anthropic
+  + 28:     model: Claude Opus
+  + 29:     version: "5.5"
+  + 30:     launch: claude --model claude-opus-5-5
 
 Needs a new approval: `trust` changed; `limits` changed; seat claude-beacon is not in the approved file.
 Ceilings approved: 3 seats at most, 2 temporary.

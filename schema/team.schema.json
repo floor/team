@@ -10,7 +10,8 @@
     "project",
     "coordinator",
     "operator",
-    "seats"
+    "seats",
+    "trust"
   ],
   "properties": {
     "format": {
@@ -29,7 +30,7 @@
         "type": "string",
         "minLength": 1
       },
-      "$comment": "paths outside the project the seats may still work in, as the validator reads them"
+      "$comment": "absolute paths the seats may work in, including the machine lobby ~/.config/team/lobby and the project root"
     },
     "limits": {
       "type": "object",

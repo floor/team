@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { absoluteTrustProblem, isLegacyTrustEntry, trustProblem } from '../paths.ts';
 import type { Section } from './section.ts';
 
@@ -8,7 +9,7 @@ export const trust: Section = {
   validate(entry, ctx) {
     const trustItems = ctx.check.list(entry, 'trust');
     if (entry && trustItems.length === 0) {
-      ctx.check.fail(entry.line, 'trust must not be empty');
+      ctx.check.fail(entry.value.line, 'trust must not be empty');
       return [];
     }
     const hasLegacy = trustItems.some((item) => isLegacyTrustEntry(item.value));
@@ -24,9 +25,10 @@ export const trust: Section = {
         const problem = trustProblem(item.value);
         if (problem) ctx.check.fail(item.line, `trust: "${item.value}" ${problem}`);
       }
-    } else {
+    } else if (hasAbsolute) {
+      const home = ctx.home ?? homedir();
       for (const item of trustItems) {
-        const problem = absoluteTrustProblem(item.value);
+        const problem = absoluteTrustProblem(item.value, home);
         if (problem) ctx.check.fail(item.line, `trust: "${item.value}" ${problem}`);
       }
     }
@@ -36,6 +38,6 @@ export const trust: Section = {
     type: 'array',
     minItems: 1,
     items: { type: 'string', minLength: 1 },
-    $comment: 'paths outside the project the seats may still work in, as the validator reads them',
+    $comment: 'absolute paths the seats may work in, including the machine lobby ~/.config/team/lobby and the project root',
   },
 };

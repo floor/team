@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { profileFor } from '../profiles/index.ts';
 import { launchCommand, shellQuote } from '../profiles/profile.ts';
 
@@ -122,7 +122,7 @@ export function upPlan(input: UpInput): Step[] {
       continue;
     }
     const pane = seat.pane ?? paneOf(seat.name);
-    const cwd = join(input.root, seat.cwd);
+    const cwd = isAbsolute(seat.cwd) ? seat.cwd : resolve(input.root, seat.cwd);
     const fresh = seat.stage === undefined || !seat.pane;
     // The same condition as the launch step below. A seat already running keeps
     // its idle wait, rename and rules, and hears the reading as a notice.

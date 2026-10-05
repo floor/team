@@ -9,7 +9,8 @@ import { callerOf, isOwner, type Caller } from '../caller.ts';
 import { checkCommands, type ApprovedCheck } from '../budgets/checks.ts';
 import { parseOutput, runCommand, type CheckReading } from '../budgets/run.ts';
 import { loadTeamFile } from '../file/load.ts';
-import { canonicalLanding, insideTrust, isLegacyTrust } from '../file/paths.ts';
+import { validateTeamFile } from '../file/validate.ts';
+import { canonicalLanding, insideTrust, isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
 import { declaredModel } from '../file/model.ts';
 import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
 import { HERDR_TESTED, herdrVersion, sessionRunning, agentList, type HerdrAgent } from '../herdr.ts';
@@ -426,36 +427,47 @@ export function doctorFindings(
       const oldLanding = canonicalLanding(oldLogical).landing;
       const recordedSeats = Object.entries(readState(dir).sessions[session]?.seats ?? {});
       const getAgents = sources.agentList ?? agentList;
-      const liveList = running ? getAgents(session) : [];
-      const livePanes = new Set((liveList ?? []).map((a) => a.pane));
-      const activeSeats = recordedSeats.filter(([, s]) => {
-        const isRecovery = (s as { waiting?: unknown }).waiting !== undefined;
-        const isLive = Boolean(s.pane && livePanes.has(s.pane));
-        return isLive || isRecovery;
-      });
-      const missingStart = activeSeats.find(([, s]) => !s.start_cwd);
-      if (missingStart) {
-        findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: seat ${missingStart[0]} has no recorded start_cwd; stop it before removing the folder` });
+      const liveList = running ? getAgents(session) : null;
+      if (!running || liveList === null) {
+        findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: can't tell if live seats are using it: ${!running ? 'no session running' : "herdr doesn't answer"}` });
       } else {
-        const inOld = activeSeats.find(([, s]) => s.start_cwd === oldLanding);
-        if (inOld) {
-          findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: seat ${inOld[0]} started in it; stop it before removing the folder` });
+        const livePanes = new Set(liveList.map((a) => a.pane));
+        const activeSeats = recordedSeats.filter(([, s]) => {
+          const isRecovery = (s as { waiting?: unknown }).waiting !== undefined;
+          const isLive = Boolean(s.pane && livePanes.has(s.pane));
+          return isLive || isRecovery;
+        });
+        const missingStart = activeSeats.find(([, s]) => !s.start_cwd);
+        if (missingStart) {
+          findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: seat ${missingStart[0]} has no recorded start_cwd; stop it before removing the folder` });
         } else {
-          findings.push({ level: 'ok', text: `the old lobby ${oldLobby}: may be removed` });
+          const inOld = activeSeats.find(([, s]) => s.start_cwd === oldLanding);
+          if (inOld) {
+            findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: seat ${inOld[0]} started in it; stop it before removing the folder` });
+          } else {
+            findings.push({ level: 'ok', text: `the old lobby ${oldLobby}: may be removed` });
+          }
         }
       }
     }
   }
 
-  if (isLegacyTrust(team.trust)) {
-    if (oldLobby && insideTrust(oldLobby, team.trust)) {
-      findings.push({
-        level: 'note',
-        text: `the file is legacy: migrate from ${oldLobby} to ${lobby} by writing trust:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
-      });
+  const currentIsLegacy = !team.trust || team.trust.length === 0 || isLegacyTrust(team.trust);
+  let approvedIsLegacy = standing.kind === 'legacy';
+  if (standing.kind === 'verified') {
+    const approvedParsed = validateTeamFile(standing.record.file);
+    if (approvedParsed.ok && (!approvedParsed.team.trust || approvedParsed.team.trust.length === 0 || isLegacyTrust(approvedParsed.team.trust))) {
+      approvedIsLegacy = true;
     }
-  } else if (team.trust.length) {
-    findings.push({ level: 'note', text: 'trust: not applied or checked by this version; trust each folder by hand' });
+  }
+  const wasOrIsLegacy = currentIsLegacy || approvedIsLegacy;
+  const isMigratedAndApproved = isMigratedTrust(team.trust) && standing.kind === 'verified' && approvalDifferencesOf(standing, team).length === 0 && !approvedIsLegacy;
+  if (wasOrIsLegacy && !isMigratedAndApproved) {
+    const fromText = oldLobby ? `from ${oldLobby} to ${lobby}` : `to ${lobby}`;
+    findings.push({
+      level: 'note',
+      text: `the file is legacy: migrate ${fromText} by writing trust:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
+    });
   }
   return findings;
 }

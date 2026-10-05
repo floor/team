@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,7 +6,7 @@ import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
-import { canonicalLanding, isLegacyTrust } from '../file/paths.ts';
+import { canonicalLanding, isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
 import { renderSignature } from '../file/signature.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import {
@@ -33,7 +33,7 @@ import { executePlan } from '../launch/execute.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { rulesText } from '../launch/rules.ts';
 import { deliverRules } from '../launch/deliver.ts';
-import { lobbyDir, verifyLobby } from '../lobby/gate.ts';
+import { lobbyDir, verifyLobby, type FsReader } from '../lobby/gate.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -54,6 +54,7 @@ export type UpSources = {
   workspaces?(session: string): { id: string }[] | null;
   home: string;
   getuid?(): number;
+  fs?: FsReader;
   doctor?: DoctorSources;
   machine?(root: string): Machine;
   now?(): Date;
@@ -271,18 +272,6 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   // unblocks nothing, not even the seat a dry run would plan.
   const budgets = budgetsInForceOf(standing, team);
 
-  const lobby = lobbyDir(sources.home);
-  if (isLegacyTrust(team.trust)) {
-    refusals.push(
-      `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
-    );
-  } else {
-    const gate = verifyLobby(sources.home, { create: !dry, getuid: sources.getuid });
-    if (!gate.ok) {
-      refusals.push(gate.text);
-    }
-  }
-
   if (sources.doctor) {
     const findings = doctorFindings(team, root, dir, session, sources.doctor, loaded.warnings, standing);
     for (const finding of findings) if (blocksLaunch(finding)) refusals.push(finding.text);
@@ -311,6 +300,19 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
           `session ${session} has ${unknown.length} agent${unknown.length === 1 ? '' : 's'} this file's state doesn't record: \`up\` never touches a running team`,
         );
       }
+    }
+  }
+
+  const lobby = lobbyDir(sources.home);
+  if (!team.trust || team.trust.length === 0 || isLegacyTrust(team.trust)) {
+    refusals.push(
+      `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
+    );
+  } else {
+    const shouldCreate = !dry && refusals.length === 0;
+    const gate = verifyLobby(sources.home, { create: shouldCreate, getuid: sources.getuid, fs: sources.fs });
+    if (!gate.ok) {
+      refusals.push(gate.text);
     }
   }
 
@@ -460,7 +462,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
         const prior = current.seats[name] ?? { stage: patch.stage };
         // The CLI the seat was launched with: `down` needs it when the file no longer names the seat.
         const cli = team.seats.find((seat) => seat.name === name)?.cli;
-        const start_cwd = prior.start_cwd ?? (!isLegacyTrust(team.trust) ? canonicalLanding(lobbyDir(sources.home)).landing : undefined);
+        let start_cwd = prior.start_cwd;
+        if (!start_cwd && patch.createdWorkspace && isMigratedTrust(team.trust)) {
+          try {
+            start_cwd = realpathSync(lobbyDir(sources.home));
+          } catch {
+            start_cwd = lobbyDir(sources.home);
+          }
+        }
         current.seats[name] = { ...prior, ...patch, ...(cli ? { cli } : {}), ...(start_cwd ? { start_cwd } : {}) };
       });
     },

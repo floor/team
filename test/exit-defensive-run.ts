@@ -93,13 +93,14 @@ git('init', '-q', '-b', 'main');
 writeFileSync(join(root, 'README.md'), 'acme\n');
 git('add', 'README.md');
 git('commit', '-q', '-m', 'first');
+const yaml = TWO.replace('coordinator: lead\n', `coordinator: lead\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n`);
 const file = join(root, '.agents', 'team.yaml');
-writeFileSync(file, TWO);
-const loaded = realLoad.loadTeamFile(root, { file });
+writeFileSync(file, yaml);
+const loaded = realLoad.loadTeamFile(root, { file, home });
 if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
 writeApproval(
   storePath(loaded.team.project, loaded.root, home),
-  { approval: approvalOf(loaded.team, loaded.root, NOW), file: TWO },
+  { approval: approvalOf(loaded.team, loaded.root, NOW), file: yaml },
   loaded.team.seats,
   home,
   NOW,
@@ -114,7 +115,7 @@ const plan: Record<string, { failAt: number; failure: string }> = {
   // the prepared-edit check, after the seat was accepted
   'add.prepared': { failAt: 5, failure: 'the prepared edit does not validate' },
   // writeTeamFile's check, after doctor and the budget read
-  'add.locked': { failAt: 10, failure: 'the locked edit does not validate' },
+  'add.locked': { failAt: 12, failure: 'the locked edit does not validate' },
   // approve's second read of the text load just accepted
   'approve.revalidate': { failAt: 2, failure: 'the file does not validate' },
   'approve.placed': { failAt: 0, failure: '' },

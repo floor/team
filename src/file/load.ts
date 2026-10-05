@@ -3,6 +3,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { lobbyDir } from '../lobby/gate.ts';
+import { protectedLanding } from '../worktree/place.ts';
 import { canonicalLanding, fixedFolder, isLegacyTrust, isMigratedTrust } from './paths.ts';
 import type { LoadResult, Problem, TeamFile } from './types.ts';
 import { validateTeamFile } from './validate.ts';
@@ -26,7 +27,7 @@ export function findRoot(cwd: string): string | null {
 
 // Finds, reads and validates the team file. With `file`, the root is the folder that holds the
 // file's `.agents/`, or the file's own folder when it sits elsewhere.
-export function loadTeamFile(cwd: string, options: { file?: string; home?: string } = {}): LoadResult {
+export function loadTeamFile(cwd: string, options: { file?: string; home?: string; checkOnly?: boolean } = {}): LoadResult {
   let path: string;
   let root: string;
   if (options.file) {
@@ -53,8 +54,9 @@ export function loadTeamFile(cwd: string, options: { file?: string; home?: strin
   }
   // One read. Callers that store the text (approve) use this string, the one that was validated.
   const text = readFileSync(path, 'utf8');
-  const result = validateTeamFile(text);
+  const result = validateTeamFile(text, { home: options.home });
   if (!result.ok) return { ...result, path };
+  if (options.checkOnly) return { ...result, root, path, text };
   const errors = placedProblems(result.team, root, options.home);
   return errors.length ? { ok: false, errors, path } : { ...result, root, path, text };
 }
@@ -72,23 +74,36 @@ function real(path: string): string {
 // alone can't see that; here every fixed folder is resolved, symlinks included.
 export function placedProblems(team: TeamFile, root: string, home: string = homedir()): Problem[] {
   const problems: Problem[] = [];
+  const project = real(root);
+  const holdsProject = (folder: string) => {
+    const full = real(resolve(project, folder));
+    return full !== project && project.startsWith(full.endsWith(sep) ? full : full + sep);
+  };
+  const insideProj = (folder: string) => {
+    const full = real(resolve(project, folder));
+    return full === project || full.startsWith(project.endsWith(sep) ? project : project + sep);
+  };
+
+  // Check workspace.path for ANY file
+  const path = team.workspace.path;
+  if (path) {
+    const folder = path.split('/').slice(0, -1).join('/').replaceAll('{repo}', team.project) || '.';
+    if (holdsProject(folder)) {
+      problems.push({ line: 0, message: `workspace.path: "${path}" puts worktrees in the project's parent or a folder above it: give them a folder of their own` });
+    }
+    if (insideProj(folder)) {
+      problems.push({ line: 0, message: `workspace.path: "${path}" puts worktrees inside the project: give them a folder of their own` });
+    }
+    const hit = protectedLanding(root, folder, team.workspace.protected);
+    if (hit) {
+      problems.push({ line: 0, message: `workspace.path: "${path}" puts worktrees inside the protected checkout ${hit}` });
+    }
+  }
 
   if (isLegacyTrust(team.trust)) {
-    const project = real(root);
-    const holdsProject = (folder: string) => {
-      const full = real(resolve(project, folder));
-      return full !== project && project.startsWith(full.endsWith(sep) ? full : full + sep);
-    };
     for (const pattern of team.trust) {
       if (holdsProject(fixedFolder(pattern))) {
         problems.push({ line: 0, message: `trust: "${pattern}" names the project's parent or a folder above it: it would trust every folder beside the project` });
-      }
-    }
-    const path = team.workspace.path;
-    if (path) {
-      const folder = path.split('/').slice(0, -1).join('/').replaceAll('{repo}', team.project) || '.';
-      if (holdsProject(folder)) {
-        problems.push({ line: 0, message: `workspace.path: "${path}" puts worktrees in the project's parent or a folder above it: give them a folder of their own` });
       }
     }
     return problems;
@@ -121,7 +136,12 @@ export function placedProblems(team: TeamFile, root: string, home: string = home
     // Every seat's cwd must equal an approved entry or be a descendant of one
     for (const seat of team.seats) {
       const seatPath = resolve(root, seat.cwd);
-      const seatLanding = canonicalLanding(seatPath).landing;
+      const res = canonicalLanding(seatPath);
+      if (res.symlink) {
+        problems.push({ line: seat.line, message: `seat ${seat.name}: cwd "${seat.cwd}" follows a symbolic link: ${res.symlink}` });
+        continue;
+      }
+      const seatLanding = res.landing;
       const trusted = team.trust.some((entry) => {
         const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
         const entryLanding = canonicalLanding(expanded).landing;
@@ -136,7 +156,11 @@ export function placedProblems(team: TeamFile, root: string, home: string = home
     if (team.workspace.path) {
       const sample = team.workspace.path.replaceAll('{repo}', team.project).replace('{task}', 'task');
       const wtPath = resolve(root, sample);
-      const wtLanding = canonicalLanding(wtPath).landing;
+      const res = canonicalLanding(wtPath);
+      if (res.symlink) {
+        problems.push({ line: 0, message: `workspace.path: "${team.workspace.path}" follows a symbolic link: ${res.symlink}` });
+      }
+      const wtLanding = res.landing;
       const trusted = team.trust.some((entry) => {
         const expanded = resolve(entry.replace(/^~(?=$|\/)/, home));
         const entryLanding = canonicalLanding(expanded).landing;

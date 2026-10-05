@@ -27,7 +27,7 @@ export type Host = {
   allow(seat: string): string | null;
   record(
     seat: string,
-    patch: { stage: 'launched' | 'named' | 'ready'; pane?: string; workspace?: string; rules?: 'option' | 'message' },
+    patch: { stage: 'launched' | 'named' | 'ready'; pane?: string; workspace?: string; rules?: 'option' | 'message'; createdWorkspace?: boolean },
   ): void;
   /** The seat is really running, so the next seat's ceiling check counts it. */
   running(seat: string): void;
@@ -156,7 +156,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         }
         places.set(op.seat ?? op.label, made);
         if (op.seat) {
-          host.record(op.seat, { stage: 'launched', pane: made.pane, workspace: made.workspace });
+          host.record(op.seat, { stage: 'launched', pane: made.pane, workspace: made.workspace, createdWorkspace: true });
           host.running(op.seat);
         }
         break;

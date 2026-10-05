@@ -173,6 +173,10 @@ project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
 
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
+
 workspace:
   mode: shared
 
@@ -331,6 +335,10 @@ project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
 
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
+
 watch:
   interval: 120s
   checks:
@@ -374,11 +382,11 @@ The owner approves it, and the next pass runs without the check:
 $ team approve ; echo "exit $?"
 ./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 
-  + 6: watch:
-  + 7:   interval: 120s
-  + 8:   checks:
-  + 9:     memory: off
-  + 10: 
+  + 10: watch:
+  + 11:   interval: 120s
+  + 12:   checks:
+  + 13:     memory: off
+  + 14: 
 
 Needs a new approval: `watch.checks` changed.
 Ceilings this approval fixes: 4 seats at most, 2 temporary.

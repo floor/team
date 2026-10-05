@@ -13,6 +13,8 @@ export interface Ctx {
   broken: Set<string>;
   /** Each section's value, set once the section has run. */
   values: Map<string, unknown>;
+  /** Injected home for path validation. */
+  home?: string;
 }
 
 /** A section's value, once every section it names in `after` has run. */

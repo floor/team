@@ -71,7 +71,7 @@ function normalize(text: string, page: { fixture: Fixture }): string {
 
 async function setup(page: Page): Promise<void> {
   const { fixture } = page;
-  const loaded = loadTeamFile(fixture.root, {});
+  const loaded = loadTeamFile(fixture.root, { home: fixture.home });
   if (loaded.ok) {
     page.team = loaded.team;
     page.session = loaded.team.session;
@@ -284,7 +284,7 @@ async function consoleBlock(page: Page, block: Block, failures: Failure[]): Prom
 
 /** `file=overrides.yaml` is the approval store's file, not a path in the project. */
 function writeOverrides(page: Page, text: string, line: number): void {
-  const loaded = loadTeamFile(page.fixture.root, {});
+  const loaded = loadTeamFile(page.fixture.root, { home: page.fixture.home });
   if (!loaded.ok) throw new Error(`overrides.yaml at line ${line} needs a team file`);
   const path = join(storePath(loaded.team.project, loaded.root, page.fixture.home), 'overrides.yaml');
   mkdirSync(dirname(path), { recursive: true });

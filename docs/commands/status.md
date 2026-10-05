@@ -124,8 +124,9 @@ to report. When at least one repair is the owner's, the summary line reports
       "notice": null
     }
 
-`rows`, `notes` and `differences` hold what the table, the notes and the repairs hold; `notice` is
-the line a normal run prints above the table, or null when there is none. `budgets` is present only
+`rows`, `notes` and `differences` hold what the table, the notes and the repairs hold; each seat in
+`rows` has `name`, `state`, `model`, `pane`, and, when recorded at workspace creation by a migrated launch,
+`start_cwd`. `notice` is the line a normal run prints above the table, or null when there is none. `budgets` is present only
 when the budgets table would be printed, one object per row (`account`, `window`, `left`, `used`,
 `resetsIn`, `seat`, `age`, `source`, `fallback`, `state`, `inside`, `reserve`). `inside` is true
 when a subscription's left figure is at or inside its reserve, `fallback` when the figure did not
@@ -157,6 +158,10 @@ format: 1
 project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
+
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
 
 workspace:
   mode: shared

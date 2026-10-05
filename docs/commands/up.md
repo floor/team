@@ -30,9 +30,9 @@ Reads the team file (or the one `--file` names), this machine's approval store, 
 (`.agents/team.state.json`, for each seat's stage), herdr (whether the session is up, its agents and
 workspaces), the doctor's findings, and the machine's load, free memory, free disk and free swap.
 Writes `.agents/team.state.json` (each seat's stage, pane, workspace and the CLI it was launched
-with; the watch's pid and heartbeat), `.agents/team.log`, the lobby folder a seat that works in
-worktrees waits in, and, through herdr: the server, one workspace per seat and one for the watchdog,
-each seat's launch, and the watch.
+with; the watch's pid and heartbeat), `.agents/team.log`, the machine lobby folder
+(`~/.config/team/lobby`) every seat starts in, and, through herdr: the server, one workspace per seat
+and one for the watchdog, each seat's launch, and the watch.
 
 ## Who may run it
 
@@ -110,7 +110,7 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | `herdr doesn't answer` |
 | ``session beacon is stopped; clear it with `herdr session delete beacon` `` |
 | ``session beacon has 2 agents this file's state doesn't record: `up` never touches a running team`` |
-| ``the lobby ~/.config/team/lobby: not in trust: add it to trust: and run `team approve` `` |
+| ``the file is legacy: migrate trust to absolute paths including the lobby ~/.config/team/lobby: ...`` |
 | ``the lobby ~/.config/team/lobby: <check>`` — gate check failed (symbolic link, permissions, mode, not empty, inside git repo) |
 | ``seat beacon-qa would start in live, inside the protected checkout live; a seat that isn't `mode: shared` never starts in one`` — the folder the file gives it, or its lobby, is a protected checkout |
 
@@ -130,6 +130,10 @@ format: 1
 project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
+
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
 
 workspace:
   mode: shared
@@ -224,6 +228,10 @@ format: 1
 project: beacon
 coordinator: claude-keeper
 operator: claude-keeper
+
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
 
 limits:
   seats: 4

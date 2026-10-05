@@ -15,6 +15,10 @@ identity:
       position: last-line
       template: "**Agent:** {display} · {role}"
 
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
+
 workspace:
   mode: shared                # every seat works in the project root
 

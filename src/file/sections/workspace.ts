@@ -1,5 +1,5 @@
 import type { YamlEntry } from '../../yaml.ts';
-import { insideTrust, isMigratedTrust, normalize } from '../paths.ts';
+import { insideTrust, isLegacyTrust, isMigratedTrust, normalize } from '../paths.ts';
 import type { Check } from '../check.ts';
 import type { Mode, TeamFile } from '../types.ts';
 import type { Section } from './section.ts';
@@ -49,6 +49,9 @@ function readWorkspace(
   if (usesWorktrees && !path) check.fail(line, 'workspace.path is required when a seat works in worktrees');
   if (path) {
     const at = fields.get('path')?.value.line ?? line;
+    if (/[\x00-\x1f\x7f`]/.test(path)) {
+      check.fail(at, 'workspace.path must not contain control characters or backticks');
+    }
     const problem = worktreePathProblem(path, project, trust);
     if (problem) check.fail(at, `workspace.path ${problem}`);
   }
@@ -78,6 +81,6 @@ function worktreePathProblem(path: string, project: string, trust: string[]): st
     return 'needs a fixed folder of its own before {task}: this one puts worktrees straight into the project or one of its parents';
   }
   const sample = normalize([...folder, 'task'].join('/'));
-  if (!isMigratedTrust(trust) && !insideTrust(sample, trust)) return 'matches no trust pattern';
+  if (isLegacyTrust(trust) && !insideTrust(sample, trust)) return 'matches no trust pattern';
   return null;
 }
