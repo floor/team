@@ -1154,6 +1154,7 @@ describe('a border anywhere else stays unknown (Cursor)', () => {
   const input = source.findIndex((line) => /^ {2}→/.test(line));
   const bottom = source.findIndex((line) => /^ ▀+$/.test(line));
   const status = source.findIndex((line) => /^ {2}(?:Grok|GPT-|Gemini |Composer )/.test(line));
+  const statusLen = (source[status] ?? '').length;
   const text = (lines: string[]) => lines.join('\n');
   const unknown = (screen: string) => {
     expect(readScreen('cursor', screen).kind).toBe('unknown');
@@ -1301,8 +1302,8 @@ describe('a border anywhere else stays unknown (Cursor)', () => {
     const sameLen = [...source];
     sameLen[top] = ' ' + '▄'.repeat(50);
     sameLen[bottom] = ' ' + '▀'.repeat(50);
-    expect(sameLen[top].length).toBe(source[status].length);
-    expect(sameLen[bottom].length).toBe(source[status].length);
+    expect((sameLen[top] ?? '').length).toBe(statusLen);
+    expect((sameLen[bottom] ?? '').length).toBe(statusLen);
     unknown(text(sameLen));
   });
 
@@ -1311,8 +1312,8 @@ describe('a border anywhere else stays unknown (Cursor)', () => {
     const twoLonger = [...source];
     twoLonger[top] = ' ' + '▄'.repeat(52);
     twoLonger[bottom] = ' ' + '▀'.repeat(52);
-    expect(twoLonger[top].length).toBe(source[status].length + 2);
-    expect(twoLonger[bottom].length).toBe(source[status].length + 2);
+    expect((twoLonger[top] ?? '').length).toBe(statusLen + 2);
+    expect((twoLonger[bottom] ?? '').length).toBe(statusLen + 2);
     unknown(text(twoLonger));
   });
 
@@ -1321,8 +1322,8 @@ describe('a border anywhere else stays unknown (Cursor)', () => {
     const shorter = [...source];
     shorter[top] = ' ' + '▄'.repeat(49);
     shorter[bottom] = ' ' + '▀'.repeat(49);
-    expect(shorter[top].length).toBeLessThan(source[status].length);
-    expect(shorter[bottom].length).toBeLessThan(source[status].length);
+    expect((shorter[top] ?? '').length).toBeLessThan(statusLen);
+    expect((shorter[bottom] ?? '').length).toBeLessThan(statusLen);
     unknown(text(shorter));
   });
 
