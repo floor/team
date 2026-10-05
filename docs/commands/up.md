@@ -240,7 +240,7 @@ carrying this seat's name; the workspace's live label is the one this seat's lau
 waiting record with no process identity proves nothing: it is never resumed, opened, skipped or
 closed from the record, and the run fails closed with `<seat>: left out: its waiting record has no
 process identity`, the repair under the record on stderr — run `team remove <seat> --keep`, then
-`team add <seat>`, to establish one by a run.
+`team add <seat>`, to establish one by a run. A stored classification is validated on the state's
 own read against the closed list above: anything else the file holds reads `unknown` in the record,
 the log line, the prompt, `team status` and `team doctor`.
 

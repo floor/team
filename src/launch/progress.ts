@@ -22,16 +22,28 @@
 
 import { plainLine } from './plain.ts';
 
-/** The classifications a record can name. `login` is reserved: no profile produces it today. */
-export type Classification =
-  | 'trust'
-  | 'permission'
-  | 'question'
-  | 'vendor notice'
-  | 'login'
-  | 'unknown'
-  | 'unsent'
-  | 'timeout';
+/** The classifications a record can name, in the one closed list every reader validates against.
+ *  `login` is reserved: no profile produces it today. */
+export const CLASSIFICATIONS = [
+  'trust',
+  'permission',
+  'question',
+  'vendor notice',
+  'login',
+  'unknown',
+  'unsent',
+  'timeout',
+] as const;
+
+export type Classification = (typeof CLASSIFICATIONS)[number];
+
+/** A classification from outside the program — the state file is the one place one enters —
+ *  validated against the closed list: one of the eight, or `unknown` for anything else. */
+export function cleanClassification(value: unknown): Classification {
+  return typeof value === 'string' && (CLASSIFICATIONS as readonly string[]).includes(value)
+    ? (value as Classification)
+    : 'unknown';
+}
 
 /** The provisional states a line is drawn in, in the order a seat can pass them. The words a
  *  person watching the terminal sees. */

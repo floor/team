@@ -2,6 +2,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, s
 import { join } from 'node:path';
 import type { StoredReading, StoredSpend } from './budgets/readings.ts';
 import type { LaunchedIdentity } from './launch/identity.ts';
+import { cleanClassification, type Classification } from './launch/progress.ts';
 
 // What a team keeps: the live session's seats, worktrees and watch, and the project's last
 // readings, which outlive every session (§ 4.4). It lives beside the team file and is written by
@@ -38,7 +39,7 @@ export type SeatState = {
    */
   waiting?: {
     state: 'waiting-owner' | 'trust-sent-recovery';
-    classification: 'trust' | 'permission' | 'question' | 'vendor notice' | 'login' | 'unknown' | 'unsent' | 'timeout';
+    classification: Classification;
     manual?: true;
     sentAt?: string;
     version?: string;
@@ -105,6 +106,16 @@ export function readState(dir: string): State {
   for (const session of Object.values(state.sessions)) {
     session.seats ??= {};
     session.worktrees ??= {};
+    // A stored classification is validated here, at the one door a value from outside the program
+    // enters through: one of the closed list, or `unknown` for anything else. Every later reader —
+    // the log line a waiting seat writes, the status row and its `difference:` line, the prompt a
+    // resumed wait draws — takes the reading from here, so a hand-edited or corrupted record can
+    // never print whatever it holds.
+    for (const seat of Object.values(session.seats)) {
+      if (seat.waiting && typeof seat.waiting === 'object') {
+        seat.waiting.classification = cleanClassification(seat.waiting.classification);
+      }
+    }
     // Read old, write new: readings used to be held under a session. They are the project's
     // (§ 4.4), so every session's records are merged to the top level here — no reader loses one,
     // and the next write persists the new shape.

@@ -2724,6 +2724,65 @@ describe('team up, the pause', () => {
     expect(kept?.pane).toBe('w1:p1');
   });
 
+  test('a waiting log line takes its classification from the validated read, never the stored bytes', async () => {
+    await approve();
+    // A stored classification a hand-edited or corrupted file can hold — an escape sequence and
+    // a forged line. The log line `entering()` writes is built from the record read through the
+    // state's one door, so it carries `unknown`, never the bytes.
+    writeFileSync(join(root, '.agents/team.state.json'), JSON.stringify({
+      format: 1,
+      sessions: {
+        'acme-web': {
+          seats: {
+            'claude-coordinator-acme': {
+              stage: 'launched',
+              pane: 'w1:p1',
+              workspace: 'w1',
+              launched: { shell: 400, cli: [401] },
+              waiting: { state: 'waiting-owner', classification: 'trust\x1b[2J\r\ninjected' },
+            },
+            'deepseek-acme': { stage: 'ready', pane: 'w2:p1', workspace: 'w2', launched: { shell: 500, cli: [501] } },
+            'deepseek-acme-2': { stage: 'ready', pane: 'w3:p1', workspace: 'w3', launched: { shell: 510, cli: [511] } },
+          },
+          worktrees: {},
+          watch: { pid: 4242, heartbeat: '2026-10-03T14:01:00Z' },
+        },
+      },
+    }));
+    // The pane reads working, so the fresh read has no classification of its own to offer and the
+    // stored one — the probe — is what the record hands on. The log line carries the validated
+    // `unknown`, never the bytes.
+    const working = readFileSync(new URL('../fixtures/claude-code/2.1.289/unsent-typing-while-running-ansi.txt', import.meta.url), 'utf8');
+    const made = world(IDLE);
+    made.seed('w1:p1', working, true);
+    made.seed('w2:p1', IDLE, true);
+    made.seed('w3:p1', IDLE, true);
+    made.session = 'running';
+    const listed = () => [
+      listedPane('w1:p1'),
+      agent('deepseek-acme', 'w2:p1'),
+      agent('deepseek-acme-2', 'w3:p1'),
+    ];
+    made.launch.agents = listed;
+    made.launch.processInfo = (_session, pane) =>
+      pane === 'w1:p1' ? { shell: 400, foreground: [400, 401] } :
+      pane === 'w2:p1' ? { shell: 500, foreground: [500, 501] } :
+      pane === 'w3:p1' ? { shell: 510, foreground: [510, 511] } : null;
+    made.terminal.keys.push('eof');
+    const io = testIo(root, { kind: 'owner' });
+    io.stdoutIsTTY = true;
+    const code = await runUp(FILE, io, sources({
+      sessionState: () => 'running',
+      alive: () => true,
+      workspaces: () => [{ id: 'w1', label: 'claude opus 5.5' }, { id: 'w2', label: 'deepseek flash v4.1' }, { id: 'w3', label: 'deepseek flash v4.1-2' }],
+      agents: listed,
+    }, made));
+    expect(code).toBe(1);
+    const log = readFileSync(join(root, '.agents/team.log'), 'utf8');
+    expect(log).toContain('up [owner] claude-coordinator-acme: waiting for owner (unknown)');
+    expect(log).not.toContain('injected');
+  });
+
   test('a recorded waiting seat whose pane is gone fails closed, and the repair is named', async () => {
     await approve();
     writeFileSync(join(root, '.agents/team.state.json'), JSON.stringify({

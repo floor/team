@@ -112,7 +112,11 @@ CODEX_HOME=/path/to/codex exec /path/to/codex-quota
 
 A seat the state records waiting shows `waiting for owner (<classification>)` — or
 `trust sent; recovery required` — as its row, with its pane, and its one difference stands before
-the unnamed and launch-stopped ones.
+the unnamed and launch-stopped ones. The classification is validated when the state is read,
+against the closed list (`trust`, `permission`, `question`, `vendor notice`, `login`, `unknown`,
+`unsent`, `timeout`): anything else the file holds reads `unknown` in the row, in the difference
+and in the log line the record writes, so a hand-edited or corrupted file can never print its bytes
+here.
 
 | Difference | Repair |
 | --- | --- |
