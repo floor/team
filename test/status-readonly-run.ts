@@ -82,7 +82,7 @@ mkdirSync(join(root, '.agents'), { recursive: true });
 const file = join(root, '.agents', 'team.yaml');
 writeFileSync(file, TEAM);
 
-const io = testIo(root);
+const io = testIo(root, { kind: 'owner' });
 const code = await runStatus(['--file', file], io, {
   // The real live read (the one under test); the store, the branch and the clock are stood in.
   live: realSources.live,

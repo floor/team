@@ -113,6 +113,9 @@ export interface UpInput {
   seats: readonly UpSeat[];
   /** The watch's pid is alive, so no second watch is started. */
   watchAlive?: boolean;
+  /** When false, no watchdog workspace is created: a flagless watch started in `root` would
+   *  not read the file this plan was built from. Absent means start one, as before. */
+  startWatch?: boolean;
   /** The command the watchdog pane runs. Defaults to `team watch`. */
   watchLine?: string;
 }
@@ -326,7 +329,7 @@ export function upPlan(input: UpInput): Step[] {
     }
   }
 
-  if (input.watchAlive) return steps;
+  if (input.watchAlive || input.startWatch === false) return steps;
   const watchArguments = session === 'default' ? '' : ` --session ${shellQuote(session)}`;
   const watchLine = input.watchLine ?? `team watch${watchArguments}`;
   steps.push({

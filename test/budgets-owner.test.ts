@@ -199,7 +199,7 @@ describe('the watch reads them', () => {
         windows: [{ window: 'weekly', left: 8, used: 92, at: NOW_MS, resetsAt: NOW_MS + 7 * 24 * 3600_000 }],
       },
     }];
-    const io = testIo(root);
+    const io = testIo(root, { kind: 'owner' });
     const code = await runWatch(['--file', '.agents/team.yaml'], io, watchSources(1));
     expect(code).toBe(0);
     expect(io.out).toContain('openai weekly is 92% used, past the 50% mark');
@@ -210,7 +210,7 @@ describe('the watch reads them', () => {
   test('an unapproved cadence edit does not stretch the loop\'s check runs', async () => {
     approve(source('  check_every: 30s\n'));
     write(source('  check_every: 1000h\n'));
-    const io = testIo(root);
+    const io = testIo(root, { kind: 'owner' });
     const code = await runWatch(['--file', '.agents/team.yaml'], io, watchSources(2));
     expect(code).toBe(0);
     // Two passes 120s apart are the approved 30s cadence's: both run the checks. A file that
@@ -241,7 +241,7 @@ describe('status reads them', () => {
       now: () => NOW,
     };
     const status = async () => {
-      const io = testIo(root);
+      const io = testIo(root, { kind: 'owner' });
       await runStatus(['--file', '.agents/team.yaml'], io, sources);
       return io.out;
     };
