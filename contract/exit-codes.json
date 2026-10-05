@@ -39,6 +39,13 @@
     {
       "code": 1,
       "command": "add",
+      "id": "add.another-pane",
+      "meaning": "the state records another pane for the caller's seat",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
       "id": "add.approved-copy",
       "meaning": "the approved copy can't be read",
       "trigger": "team add worker"
@@ -165,6 +172,13 @@
     {
       "code": 1,
       "command": "add",
+      "id": "add.no-pane",
+      "meaning": "the state records no pane for the caller's seat",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
       "id": "add.no-profile",
       "meaning": "the seat has no launch profile",
       "trigger": "team add worker"
@@ -217,6 +231,13 @@
       "id": "add.server",
       "meaning": "the session's server did not start",
       "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.session-owner",
+      "meaning": "--session is the owner's",
+      "trigger": "team add worker --session other"
     },
     {
       "code": 1,
@@ -333,9 +354,23 @@
     {
       "code": 1,
       "command": "answer",
+      "id": "answer.another-pane",
+      "meaning": "the state records another pane for the caller's seat",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
       "id": "answer.caller",
       "meaning": "the caller may not answer a trust dialog",
       "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.file-owner",
+      "meaning": "--file is the owner's",
+      "trigger": "team answer lead trust --file .agents/team.yaml"
     },
     {
       "code": 1,
@@ -349,6 +384,13 @@
       "command": "answer",
       "id": "answer.label",
       "meaning": "the trust choice is not the recorded one",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.no-pane",
+      "meaning": "the state records no pane for the caller's seat",
       "trigger": "team answer lead trust"
     },
     {
@@ -378,6 +420,13 @@
       "id": "answer.screen",
       "meaning": "the pane is not the trust dialog",
       "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.session-owner",
+      "meaning": "--session is the owner's",
+      "trigger": "team answer lead trust --session other"
     },
     {
       "code": 1,
@@ -697,9 +746,23 @@
     {
       "code": 1,
       "command": "down",
+      "id": "down.another-pane",
+      "meaning": "the state records another pane for the caller's seat",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
       "id": "down.caller",
       "meaning": "the caller may not change the team",
       "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.file-owner",
+      "meaning": "--file is the owner's",
+      "trigger": "team down --file .agents/team.yaml"
     },
     {
       "code": 1,
@@ -714,6 +777,20 @@
       "id": "down.no-launch",
       "meaning": "this call has no way to reach herdr",
       "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.no-pane",
+      "meaning": "the state records no pane for the caller's seat",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.session-owner",
+      "meaning": "--session is the owner's",
+      "trigger": "team down --session other"
     },
     {
       "code": 2,
@@ -914,6 +991,13 @@
     {
       "code": 1,
       "command": "remove",
+      "id": "remove.another-pane",
+      "meaning": "the state records another pane for the caller's seat",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
       "id": "remove.busy",
       "meaning": "the seat is not free",
       "trigger": "team remove worker"
@@ -963,8 +1047,22 @@
     {
       "code": 1,
       "command": "remove",
+      "id": "remove.never-approved",
+      "meaning": "the file was never approved",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
       "id": "remove.no-launch",
       "meaning": "this call has no way to reach herdr",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.no-pane",
+      "meaning": "the state records no pane for the caller's seat",
       "trigger": "team remove worker"
     },
     {
@@ -980,6 +1078,13 @@
       "id": "remove.no-seat",
       "meaning": "the team has no such seat",
       "trigger": "team remove missing"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.session-owner",
+      "meaning": "--session is the owner's",
+      "trigger": "team remove worker --session other"
     },
     {
       "code": 1,
@@ -1341,6 +1446,13 @@
     {
       "code": 1,
       "command": "worktree",
+      "id": "worktree.another-pane",
+      "meaning": "the state records another pane for the caller's seat",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
       "id": "worktree.approved-copy",
       "meaning": "the approved copy can't be read",
       "trigger": "team worktree new task --kind fix"
@@ -1481,6 +1593,13 @@
     {
       "code": 1,
       "command": "worktree",
+      "id": "worktree.no-pane",
+      "meaning": "the state records no pane for the caller's seat",
+      "trigger": "team worktree new task"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
       "id": "worktree.occupied",
       "meaning": "a seat is recorded in the worktree",
       "trigger": "team worktree remove task"
@@ -1547,6 +1666,13 @@
       "id": "worktree.seat-unapproved",
       "meaning": "--seat names a seat only the file declares",
       "trigger": "team worktree new task --kind fix --seat added-later"
+    },
+    {
+      "code": 1,
+      "command": "worktree",
+      "id": "worktree.session-owner",
+      "meaning": "--session is the owner's",
+      "trigger": "team worktree new task --session other"
     },
     {
       "code": 1,

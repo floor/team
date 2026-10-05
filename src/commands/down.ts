@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, mayChangeTeam, type Caller } from '../caller.ts';
+import { anotherPaneRefusal, callerOf, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller } from '../caller.ts';
 import { currentTeam } from '../file/current.ts';
 import {
   agentList,
@@ -148,6 +148,30 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     return 2;
   }
   const dry = args.flags.has('dry-run');
+  // The `--file` check is the walk's too, and it runs before `currentTeam` reads that file or
+  // writes beside it: a non-owner aiming `--file` must not make this command read and validate
+  // another project's team file, nor leave its `last_valid` in that project's state. The one
+  // place the six commands that take the flag decide it is `fileOwnerRefusal` (caller.ts).
+  const fileRefusal = fileOwnerRefusal(io, args.values.file);
+  if (fileRefusal !== undefined) {
+    io.stderr(`team down: ${fileRefusal}\n`);
+    // exit: down.file-owner
+    return 1;
+  }
+  // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
+  // `--session` is refused here, before `currentTeam` writes anything and before the flag's
+  // session is read — no agent list, no pane root, no `last_valid`, no log line. The dry run
+  // refuses the same way: the plan it would print is that session's, which is not its to aim.
+  // (A seat cannot be named in this refusal: placing it would read a session, and that is what
+  // must not happen yet.)
+  if (args.values.session !== undefined) {
+    const walked = walkCaller(io);
+    if (!isOwner(walked)) {
+      io.stderr(`team down: ${sessionOwnerRefusal(walked)}\n`);
+      // exit: down.session-owner
+      return 1;
+    }
+  }
   const current = currentTeam(io.cwd, args.values.file, sources.now(), sources.home);
   if (!current.ok) {
     for (const problem of current.errors) {
@@ -160,7 +184,15 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   }
   if (current.notice) io.stdout(`${current.notice}\n`);
   const { team, dir, root } = current;
-  const session = args.values.session ?? team.session;
+  // With no `--session` the session this run judges and stops is the caller's own placement: the
+  // file's session first, then a session the state records this caller's pane in (`team up
+  // --session <other>`) — never one a non-owner chose, and the plan then names that session. The
+  // flag keeps aiming the run, for the owner alone.
+  const judged = args.values.session !== undefined
+    ? { caller: callerOf(io, args.values.session === 'default' ? undefined : args.values.session), session: args.values.session }
+    : judgeCallerIn(io, dir, team);
+  const { caller } = judged;
+  const session = judged.session;
 
   const running = sources.sessionRunning(session);
   if (running === null) {
@@ -180,9 +212,13 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     return 2;
   }
 
-  const caller = callerOf(io, session === 'default' ? undefined : session);
   const refusals: string[] = [];
-  if (!mayChangeTeam(caller, team)) {
+  const verdict = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
+  if (verdict.kind === 'no-pane') {
+    refusals.push(noPaneRefusal(verdict.name));
+  } else if (verdict.kind === 'another-pane') {
+    refusals.push(anotherPaneRefusal(verdict.name, verdict.recordedPane));
+  } else if (verdict.kind === 'refused') {
     refusals.push(
       `only the owner, the coordinator or the operator stops the team; this call is ${describeCaller(caller)}`,
     );
@@ -260,6 +296,8 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     for (const refusal of refusals) io.stderr(`team down: ${refusal}\n`);
     // exit: down.caller
     // exit: down.abandon
+    // exit: down.no-pane
+    // exit: down.another-pane
     return 1;
   }
   const launch = sources.launch;
