@@ -190,7 +190,9 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
 
 /** The caller class the caller check returned, as the log's bracket. */
 function logWho(caller: Caller, team: TeamFile): string {
-  if (caller.kind === 'owner') return 'owner';
+  // `owner-no-tty` is refused before anything logs (it is not on a terminal), but the bracket
+  // it would carry is the owner's, as everywhere else.
+  if (caller.kind === 'owner' || caller.kind === 'owner-no-tty') return 'owner';
   if (caller.kind === 'unplaced') return 'unplaced';
   return caller.name === team.coordinator ? 'coordinator' : 'seat';
 }

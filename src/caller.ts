@@ -12,6 +12,9 @@ import { CLI_PROCESSES } from './clis.ts';
 
 export type Caller =
   | { kind: 'owner' }
+  // An owner's process with no terminal to prompt on: a script, a pty-less runner. It may run
+  // `up` (which then never prompts), and it is refused everywhere a terminal was required.
+  | { kind: 'owner-no-tty' }
   | { kind: 'seat'; name: string; pane: string }
   | { kind: 'unplaced'; reason: string };
 
@@ -51,12 +54,21 @@ export function placeCaller(sources: CallerSources): Caller {
   const cli = ancestors.find((process) => CLI_PROCESSES.includes(process.name));
   if (cli) return { kind: 'unplaced', reason: `it is run by an agent (${cli.name}) outside herdr` };
   if (sources.env.AGENT_UNATTENDED) return { kind: 'unplaced', reason: 'AGENT_UNATTENDED is set' };
-  if (!sources.stdinIsTTY) return { kind: 'unplaced', reason: 'it doesn\'t run on a terminal' };
+  if (!sources.stdinIsTTY) return { kind: 'owner-no-tty' };
   return { kind: 'owner' };
 }
 
 export function isOwner(caller: Caller): boolean {
   return caller.kind === 'owner';
+}
+
+/**
+ * Who may launch seats: the owner at a terminal, and the otherwise-verified owner without one.
+ * Only `up` reads this, and only to tell the two apart — the no-terminal one never prompts. Every
+ * other command keeps its refusals exactly: `isOwner` is still the terminal case alone.
+ */
+export function mayLaunchSeats(caller: Caller): boolean {
+  return caller.kind === 'owner' || caller.kind === 'owner-no-tty';
 }
 
 // The owner, or the coordinator's or the operator's seat: who may change a running team.
@@ -67,8 +79,16 @@ export function mayChangeTeam(caller: Caller, team: Pick<TeamFile, 'coordinator'
 
 export function describeCaller(caller: Caller): string {
   if (caller.kind === 'owner') return 'owner';
+  if (caller.kind === 'owner-no-tty') return 'owner (no terminal)';
   if (caller.kind === 'seat') return caller.name;
   return `unplaced (${caller.reason})`;
+}
+
+/** The bracket a log line carries. The owner is `owner` with or without a terminal: the log's
+ *  caller column names classes, and `(no terminal for owner)` on the record already says the rest. */
+export function callerLabel(caller: Caller): string {
+  if (caller.kind === 'owner' || caller.kind === 'owner-no-tty') return 'owner';
+  return describeCaller(caller);
 }
 
 // One process's parent and name, or null. By name only: arguments can hold credentials.

@@ -1,5 +1,17 @@
 import { describe, expect, test } from 'bun:test';
-import { mayChangeTeam, parseStat, placeCaller, processReader, readAncestors, readWithProc, readWithPs } from '../src/caller.ts';
+import {
+  callerLabel,
+  describeCaller,
+  isOwner,
+  mayChangeTeam,
+  mayLaunchSeats,
+  parseStat,
+  placeCaller,
+  processReader,
+  readAncestors,
+  readWithProc,
+  readWithPs,
+} from '../src/caller.ts';
 import type { CallerSources, Process } from '../src/caller.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 
@@ -55,8 +67,15 @@ describe('the caller is placed by its parent processes', () => {
     expect(placeCaller(sources(terminal, { env: { AGENT_UNATTENDED: '1' } })).kind).toBe('unplaced');
   });
 
-  test('a call that is not on a terminal is not the owner\'s', () => {
-    expect(placeCaller(sources(terminal, { stdinIsTTY: false })).kind).toBe('unplaced');
+  test('a verified owner outside herdr without a terminal is owner-no-tty, not unplaced', () => {
+    expect(placeCaller(sources(terminal, { stdinIsTTY: false }))).toEqual({ kind: 'owner-no-tty' });
+  });
+
+  test('no terminal only changes the owner case: every other refusal stands', () => {
+    expect(placeCaller(sources(seat, { stdinIsTTY: false })).kind).toBe('seat');
+    const loose: Process[] = [{ pid: 51, name: 'bash' }, { pid: 50, name: 'claude' }, { pid: 40, name: 'zsh' }];
+    expect(placeCaller(sources(loose, { stdinIsTTY: false })).kind).toBe('unplaced');
+    expect(placeCaller(sources(terminal, { stdinIsTTY: false, env: { AGENT_UNATTENDED: '1' } })).kind).toBe('unplaced');
   });
 
   test('under herdr, a herdr that doesn\'t answer places nobody', () => {
@@ -69,6 +88,22 @@ describe('the caller is placed by its parent processes', () => {
 
   test('a walk that stopped before the top places nobody, even on a terminal', () => {
     expect(placeCaller(sources(terminal, { ancestors: () => null }))).toMatchObject({ kind: 'unplaced', reason: expect.stringMatching(/to the top/) });
+  });
+});
+
+describe('the classes read apart', () => {
+  test('isOwner stays the terminal case; mayLaunchSeats is the one that includes owner-no-tty', () => {
+    expect(isOwner({ kind: 'owner' })).toBe(true);
+    expect(isOwner({ kind: 'owner-no-tty' })).toBe(false);
+    expect(mayLaunchSeats({ kind: 'owner' })).toBe(true);
+    expect(mayLaunchSeats({ kind: 'owner-no-tty' })).toBe(true);
+    expect(mayLaunchSeats({ kind: 'unplaced', reason: 'x' })).toBe(false);
+  });
+
+  test('the log bracket is owner for both; a refusal message still says which one', () => {
+    expect(callerLabel({ kind: 'owner' })).toBe('owner');
+    expect(callerLabel({ kind: 'owner-no-tty' })).toBe('owner');
+    expect(describeCaller({ kind: 'owner-no-tty' })).toBe('owner (no terminal)');
   });
 });
 

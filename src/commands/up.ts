@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner } from '../caller.ts';
+import { callerLabel, callerOf, describeCaller, mayLaunchSeats } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
@@ -272,7 +272,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   // What would make `up` refuse. A dry run prints the plan anyway; a real run stops first.
   const refusals: string[] = [];
   const caller = callerOf(io);
-  if (!isOwner(caller)) {
+  if (!mayLaunchSeats(caller)) {
     refusals.push(`only the owner runs \`up\`, from a terminal outside herdr; this call is ${describeCaller(caller)}`);
   }
   // One verified snapshot carries the whole command: the refusal when there is
@@ -580,7 +580,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       if (!profile || !sources.doctor) return null;
       return sources.doctor.version(profile.binary);
     },
-    log: (who, what) => logLine(dir, 'up', describeCaller(caller), `${who}: ${what}`, now()),
+    log: (who, what) => logLine(dir, 'up', callerLabel(caller), `${who}: ${what}`, now()),
   };
 
   const report = await executePlan(plan, session, host);
