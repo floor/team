@@ -789,6 +789,7 @@ seats:
 
   test('grammar matrix: ~ in later component, ., trailing slash, duplicates', () => {
     expect(absoluteTrustProblem(join(root, '~', 'more'), home)).toContain('takes "~" only as the first component');
+    expect(absoluteTrustProblem('~other/lobby', home)).toContain('takes "~" only as the first component');
     expect(absoluteTrustProblem(`${root}/.`, home)).toContain('must not contain "." or ".."');
 
     // trailing slash accepted
@@ -854,6 +855,21 @@ seats:
     }
   });
 
+  test('containment: a shared seat aimed at a protected checkout hears the rule that applies to it', () => {
+    const yaml = migratedTeamYaml()
+      .replace('protected: [.]', 'protected: [., src]')
+      .replace('cwd: .', 'cwd: src');
+    writeFileSync(join(root, '.agents', 'team.yaml'), yaml);
+    const loaded = loadTeamFile(root, { home });
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) {
+      const lead = loaded.team.seats.find((seat) => seat.name === 'lead');
+      if (!lead) throw new Error('no lead seat');
+      const start = seatStart(loaded.team, lead, root, home);
+      expect('problem' in start && start.problem).toContain('a shared seat never works in a protected checkout');
+    }
+  });
+
   test('containment: worktrees folder symlinked into project in migrated file is refused', () => {
     const liveDir = join(root, 'live');
     mkdirSync(liveDir, { recursive: true });
@@ -889,6 +905,24 @@ describe('legacy files and migration', () => {
     expect((await runDoctorCmd()).code).not.toBe(2);
     expect((await runCheckCmd()).code).not.toBe(2);
     expect((await runWorktreeCmd(['new', 'task-1', '--kind', 'feat'])).code).toBe(0);
+  });
+
+  test('a legacy file whose worktrees sit inside the project loads and reads; the seat is refused at placement', async () => {
+    // Main loaded such a file and refused the seat at launch; the load-time containment of
+    // workspace.path holds migrated files only, so this file must still load and read.
+    const yaml = legacyTeamYaml().replace('../worktrees/{repo}/{task}', 'wt/{task}');
+    approveYaml(yaml);
+
+    const loaded = loadTeamFile(root, { home });
+    expect(loaded.ok).toBe(true);
+    expect((await runStatusCmd()).code).not.toBe(2);
+    expect((await runDoctorCmd()).code).not.toBe(2);
+
+    if (!loaded.ok) return;
+    const worker = loaded.team.seats.find((seat) => seat.name === 'worker');
+    if (!worker) throw new Error('no worker seat');
+    const start = seatStart(loaded.team, worker, root, home);
+    expect('problem' in start && start.problem).toContain('inside the protected checkout');
   });
 
   test('up and add refuse every seat with the migration message naming the lobby path and showing trust:', async () => {
@@ -1298,12 +1332,120 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
   });
 
   test('a trust entry covering the approval store is detected', async () => {
-    const yaml = migratedTeamYaml().replace('trust:\n', 'trust:\n  - ~/.config/team\n');
+    // The store's own folder, spelled through `~`: only the approval-store check can refuse it.
+    const store = storePath('acme', root, home);
+    const yaml = migratedTeamYaml().replace('trust:\n', `trust:\n  - ~/.config/team/${store.split('/').pop()}\n`);
     writeFileSync(join(root, '.agents', 'team.yaml'), yaml);
     const run = await runApproveCmd();
     expect(run.code).not.toBe(0);
     expect(run.err).toContain('approval store');
     expect(run.err).toContain('.config/team');
+  });
+
+  test('a migrated file listing "/", the home, or a folder above them is refused at load, naming the entry', () => {
+    const cases: [string, string, RegExp][] = [
+      ['/', '/', /root of the filesystem/],
+      ['"~"', '~', /is the home itself/],
+      [home, home, /is the home itself/],
+      [join(home, '.config', 'team'), join(home, '.config', 'team'), /holds the lobby and the approval store/],
+      [base, base, /holds the lobby and the approval store/],
+    ];
+    for (const [written, value, reason] of cases) {
+      const yaml = migratedTeamYaml().replace('trust:\n', `trust:\n  - ${written}\n`);
+      writeFileSync(join(root, '.agents', 'team.yaml'), yaml);
+      const loaded = loadTeamFile(root, { home });
+      expect(loaded.ok).toBe(false);
+      if (loaded.ok) continue;
+      const text = loaded.errors.map((error) => error.message).join('\n');
+      expect(text).toContain(`trust: "${value}"`);
+      expect(text).toMatch(reason);
+    }
+  });
+
+  test('the project root, a folder under it, the lobby, and a worktrees folder beside the project stay acceptable', () => {
+    const yaml = migratedTeamYaml().replace('  - ~/.config/team/lobby\n', `  - ~/.config/team/lobby\n  - ${join(root, 'notes')}\n`);
+    writeFileSync(join(root, '.agents', 'team.yaml'), yaml);
+    const loaded = loadTeamFile(root, { home });
+    expect(loaded.ok).toBe(true);
+  });
+
+  test('the launch uses the gate\'s canonical lobby when the home is reached through a link', async () => {
+    const realHome = join(base, 'real', 'home');
+    mkdirSync(realHome, { recursive: true });
+    const link = join(base, 'link');
+    symlinkSync(join(base, 'real'), link, 'dir');
+    const homeLink = join(link, 'home');
+    const canonical = lobbyDir(realHome);
+    expect(lobbyDir(homeLink)).not.toBe(canonical);
+    // The file names the link-free entry; the launch must use the gate's canonical one.
+    approveYaml(migratedTeamYaml().replace('~/.config/team/lobby', canonical), homeLink);
+
+    const made = world();
+    const run = await runUpCmd([], made, { home: homeLink });
+    expect(run.code).toBe(0);
+    expect(made.workspaces).toContainEqual({ label: 'lead', cwd: canonical });
+    expect(made.workspaces).toContainEqual({ label: 'worker', cwd: canonical });
+    const state = readState(dir);
+    expect(state.sessions['acme']?.seats['lead']?.start_cwd).toBe(canonical);
+    expect(state.sessions['acme']?.seats['worker']?.start_cwd).toBe(canonical);
+  });
+
+  test('a temporary add launched through a linked home lands in the canonical lobby', async () => {
+    const realHome = join(base, 'real', 'home');
+    mkdirSync(realHome, { recursive: true });
+    const link = join(base, 'link');
+    symlinkSync(join(base, 'real'), link, 'dir');
+    const homeLink = join(link, 'home');
+    const canonical = lobbyDir(realHome);
+    approveYaml(migratedTeamYaml().replace('~/.config/team/lobby', canonical), homeLink);
+
+    const made = world();
+    expect((await runUpCmd([], made, { home: homeLink })).code).toBe(0);
+    const before = made.workspaces.length;
+    const addRun = await runAddCmd(['--temporary', '--like', 'worker', '--until', 'merged:main'], made, { home: homeLink });
+    expect(addRun.code).toBe(0);
+    expect(made.workspaces.slice(before)).toContainEqual({ label: 'worker-tmp-1', cwd: canonical });
+  });
+
+  test('a link swapped in before the chmod changes no folder outside the lobby', () => {
+    const outside = join(base, 'outside');
+    mkdirSync(outside, { recursive: true });
+    chmodSync(outside, 0o755);
+    const changed: string[] = [];
+    let lobbys = 0;
+    const fs: FsReader = {
+      ...defaultFs,
+      lstat(p) {
+        if (p === lobby) {
+          lobbys++;
+          // The swap lands after the lobby was created and checked once.
+          if (lobbys >= 3) {
+            const stat = defaultFs.lstat(p);
+            return { isDirectory: () => false, isSymbolicLink: () => true, isFile: () => false, mode: stat.mode, uid: stat.uid };
+          }
+        }
+        return defaultFs.lstat(p);
+      },
+      chmod(p, mode) {
+        changed.push(p);
+        // chmod(2) follows symbolic links: on the swapped path, it would reach the outside folder.
+        defaultFs.chmod(p === lobby ? outside : p, mode);
+      },
+    };
+    const res = verifyLobby(home, { create: true, fs });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.text).toContain('symbolic link');
+    expect(changed).toEqual([]);
+    expect(statSync(outside).mode & 0o7777).toBe(0o755);
+  });
+
+  test('an existing lobby with a looser mode is refused, never repaired', () => {
+    mkdirSync(lobby, { recursive: true });
+    chmodSync(lobby, 0o755);
+    const res = verifyLobby(home, { create: true });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.text).toContain('not 0700');
+    expect(statSync(lobby).mode & 0o7777).toBe(0o755);
   });
 
   test('doctor notes a migrated file that has never been approved', async () => {
