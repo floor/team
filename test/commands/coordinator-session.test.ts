@@ -1002,10 +1002,18 @@ describe('up over the v0.2.1 state', () => {
       }),
     );
     expect(code).toBe(0);
+    // The 0.2.1 state records no process identity, so each skip names the relaunch that
+    // records it; the seat itself is still left exactly as it is.
     expect(io.out).toBe(
-      `  skip ${COORDINATOR}: already ready; left as it is\n` +
-        `  skip ${OPERATOR}: already ready; left as it is\n` +
-        `  skip ${SEAT}: already ready; left as it is\n`,
+      `  skip ${COORDINATOR}: already ready; left as it is; a relaunch records its process: ` +
+        `team remove ${COORDINATOR} --keep, then team add ${COORDINATOR} ` +
+        '(or team down, then team up, for the whole team)\n' +
+        `  skip ${OPERATOR}: already ready; left as it is; a relaunch records its process: ` +
+        `team remove ${OPERATOR} --keep, then team add ${OPERATOR} ` +
+        '(or team down, then team up, for the whole team)\n' +
+        `  skip ${SEAT}: already ready; left as it is; a relaunch records its process: ` +
+        `team remove ${SEAT} --keep, then team add ${SEAT} ` +
+        '(or team down, then team up, for the whole team)\n',
     );
     expect(counts).toEqual({ starts: 0, creates: 0, runs: 0, renames: 0, closes: 0 });
     expect(readFileSync(stateFile, 'utf8')).toBe(`${JSON.stringify(STATE_021, null, 2)}\n`);
