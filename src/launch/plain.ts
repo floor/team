@@ -114,10 +114,28 @@ export function stripControlStrings(text: string): string {
 /** A string as it is safe to print: every escape sequence is removed whole — a CSI's private
  *  parameters among them, and the payload of a string sequence (OSC, DCS, APC, PM, SOS),
  *  whichever introducer and terminator are mixed, 7-bit `ESC x` or its one-byte C1 form, `ESC \`
- *  or C1 ST, or BEL to close an OSC; one left unterminated goes to the end of the text — and
- *  every control character but the line break, carriage returns, bells and escape characters
- *  among them — and every invisible format character that would change how the rest is
- *  displayed or hide it. The line breaks are kept: a multi-line detail stays multi-line. */
+ *  or C1 ST, or BEL to close an OSC; one left unterminated goes to the end of the text — and the
+ *  characters the rule below names. The line breaks are kept: a multi-line detail stays
+ *  multi-line.
+ *
+ *  The rule, so that no list of characters is the definition and no code point has to be
+ *  re-audited into it: every C0 and C1 control character, every character of Unicode category
+ *  Cf, Zl and Zp, and the whole tag block U+E0000–U+E007F is removed or folded. LF is the fold
+ *  target, not a removal: the line and paragraph separators U+2028 (Zl) and U+2029 (Zp) become
+ *  LF on the spot, so `plainLine` folds any of the three exactly as it folds a line feed, and a
+ *  field's bytes are the same wherever they are shown or written.
+ *  - The variation selectors stay, on purpose: U+FE00–U+FE0F and U+E0100–U+E01EF only choose how
+ *    the character before them is drawn — they never show other words than the string holds — so
+ *    they are carried through whatever a category table says (both runtimes here report U+FE0E,
+ *    U+FE0F and U+E0100 `Cf` false and `Mn` true).
+ *  - The tag block is removed whole because a category test alone would leave its edges:
+ *    U+E0000 and U+E001F are unassigned, not `Cf`.
+ *  - U+200D is not an exception: removing it splits an emoji joined with it into the characters
+ *    the string actually holds — the joiner is invisible, the parts are what the string says.
+ *    Accepted.
+ *
+ *  The C0/C1 line is the rule read directly: every C0 (U+0000–U+001F) and C1 (U+007F–U+009F)
+ *  control goes, LF alone left for the fold. */
 export function plainText(text: string): string {
   return stripControlStrings(
     text
@@ -127,15 +145,18 @@ export function plainText(text: string): string {
       .replace(/\x9b\[?[0-?]*[ -/]*[@-~]/g, ''),
   )
     .replace(/\x1b./g, '')
+    // The line separators folded to the line feed, before anything else looks at a line break.
+    .replace(/[\p{Zl}\p{Zp}]/gu, '\n')
     .replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, '')
-    // The invisible format characters (Unicode category Cf), exactly the ones whose effect is on
-    // what is displayed rather than on the text itself: the bidi embeddings, overrides and
-    // isolates (U+202A–U+202E, U+2066–U+2069), the direction marks (U+061C, U+200E, U+200F), the
-    // zero-width characters (U+200B–U+200D, U+2060) and the byte-order mark (U+FEFF). A terminal
-    // that honours them displays other words than the string holds, or hides words; ordinary
-    // letters of every script are untouched.
-    .replace(/[؜​-‏‪-‮⁠⁦-⁩﻿]/g, '');
+    // The Cf characters and the tag block whole; the exception is named as a constant below so it
+    // holds whatever a Unicode table calls the selectors.
+    .replace(/[\p{Cf}\u{e0000}-\u{e007f}]/gu, (character) => (VARIATION_SELECTOR.test(character) ? character : ''));
 }
+
+/** The cleaning's one named exception: the variation selectors choose how the character before
+ *  them is drawn and nothing else. Both runtimes' tables put them in category `Mn`, so the `Cf`
+ *  rule reaches none of them; the exception keeps that true even if a table were to change. */
+const VARIATION_SELECTOR = /[\u{fe00}-\u{fe0f}\u{e0100}-\u{e01ef}]/u;
 
 /** `plainText` with the line breaks folded: one line in, one line out, whatever the caller
  *  built. A run of line feeds becomes one space — every word stays, the field is never cut —
