@@ -8,7 +8,10 @@ import { statusOnLine } from '../profiles/profile.ts';
 export type Running = { model: string; version: string };
 
 /** The screen names a model, and it is not the file's. Unread is never a difference. */
-export function modelDiffers(running: Running | null, declared: { model: string; version: string }): boolean {
+export function modelDiffers(
+  running: Running | null,
+  declared: { model: string; version: string },
+): running is Running {
   return running !== null && (running.model !== declared.model || running.version !== declared.version);
 }
 

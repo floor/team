@@ -212,7 +212,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
             const declared = { model: op.model, version: op.version };
             if (modelDiffers(running, declared)) {
               dropped.add(op.seat);
-              finish(op.seat, modelLeft(running as Running, declared, op.cli));
+              finish(op.seat, modelLeft(running, declared, op.cli));
               break;
             }
             if (!running) {

@@ -290,7 +290,7 @@ function modelRules(node: YamlNode, key: string): ModelRule[] {
     template(version, match.line);
     const suggested = optional(entries, 'flag');
     const suggestedId = suggested ? text(suggested, 'flag') : null;
-    if (suggestedId !== null) {
+    if (suggested !== undefined && suggestedId !== null) {
       const rest = suggestedId.replaceAll('{version}', '');
       if (rest.includes('{') || rest.includes('}')) fail(suggested.line, 'a flag template is "{version}"');
     }
