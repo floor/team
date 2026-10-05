@@ -11,6 +11,22 @@ function readJson(path: string): { version: string; dependencies?: { team?: stri
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
+// Every npm call runs offline, in a temporary home, prefix and cache of this test's
+// own: no machine npm state is read or written and no network is touched.
+function npmRun(home: string, args: string[], cwd: string, timeout?: number) {
+  return spawnSync('npm', [...args, '--offline', '--cache', join(home, 'cache')], {
+    cwd,
+    encoding: 'utf8',
+    timeout,
+    env: {
+      ...process.env,
+      HOME: home,
+      npm_config_userconfig: join(home, 'npmrc'),
+      npm_config_prefix: join(home, 'prefix'),
+    },
+  });
+}
+
 test('teamcli is the same version as team, and depends on that exact version', () => {
   const root = readJson(join(repo, 'package.json'));
   const teamcli = readJson(join(repo, 'packages/teamcli/package.json'));
@@ -19,11 +35,9 @@ test('teamcli is the same version as team, and depends on that exact version', (
 });
 
 test('the teamcli tarball lists exactly the package manifest, the shim and the readme', () => {
+  const home = mkdtempSync(join(tmpdir(), 'teamcli-home-'));
   const dest = mkdtempSync(join(tmpdir(), 'teamcli-pack-'));
-  const packed = spawnSync('npm', ['pack', '--json', '--pack-destination', dest], {
-    cwd: join(repo, 'packages/teamcli'),
-    encoding: 'utf8',
-  });
+  const packed = npmRun(home, ['pack', '--json', '--pack-destination', dest], join(repo, 'packages/teamcli'));
   expect(packed.status).toBe(0);
   const report = JSON.parse(packed.stdout)[0];
   const tarball = join(dest, report.filename);
@@ -38,7 +52,7 @@ test('the teamcli tarball lists exactly the package manifest, the shim and the r
 
 // The published manifest exports only ".". This test builds a package with that map
 // rather than packing the tagged tree, then installs this branch's own tarball too.
-function publishedTeam(dest: string): string {
+function publishedTeam(dest: string, home: string): string {
   const dir = join(dest, 'published-team');
   mkdirSync(join(dir, 'dist'), { recursive: true });
   writeFileSync(join(dir, 'package.json'), `${JSON.stringify({
@@ -51,16 +65,17 @@ function publishedTeam(dest: string): string {
   }, null, 2)}\n`);
   writeFileSync(join(dir, 'dist/index.js'), 'export {};\n');
   writeFileSync(join(dir, 'dist/cli.js'), '#!/usr/bin/env node\nconsole.log("published-line");\n');
-  const packed = spawnSync('npm', ['pack', '--json', '--pack-destination', dest], { cwd: dir, encoding: 'utf8' });
+  const packed = npmRun(home, ['pack', '--json', '--pack-destination', dest], dir);
   expect(packed.status).toBe(0);
   return join(dest, JSON.parse(packed.stdout)[0].filename);
 }
 
-function installPair(prefix: string, teamTarball: string, teamcliTarball: string): void {
-  const installed = spawnSync(
-    'npm',
-    ['install', '--offline', '--no-audit', '--no-fund', '--ignore-scripts', teamTarball, teamcliTarball],
-    { cwd: prefix, encoding: 'utf8', timeout: 40_000 },
+function installPair(prefix: string, teamTarball: string, teamcliTarball: string, home: string): void {
+  const installed = npmRun(
+    home,
+    ['install', '--no-audit', '--no-fund', '--ignore-scripts', teamTarball, teamcliTarball],
+    prefix,
+    40_000,
   );
   if (installed.status !== 0) {
     throw new Error(`npm install exited ${installed.status} ${installed.signal ?? ''}: ${installed.stderr || installed.stdout}`);
@@ -71,28 +86,26 @@ test('packed team and teamcli bins match the team cli, and a signal reaches the 
   const built = spawnSync('bun', ['run', 'build'], { cwd: repo, encoding: 'utf8', timeout: 40_000 });
   expect(built.status).toBe(0);
 
+  const home = mkdtempSync(join(tmpdir(), 'teamcli-home-'));
   const dest = mkdtempSync(join(tmpdir(), 'teamcli-bins-'));
-  const rootPack = spawnSync('npm', ['pack', '--json', '--pack-destination', dest], { cwd: repo, encoding: 'utf8' });
+  const rootPack = npmRun(home, ['pack', '--json', '--pack-destination', dest], repo);
   expect(rootPack.status).toBe(0);
   const rootReport = JSON.parse(rootPack.stdout)[0];
   const rootPaths: string[] = rootReport.files.map((file: { path: string }) => file.path);
   expect(rootPaths.some((path) => path === 'packages' || path.startsWith('packages/'))).toBe(false);
-  const teamcliPack = spawnSync('npm', ['pack', '--json', '--pack-destination', dest], {
-    cwd: join(repo, 'packages/teamcli'),
-    encoding: 'utf8',
-  });
+  const teamcliPack = npmRun(home, ['pack', '--json', '--pack-destination', dest], join(repo, 'packages/teamcli'));
   expect(teamcliPack.status).toBe(0);
   const teamcliReport = JSON.parse(teamcliPack.stdout)[0];
 
   const teamcliTarball = join(dest, teamcliReport.filename);
   const published = mkdtempSync(join(tmpdir(), 'teamcli-published-'));
-  installPair(published, publishedTeam(mkdtempSync(join(tmpdir(), 'teamcli-published-pack-'))), teamcliTarball);
+  installPair(published, publishedTeam(mkdtempSync(join(tmpdir(), 'teamcli-published-pack-')), home), teamcliTarball, home);
   const publishedRun = spawnSync(join(published, 'node_modules/.bin/teamcli'), [], { encoding: 'utf8' });
   expect(publishedRun.status).toBe(0);
   expect(publishedRun.stdout).toBe('published-line\n');
 
   const prefix = mkdtempSync(join(tmpdir(), 'teamcli-prefix-'));
-  installPair(prefix, join(dest, rootReport.filename), teamcliTarball);
+  installPair(prefix, join(dest, rootReport.filename), teamcliTarball, home);
 
   const own = spawnSync(process.execPath, [join(repo, 'dist/cli.js'), '--version'], { encoding: 'utf8' });
   const team = spawnSync(join(prefix, 'node_modules/.bin/team'), ['--version'], { encoding: 'utf8' });
