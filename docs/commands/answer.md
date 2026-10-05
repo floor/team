@@ -1,6 +1,6 @@
 # team answer
 
-Presses the one recorded key of a folder-trust dialog, and only that key. Every check has to pass on two fresh reads of the pane. Anything else sends nothing.
+Presses the one recorded key of a folder-trust dialog, and only that key. Every check has to pass on two fresh reads of the pane, and the folder must be the lobby on three readings at once: the path the screen shows, the folder the pane itself reports working in, and the lobby's parent directory, where no name may sit that differs from the lobby's by whitespace alone. A row's trailing padding is stripped, so the screen's last byte alone is never proof. Anything else sends nothing.
 
 ## Synopsis
 
@@ -10,7 +10,7 @@ Presses the one recorded key of a folder-trust dialog, and only that key. Every 
 
 ## What it reads and writes
 
-Reads the team file, this machine's approval and the approved copy the trust entries are read from, the seat's state, the installed CLI's version, and the pane. The version must match a record whose own capture is registered (`src/profiles/trust-answer.ts`); Codex's record also needs a registered capture of its folder layout in the real lobby and none exists, so Codex answers nothing today. The command holds the seat's lock (`<state dir>/seat-locks/<session>/<seat>`) for its whole run, so a launch of the same seat cannot act beside it.
+Reads the team file, this machine's approval and the approved copy the trust entries are read from, the seat's state, the installed CLI's version, and the pane — the screen's own lines, the folder herdr reports the pane working in, and the lobby's parent directory. The version must match a record whose own capture is registered (`src/profiles/trust-answer.ts`); Codex's record also needs a registered capture of its folder layout in the real lobby and none exists, so Codex answers nothing today. The command holds the seat's lock (`<state dir>/seat-locks/<session>/<seat>`) for its whole run, so a launch of the same seat cannot act beside it.
 
 On success it writes `trust-sent-recovery` into the seat's state and reads it back **before** sending the key: a crash between the two leaves a recovery a retry only observes, never a dialog answered twice. It then sends one key, waits for the idle prompt, delivers the ordinary rules, and writes the seat `ready`. A refusal before the key writes nothing; a failure after it leaves `trust-sent-recovery`.
 
@@ -62,7 +62,7 @@ Every refusal line is `<seat>: <reason>` except an unplaced caller's, which is i
 | version | `this version has no trust answer` |
 | screen | `the pane is not the trust dialog` |
 | label | `the trust choice is not the recorded one` |
-| folder | `the dialog does not show exactly one folder`; `the dialog does not show the lobby as written`; `this folder is not an exact trust entry`; `ask the owner to approve this exact folder and answer through team up` |
+| folder | `the dialog does not show exactly one folder`; `the dialog does not show the lobby as written: the owner answers it through team up`; `the pane's folder cannot be read`; `the pane's folder is not the lobby as written`; `the lobby's parent folder cannot be read`; `the lobby's parent folder holds a name that differs from the lobby's by whitespace alone`; `this folder is not an exact trust entry`; `ask the owner to approve this exact folder and answer through team up` |
 | action | `the recorded key is not one this version sends` |
 
 `action` is a well-formedness defence: it is reached only when a profile records a key byte the host does not send, which the shipped profiles (0d, 31, 61) do not.
@@ -86,7 +86,7 @@ Every refusal line is `<seat>: <reason>` except an unplaced caller's, which is i
 
 ## Log lines
 
-Every run writes one line to `team.log`: `<ISO timestamp> answer [<who>] <seat>: <message>`. `<who>` is the class the caller check returned — `owner`, `coordinator`, `seat`, or `unplaced` — never the owner for a caller that is not the owner. No line holds pane text, a pane id, a folder, or an unplaced reason.
+Every transition writes one line to `team.log`: `<ISO timestamp> answer [<who>] <seat>: <message>`. `<who>` is the class the caller check returned — `owner`, `coordinator`, `seat`, or `unplaced` — never the owner for a caller that is not the owner. No line holds pane text, a pane id, a folder, or an unplaced reason.
 
 | Message | When |
 | --- | --- |
@@ -96,7 +96,7 @@ Every run writes one line to `team.log`: `<ISO timestamp> answer [<who>] <seat>:
 | `refused trust: version` | no record matches the printed version, or it changed between reads |
 | `refused trust: screen` | the pane is not the trust dialog |
 | `refused trust: label` | the recorded label is not marked on screen |
-| `refused trust: folder` | the folder is not the lobby as written, or not an exact trust entry |
+| `refused trust: folder` | the screen's path, the pane's own folder, or the lobby's parent is not the lobby as written, or the folder is not an exact trust entry |
 | `refused trust: action` | the recorded key is not one this version sends, or the send failed |
 | `refused trust: idle` | the key was sent; the idle prompt did not come |
 | `refused trust: rule delivery` | the key was sent; the rules were not delivered |
