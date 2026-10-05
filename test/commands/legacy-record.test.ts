@@ -147,6 +147,7 @@ describe('a legacy record, with the team\'s seats running', () => {
       renameAgent: () => true,
       closeWorkspace: () => true,
       agentPanes: () => [],
+      agents: () => [],
       paneText: () => '',
       foreground: () => ['claude'],
       sleep: async () => {},

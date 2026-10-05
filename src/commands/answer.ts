@@ -10,9 +10,10 @@ import { loadTeamFile } from '../file/load.ts';
 import { renderSignature } from '../file/signature.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
-import { agentList, agentRename, agentStatus, paneForeground, paneForegroundCwd, paneRead, pressEnter, sendKey as herdrSendKey, typeText } from '../herdr.ts';
+import { agentList, agentRename, agentStatus, paneForeground, paneForegroundCwd, paneProcesses, paneRead, pressEnter, sendKey as herdrSendKey, typeText, type PaneProcesses } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { deliverRules, type Delivery } from '../launch/deliver.ts';
+import { seatProcessVerdict, type LaunchedIdentity } from '../launch/identity.ts';
 import { rulesText } from '../launch/rules.ts';
 import { acquireSeatLock } from '../launch/seat-lock.ts';
 import { logLine } from '../log.ts';
@@ -40,6 +41,8 @@ export type AnswerHost = {
   status(session: string, pane: string): string | null;
   type(session: string, pane: string, text: string): boolean;
   enter(session: string, pane: string): boolean;
+  /** The pane's process identity; null when herdr can't tell. */
+  processInfo?(session: string, pane: string): PaneProcesses | null;
   now(): Date;
   sleep(ms: number): Promise<void>;
   home: string;
@@ -64,13 +67,14 @@ export const realHost: AnswerHost = {
   status: (session, pane) => agentStatus(pane, session),
   type: (session, pane, text) => typeText(pane, text, session),
   enter: (session, pane) => pressEnter(pane, session),
+  processInfo: (session, pane) => paneProcesses(pane, session),
   now: () => new Date(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   home: homedir(),
   standing: (root) => approvalStanding(root, homedir()),
 };
 
-type Reason = 'caller' | 'policy' | 'state' | 'screen' | 'version' | 'label' | 'folder' | 'action' | 'idle' | 'rule delivery';
+type Reason = 'caller' | 'policy' | 'state' | 'screen' | 'version' | 'label' | 'folder' | 'action' | 'process' | 'idle' | 'rule delivery';
 
 type Refusal = { class: Reason; message: string };
 
@@ -100,20 +104,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
   const caller = callerOf(io, session);
   const who = logWho(caller, team);
 
-  const refused = (reason: Refusal): number => {
-    logLine(dir, 'answer', who, `${seatName}: refused trust: ${reason.class}`, host.now());
-    if (json) io.stdout(`${JSON.stringify({ seat: seatName, dialog: 'trust', status: 'refused', reason: reason.message })}\n`);
-    else io.stderr(`${reason.message}\n`);
-    // exit: answer.caller
-    // exit: answer.policy
-    // exit: answer.state
-    // exit: answer.version
-    // exit: answer.screen
-    // exit: answer.label
-    // exit: answer.folder
-    // exit: answer.action
-    return 1;
-  };
+  const refused = (reason: Refusal): number => refuse(io, json, dir, who, seatName, host, reason);
 
   const callerProblem = callerProblemOf(caller, team, seatName);
   if (callerProblem) return refused(callerProblem);
@@ -148,7 +139,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
     const waiting = recorded?.waiting;
     if (waiting?.manual === true) return refused({ class: 'state', message: `${seatName}: the owner has the pane open` });
     if (waiting?.state === 'trust-sent-recovery') {
-      return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace);
+      return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace, recorded?.launched);
     }
     if (waiting?.state !== 'waiting-owner' || waiting.classification !== 'trust') {
       return refused({ class: 'state', message: `${seatName}: it is not waiting at a trust dialog` });
@@ -156,9 +147,9 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
 
     const cli = configured?.cli ?? team.seats.find((seat) => seat.name === temporary?.like)?.cli ?? '';
     const profile = profileFor(cli);
-    const checked = inspect(seatName, host, session, pane, profile, approved.team.trust, root);
+    const checked = inspect(seatName, host, session, pane, profile, approved.team.trust, root, recorded?.launched);
     if ('class' in checked) return refused(checked);
-    const again = inspect(seatName, host, session, pane, profile, approved.team.trust, root);
+    const again = inspect(seatName, host, session, pane, profile, approved.team.trust, root, recorded?.launched);
     if ('class' in again) return refused(again);
     if (again.folder !== checked.folder) return refused({ class: 'folder', message: `${seatName}: ${OUTSIDE}` });
     if (again.record.from !== checked.record.from || again.record.to !== checked.record.to || again.record.action !== checked.record.action) {
@@ -180,6 +171,8 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
     }, pane, workspace)) {
       return refused({ class: 'state', message: `${seatName}: its recovery state could not be recorded` });
     }
+    const keyProcessProblem = checkProcess(seatName, host, session, pane, recorded?.launched);
+    if (keyProcessProblem) return refused(keyProcessProblem);
     let sent = false;
     try {
       sent = host.sendKey(session, pane, key);
@@ -190,7 +183,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
       logLine(dir, 'answer', who, `${seatName}: refused trust: action`, host.now());
       return recovery(io, json, seatName, 'its key could not be sent', `${seatName}: the key could not be sent; recovery required`);
     }
-    return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace);
+    return await finish(io, json, host, dir, session, who, seatName, team, configured, pane, workspace, recorded?.launched);
   } finally {
     lock.release();
   }
@@ -216,6 +209,21 @@ function expired(root: string, until: string, team: TeamFile, own: boolean): boo
   return end.verdict === 'merged';
 }
 
+function checkProcess(
+  seat: string,
+  host: AnswerHost,
+  session: string,
+  pane: string,
+  launched?: LaunchedIdentity,
+): Refusal | null {
+  if (!launched) return null;
+  const info = host.processInfo ? host.processInfo(session, pane) : null;
+  const verdict = seatProcessVerdict(launched, info);
+  if (verdict === 'unknown') return { class: 'process', message: `${seat}: its pane could not be read` };
+  if (verdict !== 'same') return { class: 'process', message: `${seat}: the process in its pane is not the one team launched` };
+  return null;
+}
+
 /**
  * One fresh reading of the pane: the record this version answers, or the class that
  * refused. `trust` is the approved copy's own `trust:` list, never the live file's —
@@ -229,8 +237,11 @@ function inspect(
   profile: Profile | null,
   trust: readonly string[],
   root: string,
+  launched?: LaunchedIdentity,
 ): Seen | Refusal {
   const say = (reason: Reason, text: string): Refusal => ({ class: reason, message: `${seat}: ${text}` });
+  const problem = checkProcess(seat, host, session, pane, launched);
+  if (problem) return problem;
   if (!profile) return say('version', 'this version has no trust answer');
   const printed = host.version(profile.binary);
   const record = printed
@@ -321,6 +332,30 @@ function recovery(io: Io, json: boolean, seat: string, reason: string, human: st
   return 1;
 }
 
+function refuse(
+  io: Io,
+  json: boolean,
+  dir: string,
+  who: string,
+  seat: string,
+  host: AnswerHost,
+  reason: Refusal,
+): number {
+  logLine(dir, 'answer', who, `${seat}: refused trust: ${reason.class}`, host.now());
+  if (json) io.stdout(`${JSON.stringify({ seat, dialog: 'trust', status: 'refused', reason: reason.message })}\n`);
+  else io.stderr(`${reason.message}\n`);
+  // exit: answer.caller
+  // exit: answer.policy
+  // exit: answer.state
+  // exit: answer.version
+  // exit: answer.screen
+  // exit: answer.label
+  // exit: answer.folder
+  // exit: answer.action
+  // exit: answer.process
+  return 1;
+}
+
 async function finish(
   io: Io,
   json: boolean,
@@ -333,11 +368,17 @@ async function finish(
   configured: Seat | undefined,
   pane: string,
   workspace: string | undefined,
+  launched?: LaunchedIdentity,
 ): Promise<number> {
-  const like = readState(dir).sessions[session]?.seats[name]?.temporary?.like;
+  const seatState = readState(dir).sessions[session]?.seats[name];
+  const like = seatState?.temporary?.like;
   const seat = configured ?? team.seats.find((item) => item.name === like);
   const profile = seat ? profileFor(seat.cli) : null;
-  const ready = profile ? await recover(host, session, pane, name, profile, seat as Seat, team) : 'idle';
+  const launchIdentity = launched ?? seatState?.launched;
+  const ready = profile ? await recover(host, session, pane, name, profile, seat as Seat, team, launchIdentity) : 'idle';
+  if (typeof ready === 'object' && 'class' in ready) {
+    return refuse(io, json, dir, who, name, host, ready);
+  }
   if (ready !== true) {
     logLine(dir, 'answer', who, `${name}: refused trust: ${ready}`, host.now());
     const reason = ready === 'idle' ? 'its idle prompt did not come' : 'its rules were not delivered';
@@ -369,7 +410,8 @@ async function recover(
   profile: Profile,
   seat: Seat,
   team: TeamFile,
-): Promise<true | 'idle' | 'rule delivery'> {
+  launched?: LaunchedIdentity,
+): Promise<true | Refusal | 'idle' | 'rule delivery'> {
   if (!(await waitIdle(host, session, pane, profile))) return 'idle';
   const named = host.agents(session)?.some((agent) => agent.name === name && agent.pane === pane) === true;
   if (!named && !host.rename(session, pane, name)) return 'rule delivery';
@@ -387,7 +429,21 @@ async function recover(
     },
     'message',
   );
-  const delivered = await deliverRules(profile.cli, text, profile.idleTimeout, deliveryOf(host, session, pane));
+  let processRefusal: Refusal | null = null;
+  const delivered = await deliverRules(
+    profile.cli,
+    text,
+    profile.idleTimeout,
+    deliveryOf(host, session, pane, (action) => {
+      const problem = checkProcess(name, host, session, pane, launched);
+      if (!problem) return true;
+      processRefusal = action === 'enter'
+        ? { class: problem.class, message: `${problem.message}; rules were typed, not sent` }
+        : problem;
+      return false;
+    }),
+  );
+  if (processRefusal) return processRefusal;
   return delivered === true ? true : 'rule delivery';
 }
 
@@ -402,7 +458,12 @@ async function waitIdle(host: AnswerHost, session: string, pane: string, profile
   }
 }
 
-function deliveryOf(host: AnswerHost, session: string, pane: string): Delivery {
+function deliveryOf(
+  host: AnswerHost,
+  session: string,
+  pane: string,
+  beforeInput?: (action: 'type' | 'enter') => boolean,
+): Delivery {
   return {
     screen: () => host.pane(session, pane),
     status: () => host.status(session, pane),
@@ -411,6 +472,7 @@ function deliveryOf(host: AnswerHost, session: string, pane: string): Delivery {
     foreground: () => host.foreground(session, pane),
     now: () => host.now().getTime(),
     sleep: (ms) => host.sleep(ms),
+    beforeInput,
   };
 }
 

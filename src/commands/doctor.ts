@@ -406,6 +406,25 @@ function trustFindings(team: TeamFile, dir: string, session: string, sources: Do
   return findings;
 }
 
+// A seat the state records from a launch that predates the process identity: neither the watch
+// nor `status` can tell whether its pane still holds what team launched, and nothing would
+// notice a restore. One note per such seat; only a launch records the identity, so the note
+// says when. A seat the state doesn't record was not left running by this session, and a
+// stopped seat is never started by `up`: neither is told.
+function identityFindings(team: TeamFile, dir: string, session: string): Finding[] {
+  const recorded = readState(dir).sessions[session]?.seats ?? {};
+  const findings: Finding[] = [];
+  for (const seat of team.seats) {
+    const held = recorded[seat.name];
+    if (seat.stopped || !held || held.launched) continue;
+    findings.push({
+      level: 'note',
+      text: `${seat.name}: launched before team recorded its process; run team up after the next restart`,
+    });
+  }
+  return findings;
+}
+
 function cliOf(team: TeamFile, name: string, recorded: SeatState): string | null {
   return team.seats.find((seat) => seat.name === name)?.cli
     ?? team.seats.find((seat) => seat.name === recorded.temporary?.like)?.cli
@@ -463,6 +482,8 @@ export function doctorFindings(
   }
 
   findings.push(...launchLines);
+
+  findings.push(...identityFindings(team, dir, session));
 
   findings.push(...watchFindings(watchInForceOf(standing, team), dir, session, running, sources.now()));
   findings.push(...trustFindings(team, dir, session, sources));

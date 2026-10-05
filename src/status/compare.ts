@@ -1,17 +1,21 @@
 import { declaredModel } from '../file/model.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
-import type { HerdrAgent, HerdrWorkspace } from '../herdr.ts';
+import type { HerdrAgent, HerdrWorkspace, PaneProcesses } from '../herdr.ts';
 import { herdrCommand } from '../herdr.ts';
+import { seatProcessVerdict } from '../launch/identity.ts';
 import type { SeatState, SessionState } from '../state.ts';
 import { readScreen } from '../watch/screen.ts';
 import { modelDiffers, seatModel } from './statusline.ts';
 
-// What herdr shows of a session. `screens` holds a pane's visible text, where it could be read.
+// What herdr shows of a session. `screens` holds a pane's visible text, where it could be read;
+// `processes` each seat pane's process identity, where it was read, and null where herdr can't
+// tell. A pane the map doesn't hold is not compared: exactly as a seat with no record.
 export type Live = {
   running: boolean;
   agents: HerdrAgent[];
   workspaces: HerdrWorkspace[];
   screens: Record<string, string>;
+  processes?: Record<string, PaneProcesses | null>;
 };
 
 export type Row = { name: string; state: string; model: string; pane: string; stored?: string; start_cwd?: string };
@@ -116,6 +120,16 @@ export function compare(
     const recorded = state.seats[seat.name];
     if (agent) {
       claimed.add(agent.pane);
+      // The pane is the seat only while the process team launched is still in it. A pane that
+      // runs no CLI, or one whose process is not the recorded one, is not this seat: it is
+      // never shown idle, working or ready, and never under its model as if it were running.
+      const verdict = seatProcessVerdict(recorded?.launched, live.processes?.[agent.pane] ?? null);
+      if (verdict === 'gone' || verdict === 'replaced') {
+        const { row, difference } = notLaunched(seat, agent.pane, verdict);
+        rows.push(row);
+        differences.push(difference);
+        continue;
+      }
       const model = modelOf(seat, agent, live, differences, notes);
       const held = waitingView(seat.name, recorded, team);
       if (held) {
@@ -201,17 +215,33 @@ export function compare(
       });
       continue;
     }
-    const held = recorded?.pane ? waitingView(seat.name, recorded, team) : null;
-    if (held && recorded?.pane) {
+    // The pane the state recorded for this seat, with no agent herdr lists under its name: the
+    // pane is the seat only while the recorded process is still in it. One left holding its shell,
+    // or one whose foreground CLI is not the recorded one, is not this seat — and it is not a
+    // stray to rename: the launch ended, and only `up` puts a fresh one there.
+    const held = recorded?.pane;
+    const verdict = seatProcessVerdict(recorded?.launched, held ? live.processes?.[held] ?? null : null);
+    if (held && (verdict === 'gone' || verdict === 'replaced')) {
+      claimed.add(held);
+      const { row, difference } = notLaunched(seat, held, verdict);
+      rows.push(row);
+      differences.push(difference);
+      continue;
+    }
+    // A waiting record is read only of a pane that may still hold the seat: one that lost the
+    // launched process reads `missing` or `restored, not launched by team` above — never
+    // `waiting for owner`, and never under the declared model for a replaced one.
+    const waiting = recorded?.pane ? waitingView(seat.name, recorded, team) : null;
+    if (waiting && recorded?.pane) {
       rows.push({
         name: seat.name,
-        state: held.state,
-        stored: held.stored,
+        state: waiting.state,
+        stored: waiting.stored,
         model: seat.display,
         pane: recorded.pane,
         ...(recorded.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
       });
-      differences.push(held.difference);
+      differences.push(waiting.difference);
       continue;
     }
     // An agent sits in the workspace recorded for this name, under another name or under none.
@@ -310,6 +340,31 @@ export function compare(
   }
 
   return { rows, differences, notes };
+}
+
+// A pane that no longer holds the process team launched: no CLI at all, or a foreground CLI that
+// is not the recorded one. The row and the difference read the same wherever the pane is found —
+// a pane herdr still lists an agent in, and one the agent went with its CLI.
+function notLaunched(seat: Seat, pane: string, verdict: 'gone' | 'replaced'): { row: Row; difference: Difference } {
+  return {
+    row: {
+      name: seat.name,
+      state: verdict === 'gone' ? 'missing' : 'restored, not launched by team',
+      // A replaced pane runs a CLI team did not launch: its model is unknown, so it is never
+      // shown under the declared one as if it were running. A pane with no CLI holds no model
+      // either, but `missing` rows carry the declared one as they always have.
+      model: verdict === 'gone' ? seat.display : '-',
+      pane,
+    },
+    difference: {
+      what: verdict === 'gone'
+        ? `${seat.name}: its pane runs no CLI (the CLI ended or the session was restored)`
+        : `${seat.name}: the process in its pane is not the one team launched; nothing checks its model, account or rules`,
+      repair: 'the owner runs team up',
+      needs: 'approve',
+      owner: true,
+    },
+  };
 }
 
 function modelOf(seat: Seat, agent: HerdrAgent, live: Live, differences: Difference[], notes: string[]): string {

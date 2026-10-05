@@ -11,6 +11,7 @@ export interface Delivery {
   foreground(): string[] | null;
   now(): number;
   sleep(ms: number): Promise<void>;
+  beforeInput?(action: 'type' | 'enter'): boolean;
 }
 
 /** The rows a composer shows for `text` at `width` columns: a hard wrap, a line longer than the
@@ -145,7 +146,7 @@ export async function deliverRules(cli: string, text: string, seconds: number, i
   const live = () => reportedLiveAgent(io.foreground(), names);
   const free = () => ['idle', 'done'].includes(io.status() ?? '');
   if (!live()) return 'no-agent';
-  if (!free() || readScreen(cli, io.screen()).kind !== 'idle' || !io.type(text)) return false;
+  if (!free() || readScreen(cli, io.screen()).kind !== 'idle' || (io.beforeInput && !io.beforeInput('type')) || !io.type(text)) return false;
   const deadline = io.now() + seconds * 1000;
   // Terminal rendering can lag send-text. Never press Enter until the box is verified to hold the
   // text: an ordinary box reads `unsent`, and a box that folded the paste counts only when the
@@ -163,7 +164,7 @@ export async function deliverRules(cli: string, text: string, seconds: number, i
   // paste, and a dialog that appeared gets no key; a folded box that no longer matches the text
   // gets none either.
   if (!live()) return 'no-agent';
-  if (!free() || boxState(cli, text, io.screen()) !== 'ready' || !io.enter()) return false;
+  if (!free() || boxState(cli, text, io.screen()) !== 'ready' || (io.beforeInput && !io.beforeInput('enter')) || !io.enter()) return false;
   for (;;) {
     const status = io.status();
     const screen = io.screen();
