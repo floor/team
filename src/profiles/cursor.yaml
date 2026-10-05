@@ -178,14 +178,29 @@ screen:
     # closed tokens is 227 characters and the dialect refuses anything past 200, so the patterns
     # are a list, read as the union: a line is a candidate when it matches any entry.
     #
-    # The same four expressions are used, character for character, in the trust dialog's
-    # none_after and in the working queue's exception, so the three places that decide whether a
-    # line is the status row cannot disagree.
+    # The row's place is pinned too: the line directly under it is the workspace line the pane
+    # draws (`  <workspace>` in the fixtures — the captures' paths replaced — `  ~/…` or
+    # `  /…` live), that line must be the pane's last non-blank one, and the `  →` input row
+    # sits above the row within the distance the captures show (three to five rows; the core's
+    # bound). A grammar-looking line anywhere else is ordinary text: it opens no fallback, it is
+    # never the row, and it leaves the screen unknown. A grammar line with no workspace line
+    # under it reads no row at all.
+    #
+    # Grok rows are the exception (`except`): main read any `  Grok <digit>` tail wherever it
+    # sat, and the follow-up-queue captures — transcribed rather than captured — draw Grok rows
+    # without `Run Everything`; pinning those rows' place would move readings main makes and
+    # every shipped Grok fixture keeps. The new families' rows have only ever been seen in
+    # place, so they carry the place test. The same four expressions are used, character for
+    # character, in the trust dialog's none_after and in the working queue's exception, so the
+    # three places that decide whether a line is the status row cannot disagree.
     status_line:
       - '^  Grok\s+\d.*'
       - '^  GPT-\d+(?:\.\d+)* Sol(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
       - '^  Gemini \d+(?:\.\d+)* Flash(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
       - '^  Composer \d+(?:\.\d+)*(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
+    status_below:
+      line: '^  (?:<workspace>|~?/)'
+      except: '^  Grok\s+\d'
     # The input row carries the prompt at the pane's second column — unsent.txt and
     # follow-up-queue-typed.txt draw `  → Plan, search, build anything` there, continuations at
     # the fourth — and a prompt glyph on a content or popup row is never the input row. The

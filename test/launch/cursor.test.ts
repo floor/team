@@ -474,11 +474,10 @@ describe('Cursor rules delivery', () => {
   });
 
   test('a trailing blank row after the wrapped text gets no Enter', async () => {
-    // The reviewer's reproduction: the correctly wrapped text, then one more empty row inside
-    // the box. Cursor draws two empty rows of its own under the text — idle.txt and unsent.txt
-    // show them, the drop before the status line — and those rows are the box's frame, not its
-    // content. A row beyond them is a row the text does not have: someone pressed a newline
-    // after it.
+    // The probe: the correctly wrapped text, then one more empty row inside the box. Cursor
+    // draws two empty rows of its own under the text — idle.txt and unsent.txt show them, the
+    // drop before the status line — and those rows are the box's frame, not its content. A row
+    // beyond them is a row the text does not have: someone pressed a newline after it.
     const rows = wordWrap(CAPTURED_WRAP, 51 - 4);
     const [firstRow = '', ...rest] = rows;
     const body = [`  → ${firstRow}`, ...rest.map((row) => `    ${row}`), ''].join('\n');
@@ -492,9 +491,10 @@ describe('Cursor rules delivery', () => {
 
   test('a typed text whose own last line is empty: the box shows the row, or no Enter', async () => {
     // The text ends with a newline, so its last line is empty and the pane draws a row for it,
-    // above the two frame rows it draws under every box. That screen and the reviewer's are the
-    // same: only the typed text tells them apart. With the row the box holds the text; without
-    // it the box stops at the sentence and the trailing newline is unaccounted for.
+    // above the two frame rows it draws under every box. That screen and the one with the extra
+    // blank row are the same layout: only the typed text tells them apart. With the row the box
+    // holds the text; without it the box stops at the sentence and the trailing newline is
+    // unaccounted for.
     const typed = CAPTURED_WRAP + '\n';
     const rows = wordWrap(CAPTURED_WRAP, 51 - 4);
     const [firstRow = '', ...rest] = rows;
@@ -738,7 +738,7 @@ describe('the box\'s top frame (Cursor)', () => {
 });
 
 describe('the person\'s own box, captured (Cursor)', () => {
-  // The round-2 fixtures (see the fixtures README): a person's text typed into Cursor's own box
+  // The typed fixtures (see the fixtures README): a person's text typed into Cursor's own box
   // and never sent. Each box reads back as exactly its own text, and as nothing else.
   const CAPTURES: [string, string][] = [
     ['typed-two-line', 'alpha typed line one\nbeta typed line two'],
@@ -785,12 +785,15 @@ describe('the person\'s own box, captured (Cursor)', () => {
   });
 });
 
-describe('the closed Cursor status row (round 2)', () => {
-  // Every reading kept here is a reviewer probe from the round-2 verdicts under this branch.
-  // On main each of these screens read `unknown`, with the model unread; this tree must read
-  // them the same way. The six new captures are the only readings that differ from main, and
-  // a row that keeps every closed token — `Run Everything` included — is a real row by every
-  // test the screen offers, so it is accepted and the model it names is the model read.
+describe('the closed Cursor status row', () => {
+  // A line carrying the closed grammar outside the status position is ordinary text: these
+  // screens are the false rows a transcript, a dialog or a box could paint — a grammar line
+  // with no workspace line under it, a full row below a real footer, a row after a trust
+  // anchor — and each must read what the same screen without that row reads, never idle or
+  // unsent the pane does not show. A row that keeps every closed token and sits in the
+  // footer's place is a real row: it is accepted, and the model it names is the model read.
+  // The six captured panes (see the fixtures README) are the only screens whose reading
+  // differs from what main read.
   const GROK = '  Grok 4.7 256K High                 Run Everything';
   const GPT_ROW = '  GPT-5.6 Sol 272K High              Run Everything';
   const rows = (name: string) => fixture(name).replace(/\n+$/, '').split('\n');
@@ -847,7 +850,7 @@ describe('the closed Cursor status row (round 2)', () => {
   });
 
   test('the version, the quota and the file count are digits in closed runs', () => {
-    // The reviewer probes: `[\d.]+` read `5..6`, a bare `.` and `4..2%` as tokens — a version,
+    // The probes: `[\d.]+` read `5..6`, a bare `.` and `4..2%` as tokens — a version,
     // a quota or a file count that no pane draws. The closed runs cannot, on either side: the
     // status line's grammar and the status_model rule.
     const row = (text: string) => `  ${text}${' '.repeat(24)}Run Everything`;
@@ -948,6 +951,56 @@ describe('the closed Cursor status row (round 2)', () => {
     const typed = put('gpt-sol-idle', 9, `  → ${GPT_ROW.slice(2)}`);
     expect(read(typed)).toBe('unsent / unsent');
     expect(model(typed)).toEqual({ model: 'GPT Sol', version: '5.6' });
+  });
+
+  test('a new-family row outside the status position is ordinary text, not the row', () => {
+    const base = text(rows('gpt-sol-idle'));
+    expect(read(base)).toBe('idle / idle'); // the captured frame: the row sits above its workspace line
+    // A row in the transcript, above the input row: the footer in place below stays the row,
+    // and the screen reads exactly as the capture does.
+    const above = rows('gpt-sol-idle');
+    above.splice(above.findIndex((row) => /^ {2}→/.test(row)) - 2, 0, GPT_ROW);
+    expect(read(text(above))).toBe('idle / idle');
+    // No workspace line under the row: it is not in the position, and it reads no row.
+    expect(read(text(rows('gpt-sol-idle').slice(0, -1)))).toBe('unknown / unknown');
+    // A non-workspace line under the row: same.
+    expect(read(put('gpt-sol-idle', rows('gpt-sol-idle').length, '  something else'))).toBe('unknown / unknown');
+    // A non-blank line under the workspace line: it is not the pane's last, so neither the
+    // footer nor the appended row is in the position.
+    expect(read(`${base}\n${GPT_ROW}`)).toBe('unknown / unknown');
+    // No input row above the row: the frame is not the capture's, and no row is read.
+    const input = rows('gpt-sol-idle').findIndex((row) => /^ {2}→/.test(row));
+    expect(read(text(rows('gpt-sol-idle').filter((_, i) => i !== input)))).toBe('unknown / unknown');
+  });
+
+  test('the input row sits above the status row within the captured distance', () => {
+    // Every composer capture draws the input row three to five rows above the status row
+    // (measured over the idle, startup, unsent, working, thinking, queue and typed frames).
+    // Five holds, six does not: a row further above is not the input row the frame draws.
+    const box = (extra: number) => {
+      const lines = rows('gpt-sol-idle');
+      const at = lines.findIndex((row) => /^ {2}→/.test(row));
+      lines.splice(at + 1, 0, ...Array.from({ length: extra }, () => ''));
+      return text(lines);
+    };
+    expect(read(box(2))).toBe('idle / idle'); // distance five
+    expect(read(box(3))).toBe('unknown / unknown'); // distance six
+  });
+
+  test('a grammar line that is not the row counts for neither the trust rules nor the working queue', () => {
+    // The trust dialog with a full row after its anchor: the row has no workspace line under
+    // it, so it is ordinary text — the dialog still closes as trust, as main read it, and the
+    // composer reads no row.
+    expect(read(`${text(rows('trust'))}\n${GPT_ROW}`)).toBe('trust / unknown');
+    // A running screen with the row appended: still working, and the composer reads no row.
+    expect(read(`${text(rows('working'))}\n${GPT_ROW}`)).toBe('working / unknown');
+  });
+
+  test("a new family's model rule is anchored to the row's own line, both ends", () => {
+    // A rule that lost its start anchor would read a row mid-sentence; one that lost its end
+    // anchor would read a row that runs on past `Run Everything`. Neither is the row's line.
+    expect(model(footer('idle', 'x GPT-5.6 Sol 272K High              Run Everything'))).toBeNull();
+    expect(model(footer('idle', '  GPT-5.6 Sol 272K High              Run Everything and more'))).toBeNull();
   });
 
   test('the Grok model rule is anchored to the status row', () => {
