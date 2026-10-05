@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
+import { describe, expect, test, beforeAll, beforeEach, afterAll } from 'bun:test';
 import { readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, statSync, mkdirSync, existsSync, copyFileSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -15,15 +15,38 @@ import { validateTeamFile } from '../src/file/validate.ts';
 
 const fixtureDir = fileURLToPath(new URL('./fixtures/hatch', import.meta.url));
 
+const COMPILE_TIMEOUT_MS = 30_000;
+
 let tempBuildDir: string | null = null;
 let builtScreenFileModule: any = null;
 
-async function getBuiltScreenFile(): Promise<any> {
+function formatCompileError(tsc: ReturnType<typeof spawnSync>, timeoutMs: number): string {
+  const isTimeout = (tsc.error as any)?.code === 'ETIMEDOUT' || (tsc.status === null && tsc.signal === 'SIGTERM');
+  const details: string[] = [];
+  if (isTimeout) {
+    details.push(`process timed out after ${timeoutMs / 1000}s`);
+  } else if (tsc.status !== null) {
+    details.push(`process exited with code ${tsc.status}`);
+  } else if (tsc.signal) {
+    details.push(`process terminated with signal ${tsc.signal}`);
+  } else if (tsc.error) {
+    details.push(`process failed: ${tsc.error.message}`);
+  }
+  const output = (tsc.stderr?.toString().trim() || tsc.stdout?.toString().trim());
+  if (output) {
+    details.push(output);
+  }
+  return `Failed to compile to temp directory: ${details.join(': ')}`;
+}
+
+async function compileScreenFile(): Promise<any> {
   if (builtScreenFileModule) return builtScreenFileModule;
   tempBuildDir = mkdtempSync(resolve(tmpdir(), 'hatch-built-'));
-  const tsc = spawnSync('bun', ['run', 'tsc', '-p', 'tsconfig.build.json', '--outDir', tempBuildDir]);
-  if (tsc.status !== 0) {
-    throw new Error(`Failed to compile to temp directory: ${tsc.stderr?.toString() || tsc.stdout?.toString()}`);
+  const tsc = spawnSync('bun', ['run', 'tsc', '-p', 'tsconfig.build.json', '--outDir', tempBuildDir], {
+    timeout: COMPILE_TIMEOUT_MS,
+  });
+  if (tsc.status !== 0 || tsc.error) {
+    throw new Error(formatCompileError(tsc, COMPILE_TIMEOUT_MS));
   }
   mkdirSync(resolve(tempBuildDir, 'profiles'), { recursive: true });
   for (const name of readdirSync(resolve(process.cwd(), 'src/profiles'))) {
@@ -39,10 +62,21 @@ async function getBuiltScreenFile(): Promise<any> {
   return builtScreenFileModule;
 }
 
-describe('Slice C: ScreenProfile escape hatch', () => {
+async function getBuiltScreenFile(): Promise<any> {
+  if (builtScreenFileModule) return builtScreenFileModule;
+  return compileScreenFile();
+}
+
+describe('ScreenProfile escape hatch', () => {
+  beforeAll(async () => {
+    await compileScreenFile();
+  }, COMPILE_TIMEOUT_MS);
+
   afterAll(() => {
     if (tempBuildDir) {
       rmSync(tempBuildDir, { recursive: true, force: true });
+      tempBuildDir = null;
+      builtScreenFileModule = null;
     }
   });
   beforeEach(() => {
@@ -668,7 +702,7 @@ screen:
     }
   });
 
-  test('round 6: every fixture in conformance manifest reads identical with caution predicates returning false', () => {
+  test('every fixture in conformance manifest reads identical with caution predicates returning false', () => {
     const manifestPath = resolve(process.cwd(), 'test/fixtures/conformance.json');
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
       screens: { file: string; cli: string; classify: Screen['kind']; composer: Screen['kind'] }[];
@@ -716,7 +750,7 @@ screen:
     }
   });
 
-  test('round 6: a hatch composer on each of the four shipped profiles is refused at load (b)', async () => {
+  test('a hatch composer on each of the four shipped profiles is refused at load in source and built code', async () => {
     const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-composer-test-'));
     writeFileSync(resolve(tempDir, 'composer-hatch.cjs'), 'module.exports = { composer: () => ({ kind: "idle" }) };');
 
@@ -745,7 +779,7 @@ screen:
     }
   });
 
-  test('round 6: fake CLI in test/fixtures/hatch (hatch composer, no data composer): data stages and floor win over hatch composer (b, 3)', () => {
+  test('fake CLI with hatch composer and no data composer: data stages and floor win over hatch composer', () => {
     const yaml = readFileSync(resolve(fixtureDir, 'fake-cli.yaml'), 'utf8');
     const data = loadScreen(yaml, fixtureDir, 'fake-cli.yaml');
     expect(data.profile?.composer).toBeDefined();
@@ -787,7 +821,7 @@ screen:
     expect(composerBox(data, cleanLines)).toBeNull();
   });
 
-  test('round 6: throwing getters on profile object and throwing Proxy fail safe to unknown on all readers and through watch pass (c)', () => {
+  test('throwing getters on profile object and throwing Proxy fail safe to unknown on all readers and through watch pass', () => {
     const base = screenData('codex')!;
     const lines = ['some line'];
     const content = 'some line';
@@ -869,7 +903,7 @@ seats:
     }
   });
 
-  test('round 6: throwing proxy module at loadScreen names the profile file (c)', () => {
+  test('throwing proxy module at loadScreen names the profile file', () => {
     const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-proxy-test-'));
     writeFileSync(resolve(tempDir, 'throwing-proxy.cjs'), 'module.exports = new Proxy({}, { get() { throw new Error("proxy export"); } });');
 
@@ -883,7 +917,7 @@ seats:
     }
   });
 
-  test('round 6: screen_module extension case agrees with schema (lowercase required)', () => {
+  test('screen_module extension case agrees with schema (lowercase required)', () => {
     const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-case-test-'));
     writeFileSync(resolve(tempDir, 'good.CJS'), 'module.exports = {};');
 
@@ -897,7 +931,7 @@ seats:
     }
   });
 
-  test('round 8: stateful composer getter is refused at load on all four shipped profiles in source and built code (b)', async () => {
+  test('stateful composer getter is refused at load on all four shipped profiles in source and built code', async () => {
     const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-stateful-composer-'));
 
     try {
@@ -956,7 +990,7 @@ Object.defineProperty(module.exports, "composer", {
     }
   });
 
-  test('round 8: stateful getter on predicate export runs snapshot value and reads export only once (b)', () => {
+  test('stateful getter on predicate export runs snapshot value and reads export only once', () => {
     const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-stateful-predicate-'));
     writeFileSync(
       resolve(tempDir, 'stateful-predicate.cjs'),
@@ -999,7 +1033,7 @@ module.exports.getReads = () => reads;`,
     }
   });
 
-  test('round 8: prototype export, default export, and Proxy module refuse hatch composer on shipped profiles (b)', async () => {
+  test('prototype export, default export, and Proxy module refuse hatch composer on shipped profiles', async () => {
     const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-module-variants-'));
     // 1. Module whose composer is defined on its prototype
     writeFileSync(
@@ -1068,7 +1102,7 @@ module.exports = { default: def };`,
     }
   });
 
-  test('round 9: disagreeing Proxy hiding default and function-valued export with default accessor refuse hatch composer on shipped profiles in source and built code (b)', async () => {
+  test('disagreeing Proxy hiding default and function-valued export with default accessor refuse hatch composer on shipped profiles in source and built code', async () => {
     const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-disagreeing-proxy-'));
 
     // 1. Reviewer's exact Proxy: has trap hides default, ownKeys and descriptor report composer,
@@ -1130,7 +1164,7 @@ module.exports = fn;`,
     }
   });
 
-  test('round 8 addendum: what loadScreen returns is deeply frozen against post-load mutations', () => {
+  test('what loadScreen returns is deeply frozen against post-load mutations', () => {
     // 1. Shipped profiles (no hatch)
     for (const cli of ['claude-code', 'codex', 'cursor', 'antigravity']) {
       const rawYaml = readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8');
