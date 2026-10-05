@@ -11,7 +11,7 @@ import { validateTeamFile } from '../file/validate.ts';
 import { agentList, agentRename, agentStatus, paneForeground, paneForegroundCwd, paneRead, pressEnter, sendKey as herdrSendKey, typeText } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { deliverRules, type Delivery } from '../launch/deliver.ts';
-import { rulesDeliveryOf, rulesFileHash, writeRulesFile } from '../launch/rules-file.ts';
+import { rulesDeliveryOf, rulesFileHash, rulesFileHolds, writeRulesFile } from '../launch/rules-file.ts';
 import { acquireSeatLock } from '../launch/seat-lock.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -383,7 +383,12 @@ async function recover(
   const delivery = rulesDeliveryOf(standing, team, seat, root, host.home);
   if ('refusal' in delivery) return 'rule delivery';
   if (!writeRulesFile(delivery.path, delivery.text, rulesFileHash(delivery.text)).ok) return 'rule delivery';
-  const delivered = await deliverRules(profile.cli, delivery.line, profile.idleTimeout, deliveryOf(host, session, pane));
+  const delivered = await deliverRules(
+    profile.cli,
+    delivery.line,
+    profile.idleTimeout,
+    deliveryOf(host, session, pane, () => rulesFileHolds(delivery.path, rulesFileHash(delivery.text))),
+  );
   return delivered === true ? true : 'rule delivery';
 }
 
@@ -398,12 +403,14 @@ async function waitIdle(host: AnswerHost, session: string, pane: string, profile
   }
 }
 
-function deliveryOf(host: AnswerHost, session: string, pane: string): Delivery {
+function deliveryOf(host: AnswerHost, session: string, pane: string, file: () => boolean): Delivery {
   return {
     screen: () => host.pane(session, pane),
     status: () => host.status(session, pane),
     type: (text) => host.type(session, pane, text),
     enter: () => host.enter(session, pane),
+    // The last look before Enter, the same no-follow read `up`'s delivery makes.
+    file,
     foreground: () => host.foreground(session, pane),
     now: () => host.now().getTime(),
     sleep: (ms) => host.sleep(ms),

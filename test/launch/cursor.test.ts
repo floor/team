@@ -346,6 +346,7 @@ function delivery(initial = 'idle') {
     screen: () => raw,
     status: () => status,
     report: (why) => { refusals.push(why); },
+    file: () => true, // the delivery tests prove the line, not the file
     // The paste renders as the box the CLI draws for its text.
     type(text) { calls.push(text); raw = boxed(text); return true; },
     enter() { calls.push('Enter'); raw = fixture('working'); status = 'working'; return true; },
@@ -867,6 +868,7 @@ function lineDelivery() {
     screen: () => raw,
     status: () => status,
     report: (why) => { refusals.push(why); },
+    file: () => true, // the delivery tests prove the line, not the file
     type(text) {
       calls.push(text);
       raw = text === capturedLine ? fixture('rules-line') : drawnAt(text);
@@ -976,6 +978,20 @@ describe('Cursor rules delivery of the one line (2026.10.01 capture)', () => {
     expect(why?.stop).toBe('read-back');
     expect(why?.sent).toBe(false);
     expect(why?.kind).toBe('trust');
+  });
+
+  test('the file changing after it was written gets no Enter', async () => {
+    // The line read back as its own rows; between that and the key, the file at its path no
+    // longer holds the text whose hash the line names. Nothing is sent, and the report says
+    // the file changed — the seat is never pointed at a file team cannot vouch for.
+    const d = lineDelivery();
+    d.io.file = () => false;
+    expect(await deliverRules('cursor', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([capturedLine]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('file-changed');
+    expect(why?.sent).toBe(false);
+    expect(refusalReport(why!)).toBe('rules typed, not sent: the rules file changed after it was written');
   });
 
   test('a seat mid-turn is reported as working; nothing is typed', async () => {

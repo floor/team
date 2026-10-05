@@ -20,6 +20,7 @@ function delivery() {
     screen: () => raw,
     status: () => status,
     report: (why) => { refusals.push(why); },
+    file: () => true, // the delivery tests prove the line, not the file
     // The paste renders as the box the CLI draws for its text.
     type(text) { calls.push(text); raw = claudeBox(text); return true; },
     enter() { calls.push('Enter'); raw = busy; status = 'working'; return true; },

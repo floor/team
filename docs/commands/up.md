@@ -89,6 +89,10 @@ could not verify: a stop leaves the text where it is.
 - A row break may hide at most one space, and no read can prove what a pane folds into a break:
   the check requires every other visible character to match exactly, and refuses anything looser
   rather than guess.
+- The file is read once more, without following a link, directly before the Enter — but a
+  process of the same user can still replace the file between that check and the seat's read.
+  The line carries the file's hash, so the seat, or the owner, can check what was read against
+  what was meant.
 
 A seat that doesn't get there is printed once with what stopped it, and `up` exits 1. For a seat
 whose wait ended without a prompt, the last non-empty lines the pane showed — the launch line's own
@@ -113,6 +117,7 @@ Those lines go to the terminal only: the log file gets the reading, never the sc
 | `<seat>: rules not confirmed: the seat is working; run up again when it is idle` | the seat is mid-turn; nothing was typed |
 | `<seat>: rules not typed: <what stopped it>; <what to do>` | nothing was typed: the screen was not an empty idle prompt, or the box already held text that is not the rules line |
 | `<seat>: rules typed, not sent: the read-back didn't match; the line sits in its box, unsent: <what to do>` | the line was typed and its box did not read back as the line; `up` does not clear it. When the box drew a row that is not the line's own, the first such row is printed above this line, stripped of control characters and cut to 200 characters |
+| `<seat>: rules typed, not sent: the rules file changed after it was written` | the line read back, but the file — read again without following a link, directly before Enter — no longer held the text whose hash the line names. Enter was not pressed; the line sits in the box, unsent, and the owner checks the project state folder before running `up` again |
 | `<seat>: rules typed, not sent: its box still holds the line after Enter; <what to do>` | Enter was pressed and the box still shows the line: the key did not take, and nothing was sent |
 | `<seat>: the seat did not come back to its idle prompt (<reading>); <what to do>` | the line was submitted and the seat never came back to its idle prompt — a running turn, or a dialog to answer |
 | `<seat>: its rules were not delivered; left at named` | the pane could not be read at all; nothing was typed |

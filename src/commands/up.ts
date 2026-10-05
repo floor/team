@@ -32,7 +32,7 @@ import { executePlan } from '../launch/execute.ts';
 import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { rulesOf } from '../launch/rules.ts';
-import { rulesFileHash, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
+import { rulesFileHash, rulesFileHolds, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
 import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
@@ -447,6 +447,9 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
         status: () => launch.agentStatus?.(session, pane) ?? null,
         type: (value) => launch.typeText?.(session, pane, value) ?? false,
         enter: () => launch.pressEnter?.(session, pane) ?? false,
+        // The last look before Enter: the file, read without following a link, must still hold
+        // the text whose hash the line names.
+        file: () => rulesFileHolds(file.path, rulesFileHash(file.text)),
         foreground: () => launch.foreground(session, pane),
         report: (why) => { stopped.why = why; },
         now: () => now().getTime(),

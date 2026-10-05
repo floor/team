@@ -9,7 +9,7 @@ import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
 import type { Launch } from '../commands/up.ts';
 import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
-import { removeRulesFile, rulesFileHash, rulesFilePath, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
+import { removeRulesFile, rulesFileHash, rulesFilePath, rulesFileHolds, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { branchPresent, readMerge } from '../end/condition.ts';
 import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines.ts';
@@ -554,6 +554,9 @@ function hostOf(input: {
         status: () => launch.agentStatus?.(session, pane) ?? null,
         type: (value) => launch.typeText?.(session, pane, value) ?? false,
         enter: () => launch.pressEnter?.(session, pane) ?? false,
+        // The last look before Enter: the file, read without following a link, must still hold
+        // the text whose hash the line names.
+        file: () => rulesFileHolds(file.path, rulesFileHash(file.text)),
         foreground: () => launch.foreground(session, pane),
         report: (why) => { stopped.why = why; },
         now: () => input.now().getTime(),

@@ -13,8 +13,10 @@ import {
  *  - `leftover`: the box already held text that is not the rules line; nothing typed.
  *  - `typing`: the pane took no text; nothing was typed.
  *  - `read-back`: the line was typed and never read back as its own rows.
+ *  - `file-changed`: the line read back, but the file no longer held the hash it names; Enter
+ *    was not pressed.
  *  - `ack`: Enter was sent and the seat did not come back to its idle prompt. */
-export type Stop = 'file' | 'path' | 'screen' | 'working' | 'leftover' | 'typing' | 'read-back' | 'ack';
+export type Stop = 'file' | 'path' | 'screen' | 'working' | 'leftover' | 'typing' | 'read-back' | 'file-changed' | 'ack';
 
 /** Where a delivery stopped, for the report. `kind` is what the screen read at the stop; `typed`
  *  says the line reached the pane; `sent` says Enter was pressed; `row` is the first row drawn
@@ -35,6 +37,9 @@ export interface Delivery {
   status(): string | null;
   type(text: string): boolean;
   enter(): boolean;
+  /** Whether the seat's rules file still holds, read without following a link, the text whose
+   *  hash the line carries — the last look, directly before Enter. */
+  file(): boolean;
   /** Foreground argv0 names, or null when the pane can't be read. */
   foreground(): string[] | null;
   now(): number;
@@ -213,6 +218,8 @@ export function refusalReport(why: Refusal): string {
     case 'read-back':
       return `rules typed, not sent: the read-back didn't match; the line sits in its box, unsent: `
         + `press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again`;
+    case 'file-changed':
+      return `rules typed, not sent: the rules file changed after it was written`;
     case 'ack':
       // A box that still holds the line after Enter never took the key: it sits unsent, and the
       // report says so rather than claiming a send.
@@ -261,9 +268,17 @@ export async function deliverRules(cli: string, line: string, seconds: number, i
   }
   // Re-read immediately before Enter. The agent is asked again: it may have exited since the
   // line was typed, and a dialog that appeared gets no key; a box that no longer holds the line
-  // gets none either.
+  // gets none either. And the file is checked once more, directly before the key: the screen
+  // proved the line, so the file must still hold the text whose hash the line names — a file
+  // that changed after it was written gets no Enter, whatever now sits at its path.
   if (!live()) return 'no-agent';
-  if (!free() || boxState(cli, line, io.screen()) !== 'ready' || !io.enter()) {
+  if (!free() || boxState(cli, line, io.screen()) !== 'ready') {
+    return report(stoppedOn(cli, 'read-back', io.screen(), line));
+  }
+  if (!io.file()) {
+    return report({ stop: 'file-changed', typed: true, sent: false, kind: readScreen(cli, io.screen()).kind, row: null });
+  }
+  if (!io.enter()) {
     return report(stoppedOn(cli, 'read-back', io.screen(), line));
   }
   for (;;) {
