@@ -573,6 +573,20 @@ describe('team worktree and the approved copy', () => {
     expect(existsSync(join(base, 'worktrees', 'acme', 'WEB-12'))).toBe(false);
   });
 
+  test('a live private visibility is not used: the approved public pattern still refuses the name', async () => {
+    // The reviewer's mutant passed the live `visibility` to the forbidden-name check; the
+    // private live file would then allow a name the approved public file forbids.
+    const approved = teamText();
+    const live = approved.replace('visibility: public\n', 'visibility: private\n');
+    expect(live).not.toBe(approved);
+    expect(live).not.toContain('visibility: public');
+    edit(live);
+    const io = await run(['new', 'WEB-12', '--kind', 'fix']);
+    expect(io.code).toBe(1);
+    expect(io.err).toBe(`${note}team worktree: "WEB-12" matches forbidden_public "\\\\bWEB-[0-9]+\\\\b"; a public project refuses that name\n`);
+    expect(existsSync(join(base, 'worktrees', 'acme', 'WEB-12'))).toBe(false);
+  });
+
   test('a seat taken out of the file is still one, and the note says the file changed', async () => {
     // `limits.seats` defaults to the roster, so an unpinned limit would itself be a difference and
     // the one-way comparison would not be quiet. Both files pin it: the removed seat is the only change.
