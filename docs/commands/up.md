@@ -62,6 +62,17 @@ A seat that reaches its idle prompt with its rules delivered prints `<seat>: rea
 ready, stopped in the file, or on a CLI with no launch profile prints one `  skip` line and is left
 as it is. The watch prints `watch: started`.
 
+A seat is its pane only while the process `team` launched is still in it. A seat the state records
+whose pane no longer holds that process is not "already ready": its workspace is closed without a
+key and without input — its pane runs no CLI, or one team did not launch, and nothing in it is the
+seat — and the seat is launched fresh with its rules. Its one line says both:
+`<seat>: its pane held no CLI; closed without input and launched again` when the pane was back at
+its shell, `<seat>: its pane held a process team did not launch; closed without input and launched
+again` when another process held it. When the workspace does not close, nothing is launched in its
+place and the seat is left as it is:
+`<seat>: its workspace did not close; left as it is`, with `up` exiting 1. A seat launched before
+the state recorded its process keeps today's behaviour: nothing checks its pane.
+
 A seat that doesn't get there is printed once with what stopped it, and `up` exits 1. For a seat
 whose wait ended without a prompt, the last non-empty lines the pane showed — the launch line's own
 echo first when it is within reach, six at most, every escape sequence and every control character
@@ -77,6 +88,7 @@ Those lines go to the terminal only: the log file gets the reading, never the sc
 | `<seat>: timed out after <n> s waiting for its idle prompt; the screen last read <kind>; left at launched` | the prompt never came within the profile's own time limit; the last reading and the pane's last lines follow on the terminal |
 | `<seat>: was not in the agent list in time; left at launched` | herdr listed no agent in the pane to name |
 | `<seat>: its rules were not delivered; left at named` | the rules did not reach an empty idle prompt |
+| `<seat>: its workspace did not close; left as it is` | its pane no longer held the process `team` launched, and closing that workspace failed, so nothing was launched in its place |
 | `<seat>: its workspace was not created; left at launched` | herdr made no workspace for it |
 | `<seat>: its lobby folder was not created; left out` | the folder a seat that works in worktrees waits in could not be made |
 | `<seat>: its launch command did not run; left at launched` | the pane took no command |

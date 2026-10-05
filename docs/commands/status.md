@@ -38,8 +38,19 @@ The columns are the seat, its state, the model, and the pane. The state is what 
 (`idle`, `working`, `blocked`…), with `, parked` added for a seat the file parks and `, temporary`
 for a temporary one; or `<state> (unsent text)` when an idle or done seat — the two states `team`
 types into — holds text in its input box that was never sent; or `missing` when the seat is in the
-file and nothing is running for it; or `stopped` when the file marks it stopped; or `wrong name`
+file and nothing is running for it, or when the pane the state recorded for it runs no CLI — the
+CLI ended, or the session was restored, and the pane is back at its shell; or `restored, not
+launched by team` when its pane runs a process `team` did not launch — another session's restore,
+or a CLI started by hand; or `stopped` when the file marks it stopped; or `wrong name`
 when an agent sits in the seat's workspace under another name.
+
+A pane is its seat only while the process `team` launched is still in it. The state records, for
+each seat `up` or `add` launched, the pane's own shell process and the processes the launch left in
+front of it — pids only, never a command line. Wherever `status` reads the seat as running, the two
+are compared: `same` is the pane team launched, `missing` a pane back at its shell, `restored, not
+launched by team` a pane held by another process. A restored row's model is `-`, never the file's:
+nothing checks what that process runs. A seat launched before this record existed — or one whose
+pane herdr can't read — is shown as it always was; `team doctor` says which seats those are.
 
 The model is the seat's `display` when the running model matches the file, and
 `<model> <version> (file: <display>)` when it doesn't. A screen that doesn't show the model is a
@@ -86,6 +97,8 @@ CODEX_HOME=/path/to/codex exec /path/to/codex-quota
 | Difference | Repair |
 | --- | --- |
 | `<seat> is in the file and is not running` | `team add <seat>` when something else runs, `the owner runs team up` when nothing does |
+| `<seat>: its pane runs no CLI (the CLI ended or the session was restored)` | `the owner runs team up` (it closes the pane without input and launches the seat fresh) |
+| `<seat>: the process in its pane is not the one team launched; nothing checks its model, account or rules` | `the owner runs team up` (it closes the pane without input and launches the seat fresh) |
 | `<seat>: the agent in <pane> is named "x"` | `herdr --session <s> agent rename <pane> <seat>` |
 | `<seat> runs <model> <version>; the file says <declared>` (`<declared>` is the seat's `display` spelling) | restart it (`team remove <seat> --keep`, then `team add <seat>`), or correct the file and `team approve` |
 | `<seat> is marked stopped in the file and is running` | `team remove <seat> --keep`, or take `stopped: true` off the seat |
