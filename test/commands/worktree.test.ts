@@ -4,10 +4,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalOf } from '../../src/approve/approval.ts';
+import { compare, fingerprints } from '../../src/approve/fingerprint.ts';
 import { runWorktree, type WorktreeSources } from '../../src/commands/worktree.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
+import { validateTeamFile } from '../../src/file/validate.ts';
 import { readState } from '../../src/state.ts';
-import { storePath, writeApproval } from '../../src/store/store.ts';
+import { approvalStanding, storePath, writeApproval } from '../../src/store/store.ts';
 import { testIo, type TestIo } from '../helpers.ts';
 
 let base: string;
@@ -131,17 +133,11 @@ describe('team worktree new', () => {
     expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(false);
   });
 
-  test('refuses an unapproved file and a file that has changed since approval', async () => {
+  test('refuses a file that was never approved, with the same line as before', async () => {
     rmSync(home, { recursive: true, force: true });
     const missing = await run(['new', 'select-width', '--kind', 'fix']);
     expect(missing.code).toBe(1);
-    expect(missing.err).toContain('never approved');
-    approve(teamText());
-    const text = teamText({ limit: 4 });
-    writeFileSync(join(project, '.agents', 'team.yaml'), text);
-    const changed = await run(['new', 'select-width', '--kind', 'fix']);
-    expect(changed.code).toBe(1);
-    expect(changed.err).toContain('not the approved one');
+    expect(missing.err).toBe('team worktree: the file was never approved on this machine: run `team approve`\n');
     expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(false);
   });
 
@@ -299,5 +295,449 @@ describe('team worktree remove', () => {
     expect(io.out).toContain('already gone');
     expect(git(project, 'rev-parse', '--verify', '--quiet', 'refs/heads/fix/select-width').trim()).not.toBe('');
     expect(readState(join(project, '.agents')).sessions.acme?.worktrees['select-width']).toBeUndefined();
+  });
+});
+
+describe('team worktree and the approved copy', () => {
+  const note = 'team worktree: using the approved workspace settings; the file has unapproved changes: run `team approve`\n';
+
+  function edit(text: string): void {
+    writeFileSync(join(project, '.agents', 'team.yaml'), text);
+  }
+
+  function recordPath(): string {
+    const loaded = loadTeamFile(project);
+    if (!loaded.ok) throw new Error('the team file must load');
+    return join(storePath(loaded.team.project, loaded.root, home), 'approval.json');
+  }
+
+  test('a rules-only edit draws one note, and both subcommands run on the approved settings', async () => {
+    expect((await run(['new', 'select-width', '--kind', 'fix'])).code).toBe(0);
+    edit(`${teamText()}rules:\n  - "read the brief first"\n`);
+    const created = await run(['new', 'tidy-logs', '--kind', 'chore']);
+    expect(created.code).toBe(0);
+    expect(created.err).toBe(note);
+    expect(created.out).toBe('../worktrees/acme/tidy-logs\n');
+    const removed = await run(['remove', 'select-width']);
+    expect(removed.code).toBe(0);
+    expect(removed.err).toBe(note);
+    expect(removed.out).toBe('removed select-width; the branch fix/select-width is kept\n');
+  });
+
+  test('an unapproved workspace.path is never used: the approved path wins', async () => {
+    // The file's own path, one folder deeper under the same trust, so the file still validates.
+    edit(teamText().replace('../worktrees/{repo}/{task}', '../worktrees/{repo}/file/{task}'));
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+    expect(io.out).toBe('../worktrees/acme/select-width\n');
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width', 'README.md'))).toBe(true);
+    expect(existsSync(join(base, 'worktrees', 'acme', 'file'))).toBe(false);
+  });
+
+  test('an unapproved workspace.setup never runs, and the approved commands do', async () => {
+    const folder = join(base, 'worktrees', 'acme', 'select-width');
+    const ran: { cwd: string; command: string }[] = [];
+    sources.setup = (cwd, command) => {
+      ran.push({ cwd, command });
+      return 0;
+    };
+    approve(teamText({ setup: '  setup:\n    - "touch from-approved"\n' }));
+    edit(teamText({ setup: '  setup:\n    - "touch from-file"\n' }));
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+    expect(ran).toEqual([{ cwd: folder, command: 'touch from-approved' }]);
+  });
+
+  test('an unapproved trust edit that would allow a forbidden landing is refused on the approved values', async () => {
+    // The approved copy trusts only the task called "task" — the sample the validator checks — so
+    // its own landing is outside it; the file's wider trust would have allowed the landing.
+    approve(teamText().replace('  - ../worktrees/acme/*\n', '  - ../worktrees/acme/task\n'));
+    edit(teamText());
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(1);
+    expect(io.err).toBe(`${note}team worktree: ../worktrees/acme/select-width is outside the approved trust paths\n`);
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(false);
+  });
+
+  test('an unapproved trust edit that would forbid an allowed landing is not used', async () => {
+    approve(teamText());
+    edit(teamText().replace('  - ../worktrees/acme/*\n', '  - ../worktrees/acme/task\n'));
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(true);
+  });
+
+  test('an unapproved workspace.protected edit changes nothing: the subcommands never read it', async () => {
+    approve(teamText());
+    edit(teamText().replace('  base: main\n', '  base: main\n  protected:\n    - .\n    - ../worktrees\n'));
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(true);
+  });
+
+  test('--seat refuses a seat the file added, and uses the approved definition of one the file changed', async () => {
+    approve(teamText());
+    edit(teamText()
+      .replace('    model: Claude Opus\n', '    model: Claude Sonnet\n')
+      .replace('\nseats:\n', '\nseats:\n  - role: implementer\n    name: ghost\n    cli: claude-code\n    vendor: anthropic\n    model: Claude Opus\n    version: "5.5"\n    launch: claude --model claude-opus-5-5\n'));
+    const added = await run(['new', 'select-width', '--kind', 'fix', '--seat', 'ghost']);
+    expect(added.code).toBe(1);
+    expect(added.err).toBe(`${note}team worktree: seat ghost is not in the approved file: run \`team approve\`\n`);
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(false);
+    const kept = await run(['new', 'select-width', '--kind', 'fix', '--seat', 'lead']);
+    expect(kept.code).toBe(0);
+    expect(kept.err).toBe(note);
+    // The worktree state records the seat's name only, and that name is the approved one.
+    expect(readState(join(project, '.agents')).sessions.acme?.worktrees['select-width']?.seat).toBe('lead');
+  });
+
+  test('a file equal to the approved copy prints no note and both outputs are main\'s own', async () => {
+    const created = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(created.code).toBe(0);
+    expect(created.err).toBe('');
+    expect(created.out).toBe('../worktrees/acme/select-width\n');
+    const removed = await run(['remove', 'select-width']);
+    expect(removed.code).toBe(0);
+    expect(removed.err).toBe('');
+    expect(removed.out).toBe('removed select-width; the branch fix/select-width is kept\n');
+  });
+
+  test('a record that does not verify refuses with the signature line, unchanged', async () => {
+    const path = recordPath();
+    const record = JSON.parse(readFileSync(path, 'utf8')) as { approvedAt: string };
+    record.approvedAt = '2020-01-01T00:00:00.000Z';
+    writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(1);
+    expect(io.err).toBe('team worktree: the record does not carry a valid signature: it was changed after approval, or written without the key: run `team approve` once\n');
+  });
+
+  test('a legacy record refuses with the one-line repair, unchanged', async () => {
+    const path = recordPath();
+    const record = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    record.format = 1;
+    delete record.generation;
+    delete record.signature;
+    writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(1);
+    expect(io.err).toBe('team worktree: approved before records were signed: run `team approve` once\n');
+  });
+
+  test('an approved copy this version cannot read refuses before anything is created', async () => {
+    // A record whose copy this version cannot read, as a stricter validator tomorrow would leave
+    // it: the standing is handed in whole, so the signature is the one that verified.
+    edit(teamText({ limit: 4 }));
+    const loaded = loadTeamFile(project);
+    if (!loaded.ok) throw new Error('the team file must load');
+    const real = approvalStanding(loaded.root, home);
+    if (real.kind !== 'verified') throw new Error(real.kind);
+    const io = testIo(project, owner) as TestIo & { code: number };
+    io.code = await runWorktree(['new', 'select-width', '--kind', 'fix'], io, {
+      home,
+      now: sources.now,
+      standing: () => ({ ...real, record: { ...real.record, file: 'nope: [[[' } }),
+    });
+    expect(io.code).toBe(1);
+    expect(io.err).toBe('team worktree: the approved copy can\'t be read: run `team approve`\n');
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(false);
+  });
+
+  test('the caller gate reads the approved copy: a promotion the owner did not make is not one', async () => {
+    approve(teamText());
+    edit(teamText()
+      .replace('coordinator: lead\n', 'coordinator: stranger\n')
+      .replace('\nseats:\n', '\nseats:\n  - role: coordinator\n    name: stranger\n    cli: claude-code\n    vendor: anthropic\n    model: Claude Opus\n    version: "5.5"\n    launch: claude --model claude-opus-5-5\n'));
+    const promoted = await run(['new', 'select-width', '--kind', 'fix'], { kind: 'seat', name: 'stranger', pane: 'w2:p1' });
+    expect(promoted.code).toBe(1);
+    expect(promoted.err).toBe('team worktree: only the owner, the coordinator or the operator runs it; this call is stranger\n');
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(false);
+
+    // The other way round: the approved copy's coordinator is still one after the file demotes her.
+    approve(teamText());
+    edit(teamText()
+      .replace('coordinator: lead\n', 'coordinator: stranger\n')
+      .replace('\nseats:\n', '\nseats:\n  - role: coordinator\n    name: stranger\n    cli: claude-code\n    vendor: anthropic\n    model: Claude Opus\n    version: "5.5"\n    launch: claude --model claude-opus-5-5\n'));
+    const demoted = await run(['new', 'select-width', '--kind', 'fix'], lead);
+    expect(demoted.code).toBe(0);
+    expect(demoted.err).toBe(note);
+  });
+
+  test('an unapproved workspace.branch is never used', async () => {
+    edit(teamText().replace('branch: "{kind}/{task}"', 'branch: "file/{task}"'));
+    const io = await run(['new', 'branch-case', '--kind', 'fix']);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+    expect(readState(join(project, '.agents')).sessions.acme?.worktrees['branch-case']?.branch).toBe('fix/branch-case');
+    expect(() => git(project, 'rev-parse', '--verify', '--quiet', 'refs/heads/file/branch-case')).toThrow();
+  });
+
+  test('an unapproved workspace.base is never used', async () => {
+    git(project, 'checkout', '-q', '-b', 'other');
+    writeFileSync(join(project, 'README.md'), 'other\n');
+    git(project, 'add', 'README.md');
+    git(project, 'commit', '-q', '-m', 'other');
+    git(project, 'checkout', '-q', 'main');
+    edit(teamText().replace('base: main\n', 'base: other\n'));
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+    expect(readFileSync(join(base, 'worktrees', 'acme', 'select-width', 'README.md'), 'utf8')).toBe('acme\n');
+  });
+
+  test('an unapproved workspace.mode shared is never used', async () => {
+    edit(teamText({ mode: 'shared' }));
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width', 'README.md'))).toBe(true);
+  });
+
+  test('a widened workspace.limit is refused at the approved limit, after one note', async () => {
+    approve(teamText({ limit: 1 }));
+    expect((await run(['new', 'select-width', '--kind', 'fix'])).code).toBe(0);
+    edit(teamText({ limit: 8 }));
+    const io = await run(['new', 'other-task', '--kind', 'fix']);
+    expect(io.code).toBe(1);
+    expect(io.err).toBe(`${note}team worktree: the worktree limit is 1, and 1 are open\n`);
+    expect(existsSync(join(base, 'worktrees', 'acme', 'other-task'))).toBe(false);
+  });
+
+  function staffText(): string {
+    return teamText()
+      .replace('operator: lead\n', 'operator: clerk\n')
+      .replace(
+        '    launch: claude --model claude-opus-5-5\n',
+        '    launch: claude --model claude-opus-5-5\n  - role: operator\n    name: clerk\n    cli: claude-code\n    vendor: anthropic\n    model: Claude Opus\n    version: "5.5"\n    launch: claude --model claude-opus-5-5\n',
+      );
+  }
+
+  test('an operator promoted only in the live file is refused, and nothing is created', async () => {
+    const staff = staffText();
+    const stranger = '  - role: operator\n    name: stranger\n    cli: claude-code\n    vendor: anthropic\n    model: Claude Opus\n    version: "5.5"\n    launch: claude --model claude-opus-5-5\n';
+    approve(staff);
+    edit(`${staff.replace('operator: clerk\n', 'operator: stranger\n')}${stranger}`);
+    const io = await run(['new', 'select-width', '--kind', 'fix'], { kind: 'seat', name: 'stranger', pane: 'w2:p1' });
+    expect(io.code).toBe(1);
+    expect(io.err).toBe('team worktree: only the owner, the coordinator or the operator runs it; this call is stranger\n');
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(false);
+  });
+
+  test('the approved operator still runs after the live file demotes them, with the note', async () => {
+    const staff = staffText();
+    approve(staff);
+    edit(staff.replace('operator: clerk\n', 'operator: lead\n'));
+    const io = await run(['new', 'select-width', '--kind', 'fix'], { kind: 'seat', name: 'clerk', pane: 'w3:p1' });
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width', 'README.md'))).toBe(true);
+  });
+
+  test('the approved coordinator stays one after the file demotes her, even when she is not the operator', async () => {
+    const staff = teamText()
+      .replace('operator: lead\n', 'operator: clerk\n')
+      .replace(
+        '    launch: claude --model claude-opus-5-5\n',
+        '    launch: claude --model claude-opus-5-5\n  - role: operator\n    name: clerk\n    cli: claude-code\n    vendor: anthropic\n    model: Claude Opus\n    version: "5.5"\n    launch: claude --model claude-opus-5-5\n',
+      );
+    approve(staff);
+    edit(staff.replace('coordinator: lead\n', 'coordinator: clerk\n'));
+    const io = await run(['new', 'select-width', '--kind', 'fix'], lead);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+  });
+
+  test('an unapproved session name is never used', async () => {
+    edit(teamText().replace('project: acme\n', 'project: acme\nsession: other\n'));
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+    const state = readState(join(project, '.agents'));
+    expect(state.sessions.acme?.worktrees['select-width']?.path).toBe('../worktrees/acme/select-width');
+    expect(state.sessions.other).toBeUndefined();
+  });
+
+  test('an emptied forbidden_public list is not used: the approved pattern still refuses the name', async () => {
+    const approved = teamText();
+    const live = approved.replace('identity:\n  forbidden_public:\n    - "\\\\bWEB-[0-9]+\\\\b"\n', '');
+    expect(live).not.toBe(approved);
+    expect(live).not.toContain('forbidden_public');
+    edit(live);
+    const io = await run(['new', 'WEB-12', '--kind', 'fix']);
+    expect(io.code).toBe(1);
+    expect(io.err).toBe(`${note}team worktree: "WEB-12" matches forbidden_public "\\\\bWEB-[0-9]+\\\\b"; a public project refuses that name\n`);
+    expect(existsSync(join(base, 'worktrees', 'acme', 'WEB-12'))).toBe(false);
+  });
+
+  test('a live private visibility is not used: the approved public pattern still refuses the name', async () => {
+    // The reviewer's mutant passed the live `visibility` to the forbidden-name check; the
+    // private live file would then allow a name the approved public file forbids.
+    const approved = teamText();
+    const live = approved.replace('visibility: public\n', 'visibility: private\n');
+    expect(live).not.toBe(approved);
+    expect(live).not.toContain('visibility: public');
+    edit(live);
+    const io = await run(['new', 'WEB-12', '--kind', 'fix']);
+    expect(io.code).toBe(1);
+    expect(io.err).toBe(`${note}team worktree: "WEB-12" matches forbidden_public "\\\\bWEB-[0-9]+\\\\b"; a public project refuses that name\n`);
+    expect(existsSync(join(base, 'worktrees', 'acme', 'WEB-12'))).toBe(false);
+  });
+
+  test('a seat taken out of the file is still one, and the note says the file changed', async () => {
+    // `limits.seats` defaults to the roster, so an unpinned limit would itself be a difference and
+    // the one-way comparison would not be quiet. Both files pin it: the removed seat is the only change.
+    const limits = 'limits:\n  seats: 4\n  temporary: 2\n';
+    const pinned = teamText().replace('trust:\n', `${limits}trust:\n`);
+    const withScribe = pinned.replace(
+      '    launch: claude --model claude-opus-5-5\n',
+      '    launch: claude --model claude-opus-5-5\n  - role: implementer\n    name: scribe\n    cli: claude-code\n    vendor: anthropic\n    model: Claude Opus\n    version: "5.5"\n    launch: claude --model claude-opus-5-5\n',
+    );
+    const approved = validateTeamFile(withScribe);
+    const live = validateTeamFile(pinned);
+    if (!approved.ok || !live.ok) throw new Error('both files must load');
+    expect(compare(fingerprints(approved.team), fingerprints(live.team))).toEqual([]);
+    approve(withScribe);
+    edit(pinned);
+    const io = await run(['new', 'select-width', '--kind', 'fix', '--seat', 'scribe']);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+    expect(io.err).not.toContain('names no declared seat');
+    expect(readState(join(project, '.agents')).sessions.acme?.worktrees['select-width']?.seat).toBe('scribe');
+  });
+
+  test('a renamed seat is still the approved name', async () => {
+    edit(teamText().replaceAll('lead', 'chief'));
+    const io = await run(['new', 'select-width', '--kind', 'fix', '--seat', 'lead']);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+    expect(readState(join(project, '.agents')).sessions.acme?.worktrees['select-width']?.seat).toBe('lead');
+  });
+
+  test('a redefined seat keeps the approved name', async () => {
+    edit(teamText().replace('model: Claude Opus\n', 'model: Claude Sonnet\n'));
+    const io = await run(['new', 'select-width', '--kind', 'fix', '--seat', 'lead']);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+    expect(readState(join(project, '.agents')).sessions.acme?.worktrees['select-width']?.seat).toBe('lead');
+  });
+
+  test('a replaced file still runs the approved path, branch and setup', async () => {
+    const ran: string[] = [];
+    sources.setup = (_cwd, command) => {
+      ran.push(command);
+      return 0;
+    };
+    approve(teamText({ setup: '  setup:\n    - "echo approved"\n' }));
+    edit(`format: 1
+project: acme
+visibility: private
+coordinator: lead
+operator: lead
+trust:
+  - ../worktrees/acme/*
+workspace:
+  mode: worktree
+  path: ../worktrees/{repo}/live/{task}
+  branch: "live/{task}"
+  base: main
+  setup:
+    - "echo from-file"
+seats:
+  - role: coordinator
+    name: lead
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+`);
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe(note);
+    expect(io.out).toBe('../worktrees/acme/select-width\n');
+    expect(ran).toEqual(['echo approved']);
+    expect(readState(join(project, '.agents')).sessions.acme?.worktrees['select-width']?.branch).toBe('fix/select-width');
+    expect(existsSync(join(base, 'worktrees', 'acme', 'live'))).toBe(false);
+  });
+
+  test('a verified record whose stored copy is an older format refuses, even when the fingerprints match', async () => {
+    const loaded = loadTeamFile(project);
+    if (!loaded.ok) throw new Error('the team file must load');
+    writeApproval(
+      storePath(loaded.team.project, loaded.root, home),
+      { approval: approvalOf(loaded.team, loaded.root), file: 'format: 0\n' },
+      loaded.team.seats,
+      home,
+    );
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(1);
+    expect(io.err).toBe('team worktree: the approved copy can\'t be read: run `team approve`\n');
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(false);
+  });
+
+  test('a verified record whose stored copy is empty refuses, even when the fingerprints match', async () => {
+    const loaded = loadTeamFile(project);
+    if (!loaded.ok) throw new Error('the team file must load');
+    writeApproval(
+      storePath(loaded.team.project, loaded.root, home),
+      { approval: approvalOf(loaded.team, loaded.root), file: '' },
+      loaded.team.seats,
+      home,
+    );
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(1);
+    expect(io.err).toBe('team worktree: the approved copy can\'t be read: run `team approve`\n');
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(false);
+  });
+
+  test('a record whose file is not a string keeps the store\'s own refusal', async () => {
+    const path = recordPath();
+    const record = JSON.parse(readFileSync(path, 'utf8')) as { file: unknown };
+    record.file = 1;
+    writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(1);
+    expect(io.err).toContain('the approval record cannot be read');
+    expect(io.err).toContain('"file" is not a string');
+    expect(io.err).toContain('run `team approve` once');
+    expect(io.err).not.toContain("the approved copy can't be read");
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(false);
+  });
+
+  test('renaming project fills {repo} from the live file and stays inside a wide approved trust', async () => {
+    // `session` is written, so it does not follow the project name: the only edit is `project`.
+    const wide = teamText()
+      .replace('  - ../worktrees/acme/*\n', '  - ../worktrees/*\n')
+      .replace('project: acme\n', 'project: acme\nsession: acme\n');
+    approve(wide);
+    edit(wide.replace('project: acme\n', 'project: renamed\n'));
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(0);
+    expect(io.err).toBe('');
+    expect(io.out).toBe('../worktrees/renamed/select-width\n');
+    expect(existsSync(join(base, 'worktrees', 'renamed', 'select-width', 'README.md'))).toBe(true);
+  });
+
+  test('renaming project against a trust that names the old project makes the file invalid', async () => {
+    edit(teamText().replace('project: acme\n', 'project: renamed\n'));
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(2);
+    expect(io.err).toContain('matches no trust pattern');
+    expect(existsSync(join(base, 'worktrees', 'renamed'))).toBe(false);
+    expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(false);
+  });
+
+  test('a project rename the live trust allows is still refused when it leaves the approved trust', async () => {
+    edit(teamText()
+      .replace('project: acme\n', 'project: renamed\n')
+      .replace('  - ../worktrees/acme/*\n', '  - ../worktrees/*\n'));
+    const io = await run(['new', 'select-width', '--kind', 'fix']);
+    expect(io.code).toBe(1);
+    expect(io.err).toBe(`${note}team worktree: ../worktrees/renamed/select-width is outside the approved trust paths\n`);
+    expect(existsSync(join(base, 'worktrees', 'renamed'))).toBe(false);
   });
 });
