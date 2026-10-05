@@ -491,11 +491,14 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
   io.stdout(findings.map((finding) => `${label[finding.level]}  ${finding.text}\n`).join(''));
   const missing = findings.filter((finding) => finding.level === 'miss').length;
   const warnings = findings.filter((finding) => finding.level === 'warn').length;
-  io.stdout(
-    missing
-      ? `team doctor: ${missing} missing, ${warnings} warning${warnings === 1 ? '' : 's'}: \`up\` and \`add\` refuse until the missing ones are done\n`
-      : `team doctor: nothing missing, ${warnings} warning${warnings === 1 ? '' : 's'}\n`,
-  );
+  // The same rule `up` and `add` refuse on. A missing watch is `miss` but blocks nothing, so the
+  // refusal line is printed only when at least one finding blocks, and counts those.
+  const blockers = findings.filter(blocksLaunch).length;
+  const plural = warnings === 1 ? '' : 's';
+  let summary = `team doctor: ${missing} missing, ${warnings} warning${plural}`;
+  if (!missing) summary = `team doctor: nothing missing, ${warnings} warning${plural}`;
+  else if (blockers) summary += `: ${blockers} of them block \`up\` and \`add\``;
+  io.stdout(`${summary}\n`);
   // exit: doctor.clear
   // exit: doctor.missing
   return missing ? 1 : 0;
