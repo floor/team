@@ -30,6 +30,10 @@ export interface Profile {
   idleTimeout: number;
   /** Seconds to wait for the pane's shell after the exit command. */
   exitTimeout: number;
+  /** Whether the CLI's screen shows the model it runs, so the running seat can be checked. */
+  readsModel: boolean;
+  /** Whether the CLI starts on its last-used model when a launch names none. */
+  lastUsedModel: boolean;
   /** The model and version a launch line's model id means, or null when unknown. */
   modelOf(launch: string): { model: string; version: string } | null;
 }
@@ -83,7 +87,11 @@ type ModelRule = { match: RegExp; model: string; version: string };
 type Shipped = { profile: Profile; status: ModelRule[]; quota: QuotaPattern[] };
 
 const NAMES = ['claude-code', 'codex', 'cursor', 'antigravity'] as const;
-const LAUNCH_KEYS = ['binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'timeouts', 'models', 'status_model'] as const;
+// The keys every profile carries. `status_model` and `last_used_model` are optional: a profile
+// without the first belongs to a CLI whose screen doesn't show its model; the second says the
+// CLI starts on its last-used model when a launch names none, and no shipped profile sets it.
+const LAUNCH_KEYS = ['binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'timeouts', 'models'] as const;
+const OPTIONAL_LAUNCH_KEYS = ['status_model', 'last_used_model'] as const;
 
 const SHIPPED: Record<string, Shipped> = loadShipped();
 
@@ -129,10 +137,12 @@ function launchOf(root: YamlNode): Shipped {
   const entries = mapping(root, 'a profile');
   const format = required(entries, 'format', root.line);
   if (format.value.kind !== 'scalar' || format.value.value !== 1) fail(format.line, '"format" must be 1');
-  only(entries, ['format', 'cli', 'screen', 'screen_module', 'quota', ...LAUNCH_KEYS]);
+  only(entries, ['format', 'cli', 'screen', 'screen_module', 'quota', ...LAUNCH_KEYS, ...OPTIONAL_LAUNCH_KEYS]);
   const cli = text(required(entries, 'cli', root.line), 'cli');
   required(entries, 'screen', root.line);
   const quotaEntry = optional(entries, 'quota');
+  const statusEntry = optional(entries, 'status_model');
+  const lastUsedEntry = optional(entries, 'last_used_model');
   for (const key of LAUNCH_KEYS) required(entries, key, root.line);
   const login = loginOf(required(entries, 'login', root.line).value);
   const timeouts = required(entries, 'timeouts', root.line).value;
@@ -150,9 +160,11 @@ function launchOf(root: YamlNode): Shipped {
       exit: text(required(entries, 'exit', root.line), 'exit'),
       idleTimeout: seconds(timeouts, 'idle'),
       exitTimeout: seconds(timeouts, 'exit'),
+      readsModel: statusEntry !== undefined,
+      lastUsedModel: lastUsedEntry ? boolOf(lastUsedEntry.value, 'last_used_model') : false,
       modelOf: (launch) => modelOf(models, launch),
     },
-    status: modelRules(required(entries, 'status_model', root.line).value, 'status_model'),
+    status: statusEntry ? modelRules(statusEntry.value, 'status_model') : [],
     quota: quotaEntry ? quotaOf(quotaEntry.value) : [],
   };
 }

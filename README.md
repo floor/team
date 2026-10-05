@@ -86,6 +86,8 @@ seats:
     version: "V4.1"
     display: DeepSeek V4.1 Flash
     launch: team-deepseek     # a launcher on the PATH, holding the account's key and endpoint
+    model_from: launcher      # optional: says outright the launcher picks the model, which doctor
+                              # then checks on the running seat, not on the launch line
     count: 2                  # implementer-deepseek and implementer-deepseek-2
 
   - role: reviewer

@@ -2,13 +2,14 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, dirname, isAbsolute, join } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join } from 'node:path';
 import { approvalDifferencesOf, budgetsInForceOf, watchInForceOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, isOwner, type Caller } from '../caller.ts';
 import { checkCommands, type ApprovedCheck } from '../budgets/checks.ts';
 import { parseOutput, runCommand, type CheckReading } from '../budgets/run.ts';
 import { loadTeamFile } from '../file/load.ts';
+import { declaredModel } from '../file/model.ts';
 import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
 import { HERDR_TESTED, herdrVersion, sessionRunning } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
@@ -114,6 +115,20 @@ function launchBinary(launch: string): string | null {
       .split(/\s+/)
       .find((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) ?? null
   );
+}
+
+// Whether a launch line runs the CLI's own binary, so any model flag in it is the CLI's own, or
+// runs a launcher — a script or program that chooses the model itself. Decided from the first two
+// words that are not variable assignments: a launcher names none of the profile's binary or
+// process names, as itself or as the basename of a path.
+function runsOwnBinary(launch: string, profile: Pick<Profile, 'binary' | 'processNames'>): boolean {
+  const words = launch
+    .trim()
+    .split(/\s+/)
+    .filter((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word))
+    .slice(0, 2);
+  const known = [profile.binary, ...profile.processNames];
+  return words.some((word) => known.some((name) => word === name || basename(word) === name));
 }
 
 // The approved bytes rule, as the watch applies it (budgets/checks.ts): a check whose file no
@@ -256,18 +271,38 @@ function cliFindings(cli: string, seats: Seat[], sources: DoctorSources): Findin
     }
     const named = profile.modelOf(seat.launch);
     if (named === null) {
-      findings.push({
-        level: 'warn',
-        text: `${seat.name}: the launch names no model this version knows; the file says ${seat.model} ${seat.version}`,
-      });
+      const finding = modelFlagFinding(seat, profile);
+      if (finding) findings.push(finding);
     } else if (named.model !== seat.model || named.version !== seat.version) {
       findings.push({
         level: 'warn',
-        text: `${seat.name}: the launch starts ${named.model} ${named.version}, the file says ${seat.model} ${seat.version}`,
+        text: `${seat.name}: the launch starts ${named.model} ${named.version}, the file says ${declaredModel(seat)}`,
       });
     }
   }
   return findings;
+}
+
+// What `doctor` says of a seat whose launch names no model the profile knows. Nothing, when the
+// model is checked on the running seat instead: a screen the profile reads settles it, and a
+// launcher that runs the CLI names the model itself. The one case nothing can check — a CLI that
+// keeps no model on its screen — stays a warning; so does a CLI that starts on its last-used
+// model, whose warning another change rewords.
+export function modelFlagFinding(
+  seat: Pick<Seat, 'name' | 'launch' | 'display' | 'modelFrom'>,
+  profile: Pick<Profile, 'binary' | 'processNames' | 'readsModel' | 'lastUsedModel'>,
+): Finding | null {
+  const declared = declaredModel(seat);
+  if (!profile.readsModel) {
+    return { level: 'warn', text: `${seat.name}: no model flag and this CLI doesn't show its model; nothing checks that it runs ${declared}` };
+  }
+  if (seat.modelFrom === 'launcher' || !runsOwnBinary(seat.launch, profile)) {
+    return { level: 'note', text: `${seat.name}: the model is chosen by its launcher; checked on the running seat` };
+  }
+  if (profile.lastUsedModel) {
+    return { level: 'warn', text: `${seat.name}: the launch names no model this version knows; the file says ${declared}` };
+  }
+  return null;
 }
 
 // `watch` is the watch values in force — the approved ones — so an unapproved interval edit can't

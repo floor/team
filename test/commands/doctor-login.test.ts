@@ -108,6 +108,8 @@ describe('checkLogin with fake command results', () => {
       exit: '/exit',
       idleTimeout: 30,
       exitTimeout: 10,
+      readsModel: false,
+      lastUsedModel: false,
       modelOf: () => null,
     };
     let ran = false;

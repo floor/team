@@ -220,12 +220,12 @@ describe('team doctor', () => {
         '--    session acme-web is not running',
         'ok    claude 2.1.288 (Claude Code)',
         'ok    claude-code: logged in',
-        'warn  deepseek-acme: the launch names no model this version knows; the file says DeepSeek Flash V4.1',
-        'warn  deepseek-acme-2: the launch names no model this version knows; the file says DeepSeek Flash V4.1',
+        '--    deepseek-acme: the model is chosen by its launcher; checked on the running seat',
+        '--    deepseek-acme-2: the model is chosen by its launcher; checked on the running seat',
         'ok    codex codex-cli 0.157.0',
         'ok    codex: logged in',
         '--    trust: not applied or checked by this version; trust each folder by hand',
-        'team doctor: nothing missing, 2 warnings',
+        'team doctor: nothing missing, 0 warnings',
         '',
       ].join('\n'),
     );
@@ -250,7 +250,7 @@ describe('team doctor', () => {
     expect(out.out).toContain('MISS  log in to claude-code: `claude auth login`\n');
     expect(out.out).toContain('MISS  deepseek-acme: its launcher `team-deepseek` is not on the PATH\n');
     expect(out.out).toContain(
-      'team doctor: 4 missing, 2 warnings: `up` and `add` refuse until the missing ones are done\n',
+      'team doctor: 4 missing, 0 warnings: `up` and `add` refuse until the missing ones are done\n',
     );
     expect(out.code).toBe(1);
   });
