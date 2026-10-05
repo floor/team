@@ -46,6 +46,10 @@ export type SeatState = {
   };
 };
 
+/** A seat's waiting record, as the seat shape above stores it. Named for the plan and the
+ *  pause, which carry it between the state and the prompt. */
+export type WaitingRecord = NonNullable<SeatState['waiting']>;
+
 export type WorktreeState = {
   path: string;
   branch: string;

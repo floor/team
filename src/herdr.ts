@@ -283,6 +283,17 @@ export function agentRename(pane: string, name: string, session?: string): boole
   return body === null || body.type !== 'error';
 }
 
+// Brings an agent's pane to the owner's attention and changes nothing in it: no key, no text.
+// Captured on herdr 0.7.1 in a scratch session: `agent focus` on a pane holding typed, unsent
+// text left the pane's text exactly as it was and only moved the focus (see the result of the
+// slice that added this call). False when herdr doesn't list the target or the call failed.
+export function focusAgent(target: string, session?: string): boolean {
+  const out = capture(['agent', 'focus', target], session);
+  if (out === null) return false;
+  const body = parsed(out);
+  return body === null || body.type !== 'error';
+}
+
 export function workspaceClose(workspace: string, session?: string): boolean {
   const out = capture(['workspace', 'close', workspace], session);
   if (out === null) return false;

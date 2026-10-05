@@ -313,7 +313,7 @@ describe('s, skip the seat', () => {
       state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2' } },
     });
     const result = await runPause(input(), f.host);
-    expect(result).toMatchObject({ kind: 'left out', reason: 'its workspace did not close; left as it is' });
+    expect(result).toMatchObject({ kind: 'left out', reason: 'trust; its workspace did not close; left as it is' });
     expect(f.calls).not.toContain('drop');
     expect(f.state.current?.waiting?.state).toBe('waiting-owner');
   });

@@ -1,5 +1,5 @@
 import type { HerdrAgent, PaneProcesses } from '../herdr.ts';
-import { seatProcessVerdict } from './identity.ts';
+import { seatProcessVerdict, type LaunchedIdentity } from './identity.ts';
 import { IDLE_POLL_MS } from './plan.ts';
 import type { Classification } from './progress.ts';
 import type { SeatState } from '../state.ts';
@@ -102,18 +102,25 @@ function display(view: View): string {
 }
 
 /** The repair for a waiting record whose pane is gone or no longer holds the seat. */
-function goneDetail(seat: string): string {
+export function goneDetail(seat: string): string {
   return `  its record still names it; \`team remove ${seat} --keep\`, then \`team up\`, clears it\n`;
 }
 
-/** Why the seat's waiting pane is not the one it was recorded on, or null when it still is. */
-function paneProblem(host: PauseHost, pane: string, state: SeatState | undefined): string | null {
-  const agents = host.agents();
+/** The two reads that say whether a pane is still the seat's: herdr's agent list and the pane's
+ *  process. A `PauseHost` has both; so does `execute`'s host, through its two hooks. */
+export type PaneReads = {
+  agents(): HerdrAgent[] | null;
+  process(): PaneProcesses | null;
+};
+
+/** Why the pane is not the one the seat was recorded on, or null when it still is. */
+export function paneProblem(reads: PaneReads, pane: string, launched: LaunchedIdentity | undefined): string | null {
+  const agents = reads.agents();
   if (!agents) return 'its waiting pane could not be read';
   if (!agents.some((agent) => agent.pane === pane)) return 'its waiting pane is gone';
-  const verdict = seatProcessVerdict(state?.launched, host.process());
+  const verdict = seatProcessVerdict(launched, reads.process());
   if (verdict === 'gone' || verdict === 'replaced') return 'its waiting pane holds another process';
-  if (verdict === 'unknown' && state?.launched) return 'its waiting pane could not be read';
+  if (verdict === 'unknown' && launched) return 'its waiting pane could not be read';
   return null;
 }
 
@@ -127,10 +134,15 @@ const leftOut = (reason: string, seat: string): Outcome => ({ kind: 'done', resu
 
 export async function runPause(input: PauseInput, host: PauseHost): Promise<PauseResult> {
   // The first write. A seat resumed out of a recovery keeps the record exactly as the answer
-  // left it — only the owner's path clears that, and it clears it by finishing the seat.
+  // left it — only the owner's path clears that, and it clears it by finishing the seat. A seat
+  // resumed from a recorded wait was written by the caller's own resume, under the seat lock:
+  // this entry writes only when it is the first to record the seat, so nothing here can ever
+  // overwrite a recovery a concurrent `team answer` just wrote.
   let view: View;
   if (input.recorded?.state === 'trust-sent-recovery') {
     view = { classification: input.recorded.classification, recovery: true };
+  } else if (input.recorded) {
+    view = { classification: input.classification, recovery: false };
   } else {
     view = { classification: input.classification, recovery: false };
     host.write((prior) => ({
@@ -159,7 +171,7 @@ export async function runPause(input: PauseInput, host: PauseHost): Promise<Paus
       continue;
     }
     if (key === 's') {
-      const outcome = await skip(input, host);
+      const outcome = await skip(input, host, view.classification);
       if (outcome.kind === 'done') return outcome.result;
       continue;
     }
@@ -187,7 +199,7 @@ async function open(input: PauseInput, host: PauseHost): Promise<Outcome> {
   try {
     const state = host.state();
     if (state?.stage === 'ready') return { kind: 'done', result: ready(input.seat) };
-    const problem = paneProblem(host, input.pane, state);
+    const problem = paneProblem(host, input.pane, state?.launched);
     if (problem) return leftOut(problem, input.seat);
     host.write((prior) => ({
       ...(prior ?? { state: 'waiting-owner', classification: input.classification }),
@@ -207,7 +219,7 @@ async function open(input: PauseInput, host: PauseHost): Promise<Outcome> {
     try {
       const state = host.state();
       if (state?.stage === 'ready') return { kind: 'done', result: ready(input.seat) };
-      const problem = paneProblem(host, input.pane, state);
+      const problem = paneProblem(host, input.pane, state?.launched);
       if (problem) return leftOut(problem, input.seat);
       if (state?.waiting?.state === 'trust-sent-recovery') {
         return { kind: 'view', view: { classification: state.waiting.classification, recovery: true } };
@@ -225,8 +237,10 @@ async function open(input: PauseInput, host: PauseHost): Promise<Outcome> {
   }
 }
 
-/** `s`: the seat is skipped. Its workspace is closed without input, its state cleared. */
-async function skip(input: PauseInput, host: PauseHost): Promise<Outcome> {
+/** `s`: the seat is skipped. Its workspace is closed without input, its state cleared. A close
+ *  that fails says so under the reading the prompt showed, the same line the run's own close of
+ *  a dialog would write — nothing claims a close that did not happen. */
+async function skip(input: PauseInput, host: PauseHost, at: string): Promise<Outcome> {
   const lock = host.lock();
   if ('held' in lock) {
     host.say(`  ${input.seat}: another command holds it; try [s] again\n`);
@@ -234,11 +248,11 @@ async function skip(input: PauseInput, host: PauseHost): Promise<Outcome> {
   }
   try {
     const state = host.state();
-    const problem = paneProblem(host, input.pane, state);
+    const problem = paneProblem(host, input.pane, state?.launched);
     if (problem) return leftOut(problem, input.seat);
     const workspace = input.workspace ?? state?.workspace;
     if (workspace && !host.close(workspace)) {
-      return { kind: 'done', result: { kind: 'left out', reason: 'its workspace did not close; left as it is', detail: '' } };
+      return { kind: 'done', result: { kind: 'left out', reason: `${at}; its workspace did not close; left as it is`, detail: '' } };
     }
     host.drop();
     return { kind: 'done', result: { kind: 'skipped' } };
@@ -255,7 +269,7 @@ async function refresh(input: PauseInput, host: PauseHost, view: View): Promise<
   try {
     const state = host.state();
     if (state?.stage === 'ready') return { kind: 'done', result: ready(input.seat) };
-    const problem = paneProblem(host, input.pane, state);
+    const problem = paneProblem(host, input.pane, state?.launched);
     if (problem) return leftOut(problem, input.seat);
     if (state?.waiting?.state === 'trust-sent-recovery') {
       return { kind: 'view', view: { classification: state.waiting.classification, recovery: true } };
