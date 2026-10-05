@@ -156,6 +156,10 @@ function readVersion(entry: YamlEntry | undefined, at: string, line: number, che
 function readCwd(entry: YamlEntry | undefined, at: string, trust: string[], check: Check): string {
   const cwd = check.text(entry, `${at}: cwd`);
   if (cwd === undefined || !entry) return '.';
+  if (/[\x00-\x1f\x7f`]/.test(cwd)) {
+    check.fail(entry.value.line, `${at}: cwd must not contain control characters or backticks`);
+    return '.';
+  }
   if (cwd.startsWith('/') || cwd.startsWith('~') || /^[A-Za-z]:[\\/]/.test(cwd)) {
     check.fail(entry.value.line, `${at}: cwd must be relative to the project, never absolute and never "~"`);
     return '.';

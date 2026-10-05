@@ -85,6 +85,10 @@ operator: claude-keeper
 identity:
   humans: [jane@acme.example]
 
+trust:
+  - ~/.config/team/lobby
+  - ~/Code/beacon
+
 workspace:
   mode: shared
 

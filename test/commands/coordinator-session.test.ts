@@ -8,7 +8,7 @@
 // to each command's real run function, so the gate under test is the shipped one.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalOf } from '../../src/approve/approval.ts';
@@ -22,6 +22,7 @@ import type { DoctorSources } from '../../src/commands/doctor.ts';
 import { runUp, type Launch, type UpSources } from '../../src/commands/up.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
+import { lobbyDir } from '../../src/lobby/gate.ts';
 import { storePath, writeApproval } from '../../src/store/store.ts';
 import { claudeBox, testIo, type TestIo } from '../helpers.ts';
 
@@ -113,36 +114,49 @@ const STATE_021 = {
   },
 };
 
+let base: string;
 let dir: string;
 let file: string;
 let stateFile: string;
 let home: string;
 let emptyHome: string;
+let fileText: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'team-coordinator-session-'));
-  mkdirSync(join(dir, '.agents'));
+  // realpath: an absolute entry under the raw tmpdir names `/var`, a symbolic link, and the
+  // load refuses a trust entry that lands through one.
+  base = realpathSync(mkdtempSync(join(tmpdir(), 'team-coordinator-session-')));
+  dir = join(base, 'project');
+  mkdirSync(join(dir, '.agents'), { recursive: true });
   file = join(dir, '.agents', 'team.yaml');
   stateFile = join(dir, '.agents', 'team.state.json');
   execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
-  writeFileSync(file, FILE);
   // The approval in force `remove` needs to stop a seat and edit the file, signed over the
   // file above. `emptyHome` is a store that was never written: refusals for the commands
-  // that need no approval in force.
-  home = join(dir, 'home');
-  emptyHome = join(dir, 'home-empty');
-  const loaded = loadTeamFile(dir);
+  // that need no approval in force. The home holds the lobby and the store, so it lives
+  // beside the project, not inside it: trust may not cover the lobby and the store.
+  home = join(base, 'home');
+  emptyHome = join(base, 'home-empty');
+  // The file every command loads here is a migrated one: its trust names the machine lobby the
+  // setup slice writes (absolute, with `~`, as the migration line prints it) and the project.
+  // The lobby it names must exist for the load's landing reads and the gate's mode check, so
+  // the world makes it first, at 0700 as the gate requires.
+  mkdirSync(lobbyDir(home), { recursive: true });
+  chmodSync(lobbyDir(home), 0o700);
+  fileText = `${FILE}trust:\n  - ~/.config/team/lobby\n  - ${dir}\n`;
+  writeFileSync(file, fileText);
+  const loaded = loadTeamFile(dir, { home });
   if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
   writeApproval(
     storePath(loaded.team.project, loaded.root, home),
-    { approval: approvalOf(loaded.team, loaded.root), file: FILE },
+    { approval: approvalOf(loaded.team, loaded.root), file: fileText },
     loaded.team.seats,
     home,
   );
 });
 
 afterEach(() => {
-  rmSync(dir, { recursive: true, force: true });
+  rmSync(base, { recursive: true, force: true });
 });
 
 function runningAgent(name: string, pane: string): HerdrAgent {
@@ -217,7 +231,7 @@ async function call(
   caller: Placement,
   options: { state?: Record<string, unknown> | null } = {},
 ): Promise<Run> {
-  writeFileSync(file, FILE);
+  writeFileSync(file, fileText);
   const state = options.state === undefined ? (STATE as Record<string, unknown>) : options.state;
   if (state === null) rmSync(stateFile, { force: true });
   else writeFileSync(stateFile, `${JSON.stringify(state, null, 2)}\n`);
@@ -916,7 +930,7 @@ describe('up over the v0.2.1 state', () => {
       `team up: session ${SESSION} has 1 agent this file's state doesn't record: \`up\` never touches a running team\n`,
     );
     expect(counts).toEqual({ starts: 0, creates: 0, runs: 0, renames: 0, closes: 0 });
-    expect(readFileSync(file, 'utf8')).toBe(FILE);
+    expect(readFileSync(file, 'utf8')).toBe(fileText);
     expect(readFileSync(stateFile, 'utf8')).toBe(`${JSON.stringify(TEMPORARY_STATE, null, 2)}\n`);
   });
 });

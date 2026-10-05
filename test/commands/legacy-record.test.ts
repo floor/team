@@ -35,15 +35,24 @@ const LINE = LEGACY_LINE;
 let base: string;
 let root: string;
 let home: string;
+let example: string;
+
+function makeExample(basePath: string, rootPath: string): string {
+  return EXAMPLE.replace(
+    /trust:[\s\S]*?workspace:/,
+    `trust:\n  - ~/.config/team/lobby\n  - ${rootPath}\n  - ${join(basePath, 'worktrees')}\n\nworkspace:`,
+  );
+}
 
 beforeEach(() => {
   base = realpathSync(mkdtempSync(join(tmpdir(), 'team-legacy-')));
   root = join(base, 'acme-web');
   home = join(base, 'home');
+  example = makeExample(base, root);
   mkdirSync(join(root, '.agents'), { recursive: true });
   mkdirSync(home);
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root, stdio: 'ignore' });
-  writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE);
+  writeFileSync(join(root, '.agents/team.yaml'), example);
 });
 
 afterEach(() => rmSync(base, { recursive: true, force: true }));
@@ -52,20 +61,20 @@ const store = () => storePath('acme-web', root, home);
 
 /** What an earlier `team` wrote: format 1, no generation, no signature. */
 function legacy(): void {
-  const loaded = loadTeamFile(root);
+  const loaded = loadTeamFile(root, { home });
   if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
   mkdirSync(store(), { recursive: true });
   writeFileSync(
     join(store(), 'approval.json'),
-    `${JSON.stringify({ ...approvalOf(loaded.team, loaded.root, NOW), format: 1, file: EXAMPLE }, null, 2)}\n`,
+    `${JSON.stringify({ ...approvalOf(loaded.team, loaded.root, NOW), format: 1, file: example }, null, 2)}\n`,
   );
 }
 
 /** Approves as the owner would, signing the record. */
 function signed(): void {
-  const loaded = loadTeamFile(root);
+  const loaded = loadTeamFile(root, { home });
   if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
-  writeApproval(store(), { approval: approvalOf(loaded.team, loaded.root, NOW), file: EXAMPLE }, loaded.team.seats, home, NOW);
+  writeApproval(store(), { approval: approvalOf(loaded.team, loaded.root, NOW), file: example }, loaded.team.seats, home, NOW);
 }
 
 /** Rewrites the stored copy under the signature the owner's key made. */
@@ -205,7 +214,7 @@ describe('a legacy record, with the team\'s seats running', () => {
     runningState();
     // The file turns the load check off; an approval in force is what that needs, so the
     // check runs, and a load above the file's maximum is still reported.
-    writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace('  interval: 120s', '  interval: 120s\n  checks:\n    load: off'));
+    writeFileSync(join(root, '.agents/team.yaml'), example.replace('  interval: 120s', '  interval: 120s\n  checks:\n    load: off'));
     let passes = 2;
     const io = testIo(root, OWNER);
     const code = await runWatch(FILE, io, {

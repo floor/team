@@ -60,7 +60,7 @@ function parse(argv: string[]): Arguments | string {
 
 /** The file's rules, with the ledger of this machine's store when the owner has approved a file here. */
 export function loadConfig(cwd: string, file?: string, home: string = homedir()): ReturnType<LoadConfig> {
-  const loaded = loadTeamFile(cwd, { file });
+  const loaded = loadTeamFile(cwd, { file, home, checkOnly: true });
   if (!loaded.ok) return loaded;
   const store = storePath(loaded.team.project, loaded.root, home);
   const ledgerFile = join(store, 'ledger.json');

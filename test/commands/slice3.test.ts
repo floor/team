@@ -216,7 +216,7 @@ function writeRulesFiles() {
   if (!parsed.ok) throw new Error('the fixture does not validate');
   for (const seat of parsed.team.seats) {
     if (seat.stopped) continue;
-    const text = rulesOf(parsed.team, seat);
+    const text = rulesOf(parsed.team, seat, root);
     const written = writeRulesFile(standing, seat.name, root, home, text, rulesFileHash(text));
     if (!written.ok) throw new Error('the rules file did not write');
   }
@@ -251,7 +251,11 @@ describe('team doctor', () => {
         'warn  deepseek-acme-2: the launch runs team-deepseek, not claude, and names no model: if the launcher chooses the model, say so with model_from: launcher',
         'ok    codex codex-cli 0.157.0',
         'ok    codex: logged in',
-        '--    trust: not applied or checked by this version; trust each folder by hand',
+        `ok    the lobby ${home}/.config/team/lobby: will be created at the first launch`,
+        `--    the file is legacy: migrate from ../worktrees/acme-web/.lobby to ${home}/.config/team/lobby by writing trust:`,
+        'trust:',
+        '  - ~/.config/team/lobby',
+        `  - ${root}`,
         'team doctor: nothing missing, 2 warnings',
         '',
       ].join('\n'),
@@ -490,9 +494,10 @@ describe('team up', () => {
     await approve([], OWNER);
     const run = await up(['--dry-run'], OWNER);
     expect(run.code).toBe(0);
-    expect(run.out).not.toContain('! up would refuse');
+    expect(run.out).toContain(`! up would refuse: the file is legacy: migrate trust to absolute paths including the lobby ${home}/.config/team/lobby:`);
+    expect(run.out).not.toContain('the file was never approved');
     const lines = run.out.split('\n');
-    expect(lines[0]).toStartWith('+ env -i HOME=$HOME ');
+    expect(lines[0]).toContain(`! up would refuse: the file is legacy: migrate trust to absolute paths including the lobby ${home}/.config/team/lobby:`);
     expect(run.out).toContain(
       `+ herdr --session acme-web workspace create --cwd ${root} --label 'claude opus 5.5' --no-focus\n`,
     );
@@ -527,6 +532,10 @@ describe('team up', () => {
         '! up would refuse: only the owner runs `up`, from a terminal outside herdr; this call is deepseek-acme',
         '! up would refuse: the file was never approved on this machine: run `team approve`',
         "! up would refuse: session acme-web has 2 agents this file's state doesn't record: `up` never touches a running team",
+        `! up would refuse: the file is legacy: migrate trust to absolute paths including the lobby ${home}/.config/team/lobby:`,
+        'trust:',
+        '  - ~/.config/team/lobby',
+        `  - ${root}`,
         '+ herdr --session acme-web workspace create',
       ].join('\n'),
     );
@@ -553,7 +562,8 @@ describe('team up', () => {
       }),
     );
     const run = await up(['--dry-run'], OWNER, { sessionRunning: () => true, agents: () => [agent('deepseek-acme')] });
-    expect(run.out).not.toContain('! up would refuse');
+    expect(run.out).not.toContain("doesn't record");
+    expect(run.out).toContain('! up would refuse: the file is legacy:');
     expect(run.out).not.toContain('env -i');
   });
 });

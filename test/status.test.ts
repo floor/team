@@ -803,7 +803,7 @@ describe('the rules files of message seats', () => {
   const writeAll = (team: TeamFile, edit?: (seat: Seat, text: string) => string) => {
     for (const seat of team.seats) {
       if (seat.stopped) continue;
-      const delivery = rulesOf(team, seat);
+      const delivery = rulesOf(team, seat, dir);
       const text = edit ? edit(seat, delivery) : delivery;
       // Planted through the same resolution the check reads: the approval in force, not the
       // live file's project name.
@@ -821,7 +821,7 @@ describe('the rules files of message seats', () => {
   });
 
   test('a file that differs from the approved rules is a difference the owner repairs with up', async () => {
-    writeAll(teamOf(), (seat) => (seat.cli === 'codex' ? 'other rules entirely' : rulesOf(teamOf(), seat)));
+    writeAll(teamOf(), (seat) => (seat.cli === 'codex' ? 'other rules entirely' : rulesOf(teamOf(), seat, dir)));
     const { code, out } = await status();
     expect(out).toContain('codex-acme: its rules file differs from the approved rules');
     expect(out).toContain('repair: the owner runs team up');

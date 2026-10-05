@@ -67,9 +67,6 @@ const WORKTREE_FILE = `format: 1
 project: acme
 coordinator: lead
 operator: lead
-trust:
-  - .
-  - ../worktrees/acme/*
 workspace:
   mode: worktree
   path: ../worktrees/{repo}/{task}
@@ -107,12 +104,16 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 function approve(text: string = FILE): void {
-  writeFileSync(join(project, '.agents', 'team.yaml'), text);
-  const loaded = loadTeamFile(project);
+  const trustPath = project.startsWith(home) ? project.replace(home, '~') : project;
+  const yaml = text.includes('trust:')
+    ? text
+    : text.replace('coordinator: lead\n', `coordinator: lead\ntrust:\n  - ~/.config/team/lobby\n  - ${trustPath}\n  - ${join(home, 'worktrees')}\n`);
+  writeFileSync(join(project, '.agents', 'team.yaml'), yaml);
+  const loaded = loadTeamFile(project, { home });
   if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
   writeApproval(
     storePath(loaded.team.project, loaded.root, home),
-    { approval: approvalOf(loaded.team, loaded.root), file: text },
+    { approval: approvalOf(loaded.team, loaded.root), file: yaml },
     loaded.team.seats,
     home,
   );
@@ -189,8 +190,9 @@ function sources(made: ReturnType<typeof world>, extra: Partial<AddSources> = {}
 
 beforeEach(() => {
   base = realpathSync(mkdtempSync(join(tmpdir(), 'team-add-')));
-  project = join(base, 'acme');
   home = join(base, 'home');
+  mkdirSync(home, { recursive: true });
+  project = join(home, 'acme');
   mkdirSync(join(project, '.agents'), { recursive: true });
   const remote = join(base, 'remote.git');
   git(base, 'init', '-q', '--bare', '-b', 'main', remote);
@@ -222,7 +224,7 @@ describe('team add', () => {
     expect(text).toContain('# the seat stays in this order');
     expect(text.indexOf('name: worker')).toBeLessThan(text.indexOf('# the seat stays in this order'));
     expect(readState(join(project, '.agents')).sessions.acme?.seats.worker?.stage).toBe('ready');
-    const loaded = loadTeamFile(project);
+    const loaded = loadTeamFile(project, { home });
     expect(loaded.ok && approvalDifferences(loaded.team, project, home)).toEqual([]);
   });
 
@@ -385,10 +387,10 @@ describe('team add', () => {
       home,
     };
     expect(await runRemove(['worker', '--keep'], testIo(project, owner), removeSources)).toBe(0);
-    const kept = loadTeamFile(project);
+    const kept = loadTeamFile(project, { home });
     expect(kept.ok && approvalDifferences(kept.team, project, home)).toEqual([]);
     expect(await runAdd(['worker'], testIo(project, owner), sources(world()))).toBe(0);
-    const after = loadTeamFile(project);
+    const after = loadTeamFile(project, { home });
     expect(after.ok && approvalDifferences(after.team, project, home)).toEqual([]);
     expect(after.ok && after.team.seats.find((seat) => seat.name === 'worker')?.stopped).toBe(false);
   });
@@ -410,7 +412,9 @@ describe('team add', () => {
     expect(code).toBe(0);
     expect(made.renames).toEqual(['worker-tmp-1']);
     const text = readFileSync(join(project, '.agents', 'team.yaml'), 'utf8');
-    expect(text).not.toContain('tmp');
+    const loaded = loadTeamFile(project, { home });
+    if (!loaded.ok) throw new Error(loaded.errors.map((problem) => problem.message).join('\n'));
+    expect(loaded.team.seats.map((seat) => seat.name)).not.toContain('worker-tmp-1');
     expect(text).toContain('stopped: true');
     const seat = readState(join(project, '.agents')).sessions.acme?.seats['worker-tmp-1'];
     expect(seat?.temporary).toEqual({ like: 'worker', until: 'merged:fix/fresh', own_commits: false });

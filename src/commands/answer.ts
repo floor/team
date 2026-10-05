@@ -4,7 +4,7 @@ import { basename, dirname } from 'node:path';
 import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { anotherPaneRefusal, callerOf, callerVerdict, describeCaller, isOwner, judgeCallerIn, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller, type SeatStanding } from '../caller.ts';
-import { canonicalLanding, folderOf, listFolder, lobbyPath } from '../file/landing.ts';
+import { canonicalLanding, folderOf, listFolder } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
@@ -14,6 +14,7 @@ import { deliverRules, type Delivery } from '../launch/deliver.ts';
 import { seatProcessVerdict, type LaunchedIdentity } from '../launch/identity.ts';
 import { rulesDeliveryOf, rulesFileHash, rulesFileHolds, writeRulesFile } from '../launch/rules-file.ts';
 import { acquireSeatLock } from '../launch/seat-lock.ts';
+import { lobbyDir } from '../lobby/gate.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { type Profile } from '../profiles/profile.ts';
@@ -103,7 +104,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
       return 1;
     }
   }
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
+  const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: host.home });
   if (!loaded.ok) {
     const message = loaded.errors.map((problem) => (problem.line ? `line ${problem.line}: ${problem.message}` : problem.message)).join('; ');
     return configuration(io, json, message || 'the team file cannot be read');
@@ -293,7 +294,7 @@ function inspect(
   // `shown` must be the lobby as team writes it, byte for byte, and canonicalise to
   // it — a trailing slash, another case, `//` or `/./` is a different spelling, and
   // the reading that sends less is to refuse it.
-  const lobby = canonicalLanding(lobbyPath(host.home));
+  const lobby = canonicalLanding(lobbyDir(host.home));
   if (!lobby) return say('folder', OUTSIDE);
   if (canonicalLanding(shown) !== lobby) return say('folder', OUTSIDE);
   if (shown !== lobby) return say('folder', 'the dialog does not show the lobby as written: the owner answers it through team up');

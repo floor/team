@@ -19,7 +19,7 @@ const target = join(root, 'schema', 'team.schema.json');
 // The fields the validator refuses to see missing: the format marker, the project, the two leads
 // and the seats. `required` is a shape of the whole file, not of one section, so it lives here;
 // every field it names is refused by name in the section that reads it.
-const REQUIRED = ['format', 'project', 'coordinator', 'operator', 'seats'];
+const REQUIRED = ['format', 'project', 'coordinator', 'operator', 'seats', 'trust'];
 
 /** The whole schema: one property per top-level key, in the order the sections run. */
 export function buildSchema(): JsonSchema {

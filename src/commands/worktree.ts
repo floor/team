@@ -6,7 +6,7 @@ import { notInForce, worktreeTeamInForceOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { anotherPaneRefusal, callerOf, describeCaller, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller } from '../caller.ts';
 import { insideTrust } from '../file/paths.ts';
-import { loadTeamFile } from '../file/load.ts';
+import { loadTeamFile, placedProblems } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
@@ -84,9 +84,19 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     }
   }
 
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
-  if (!loaded.ok) {
-    for (const problem of loaded.errors) {
+  const loaded = loadTeamFile(io.cwd, {
+    ...(args.values.file ? { file: args.values.file } : {}),
+    home: sources.home,
+    checkOnly: true,
+  });
+  const standing = loaded.ok ? (sources.standing?.(loaded.root) ?? approvalStanding(loaded.root, sources.home)) : null;
+  const inForce = loaded.ok && standing ? worktreeTeamInForceOf(standing, loaded.team) : null;
+  // Placement is judged on the file the command will use. A verified run uses the approved
+  // copy, so an unapproved protected list on the live file does not refuse the load.
+  const placed = loaded.ok ? placedProblems(inForce?.team ?? loaded.team, loaded.root, sources.home) : [];
+  if (!loaded.ok || placed.length) {
+    const problems = loaded.ok ? placed : loaded.errors;
+    for (const problem of problems) {
       io.stderr(`team worktree: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
     }
     // exit: worktree.not-a-repo
@@ -109,9 +119,7 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
   // gate below is judged on those values too — a seat the file added to `coordinator` is not one
   // until the owner approves it. With nothing verified the file's own values are read, exactly
   // as before, so the refusals are still main's. `project` on the snapshot is the live file's.
-  const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
-  const inForce = worktreeTeamInForceOf(standing, team);
-  if (inForce === null) {
+  if (standing === null || inForce === null) {
     io.stderr('team worktree: the approved copy can\'t be read: run `team approve`\n');
     // exit: worktree.approved-copy
     return 1;
@@ -224,7 +232,7 @@ function create(
     // exit: worktree.forbidden
     return 1;
   }
-  if (!insideTrust(folder, team.trust)) {
+  if (!insideTrust(folder, team.trust, root, sources.home)) {
     io.stderr(`team worktree: ${folder} is outside the approved trust paths\n`);
     // exit: worktree.trust
     return 1;
@@ -232,7 +240,7 @@ function create(
   const landing = realLanding(root, folder);
   if (landing.real !== landing.logical) {
     const rel = relative(realpathSync(root), landing.real).split(sep).join('/');
-    if (!insideTrust(rel, team.trust)) {
+    if (!insideTrust(rel, team.trust, root, sources.home)) {
       io.stderr(`team worktree: ${folder} follows a symlink to ${landing.real}, which is outside the approved trust paths\n`);
       // exit: worktree.symlink
       return 1;

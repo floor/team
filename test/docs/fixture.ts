@@ -28,10 +28,10 @@ export type Fixture = {
 
 export function createFixture(project: string, clock: { at: number }): Fixture {
   const base = realpathSync(mkdtempSync(join(tmpdir(), 'team-docs-')));
-  const root = join(base, project);
   const home = join(base, 'home');
-  mkdirSync(root);
+  const root = join(home, 'Code', project);
   mkdirSync(home);
+  mkdirSync(root, { recursive: true });
 
   const git = (...args: string[]): GitRun => {
     const result = spawnSync('git', args, {

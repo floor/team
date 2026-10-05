@@ -1,22 +1,24 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { accessSync, constants, readFileSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, lstatSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, dirname, isAbsolute, join } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import { approvalDifferencesOf, budgetsInForceOf, watchInForceOf } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerOf, isOwner, type Caller } from '../caller.ts';
 import { checkCommands, type ApprovedCheck } from '../budgets/checks.ts';
 import { parseOutput, runCommand, type CheckReading } from '../budgets/run.ts';
-import { canonicalLanding, lobbyPath } from '../file/landing.ts';
+import { canonicalLanding as showLanding } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
+import { validateTeamFile } from '../file/validate.ts';
+import { canonicalLanding, insideTrust, isMigratedTrust } from '../file/paths.ts';
 import { declaredModel } from '../file/model.ts';
 import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
-import { HERDR_TESTED, herdrVersion, paneRead, sessionRunning } from '../herdr.ts';
+import { HERDR_TESTED, herdrVersion, paneRead, sessionRunning, agentList, type HerdrAgent } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
+import { lobbyDir, verifyLobby } from '../lobby/gate.ts';
 import { launchBinary, launchLineFindings } from '../launch/line.ts';
 import { profileFor } from '../profiles/index.ts';
-import { validateTeamFile } from '../file/validate.ts';
 import { checkRulesFile, rulesFilePathOf } from '../launch/rules-file.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
@@ -27,6 +29,7 @@ import { canShowModel } from '../status/statusline.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
 import { approvalStanding, LEGACY_LINE, type Standing } from '../store/store.ts';
 import { readScreen } from '../watch/screen.ts';
+import { lobbyPath as derivedLobby } from '../worktree/place.ts';
 
 // What `doctor` reads from the machine, so tests can stand in for it.
 export type DoctorSources = {
@@ -38,8 +41,10 @@ export type DoctorSources = {
   loggedIn(profile: Profile): boolean | null;
   herdrVersion(): string | null;
   sessionRunning(session: string): boolean | null;
+  agentList?(session?: string): HerdrAgent[] | null;
   now(): Date;
   home: string;
+  getuid?(): number;
   // One approved check's raw stdout, or null when it failed or timed out. Absent: the real
   // runner, the same one the watch uses. The raw bytes are parsed and dropped, never returned.
   runCheck?(path: string): string | null;
@@ -87,8 +92,10 @@ export const realSources: DoctorSources = {
   },
   herdrVersion,
   sessionRunning,
+  agentList,
   now: () => new Date(),
   home: homedir(),
+  getuid: () => process.getuid?.() ?? 0,
   runCheck: (path) => runCommand(path),
   paneText: (session, pane) => paneRead(pane, 40, session) ?? undefined,
 };
@@ -388,8 +395,8 @@ function trustFindings(team: TeamFile, dir: string, session: string, sources: Do
     if (!eligible) findings.push({ level: 'warn', text: `${name}: waiting at trust; this version has no trust answer` });
     if (inRange) {
       const shown = extractFolder(inRange.extract, screen);
-      const landed = shown ? canonicalLanding(shown) : null;
-      const lobby = canonicalLanding(lobbyPath(sources.home));
+      const landed = shown ? showLanding(shown) : null;
+      const lobby = showLanding(lobbyDir(sources.home));
       // The shown spelling must be the lobby itself, not something that only
       // canonicalises to it: `answer` refuses a trailing slash, another case,
       // `//` or `/./`, and doctor warns about what `answer` would refuse.
@@ -470,7 +477,7 @@ export function doctorFindings(
       // the one way, from the approval in force, like every other reader of the file.
       const path = rulesFilePathOf(standing, seat.name, root, sources.home);
       if (path === null) continue;
-      const check = checkRulesFile(path, rulesOf(ofRecord.ok ? ofRecord.team : approved, seat));
+      const check = checkRulesFile(path, rulesOf(ofRecord.ok ? ofRecord.team : approved, seat, root));
       if (!check.ok) findings.push({ level: 'warn', text: `${seat.name}: ${check.what}; run \`team up\`` });
     }
   }
@@ -501,8 +508,73 @@ export function doctorFindings(
 
   findings.push(...watchFindings(watchInForceOf(standing, team), dir, session, running, sources.now()));
   findings.push(...trustFindings(team, dir, session, sources));
-  if (team.trust.length) {
-    findings.push({ level: 'note', text: 'trust: not applied or checked by this version; trust each folder by hand' });
+
+  const lobby = lobbyDir(sources.home);
+  const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid });
+  if (!gate.ok) {
+    findings.push({ level: 'miss', text: gate.text });
+  } else if ('missing' in gate) {
+    findings.push({ level: 'ok', text: `the lobby ${lobby}: will be created at the first launch` });
+  } else {
+    findings.push({ level: 'ok', text: `the lobby ${lobby}: verified` });
+  }
+
+  const oldLobby = derivedLobby(team);
+  if (oldLobby) {
+    const oldLogical = resolve(root, oldLobby);
+    let oldStat: { isSymbolicLink(): boolean; isDirectory(): boolean } | null = null;
+    let oldReadError: string | null = null;
+    try {
+      oldStat = lstatSync(oldLogical);
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code !== 'ENOENT') oldReadError = String(code ?? (err as { message?: string }).message ?? 'unknown');
+    }
+    if (oldReadError) {
+      findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: cannot read ${oldLogical}: ${oldReadError}` });
+    } else if (oldStat?.isSymbolicLink()) {
+      findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: is a symbolic link; can't tell if it may be removed` });
+    } else if (oldStat?.isDirectory()) {
+      const landed = canonicalLanding(oldLogical);
+      if (landed.error) {
+        findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: cannot read ${landed.error.path}: ${landed.error.code}` });
+      } else {
+        const oldLanding = landed.landing;
+        const recordedSeats = Object.entries(readState(dir).sessions[session]?.seats ?? {});
+        const getAgents = sources.agentList ?? agentList;
+        const liveList = running ? getAgents(session) : null;
+        if (!running || liveList === null) {
+          findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: can't tell if live seats are using it: ${!running ? 'no session running' : "herdr doesn't answer"}` });
+        } else {
+          const livePanes = new Set(liveList.map((a) => a.pane));
+          const activeSeats = recordedSeats.filter(([, s]) => {
+            const isRecovery = s.waiting !== undefined;
+            const isLive = Boolean(s.pane && livePanes.has(s.pane));
+            return isLive || isRecovery;
+          });
+          const missingStart = activeSeats.find(([, s]) => !s.start_cwd);
+          if (missingStart) {
+            findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: seat ${missingStart[0]} has no recorded start_cwd; stop it before removing the folder` });
+          } else {
+            const inOld = activeSeats.find(([, s]) => s.start_cwd === oldLanding);
+            if (inOld) {
+              findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: seat ${inOld[0]} started in it; stop it before removing the folder` });
+            } else {
+              findings.push({ level: 'ok', text: `the old lobby ${oldLobby}: may be removed` });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const settled = isMigratedTrust(team.trust) && standing.kind === 'verified' && approvalDifferencesOf(standing, team).length === 0;
+  if (!settled) {
+    const fromText = oldLobby ? `from ${oldLobby} to ${lobby}` : `to ${lobby}`;
+    findings.push({
+      level: 'note',
+      text: `the file is legacy: migrate ${fromText} by writing trust:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
+    });
   }
   return findings;
 }
@@ -538,7 +610,13 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
     // exit: doctor.invocation
     return 2;
   }
-  const loaded = loadTeamFile(io.cwd, args.values.file ? { file: args.values.file } : {});
+  let home: string | undefined;
+  try {
+    home = sources?.home;
+  } catch {
+    // Tests may supply a proxy that throws on any read to prove no source was touched before validation.
+  }
+  const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), ...(home ? { home } : {}) });
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
       io.stderr(`team doctor: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);

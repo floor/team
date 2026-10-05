@@ -18,7 +18,7 @@ export type Live = {
   processes?: Record<string, PaneProcesses | null>;
 };
 
-export type Row = { name: string; state: string; model: string; pane: string; stored?: string };
+export type Row = { name: string; state: string; model: string; pane: string; stored?: string; start_cwd?: string };
 
 /** The repair of the one precondition `status` knows: the file is not the approved one. The
  *  approval differences carry it, and a repair that waits on it is marked with it. */
@@ -133,7 +133,14 @@ export function compare(
       const model = modelOf(seat, agent, live, differences, notes);
       const held = waitingView(seat.name, recorded, team);
       if (held) {
-        rows.push({ name: seat.name, state: held.state, stored: held.stored, model, pane: agent.pane });
+        rows.push({
+          name: seat.name,
+          state: held.state,
+          stored: held.stored,
+          model,
+          pane: agent.pane,
+          ...(recorded?.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+        });
         differences.push(held.difference);
         if (seat.stopped) {
           differences.push({
@@ -152,7 +159,13 @@ export function compare(
       const stateText = isUnsent
         ? (seat.parked ? `${agent.status} (unsent text), parked` : `${agent.status} (unsent text)`)
         : (seat.parked ? `${agent.status}, parked` : agent.status);
-      rows.push({ name: seat.name, state: stateText, model, pane: agent.pane });
+      rows.push({
+        name: seat.name,
+        state: stateText,
+        model,
+        pane: agent.pane,
+        ...(recorded?.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+      });
       if (seat.stopped) {
         differences.push({
           what: `${seat.name} is marked stopped in the file and is running`,
@@ -193,7 +206,13 @@ export function compare(
       continue;
     }
     if (seat.stopped) {
-      rows.push({ name: seat.name, state: 'stopped', model: seat.display, pane: '-' });
+      rows.push({
+        name: seat.name,
+        state: 'stopped',
+        model: seat.display,
+        pane: '-',
+        ...(recorded?.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+      });
       continue;
     }
     // The pane the state recorded for this seat, with no agent herdr lists under its name: the
@@ -214,7 +233,14 @@ export function compare(
     // `waiting for owner`, and never under the declared model for a replaced one.
     const waiting = recorded?.pane ? waitingView(seat.name, recorded, team) : null;
     if (waiting && recorded?.pane) {
-      rows.push({ name: seat.name, state: waiting.state, stored: waiting.stored, model: seat.display, pane: recorded.pane });
+      rows.push({
+        name: seat.name,
+        state: waiting.state,
+        stored: waiting.stored,
+        model: seat.display,
+        pane: recorded.pane,
+        ...(recorded.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+      });
       differences.push(waiting.difference);
       continue;
     }
@@ -226,14 +252,26 @@ export function compare(
       : undefined;
     if (stray) {
       claimed.add(stray.pane);
-      rows.push({ name: seat.name, state: 'wrong name', model: seat.display, pane: stray.pane });
+      rows.push({
+        name: seat.name,
+        state: 'wrong name',
+        model: seat.display,
+        pane: stray.pane,
+        ...(recorded?.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+      });
       differences.push({
         what: `${seat.name}: the agent in ${stray.pane} is ${stray.name ? `named "${stray.name}"` : 'unnamed'}`,
         repair: herdrCommand(session, 'agent', 'rename', stray.pane, seat.name),
       });
       continue;
     }
-    rows.push({ name: seat.name, state: 'missing', model: seat.display, pane: '-' });
+    rows.push({
+      name: seat.name,
+      state: 'missing',
+      model: seat.display,
+      pane: '-',
+      ...(recorded?.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+    });
     differences.push({
       what: `${seat.name} is in the file and is not running`,
       repair: anyRunning ? `team add ${seat.name}` : 'the owner runs team up',
@@ -249,12 +287,25 @@ export function compare(
       claimed.add(agent.pane);
       const held = waitingView(name, recorded, team);
       if (held) {
-        rows.push({ name, state: held.state, stored: held.stored, model: `like ${recorded.temporary.like}`, pane: agent.pane });
+        rows.push({
+          name,
+          state: held.state,
+          stored: held.stored,
+          model: `like ${recorded.temporary.like}`,
+          pane: agent.pane,
+          ...(recorded.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+        });
         differences.push(held.difference);
         notes.push(`${name} is temporary, until ${recorded.temporary.until}`);
         continue;
       }
-      rows.push({ name, state: `${agent.status}, temporary`, model: `like ${recorded.temporary.like}`, pane: agent.pane });
+      rows.push({
+        name,
+        state: `${agent.status}, temporary`,
+        model: `like ${recorded.temporary.like}`,
+        pane: agent.pane,
+        ...(recorded.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
+      });
       notes.push(`${name} is temporary, until ${recorded.temporary.until}`);
     } else {
       differences.push({ what: `${name}: a temporary seat is recorded and is not running`, repair: `team remove ${name}` });
