@@ -10,6 +10,7 @@ import { approvalOf } from '../src/approve/approval.ts';
 import { saveReadings, type Seen } from '../src/budgets/readings.ts';
 import type { Caller } from '../src/caller.ts';
 import { runAdd, type AddSources } from '../src/commands/add.ts';
+import { runAnswer, type AnswerHost } from '../src/commands/answer.ts';
 import { runApprove, type ApproveSources } from '../src/commands/approve.ts';
 import { check, loadConfig, type LoadConfig } from '../src/commands/check.ts';
 import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
@@ -21,6 +22,7 @@ import { runUp, type Launch, type UpSources } from '../src/commands/up.ts';
 import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import { runWorktree, type WorktreeSources } from '../src/commands/worktree.ts';
 import { main, reportFailure, version } from '../src/cli.ts';
+import { listFolder, lobbyPath } from '../src/file/landing.ts';
 import { loadTeamFile } from '../src/file/load.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import { overridesPath } from '../src/profiles/overrides.ts';
@@ -1548,9 +1550,170 @@ scene('team.command-threw', async (place) => {
   return show(await entry(['init'], testIo(root, owner)), 'team:');
 });
 
-// These returns are reached when a second validation disagrees with the first. The stand-in is
-// the same idea as a fake herdr: the command runs, and only that later check is made to fail.
-const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed']);
+const CURSOR_TRUST = readFileSync(new URL('./fixtures/cursor/2026.10.01/trust.txt', import.meta.url), 'utf8');
+const CURSOR_IDLE = readFileSync(new URL('./fixtures/cursor/2026.10.01/idle.txt', import.meta.url), 'utf8');
+
+function cursorTeam(lobby: string, dialogs: 'owner' | 'coordinator'): string {
+  const section = dialogs === 'coordinator' ? 'dialogs:\n  trust: coordinator\n' : '';
+  return `format: 1
+project: acme
+coordinator: lead
+operator: lead
+session: acme
+workspace:
+  mode: shared
+${section}trust:
+  - ${lobby}
+seats:
+  - role: coordinator
+    name: lead
+    cli: cursor
+    vendor: test
+    model: Grok
+    version: "4.7"
+    launch: cursor-agent
+`;
+}
+
+function cursorBox(text: string): string {
+  const lines = text.split('\n');
+  const body = [`  → ${lines[0] ?? ''}`, ...lines.slice(1).map((line) => `    ${line}`)].join('\n');
+  return CURSOR_IDLE.replace('  → Plan, search, build anything', body);
+}
+
+function answerHost(place: Place, screen: string, opts: { version?: string; send?: boolean; type?: boolean } = {}): AnswerHost & { keys: string[] } {
+  let at = NOW.getTime();
+  let text = screen;
+  let status = 'idle';
+  const host: AnswerHost & { keys: string[] } = {
+    keys: [],
+    version: () => opts.version ?? '2026.10.01-14929f9',
+    agents: () => [{ name: 'lead', pane: 'w1:p1', workspace: 'w1' }],
+    pane: () => text,
+    sendKey: (_session, _pane, key) => {
+      if (opts.send === false) return false;
+      host.keys.push(key);
+      text = CURSOR_IDLE;
+      return true;
+    },
+    rename: () => true,
+    foreground: () => ['cursor-agent'],
+    foregroundCwd: () => lobbyPath(place.home),
+    list: (dir) => listFolder(dir),
+    status: () => status,
+    type: (_session, _pane, value) => {
+      if (opts.type === false) return false;
+      text = cursorBox(value);
+      return true;
+    },
+    enter: () => {
+      text = CURSOR_IDLE;
+      status = 'working';
+      return true;
+    },
+    now: () => new Date(at),
+    sleep: async (ms) => { at += ms; },
+    home: place.home,
+    standing: (root) => approvalStanding(root, place.home),
+  };
+  return host;
+}
+
+async function answered(place: Place, argv: string[], caller: Caller, host: AnswerHost): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  const code = await runAnswer(argv, io, host);
+  return { code, out: io.out, err: io.err };
+}
+
+scene('answer.usage', async (place) => show(await answered(place, [], owner, answerHost(place, '')), 'a seat and trust are required'));
+scene('answer.configuration', async (place) => show(await answered(place, ['lead', 'trust', '--file', 'missing.yaml'], owner, answerHost(place, '')), 'no team file'));
+scene('answer.caller', async (place) => {
+  const lobby = lobbyPath(place.home);
+  mkdirSync(lobby, { recursive: true });
+  approve(place, cursorTeam(lobby, 'coordinator'));
+  return show(await answered(place, ['lead', 'trust', '--file', place.file], other, answerHost(place, '')), 'only the owner');
+});
+scene('answer.policy', async (place) => {
+  const lobby = lobbyPath(place.home);
+  mkdirSync(lobby, { recursive: true });
+  approve(place, cursorTeam(lobby, 'owner'));
+  return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, answerHost(place, '')), 'use team up and [o]');
+});
+scene('answer.state', async (place) => {
+  const lobby = lobbyPath(place.home);
+  mkdirSync(lobby, { recursive: true });
+  approve(place, cursorTeam(lobby, 'coordinator'));
+  const host = answerHost(place, '');
+  host.agents = () => [];
+  return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, host), 'not a live seat');
+});
+scene('answer.version', async (place) => {
+  const lobby = lobbyPath(place.home);
+  mkdirSync(lobby, { recursive: true });
+  approve(place, cursorTeam(lobby, 'coordinator'));
+  updateState(dirname(place.file), (state) => {
+    state.sessions.acme = { seats: { lead: { stage: 'launched', pane: 'w1:p1', waiting: { state: 'waiting-owner', classification: 'trust' } } }, worktrees: {} };
+  });
+  return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, answerHost(place, CURSOR_TRUST, { version: '2026.10.02' })), 'no trust answer');
+});
+scene('answer.screen', async (place) => {
+  const lobby = lobbyPath(place.home);
+  mkdirSync(lobby, { recursive: true });
+  approve(place, cursorTeam(lobby, 'coordinator'));
+  updateState(dirname(place.file), (state) => {
+    state.sessions.acme = { seats: { lead: { stage: 'launched', pane: 'w1:p1', waiting: { state: 'waiting-owner', classification: 'trust' } } }, worktrees: {} };
+  });
+  return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, answerHost(place, 'not a dialog\n')), 'not the trust dialog');
+});
+scene('answer.label', async (place) => {
+  // The shipped predicate already requires the recorded label, so a one-character change is refused
+  // as the screen. The label return is the same exit, reached when a trust screen lacks the mark.
+  const lobby = lobbyPath(place.home);
+  mkdirSync(lobby, { recursive: true });
+  approve(place, cursorTeam(lobby, 'coordinator'));
+  updateState(dirname(place.file), (state) => {
+    state.sessions.acme = { seats: { lead: { stage: 'launched', pane: 'w1:p1', waiting: { state: 'waiting-owner', classification: 'trust' } } }, worktrees: {} };
+  });
+  const screen = CURSOR_TRUST.replace('[a] Trust this workspace', '[a] Trust this workspacX').replace('<untrusted-directory>', lobby);
+  return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, answerHost(place, screen)), 'not the trust dialog');
+});
+scene('answer.folder', async (place) => {
+  const lobby = lobbyPath(place.home);
+  mkdirSync(lobby, { recursive: true });
+  approve(place, cursorTeam(lobby, 'coordinator').replace(`  - ${lobby}`, '  - .'));
+  updateState(dirname(place.file), (state) => {
+    state.sessions.acme = { seats: { lead: { stage: 'launched', pane: 'w1:p1', waiting: { state: 'waiting-owner', classification: 'trust' } } }, worktrees: {} };
+  });
+  const screen = CURSOR_TRUST.replace('<untrusted-directory>', lobby);
+  return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, answerHost(place, screen)), 'not an exact trust entry');
+});
+scene('answer.recovery', async (place) => {
+  const lobby = lobbyPath(place.home);
+  mkdirSync(lobby, { recursive: true });
+  approve(place, cursorTeam(lobby, 'coordinator'));
+  updateState(dirname(place.file), (state) => {
+    state.sessions.acme = { seats: { lead: { stage: 'launched', pane: 'w1:p1', waiting: { state: 'trust-sent-recovery', classification: 'trust' } } }, worktrees: {} };
+  });
+  return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, answerHost(place, 'not a dialog\n')), 'recovery required');
+});
+scene('answer.ready', async (place) => {
+  const lobby = lobbyPath(place.home);
+  mkdirSync(lobby, { recursive: true });
+  approve(place, cursorTeam(lobby, 'coordinator'));
+  updateState(dirname(place.file), (state) => {
+    state.sessions.acme = { seats: { lead: { stage: 'launched', pane: 'w1:p1', waiting: { state: 'waiting-owner', classification: 'trust' } } }, worktrees: {} };
+  });
+  const screen = CURSOR_TRUST.replace('<untrusted-directory>', lobby);
+  return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, answerHost(place, screen)), 'trust answered; ready');
+});
+
+// These returns are reached when a second validation disagrees with the first, or when no data
+// this version ships can reach them. The stand-in is the same idea as a fake herdr: the command
+// runs, and only that later check is made to fail. `answer.action` is the second kind: a send
+// that reports false now leaves the recovery state (`answer.recovery`), so the only action
+// refusal left is a record whose byte the build does not send, and the shipped profiles record
+// 0d, 31 and 61 — all keys the build sends. The check defends against a profile that does not.
+const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed', 'answer.action']);
 
 const contract = loadContract();
 for (const row of contract.rows) {

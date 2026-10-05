@@ -311,6 +311,90 @@
     },
     {
       "code": 0,
+      "command": "answer",
+      "id": "answer.ready",
+      "meaning": "the trust dialog was answered and the seat is ready",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.action",
+      "meaning": "the recorded key was not sent",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.caller",
+      "meaning": "the caller may not answer a trust dialog",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.folder",
+      "meaning": "the dialog's folder is not the lobby's exact trust entry",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.label",
+      "meaning": "the trust choice is not the recorded one",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.policy",
+      "meaning": "the file leaves trust dialogs to the owner",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.recovery",
+      "meaning": "the trust answer did not complete: the seat stays in recovery",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.screen",
+      "meaning": "the pane is not the trust dialog",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.state",
+      "meaning": "the seat is not waiting at a trust dialog",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.version",
+      "meaning": "this version has no trust answer",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 2,
+      "command": "answer",
+      "id": "answer.configuration",
+      "meaning": "the team file cannot be read",
+      "trigger": "team answer lead trust --file missing.yaml"
+    },
+    {
+      "code": 2,
+      "command": "answer",
+      "id": "answer.usage",
+      "meaning": "the invocation is not a seat and trust",
+      "trigger": "team answer"
+    },
+    {
+      "code": 0,
       "command": "approve",
       "id": "approve.approved",
       "meaning": "the owner approved the file",

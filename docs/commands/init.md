@@ -20,6 +20,7 @@ one line to `.agents/team.log`:
     .agents/team.state.json
     .agents/team.log*
     .agents/team.lock
+    .agents/seat-locks
 
 The skeleton is validated before it is written. A file that already exists is never overwritten,
 and no history is ever rewritten. The skeleton begins with a `# yaml-language-server: $schema=…` line so editors validate it against the package schema in `schema/team.schema.json`.
