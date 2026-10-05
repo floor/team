@@ -322,7 +322,7 @@ ok    the lobby ~/.config/team/lobby: will be created at the first launch
 --    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
 trust:
   - ~/.config/team/lobby
-  - .
+  - ~/Code/beacon
 team doctor: 2 missing, 1 warning: 2 of them block `up` and `add`
 exit 1
 ```
@@ -392,7 +392,7 @@ ok    the lobby ~/.config/team/lobby: will be created at the first launch
 --    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
 trust:
   - ~/.config/team/lobby
-  - .
+  - ~/Code/beacon
 team doctor: 2 missing, 2 warnings: 2 of them block `up` and `add`
 exit 1
 ```
@@ -475,7 +475,7 @@ ok    the lobby ~/.config/team/lobby: will be created at the first launch
 --    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
 trust:
   - ~/.config/team/lobby
-  - .
+  - ~/Code/beacon
 team doctor: 1 missing, 2 warnings: 1 of them block `up` and `add`
 exit 1
 ```
@@ -558,7 +558,7 @@ ok    the lobby ~/.config/team/lobby: will be created at the first launch
 --    the file is legacy: migrate to ~/.config/team/lobby by writing trust:
 trust:
   - ~/.config/team/lobby
-  - .
+  - ~/Code/beacon
 team doctor: 1 missing, 1 warning: 1 of them block `up` and `add`
 exit 1
 ```
