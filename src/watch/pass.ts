@@ -6,7 +6,9 @@ import { seatNamed } from '../approve/fingerprint.ts';
 import { observe, observeCheck, type Seen } from '../budgets/readings.ts';
 import type { CheckOutcome } from '../budgets/run.ts';
 import type { TeamFile } from '../file/types.ts';
+import type { PaneProcesses } from '../herdr.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
+import { seatProcessVerdict } from '../launch/identity.ts';
 import { profileFor, quotaFor as shippedQuota } from '../profiles/profile.ts';
 import { figuresOf, type QuotaFigure, type QuotaPattern } from '../profiles/quota.ts';
 import type { SessionState } from '../state.ts';
@@ -34,6 +36,7 @@ import { load } from './checks/load.ts';
 import { memory as memoryCheck } from './checks/memory.ts';
 import { missing } from './checks/missing.ts';
 import { modelDrift } from './checks/model-drift.ts';
+import { restored } from './checks/restored.ts';
 import { swapFree } from './checks/swap-free.ts';
 import { swapGrowth } from './checks/swap-growth.ts';
 import { teamIdle } from './checks/team-idle.ts';
@@ -80,7 +83,7 @@ export type PassResult = {
 // order is the core's: a seat's wrong model is reported before its permission prompt, and every
 // seat before the team. Disabling a check in the `watch` section in force takes it out of the
 // run, except the four that can't be turned off.
-export const SEAT_CHECKS: SeatCheck[] = [missing, modelDrift, attention, unsent, idle];
+export const SEAT_CHECKS: SeatCheck[] = [missing, restored, modelDrift, attention, unsent, idle];
 export const TEAM_CHECKS: TeamCheck[] = [extra, teamIdle, approval, load, memoryCheck, disk, swapFree, swapGrowth, budget];
 
 // The one exclusive reading of a seat's screen and herdr status. herdr can report a seat at a
@@ -134,6 +137,11 @@ export type PassInput = {
   budgets?: TeamFile['budgets'];
   readings?: readonly Seen[];
   foreground?: Readonly<Record<string, readonly string[] | null>>;
+  // Each pane's process identity, by pane id, as the caller read it — null where herdr can't
+  // tell, and absent for a pane it wasn't read for. A seat's recorded identity is compared with
+  // its pane's reading: `gone`/`replaced` is no longer the seat. A null, or a pane the map
+  // doesn't hold, is exactly a seat with no record: the restored check reports nothing.
+  processes?: Readonly<Record<string, PaneProcesses | null>>;
   /** Screen readings with the approved overrides applied. The shipped profiles, when omitted. */
   readScreen?: (cli: string, screen: string | undefined) => Screen;
   /** Quota patterns in force, shipped plus the approved override. The shipped list, when omitted. */
@@ -155,6 +163,7 @@ export function pass({
   budgets = team.budgets,
   readings: stored = [],
   foreground,
+  processes,
   readScreen: read = readScreen,
   quotaFor: patternsOf = shippedQuota,
 }: PassInput): PassResult {
@@ -164,6 +173,12 @@ export function pass({
   const once = (key: string, text: string, to: Report['to'] = 'operator'): Report | null => {
     current.add(key);
     return memory.active.has(key) ? null : { key, text, to };
+  };
+  // A reading herdr can't give is no change: `keep` carries an active key through a pass that
+  // could not read, so the next pass that can read again doesn't report what it already
+  // reported. A key that was not active is not made active — nothing has been reported yet.
+  const keep = (key: string): void => {
+    if (memory.active.has(key)) current.add(key);
   };
 
   const known = new Set<string>();
@@ -214,6 +229,7 @@ export function pass({
         vendor,
         account,
         quota: [],
+        identity: 'unknown',
         running: false,
         quiet: false,
         working: false,
@@ -257,6 +273,7 @@ export function pass({
       vendor,
       account,
       quota: quotaOf(cli, screen, pane, reportedLiveAgent(foreground?.[agent.pane] ?? null, profileFor(cli)?.processNames ?? []), patternsOf(cli)),
+      identity: seatProcessVerdict(state.seats[name]?.launched, processes?.[agent.pane] ?? null),
       running: true,
       quiet,
       working,
@@ -329,6 +346,7 @@ export function pass({
     watch,
     budgets,
     once,
+    keep,
     memory: <T>(kind: string, start: () => T): T => {
       if (!Object.hasOwn(memory.slots, kind)) memory.slots[kind] = start();
       return memory.slots[kind] as T;

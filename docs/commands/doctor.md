@@ -83,7 +83,10 @@ version, its login, then each of its seats' launchers and models), one line per 
 line can't run where the seat starts (the `MISS` names the start folder, the program that is missing
 or not executable, and when the same file resolves from the project root, its path to write
 instead; a line only said to be unchecked, or a relative path that exists nowhere yet, is a `--  `
-note — `not checked: the command may create it`), the watch, and the `trust` note. A seat the file
+note — `not checked: the command may create it`), one note per seat the state records from a launch
+that predates the process identity — `--    <seat>: launched before team recorded its process; run
+team up after the next restart`, so the owner can have the seat compared again — the watch, and the
+`trust` note. A seat the file
 stops is left out of the CLI findings and the launch lines. A CLI outside its tested range keeps its
 `warn` and says what that means: its screens are untested with this version, and a seat that isn't
 read at launch is left out, never typed into (herdr's version line says just where it sits — herdr

@@ -144,6 +144,39 @@ describe('team doctor on a file of every model shape', () => {
   });
 });
 
+// A seat the state records from a launch that predates the process identity: neither `status` nor
+// the watch can tell whether its pane still holds what team launched, so the doctor says
+// `run team up after the next restart` for it. A seat whose identity was recorded, a stopped seat
+// (`up` never starts it) and a seat the state doesn't hold at all draw nothing.
+describe('the note for a seat launched before team recorded its process', () => {
+  test('one note per recorded seat without the identity, and none for the others', async () => {
+    await approve();
+    writeFileSync(
+      join(root, '.agents/team.state.json'),
+      JSON.stringify({
+        format: 1,
+        sessions: {
+          pilot: {
+            seats: {
+              'plain-codex': { stage: 'ready', pane: 'w2:p1', workspace: 'w2' },
+              'other-model': { stage: 'ready', pane: 'w6:p1', workspace: 'w6' },
+              lead: { stage: 'ready', pane: 'w5:p1', workspace: 'w5', launched: { shell: 400, cli: [401] } },
+              'parked-one': { stage: 'ready' },
+            },
+          },
+        },
+      }),
+    );
+    const run = await doctor();
+    expect(run.code).toBe(0);
+    const notes = run.out.split('\n').filter((line) => line.includes('launched before team recorded its process'));
+    expect(notes).toEqual([
+      '--    plain-codex: launched before team recorded its process; run team up after the next restart',
+      '--    other-model: launched before team recorded its process; run team up after the next restart',
+    ]);
+  });
+});
+
 // The review's matrix: every launch-line shape × a model the screen can name or not × model_from
 // declared or not. Main printed one warning for every row; this version may fall silent only
 // where the launch runs the CLI's own binary, bare, and the screen can name the declared model.
