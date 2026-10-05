@@ -1747,6 +1747,81 @@ describe('the border inserted around every other capture (Cursor)', () => {
   });
 });
 
+describe('a live dialog and a complete idle frame never share a screen (Cursor)', () => {
+  // The corpus evidence for the composite reading below: over every registered Cursor
+  // capture whose reading is a dialog — permission, trust or question, every version
+  // folder, bordered or not — no complete idle frame is present anywhere in the capture.
+  // The detector slides the reader's own window over every tail of the screen: classify
+  // sees only the pane's last 20 rows, and a complete frame — bordered or unbordered — is
+  // the last structure of exactly the window that ends at the frame's own last row (the
+  // grammar allows nothing after the workspace line but empty rows), so testing every tail
+  // position cannot miss a frame any window could read; the frames no window reads whole
+  // are not frames the pane could ever read as complete. Every window of every dialog
+  // capture reads its own dialog or `unknown`: while a dialog is live the box is not on
+  // the screen.
+  const manifest = JSON.parse(readFileSync(new URL('../fixtures/conformance.json', import.meta.url), 'utf8'));
+  const dialogs = manifest.screens.filter(
+    (entry: { cli: string; classify: string; file: string }) =>
+      entry.cli === 'cursor' && ['permission', 'trust', 'question'].includes(entry.classify),
+  );
+
+  test('no capture of the corpus holds a dialog and a complete idle frame at once', () => {
+    expect(dialogs.length).toBeGreaterThanOrEqual(4);
+    const found: string[] = [];
+    for (const entry of dialogs) {
+      const lines = readFileSync(new URL(`../fixtures/${entry.file}`, import.meta.url), 'utf8').split('\n');
+      const windows: string[] = [];
+      for (let tail = 0; tail < lines.length; tail++) {
+        const kind = classify('cursor', lines.slice(Math.max(0, tail - 19), tail + 1)).kind;
+        if (kind !== entry.classify && kind !== 'unknown') windows.push(`tail ${tail} reads ${kind}`);
+      }
+      if (windows.length > 0) found.push(`${entry.file}: ${windows.join(', ')}`);
+    }
+    expect(found).toEqual([]);
+  });
+});
+
+describe('dialog text and a complete idle frame on one screen (Cursor)', () => {
+  // The composites the corpus above never draws, pinned from the run in the result
+  // document (raw fixture bytes, the captures' own trailing blank row kept: the working
+  // screen's spinner row sits at its window's first row, so one blank row more or less is
+  // the difference between its `working` and the frame's `idle`). Old dialog text above a
+  // complete frame in place reads what the frame reads — `idle` for the dialog screens:
+  // the answer was given and the box was redrawn — and the unbordered column is the
+  // reading main already gives, so the bordered frame extends it, nothing more. A frame
+  // scrolled above a live dialog never hides the dialog. The live-agent check stays the
+  // second layer over both.
+  const read = (screen: string) =>
+    `${classify('cursor', screen.split('\n')).kind} / ${classifyComposer('cursor', screen.split('\n')).kind}`;
+
+  test.each([
+    ['permission-plan', 'bordered-idle', 'idle / idle'],
+    ['trust', 'bordered-idle', 'idle / idle'],
+    ['question', 'bordered-idle', 'idle / idle'],
+    ['working', 'bordered-idle', 'idle / idle'],
+    ['permission-plan', 'idle', 'idle / idle'],
+    ['trust', 'idle', 'idle / idle'],
+    ['question', 'idle', 'idle / idle'],
+    ['working', 'idle', 'working / idle'],
+  ])('%s above the complete %s frame reads %s', (dialog, frame, expected) => {
+    expect(read(fixture(dialog) + fixture(frame))).toBe(expected);
+    expect(read(`${fixture(dialog)}\n${fixture(frame)}`)).toBe(expected);
+  });
+
+  test.each([
+    ['bordered-idle', 'permission-plan', 'permission / unknown'],
+    ['bordered-idle', 'trust', 'trust / unknown'],
+    ['bordered-idle', 'question', 'question / unknown'],
+    ['bordered-idle', 'working', 'working / idle'],
+    ['idle', 'permission-plan', 'permission / unknown'],
+    ['idle', 'trust', 'trust / unknown'],
+    ['idle', 'question', 'question / unknown'],
+    ['idle', 'working', 'working / idle'],
+  ])('the complete %s frame above the %s dialog reads %s', (frame, dialog, expected) => {
+    expect(read(fixture(frame) + fixture(dialog))).toBe(expected);
+  });
+});
+
 describe('the bordered box read back (Cursor)', () => {
   // The read-back over the three-row capture: the box the reader takes must be the rows
   // between the frame's own rows — the typed text, not the border — so `deliver.ts` reads a
