@@ -32,6 +32,7 @@ export const seats: Section = {
         cli: { enum: CLIS },
         vendor: { type: 'string', minLength: 1 },
         account: { type: 'string' },
+        model_from: { enum: ['launcher'], $comment: 'the model is chosen by the launcher; doctor checks the running seat' },
         model: { type: 'string', minLength: 1 },
         version: { type: 'string', $comment: 'quoted: unquoted, YAML reads 4.10 as the number 4.1' },
         display: { type: 'string', $comment: 'defaults to "model version"; must contain the version as a token of its own' },
@@ -66,7 +67,7 @@ function readSeats(
   const seats: DraftSeat[] = [];
   for (const item of entry.value.items) {
     const fields = check.fields(item, 'a seat', [
-      'role', 'name', 'cli', 'vendor', 'account', 'model', 'version', 'display', 'launch', 'cwd', 'label', 'mode',
+      'role', 'name', 'cli', 'vendor', 'account', 'model_from', 'model', 'version', 'display', 'launch', 'cwd', 'label', 'mode',
       'parked', 'stopped', 'count',
     ]);
     if (item.kind !== 'map') continue;
@@ -88,6 +89,10 @@ function readSeats(
     if (account !== undefined && !accounts.has(account)) {
       check.fail(fields.get('account')?.line ?? line, `${at}: account "${account}" is not in budgets.accounts`);
     }
+    // `launcher` says the model is chosen by whatever the launch line runs; `doctor` then checks
+    // the running seat instead of the launch. It is in the seat's digest: writing it is a change
+    // the owner approves.
+    const modelFrom = check.oneOf(fields.get('model_from'), `${at}: model_from`, ['launcher']);
     const model = check.required(fields.get('model'), `${at}: model`, line);
     const version = readVersion(fields.get('version'), at, line, check);
     const launch = check.required(fields.get('launch'), `${at}: launch`, line);
@@ -117,6 +122,7 @@ function readSeats(
         count,
         instance,
         ...(account ? { account } : {}),
+        ...(modelFrom ? { modelFrom } : {}),
         ...(mode ? { mode } : {}),
       });
     }

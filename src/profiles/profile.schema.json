@@ -51,7 +51,8 @@
       }
     },
     "models": { "$ref": "#/$defs/models" },
-    "status_model": { "type": "array", "items": { "$ref": "#/$defs/modelRule" }, "minItems": 1 },
+    "status_model": { "type": "array", "items": { "$ref": "#/$defs/modelRule" }, "minItems": 1, "description": "optional: absent, the CLI's screen doesn't show its model" },
+    "last_used_model": { "type": "boolean", "description": "optional: the CLI starts on its last-used model when a launch names none" },
     "quota": { "type": "array", "items": { "$ref": "#/$defs/quota" }, "minItems": 1 },
     "trust_answer": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/trustAnswer" } },
     "screen": { "$ref": "#/$defs/screen" },

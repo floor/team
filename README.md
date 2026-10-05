@@ -86,6 +86,9 @@ seats:
     version: "V4.1"
     display: DeepSeek V4.1 Flash
     launch: team-deepseek     # a launcher on the PATH, holding the account's key and endpoint
+    model_from: launcher      # optional: says outright the launcher picks the model; doctor notes
+                              # it and says what checks the model — here nothing can, Claude Code's
+                              # screen never names DeepSeek's
     count: 2                  # implementer-deepseek and implementer-deepseek-2
 
   - role: reviewer
