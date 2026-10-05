@@ -73,15 +73,24 @@ status_model:
   - match: '^  Grok\s+([0-9]+(?:\.[0-9]+)*)\b'
     model: Grok
     version: '{1}'
+    # The literal model the row names; `{1}` is the version the row carries.
+    yields: [Grok]
+    version_like: '^[0-9]+(?:\.[0-9]+)*$'
   - match: '^  GPT-(\d+(?:\.\d+)*) Sol(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
     model: 'GPT Sol'
     version: '{1}'
+    yields: [GPT Sol]
+    version_like: '^[0-9]+(?:\.[0-9]+)*$'
   - match: '^  Gemini (\d+(?:\.\d+)*) Flash(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
     model: 'Gemini Flash'
     version: '{1}'
+    yields: [Gemini Flash]
+    version_like: '^[0-9]+(?:\.[0-9]+)*$'
   - match: '^  Composer (\d+(?:\.\d+)*)(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$'
     model: Composer
     version: '{1}'
+    yields: [Composer]
+    version_like: '^[0-9]+(?:\.[0-9]+)*$'
 screen:
   unknown:
     - any: ['To resume this session:']

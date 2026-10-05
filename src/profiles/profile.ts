@@ -84,7 +84,20 @@ export function launchCommand(profile: Profile, launch: string, rules: string): 
   return ['AGENT_UNATTENDED=1', launch.trim(), ...options.map(shellQuote)].join(' ');
 }
 
-type ModelRule = { match: RegExp; model: string; version: string; flag: string | null };
+/**
+ * One rule that reads a model off a line. A `status_model` rule also declares what it can read:
+ * `yields` is the closed list of exact model names its templates spell, and `versionLike` the
+ * version shapes it can spell them with (null: none). An id rule (`models.ids`) declares nothing —
+ * `yields` is empty and `versionLike` null — because an id maps a launch, it does not read a screen.
+ */
+export type ModelRule = {
+  match: RegExp;
+  model: string;
+  version: string;
+  flag: string | null;
+  yields: readonly string[];
+  versionLike: RegExp | null;
+};
 
 type Shipped = { profile: Profile; status: ModelRule[]; quota: QuotaPattern[] };
 
@@ -122,6 +135,20 @@ export function statusOnLine(cli: string, line: string): { model: string; versio
   const rules = SHIPPED[cli]?.status;
   if (!rules) return null;
   return apply(rules, line);
+}
+
+/** The `status_model` rules of a shipped CLI, in reading order. Empty for an unknown CLI. */
+export function statusModelRules(cli: string): readonly ModelRule[] {
+  return SHIPPED[cli]?.status ?? [];
+}
+
+/**
+ * The `status_model` rules a YAML list spells, for a profile snippet. A bad rule throws, a
+ * `version_like` not anchored at both ends included. A rule without the two declaration keys
+ * loads as it always has: it yields no model and spells no version.
+ */
+export function statusModelRulesOf(text: string): ModelRule[] {
+  return modelRules(parseYaml(text), 'status_model');
 }
 
 /**
@@ -593,9 +620,11 @@ function suggestId(rules: ModelRule[], model: string, version: string): string |
 
 function modelRules(node: YamlNode, key: string): ModelRule[] {
   if (node.kind !== 'seq' || node.items.length === 0) fail(node.line, `"${key}" must be a non-empty list`);
+  // Only a status rule declares what it reads: an id maps a launch line, it never reads a screen.
+  const declares = key === 'status_model';
   return node.items.map((item) => {
     const entries = mapping(item, 'a model rule');
-    only(entries, ['match', 'ignore_case', 'model', 'version', 'flag']);
+    only(entries, ['match', 'ignore_case', 'model', 'version', 'flag', ...(declares ? ['yields', 'version_like'] : [])]);
     const flag = optional(entries, 'ignore_case');
     const ignoreCase = flag ? boolOf(flag.value, 'ignore_case') : false;
     const match = required(entries, 'match', item.line);
@@ -609,8 +638,47 @@ function modelRules(node: YamlNode, key: string): ModelRule[] {
       const rest = suggestedId.replaceAll('{version}', '');
       if (rest.includes('{') || rest.includes('}')) fail(suggested.line, 'a flag template is "{version}"');
     }
-    return { match: pattern(text(match, 'match'), ignoreCase, match.line), model, version, flag: suggestedId };
+    return {
+      match: pattern(text(match, 'match'), ignoreCase, match.line),
+      model,
+      version,
+      flag: suggestedId,
+      yields: declares ? yieldsOf(optional(entries, 'yields')) : [],
+      versionLike: declares ? versionLikeOf(optional(entries, 'version_like')) : null,
+    };
   });
+}
+
+/**
+ * The model names a rule declares it reads. Absent: none — a rule that names no model on purpose
+ * says so by leaving the key out or giving the empty list, and both read as yielding nothing.
+ */
+function yieldsOf(entry: YamlEntry | undefined): string[] {
+  if (!entry) return [];
+  if (entry.value.kind !== 'seq') fail(entry.line, '"yields" must be a list of model names');
+  return entry.value.items.map((item) => {
+    const name = stringOf(item);
+    if (!name) fail(item.line, '"yields" entries must be non-empty strings');
+    return name;
+  });
+}
+
+/**
+ * The version shapes a rule can spell. A plain source, kept anchored at both ends so it can only
+ * describe a whole version — `5.5` is one, `5.5.1x` is not — and a source that cannot compile is
+ * refused here, where the file's line is still known. Absent: the rule spells no version.
+ */
+function versionLikeOf(entry: YamlEntry | undefined): RegExp | null {
+  if (!entry) return null;
+  const source = text(entry, 'version_like');
+  if (!source.startsWith('^') || !source.endsWith('$')) {
+    fail(entry.line, '"version_like" must be anchored at both ends: start with "^" and end with "$"');
+  }
+  try {
+    return new RegExp(source, 'u');
+  } catch {
+    fail(entry.line, '"version_like" must be a regular expression');
+  }
 }
 
 function template(text: string, line: number): void {

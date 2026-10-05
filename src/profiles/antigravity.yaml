@@ -32,6 +32,10 @@ status_model:
     ignore_case: true
     model: 'Gemini {2:title}'
     version: '{1}'
+    # The two families the capture knows, whatever case the row spells them in; `{2:title}`
+    # reads each back in title case.
+    yields: [Gemini Flash, Gemini Pro]
+    version_like: '^[0-9]+(?:\.[0-9]+)*$'
 screen:
   chrome:
     - '^\s*↑/↓ Navigate.*$'
