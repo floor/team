@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalOf } from '../../src/approve/approval.ts';
@@ -1462,16 +1462,25 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
 
   /** An FsReader that swaps the lobby out of the way just before the `n`th read of its canonical
    *  path — after the gate's read, against the check that comes next: `'folder'` puts a fresh
-   *  empty folder of the same owner and mode where the lobby was, a path puts a link there. */
+   *  empty folder of the same owner and mode where the lobby was, a path puts a link there.
+   *  A replacement folder is made beside the lobby while the lobby still exists and renamed into
+   *  place: `rmSync` followed by `mkdirSync` can hand the old inode straight back — Linux did in
+   *  CI — and a folder with the gate's own device and inode reads as the same folder, rightly. */
   function swapLobbyAt(n: number, replacement: 'folder' | string): FsReader {
     let seen = 0;
     return {
       ...defaultFs,
       realpath(p) {
         if (p === lobby && ++seen === n) {
-          rmSync(lobby, { recursive: true });
-          if (replacement === 'folder') mkdirSync(lobby, { mode: 0o700 });
-          else symlinkSync(replacement, lobby, 'dir');
+          if (replacement === 'folder') {
+            const aside = `${lobby}.replacement`;
+            mkdirSync(aside, { mode: 0o700 });
+            rmSync(lobby, { recursive: true });
+            renameSync(aside, lobby);
+          } else {
+            rmSync(lobby, { recursive: true });
+            symlinkSync(replacement, lobby, 'dir');
+          }
         }
         return defaultFs.realpath(p);
       },
