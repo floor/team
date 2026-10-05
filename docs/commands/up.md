@@ -101,7 +101,9 @@ could not verify: a stop leaves the text where it is.
   approved text and nothing else, through an exclusive no-follow temporary whose name no other
   process knows, the file is read back by its hash after the rename, and the line the seat
   receives carries the same hash — so whatever lands wherever it lands can always be checked
-  against what was meant, and nothing but the approved text ever lands anywhere.
+  against what was meant, and nothing but the approved text ever lands anywhere. The removal
+  of a temporary seat's rules file has the same window: the unlink follows whatever `rules/`
+  is at that moment, and the folder was last checked when the file was written.
 
 A seat that doesn't get there is printed once with what stopped it, and `up` exits 1. For a seat
 whose wait ended without a prompt, the last non-empty lines the pane showed — the launch line's own
