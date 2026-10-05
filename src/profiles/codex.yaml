@@ -25,6 +25,17 @@ exit: /exit
 timeouts:
   idle: 90s
   exit: 30s
+# The folder-only layout. Eligible only once a lobby capture is named; this record names none.
+trust_answer:
+  - from: '0.157.0'
+    to: '0.157.0'
+    label: '1. Trust and continue'
+    action: '31'
+    extract:
+      after: 'Folder access'
+      until_blank: true
+      join: true
+      refuse_line: 'Trusting will apply to the repository root:'
 models:
   option:
     - -m

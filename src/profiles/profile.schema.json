@@ -53,6 +53,7 @@
     "models": { "$ref": "#/$defs/models" },
     "status_model": { "type": "array", "items": { "$ref": "#/$defs/modelRule" }, "minItems": 1 },
     "quota": { "type": "array", "items": { "$ref": "#/$defs/quota" }, "minItems": 1 },
+    "trust_answer": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/trustAnswer" } },
     "screen": { "$ref": "#/$defs/screen" },
     "screen_module": { "$ref": "#/$defs/screenModule" }
   },
@@ -70,6 +71,35 @@
     }
   ],
   "$defs": {
+    "trustAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "label", "action", "extract"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "mark": { "type": "string", "minLength": 1 },
+        "footer": { "type": "string", "minLength": 1 },
+        "action": { "type": "string", "pattern": "^[0-9a-fA-F]{2}$" },
+        "lobby_evidence": { "type": "string", "minLength": 1 },
+        "extract": { "$ref": "#/$defs/trustExtract" }
+      }
+    },
+    "trustExtract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["after"],
+      "properties": {
+        "after": { "type": "string", "minLength": 1 },
+        "before": { "type": "string", "minLength": 1 },
+        "until_blank": { "type": "boolean" },
+        "join": { "type": "boolean" },
+        "box": { "type": "boolean" },
+        "refuse_line": { "type": "string", "minLength": 1 }
+      },
+      "anyOf": [{ "required": ["before"] }, { "required": ["until_blank"] }]
+    },
     "screenModule": {
       "type": "string",
       "minLength": 1,

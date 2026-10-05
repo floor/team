@@ -21,6 +21,16 @@ exit: /exit
 timeouts:
   idle: 90s
   exit: 30s
+trust_answer:
+  - from: '2026.10.01'
+    to: '2026.10.01'
+    label: '[a] Trust this workspace'
+    action: '61'
+    lobby_evidence: trust.txt
+    extract:
+      after: 'directory?'
+      before: '[a] Trust this workspace'
+      box: true
 models:
   option:
     - --model

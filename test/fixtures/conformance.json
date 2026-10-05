@@ -414,6 +414,13 @@
       "provenance": "capture"
     },
     {
+      "file": "codex/0.157.0/lobby-constructed.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
       "file": "codex/0.157.0/owner-status.txt",
       "cli": "codex",
       "classify": "idle",

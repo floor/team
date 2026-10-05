@@ -19,6 +19,17 @@ exit: /exit
 timeouts:
   idle: 90s
   exit: 30s
+trust_answer:
+  - from: '1.2.16'
+    to: '1.2.16'
+    label: 'Yes, I trust this folder'
+    mark: '>'
+    footer: 'enter Confirm'
+    action: '0d'
+    lobby_evidence: trust.txt
+    extract:
+      after: 'Accessing workspace:'
+      before: 'Do you trust the contents of this project?'
 models:
   option:
     - --model
