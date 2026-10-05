@@ -92,7 +92,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
   const dir = dirname(loaded.path);
   const session = args.values.session ?? team.session;
   const caller = callerOf(io, session);
-  const who = caller.kind === 'seat' && caller.name === team.coordinator ? 'coordinator' : 'owner';
+  const who = logWho(caller, team);
 
   const refused = (reason: Refusal): number => {
     logLine(dir, 'answer', who, `${seatName}: refused trust: ${reason.class}`, host.now());
@@ -183,6 +183,13 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
   } finally {
     lock.release();
   }
+}
+
+/** The caller class the caller check returned, as the log's bracket. */
+function logWho(caller: Caller, team: TeamFile): string {
+  if (caller.kind === 'owner') return 'owner';
+  if (caller.kind === 'unplaced') return 'unplaced';
+  return caller.name === team.coordinator ? 'coordinator' : 'seat';
 }
 
 function callerProblemOf(caller: Caller, team: TeamFile, seat: string): Refusal | null {

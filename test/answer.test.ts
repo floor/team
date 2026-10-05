@@ -552,6 +552,31 @@ describe('team answer', () => {
     expect(lost.err).toBe('its parent processes can\'t be read to the top\n');
   });
 
+  test('a refusal log names the caller class the caller check returned', async () => {
+    const { root, home, lobby, dir } = world();
+    writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+    await approve(root, home);
+    wait(dir, 'lead');
+    const host = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', lobby), 'cursor');
+
+    // The operator's seat, neither owner nor coordinator: not logged as the owner.
+    const seat = testIo(root, { kind: 'seat', name: 'helper', pane: 'w1:p2' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], seat, host)).toBe(1);
+    expect(host.keys).toEqual([]);
+    expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('answer [seat] lead: refused trust: caller');
+
+    const lost = testIo(root, { kind: 'unplaced', reason: 'it doesn\'t run on a terminal' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], lost, host)).toBe(1);
+    expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('answer [unplaced] lead: refused trust: caller');
+
+    // The authorized caller keeps its own class, and the owner keeps its.
+    const coordinator = testIo(root, { kind: 'seat', name: 'lead', pane: 'w1:p1' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], coordinator, host)).toBe(0);
+    const log = readFileSync(join(dir, 'team.log'), 'utf8');
+    expect(log).toContain('answer [coordinator] lead: trust answered');
+    expect(log).not.toContain('answer [owner] lead: refused trust: caller');
+  });
+
   test('an unapproved file and a lock already held send nothing', async () => {
     const { root, home, lobby, dir } = world();
     writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
