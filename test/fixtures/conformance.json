@@ -533,6 +533,55 @@
       "provenance": "capture"
     },
     {
+      "file": "cursor/2026.10.01/bordered-after-exit.txt",
+      "cli": "cursor",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/bordered-after-round.txt",
+      "cli": "cursor",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/bordered-idle.txt",
+      "cli": "cursor",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/bordered-typed-one.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/bordered-typed-three.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/bordered-working-typed.txt",
+      "cli": "cursor",
+      "classify": "working",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/bordered-working.txt",
+      "cli": "cursor",
+      "classify": "working",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "cursor/2026.10.01/composer-idle.txt",
       "cli": "cursor",
       "classify": "idle",

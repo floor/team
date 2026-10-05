@@ -530,6 +530,11 @@ describe('codex, cursor and antigravity through the screen core', () => {
         if (name === 'composer-idle.txt' || name === 'composer-unsent.txt'
           || name === 'gemini-flash-idle.txt' || name === 'gemini-flash-unsent.txt'
           || name === 'gpt-sol-idle.txt' || name === 'gpt-sol-unsent.txt') continue;
+        // Captured 2026-10-05, and the screens this fix is meant to read differently: the CLI
+        // draws the box between two border rows, which main's classifier knew as no frame, so
+        // each of these read unknown. The profile now reads the bordered frame beside the
+        // blank one. Their own tests are in test/launch/cursor.test.ts.
+        if (name.startsWith('bordered-')) continue;
         // Captured 2026-10-04, and the four screens the antigravity profile's round-2 rules are
         // meant to read differently: main had no rule for the file-creation, file-edit, question
         // or unsent-comments dialogs and read each unknown. Their own test follows the loop.

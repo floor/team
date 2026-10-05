@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { profileFor } from '../../src/profiles/index.ts';
 import { launchCommand, statusOnLine, versionVerdict } from '../../src/profiles/profile.ts';
 import { classify, classifyComposer, readBox, readFold, readScreen, screenData } from '../../src/watch/screen.ts';
@@ -317,6 +317,16 @@ function box(lines: string[]): string {
 
 function boxed(text: string): string {
   return box(text.split('\n'));
+}
+
+/** The bordered idle frame once `lines` sit in the box: the placeholder row replaced, the first
+ *  line after the prompt, every later line at the captured continuation column — the bordered
+ *  captures' own shape (bordered-typed-three.txt) — with the border rows left where the capture
+ *  draws them. */
+function borderedBox(lines: string[]): string {
+  const [first = '', ...rest] = lines;
+  const body = [`  → ${first}`, ...rest.map((line) => `    ${line}`)].join('\n');
+  return fixture('bordered-idle').replace('  → Plan, search, build anything', body);
 }
 
 /** The pane's own wrap, as the captured `unsent.txt` shows it: a line wider than the pane's
@@ -1087,5 +1097,270 @@ describe('the closed Cursor status row', () => {
     for (const source of status) expect(workingRows).toContain(source);
     expect(status.some((source) => source.includes('Run Everything'))).toBe(true);
     expect(status.some((source) => source.includes('GPT-'))).toBe(true);
+  });
+});
+
+describe('the box\'s own border (Cursor)', () => {
+  // The 2026-10-05 captures (see the fixtures README): this installed build draws the box
+  // between two border rows — one leading space then only the block character, the ` ▄` row
+  // directly above the input row and the ` ▀` row directly below the input rows and directly
+  // above the status row — where the 2026-10-01 captures draw up to four empty rows above the
+  // input row and two under the text. Each frame is read by its own complete shape; the
+  // readings below are the captures' own. The bordered box never reads `idle` or `unsent`
+  // from anything but these frames.
+  const CAPTURES: [string, ReturnType<typeof readScreen>['kind'], ReturnType<typeof readScreen>['kind']][] = [
+    ['bordered-idle', 'idle', 'idle'],
+    ['bordered-typed-one', 'unsent', 'unsent'],
+    ['bordered-typed-three', 'unsent', 'unsent'],
+    ['bordered-after-round', 'idle', 'idle'],
+    ['bordered-working', 'working', 'unsent'],
+    ['bordered-working-typed', 'working', 'unsent'],
+    ['bordered-after-exit', 'unknown', 'unknown'],
+  ];
+
+  test.each(CAPTURES)('%s reads %s, its composer %s', (name, whole, composer) => {
+    const lines = fixture(name).split('\n');
+    expect(readScreen('cursor', fixture(name)).kind).toBe(whole);
+    expect(classify('cursor', lines).kind).toBe(whole);
+    expect(classifyComposer('cursor', lines).kind).toBe(composer);
+  });
+
+  test('the frame rows sit directly against the input row and the status row, nowhere else', () => {
+    // The captures' own geometry, tied to the readings above: the ` ▄` row is the row directly
+    // above the input row, the ` ▀` row the row directly above the status row, both whole rows
+    // at one width, and no other row of the screen is border-shaped.
+    const lines = fixture('bordered-typed-three').split('\n');
+    const input = lines.findIndex((line) => /^ {2}→/.test(line));
+    const status = lines.findIndex((line) => /^ {2}Grok /.test(line));
+    expect(lines[input - 1]).toMatch(/^ ▄+$/);
+    expect(lines[status - 1]).toMatch(/^ ▀+$/);
+    expect(lines[status - 1]?.length).toBe(lines[input - 1]?.length);
+    const elsewhere = lines.filter((line, i) => /^ [▄▀]+$/.test(line) && i !== input - 1 && i !== status - 1);
+    expect(elsewhere).toEqual([]);
+  });
+});
+
+describe('a border anywhere else stays unknown (Cursor)', () => {
+  // Constructed from the registered captures: each screen below keeps a bordered box's own
+  // rows and breaks the frame's shape or place, or plants the pair where the captures draw
+  // none. Every one fails closed — never `idle`, never `unsent` — so nothing is typed into
+  // these screens and no Enter is sent. The 2026-10-01 captures read the same: they hold no
+  // border-shaped row at all (the manifest below), so none of these screens is a frame those
+  // captures explain either.
+  const source = fixture('bordered-typed-one').replace(/\n+$/, '').split('\n');
+  const TOP = source.find((line) => /^ ▄+$/.test(line)) ?? '';
+  const BOTTOM = source.find((line) => /^ ▀+$/.test(line)) ?? '';
+  const top = source.findIndex((line) => /^ ▄+$/.test(line));
+  const input = source.findIndex((line) => /^ {2}→/.test(line));
+  const bottom = source.findIndex((line) => /^ ▀+$/.test(line));
+  const text = (lines: string[]) => lines.join('\n');
+  const unknown = (screen: string) => {
+    expect(readScreen('cursor', screen).kind).toBe('unknown');
+    expect(classify('cursor', screen.split('\n')).kind).toBe('unknown');
+    expect(classifyComposer('cursor', screen.split('\n')).kind).toBe('unknown');
+  };
+
+  test('one border row missing', () => {
+    unknown(text(source.filter((_, i) => i !== input - 1))); // the top row gone
+    unknown(text(source.filter((_, i) => i !== bottom))); // the bottom row gone
+  });
+
+  test('the rows swapped: ` ▀` above the input, ` ▄` below it', () => {
+    const swapped = [...source];
+    swapped[input - 1] = BOTTOM;
+    swapped[bottom] = TOP;
+    unknown(text(swapped));
+  });
+
+  test('a border row with another character in it or with text after it', () => {
+    const junk = [...source];
+    junk[top] = `${TOP.slice(0, 10)}X${TOP.slice(11)}`;
+    unknown(text(junk));
+    const after = [...source];
+    after[bottom] = `${BOTTOM} ok`;
+    unknown(text(after));
+  });
+
+  test('a border one row away from the input, an empty row between', () => {
+    const underTop = [...source];
+    underTop.splice(input, 0, '');
+    unknown(text(underTop));
+    const overBottom = [...source];
+    overBottom.splice(bottom, 0, '');
+    unknown(text(overBottom));
+  });
+
+  test('a border pair in the transcript above an ordinary box', () => {
+    // The blank-framed captures with the pair planted in their transcript, well above the box
+    // and pressed against it: a border row anywhere but its place is a shape no capture
+    // draws, and the read fails closed rather than take the rows under it for a box. Nothing
+    // is typed and no Enter is sent.
+    const lines = fixture('idle').replace(/\n+$/, '').split('\n');
+    const planted = [...lines.slice(0, 4), TOP, BOTTOM, ...lines.slice(4)];
+    unknown(text(planted));
+    const pressed = [...lines.slice(0, 8), TOP, BOTTOM, ...lines.slice(8)];
+    unknown(text(pressed));
+    expect(boxHoldsText('cursor', 'Rules.', text(planted))).toBe(false);
+    expect(boxHoldsText('cursor', 'Rules.', text(pressed))).toBe(false);
+  });
+
+  test('the bordered box with no status row', async () => {
+    const lines = fixture('bordered-idle').replace(/\n+$/, '').split('\n');
+    const status = lines.findIndex((line) => /^ {2}Grok /.test(line));
+    const screen = text(lines.filter((_, i) => i !== status));
+    unknown(screen);
+    const d = delivery('bordered-idle');
+    d.showText(screen);
+    expect(await deliverRules('cursor', 'Rules.', 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+  });
+
+  test('the bordered box with a status row of a family the grammar does not know', () => {
+    const lines = fixture('bordered-idle').replace(/\n+$/, '').split('\n');
+    const status = lines.findIndex((line) => /^ {2}Grok /.test(line));
+    lines[status] = '  Muse Spark 1.3                    Run Everything';
+    unknown(text(lines));
+  });
+});
+
+describe('a border around a dialog (Cursor)', () => {
+  // Each registered dialog with the captures' border rows wrapped around its box rows: the
+  // pair is not a dialog's frame, and the composer must not read the dialog's rows under it
+  // as an input box. Each still reads exactly what it read before — never `idle`, never
+  // `unsent`.
+  const WRAPS: [string, RegExp, RegExp][] = [
+    ['trust', /^  ╭─+╮$/, /^  ╰─+╯$/],
+    ['trust-54', /^  ╭─+╮$/, /^  ╰─+╯$/],
+    ['question', /^ ┌─+┐$/, /^ └─+┘$/],
+    ['permission-plan', /^━{8,}$/, /^    Reject \(n or esc\)$/],
+  ];
+  const bordered = fixture('bordered-typed-one').replace(/\n+$/, '').split('\n');
+  const TOP = bordered.find((line) => /^ ▄+$/.test(line)) ?? '';
+  const BOTTOM = bordered.find((line) => /^ ▀+$/.test(line)) ?? '';
+  const wrapped = (name: string, first: RegExp, last: RegExp) => {
+    const lines = fixture(name).replace(/\n+$/, '').split('\n');
+    const a = lines.findIndex((line) => first.test(line));
+    const b = lines.findIndex((line) => last.test(line));
+    if (a < 0 || b < 0) throw new Error(`${name} has no box rows`);
+    return [...lines.slice(0, a), TOP, ...lines.slice(a, b + 1), BOTTOM, ...lines.slice(b + 1)].join('\n');
+  };
+
+  test.each(WRAPS)('%s with its box rows wrapped reads what it read before', (name, first, last) => {
+    const original = fixture(name).split('\n');
+    const screen = wrapped(name, first, last);
+    const before = `${classify('cursor', original).kind} / ${classifyComposer('cursor', original).kind}`;
+    const after = `${classify('cursor', screen.split('\n')).kind} / ${classifyComposer('cursor', screen.split('\n')).kind}`;
+    expect(after).toBe(before);
+    expect(before).not.toBe('idle / idle');
+    expect(before).not.toBe('unsent / unsent');
+  });
+});
+
+describe('the border inserted around every other capture (Cursor)', () => {
+  // The generated set: every Cursor fixture that draws no border — the registered captures of
+  // 2026-10-01 through 2026-10-05, the `bordered-` captures excluded because they already
+  // draw the frame and are read above — with the captures' border rows inserted around its
+  // input rows: the ` ▄` row directly above the input row and the ` ▀` row directly above the
+  // status row (directly under the input row where the screen shows no status row), the
+  // empty rows they displace being the frame's. Each reads exactly what its original reads —
+  // an `idle` original stays `idle`, `working` stays `working`, a dialog stays that dialog —
+  // so the border never changes a reading by itself. The dialogs take the item above's wrap;
+  // count and result are in the result document.
+  const DIR = new URL('../fixtures/cursor/2026.10.01/', import.meta.url);
+  const NAMES = readdirSync(DIR)
+    .filter((file) => file.endsWith('.txt'))
+    .map((file) => file.slice(0, -'.txt'.length))
+    .filter((name) => !name.startsWith('bordered'))
+    .sort();
+  const bordered = fixture('bordered-idle').replace(/\n+$/, '').split('\n');
+  const TOP = bordered.find((line) => /^ ▄+$/.test(line)) ?? '';
+  const BOTTOM = bordered.find((line) => /^ ▀+$/.test(line)) ?? '';
+  const DIALOGS: Record<string, [RegExp, RegExp]> = {
+    trust: [/^  ╭─+╮$/, /^  ╰─+╯$/],
+    'trust-54': [/^  ╭─+╮$/, /^  ╰─+╯$/],
+    question: [/^ ┌─+┐$/, /^ └─+┘$/],
+    'permission-plan': [/^━{8,}$/, /^    Reject \(n or esc\)$/],
+  };
+
+  const framed = (name: string) => {
+    const lines = fixture(name).replace(/\n+$/, '').split('\n');
+    const input = lines.findLastIndex((line) => /^ {2}→/.test(line));
+    const status = lines.findLastIndex((line) => /^ {2}(?:Grok|GPT-|Gemini |Composer )/.test(line));
+    const out = [...lines];
+    out[input - 1] = TOP; // the row above every capture's input row is one of its frame's empty rows
+    if (status > input) {
+      let last = status - 1;
+      while (last > input && (out[last] ?? '').trim() === '') last--;
+      out.splice(last + 1, status - 1 - last, BOTTOM); // the frame's empty rows give way to the row
+    } else {
+      out.splice(input + 1, 1, BOTTOM); // no status row: the row sits directly under the input row
+    }
+    return out.join('\n');
+  };
+
+  const withDialogWrap = (name: string) => {
+    const [first, last] = DIALOGS[name] ?? [];
+    if (!first || !last) return framed(name);
+    const lines = fixture(name).replace(/\n+$/, '').split('\n');
+    const a = lines.findIndex((line) => first.test(line));
+    const b = lines.findIndex((line) => last.test(line));
+    return [...lines.slice(0, a), TOP, ...lines.slice(a, b + 1), BOTTOM, ...lines.slice(b + 1)].join('\n');
+  };
+
+  test('every fixture of the set reads what its original reads', () => {
+    const differed: string[] = [];
+    for (const name of NAMES) {
+      const original = fixture(name).split('\n');
+      const inserted = withDialogWrap(name).split('\n');
+      const before = `${classify('cursor', original).kind} / ${classifyComposer('cursor', original).kind}`;
+      const after = `${classify('cursor', inserted).kind} / ${classifyComposer('cursor', inserted).kind}`;
+      if (after !== before) differed.push(`${name}: ${before} -> ${after}`);
+    }
+    expect(differed).toEqual([]);
+    expect(NAMES.length).toBe(29);
+    expect(NAMES).toContain('idle');
+    expect(NAMES).toContain('working');
+    expect(NAMES).toContain('trust');
+    expect(NAMES).toContain('question');
+    expect(NAMES).toContain('permission-plan');
+  });
+});
+
+describe('the bordered box read back (Cursor)', () => {
+  // The read-back over the three-row capture: the box the reader takes must be the rows
+  // between the frame's own rows — the typed text, not the border — so `deliver.ts` reads a
+  // bordered box unchanged. The text read back is exactly what was typed.
+  const TYPED = ['alpha bordered line one', 'beta bordered line two', 'gamma bordered line three'];
+  const TEXT = TYPED.join('\n');
+
+  test('the three-row capture reads unsent and its box is exactly the typed text', () => {
+    const screen = fixture('bordered-typed-three');
+    expect(readScreen('cursor', screen).kind).toBe('unsent');
+    expect(classifyComposer('cursor', screen.split('\n')).kind).toBe('unsent');
+    expect(readBox('cursor', screen)).toEqual({
+      first: 'alpha bordered line one',
+      indent: 4,
+      rows: ['    beta bordered line two', '    gamma bordered line three'],
+      wrap: { continuation: 'text-column', kind: 'word' },
+    });
+    expect(boxHoldsText('cursor', TEXT, screen)).toBe(true);
+    expect(boxHoldsText('cursor', 'alpha bordered line one', fixture('bordered-typed-one'))).toBe(true);
+  });
+
+  test('another text is refused', () => {
+    expect(boxHoldsText('cursor', `${TEXT}\nand one more`, fixture('bordered-typed-three'))).toBe(false);
+    expect(boxHoldsText('cursor', CAPTURED_WRAP, fixture('bordered-typed-three'))).toBe(false);
+    expect(boxHoldsText('cursor', NUDGE_TEXT, fixture('bordered-typed-three'))).toBe(false);
+  });
+
+  test('rules delivery types the three rows into the bordered box, reads them back and enters', async () => {
+    const d = delivery('bordered-idle');
+    d.io.type = (text) => {
+      d.calls.push(text);
+      d.showText(borderedBox(text.split('\n')));
+      return true;
+    };
+    expect(await deliverRules('cursor', TEXT, 1, d.io)).toBe(true);
+    expect(d.calls).toEqual([TEXT, 'Enter']);
   });
 });

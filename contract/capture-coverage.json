@@ -129,17 +129,17 @@
     },
     "cursor": {
       "idle": {
-        "real": 6,
+        "real": 8,
         "constructed": 0,
         "undocumented": 0
       },
       "working": {
-        "real": 2,
+        "real": 4,
         "constructed": 5,
         "undocumented": 0
       },
       "unsent": {
-        "real": 11,
+        "real": 13,
         "constructed": 0,
         "undocumented": 0
       },
@@ -159,7 +159,7 @@
         "undocumented": 0
       },
       "unknown": {
-        "real": 1,
+        "real": 2,
         "constructed": 0,
         "undocumented": 0
       }
@@ -626,6 +626,48 @@
       "file": "codex/0.157.0/wrapped-line.txt",
       "cli": "codex",
       "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/bordered-after-exit.txt",
+      "cli": "cursor",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/bordered-after-round.txt",
+      "cli": "cursor",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/bordered-idle.txt",
+      "cli": "cursor",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/bordered-typed-one.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/bordered-typed-three.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/bordered-working-typed.txt",
+      "cli": "cursor",
+      "kind": "working",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/bordered-working.txt",
+      "cli": "cursor",
+      "kind": "working",
       "provenance": "capture"
     },
     {

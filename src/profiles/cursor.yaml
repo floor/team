@@ -248,6 +248,19 @@ screen:
     # The box read strips up to two trailing empty rows as that frame; a row beyond them is
     # one the typed text does not have.
     frame_rows: 2
+    # The box's own border, as the captures of 2026-10-05 draw it: one row of `▄` directly
+    # above the input row and one row of `▀` directly below the input rows, both whole rows
+    # at the pane's width, with the status row directly under the bottom one. The 2026-10-01
+    # captures draw the empty frame above instead; both frames are read, and the border is
+    # never read apart from its place — the rule language pins the status row's place
+    # (`status_below`) but nothing pinned rows against the input row, so this field names
+    # the two rows and the core reads their place: directly above the input row, directly
+    # below the input rows and directly above the status row. A frame with one row missing,
+    # a row one row away, a row carrying anything but the block character, or a border row
+    # inside the box leaves the screen unknown.
+    border:
+      top: '^ ▄+$'
+      bottom: '^ ▀+$'
     fallback:
       - all:
           - match: '^\s*→\s+\S'

@@ -681,20 +681,59 @@ function statusLast(
   let low = status - 1;
   while (low >= 0 && !composer.prompt.test(lines[low] ?? '')) low--;
   if (low < 0) return { kind: 'unknown' };
-  if (low === 0 || (lines[low - 1] ?? '').trim() !== '') return { kind: 'unknown' };
+  const input = low;
+  // The frame above the input row. Every 2026-10-01 capture draws blank rows there — four in
+  // idle.txt (rows 5-8 above the input at 9), one to four in the others — and a non-blank row
+  // against the prompt from above is a shape no capture draws. A composer that declares its
+  // `border` (the CLI's own frame, as the captures of 2026-10-05 draw the Cursor box: a ` ▄…`
+  // row above the input row and a ` ▀…` row under the input rows) reads the row directly
+  // above the input row as the frame's top instead, beside the blank frame. The frame's place
+  // is the captures' own and is pinned here, not by the patterns: the bottom row must sit
+  // directly under the input rows (a blank row between it and the text fails closed) and
+  // directly above the status row, both border rows must be whole rows at one width, and the
+  // top row stands alone — a bottom row under a blank frame (top missing) or a top row
+  // without its bottom is not the frame. A border row anywhere the frame does not draw it —
+  // inside the box, where only the person's indented text may sit — fails closed too. The
+  // border never moves a reading toward idle or unsent by itself.
+  const border = composer.border;
+  // A border-shaped row anywhere above the input row's frame is a row no capture draws: the
+  // border runs around the box and nowhere else, and the rows a capture shows above it are
+  // transcript (idle.txt's tip, rules-accepted.txt's reply, the 2026-10-05 captures' text
+  // scrolled above the ` ▄` row). A `▄` or `▀` run above the frame is either a frame the
+  // window cut through — which the read cannot place — or a shape no capture explains; the
+  // read fails closed rather than take the rows under it for a box.
+  if (border) {
+    for (let i = 0; i < input - 1; i++) {
+      if (border.top.test(lines[i] ?? '') || border.bottom.test(lines[i] ?? '')) return { kind: 'unknown' };
+    }
+  }
+  const above = lines[input - 1] ?? '';
+  let end = status;
+  if (border && input > 0 && border.top.test(above)) {
+    if (status - 1 <= input) return { kind: 'unknown' };
+    const under = lines[status - 1] ?? '';
+    if (!border.bottom.test(under) || under.length !== above.length) return { kind: 'unknown' };
+    if ((lines[status - 2] ?? '').trim() === '') return { kind: 'unknown' };
+    end = status - 1;
+  } else if (input === 0 || above.trim() !== '') {
+    return { kind: 'unknown' };
+  }
   // The lowest prompt row above the status line is the input row when it holds text: the
   // exit-typed capture draws its menu row `› /exit  exit Codex` above the gap and `/exit` on
   // the input row itself. When it holds none, the row above the gap is the transcript, read
   // as nothing — the echo of the person's own sent message is the routine post-send layout,
   // not a second row of the box.
-  const input = low;
   // Every capture draws every row of typed text below the input row indented (Codex's
   // continuations at column two, Cursor's at four), so a prompt row after the input, inside
   // the box, is a shape the captures do not show. Fail closed on it rather than leave a
-  // person's own text above it unread.
-  for (let i = input + 1; i < status; i++) if (composer.prompt.test(lines[i] ?? '')) return { kind: 'unknown' };
-  const rows = lines.slice(input + 1, status);
-  for (let i = input + 1; i < status; i++) if ((lines[i] ?? '').trim()) return { kind: 'unsent', from: input, input, rows };
+  // person's own text above it unread. A border-shaped row inside the box is a row the
+  // frame does not draw there either: the box holds the person's text, nothing else.
+  for (let i = input + 1; i < end; i++) {
+    if (composer.prompt.test(lines[i] ?? '')) return { kind: 'unknown' };
+    if (border && (border.top.test(lines[i] ?? '') || border.bottom.test(lines[i] ?? ''))) return { kind: 'unknown' };
+  }
+  const rows = lines.slice(input + 1, end);
+  for (let i = input + 1; i < end; i++) if ((lines[i] ?? '').trim()) return { kind: 'unsent', from: input, input, rows };
   return { kind: placeholder(stripTyped(lines[input] ?? '', composer), composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from: input, input, rows };
 }
 
