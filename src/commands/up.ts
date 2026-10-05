@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
@@ -325,11 +325,30 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     }
     const placed = planned.stage === undefined || !planned.pane;
     // The seat's own launch line, checked where the seat starts: a `miss` leaves this seat out
-    // before its workspace is made, and the other seats go on. A note is told, never refused.
+    // before its workspace is made, and the other seats go on. A note is told, never refused —
+    // once, on the terminal, and on stderr on a real run as `doctor` says it. A seat resumed
+    // into an existing pane is checked where that pane runs, when the state records it
+    // (`start_cwd`); without it the line is not checked at all — the file's folder is not
+    // where that pane is, so refusing or passing on it would be a guess.
     const doctor = sources.doctor;
+    const resumeCwd = recorded?.seats[seat.name]?.start_cwd;
     const line = doctor
-      ? launchLineFinding(team, seat, root, { onPath: (binary) => doctor.onPath(binary), home: doctor.home })
+      ? placed
+        ? launchLineFinding(team, seat, root, { onPath: (binary) => doctor.onPath(binary), home: doctor.home })
+        : typeof resumeCwd === 'string' && resumeCwd !== ''
+          ? launchLineFinding(
+              team,
+              seat,
+              root,
+              { onPath: (binary) => doctor.onPath(binary), home: doctor.home },
+              { cwd: resolve(root, resumeCwd), folder: resumeCwd },
+            )
+          : {
+              level: 'note' as const,
+              why: 'its launch line was not checked: the seat is resumed and its state records no start folder',
+            }
       : null;
+    if (line?.level === 'note') (dry ? io.stdout : io.stderr)(`  note ${seat.name}: ${line.why}\n`);
     const launchProblem = line?.level === 'miss' ? { launchProblem: line.why } : {};
     if (!placed) {
       const budget = budgetOf(seat);

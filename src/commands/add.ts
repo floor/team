@@ -102,6 +102,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 2;
   }
   const temporary = args.flags.has('temporary');
+  const dry = args.flags.has('dry-run');
   if (temporary ? args.rest.length > 0 : args.rest.length !== 1) {
     io.stderr(`team add: ${temporary ? `unexpected "${args.rest[0]}"` : 'a seat name is required'}\n${USAGE}`);
     // exit: add.seat-name
@@ -234,22 +235,27 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     // exit: add.start
     return 1;
   }
-  // Its own launch line, checked where the seat will start: a `miss` leaves this seat out
-  // before the file is edited and before any workspace is made.
+  // Its own launch line, checked where the seat will start, before the file is edited and
+  // before any workspace is made. A note is told, never refused: once, on the terminal, and on
+  // stderr on a real run as `doctor` says it. A `miss` joins the doctor findings below.
   const line = launchLineFinding(prepared.team, built.seat, root, {
     onPath: (binary) => sources.doctor.onPath(binary),
     home: sources.doctor.home,
   });
+  if (line?.level === 'note') (dry ? io.stdout : io.stderr)(`  note ${built.name}: ${line.why}\n`);
+  const launchProblem = line?.level === 'miss' ? line.why : null;
   const doctorTeam = built.temporary
     ? { ...prepared.team, seats: prepared.team.seats.map((item) => item.name === built.temporary?.like ? { ...item, stopped: false } : item) }
     : prepared.team;
   // `team` is the file on disk, already the approved one. `doctorTeam` is the
   // seat about to run, so a stopped seat's CLI is still checked. The digest is
   // recorded with the write, after a refusal has left the file alone. The seat's own launch
-  // line is the last finding, so a miss there refuses this `add` like any other.
+  // line is the last finding: on a real run a miss refuses this `add` like any other doctor
+  // finding, and a dry run leaves it out for the plan below, which prints it as
+  // `  skip <name>: would refuse: …`, the line `up` prints for the same seat.
   for (const finding of [
     ...doctorFindings(doctorTeam, root, dir, session, sources.doctor, prepared.warnings, standing, team),
-    ...(line?.level === 'miss' ? [{ level: 'miss' as const, text: `${built.name}: ${line.why}` }] : []),
+    ...(launchProblem && !dry ? [{ level: 'miss' as const, text: `${built.name}: ${launchProblem}` }] : []),
   ]) {
     if (blocksLaunch(finding)) {
       io.stderr(`team add: ${finding.text}\n`);
@@ -291,8 +297,11 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     ? { ...starting, stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
     : starting;
   const wouldLaunch = planned.stage === undefined || !planned.pane || (planned.stage === 'launched' && !planned.agentLive);
-  const seatForPlan = decision.kind === 'refuse' && !wouldLaunch ? { ...planned, budget: decision } : planned;
-  const dry = args.flags.has('dry-run');
+  const seatForPlan = {
+    ...planned,
+    ...(launchProblem && wouldLaunch ? { launchProblem } : {}),
+    ...(decision.kind === 'refuse' && !wouldLaunch ? { budget: decision } : {}),
+  };
   if (dry) {
     if (decision.kind === 'refuse' && wouldLaunch) {
       io.stdout(`${built.name}: would refuse: ${decision.why}\ndry run: nothing was run\n`);
