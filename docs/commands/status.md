@@ -86,7 +86,7 @@ CODEX_HOME=/path/to/codex exec /path/to/codex-quota
 | --- | --- |
 | `<seat> is in the file and is not running` | `team add <seat>` when something else runs, `team up` when nothing does |
 | `<seat>: the agent in <pane> is named "x"` | `herdr --session <s> agent rename <pane> <seat>` |
-| `<seat> runs <model> <version>; the file says <model> <version>` | restart it (`team remove <seat> --keep`, then `team add <seat>`), or correct the file and `team approve` |
+| `<seat> runs <model> <version>; the file says <declared>` (`<declared>` is the seat's `display` spelling) | restart it (`team remove <seat> --keep`, then `team add <seat>`), or correct the file and `team approve` |
 | `<seat> is marked stopped in the file and is running` | `team remove <seat> --keep`, or take `stopped: true` off the seat |
 | `<seat>: its launch stopped at "<stage>"` | `team up` (it resumes the launch) |
 | `<seat>: its rules were not delivered` | `team remove <seat> --keep`, then `team add <seat>` |

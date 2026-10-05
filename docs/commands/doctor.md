@@ -2,8 +2,9 @@
 
 Reads the machine and says what the team needs before it can run: whether this file is the one the
 owner approved, whether herdr and each seat's CLI are installed, at the tested version and logged in,
-whether each launch names the model the file says, whether a watch has run for the session, and what
-each approved budget check reads right now. `up` and `add` refuse until the missing ones are done.
+whether each launch names the model the file says — and, when it names none, what checks the model
+the seat really runs — whether a watch has run for the session, and what each approved budget check
+reads right now. `up` and `add` refuse until the missing ones are done.
 
 ## Synopsis
 
@@ -40,6 +41,7 @@ One line per finding, the level first, then two spaces:
     ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
     warn  claude-beacon: its name repeats "beacon"; the session already carries it
     warn  claude-beacon: the launch starts Claude Opus 5.5, the file says Claude Sonnet 5.5
+    --    codex-scribe: the model is chosen by its launcher; checked on the running seat
     MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
     --    session beacon is running
 
@@ -62,10 +64,25 @@ command is unapproved, or no longer matches the file hashed at approval (a warni
 account reads unknown, and `up` and `add` still
 run), the budget checks, herdr, one CLI at a time (its
 version, its login, then each of its seats' launchers and models), the watch, and the `trust` note.
-A seat the file stops is left out of the CLI findings. The last line counts them:
+A seat the file stops is left out of the CLI findings. A CLI outside its tested range keeps its
+`warn` and says what that means: its screens are untested with this version, and a seat that isn't
+read at launch is left out, never typed into (herdr's version line says just where it sits — herdr
+has no screens). The last line counts them:
 
     team doctor: nothing missing, 1 warning
     team doctor: 2 missing, 0 warnings: `up` and `add` refuse until the missing ones are done
+
+A seat's model is judged by what can check it. A launch that names a model the profile knows is
+compared with the file's, and a mismatch is the warning above. A launch that names none is left to
+the running seat whenever the CLI's screen shows the model it runs: a launcher — a script or
+program that runs the CLI and picks the model itself, told by the launch line's first words, or by
+the seat's `model_from: launcher` — gets the note `--    <seat>: the model is chosen by its
+launcher; checked on the running seat`, and the CLI's own binary started bare prints nothing, since
+`status` and the watch read the model off its screen. Two cases nothing can check stay warnings: a
+CLI that keeps no model on its screen (`<seat>: no model flag and this CLI doesn't show its model;
+nothing checks that it runs <declared>`), and a CLI this version knows to start on its last-used
+model, which keeps its `warn` for another change to reword. The model the file declares is spelled
+by the seat's `display` in every line that names it.
 
 The key's fingerprint is the first twelve hex digits of the signing key's public half. What it
 proves is narrow: an owner who noted it sees a *replaced* key — a process that only reads the
@@ -163,6 +180,23 @@ ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
 team doctor: nothing missing, 1 warning
+exit 0
+```
+
+A CLI outside the range this version was tested with keeps its warning and says what that means —
+herdr's own version line says only where it sits, for the same reason:
+
+```console tools="claude-code=old"
+$ team doctor ; echo "exit $?"
+warn  claude-beacon: its name repeats "beacon"; the session already carries it
+ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
+ok    the check for openai reads weekly 40% used
+ok    herdr 0.7.1
+--    session beacon is running
+warn  claude 2.1.200 is older than the tested 2.1.288: its screens are untested with this version; a seat that isn't read at launch is left out, never typed into
+ok    claude-code: logged in
+ok    the watch is running
+team doctor: nothing missing, 2 warnings
 exit 0
 ```
 
@@ -303,6 +337,84 @@ ok    the watch is running
 team doctor: 2 missing, 2 warnings: `up` and `add` refuse until the missing ones are done
 exit 1
 ```
+
+A launch that names no model is not warned for its own sake: what the seat really runs is read off
+its screen by `status` and the watch, and `doctor` says only what that reading cannot cover. A
+launcher — here a wrapper script — gets the note; the CLI's own binary started bare prints nothing
+at all, its model checked the same way:
+
+```yaml file=.agents/team.yaml
+format: 1
+project: beacon
+coordinator: claude-keeper
+operator: claude-keeper
+
+workspace:
+  mode: shared
+
+budgets:                       # owner-only; the checks run from the approved copy
+  accounts:
+    openai: { kind: subscription, reserve: 10%, sources: [check], check: .agents/openai-quota }
+
+seats:
+  - role: coordinator
+    name: claude-keeper
+    label: coordinator
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+
+  - role: implementer
+    name: claude-beacon
+    label: implementer
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+
+  - role: researcher
+    name: codex-scribe
+    label: researcher
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    launch: team-codex          # the wrapper picks the model and runs codex
+
+  - role: implementer
+    name: codex-reader
+    label: implementer
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    launch: codex
+```
+
+```console tools="codex=fine"
+$ team doctor ; echo "exit $?"
+warn  claude-beacon: its name repeats "beacon"; the session already carries it
+MISS  run `team approve`: `limits` changed; seat codex-scribe is not in the approved file; seat codex-reader is not in the approved file
+ok    the check for openai reads weekly 40% used
+ok    herdr 0.7.1
+--    session beacon is running
+ok    claude 2.1.288
+ok    claude-code: logged in
+ok    codex 0.157.0
+ok    codex: logged in
+--    codex-scribe: the model is chosen by its launcher; checked on the running seat
+ok    the watch is running
+team doctor: 1 missing, 1 warning: `up` and `add` refuse until the missing ones are done
+exit 1
+```
+
+The launcher is told by the launch line's first words: none of them is the CLI's own binary (or a
+path ending in it), so the line runs something that chooses the model itself. A seat may say so
+outright with `model_from: launcher`, which wins over the launch line's shape; the key is part of
+the seat's approval, as any seat key is.
 
 `--login` answers the one question that needs no herdr, no session and no machine — which CLIs have
 an account to run under. Two seats share a CLI, so it is said once:
