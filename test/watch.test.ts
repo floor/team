@@ -401,6 +401,66 @@ describe('a pass of the watch', () => {
     ]);
   });
 
+  // A seat the watch saw running and that is gone says so, and says it at each disappearance: the
+  // session's own sequence, from the incident that found the line missing.
+  const without = (scene: Live, name: string): Live => ({ ...scene, agents: scene.agents.filter((one) => one.name !== name) });
+  const missingTexts = (memory: ReturnType<typeof newMemory>, at: number, scene: Live) => pass({
+    team: team(), watch: team().watch, state: emptySession(), live: scene, machine: fine, now: at, memory,
+  }).reports.filter((report) => report.key.startsWith('missing:')).map((report) => report.text);
+  const GONE = 'deepseek-acme-2 was running and is gone (its pane closed, or its CLI ended)';
+
+  test('the session\'s sequence: absent before the up, seen idle after it, then gone', () => {
+    const memory = newMemory();
+    const absent = without(live(), 'deepseek-acme-2');
+    const running = live({ 'deepseek-acme-2': { status: 'idle', screen: idle } });
+    // Absent from the very first pass: the seat never ran in this watch's run.
+    expect(missingTexts(memory, 0, absent)).toEqual(['deepseek-acme-2 is in the file and is not running']);
+    expect(missingTexts(memory, 2 * MIN, absent)).toEqual([]);
+    // Launched and left at `named`, then seen idle for ten minutes: the watch knows it ran.
+    expect(missingTexts(memory, 4 * MIN, running)).toEqual([]);
+    expect(missingTexts(memory, 14 * MIN, running)).toEqual([]);
+    // Gone at a later pass: said so, in the words for a seat that ran.
+    expect(missingTexts(memory, 16 * MIN, absent)).toEqual([GONE]);
+    expect(missingTexts(memory, 40 * MIN, absent)).toEqual([]);
+  });
+
+  test('gone, back, gone again: a report each time, not only the first', () => {
+    const memory = newMemory();
+    const running = live();
+    const absent = without(running, 'deepseek-acme-2');
+    expect(missingTexts(memory, 0, running)).toEqual([]);
+    expect(missingTexts(memory, 2 * MIN, absent)).toEqual([GONE]);
+    expect(missingTexts(memory, 4 * MIN, running)).toEqual([]);
+    expect(missingTexts(memory, 6 * MIN, absent)).toEqual([GONE]);
+    expect(missingTexts(memory, 8 * MIN, absent)).toEqual([]);
+  });
+
+  test('a seat never seen running: today\'s line, once', () => {
+    const memory = newMemory();
+    const absent = without(live(), 'deepseek-acme-2');
+    expect(missingTexts(memory, 0, absent)).toEqual(['deepseek-acme-2 is in the file and is not running']);
+    expect(missingTexts(memory, MIN, absent)).toEqual([]);
+    expect(missingTexts(memory, 2 * MIN, absent)).toEqual([]);
+  });
+
+  test('a stopped seat that is not running draws nothing', () => {
+    const file = stoppedTeam();
+    const absent = without(live(), 'codex-acme');
+    const memory = newMemory();
+    expect(pass({ team: file, watch: file.watch, state: emptySession(), live: absent, machine: fine, now: 0, memory }).reports).toEqual([]);
+    expect(pass({ team: file, watch: file.watch, state: emptySession(), live: absent, machine: fine, now: MIN, memory }).reports).toEqual([]);
+  });
+
+  test('a session that doesn\'t answer reports no seat — and does again once it answers, as on main', () => {
+    const memory = newMemory();
+    const absent = without(live(), 'deepseek-acme-2');
+    const dark = { ...absent, running: false };
+    expect(missingTexts(memory, 0, dark)).toEqual([]);
+    expect(missingTexts(memory, 2 * MIN, absent)).toEqual(['deepseek-acme-2 is in the file and is not running']);
+    expect(missingTexts(memory, 4 * MIN, dark)).toEqual([]);
+    expect(missingTexts(memory, 6 * MIN, absent)).toEqual(['deepseek-acme-2 is in the file and is not running']);
+  });
+
   test('a temporary seat of the state is watched as a seat', () => {
     const state = { ...emptySession(), seats: { 'deepseek-acme-tmp-1': { stage: 'ready' as const, temporary: { like: 'deepseek-acme', until: 'result:out.md' } } } };
     const now = live();
@@ -556,13 +616,14 @@ describe('the idle anchor', () => {
     expect(reportAt(memory, 35, { [name]: { status: 'idle', screen: idleScreen } })).toEqual([`${name} has been idle for 10 minutes`]);
   });
 
-  test.each(workers)('%s: never seen working, the report carries no duration', (name, _working, idleScreen) => {
+  test.each(workers)('%s: never seen working, the report carries no duration and reports once by default', (name, _working, idleScreen) => {
     const memory = newMemory();
     const quiet = { [name]: { status: 'idle', screen: idleScreen } };
     expect(reportAt(memory, 0, quiet)).toEqual([]);
     expect(reportAt(memory, 9, quiet)).toEqual([]);
     expect(reportAt(memory, 10, quiet)).toEqual([`${name} has been idle since the watch started`]);
-    expect(reportAt(memory, 30, quiet)).toEqual([`${name} has been idle since the watch started`]);
+    // By default idle_repeat is off: reported once per watch run.
+    expect(reportAt(memory, 30, quiet)).toEqual([]);
   });
 });
 

@@ -19,6 +19,7 @@ import type { Machine } from '../../src/watch/machine.ts';
 const NOW = new Date('2026-10-03T14:02:00Z');
 const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
 const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
+const PERMISSION = 'Do you want to proceed?\n1. Yes\n';
 
 let base: string;
 let project: string;
@@ -497,5 +498,19 @@ describe('team add', () => {
     expect(code).toBe(0);
     expect(made.creates).toEqual([]);
     expect(made.renames).toEqual(['lead']);
+  });
+
+  test('the close of the new seat\'s workspace is said on the terminal and in the log, and exits 1', async () => {
+    const made = world();
+    const closed: string[] = [];
+    made.launch.paneText = (_session, pane) => (pane === 'w1:p1' ? PERMISSION : IDLE);
+    made.launch.closeWorkspace = (_session, workspace) => { closed.push(workspace); return true; };
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker'], io, sources(made));
+    expect(code).toBe(1);
+    const line = 'worker: permission; its workspace was closed without input and the seat left out';
+    expect(io.out).toContain(`${line}\n`);
+    expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8')).toContain(line);
+    expect(closed).toEqual(['w1']);
   });
 });

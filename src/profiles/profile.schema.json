@@ -51,7 +51,7 @@
       }
     },
     "models": { "$ref": "#/$defs/models" },
-    "status_model": { "type": "array", "items": { "$ref": "#/$defs/modelRule" }, "minItems": 1, "description": "optional: absent, the CLI's screen doesn't show its model" },
+    "status_model": { "type": "array", "items": { "$ref": "#/$defs/statusModelRule" }, "minItems": 1, "description": "optional: absent, the CLI's screen doesn't show its model" },
     "last_used_model": { "type": "boolean", "description": "optional: the CLI starts on its last-used model when a launch names none" },
     "quota": { "type": "array", "items": { "$ref": "#/$defs/quota" }, "minItems": 1 },
     "trust_answer": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/trustAnswer" } },
@@ -233,6 +233,32 @@
         "model": { "type": "string", "minLength": 1 },
         "version": { "type": "string", "minLength": 1 },
         "flag": { "type": "string", "minLength": 1, "description": "The model id to suggest for this model and version. \"{version}\" is the seat's version." }
+      }
+    },
+    "statusModelRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["match", "model", "version"],
+      "properties": {
+        "match": { "$ref": "#/$defs/patternString" },
+        "ignore_case": {
+          "type": "boolean",
+          "description": "Ignore ASCII case only: each letter matches its other case; no other character folds (a long s or a Kelvin sign reads as itself)."
+        },
+        "model": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "flag": { "type": "string", "minLength": 1, "description": "The model id to suggest for this model and version. \"{version}\" is the seat's version." },
+        "yields": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "description": "The exact model names this rule's templates spell, as the reader reads them back — a closed list, never a pattern, each name once. Absent or empty: the rule yields no model (a template that cannot fill, like an id a launch line shows but the screen never does)."
+        },
+        "version_like": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The version shapes this rule can spell its models with: a regular expression source anchored at both ends (\"^\" and \"$\"), tested against the whole version. Absent: the rule spells no version. A source not anchored at both ends is refused as the profile loads."
+        }
       }
     },
     "models": {

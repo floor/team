@@ -137,7 +137,8 @@ function oldPass(
     if (worked === undefined) memory.idleSince[name] ??= now;
     const since = now - (worked ?? (memory.idleSince[name] as number));
     const told = memory.idleTold[name];
-    if (since >= team.watch.idleFirst * 1000 && (told === undefined || now - told >= team.watch.idleRepeat * 1000)) {
+    const repeat = team.watch.idleRepeat;
+    if (since >= team.watch.idleFirst * 1000 && (told === undefined || (repeat !== undefined && now - told >= repeat * 1000))) {
       memory.idleTold[name] = now;
       reports.push({
         key: `idle:${name}`,
@@ -190,7 +191,11 @@ function oldPass(
 
   memory.active = current;
 
-  for (const report of reports) if (report.to === 'operator') memory.pending.push(report.text);
+  for (const report of reports) {
+    if (report.to === 'operator' && !memory.pending.includes(report.text)) {
+      memory.pending.push(report.text);
+    }
+  }
   let nudge: OldPassResult['nudge'] = null;
   let fallback: string | null = null;
   if (memory.pending.length) {
@@ -451,10 +456,13 @@ describe('the modular core against the pass it replaced', () => {
     const now = live();
     now.agents.push(agent('deepseek-acme-tmp-1', 'w7', 'idle'));
     now.screens['w7:p1'] = permission;
+    // The last step leaves through the state, not through the agent: a seat seen running and then
+    // gone now says so in its own words ("was running and is gone"), a deliberate change this file
+    // cannot compare against the pre-#45 pass — it is pinned in watch.test.ts.
     both('a temporary seat', team(), [
       { live: now, at: 0, state },
       { live: now, at: MIN, state },
-      { live: { ...now, agents: now.agents.filter((one) => one.name !== 'deepseek-acme-tmp-1') }, at: 2 * MIN, state },
+      { live: now, at: 2 * MIN, state: emptySession() },
     ]);
   });
 

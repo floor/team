@@ -98,6 +98,18 @@ export function legacyLabelDigests(team: Approvable): { named: Record<string, st
   return { named, namedWithoutFlags };
 }
 
+/**
+ * A watch section digest as computed before `idle_repeat` defaulted to off:
+ * when the key was not set in the file, its value was filled in as 1200 seconds.
+ */
+export function legacyWatchDigest(team: Approvable): string | null {
+  const watch = team.watch as Record<string, unknown> | null | undefined;
+  if (!watch || watch.idleRepeat !== undefined) return null;
+  const rest: Record<string, unknown> = { ...watch, idleRepeat: 1200 };
+  delete rest.checks;
+  return digest(rest);
+}
+
 function seatDigest(seat: Record<string, unknown>, free: Set<string>): string {
   const fields = Object.fromEntries(Object.entries(seat).filter(([key]) => !free.has(key)));
   return digest(fields);

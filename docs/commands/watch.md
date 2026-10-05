@@ -74,14 +74,15 @@ or a machine that stays full, is said once, not every pass.
 
 | Report | Made when |
 | --- | --- |
-| `<seat> is in the file and is not running` | herdr lists no agent for a seat the file has and does not stop |
+| `<seat> is in the file and is not running` | herdr lists no agent for a seat the file has, does not stop, and the watch has not seen running |
+| `<seat> was running and is gone (its pane closed, or its CLI ended)` | herdr lists no agent for a seat the watch had seen running; said at each disappearance |
 | `<seat> waits at a permission prompt: its owner's to answer` | a permission dialog or a trust question; only its owner answers those |
 | `<seat> asked a question: the operator's to act on` | a question the seat is waiting on |
 | `<seat> is blocked, and its screen is not one the watch recognises` | herdr says blocked and the screen says nothing the watch knows |
 | `<seat>: herdr reports the status "<status>"` | a status that is neither idle, done, working nor blocked |
 | `<seat> holds text in its input box that was never sent` | unsent text for `watch.unsent_after` |
-| `<seat> has been idle since the watch started` | quiet for `watch.idle_first`, and never seen working |
-| `<seat> has been idle for <n> minutes` | quiet for `watch.idle_first` since its last turn, then every `watch.idle_repeat` |
+| `<seat> has been idle since the watch started` | quiet for `watch.idle_first`, and never seen working (reported once; repeated every `watch.idle_repeat` when set) |
+| `<seat> has been idle for <n> minutes` | quiet for `watch.idle_first` since its last turn (reported once per idle period; repeated every `watch.idle_repeat` when set) |
 | `every agent is idle` | every seat that is not the coordinator, the operator or parked, quiet for `watch.team_idle` |
 | `<seat> runs <model> <version>; the file says <declared>: it signs with the wrong model` (`<declared>` is the seat's `display` spelling) | the running model or version is not the file's |
 | `<name> (<pane>) is running and is not in the file` | an agent in the session no seat claims, the watchdog pane aside |
@@ -331,6 +332,9 @@ The watch's own timings are the owner's too: `interval`, `idle_first`, `idle_rep
 `nudge_wait` and `unsent_after` are approved with the file, and an edit to one of them changes
 nothing until the owner approves it — the passes keep running with the values of the approved copy,
 or with the defaults when nothing was approved, and the difference is reported.
+By default an idle seat is reported once per idle period (`idle_repeat` is off). A team that wants
+repeated idle reports turns them on by setting `watch.idle_repeat` to the repeat interval (such as
+`idle_repeat: 20m`), repeating every 20 minutes while the seat stays quiet.
 
 A check the team doesn't want is turned off in `watch.checks` — a section only the owner changes,
 so it is approved like the rest of them. While that edit is unapproved, the approved list stays

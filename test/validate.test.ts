@@ -105,6 +105,7 @@ describe('a minimal file', () => {
     expect(team.workspace).toMatchObject({ mode: 'shared', branch: '{task}', remove: 'on-merge', protected: ['.'], limit: 8 });
     expect(team.limits).toEqual({ seats: 3, temporary: 2, vendors: {} });
     expect(team.watch.nudgeWait).toBe(600);
+    expect(team.watch.idleRepeat).toBeUndefined();
   });
   test('is public when it only sets forbidden_public', () => {
     const text = `${minimal}identity:\n  forbidden_public: ["\\\\bX-[0-9]+"]\n`;
