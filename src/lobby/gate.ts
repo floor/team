@@ -145,6 +145,11 @@ export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGa
       const seen = checkComp(comp);
       if (!seen.ok) return seen;
       if (!existed && comp === lobby) {
+        // This run just created the lobby, and only then may its mode be set. Check it once more,
+        // immediately before the chmod: `chmod(2)` follows symbolic links, so a link swapped in
+        // after the check above would otherwise change the mode of a folder outside the lobby.
+        const still = checkComp(comp);
+        if (!still.ok) return still;
         try {
           fs.chmod(comp, 0o700);
         } catch (err) {
