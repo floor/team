@@ -846,6 +846,30 @@ describe('the closed Cursor status row (round 2)', () => {
     expect(model(big)).toBeNull();
   });
 
+  test('the version, the quota and the file count are digits in closed runs', () => {
+    // The reviewer probes: `[\d.]+` read `5..6`, a bare `.` and `4..2%` as tokens — a version,
+    // a quota or a file count that no pane draws. The closed runs cannot, on either side: the
+    // status line's grammar and the status_model rule.
+    const row = (text: string) => `  ${text}${' '.repeat(24)}Run Everything`;
+    for (const line of [
+      row('GPT-5..6 Sol 272K High'),
+      row('Composer .'),
+      row('Composer 2.5 · 4..2%'),
+      row('Gemini 3.8 Flash · .%'),
+      row('Composer 2.5 · 12. files edited'),
+      row('Composer 2.5.1. High'),
+    ]) {
+      const screen = footer('idle', line);
+      expect(read(screen)).toBe('unknown / unknown');
+      expect(model(screen)).toBeNull();
+    }
+    expect(model(row('GPT-5..6 Sol 272K High'))).toBeNull();
+    // A multi-part version and a fractional quota are still closed runs that match.
+    const good = footer('idle', row('Composer 2.5.1 · 12.5%'));
+    expect(read(good)).toBe('idle / idle');
+    expect(model(good)).toEqual({ model: 'Composer', version: '2.5.1' });
+  });
+
   test('a painted running screen stays working, and gains no status row', () => {
     const screen = footer('working', '  Step 2');
     expect(read(screen)).toBe('working / unknown');
