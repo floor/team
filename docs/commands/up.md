@@ -93,6 +93,15 @@ could not verify: a stop leaves the text where it is.
   process of the same user can still replace the file between that check and the seat's read.
   The line carries the file's hash, so the seat, or the owner, can check what was read against
   what was meant.
+- Every folder from `team`'s state root down to `rules/` is checked before it is used — but the
+  check and the use are two calls, and a process of the same user can swap a checked folder for a
+  link in the window between them, so a folder of the ladder, or the file itself, lands where the
+  link points. The runtime this runs on offers no way to hold the checked folder open and create
+  the next level through that handle, so the window stays open. What limits it: the write is the
+  approved text and nothing else, through an exclusive no-follow temporary whose name no other
+  process knows, the file is read back by its hash after the rename, and the line the seat
+  receives carries the same hash — so whatever lands wherever it lands can always be checked
+  against what was meant, and nothing but the approved text ever lands anywhere.
 
 A seat that doesn't get there is printed once with what stopped it, and `up` exits 1. For a seat
 whose wait ended without a prompt, the last non-empty lines the pane showed — the launch line's own
