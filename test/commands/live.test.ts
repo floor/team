@@ -734,7 +734,12 @@ describe('team up, live', () => {
     );
     expect(code).toBe(0);
     expect(io.out).toContain('claude-coordinator-acme: ready\n');
-    expect(io.err).toContain('  already ready; left as it is\n');
+    // The state records no process for it, so the detail carries the note main added: how to
+    // relaunch it. It is the coordinator, so the repair is the whole team's.
+    expect(io.err).toContain(
+      '  already ready; left as it is; a relaunch records its process: ' +
+        'team down, then team up (to restart the whole team)\n',
+    );
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(made.creates).not.toContain('deepseek flash v4.1');
     expect(made.renames).toContain('deepseek-acme');
