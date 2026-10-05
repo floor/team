@@ -13,8 +13,11 @@ and the session, are left alone.
 ## What it reads and writes
 
 Reads the team file, the session's state (`.agents/team.state.json`, for a temporary seat's record),
-and herdr: whether the session runs, its agents, each pane's screen and status, and the pane's
-foreground processes, which is how it knows the CLI has really exited.
+herdr: whether the session runs, its agents, each pane's screen and status, and the pane's
+foreground processes, which is how it knows the CLI has really exited, and the approval store:
+stopping a seat and editing the file are changes the owner approves first. Without an approval in
+force — never approved, a record from before records were signed, or one the verification refused —
+nothing is stopped and nothing is written, with the one-line repair every command prints.
 
 Writes the team file (the seat's entry taken out, or `stopped: true` added to it),
 `.agents/team.state.json` (the seat's record is dropped), `.agents/team.log`, and, through herdr:
@@ -77,6 +80,8 @@ A seat that doesn't leave cleanly is printed once with what stopped it, and `rem
 | `team remove: <seat> shows a screen the profile does not recognise; left as it is` | 1 |
 | `team remove: <seat> holds unsent text in its input box; left as it is` | 1 |
 | ``team remove: no launch profile for `<cli>`; left as it is`` | 1 |
+| ``team remove: the file was never approved on this machine: run `team approve` `` | 1 |
+| ``team remove: approved before records were signed: run `team approve` once`` — the record was written by an earlier `team`; the same line, with the case, for a record that does not verify | 1 |
 
 `--abandon` answers the last five: the seat is not asked anything, its workspace is closed as it is,
 and its pane's text is lost.

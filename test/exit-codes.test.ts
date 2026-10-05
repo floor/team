@@ -1003,14 +1003,18 @@ scene('remove.edit', async (place) => {
   write(place, TWO);
   return show(await removed(place, ['lead'], owner, downSources({ home: place.home })), 'coordinator "lead"');
 });
-scene('remove.no-launch', async (place) => {
+scene('remove.never-approved', async (place) => {
   write(place, TWO);
+  return show(await removed(place, ['worker'], owner, downSources({ home: place.home })), 'never approved');
+});
+scene('remove.no-launch', async (place) => {
+  approve(place, TWO);
   return show(await removed(place, ['worker'], owner, downSources({
     sessionRunning: () => true, agents: () => [agent('worker')], home: place.home,
   })), 'no way to reach herdr');
 });
 scene('remove.stop-failed', async (place) => {
-  write(place, TWO);
+  approve(place, TWO);
   return show(await removed(place, ['worker'], owner, downSources({
     sessionRunning: () => true,
     agents: () => [agent('worker')],
@@ -1019,7 +1023,7 @@ scene('remove.stop-failed', async (place) => {
   })), 'its exit was not typed');
 });
 scene('remove.locked', async (place) => {
-  write(place, TWO);
+  approve(place, TWO);
   const swapped = `format: 1
 project: acme
 coordinator: worker
@@ -1050,15 +1054,15 @@ seats:
   })), 'coordinator "worker"');
 });
 scene('remove.removed', async (place) => {
-  write(place, TWO);
+  approve(place, TWO);
   return show(await removed(place, ['worker'], owner, downSources({ home: place.home })), 'removed worker');
 });
 scene('remove.kept', async (place) => {
-  write(place, TWO);
+  approve(place, TWO);
   return show(await removed(place, ['worker', '--keep'], owner, downSources({ home: place.home })), 'stopped worker');
 });
 scene('remove.temporary', async (place) => {
-  write(place, TEAM);
+  approve(place, TEAM);
   updateState(join(place.root, '.agents'), (state) => {
     const session = (state.sessions.acme ??= emptySession());
     session.seats.worker = { stage: 'ready', temporary: { like: 'lead', until: 'result:out.md' } };

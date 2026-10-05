@@ -1,8 +1,8 @@
 // A record written before records were signed, with the team's seats running: only the
 // commands that need an approval in force refuse, each with the one-line repair; the watch
-// keeps watching, `status` keeps reporting, `down` and `remove` keep working, and no running
-// seat is stopped or disturbed. A record the verification refused is heard the same way,
-// in its own words.
+// keeps watching, `status` keeps reporting, `down` keeps working, `remove` refuses too (it
+// stops a seat and edits the file), and no running seat is stopped or disturbed. A record
+// the verification refused is heard the same way, in its own words.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -253,8 +253,9 @@ describe('a legacy record, with the team\'s seats running', () => {
     expect(`${io.out}${io.err}`).not.toContain('approve');
   });
 
-  test('remove --keep keeps working, and does not amend the legacy record', async () => {
+  test('remove refuses while the record is legacy, and the file is not amended', async () => {
     legacy();
+    const before = readFileSync(join(root, '.agents', 'team.yaml'), 'utf8');
     const io = testIo(root, OWNER);
     const code = await runRemove(['--keep', 'deepseek-acme'], io, {
       sessionRunning: () => true,
@@ -268,10 +269,12 @@ describe('a legacy record, with the team\'s seats running', () => {
       sleep: async () => {},
       home,
     });
-    expect(code).toBe(0);
-    expect(io.out).toBe('stopped deepseek-acme\n');
-    // The record is what it was: unsigned, and still reported as legacy — the digest
-    // `remove --keep` would record needs a verified record to amend.
+    expect(code).toBe(1);
+    expect(io.err).toBe(`team remove: ${LINE}\n`);
+    expect(io.out).toBe('');
+    // Nothing was stopped and nothing was written: the file is byte-identical, and the
+    // record is what it was, unsigned and still reported as legacy.
+    expect(readFileSync(join(root, '.agents', 'team.yaml'), 'utf8')).toBe(before);
     expect(readApproval(store())?.approval.format).toBe(1);
     expect(approvalStanding(root, home)).toEqual({ kind: 'legacy' });
   });

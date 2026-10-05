@@ -141,6 +141,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `remove.file-owner` | `remove` | 1 | --file is the owner's | `team remove worker --file .agents/team.yaml` |
 | `remove.herdr` | `remove` | 1 | herdr doesn't answer | `team remove worker` |
 | `remove.keep-temporary` | `remove` | 1 | a temporary seat is not kept in the file | `team remove worker --keep` |
+| `remove.never-approved` | `remove` | 1 | the file was never approved | `team remove worker` |
 | `remove.no-launch` | `remove` | 1 | this call has no way to reach herdr | `team remove worker` |
 | `remove.no-profile` | `remove` | 1 | the running seat has no launch profile | `team remove worker` |
 | `remove.no-seat` | `remove` | 1 | the team has no such seat | `team remove missing` |

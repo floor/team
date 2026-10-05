@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
-import { recordSeatDigestOf } from '../approve/approval.ts';
+import { recordSeatDigestOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { describeCaller, isOwner, judgeCallerOf, mayChangeTeam, standingOf } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
@@ -27,8 +27,8 @@ export type RemoveSources = DownSources & {
   foreground(session: string, pane: string): string[] | null;
   /** Approval store home. The real command uses the owner's home. */
   home?: string;
-  // The approval store's one read (the amending branch alone reads it), overridable so a
-  // test can count it or swap the record after the gate. Absent: the real read.
+  // The approval store's one read, done before anything is stopped or written and reused by the
+  // amending branch, overridable so a test can count it or swap the record after the read.
   standing?(root: string): Standing;
 };
 
@@ -167,6 +167,17 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     }
   }
 
+  // No approval in force: nothing is stopped and nothing is written for a team the owner never
+  // approved. Read after the read-only refusals above, which name a more specific problem, and
+  // before the seat is stopped or the file is edited.
+  const home = sources.home ?? homedir();
+  const standing = sources.standing?.(root) ?? approvalStanding(root, home);
+  if (standing.kind !== 'verified') {
+    io.stderr(`team remove: ${notInForce(standing)}\n`);
+    // exit: remove.never-approved
+    return 1;
+  }
+
   if (agent) {
     const screen = sources.screen(session, agent.pane, cli);
     const where = stateOf(agent.status, screen);
@@ -201,9 +212,6 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   }
   if (kept !== null) {
     const parsed = validateTeamFile(kept);
-    // The one read of the whole command, done only by the amending branch.
-    const home = sources.home ?? homedir();
-    const standing = sources.standing?.(root) ?? approvalStanding(root, home);
     if (parsed.ok) recordSeatDigestOf(standing, parsed.team, root, name, home);
   }
   if (!agent && recorded) {

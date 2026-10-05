@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
 import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
+import { loadTeamFile } from '../../src/file/load.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
 import { storePath, writeApproval } from '../../src/store/store.ts';
 import type { DownLaunch } from '../../src/commands/down.ts';
@@ -45,6 +46,7 @@ const lead = { kind: 'seat' as const, name: 'lead', pane: 'w0:p1' };
 
 let dir: string;
 let file: string;
+let home: string;
 let clock: number;
 
 function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
@@ -74,6 +76,7 @@ function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
     now: () => new Date(clock),
   };
   const sources: RemoveSources = {
+    home,
     sessionRunning: () => true,
     agents: () => agents,
     alive: () => false,
@@ -94,6 +97,17 @@ beforeEach(() => {
   file = join(dir, '.agents', 'team.yaml');
   writeFileSync(file, FILE);
   execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
+  // The approval in force every test runs under: `remove` refuses to stop a seat or edit the
+  // file without one. The tests that write their own record point `sources.home` at theirs.
+  home = join(dir, 'home');
+  const loaded = loadTeamFile(dir);
+  if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+  writeApproval(
+    storePath(loaded.team.project, loaded.root, home),
+    { approval: approvalOf(loaded.team, loaded.root), file: FILE },
+    loaded.team.seats,
+    home,
+  );
 });
 
 afterEach(() => {

@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { approvalOf } from '../../src/approve/approval.ts';
 import { placeCaller, type Caller, type CallerSources } from '../../src/caller.ts';
 import { runAdd, type AddSources } from '../../src/commands/add.ts';
 import { runAnswer, type AnswerHost } from '../../src/commands/answer.ts';
@@ -19,7 +20,9 @@ import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
 import { runWorktree, type WorktreeSources } from '../../src/commands/worktree.ts';
 import type { DoctorSources } from '../../src/commands/doctor.ts';
 import type { Launch } from '../../src/commands/up.ts';
+import { loadTeamFile } from '../../src/file/load.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
+import { storePath, writeApproval } from '../../src/store/store.ts';
 import { testIo, type TestIo } from '../helpers.ts';
 
 const SESSION = 'acme-web';
@@ -103,8 +106,19 @@ beforeEach(() => {
   stateFile = join(dir, '.agents', 'team.state.json');
   execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
   writeFileSync(file, FILE);
+  // The approval in force `remove` needs to stop a seat and edit the file, signed over the
+  // file above. `emptyHome` is a store that was never written: refusals for the commands
+  // that need no approval in force.
   home = join(dir, 'home');
   emptyHome = join(dir, 'home-empty');
+  const loaded = loadTeamFile(dir);
+  if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+  writeApproval(
+    storePath(loaded.team.project, loaded.root, home),
+    { approval: approvalOf(loaded.team, loaded.root), file: FILE },
+    loaded.team.seats,
+    home,
+  );
 });
 
 afterEach(() => {
@@ -332,4 +346,31 @@ describe('the renamed pane in another session', () => {
     expect(readFileSync(stateFile, 'utf8')).toBe(run.beforeState);
     expect(readFileSync(file, 'utf8')).toContain(`name: ${SEAT}`);
   });
+});
+
+// remove stops a seat and edits the file: without an approval in force it does neither, in the
+// words every command uses for the case.
+describe('remove needs an approval in force', () => {
+  const CASES: { name: string; sources: () => RemoveSources; why: string }[] = [
+    { name: 'never approved', sources: () => removeSources({ home: emptyHome }), why: `team remove: ${NEVER_APPROVED}\n` },
+    {
+      name: 'a legacy record',
+      sources: () => removeSources({ standing: () => ({ kind: 'legacy' }) }),
+      why: 'team remove: approved before records were signed: run `team approve` once\n',
+    },
+    {
+      name: 'a record the verification refused',
+      sources: () => removeSources({ standing: () => ({ kind: 'refused', why: 'the record does not carry a valid signature' }) }),
+      why: 'team remove: the record does not carry a valid signature\n',
+    },
+  ];
+
+  for (const one of CASES) {
+    test(`${one.name}: refused, with the file and the state untouched`, async () => {
+      const run = await call((io) => runRemove([SEAT], io, one.sources()), { kind: 'owner' });
+      expect({ code: run.code, out: run.out, err: run.err }).toEqual({ code: 1, out: '', err: one.why });
+      expect(readFileSync(file, 'utf8')).toBe(run.before);
+      expect(readFileSync(stateFile, 'utf8')).toBe(run.beforeState);
+    });
+  }
 });

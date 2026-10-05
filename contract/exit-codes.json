@@ -949,6 +949,13 @@
     {
       "code": 1,
       "command": "remove",
+      "id": "remove.never-approved",
+      "meaning": "the file was never approved",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
       "id": "remove.no-launch",
       "meaning": "this call has no way to reach herdr",
       "trigger": "team remove worker"
