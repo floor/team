@@ -4,7 +4,8 @@ Reads the machine and says what the team needs before it can run: whether this f
 owner approved, whether herdr and each seat's CLI are installed, at the tested version and logged in,
 whether each launch names the model the file says — and, when it names none, what checks the model
 the seat really runs — whether a watch has run for the session, and what each approved budget check
-reads right now. `up` and `add` refuse until the missing ones are done.
+reads right now. `up` and `add` refuse until the missing ones that block them are done; the last
+line counts those.
 
 ## Synopsis
 
@@ -67,10 +68,11 @@ version, its login, then each of its seats' launchers and models), the watch, an
 A seat the file stops is left out of the CLI findings. A CLI outside its tested range keeps its
 `warn` and says what that means: its screens are untested with this version, and a seat that isn't
 read at launch is left out, never typed into (herdr's version line says just where it sits — herdr
-has no screens). The last line counts them:
+has no screens). The last line counts them, and — the same rule `up` and `add` refuse on — says
+how many of the missing ones block those commands, when any do:
 
     team doctor: nothing missing, 1 warning
-    team doctor: 2 missing, 0 warnings: `up` and `add` refuse until the missing ones are done
+    team doctor: 2 missing, 0 warnings: 2 of them block `up` and `add`
 
 A seat's model is judged by what can check it, and a launch that names none is judged by two
 questions. First, does the launch run the CLI's own binary, bare: the first word that is not a
@@ -286,7 +288,7 @@ ok    claude 2.1.288
 ok    claude-code: logged in
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
-team doctor: 2 missing, 1 warning: `up` and `add` refuse until the missing ones are done
+team doctor: 2 missing, 1 warning: 2 of them block `up` and `add`
 exit 1
 ```
 
@@ -347,7 +349,7 @@ ok    claude-code: logged in
 warn  claude-beacon: the launch starts Claude Opus 5.5, the file says Claude Sonnet 5.5
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
-team doctor: 2 missing, 2 warnings: `up` and `add` refuse until the missing ones are done
+team doctor: 2 missing, 2 warnings: 2 of them block `up` and `add`
 exit 1
 ```
 
@@ -421,7 +423,7 @@ ok    codex 0.157.0
 ok    codex: logged in
 warn  codex-scribe: the launch runs team-codex, not codex, and names no model: if the launcher chooses the model, say so with model_from: launcher
 ok    the watch is running
-team doctor: 1 missing, 2 warnings: `up` and `add` refuse until the missing ones are done
+team doctor: 1 missing, 2 warnings: 1 of them block `up` and `add`
 exit 1
 ```
 
@@ -495,7 +497,7 @@ ok    codex 0.157.0
 ok    codex: logged in
 --    codex-scribe: the model is chosen by its launcher; checked on the running seat
 ok    the watch is running
-team doctor: 1 missing, 1 warning: `up` and `add` refuse until the missing ones are done
+team doctor: 1 missing, 1 warning: 1 of them block `up` and `add`
 exit 1
 ```
 
@@ -552,7 +554,7 @@ seats:
 $ team doctor --login ; echo "exit $?"
 ok    claude-code: logged in
 MISS  log in to codex: `codex login`
-team doctor: 1 missing, 0 warnings: `up` and `add` refuse until the missing ones are done
+team doctor: 1 missing, 0 warnings: 1 of them block `up` and `add`
 exit 1
 ```
 

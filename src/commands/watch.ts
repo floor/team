@@ -6,7 +6,7 @@ import { runChecksOf, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
 import { homedir } from 'node:os';
-import { agentStatus, paneForeground, paneRead, pressEnter, typeText } from '../herdr.ts';
+import { agentStatus, PANE_WINDOW, paneForeground, paneRead, pressEnter, typeText } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
@@ -85,7 +85,7 @@ export const realWatchSources: WatchSources = {
   machine: readMachine,
   standing: standingSource(homedir()),
   readChecks: (standing, team, now) => runChecksOf(standing, team, now),
-  screen: (pane, session) => paneRead(pane, 14, session),
+  screen: (pane, session) => paneRead(pane, PANE_WINDOW, session),
   status: agentStatus,
   foreground: (pane, session) => paneForeground(pane, session),
   typeText,

@@ -250,7 +250,7 @@ describe('team doctor', () => {
     expect(out.out).toContain('MISS  log in to claude-code: `claude auth login`\n');
     expect(out.out).toContain('MISS  deepseek-acme: its launcher `team-deepseek` is not on the PATH\n');
     expect(out.out).toContain(
-      'team doctor: 4 missing, 2 warnings: `up` and `add` refuse until the missing ones are done\n',
+      'team doctor: 4 missing, 2 warnings: 4 of them block `up` and `add`\n',
     );
     expect(out.code).toBe(1);
   });
@@ -290,6 +290,9 @@ describe('team doctor', () => {
     await approve([], OWNER);
     const none = await doctor({ sessionRunning: () => true });
     expect(none.out).toContain('MISS  no watch has run for session acme-web: start `team watch`\n');
+    // The watch is the only missing thing and it blocks nothing: the line ends with the counts.
+    expect(none.out).toContain('team doctor: 1 missing, 2 warnings\n');
+    expect(none.out).not.toContain('block `up` and `add`');
 
     const state = (heartbeat: string) =>
       writeFileSync(
@@ -306,6 +309,7 @@ describe('team doctor', () => {
     expect(stale.out).toContain(
       "MISS  the watch's heartbeat is 12 min old (two intervals are 4 min): start `team watch`\n",
     );
+    expect(stale.out).toContain('team doctor: 1 missing, 2 warnings\n');
     expect(stale.code).toBe(1);
   });
 
