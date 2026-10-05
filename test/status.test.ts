@@ -580,6 +580,41 @@ describe('team status', () => {
     expect(pressedEnterInPane).toBe(false);
   });
 
+  test('C2: done is as free as idle — unsent text is read for both; working and blocked are not', async () => {
+    const codexUnsent = codexScreen('unsent');
+    const base = built();
+    updateState(join(dir, '.agents'), (state) => {
+      (state.sessions['acme-web'] ??= emptySession()).seats['codex-acme'] = { stage: 'ready' };
+    });
+
+    const withStatus = async (state: string) => {
+      live = {
+        ...base,
+        agents: base.agents.map((one) => (one.name === 'codex-acme' ? { ...one, status: state } : one)),
+        screens: { ...base.screens, 'w2:p1': codexUnsent },
+      };
+      return status();
+    };
+
+    // idle: as before
+    const idle = await withStatus('idle');
+    expect(idle.out).toMatch(/codex-acme\s+idle \(unsent text\), parked/);
+    expect(idle.out).toContain('difference: codex-acme holds text in its input box that was never sent');
+
+    // done: the same reading and the same difference — team types into a done box too
+    const done = await withStatus('done');
+    expect(done.out).toMatch(/codex-acme\s+done \(unsent text\), parked/);
+    expect(done.out).toContain('difference: codex-acme holds text in its input box that was never sent');
+
+    // working and blocked: the box is not team's to read as unsent text
+    for (const state of ['working', 'blocked']) {
+      const other = await withStatus(state);
+      expect(other.out).toMatch(new RegExp(`codex-acme\\s+${state}, parked`));
+      expect(other.out).not.toContain('unsent text');
+      expect(other.out).not.toContain('holds text in its input box that was never sent');
+    }
+  });
+
   test('D: summary line: with and without an owner repair', async () => {
     // 1. Without an owner repair: only a missing seat (repair: team add <seat>)
     live = { ...built(), agents: built().agents.filter((one) => one.name !== 'deepseek-acme-2') };

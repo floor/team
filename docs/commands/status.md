@@ -36,10 +36,10 @@ it, `status` can't say anything and exits 2.
 
 The columns are the seat, its state, the model, and the pane. The state is what herdr says
 (`idle`, `working`, `blocked`…), with `, parked` added for a seat the file parks and `, temporary`
-for a temporary one; or `idle (unsent text)` when an idle seat holds text in its input box that was
-never sent; or `missing` when the seat is in the file and nothing is running for it; or `stopped`
-when the file marks it stopped; or `wrong name` when an agent sits in the seat's workspace under
-another name.
+for a temporary one; or `<state> (unsent text)` when an idle or done seat — the two states `team`
+types into — holds text in its input box that was never sent; or `missing` when the seat is in the
+file and nothing is running for it; or `stopped` when the file marks it stopped; or `wrong name`
+when an agent sits in the seat's workspace under another name.
 
 The model is the seat's `display` when the running model matches the file, and
 `<model> <version> (file: <display>)` when it doesn't. A screen that doesn't show the model is a

@@ -84,9 +84,12 @@ export function compare(
       const model = modelOf(seat, agent, live, differences, notes);
       const screenText = live.screens[agent.pane];
       const screen = readScreen(seat.cli, screenText);
-      const isUnsent = agent.status === 'idle' && screen.kind === 'unsent';
+      // `done` is as free as `idle`: delivery types into either one (`deliver.ts`), and the
+      // watch's unsent check covers both (`pass.ts`). The report reads them the same way.
+      const quiet = agent.status === 'idle' || agent.status === 'done';
+      const isUnsent = quiet && screen.kind === 'unsent';
       const stateText = isUnsent
-        ? (seat.parked ? 'idle (unsent text), parked' : 'idle (unsent text)')
+        ? (seat.parked ? `${agent.status} (unsent text), parked` : `${agent.status} (unsent text)`)
         : (seat.parked ? `${agent.status}, parked` : agent.status);
       rows.push({ name: seat.name, state: stateText, model, pane: agent.pane });
       if (seat.stopped) {
