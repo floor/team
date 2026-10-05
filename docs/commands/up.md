@@ -166,11 +166,23 @@ and asks, exactly:
 
     claude-beacon is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly
 
-`o`, `s` and `q` are the whole answer. Any other input reprints the exact line and changes nothing;
-a Ctrl-C is `q`, and a closed input is the same decision made for the owner. The record stays
-provisional while the prompt is open — the seat's one final record still comes later. The seat lock
-is taken before each of resume, open, skip and close, and never held while the owner's key or a
-poll is waited for, so `team answer` can take it in between.
+`o`, `s` and `q` are the whole answer. One chunk is one key only when it is exactly one byte and
+that byte is `o`, `s`, `q` or Ctrl-C; anything else — several bytes that arrived together (a paste,
+a held key, an escape sequence) or any other byte — reprints the exact line and changes nothing,
+and a chunk's first byte is never taken for its key. Every byte already pending on the terminal is
+read and discarded directly before each prompt, and once more on the way out, so a key typed while
+the previous poll ran, or a line typed before `up` was started, never answers a prompt it was not
+meant for: only a key that arrives after the prompt is drawn counts. A Ctrl-C is `q`; an end of
+input is not — a closed stdin leaves the seat exactly as it is, its workspace and its waiting record
+kept, with `<seat>: left out: its input ended; left as it is` and exit 1, since closing on a
+vanished terminal is the destructive reading. What remains possible on this runtime: a byte that
+has not reached `node`'s stream when the drain runs — one the terminal itself still buffers, or one
+arriving between the drain and the read — is read by the next prompt; the one-chunk rule keeps a
+multi-byte paste from ever acting as a key there, and a single trailing byte of a paste split
+across two reads can only be `o`, `s`, `q` or Ctrl-C, the four the owner could have pressed. The
+record stays provisional while the prompt is open — the seat's one final record still comes later.
+The seat lock is taken before each of resume, open, skip and close, and never held while the
+owner's key or a poll is waited for, so `team answer` can take it in between.
 
 `o` takes the lock, verifies the waiting pane is still the seat's recorded one and still holds the
 recorded process, records `manual: true`, releases the lock, and focuses that seat's herdr pane

@@ -7,16 +7,30 @@
 // removes these handlers and re-raises the signal, so the process dies by the signal's own
 // default action and never leaves the owner's terminal raw. In raw mode the line discipline is
 // off, so a Ctrl-C arrives as the byte 0x03 rather than as SIGINT: that byte is read as `q`.
+//
+// One chunk is one key only when the chunk is exactly one byte of the four; anything else —
+// several bytes that arrived together (a paste, a held key, a fast keystroke pair), an escape
+// sequence, any other byte — reads as `other` and changes nothing. A chunk's first byte is never
+// taken as its key: `sq` pasted at the prompt would otherwise stop the run. Type-ahead is
+// discarded instead of answered: `drain()` reads and throws away every byte already pending, and
+// the pause drains before every prompt. What remains possible on this runtime: bytes that have
+// not reached Node's stream yet when `drain()` runs (the terminal's own buffer, or a paste
+// arriving between the drain and the read) are still read by the next `key()`, where the
+// one-chunk rule keeps a multi-byte paste from ever acting as a key; a trailing single byte of a
+// paste split across two data events is the one byte that can still act, and it can only be `o`,
+// `s`, `q` or Ctrl-C — the four the owner could have pressed.
 
 /** One read's result. Anything that is not `o`, `s`, `q` or Ctrl-C is `other`. */
 export type Key = 'o' | 's' | 'q' | 'other' | 'timeout' | 'eof';
 
-/** The parts of a TTY stream one read uses; a test hands in a fake that records the calls. */
+/** The parts of a TTY stream one read uses; a test hands in a fake that records the calls.
+ *  `read` is the stream's non-flowing pull, used by `drain` alone. */
 export type KeyStream = {
   isTTY?: boolean;
   setRawMode?(mode: boolean): void;
   resume(): void;
   pause?(): void;
+  read?(): unknown;
   on(event: 'data' | 'end', listener: (chunk: string | Buffer) => void): unknown;
   removeListener(event: 'data' | 'end', listener: (chunk: string | Buffer) => void): unknown;
 };
@@ -47,19 +61,28 @@ export const HELD_SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SI
 export type Terminal = {
   /** One key, at most `ms` (no timeout when it is not a finite positive number). */
   key(ms: number): Promise<Key>;
+  /** Every byte already pending, read and discarded. Never blocks: a stream with nothing
+   *  pending returns null on its first read. */
+  drain(): void;
 };
 
 function keyOf(chunk: string): Key {
-  const first = chunk[0];
-  if (first === 'o') return 'o';
-  if (first === 's') return 's';
-  if (first === 'q' || first === '\x03') return 'q';
+  // Exactly one byte, and one of ours. A multi-byte chunk is never a key: it is a paste, a
+  // burst of keystrokes, or an escape sequence, and its first byte must not act for it.
+  if (chunk.length !== 1) return 'other';
+  if (chunk === 'o') return 'o';
+  if (chunk === 's') return 's';
+  if (chunk === 'q' || chunk === '\x03') return 'q';
   return 'other';
 }
 
 export function terminalReader(stream: KeyStream, signals: Signals = processSignals): Terminal {
+  // A stream that ended stays ended: every later read is `eof` at once, never an endless wait,
+  // and never a `q`. (Node does not deliver a second 'end'.)
+  let ended = false;
   return {
     key(ms: number): Promise<Key> {
+      if (ended) return Promise.resolve('eof');
       return new Promise<Key>((resolve, reject) => {
         let done = false;
         let timer: ReturnType<typeof setTimeout> | null = null;
@@ -90,7 +113,10 @@ export function terminalReader(stream: KeyStream, signals: Signals = processSign
           if (text.length === 0) return;
           cleanup(keyOf(text));
         };
-        const onEnd = () => cleanup('eof');
+        const onEnd = () => {
+          ended = true;
+          cleanup('eof');
+        };
 
         try {
           stream.setRawMode?.(true);
@@ -117,6 +143,20 @@ export function terminalReader(stream: KeyStream, signals: Signals = processSign
           timer = setTimeout(() => cleanup('timeout'), ms);
         }
       });
+    },
+    drain(): void {
+      // The stream is paused between reads, so every byte that arrived since the last read sits
+      // in its buffer; `read()` pulls it out chunk by chunk, and the chunks are dropped. A
+      // stream with no `read` (or one that throws because it was destroyed) drains nothing.
+      try {
+        for (;;) {
+          const chunk = stream.read?.() as string | Buffer | null | undefined;
+          if (chunk == null || chunk.length === 0) break;
+          // Discarded: bytes typed for a prompt that is already over.
+        }
+      } catch {
+        // The stream is gone; there is nothing left to drain.
+      }
     },
   };
 }

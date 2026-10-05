@@ -719,6 +719,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     close: (workspace) => launch.closeWorkspace(session, workspace),
     record: (label) => records.waiting(input.seat, label),
     prompt: (line) => records.prompt(line),
+    drain: () => terminal.drain(),
     // A line beside the record: the writer owns the line's termination, and the cleaning of
     // every string it writes once the records slice's round lands.
     say: (line) => records.prompt(line.endsWith('\n') ? line.slice(0, -1) : line),

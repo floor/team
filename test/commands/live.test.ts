@@ -91,7 +91,7 @@ type World = {
   /** The workspaces this run created, as herdr's list would return them: id and label. */
   workspaceList(): HerdrWorkspace[];
   /** The injected owner's terminal: the pause's keys are queued here, never read from stdin. */
-  terminal: { keys: Key[]; reads: number; key(ms: number): Promise<Key> };
+  terminal: { keys: Key[]; reads: number; drains: number; key(ms: number): Promise<Key>; drain(): void };
   session: 'absent' | 'running' | 'stopped';
   seed(pane: string, text: string, agent: boolean): void;
 };
@@ -108,6 +108,7 @@ function world(text: string | ((pane: string, label: string) => string) = IDLE):
     terminal: {
       keys: [],
       reads: 0,
+      drains: 0,
       async key() {
         state.terminal.reads += 1;
         const next = state.terminal.keys.shift();
@@ -115,6 +116,11 @@ function world(text: string | ((pane: string, label: string) => string) = IDLE):
         // fallback would hide an unexpected prompt.
         if (next === undefined) throw new Error('the pause read the terminal, and no key was queued');
         return next;
+      },
+      drain() {
+        // Type-ahead never answers a prompt: the pause drains before each one, and once on the
+        // way out. The World's terminal has nothing buffered to discard; the count is the proof.
+        state.terminal.drains += 1;
       },
     },
     session: 'absent',
@@ -2264,6 +2270,8 @@ describe('team up, the pause', () => {
     expect(io.err.split(prompt('claude-coordinator-acme', 'permission')).length - 1).toBe(2);
     expect(snapshots).toHaveLength(2);
     expect(snapshots[1]).toBe(snapshots[0]);
+    // Type-ahead never answers a prompt: one drain before each prompt, and one on the way out.
+    expect(made.terminal.drains).toBe(3);
     const waiting = JSON.parse(snapshots[0] ?? '').sessions['acme-web'].seats['claude-coordinator-acme'];
     expect(waiting.waiting).toEqual({ state: 'waiting-owner', classification: 'permission' });
     expect(waiting.launched).toEqual({ shell: 400, cli: [401] });
@@ -2538,12 +2546,31 @@ describe('team up, the pause', () => {
     io.stdoutIsTTY = true;
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
-    // The record says it is a recovery, and the prompt asks the owner again — twice: the
-    // entry's, and the one the recovery drew.
+    // The record says it is a recovery, and the prompt asks the owner again: the entry's prompt
+    // (still at the dialog's own classification), then the one the recovery drew — which says
+    // what the record says, not the classification alone.
     expect(io.out).toContain('\r\x1b[Kclaude-coordinator-acme: waiting for owner (trust sent; recovery required)');
-    expect(io.err.split(prompt('claude-coordinator-acme', 'trust')).length - 1).toBe(2);
+    expect(io.err.split(prompt('claude-coordinator-acme', 'trust')).length - 1).toBe(1);
+    expect(io.err.split(prompt('claude-coordinator-acme', 'trust sent; recovery required')).length - 1).toBe(1);
     expect(typed).toEqual([]);
     expect(made.terminal.reads).toBe(2);
+  });
+
+  test('the same recovery prompt reaches a redirected stdout: what the record says, on stderr', async () => {
+    withCoordinatorPolicy();
+    await approve();
+    const { made, typed } = coordinated((seat) => {
+      seat.waiting = { state: 'trust-sent-recovery', classification: 'trust', sentAt: '2026-10-03T14:01:00.000Z' };
+    });
+    const io = testIo(root, { kind: 'owner' });
+    // stdout is a pipe: nothing provisional is drawn there, ever — and the prompt, which goes to
+    // stderr, still says what the record says.
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(1);
+    expect(io.err).toContain(prompt('claude-coordinator-acme', 'trust sent; recovery required'));
+    expect(io.out).not.toContain('\x1b[');
+    expect(io.out).toContain('claude-coordinator-acme: left out: stopped cleanly\n');
+    expect(typed).toEqual([]);
   });
 
   test('under coordination, an unchanged state re-prompts from the fresh reading, no key sent', async () => {
@@ -2632,6 +2659,69 @@ describe('team up, the pause', () => {
     expect(typed).toEqual([]);
     expect(io.err).toContain(prompt('claude-coordinator-acme', 'trust'));
     expect(io.out).toContain('claude-coordinator-acme: ready\n');
+  });
+
+  test('end of input leaves the waiting seat exactly as it is: workspace kept, record kept, exit 1', async () => {
+    await approve();
+    writeFileSync(join(root, '.agents/team.state.json'), JSON.stringify({
+      format: 1,
+      sessions: {
+        'acme-web': {
+          seats: {
+            'claude-coordinator-acme': {
+              stage: 'launched',
+              pane: 'w1:p1',
+              workspace: 'w1',
+              launched: { shell: 400, cli: [401] },
+              waiting: { state: 'waiting-owner', classification: 'trust' },
+            },
+            'deepseek-acme': { stage: 'ready', pane: 'w2:p1', workspace: 'w2', launched: { shell: 500, cli: [501] } },
+            'deepseek-acme-2': { stage: 'ready', pane: 'w3:p1', workspace: 'w3', launched: { shell: 510, cli: [511] } },
+          },
+          worktrees: {},
+          watch: { pid: 4242, heartbeat: '2026-10-03T14:01:00Z' },
+        },
+      },
+    }));
+    const trust = 'Do you trust this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n';
+    const made = world(IDLE);
+    made.seed('w1:p1', trust, true);
+    made.seed('w2:p1', IDLE, true);
+    made.seed('w3:p1', IDLE, true);
+    made.session = 'running';
+    const listed = () => [
+      listedPane('w1:p1'),
+      agent('deepseek-acme', 'w2:p1'),
+      agent('deepseek-acme-2', 'w3:p1'),
+    ];
+    made.launch.agents = listed;
+    made.launch.processInfo = (_session, pane) =>
+      pane === 'w1:p1' ? { shell: 400, foreground: [400, 401] } :
+      pane === 'w2:p1' ? { shell: 500, foreground: [500, 501] } :
+      pane === 'w3:p1' ? { shell: 510, foreground: [510, 511] } : null;
+    const { typed } = trace(made);
+    made.terminal.keys.push('eof');
+    const io = testIo(root, { kind: 'owner' });
+    io.stdoutIsTTY = true;
+    const code = await runUp(FILE, io, sources({
+      sessionState: () => 'running',
+      alive: () => true,
+      workspaces: () => [{ id: 'w1', label: 'claude opus 5.5' }, { id: 'w2', label: 'deepseek flash v4.1' }, { id: 'w3', label: 'deepseek flash v4.1-2' }],
+      agents: listed,
+    }, made));
+    // End of input is not `q`: the run stops asking, leaves the seat as it is and exits 1.
+    // Nothing is closed — not the seat's workspace, not the session — and no key is ever sent.
+    expect(code).toBe(1);
+    expect(io.out).toContain('claude-coordinator-acme: left out: its input ended; left as it is\n');
+    expect(made.closes).toEqual([]);
+    expect(made.terminal.reads).toBe(1);
+    // One drain before the one prompt, one on the way out.
+    expect(made.terminal.drains).toBe(2);
+    expect(typed).toEqual([]);
+    // The waiting record survives exactly as it was: the seat is still waiting, for the next run.
+    const kept = readState(join(root, '.agents')).sessions['acme-web']?.seats['claude-coordinator-acme'];
+    expect(kept?.waiting).toEqual({ state: 'waiting-owner', classification: 'trust' });
+    expect(kept?.pane).toBe('w1:p1');
   });
 
   test('a recorded waiting seat whose pane is gone fails closed, and the repair is named', async () => {

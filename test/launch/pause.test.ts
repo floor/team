@@ -129,6 +129,9 @@ function fake(over: Partial<Fake> = {}): Fake {
     prompt(line) {
       own.calls.push(`prompt:${line}`);
     },
+    drain() {
+      own.calls.push('drain');
+    },
     say(line) {
       own.calls.push(`say:${line.trim()}`);
     },
@@ -189,7 +192,32 @@ describe('the prompt', () => {
     OWN_CLOCK.reset();
     const f = fake({ keys: ['q'] });
     await runPause(input(), f.host);
-    expect(f.calls.slice(0, 5)).toEqual(['write:waiting-owner:trust', 'entering:trust', 'record:trust', `prompt:${PROMPT}`, 'key:block']);
+    expect(f.calls.slice(0, 6)).toEqual(['write:waiting-owner:trust', 'entering:trust', 'record:trust', 'drain', `prompt:${PROMPT}`, 'key:block']);
+  });
+
+  test('every prompt is preceded by a drain: type-ahead is never answered by the next prompt', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['other', 's'] });
+    await runPause(input(), f.host);
+    expect(f.calls.filter((call) => call === 'drain' || call.startsWith('prompt:'))).toEqual([
+      'drain',
+      `prompt:${PROMPT}`,
+      'drain',
+      `prompt:${PROMPT}`,
+      'drain', // the drain on the way out
+    ]);
+  });
+
+  test('the pause drains once more on the way out, whatever the key was', async () => {
+    OWN_CLOCK.reset();
+    const done = fake({ keys: ['q'] });
+    await runPause(input(), done.host);
+    expect(done.calls[done.calls.length - 1]).toBe('drain');
+
+    OWN_CLOCK.reset();
+    const opened = fake({ keys: ['o'], state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2' } } });
+    await runPause(input(), opened.host);
+    expect(opened.calls[opened.calls.length - 1]).toBe('drain');
   });
 
   test('without polling the key read blocks; with polling it reads one idle poll at a time', async () => {
@@ -205,6 +233,29 @@ describe('the prompt', () => {
   });
 });
 
+describe('end of input is not q', () => {
+  test('eof leaves the seat exactly as it is: nothing focused, nothing closed, the state and record kept', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['eof'] });
+    const result = await runPause(input(), f.host);
+    expect(result).toEqual({ kind: 'left out', reason: 'its input ended; left as it is', detail: '' });
+    expect(f.calls).not.toContain('focus');
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+    expect(f.calls).not.toContain('drop');
+    expect(f.calls).not.toContain('clear');
+    expect(f.state.current?.waiting?.state).toBe('waiting-owner');
+    expect(f.calls[f.calls.length - 1]).toBe('drain');
+  });
+
+  test('eof after another key: the seat is still only left out, never stopped', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['other', 'eof'] });
+    const result = await runPause(input(), f.host);
+    expect(result).toEqual({ kind: 'left out', reason: 'its input ended; left as it is', detail: '' });
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+  });
+});
+
 describe('o, open the pane', () => {
   test('a fresh reading of idle: the record says manual, the pane is focused, and nothing is typed', async () => {
     OWN_CLOCK.reset();
@@ -216,6 +267,7 @@ describe('o, open the pane', () => {
       'write:waiting-owner:trust',
       'entering:trust',
       'record:trust',
+      'drain',
       'key:block',
       'lock',
       'state',
@@ -235,6 +287,7 @@ describe('o, open the pane', () => {
       `screen:idle`,
       'clear',
       'release',
+      'drain', // the drain on the way out
     ]);
     // No key or text was sent to the pane: the host has no such call, and focus is the only act.
     expect(f.calls.filter((call) => call === 'focus').length).toBe(1);
@@ -333,6 +386,7 @@ describe('s, skip the seat', () => {
       'write:waiting-owner:trust',
       'entering:trust',
       'record:trust',
+      'drain',
       'key:block',
       'lock',
       'state',
@@ -346,6 +400,7 @@ describe('s, skip the seat', () => {
       'close:w2',
       'drop',
       'release',
+      'drain', // the drain on the way out
     ]);
     expect(f.state.current).toBeUndefined();
   });
@@ -603,11 +658,11 @@ describe('the polled prompt (coordinator policy)', () => {
     OWN_CLOCK.reset();
     const f = polled();
     const recorded = { state: 'trust-sent-recovery' as const, classification: 'trust' as const };
-    f.state.current = { stage: 'launched', pane: 'w2:p1', waiting: recorded };
+    f.state.current = { stage: 'launched', pane: 'w2:p1', launched: { shell: 10, cli: [11] }, waiting: recorded };
     const result = await runPause(input({ recorded }), f.host);
     expect(result).toEqual({ kind: 'stopped' });
     expect(f.calls).toContain('record:trust sent; recovery required');
-    expect(f.calls).toContain('prompt:beta is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly');
+    expect(f.calls).toContain('prompt:beta is waiting at trust sent; recovery required: [o] open pane, [s] skip seat, [q] stop cleanly');
     expect(f.calls.filter((call) => call.startsWith('write:')).length).toBe(0); // the recovery is kept as is
   });
 

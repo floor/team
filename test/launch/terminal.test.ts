@@ -9,9 +9,13 @@ function fakeStream(over: Partial<KeyStream> = {}) {
     calls: [] as Array<boolean | 'resume' | 'pause'>,
     raw: false,
     listeners: new Map<string, Set<(chunk: string | Buffer) => void>>(),
+    buffered: [] as string[],
     setRawMode(mode: boolean) {
       this.calls.push(mode);
       this.raw = mode;
+    },
+    read(this: { buffered: string[] }) {
+      return this.buffered.shift() ?? null;
     },
     resume(this: { calls: Array<boolean | 'resume' | 'pause'> }) {
       this.calls.push('resume');
@@ -77,11 +81,23 @@ describe('one key, from the owner\'s terminal', () => {
     }
   });
 
-  test('a chunk that carries several bytes takes the first and leaves the rest', async () => {
+  test('a chunk that carries several bytes is not a key, whatever its first byte is', async () => {
+    // A paste, a held key, two fast keystrokes in one chunk: `o` never answers a prompt from
+    // the first byte of a longer chunk. Only a chunk that is exactly one byte acts.
+    for (const chunk of ['qo', 'os', 'sq\nhello', 'oo', '\x03x', 'os\x1b[C']) {
+      const stream = fakeStream();
+      const reading = terminalReader(stream).key(5000);
+      stream.emit('data', chunk);
+      expect(await reading).toBe('other');
+      expect(stream.raw).toBe(false);
+    }
+  });
+
+  test('an escape sequence is one chunk of several bytes: other, never a key', async () => {
     const stream = fakeStream();
     const reading = terminalReader(stream).key(5000);
-    stream.emit('data', 'qo');
-    expect(await reading).toBe('q');
+    stream.emit('data', '\x1b[A');
+    expect(await reading).toBe('other');
   });
 
   test('an empty chunk changes nothing; the read stays open', async () => {
@@ -110,6 +126,54 @@ describe('one key, from the owner\'s terminal', () => {
     const reading = terminalReader(stream).key(Number.POSITIVE_INFINITY);
     stream.emit('data', 's');
     expect(await reading).toBe('s');
+  });
+
+  test('end of input is sticky: every later read is eof at once, without touching the terminal', async () => {
+    const stream = fakeStream();
+    const terminal = terminalReader(stream);
+    const first = terminal.key(5000);
+    stream.emit('end');
+    expect(await first).toBe('eof');
+    // Node delivers 'end' once; a second read must not wait forever for a key that can never come.
+    expect(await terminal.key(5000)).toBe('eof');
+    expect(stream.calls).toEqual([true, 'resume', false, 'pause']);
+  });
+});
+
+describe('type-ahead is drained, never answered', () => {
+  test('drain reads and discards every pending chunk', () => {
+    const stream = fakeStream();
+    stream.buffered.push('o', 'q\n', 's');
+    terminalReader(stream).drain();
+    expect(stream.buffered).toEqual([]);
+  });
+
+  test('drain never blocks, and never touches the mode: there is no read in flight', () => {
+    const stream = fakeStream();
+    terminalReader(stream).drain();
+    expect(stream.calls).toEqual([]);
+    expect(stream.raw).toBe(false);
+  });
+
+  test('a key arriving after the drain is read: draining is not closing', async () => {
+    const stream = fakeStream();
+    stream.buffered.push('o'); // typed for the prompt that is over
+    const terminal = terminalReader(stream);
+    terminal.drain();
+    const reading = terminal.key(5000);
+    stream.emit('data', 's');
+    expect(await reading).toBe('s');
+  });
+
+  test('a stream with no read, and one that throws, drain nothing and never crash', () => {
+    const plain = fakeStream({ read: undefined } as Partial<KeyStream>);
+    expect(() => terminalReader(plain).drain()).not.toThrow();
+    const broken = fakeStream({
+      read() {
+        throw new Error('destroyed');
+      },
+    } as Partial<KeyStream>);
+    expect(() => terminalReader(broken).drain()).not.toThrow();
   });
 });
 

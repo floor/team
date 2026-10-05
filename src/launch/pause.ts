@@ -87,6 +87,9 @@ export type PauseHost = {
   record(classification: string): void;
   /** One prompt line, on its own line. */
   prompt(line: string): void;
+  /** Every byte already pending is read and discarded: type-ahead never answers a prompt, and
+   *  a paste that arrived before the prompt is never read as a key by it. */
+  drain(): void;
   /** A line said beside the record: a failed focus, a lock another command holds. */
   say(line: string): void;
   /** The seat entered the pause this run: the caller logs its one transition line. */
@@ -330,37 +333,54 @@ export async function runPause(input: PauseInput, host: PauseHost): Promise<Paus
   host.entering(input.classification);
   host.record(display(view));
 
-  for (;;) {
-    host.prompt(promptLine(input.seat, view.classification));
-    const key = await host.key(host.polled ? IDLE_POLL_MS : Number.POSITIVE_INFINITY);
-    if (key === 'q' || key === 'eof') {
-      // Ctrl-C reads as `q` in raw mode; a closed input is the same decision made for the owner.
-      return { kind: 'stopped' };
-    }
-    if (key === 'o') {
-      const outcome = await open(input, host);
-      if (outcome.kind === 'done') return outcome.result;
-      if (outcome.kind === 'view') {
-        view = outcome.view;
-        host.record(display(view));
+  try {
+    for (;;) {
+      // Bytes typed before this prompt was drawn were typed for something else — a keystroke
+      // held down, a paste, a line the owner forgot — and are read and discarded, never
+      // answered: the prompt that follows asks about the pane as it is now.
+      host.drain();
+      host.prompt(promptLine(input.seat, display(view)));
+      const key = await host.key(host.polled ? IDLE_POLL_MS : Number.POSITIVE_INFINITY);
+      if (key === 'q') {
+        // Ctrl-C reads as `q` in raw mode: the owner's own decision to stop cleanly.
+        return { kind: 'stopped' };
       }
-      continue;
-    }
-    if (key === 's') {
-      const outcome = await skip(input, host, view.classification);
-      if (outcome.kind === 'done') return outcome.result;
-      continue;
-    }
-    if (key === 'timeout') {
-      const outcome = await refresh(input, host, view);
-      if (outcome.kind === 'done') return outcome.result;
-      if (outcome.kind === 'view') {
-        view = outcome.view;
-        host.record(display(view));
+      if (key === 'eof') {
+        // End of input is not `q`: nobody is at the terminal any more. The run stops asking and
+        // leaves the seat exactly as it is — pane, workspace and waiting record — saying so.
+        return { kind: 'left out', reason: 'its input ended; left as it is', detail: '' };
       }
-      continue;
+      if (key === 'o') {
+        const outcome = await open(input, host);
+        if (outcome.kind === 'done') return outcome.result;
+        if (outcome.kind === 'view') {
+          view = outcome.view;
+          host.record(display(view));
+        }
+        continue;
+      }
+      if (key === 's') {
+        const outcome = await skip(input, host, display(view));
+        if (outcome.kind === 'done') return outcome.result;
+        continue;
+      }
+      if (key === 'timeout') {
+        const outcome = await refresh(input, host, view);
+        if (outcome.kind === 'done') return outcome.result;
+        if (outcome.kind === 'view') {
+          view = outcome.view;
+          host.record(display(view));
+        }
+        continue;
+      }
+      // Any other input — a paste, a burst of bytes, any key that is not o, s, q or Ctrl-C: the
+      // exact prompt again, and nothing else.
     }
-    // Any other input: the exact prompt again, and nothing else.
+  } finally {
+    // The pause is over; whatever is still pending was typed for a prompt that no longer exists.
+    // On this runtime that is every byte Node's stream has already buffered — a byte still in the
+    // terminal's own buffer, or one arriving after this drain, is read by whatever runs next.
+    host.drain();
   }
 }
 
