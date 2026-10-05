@@ -2,10 +2,12 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fingerprints } from '../src/approve/fingerprint.ts';
 import { runApprove } from '../src/commands/approve.ts';
 import { runAnswer, type AnswerHost } from '../src/commands/answer.ts';
 import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
 import { lobbyPath } from '../src/file/landing.ts';
+import { validateTeamFile } from '../src/file/validate.ts';
 import { extractFolder, isEligible, labelMatches, versionMatches, wholeVersion, type TrustRecord } from '../src/profiles/trust-answer.ts';
 import { profileFor } from '../src/profiles/index.ts';
 import { runStatus, type StatusSources } from '../src/commands/status.ts';
@@ -664,6 +666,38 @@ describe('team answer', () => {
     const missing = testIo(root, { kind: 'owner' });
     expect(await runAnswer([...FILE, 'gone', 'trust'], missing, refused)).toBe(1);
     expect(missing.err).toBe('gone: it is not a live seat\n');
+  });
+  test('the folder check reads the trust entries of the approved copy, not the live file', async () => {
+    const { root, home, lobby, dir } = world();
+    const live = file(lobby, 'coordinator');
+    writeFileSync(join(dir, 'team.yaml'), live);
+    await approve(root, home);
+    const standing = approvalStanding(root, home);
+    if (standing.kind !== 'verified') throw new Error('expected a verified approval');
+    const checked = validateTeamFile(live);
+    if (!checked.ok) throw new Error('expected a valid fixture');
+    // A record whose fingerprints are the live file's — nothing drifts — while the
+    // copy it stored carries a different `trust:` list: only the copy says what the
+    // owner approved. The folder check must read the entry list from that copy.
+    const copy = live.replace(`  - ${lobby}`, '  - .');
+    const host = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', lobby), 'cursor');
+    host.standing = () => ({
+      ...standing,
+      record: { ...standing.record, file: copy, approval: { ...standing.record.approval, fingerprints: fingerprints(checked.team) } },
+    });
+    wait(dir, 'lead');
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], io, host)).toBe(1);
+    expect(host.keys).toEqual([]);
+    expect(io.err).toBe('lead: this folder is not an exact trust entry\n');
+
+    const broken = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', lobby), 'cursor');
+    broken.standing = () => ({ ...standing, record: { ...standing.record, file: 'format: [' } });
+    wait(dir, 'lead');
+    const brokenIo = testIo(root, { kind: 'owner' });
+    expect(await runAnswer([...FILE, 'lead', 'trust'], brokenIo, broken)).toBe(1);
+    expect(broken.keys).toEqual([]);
+    expect(brokenIo.err).toBe('the approved copy of the team file cannot be read\n');
   });
 
   test('json success and recovery are the stated objects', async () => {

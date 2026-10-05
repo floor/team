@@ -8,6 +8,7 @@ import { canonicalLanding, folderOf, lobbyPath } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { renderSignature } from '../file/signature.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
+import { validateTeamFile } from '../file/validate.ts';
 import { agentList, agentRename, agentStatus, paneForeground, paneRead, pressEnter, sendKey as herdrSendKey, typeText } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { deliverRules, type Delivery } from '../launch/deliver.ts';
@@ -115,6 +116,11 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
   if (standing.kind !== 'verified') return refused({ class: 'caller', message: notInForce(standing) });
   const drift = approvalDifferencesOf(standing, team);
   if (drift.length) return refused({ class: 'caller', message: `the file is not the approved one (${drift.join('; ')})` });
+  // The trust entries the folder check reads come from the approved copy itself,
+  // never from the live file: the drift check above normally makes the two equal,
+  // but the check must not depend on that to be right about what was approved.
+  const approved = validateTeamFile(standing.record.file);
+  if (!approved.ok) return refused({ class: 'caller', message: 'the approved copy of the team file cannot be read' });
   if (team.dialogs.trust !== 'coordinator') return refused({ class: 'policy', message: `${seatName}: use team up and [o]` });
 
   const lock = acquireSeatLock(dir, session, seatName);
@@ -145,9 +151,9 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
 
     const cli = configured?.cli ?? team.seats.find((seat) => seat.name === temporary?.like)?.cli ?? '';
     const profile = profileFor(cli);
-    const checked = inspect(seatName, host, session, pane, profile, team, root);
+    const checked = inspect(seatName, host, session, pane, profile, approved.team.trust, root);
     if ('class' in checked) return refused(checked);
-    const again = inspect(seatName, host, session, pane, profile, team, root);
+    const again = inspect(seatName, host, session, pane, profile, approved.team.trust, root);
     if ('class' in again) return refused(again);
     if (again.folder !== checked.folder) return refused({ class: 'folder', message: `${seatName}: ${OUTSIDE}` });
     if (again.record.from !== checked.record.from || again.record.to !== checked.record.to || again.record.action !== checked.record.action) {
@@ -205,13 +211,18 @@ function expired(root: string, until: string, team: TeamFile, own: boolean): boo
   return end.verdict === 'merged';
 }
 
+/**
+ * One fresh reading of the pane: the record this version answers, or the class that
+ * refused. `trust` is the approved copy's own `trust:` list, never the live file's —
+ * the folder must be an entry of what the owner approved.
+ */
 function inspect(
   seat: string,
   host: AnswerHost,
   session: string,
   pane: string,
   profile: Profile | null,
-  team: TeamFile,
+  trust: readonly string[],
   root: string,
 ): Seen | Refusal {
   const say = (reason: Reason, text: string): Refusal => ({ class: reason, message: `${seat}: ${text}` });
@@ -233,7 +244,7 @@ function inspect(
   if (!lobby) return say('folder', OUTSIDE);
   if (canonicalLanding(shown) !== lobby) return say('folder', OUTSIDE);
   if (shown !== lobby) return say('folder', 'the dialog does not show the lobby as written');
-  const listed = team.trust.some((entry) => canonicalLanding(folderOf(entry, root)) === lobby);
+  const listed = trust.some((entry) => canonicalLanding(folderOf(entry, root)) === lobby);
   if (!listed) return say('folder', 'this folder is not an exact trust entry');
   return { record, version: printed, folder: lobby };
 }

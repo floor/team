@@ -56,7 +56,7 @@ Every refusal line is `<seat>: <reason>` except an unplaced caller's, which is i
 
 | Class | Reasons |
 | --- | --- |
-| caller | `only the owner, or the coordinator from its own seat, can answer`; the unplaced caller's reason; `the file was never approved on this machine: run \`team approve\``; `approved before records were signed: run \`team approve\` once`; the approval verification's own reason; `the file is not the approved one (<section> changed; …)` |
+| caller | `only the owner, or the coordinator from its own seat, can answer`; the unplaced caller's reason; `the file was never approved on this machine: run \`team approve\``; `approved before records were signed: run \`team approve\` once`; the approval verification's own reason; `the file is not the approved one (<section> changed; …)`; `the approved copy of the team file cannot be read` |
 | policy | `use team up and [o]` |
 | state | `another command holds it`; `it is not a live seat`; `the owner has the pane open`; `it is not waiting at a trust dialog`; `its recovery state could not be recorded` |
 | version | `this version has no trust answer` |
