@@ -44,14 +44,14 @@ grammar spells.
 
 The box's own border requires the complete frame or nothing: the 2026-10-05 captures draw the input
 rows between a ` ▄▄…` row directly above them and a ` ▀▀…` row directly below them — each one space
-and then only the block character, running at least as long as the status row at equal width — with
-the whole status row directly under the bottom border, the workspace line directly below it, and
+and then only the block character, running exactly one character longer than the status row at equal width —
+with the whole status row directly under the bottom border, the workspace line directly below it, and
 nothing following the workspace line but empty rows (the 2026-10-01 captures draw empty frame rows
 instead; both frames read). In the bordered frame, the status row must match its closed grammar whole
 (a known model family, version, and tokens ending in `Run Everything`, with no Grok exemption), and
-the workspace line is required. A border row missing, unequal or shorter than the status row, a border
-row one row away from the input, a border row carrying anything else, or a border pair in the
-transcript above an ordinary box leaves the screen unknown.
+the workspace line is required. A border row missing, unequal or not exactly one character longer than
+the status row, a border row one row away from the input, a border row carrying anything else, or a border pair
+in the transcript above an ordinary box leaves the screen unknown.
 
 ## Who may run it
 
