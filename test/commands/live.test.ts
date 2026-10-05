@@ -620,8 +620,8 @@ describe('team up, live', () => {
 
   test('the wrapper that draws its CLI on the fourth poll is not reported as ended', async () => {
     await approve();
-    // A slow-start probe: a wrapper keeps the shell in front for three polls and
-    // the CLI draws on the fourth. The shell-back reading must hold through the fourth reading —
+    // A slow start: a wrapper keeps the shell in front for three polls and the CLI draws on the
+    // fourth. The shell-back reading must hold through the fourth reading —
     // three full poll intervals — before an end is said; two readings ended it at the second.
     const made = world();
     const commands = new Map<string, string>();

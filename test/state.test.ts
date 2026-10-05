@@ -126,7 +126,7 @@ describe('the log', () => {
     expect(readFileSync(join(dir, LOG_FILE), 'utf8')).toBe('2026-10-03T14:00:00.000Z init [owner] wrote the file\n');
   });
 
-  test('the line is cleaned at the function: the raw-log probe, and each class of the rule', () => {
+  test('the line is cleaned at the function: the gate reason\'s CR and escape bytes, and each class of the rule', () => {
     // A caller that logs a gate reason holding a carriage return and `ESC[31m` used to write
     // the escape sequence raw — the file's bytes held `1b 5b 33 31 6d`, the CR alone being
     // folded to a space by the old whitespace collapse. The cleaning is here now, at the one

@@ -315,7 +315,7 @@ describe('team add', () => {
   });
 
   test('a line for an existing unnamed pane is checked where that pane runs', async () => {
-    // The reviewer's probe: the state records the seat at pane `w9:p1` with `start_cwd` at the
+    // The adopted pane: the state records the seat at pane `w9:p1` with `start_cwd` at the
     // project root — where `../tools/x.sh` is a file — and the fresh seat would start in the
     // lobby, where it is not. The seat is adopted into the pane, not launched, so the recorded
     // folder is where its line is read: the line resolves, nothing is refused, nothing is made.

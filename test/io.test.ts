@@ -53,8 +53,8 @@ describe('cleanedIo', () => {
     // document is for a parser, not for the terminal, so the cleaning's rule does not apply to it.
     // Cleaning it would corrupt it, too: the encoder escapes every control byte (`node -e
     // 'JSON.stringify({r:"a\u001bb"})'` prints `{"r":"a\u001bb"}`, an escape byte as six ASCII
-    // characters), but not every invisible one — U+00AD is printed raw (a run this round), and the
-    // cleaning would delete it from the value. The encoder alone is trusted with this text.
+    // characters), but not every invisible one — a run showed the encoder prints U+00AD raw — and
+    // the cleaning would delete it from the value. The encoder alone is trusted with this text.
     const { written, clean } = pair();
     const document = JSON.stringify({ reason: 'a\x1bb', name: 'worker' });
     clean.stdout(document);
