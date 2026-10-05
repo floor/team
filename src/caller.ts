@@ -301,7 +301,10 @@ function stateSessions(dir: string): string[] {
 
 export function describeCaller(caller: Caller): string {
   if (caller.kind === 'owner') return 'owner';
-  if (caller.kind === 'owner-no-tty') return 'owner (no terminal)';
+  // Byte-identical to main, where a caller without a terminal was refused as `unplaced` with this
+  // reason. Only `up` may run for it, but every other command's refusal must read exactly as it
+  // did before: the same sentence for the same caller, as main's tests pin them.
+  if (caller.kind === 'owner-no-tty') return 'unplaced (it doesn\'t run on a terminal)';
   if (caller.kind === 'seat') return caller.name;
   return `unplaced (${caller.reason})`;
 }

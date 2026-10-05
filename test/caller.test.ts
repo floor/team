@@ -108,10 +108,13 @@ describe('the classes read apart', () => {
     expect(mayLaunchSeats({ kind: 'unplaced', reason: 'x' })).toBe(false);
   });
 
-  test('the log bracket is owner for both; a refusal message still says which one', () => {
+  test('the log bracket is owner for both; a refusal reads as main\'s unplaced line', () => {
     expect(callerLabel({ kind: 'owner' })).toBe('owner');
     expect(callerLabel({ kind: 'owner-no-tty' })).toBe('owner');
-    expect(describeCaller({ kind: 'owner-no-tty' })).toBe('owner (no terminal)');
+    // Byte-identical to main, where every caller without a terminal — owner or not — was refused
+    // as `unplaced` with this reason. `up` alone may now run for it; the refusal of every other
+    // command must not change shape for a script that reads it.
+    expect(describeCaller({ kind: 'owner-no-tty' })).toBe('unplaced (it doesn\'t run on a terminal)');
   });
 });
 
