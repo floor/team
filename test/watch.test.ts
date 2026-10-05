@@ -420,6 +420,25 @@ describe('a pass of the watch', () => {
     expect(at({ 'w3:p1': { shell: 500, foreground: [501] } })).toEqual([restored]);
   });
 
+  test('a reading herdr can\'t give is no change: it never clears the report-once mark', () => {
+    const state = emptySession();
+    state.seats['deepseek-acme'] = { stage: 'ready', pane: 'w3:p1', workspace: 'w3', launched: { shell: 400, cli: [401] } };
+    const memory = newMemory();
+    const at = (processes: Record<string, { shell: number; foreground: number[] } | null>) =>
+      pass({ team: team(), watch: team().watch, state, live: live(), machine: fine, now: 0, memory, processes }).reports.map((report) => report.text);
+    const restored = 'deepseek-acme is no longer the process team launched (its session was restored, or its CLI was restarted)';
+    // same, replaced, replaced, same, gone, unknown, gone: reported at the 2nd and 5th readings
+    // only. `unknown` is herdr failing to read, not the condition clearing: were it to clear the
+    // mark, the `gone` after it would report a second time what the `gone` before it reported.
+    expect(at({ 'w3:p1': { shell: 400, foreground: [400, 401] } })).toEqual([]);
+    expect(at({ 'w3:p1': { shell: 400, foreground: [500] } })).toEqual([restored]);
+    expect(at({ 'w3:p1': { shell: 400, foreground: [500] } })).toEqual([]);
+    expect(at({ 'w3:p1': { shell: 400, foreground: [400, 401] } })).toEqual([]);
+    expect(at({ 'w3:p1': { shell: 400, foreground: [400] } })).toEqual([restored]);
+    expect(at({ 'w3:p1': null })).toEqual([]);
+    expect(at({ 'w3:p1': { shell: 400, foreground: [400] } })).toEqual([]);
+  });
+
   test('herdr can\'t tell, or the seat has no record: the pane reads as today', () => {
     const recorded = emptySession();
     recorded.seats['deepseek-acme'] = { stage: 'ready', pane: 'w3:p1', workspace: 'w3', launched: { shell: 400, cli: [401] } };

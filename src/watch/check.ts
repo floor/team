@@ -111,6 +111,10 @@ export type CheckContext = {
   // first time and is null while the condition holds. Cleared conditions clear themselves: a
   // check that stops calling `once` for a key drops it from the set at the end of the pass.
   once(key: string, text: string, to?: Report['to']): Report | null;
+  // Keeps a key in the active set without reporting, for a pass whose reading is no change:
+  // a check that read `unknown` (herdr can't tell) calls this, so the next pass that can read
+  // again doesn't report what it already reported. A key that was not active stays inactive.
+  keep(key: string): void;
   // The check's own slot, under a kind of its own (`idle`, `unsent`, `team-idle`, `swap-growth`).
   // Created by `start` on first use; kept across passes. Two checks must not share a kind.
   memory<T>(kind: string, start: () => T): T;

@@ -174,6 +174,12 @@ export function pass({
     current.add(key);
     return memory.active.has(key) ? null : { key, text, to };
   };
+  // A reading herdr can't give is no change: `keep` carries an active key through a pass that
+  // could not read, so the next pass that can read again doesn't report what it already
+  // reported. A key that was not active is not made active — nothing has been reported yet.
+  const keep = (key: string): void => {
+    if (memory.active.has(key)) current.add(key);
+  };
 
   const known = new Set<string>();
   const workers: { idle: boolean }[] = [];
@@ -340,6 +346,7 @@ export function pass({
     watch,
     budgets,
     once,
+    keep,
     memory: <T>(kind: string, start: () => T): T => {
       if (!Object.hasOwn(memory.slots, kind)) memory.slots[kind] = start();
       return memory.slots[kind] as T;
