@@ -21,6 +21,9 @@ export type WorktreeSources = {
   // The approval store's one read, overridable so a test can count it or swap the record
   // after the gate. Absent: the real read.
   standing?(root: string): Standing;
+  // One `workspace.setup` command, in the new worktree. Absent: `sh -c` there. The status is
+  // the command's own: zero ran, anything else stops the list.
+  setup?(cwd: string, command: string): number;
 };
 
 export const realSources: WorktreeSources = {
@@ -86,10 +89,10 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     return 1;
   }
   // One verified snapshot for the whole command, read once: every value the two subcommands read
-  // from the file is the approved copy's while the file differs from it. The caller's gate below
-  // is judged on those values too — a seat the file added to `coordinator` is not one until the
-  // owner approves it. With nothing in force the file's own values are read, exactly as before,
-  // so the refusals are still main's.
+  // from the file is the approved copy's, including when the fingerprints match. The caller's
+  // gate below is judged on those values too — a seat the file added to `coordinator` is not one
+  // until the owner approves it. With nothing verified the file's own values are read, exactly
+  // as before, so the refusals are still main's. `project` on the snapshot is the live file's.
   const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
   const inForce = worktreeTeamInForceOf(standing, team);
   if (inForce === null) {
@@ -126,8 +129,8 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
   return removeWorktree(io, sources, reading, root, dir, session, task, who);
 }
 
-// `team` is the approved copy while the file differs from it, or the file itself otherwise; every
-// value below is read from it. `file` is the file as it is now, read for one thing only: telling a
+// `team` is the approved copy for a verified standing, or the live file when nothing is verified;
+// every value below is read from it. `file` is the live file, read for one thing only: telling a
 // seat the file added — which must not be used until `team approve` — from one no section declares.
 function create(
   io: Io, sources: WorktreeSources, team: TeamFile, file: TeamFile, root: string, dir: string, session: string, task: string,
@@ -246,7 +249,7 @@ function create(
       refused = `the worktree was not created: ${firstLine(added.stderr || added.stdout)}`;
       return null;
     }
-    const setup = runSetup(absolute, team.workspace.setup);
+    const setup = runSetup(absolute, team.workspace.setup, sources.setup ?? realSetup);
     const record = {
       path: folder,
       branch,
@@ -439,15 +442,21 @@ function commitsOnNoRemote(root: string, worktree: string, branch: string, base:
   return listed.stdout.split('\n').filter((line) => line !== '');
 }
 
-function runSetup(cwd: string, commands: string[]): { ok: true } | { ok: false; at: number } {
+function realSetup(cwd: string, command: string): number {
+  const result = spawnSync('sh', ['-c', command], {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  return result.status ?? 1;
+}
+
+function runSetup(
+  cwd: string, commands: string[], setup: (cwd: string, command: string) => number,
+): { ok: true } | { ok: false; at: number } {
   for (let i = 0; i < commands.length; i++) {
     const command = commands[i] as string;
-    const result = spawnSync('sh', ['-c', command], {
-      cwd,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    if ((result.status ?? 1) !== 0) return { ok: false, at: i + 1 };
+    if (setup(cwd, command) !== 0) return { ok: false, at: i + 1 };
   }
   return { ok: true };
 }
