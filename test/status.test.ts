@@ -163,8 +163,19 @@ describe('team status', () => {
   test('a codex seat whose captured status line names another model', async () => {
     live = { ...built(), screens: { ...built().screens, 'w2:p1': codexScreen('idle') } };
     const { code, out } = await status();
-    expect(out).toContain('difference: codex-acme runs GPT Terra 5.6; the file says GPT Sol 6');
+    expect(out).toContain('difference: codex-acme runs GPT Terra 5.6; the file says GPT-6 Sol');
     expect(code).toBe(1);
+  });
+
+  // A seat with a `display` is spelled by it everywhere: the table's model column and the
+  // difference line name the declared model in the same spelling (doctor's lines and the
+  // watch's drift notice are held to the same one by their own tests).
+  test('the table and the difference line spell a display seat alike', async () => {
+    live = { ...built(), screens: { ...built().screens, 'w2:p1': codexScreen('idle') } };
+    const { out } = await status();
+    expect(out).toContain('(file: GPT-6 Sol)');
+    expect(out).toContain('the file says GPT-6 Sol');
+    expect(out).not.toContain('the file says GPT Sol 6');
   });
 
   test('a status-line id the map doesn\'t know is unread: a note, never a difference', async () => {

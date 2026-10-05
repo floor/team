@@ -1,4 +1,5 @@
 import { reported, type SeatCheck } from '../check.ts';
+import { declaredModel } from '../../file/model.ts';
 
 // A seat that runs a model other than the one the file declares: what it signs with is not what
 // the owner approved. A temporary seat has no file model, and a screen the profile cannot read is
@@ -11,7 +12,7 @@ export const modelDrift: SeatCheck = {
     if (!file || !running || (running.model === file.model && running.version === file.version)) return [];
     return reported(ctx.once(
       `model:${seat.name}`,
-      `${seat.name} runs ${running.model} ${running.version}; the file says ${file.model} ${file.version}: it signs with the wrong model`,
+      `${seat.name} runs ${running.model} ${running.version}; the file says ${declaredModel(file)}: it signs with the wrong model`,
     ));
   },
 };

@@ -18,11 +18,12 @@ import type { Problem, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
 import {
-  agentList, agentRename, agentStatus, paneForeground, paneRead, paneRun, pressEnter, sessionRunning, sessionState, startServer,
-  typeText, workspaceClose, workspaceCreate, workspaceList, type HerdrAgent,
+  agentList, agentRename, agentStatus, paneForeground, paneRead, paneRun, paneShellBack, pressEnter, sessionRunning, sessionState,
+  startServer, typeText, workspaceClose, workspaceCreate, workspaceList, type HerdrAgent,
 } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { executePlan, type Host } from '../launch/execute.ts';
+import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -66,6 +67,7 @@ const realLaunch: Launch = {
   pressEnter: (session, pane) => pressEnter(pane, aim(session)),
   agentStatus: (session, pane) => agentStatus(pane, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
+  shellBack: (session, pane) => paneShellBack(pane, aim(session)),
   sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
   now: () => new Date(),
 };
@@ -106,6 +108,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 2;
   }
   const temporary = args.flags.has('temporary');
+  const dry = args.flags.has('dry-run');
   if (temporary ? args.rest.length > 0 : args.rest.length !== 1) {
     io.stderr(`team add: ${temporary ? `unexpected "${args.rest[0]}"` : 'a seat name is required'}\n${USAGE}`);
     // exit: add.seat-name
@@ -238,13 +241,49 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     // exit: add.start
     return 1;
   }
+  // Whether the seat is launched fresh or adopted into an existing pane is decided first, the
+  // way `up` decides it for a resumed seat: a seat whose state names a workspace that holds an
+  // unnamed pane does not run its launch line now, so that line is checked where the pane runs
+  // — the folder the state's `start_cwd` records — or, with no folder recorded, not at all. Its
+  // own launch line is checked before the file is edited and before any workspace is made. A
+  // note is told, never refused: once, on the terminal, and on stderr on a real run as `doctor`
+  // says it. A `miss` joins the doctor findings below, for a seat this `add` would launch.
+  const stray = unnamedIn(recorded.seats[built.name]?.workspace, agents);
+  const resumeCwd = recorded.seats[built.name]?.start_cwd;
+  const line = !stray
+    ? launchLineFinding(prepared.team, built.seat, root, {
+        onPath: (binary) => sources.doctor.onPath(binary),
+        home: sources.doctor.home,
+      })
+    : typeof resumeCwd === 'string' && resumeCwd !== ''
+      ? launchLineFinding(
+          prepared.team,
+          built.seat,
+          root,
+          { onPath: (binary) => sources.doctor.onPath(binary), home: sources.doctor.home },
+          { cwd: resolve(root, resumeCwd), folder: resumeCwd },
+        )
+      : {
+          level: 'note' as const,
+          why: 'its launch line was not checked: the seat is resumed and its state records no start folder',
+        };
+  if (line?.level === 'note') (dry ? io.stdout : io.stderr)(`  note ${built.name}: ${line.why}\n`);
+  const launchProblem = line?.level === 'miss' ? line.why : null;
   const doctorTeam = built.temporary
     ? { ...prepared.team, seats: prepared.team.seats.map((item) => item.name === built.temporary?.like ? { ...item, stopped: false } : item) }
     : prepared.team;
   // `team` is the file on disk, already the approved one. `doctorTeam` is the
   // seat about to run, so a stopped seat's CLI is still checked. The digest is
-  // recorded with the write, after a refusal has left the file alone.
-  for (const finding of doctorFindings(doctorTeam, root, dir, session, sources.doctor, prepared.warnings, standing, team)) {
+  // recorded with the write, after a refusal has left the file alone. The seat's own launch
+  // line is the last finding: on a real run a miss refuses this `add` like any other doctor
+  // finding, and a dry run leaves it out for the plan below, which prints it as
+  // `  skip <name>: would refuse: …`, the line `up` prints for the same seat. A `miss` found at
+  // a resumed seat's recorded folder is only said, never refused — that seat runs nothing now,
+  // and its miss is left out here exactly as `up` leaves one out of the plan for a resumed seat.
+  for (const finding of [
+    ...doctorFindings(doctorTeam, root, dir, session, sources.doctor, prepared.warnings, standing, team),
+    ...(launchProblem && !dry && !stray ? [{ level: 'miss' as const, text: `${built.name}: ${launchProblem}` }] : []),
+  ]) {
     if (blocksLaunch(finding)) {
       io.stderr(`team add: ${finding.text}\n`);
       // exit: add.doctor
@@ -279,14 +318,16 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // changes no section of its own, and no unapproved reserve may unblock a launch (#50).
   const budgets = budgetsInForceOf(standing, prepared.team);
   const decision = (sources.seatBudget ?? seatBudget)(budgets, loadReadings(dir), built.seat, sources.now().getTime(), loadSpendReadings(dir));
-  const stray = unnamedIn(recorded.seats[built.name]?.workspace, agents);
   const starting = seatPlan(prepared.team, built.seat, start, root, sources.home);
   const planned = stray
     ? { ...starting, stage: 'launched' as const, pane: stray.pane, workspace: stray.workspace, agentLive: true }
     : starting;
   const wouldLaunch = planned.stage === undefined || !planned.pane || (planned.stage === 'launched' && !planned.agentLive);
-  const seatForPlan = decision.kind === 'refuse' && !wouldLaunch ? { ...planned, budget: decision } : planned;
-  const dry = args.flags.has('dry-run');
+  const seatForPlan = {
+    ...planned,
+    ...(launchProblem && wouldLaunch ? { launchProblem } : {}),
+    ...(decision.kind === 'refuse' && !wouldLaunch ? { budget: decision } : {}),
+  };
   if (dry) {
     if (decision.kind === 'refuse' && wouldLaunch) {
       io.stdout(`${built.name}: would refuse: ${decision.why}\ndry run: nothing was run\n`);
@@ -523,6 +564,8 @@ function hostOf(input: {
     kill: () => false,
     agentPanes: launch.agentPanes,
     classify: (_name, pane, cli) => readScreen(cli, launch.paneText(session, pane) ?? undefined).kind,
+    paneText: (_name, pane) => launch.paneText(session, pane),
+    shellBack: (_name, pane) => launch.shellBack?.(session, pane) ?? null,
     sleep: launch.sleep,
     now: () => input.now().getTime(),
     allow(name) {

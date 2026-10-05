@@ -31,6 +31,10 @@ export type Host = {
   /** Pane ids herdr lists an agent in, or null when the list can't be read. */
   agentPanes(session: string): string[] | null;
   classify(session: string, pane: string, cli: string): ScreenKind;
+  /** The pane's visible text, ANSI styling and all, or null when the pane can't be read. */
+  paneText?(session: string, pane: string): string | null;
+  /** Whether the pane's foreground program is back to its shell; null when herdr can't tell. */
+  shellBack?(session: string, pane: string): boolean | null;
   sleep(ms: number): Promise<void>;
   now(): number;
   /** Null when this seat may launch. A string is the reason it may not. */
@@ -55,10 +59,52 @@ export type Report = {
 
 type Place = { pane: string; workspace?: string };
 
-/** What may reach the terminal of a pane row: no control character — BEL, CR, an escape
- *  sequence, any of C0 and DEL — and at most 200 characters. The log never sees a row at all. */
-function safeRow(row: string): string {
-  return row.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 200);
+/** Pane text as it is safe to show, each line cut to `limit` characters: every escape sequence
+ *  is removed whole — a CSI's private parameters among them, and the payload of a string
+ *  sequence (OSC, DCS, APC, PM, SOS), whichever introducer and terminator are mixed, 7-bit
+ *  `ESC x` or its one-byte C1 form, `ESC \` or C1 ST, or BEL to close an OSC; one left
+ *  unterminated goes to the end of the text — and every
+ *  control character but the line break, carriage return, backspace, bell and escape among
+ *  them. Pane text is the one text `team` says that it did not write itself: a carriage return
+ *  in it would overwrite the report that carries it. */
+export function plainPaneText(text: string, limit = 200): string {
+  return text
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\x9b[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/(?:\x1b[\]PX^_]|[\x9d\x90\x98\x9e\x9f])[\s\S]*?(?:\x07|\x1b\\|\x9c)/g, '')
+    .replace(/(?:\x1b[\]PX^_]|[\x9d\x90\x98\x9e\x9f])[\s\S]*$/g, '')
+    .replace(/\x1b./g, '')
+    .replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, '')
+    .split('\n')
+    .map((line) => (line.length > limit ? `${line.slice(0, limit)}…` : line))
+    .join('\n');
+}
+
+/** Where the launch line's echo sits among the lines, or -1 when it is not there. A prompt may
+ *  stand in front of the echo and the command may wrap after it, so only the command's first
+ *  characters are looked for — never the program word alone, which the failure message below
+ *  the echo often repeats. A marker too short to be sure of is not used. */
+function echoIndex(lines: readonly string[], command: string): number {
+  const head = (command.trim().split('\n')[0] ?? '').slice(0, 24).trimEnd();
+  return head.length >= 8 ? lines.findLastIndex((line) => line.includes(head)) : -1;
+}
+
+/** The pane's last lines for a report: at most six, the newest kept, empty lines dropped,
+ *  control characters and styling gone (`plainPaneText`). The launch line's own echo comes
+ *  first when it is within reach: the last line holding the start of the command that was
+ *  typed, when six lines or fewer follow it. A launch line that scrolled further up leaves
+ *  only the newest six, with the failure among them. */
+export function paneExcerpt(text: string | null, command: string, limit = 6): string {
+  if (text === null) return '';
+  const lines = plainPaneText(text)
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim() !== '');
+  if (lines.length === 0) return '';
+  const echo = echoIndex(lines, command);
+  const tail = Math.max(0, lines.length - limit);
+  const start = echo >= tail ? echo : tail;
+  return lines.slice(start).map((line) => `  | ${line}\n`).join('');
 }
 
 async function until(seconds: number, pace: number, host: Host, ready: () => boolean): Promise<boolean> {
@@ -84,10 +130,12 @@ export async function executePlan(steps: readonly Step[], session: string, host:
   let held = false;
   let abort = false;
 
-  const finish = (seat: string, what: string) => {
+  // The reading is what is logged: screen text may follow it on the terminal (`detail`), and
+  // never reaches the log file.
+  const finish = (seat: string, what: string, detail = '') => {
     if (logged.has(seat)) return;
     logged.add(seat);
-    host.say(`${seat}: ${what}\n`);
+    host.say(`${seat}: ${what}\n${detail}`);
     host.log(seat, what);
   };
 
@@ -202,17 +250,52 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           finish(op.seat, 'has no pane to read; left at launched');
           break;
         }
-        const deadline = host.now() + op.seconds * 1000;
-        let outcome: 'idle' | 'permission' | 'trust' | 'question' | 'timeout' = 'timeout';
+        const startedAt = host.now();
+        const deadline = startedAt + op.seconds * 1000;
+        const pollMs = 2000;
+        let outcome: 'idle' | 'permission' | 'trust' | 'question' | 'ended' | 'timeout' = 'timeout';
+        let last: ScreenKind = 'unknown';
+        let endedRead: string | null = null;
+        let endedFor = 0;
+        // The launch line was run a moment ago, and herdr can still report the pane's shell for
+        // a poll or two after it. Captured on herdr 0.7.1 in a scratch pane: right after
+        // `pane run node -e …`, `pane process-info` listed the pane's shell (`shell_pid` 11915)
+        // beside the shell's own startup child, and 600 ms later listed the program alone; a
+        // launch line whose relative path was missing listed the shell at once, and 400 ms later
+        // still. A slow wrapper looks the same for longer: the reviewer's drew its CLI on the
+        // fourth poll, so a stretch of one or two polls is not an end. The end is said only on
+        // what was read: the shell's own process is the pane's foreground program for three
+        // full polls on end — one reading starts the stretch and three more carry it past
+        // `pollMs` three times, and a single reading, the verdict's mutation, can never reach it
+        // — and the launch line's echo is still on the screen, so the line did run and a prompt
+        // below it is the CLI's absence, not the line's. A pane read before the line arrived,
+        // one whose echo scrolled away, or a herdr that can't say (no shell process info) is
+        // waited out to the deadline: the end is never inferred from the screen's text.
+        let shellBackSince: number | null = null;
         for (;;) {
           const kind = host.classify(session, here.pane, op.cli);
+          last = kind;
+          const back = host.shellBack?.(session, here.pane) ?? null;
+          const at = host.now();
+          if (kind === 'unknown' && back === true) {
+            shellBackSince ??= at;
+            if (at - shellBackSince >= 3 * pollMs) {
+              const read = host.paneText?.(session, here.pane) ?? null;
+              if (read !== null && echoIndex(plainPaneText(read).split('\n'), op.command) >= 0) {
+                endedRead = read;
+                endedFor = Math.round((at - shellBackSince) / 1000);
+                outcome = 'ended';
+                break;
+              }
+            }
+          } else shellBackSince = null;
           if (kind === 'idle' || kind === 'permission' || kind === 'trust' || kind === 'question') {
             outcome = kind;
             break;
           }
           if (host.now() >= deadline) break;
           const before = host.now();
-          await host.sleep(2000);
+          await host.sleep(pollMs);
           if (host.now() <= before) break;
         }
         if (outcome === 'idle') break;
@@ -230,7 +313,25 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           break;
         }
         dropped.add(op.seat);
-        finish(op.seat, 'timed out waiting for its idle prompt; left at launched');
+        const read = endedRead ?? host.paneText?.(session, here.pane) ?? null;
+        if (outcome === 'ended') {
+          // The report says only what was read: the shell has been the pane's foreground
+          // program for `endedFor` seconds and no CLI prompt is on the screen. The workspace is
+          // left open; the seat stays at launched, and a later `up` resumes it — the same
+          // reading covers a CLI that exited and one that never began.
+          finish(
+            op.seat,
+            `its pane has been back at its shell for ${endedFor} s and shows no CLI prompt; left at launched`,
+            `${paneExcerpt(read, op.command)}  run \`team up\` again to resume it\n`,
+          );
+          break;
+        }
+        const waited = Math.round((host.now() - startedAt) / 1000);
+        finish(
+          op.seat,
+          `timed out after ${waited} s waiting for its idle prompt; the screen last read ${last}; left at launched`,
+          `${paneExcerpt(read, op.command)}  run \`team up\` again to resume it\n`,
+        );
         break;
       }
       case 'rename': {
@@ -273,7 +374,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           // the terminal alone, stripped and cut, never logged.
           dropped.add(op.seat);
           if (delivered.row !== null) {
-            host.say(`${op.seat}: first row of its box that is not the rules line: ${safeRow(delivered.row)}\n`);
+            host.say(`${op.seat}: first row of its box that is not the rules line: ${plainPaneText(delivered.row)}\n`);
           }
           finish(op.seat, refusalReport(delivered));
           break;

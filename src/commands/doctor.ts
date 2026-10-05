@@ -9,9 +9,11 @@ import { callerOf, isOwner, type Caller } from '../caller.ts';
 import { checkCommands, type ApprovedCheck } from '../budgets/checks.ts';
 import { parseOutput, runCommand, type CheckReading } from '../budgets/run.ts';
 import { loadTeamFile } from '../file/load.ts';
+import { declaredModel } from '../file/model.ts';
 import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
 import { HERDR_TESTED, herdrVersion, sessionRunning } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
+import { launchBinary, launchLineFindings } from '../launch/line.ts';
 import { profileFor } from '../profiles/index.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { checkRulesFile, rulesFilePath } from '../launch/rules-file.ts';
@@ -19,6 +21,7 @@ import { rulesOf } from '../launch/rules.ts';
 import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
 import { readState } from '../state.ts';
+import { canShowModel } from '../status/statusline.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
 import { approvalStanding, LEGACY_LINE, type Standing } from '../store/store.ts';
 
@@ -102,21 +105,13 @@ function range(tested: { from: string; to: string }): string {
   return tested.from === tested.to ? tested.from : `${tested.from} to ${tested.to}`;
 }
 
-function versionFinding(name: string, printed: string, tested: { from: string; to: string }): Finding {
+function versionFinding(name: string, printed: string, tested: { from: string; to: string }, cli: boolean): Finding {
   const verdict = versionVerdict(printed, tested);
   if (verdict === 'tested') return { level: 'ok', text: `${name} ${printed}` };
   if (verdict === 'unread') return { level: 'warn', text: `${name}: its version can't be read from "${printed}"` };
-  return { level: 'warn', text: `${name} ${printed} is ${verdict} than the tested ${range(tested)}` };
-}
-
-// The command a launch line starts: its first word that is not a variable assignment.
-function launchBinary(launch: string): string | null {
-  return (
-    launch
-      .trim()
-      .split(/\s+/)
-      .find((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) ?? null
-  );
+  // Only a CLI has screens to misread; herdr's version line says just where it sits.
+  const tail = cli ? ": its screens are untested with this version; a seat that isn't read at launch is left out, never typed into" : '';
+  return { level: 'warn', text: `${name} ${printed} is ${verdict} than the tested ${range(tested)}${tail}` };
 }
 
 // The approved bytes rule, as the watch applies it (budgets/checks.ts): a check whose file no
@@ -245,7 +240,7 @@ function cliFindings(cli: string, seats: Seat[], sources: DoctorSources): Findin
   if (printed === null) {
     return [{ level: 'miss', text: `install \`${profile.binary}\`: it is not on the PATH (${cli}: ${names})` }];
   }
-  const findings = [versionFinding(profile.binary, printed, profile.tested)];
+  const findings = [versionFinding(profile.binary, printed, profile.tested, true)];
   const loggedIn = sources.loggedIn(profile);
   if (loggedIn === false) findings.push({ level: 'miss', text: `log in to ${cli}: \`${profile.loginHint}\`` });
   else if (loggedIn === null)
@@ -253,24 +248,57 @@ function cliFindings(cli: string, seats: Seat[], sources: DoctorSources): Findin
   else findings.push({ level: 'ok', text: `${cli}: logged in` });
 
   for (const seat of seats) {
-    const binary = launchBinary(seat.launch);
-    if (binary !== null && binary !== profile.binary && !sources.onPath(binary)) {
-      findings.push({ level: 'miss', text: `${seat.name}: its launcher \`${binary}\` is not on the PATH` });
-    }
     const named = profile.modelOf(seat.launch);
     if (named === null) {
-      findings.push({
-        level: 'warn',
-        text: `${seat.name}: the launch names no model this version knows; the file says ${seat.model} ${seat.version}`,
-      });
+      const finding = modelFlagFinding(seat, profile);
+      if (finding) findings.push(finding);
     } else if (named.model !== seat.model || named.version !== seat.version) {
       findings.push({
         level: 'warn',
-        text: `${seat.name}: the launch starts ${named.model} ${named.version}, the file says ${seat.model} ${seat.version}`,
+        text: `${seat.name}: the launch starts ${named.model} ${named.version}, the file says ${declaredModel(seat)}`,
       });
     }
   }
   return findings;
+}
+
+// What `doctor` says of a seat whose launch names no model the profile knows. Silence only when
+// the running seat will really be checked: the launch runs the CLI's own binary, bare — no path,
+// no wrapper in front of it — and the profile's screen can name the model the file declares, so
+// `status` and the watch would flag a seat that runs something else. Every other shape names
+// what the owner can do: declare `model_from` for a launcher that chooses the model, add a model
+// flag, or know that nothing checks the model. The last-used case keeps its warning, whose text
+// another change rewords.
+export function modelFlagFinding(
+  seat: Pick<Seat, 'name' | 'cli' | 'launch' | 'display' | 'model' | 'version' | 'modelFrom'>,
+  profile: Pick<Profile, 'binary' | 'lastUsedModel'>,
+): Finding | null {
+  const declared = declaredModel(seat);
+  // The first word that is not a variable assignment: the program the launch runs. Bare — equal
+  // to the binary's own name — is the one shape whose model flag is certainly the CLI's own.
+  const first = launchBinary(seat.launch) ?? seat.launch.trim().split(/\s+/)[0] ?? '';
+  const bare = first === profile.binary;
+  const shows = canShowModel(seat);
+  if (seat.modelFrom === 'launcher') {
+    // The owner wrote the key and approved it: that is what makes a note enough, and the note
+    // says the truth for the seat — checked on the running seat, or nothing checks it.
+    return shows
+      ? { level: 'note', text: `${seat.name}: the model is chosen by its launcher; checked on the running seat` }
+      : {
+          level: 'note',
+          text: `${seat.name}: the model is chosen by its launcher (declared in the file); this version can't read ${declared} on this CLI's screen, so nothing checks it`,
+        };
+  }
+  if (bare && profile.lastUsedModel) {
+    return { level: 'warn', text: `${seat.name}: the launch names no model this version knows; the file says ${declared}` };
+  }
+  if (bare) {
+    return shows ? null : { level: 'warn', text: `${seat.name}: no model flag, and this version can't read ${declared} on this CLI's screen: nothing checks that it runs it` };
+  }
+  return {
+    level: 'warn',
+    text: `${seat.name}: the launch runs ${first}, not ${profile.binary}, and names no model: if the launcher chooses the model, say so with model_from: launcher`,
+  };
 }
 
 // `watch` is the watch values in force — the approved ones — so an unapproved interval edit can't
@@ -328,6 +356,9 @@ export function doctorFindings(
   approved: TeamFile = team,
   /** The budget-check lines, which only the report runs: `up` and `add` scan, they never run a check. */
   budgetChecks: Finding[] = [],
+  /** The per-seat launch-line findings. `up` and `add` hand them in so a seat's own line can leave
+   *  that seat out before its workspace is made; the report prints them as they come. */
+  launchLines: Finding[] = [],
 ): Finding[] {
   const findings: Finding[] = warnings.map((warning) => ({
     level: 'warn',
@@ -360,7 +391,7 @@ export function doctorFindings(
   const running = herdr === null ? null : sources.sessionRunning(session);
   if (herdr === null) findings.push({ level: 'miss', text: 'install herdr: it is not on the PATH' });
   else {
-    findings.push(versionFinding('herdr', herdr, HERDR_TESTED));
+    findings.push(versionFinding('herdr', herdr, HERDR_TESTED, false));
     if (running === null) findings.push({ level: 'miss', text: "herdr doesn't answer" });
     else findings.push({ level: 'note', text: `session ${session} is ${running ? 'running' : 'not running'}` });
   }
@@ -375,6 +406,8 @@ export function doctorFindings(
       ),
     );
   }
+
+  findings.push(...launchLines);
 
   findings.push(...watchFindings(watchInForceOf(standing, team), dir, session, running, sources.now()));
   if (team.trust.length) {
@@ -440,6 +473,7 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
         standing,
         undefined,
         budgetCheckFindings(team, standing, root, sources, callerOf(io)),
+        launchLineFindings(team, root, { onPath: (binary) => sources.onPath(binary), home: sources.home }),
       );
 
   const label: Record<Level, string> = { ok: 'ok  ', warn: 'warn', miss: 'MISS', note: '--  ' };
