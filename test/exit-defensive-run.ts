@@ -114,9 +114,10 @@ const plan: Record<string, { failAt: number; failure: string }> = {
   'add.not-restored': { failAt: 4, failure: 'edited text rejected' },
   // the prepared-edit check, after the seat was accepted
   'add.prepared': { failAt: 5, failure: 'the prepared edit does not validate' },
-  // writeTeamFile's check, after doctor's two reads of the record's own copy — the rules-file
-  // scan, and the migration check, which this migrated file takes — and the budget read
-  'add.locked': { failAt: 12, failure: 'the locked edit does not validate' },
+  // writeTeamFile's check, after doctor's read of the record's own copy — the rules-file scan —
+  // and the budget read; the migration check is not taken here: the legacy note reads the file's
+  // own trust, and this file's is absolute
+  'add.locked': { failAt: 11, failure: 'the locked edit does not validate' },
   // approve's second read of the text load just accepted
   'approve.revalidate': { failAt: 2, failure: 'the file does not validate' },
   'approve.placed': { failAt: 0, failure: '' },
