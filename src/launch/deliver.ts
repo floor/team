@@ -74,9 +74,9 @@ function continues(text: string, pos: number, row: string, kind: 'word' | 'hard'
  *  content after the box's last row. Both null/false is an exact read. The comparison is the one
  *  `holdsBox` has always made: the first line after the prompt and every continuation row at the
  *  box's own column — no more rows, no fewer, none changed. A continuation row that does not
- *  start at that column is not the text's own row, and a blank row never is: since round 2 the
- *  delivery is one line, and a row break may stand for at most one space, never a newline — the
- *  pane's drawing of a blank line belonged to multi-line texts, which nothing types any more.
+ *  start at that column is not the text's own row, and a blank row never is: the delivery is
+ *  one line, and a row break may stand for at most one space, never a newline — a blank row
+ *  belongs to no text this version types.
  *  Only the one space a row break itself may stand for is normalised, and inside a row every
  *  character must match, runs of spaces included. Trailing spaces and tabs after the text's last
  *  row are not observable in a box — a pane may not paint the end of a row — so they are not

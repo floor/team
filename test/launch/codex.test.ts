@@ -107,9 +107,9 @@ describe('the typed-newline captures (Codex)', () => {
   // in one write, a second line beginning with the prompt glyph and one with `>`, a long
   // line that wraps, and three lines with a blank middle. Every later line of the person's
   // text is drawn at the continuation column, two; none at the prompt column. They stay as
-  // documentation of the continuation column; since round 2 a row break may stand for at
-  // most one space, never a newline, so no multi-line text reads back — the delivery is one
-  // line, and nothing types a multi-line text any more.
+  // documentation of the continuation column; a row break may stand for at most one space,
+  // never a newline, so no multi-line text reads back — the delivery is one line, and
+  // nothing types a multi-line text.
   test.each([
     ['typed-two-lines', 'first typed line of the sample\nsecond typed line of the sample'],
     ['pasted-two-lines', 'first pasted line of the sample\nsecond pasted line of the sample'],
@@ -491,11 +491,11 @@ describe('the box\'s top frame (Codex)', () => {
 });
 
 // The captures taken on 2026-10-05 at 54 by 23, the pane `up` creates (codex-cli 0.160.0, the
-// flags the fixtures README names). The round-1 captures of the whole message stay as
-// documentation of the box's own limits; the delivery itself is the one line of rules-line.txt.
+// flags the fixtures README names). The captures of the whole message stay as documentation
+// of the box's own limits; the delivery itself is the one line of rules-line.txt.
 const capture = (name: string) => readFileSync(new URL(`../fixtures/codex/0.160.0/${name}.txt`, import.meta.url), 'utf8');
 
-/** The fitted texts the round-1 captures were typed with: numbered rows of a sample line, one row
+/** The fitted texts these captures were typed with: numbered rows of a sample line, one row
  *  per drawn row at the pane's 50 content columns. */
 const fitted = (rows: number) => Array.from({ length: rows }, (_, i) => `row ${i + 1} of the fitted sample text`).join('\n');
 
@@ -520,9 +520,9 @@ test('the box limits: 16 rows read back, 17 and more read unknown', () => {
     expect(readScreen('codex', capture(`rules-fit-${rows}`)).kind).toBe('unknown');
   }
   expect(readScreen('codex', capture('rules-scrolled')).kind).toBe('unknown');
-  // The fitted texts are multi-line, and since round 2 a row break may stand for at most one
-  // space, never a newline: no multi-line text reads back at any height, and nothing types one
-  // any more. The captures stay as documentation of the window's edge.
+  // The fitted texts are multi-line, and a row break may stand for at most one space, never
+  // a newline: no multi-line text reads back at any height, and nothing types one. The
+  // captures stay as documentation of the window's edge.
   for (const rows of [5, 12, 16, 17, 19, 20]) {
     expect(boxHoldsText('codex', fitted(rows), capture(`rules-fit-${rows}`))).toBe(false);
   }
@@ -578,7 +578,7 @@ describe('Codex rules delivery of the one line (0.160.0 capture)', () => {
     // full stop, another seat's path, an older hash of the same rules.
     expect(boxHoldsText('codex', `${capturedLine} again`, screen)).toBe(false);
     expect(boxHoldsText('codex', capturedLine.slice(0, -1), screen)).toBe(false);
-    expect(boxHoldsText('codex', rulesLine(CAPTURED_PATH.replace('implementer', 'reviewer'), '5e1d0a9c4b2f'), screen)).toBe(false);
+    expect(boxHoldsText('codex', rulesLine(CAPTURED_PATH.replace('implementer', 'scribe'), '5e1d0a9c4b2f'), screen)).toBe(false);
     expect(boxHoldsText('codex', rulesLine(CAPTURED_PATH, '4d0c9f8b3a2e'), screen)).toBe(false);
   });
 
@@ -614,8 +614,8 @@ describe('Codex rules delivery of the one line (0.160.0 capture)', () => {
   });
 
   test('the line with one character more than the box shows gets no Enter', async () => {
-    // The reviewers' probe the other way round: the box draws the line's own four rows, and the
-    // text claims a fifth the pane never drew.
+    // The other way round: the box draws the line's own four rows, and the text claims a
+    // fifth the pane never drew.
     const d = lineDelivery();
     d.io.type = (text) => { d.calls.push(text); d.show(capture('rules-line')); return true; };
     expect(await deliverRules('codex', `${capturedLine} x`, 1, d.io)).toBe(false);
@@ -644,9 +644,9 @@ describe('Codex rules delivery of the one line (0.160.0 capture)', () => {
   });
 
   test('a trust dialog at the final re-read gets no Enter', async () => {
-    // The mutation both reviews found uncaught, the other way round: the line reads back in the
-    // loop, and the re-read that immediately precedes the Enter sees the dialog. Without that
-    // re-read the Enter goes to the dialog's first choice.
+    // The other way round: the line reads back in the loop, and the re-read that immediately
+    // precedes the Enter sees the dialog. Without that re-read the Enter goes to the dialog's
+    // first choice.
     const d = lineDelivery();
     d.io.type = (text) => {
       d.calls.push(text);
@@ -705,7 +705,7 @@ describe('Codex rules delivery of the one line (0.160.0 capture)', () => {
 
   test('a resumed seat whose box holds another seat\'s line is refused, nothing typed', async () => {
     const d = lineDelivery();
-    d.show(capture('rules-line').replace('implementer', 'reviewer'));
+    d.show(capture('rules-line').replace('implementer', 'scribe'));
     expect(await deliverRules('codex', capturedLine, 1, d.io)).toBe(false);
     expect(d.calls).toEqual([]);
     expect(d.refusals.at(-1)?.stop).toBe('leftover');

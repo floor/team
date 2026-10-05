@@ -325,9 +325,9 @@ function foldedPane(edit: (screen: string) => string = (screen) => screen) {
 }
 
 describe('Antigravity folded rules paste', () => {
-  // The round-1 captures of a folded whole message stay as documentation of the fold; since
-  // round 2 the delivery is one line, which the box draws whole, so the fold path in delivery
-  // is gone: a folded box is never verified, whatever its marker says, and never entered.
+  // The captures of a folded whole message stay as documentation of the fold; the delivery
+  // is one line, which the box draws whole, so the fold path in delivery is gone: a folded
+  // box is never verified, whatever its marker says, and never entered.
   test('a folded box never verifies: the line is typed, not sent', async () => {
     const d = foldedPane();
     expect(await deliverRules('antigravity', RULES, 1, d.io)).toBe(false);
@@ -494,7 +494,7 @@ describe('Antigravity rules delivery of the one line (1.2.16 capture)', () => {
     // full stop, another seat's path, an older hash of the same rules.
     expect(boxHoldsText('antigravity', `${capturedLine} again`, screen)).toBe(false);
     expect(boxHoldsText('antigravity', capturedLine.slice(0, -1), screen)).toBe(false);
-    expect(boxHoldsText('antigravity', rulesLine(CAPTURED_PATH.replace('implementer', 'reviewer'), '5e1d0a9c4b2f'), screen)).toBe(false);
+    expect(boxHoldsText('antigravity', rulesLine(CAPTURED_PATH.replace('implementer', 'scribe'), '5e1d0a9c4b2f'), screen)).toBe(false);
     expect(boxHoldsText('antigravity', rulesLine(CAPTURED_PATH, '4d0c9f8b3a2e'), screen)).toBe(false);
   });
 
@@ -559,8 +559,8 @@ describe('Antigravity rules delivery of the one line (1.2.16 capture)', () => {
   });
 
   test('a trust dialog at the final re-read gets no Enter', async () => {
-    // The mutation both reviews found uncaught, the other way round: the line reads back in the
-    // loop, and the re-read that immediately precedes the Enter sees the dialog.
+    // The other way round: the line reads back in the loop, and the re-read that immediately
+    // precedes the Enter sees the dialog — so the Enter is never pressed into it.
     const d = delivery();
     d.io.type = (text) => {
       d.calls.push(text);

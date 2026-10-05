@@ -502,9 +502,9 @@ describe('Cursor rules delivery', () => {
 
   test('a typed text whose own last line is empty: no Enter, with the row or without it', async () => {
     // The text ends with a newline, so its last line is empty and the pane once drew a row for
-    // it. Since round 2 a row break may stand for at most one space, never a newline, and a
-    // blank row is never the text's own: the trailing newline is unaccounted for either way, and
-    // the box never verifies.
+    // it. A row break may stand for at most one space, never a newline, and a blank row is
+    // never the text's own: the trailing newline is unaccounted for either way, and the box
+    // never verifies.
     const typed = CAPTURED_WRAP + '\n';
     const rows = wordWrap(CAPTURED_WRAP, 51 - 4);
     const [firstRow = '', ...rest] = rows;
@@ -762,8 +762,8 @@ describe('the person\'s own box, captured (Cursor)', () => {
   ];
 
   test.each(CAPTURES.filter(([name]) => name !== 'typed-wrap'))('%s reads unsent; its multi-line text no longer reads back', (name, text) => {
-    // These captures stay as documentation of the continuation column; since round 2 a row
-    // break may stand for at most one space, never a newline, so no multi-line text reads back.
+    // These captures stay as documentation of the continuation column; a row break may stand
+    // for at most one space, never a newline, so no multi-line text reads back.
     const screen = fixture(name);
     expect(readScreen('cursor', screen).kind).toBe('unsent');
     expect(classifyComposer('cursor', screen.split('\n')).kind).toBe('unsent');
@@ -807,12 +807,12 @@ describe('the person\'s own box, captured (Cursor)', () => {
 });
 
 // The captures taken on 2026-10-05 at 54 by 23, the pane `up` creates (cursor-agent
-// 2026.10.01, the flags the fixtures README names). The round-1 captures of the whole message
-// stay as documentation of the box's six-row limit and the paste marker; the delivery itself is
-// the one line of rules-line.txt.
+// 2026.10.01, the flags the fixtures README names). The captures of the whole message stay as
+// documentation of the box's six-row limit and the paste marker; the delivery itself is the
+// one line of rules-line.txt.
 
-/** The fitted texts the round-1 captures were typed with: numbered rows of a sample line. */
-const probe = (rows: number) => Array.from({ length: rows }, (_, i) => `probe line ${i + 1} of this sample`).join('\n');
+/** The fitted texts these captures were typed with: numbered rows of a sample line. */
+const fitted = (rows: number) => Array.from({ length: rows }, (_, i) => `probe line ${i + 1} of this sample`).join('\n');
 
 /** A box Cursor draws for `text` at the pane's 47 content columns: the line word-wrapped, the
  *  first row after the prompt, the rest at the four-column continuation column. */
@@ -821,14 +821,14 @@ function drawnAt(text: string): string {
   return [`  → ${first}`, ...rest.map((row) => `    ${row}`)].join('\n');
 }
 
-test('the box limits and the paste marker, as the round-1 captures show them', () => {
+test('the box limits and the paste marker, as the captures show them', () => {
   // rules-fit-6.txt draws six typed rows whole; rules-fit-7.txt has scrolled the first typed row
-  // out of the box. The fitted texts are multi-line, and since round 2 no multi-line text reads
-  // back at any height — the captures stay as documentation of the box's own edge.
+  // out of the box. The fitted texts are multi-line, and no multi-line text reads back at
+  // any height — the captures stay as documentation of the box's own edge.
   expect(readScreen('cursor', fixture('rules-fit-6')).kind).toBe('unsent');
   expect(readScreen('cursor', fixture('rules-fit-7')).kind).toBe('unsent');
-  expect(boxHoldsText('cursor', probe(6), fixture('rules-fit-6'))).toBe(false);
-  expect(boxHoldsText('cursor', probe(7), fixture('rules-fit-7'))).toBe(false);
+  expect(boxHoldsText('cursor', fitted(6), fixture('rules-fit-6'))).toBe(false);
+  expect(boxHoldsText('cursor', fitted(7), fixture('rules-fit-7'))).toBe(false);
   // A paste over 800 characters is hidden behind the marker; nothing of it reads back.
   expect(readBox('cursor', fixture('rules-pasted-short'))?.first).toBe('[Pasted text #1 +10 lines]');
   expect(readBox('cursor', fixture('rules-pasted-medium'))?.first).toBe('[Pasted text #1 +14 lines]');
@@ -896,7 +896,7 @@ describe('Cursor rules delivery of the one line (2026.10.01 capture)', () => {
     // full stop, another seat's path, an older hash of the same rules.
     expect(boxHoldsText('cursor', `${capturedLine} again`, screen)).toBe(false);
     expect(boxHoldsText('cursor', capturedLine.slice(0, -1), screen)).toBe(false);
-    expect(boxHoldsText('cursor', rulesLine(CAPTURED_PATH.replace('implementer', 'reviewer'), '5e1d0a9c4b2f'), screen)).toBe(false);
+    expect(boxHoldsText('cursor', rulesLine(CAPTURED_PATH.replace('implementer', 'scribe'), '5e1d0a9c4b2f'), screen)).toBe(false);
     expect(boxHoldsText('cursor', rulesLine(CAPTURED_PATH, '4d0c9f8b3a2e'), screen)).toBe(false);
   });
 
@@ -932,8 +932,8 @@ describe('Cursor rules delivery of the one line (2026.10.01 capture)', () => {
   });
 
   test('the line with one character more than the box shows gets no Enter', async () => {
-    // The reviewers' probe the other way round: the box draws the line's own four rows, and the
-    // text claims a fifth the pane never drew.
+    // The other way round: the box draws the line's own four rows, and the text claims a
+    // fifth the pane never drew.
     const d = lineDelivery();
     d.io.type = (text) => { d.calls.push(text); d.show(fixture('rules-line')); return true; };
     expect(await deliverRules('cursor', `${capturedLine} x`, 1, d.io)).toBe(false);
@@ -962,9 +962,9 @@ describe('Cursor rules delivery of the one line (2026.10.01 capture)', () => {
   });
 
   test('a trust dialog at the final re-read gets no Enter', async () => {
-    // The mutation both reviews found uncaught, the other way round: the line reads back in the
-    // loop, and the re-read that immediately precedes the Enter sees the dialog. Without that
-    // re-read the Enter goes to the dialog's first choice.
+    // The other way round: the line reads back in the loop, and the re-read that immediately
+    // precedes the Enter sees the dialog. Without that re-read the Enter goes to the dialog's
+    // first choice.
     const d = lineDelivery();
     d.io.type = (text) => {
       d.calls.push(text);
@@ -1023,7 +1023,7 @@ describe('Cursor rules delivery of the one line (2026.10.01 capture)', () => {
 
   test('a resumed seat whose box holds another seat\'s line is refused, nothing typed', async () => {
     const d = lineDelivery();
-    d.show(fixture('rules-line').replace('implementer', 'reviewer'));
+    d.show(fixture('rules-line').replace('implementer', 'scribe'));
     expect(await deliverRules('cursor', capturedLine, 1, d.io)).toBe(false);
     expect(d.calls).toEqual([]);
     expect(d.refusals.at(-1)?.stop).toBe('leftover');

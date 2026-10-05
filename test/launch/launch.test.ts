@@ -678,8 +678,8 @@ describe('the pane lines a report carries', () => {
 describe('the row a stopped delivery prints', () => {
   // The first mismatching row is pane text, whatever the box drew: control characters and all.
   // It goes to the terminal alone — stripped of every control character and cut to 200 — and
-  // never to the log, which holds the report only (both reviews: a BEL would ring and a CR
-  // overwrite the report, and an unbounded row would flood the terminal).
+  // never to the log, which holds the report only (a BEL would ring and a CR would overwrite
+  // the report, and an unbounded row would flood the terminal).
   const ROW_SAYED = 'coder: first row of its box that is not the rules line: ';
 
   function stoppedOn(row: string) {

@@ -118,7 +118,7 @@ answered.
 
 A later launch of `cursor-agent --force --sandbox disabled` with no `--model`, after the GPT launch, showed `GPT-5.6 Sol 272K High`. The same model-less launch after the Gemini launch showed `Gemini 3.8 Flash High`.
 
-## Round 2: the rules line
+## The rules line
 
 - `rules-line.txt`: the one line delivery types instead of the whole message, captured
   2026-10-05 with herdr 0.7.1, `pane read --source visible --lines 200` (plain), in a
@@ -170,7 +170,7 @@ The tests wrap the sentence themselves at 40- and 80-column panes, and refuse a 
 that holds another text, an extra row, one character changed, a collapsed space, a
 blank row the text does not have, or a trailing blank row the text does not end with.
 
-## Round 3: the standing-rules message, the paste marker, and the box's limits
+## The standing-rules message, the paste marker, and the box's limits
 
 Captured from the same installed CLI (`2026.10.01-14929f9`) on 2026-10-05 with herdr
 0.7.1, `pane read --source visible --lines 200` (plain), in a scratch session of my own

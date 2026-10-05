@@ -174,7 +174,7 @@ describe('writing the file', () => {
     }
   });
 
-  test('a symbolic link at the project state folder is refused — the reviewers\' first probe', () => {
+  test('a symbolic link at the project state folder is refused, nothing written through it', () => {
     const { home, path, text } = fresh();
     try {
       const elsewhere = mkdtempSync(join(tmpdir(), 'team-rules-elsewhere-'));
@@ -224,9 +224,9 @@ describe('writing the file', () => {
   });
 
   test('a regular file pre-planted at the temporary\'s own name is refused and its bytes left alone', () => {
-    // The exclusive flag's own probe: without it the open would land in the planted file —
-    // overwriting its head, keeping its tail — and the rename would move someone else's file
-    // into the final name. With it, the name being taken is a refusal, nothing written.
+    // Without the exclusive flag the open would land in the planted file — overwriting its
+    // head, keeping its tail — and the rename would move someone else's file into the final
+    // name. With it, the name being taken is a refusal, nothing written.
     const { home, path, text } = fresh();
     try {
       const planted = join(dirname(path), `${basename(path)}.planted.tmp`);
@@ -241,7 +241,7 @@ describe('writing the file', () => {
     }
   });
 
-  test('a wider mode at the final name is refused, not replaced or chmod\'d — the reviewers\' second probe', () => {
+  test('a wider mode at the final name is refused, not replaced or chmod\'d', () => {
     const { home, path, text } = fresh();
     try {
       writeRulesFile(path, text, rulesFileHash(text));

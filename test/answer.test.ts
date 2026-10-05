@@ -284,8 +284,8 @@ describe('team answer', () => {
       const token = cli === 'cursor' ? '<untrusted-directory>' : '<project-worktree>';
       const host = fake(home, root, withPath(source, token, lobby), cli);
       const boxed = cli === 'cursor' ? cursorBox : agyBox;
-      // The sanity the fake's box builder has to prove: a one-line text — the shape the
-      // delivery types since round 2, whose read-back a multi-line text can no longer pass.
+      // The sanity the fake's box builder has to prove: a one-line text — the only shape the
+      // delivery types, whose read-back a multi-line text cannot pass.
       const sample = 'Read /home/owner/.config/team/acme-3f9c2a8e1d7b/rules/lead.md (sha256 5e1d0a9c4b2f): your standing rules for this session; reply ready and wait for your brief.';
       expect(boxHoldsText(cli, sample, boxed(sample))).toBe(true);
       const io = testIo(root, { kind: 'owner' });

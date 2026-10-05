@@ -51,7 +51,7 @@ before Antigravity's header banner is removed. All other visible text is retaine
 box borders, prompts, and model footer (`Gemini 3.8 Flash · high`). Unknown screens permit no input.
 No vendor configuration in `~/.gemini` was edited.
 
-## Round 2: the rules line
+## The rules line
 
 - `rules-line.txt`: the one line delivery types instead of the whole message, captured
   2026-10-05 with herdr 0.7.1, `pane read --source visible --lines 200` (plain), in a
