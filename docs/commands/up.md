@@ -76,9 +76,9 @@ saying `a relaunch moves it into the lobby`. For a seat the file names as coordi
 the line offers only `team down, then team up (to restart the whole team)`. The watch prints `watch: started`.
 
 A command run in a folder that is not a git repository reads `.agents/team.yaml` in that folder,
-and nowhere above it. When `--file` names a file a watch started in the project folder would not
-read, `up` creates no watchdog workspace and prints this instead of `watch: started`, and exits 1
-even when every seat is ready:
+and nowhere above it. A link at `.agents` or at `team.yaml` is not followed. When `--file` names a
+file a watch started in the project folder would not read, `up` starts no watch and prints this
+instead of `watch: started`, and exits 1 even when every seat is ready:
 
     watch: not started: a watch started there could not read this file, or would read another one under this session's name. Move the file to .agents/team.yaml in the folder the watch starts in. A fuller repair is planned.
 

@@ -1,8 +1,9 @@
 # team status
 
 Shows the team as it stands: one line per seat with what the session's herdr shows of it, and one
-`difference` for each way the file, the state and the live session disagree. Read-only: `status`
-changes nothing, and names the command that repairs each difference.
+`difference` for each way the file, the state and the live session disagree. For a seat it changes
+nothing. For the owner it records the last file that validated, so a later read can fall back to
+that copy when the file breaks. It names the command that repairs each difference.
 
 ## Synopsis
 

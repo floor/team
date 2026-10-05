@@ -20,7 +20,8 @@ splits at the final `@`: `@scope/name@1.2.3`.
 Reads the team file — by default `.agents/team.yaml` of the repository's main checkout, found
 through git's common directory, so a run inside a linked worktree reads the main checkout's file,
 not the worktree's; a folder that is not a git repository is read from `.agents/team.yaml` in that
-folder only, not from a parent; `--file <path>` names another file instead, a relative path resolved
+folder only, not from a parent, and a link at `.agents` or at the file is not followed;
+`--file <path>` names another file instead, a relative path resolved
 against the working directory — then the file's `releases` section, then the public records over HTTPS
 only: the npm registry's version and attestation endpoints, and GitHub's repository, tag, compare,
 release and contents endpoints — plus, when the file configures them, one read-only GraphQL read

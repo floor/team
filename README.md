@@ -257,7 +257,8 @@ that `bun run ci` runs against a fixture team.
 The owner is a terminal outside herdr with no agent process above it: a seat, or a script a seat
 runs, cannot approve a file or start a team. With no `--file`, the file is `.agents/team.yaml` of
 the repository's main checkout, found through git's common directory. A folder that is not a git
-repository is read from `.agents/team.yaml` in that folder only, not from a parent. Every command
+repository is read from `.agents/team.yaml` in that folder only, not from a parent, and a link at
+`.agents` or at the file is not followed. Every command
 that reads the file also takes `--file <path>` for a file other than `.agents/team.yaml`.
 
 `team status --json` prints the facts `status` prints as one JSON document (`format: 1`) on stdout:
