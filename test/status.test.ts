@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { saveReadings, saveSpendReadings } from '../src/budgets/readings.ts';
@@ -7,6 +7,9 @@ import { verifiedOf } from '../src/approve/approval.ts';
 import { runStatus } from '../src/commands/status.ts';
 import type { StatusSources } from '../src/commands/status.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
+import type { Seat, TeamFile } from '../src/file/types.ts';
+import { rulesOf } from '../src/launch/rules.ts';
+import { rulesFileHash, rulesFilePathOf, writeRulesFile } from '../src/launch/rules-file.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import type { Standing } from '../src/store/store.ts';
 import { emptySession, readState, updateState } from '../src/state.ts';
@@ -773,5 +776,70 @@ describe('the status line of Claude Code', () => {
   test('is read from an Antigravity screen', () => {
     const screen = 'Antigravity CLI\n? for shortcuts               Gemini 3.8 Flash · high\n';
     expect(runningModel('antigravity', screen)).toEqual({ model: 'Gemini Flash', version: '3.8' });
+  });
+});
+
+describe('the rules files of message seats', () => {
+  // The check needs a home the store lives in; the shared sources above set none, which reads
+  // as no store at all. These tests give it one under the temp root, as the shipped command
+  // gives the owner's.
+  let home: string;
+  beforeEach(() => {
+    home = join(dir, 'home');
+    mkdirSync(home);
+    // The store already lives in this home, so `team`'s per-user state root is there with it.
+    mkdirSync(join(home, '.config', 'team'), { recursive: true, mode: 0o700 });
+    sources.home = home;
+  });
+  afterEach(() => {
+    delete sources.home;
+  });
+
+  const teamOf = (): TeamFile => {
+    const parsed = validateTeamFile(example);
+    if (!parsed.ok) throw new Error('the example fixture does not validate');
+    return parsed.team;
+  };
+  const writeAll = (team: TeamFile, edit?: (seat: Seat, text: string) => string) => {
+    for (const seat of team.seats) {
+      if (seat.stopped) continue;
+      const delivery = rulesOf(team, seat);
+      const text = edit ? edit(seat, delivery) : delivery;
+      // Planted through the same resolution the check reads: the approval in force, not the
+      // live file's project name.
+      if (rulesFilePathOf(standing, seat.name, dir, home) === null) throw new Error('the fixture seat name must be typeable');
+      const written = writeRulesFile(standing, seat.name, dir, home, text, rulesFileHash(text));
+      if (!written.ok) throw new Error('the rules file did not write');
+    }
+  };
+
+  test('a team whose files hold the approved rules reads clean', async () => {
+    writeAll(teamOf());
+    const { code, out } = await status();
+    expect(out).toContain('0 difference(s)');
+    expect(code).toBe(0);
+  });
+
+  test('a file that differs from the approved rules is a difference the owner repairs with up', async () => {
+    writeAll(teamOf(), (seat) => (seat.cli === 'codex' ? 'other rules entirely' : rulesOf(teamOf(), seat)));
+    const { code, out } = await status();
+    expect(out).toContain('codex-acme: its rules file differs from the approved rules');
+    expect(out).toContain('repair: the owner runs team up');
+    expect(code).toBe(1);
+  });
+
+  test('a missing file is a difference, and a mode wider than 0600 is one too', async () => {
+    writeAll(teamOf());
+    const seatPath = rulesFilePathOf(standing, 'codex-acme', dir, home);
+    if (seatPath === null) throw new Error('the fixture seat name must be typeable');
+    rmSync(seatPath, { force: true });
+    const missing = await status();
+    expect(missing.out).toContain('codex-acme: its rules file is missing');
+    expect(missing.code).toBe(1);
+    writeAll(teamOf());
+    chmodSync(seatPath, 0o644);
+    const wide = await status();
+    expect(wide.out).toContain('codex-acme: its rules file has mode 0644, not 0600');
+    expect(wide.code).toBe(1);
   });
 });

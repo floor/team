@@ -7,7 +7,10 @@ import { describeCaller, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVer
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from '../commands/doctor.ts';
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
-import { rulesOf, type Launch } from '../commands/up.ts';
+import type { Launch } from '../commands/up.ts';
+import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
+import { removeRulesFile, rulesFileHash, rulesFileHolds, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
+import { rulesOf } from '../launch/rules.ts';
 import { branchPresent, readMerge } from '../end/condition.ts';
 import { clearStopped, hasSeat, restoreSeat, seatIsStopped } from '../file/lines.ts';
 import { loadTeamFile, placedProblems } from '../file/load.ts';
@@ -15,8 +18,9 @@ import type { Problem, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { writeTeamFile } from '../file/write.ts';
 import {
-  agentList, agentRename, paneForeground, paneProcesses, paneRead, paneRun, paneShellBack, sessionRunning, sessionState, startServer, workspaceClose, workspaceCreate,
-  workspaceList, workspacePanes, type HerdrAgent, type PaneProcesses,
+  agentList, agentRename, agentStatus, paneForeground, paneProcesses, paneRead, paneRun, paneShellBack, pressEnter, sessionRunning,
+  sessionState, startServer, typeText, workspaceClose, workspaceCreate, workspaceList, workspacePanes,
+  type HerdrAgent, type PaneProcesses,
 } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { executePlan, type Host } from '../launch/execute.ts';
@@ -63,6 +67,9 @@ const realLaunch: Launch = {
   agents: (session) => agentList(aim(session)),
   workspacePanes: (session, workspace) => workspacePanes(workspace, aim(session)),
   paneText: (session, pane) => paneRead(pane, 200, aim(session)),
+  typeText: (session, pane, text) => typeText(pane, text, aim(session)),
+  pressEnter: (session, pane) => pressEnter(pane, aim(session)),
+  agentStatus: (session, pane) => agentStatus(pane, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
   shellBack: (session, pane) => paneShellBack(pane, aim(session)),
   processInfo: (session, pane) => paneProcesses(pane, aim(session)),
@@ -353,7 +360,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // changes no section of its own, and no unapproved reserve may unblock a launch (#50).
   const budgets = budgetsInForceOf(standing, prepared.team);
   const decision = (sources.seatBudget ?? seatBudget)(budgets, loadReadings(dir), built.seat, sources.now().getTime(), loadSpendReadings(dir));
-  const starting = seatPlan(prepared.team, built.seat, start);
+  const starting = seatPlan(standing, prepared.team, built.seat, start, root, sources.home);
   const planned = repair
     ? { ...starting, repair }
     : stray
@@ -413,8 +420,8 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const plan = upPlan({ root, session, sessionRunning: live === 'running', seats: [seatForPlan], watchAlive: true });
   const who = describeCaller(caller);
   const host = hostOf({
-    dir, session, team: prepared.team, root, ceilings, running, seat: built.seat, temporary: built.temporary,
-    caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io,
+    dir, session, team: prepared.team, root, home: sources.home, ceilings, running, seat: built.seat, temporary: built.temporary,
+    caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io, standing,
   });
   const report = await executePlan(plan, session, host);
   const afterwards = readState(dir).sessions[session]?.seats[built.name];
@@ -494,7 +501,14 @@ function parseUntil(value: string): Until | null {
   return null;
 }
 
-function seatPlan(team: TeamFile, seat: Seat, start: { cwd: string; lobby?: true }): UpSeat {
+function seatPlan(
+  standing: Standing,
+  team: TeamFile,
+  seat: Seat,
+  start: { cwd: string; lobby?: true },
+  root: string,
+  home: string,
+): UpSeat {
   return {
     name: seat.name,
     cli: seat.cli,
@@ -504,7 +518,10 @@ function seatPlan(team: TeamFile, seat: Seat, start: { cwd: string; lobby?: true
     model: seat.model,
     version: seat.version,
     stopped: false,
+    // An option seat's rules keep coming from the live file, as main's launch line does; a
+    // message seat's file and line are the approved copy's, whatever the live file says now.
     rules: rulesOf(team, seat),
+    ...seatDeliveryOf(standing, team, seat, root, home),
     ...(start.lobby ? { lobby: true } : {}),
   };
 }
@@ -548,9 +565,10 @@ function where(problem: Problem): string {
 }
 
 function hostOf(input: {
-  dir: string; session: string; team: TeamFile; root: string; ceilings: Ceilings; running: Running[];
+  dir: string; session: string; team: TeamFile; root: string; home: string; ceilings: Ceilings; running: Running[];
   seat: Seat; temporary?: SeatState['temporary']; caller: string; now(): Date; launch: Launch;
   readMachine?: (root: string) => Machine; samples: SwapSample[]; limits: TeamFile['machine']; io: Io;
+  standing: Standing;
 }): Host {
   const { dir, session, launch, seat, temporary } = input;
   const running = [...input.running];
@@ -568,6 +586,30 @@ function hostOf(input: {
     createWorkspace: launch.createWorkspace,
     paneRun: launch.paneRun,
     typeLine: () => false,
+    deliverRules: async (session, pane, cli, file, seconds) => {
+      // The rules go to the file first; nothing is typed until it holds them. The writer
+      // builds the path itself, from the approval in force and the seat's name.
+      const written = writeRulesFile(input.standing, file.seat, input.root, input.home, file.text, rulesFileHash(file.text));
+      if (!written.ok) return fileRefusalOf(written);
+      if (!typeablePath(file.path)) {
+        return { stop: 'path', typed: false, sent: false, kind: 'unknown' as const, row: null };
+      }
+      const stopped: { why: Refusal | null } = { why: null };
+      const delivered = await deliverRules(cli, file.line, seconds, {
+        screen: () => launch.paneText(session, pane) ?? undefined,
+        status: () => launch.agentStatus?.(session, pane) ?? null,
+        type: (value) => launch.typeText?.(session, pane, value) ?? false,
+        enter: () => launch.pressEnter?.(session, pane) ?? false,
+        // The last look before Enter: the file, read without following a link, must still hold
+        // the text whose hash the line names.
+        file: () => rulesFileHolds(file.path, rulesFileHash(file.text)),
+        foreground: () => launch.foreground(session, pane),
+        report: (why) => { stopped.why = why; },
+        now: () => input.now().getTime(),
+        sleep: launch.sleep,
+      });
+      return delivered === false && stopped.why !== null ? stopped.why : delivered;
+    },
     renameAgent: launch.renameAgent,
     closeWorkspace: launch.closeWorkspace,
     stopSession: () => false,
@@ -600,6 +642,9 @@ function hostOf(input: {
       if (!running.some((item) => item.name === name)) running.push({ name, vendor: seat.vendor, temporary: Boolean(temporary) });
     },
     drop(name) {
+      // A temporary seat's rules file goes with the seat. The remover builds the path itself,
+      // from the approval in force and the seat's name, and walks the writer's checked chain.
+      if (temporary && name === seat.name) removeRulesFile(input.standing, name, input.root, input.home);
       updateState(dir, (file) => {
         const seats = file.sessions[session]?.seats;
         if (seats) delete seats[name];

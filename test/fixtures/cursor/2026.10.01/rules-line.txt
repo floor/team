@@ -1,0 +1,16 @@
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Type ? in the prompt bar to show in-app
+  hints.
+
+
+
+
+  → Read /home/owner/.config/team/demo-3f9c2a8e1d7b
+    /rules/implementer.md (sha256 5e1d0a9c4b2f):
+    your standing rules for this session; reply
+    ready and wait for your brief.
+
+
+  Grok 4.7 256K High                  Run Everything
+  <workspace>

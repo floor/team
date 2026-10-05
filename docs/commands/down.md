@@ -19,7 +19,9 @@ Reads the team file, this machine's approval store, the session's state
 whether the session is running, its agents, each pane's screen and status, and each pane's
 foreground processes. Writes `.agents/team.state.json` (the seats it stopped are dropped),
 `.agents/team.log`, and, through herdr: the exit in each pane, the workspaces it closes, the watch's
-process, the session it stops and the stopped session it clears — its own, just stopped. A team
+process, the session it stops and the stopped session it clears — its own, just stopped. A
+temporary seat's rules file goes with it, out of the project state folder; a declared seat's stays
+for the next `up`. A team
 file that no longer validates is replaced by the last copy that did, with a notice printed first:
 `down` must keep working when the file breaks.
 

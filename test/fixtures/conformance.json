@@ -85,6 +85,13 @@
       "provenance": "capture"
     },
     {
+      "file": "antigravity/1.2.16/rules-line.txt",
+      "cli": "antigravity",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "antigravity/1.2.16/trust-54.txt",
       "cli": "antigravity",
       "classify": "trust",
@@ -533,6 +540,97 @@
       "provenance": "capture"
     },
     {
+      "file": "codex/0.160.0/idle.txt",
+      "cli": "codex",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-12.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-16.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-17.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-19.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-20.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-fit-5.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-line.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-medium.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-part-16-after-reply.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-scrolled-narrow.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-scrolled.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/rules-short.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
       "file": "cursor/2026.10.01/composer-idle.txt",
       "cli": "cursor",
       "classify": "idle",
@@ -649,6 +747,76 @@
       "cli": "cursor",
       "classify": "idle",
       "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-fit-6.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-fit-7.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-line.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-part-6-after-reply.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-pasted-medium.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-pasted-narrow.txt",
+      "cli": "cursor",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-pasted-short.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-pasted.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-threshold-800.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-threshold-801.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
       "provenance": "capture"
     },
     {

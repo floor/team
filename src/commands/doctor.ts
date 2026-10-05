@@ -16,6 +16,9 @@ import { HERDR_TESTED, herdrVersion, paneRead, sessionRunning } from '../herdr.t
 import type { Command, Io } from '../io.ts';
 import { launchBinary, launchLineFindings } from '../launch/line.ts';
 import { profileFor } from '../profiles/index.ts';
+import { validateTeamFile } from '../file/validate.ts';
+import { checkRulesFile, rulesFilePathOf } from '../launch/rules-file.ts';
+import { rulesOf } from '../launch/rules.ts';
 import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
 import { extractFolder, isEligible, versionMatches } from '../profiles/trust-answer.ts';
@@ -452,6 +455,25 @@ export function doctorFindings(
     ...checkFindings(standing, team),
     ...budgetChecks,
   );
+  // The rules file each message seat runs by, only when there is an approval that writes one.
+  // A file that differs is warned about, never rewritten here. A stopped seat is not checked:
+  // `up` writes the file only at a delivery, so the repair could not fix a stopped seat's file.
+  if (standing.kind === 'verified') {
+    // The seats of the file as approved, against the approved rules text: a seat the approval
+    // does not hold has no approved rules to check, and `up` refuses a drifted file anyway.
+    const ofRecord = validateTeamFile(standing.record.file);
+    const seats = ofRecord.ok ? ofRecord.team.seats : [];
+    for (const seat of seats) {
+      if (seat.stopped || profileFor(seat.cli)?.rulesOption != null) continue;
+      // A seat name the team file's own rule refuses has no path to check — the parser already
+      // refuses it, so this only guards a record that holds one anyway. The path is resolved
+      // the one way, from the approval in force, like every other reader of the file.
+      const path = rulesFilePathOf(standing, seat.name, root, sources.home);
+      if (path === null) continue;
+      const check = checkRulesFile(path, rulesOf(ofRecord.ok ? ofRecord.team : approved, seat));
+      if (!check.ok) findings.push({ level: 'warn', text: `${seat.name}: ${check.what}; run \`team up\`` });
+    }
+  }
 
   const herdr = sources.herdrVersion();
   const running = herdr === null ? null : sources.sessionRunning(session);

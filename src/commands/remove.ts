@@ -21,6 +21,7 @@ import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock } from '../state.ts';
 import { paneStillRunning, realSources as downSources, stateOf, type DownSources } from './down.ts';
 import { boxHoldsText } from '../launch/deliver.ts';
+import { removeRulesFile } from '../launch/rules-file.ts';
 
 export type RemoveSources = DownSources & {
   /** Foreground process names in the pane, or null when the pane can't be read. */
@@ -238,6 +239,13 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
       const seats = file.sessions[session]?.seats;
       if (seats) delete seats[name];
     });
+  }
+  // A temporary seat's rules file goes with the seat: nothing of it is left in the state
+  // folder. A declared seat's stays — a stopped seat comes back to its own file. No home set
+  // is a test that stands in for no store at all. The remover builds the path itself, from the
+  // approval in force and the seat's name, and walks the writer's checked chain.
+  if (temporary && sources.home) {
+    removeRulesFile(sources.standing?.(root) ?? approvalStanding(root, sources.home), name, root, sources.home);
   }
   const who = describeCaller(caller);
   const what = temporary ? `removed temporary ${name}` : args.flags.has('keep') ? `stopped ${name}` : `removed ${name}`;

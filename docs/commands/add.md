@@ -67,7 +67,11 @@ can print is the same as `up`'s, with the seat's name in front: `its workspace w
 `its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched`, `permission; its
 workspace was closed without input and the seat left out`, and the rest of the table on the
 [team up](up.md) page. A wait that ended without a prompt prints the pane's last lines under the
-reading, on the terminal only, as `up` does.
+reading, on the terminal only, as `up` does. First-message rules go to the seat's file in the project state folder and arrive as
+the one line `up` types, read back and entered, exactly as that page describes. A seat
+`add` leaves out takes its rules file with it; a temporary seat removed with `team
+remove` or stopped by `team down` loses its file with the seat, while a declared seat's
+file stays for the next `up`.
 
 The seat's own launch line is checked where it will start, before the file is edited and before any
 workspace is made. A note — a word of the line quotes or substitutes text, or a relative argument is

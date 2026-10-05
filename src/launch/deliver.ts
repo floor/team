@@ -1,87 +1,98 @@
 import { reportedLiveAgent } from './agent.ts';
 import { profileFor } from '../profiles/index.ts';
-import { classifyComposer, readBox, readFold, readFoldMark, readScreen, type Box, type Fold } from '../watch/screen.ts';
+import type { RulesFileWrite } from './rules-file.ts';
+import {
+  classifyComposer, readBox, readFoldMark, readScreen, type Box, type Screen,
+} from '../watch/screen.ts';
+
+/** Why a delivery stopped. Each one is a reading the owner can act on.
+ *  - `file`: the seat's rules file could not be written; nothing was typed.
+ *  - `path`: the file's path can't be typed provably; nothing was typed.
+ *  - `launch`: the CLI itself never appeared as its pane's foreground process — a wrapper's
+ *    shell still in front of it, or a launch line that exited; nothing was typed.
+ *  - `screen`: the screen was not the idle prompt; nothing was typed.
+ *  - `working`: the seat was mid-turn; nothing was typed.
+ *  - `leftover`: the box already held text that is not the rules line; nothing typed.
+ *  - `typing`: the pane took no text; nothing was typed.
+ *  - `read-back`: the line was typed and never read back as its own rows.
+ *  - `file-changed`: the line read back, but the file no longer held the hash it names; Enter
+ *    was not pressed.
+ *  - `ack`: Enter was sent and the seat did not come back to its idle prompt. */
+export type Stop = 'file' | 'path' | 'launch' | 'screen' | 'working' | 'leftover' | 'typing' | 'read-back' | 'file-changed' | 'ack';
+
+/** Where a delivery stopped, for the report. `kind` is what the screen read at the stop; `typed`
+ *  says the line reached the pane; `sent` says Enter was pressed; `row` is the first row drawn
+ *  that was not the line's own, kept out of the log and printed to the terminal alone;
+ *  `detail` tells the ways a file can fail to be written: a folder of the ladder, the final
+ *  name's place, a read-back that didn't match, or any other fault. */
+export type Refusal = {
+  stop: Stop;
+  typed: boolean;
+  sent: boolean;
+  kind: Screen['kind'];
+  row: string | null;
+  detail?: 'not-written' | 'changed' | { at: 'folder' | 'place'; what: string };
+};
 
 export interface Delivery {
   screen(): string | undefined;
   status(): string | null;
   type(text: string): boolean;
   enter(): boolean;
+  /** Whether the seat's rules file still holds, read without following a link, the text whose
+   *  hash the line carries — the last look, directly before Enter. */
+  file(): boolean;
   /** Foreground argv0 names, or null when the pane can't be read. */
   foreground(): string[] | null;
   now(): number;
   sleep(ms: number): Promise<void>;
+  /** The caller's own last check, immediately before the one terminal input it gates — the
+   *  typed line, then the Enter — for the caller that needs it (`answer`): a refusal sends
+   *  nothing, and the caller says why in its own words. */
   beforeInput?(action: 'type' | 'enter'): boolean;
+  /** Why a delivery stopped, when the caller wants the detail for its report. */
+  report?(why: Refusal): void;
 }
 
-/** The rows a composer shows for `text` at `width` columns: a hard wrap, a line longer than the
- *  width split into width-sized chunks, no word wrapping. The fold's tail and count are checked
- *  against this model; the fixtures README names the same one. */
-function rowsOf(text: string, width: number): string[] {
-  const rows: string[] = [];
-  for (const line of text.split('\n')) {
-    if (line.length === 0) { rows.push(''); continue; }
-    for (let at = 0; at < line.length; at += width) rows.push(line.slice(at, at + width));
-  }
-  return rows;
+/** The refusal for a rules file that could not be written: nothing was typed, nothing sent, and
+ *  the detail carries what the writer found — a folder of the ladder, the final name's place, a
+ *  read-back mismatch, or any other fault — for the report. */
+export function fileRefusalOf(written: Exclude<RulesFileWrite, { ok: true }>): Refusal {
+  const detail = 'what' in written ? { at: written.why, what: written.what } : written.why;
+  return { stop: 'file', typed: false, sent: false, kind: 'unknown', row: null, detail };
 }
-
-/** Whether the folded box is exactly `text` at the width the box reports: its visible tail rows
- *  are the text's last rows, and its hidden-row count closes the gap. Anything else is not the
- *  typed text and gets no Enter. */
-function holdsText(text: string, fold: Fold): boolean {
-  if (fold.width <= 0 || fold.rows.length === 0) return false;
-  const all = rowsOf(text, fold.width);
-  if (fold.rows.length >= all.length) return false;
-  if (fold.count !== all.length - fold.rows.length) return false;
-  const tail = all.slice(-fold.rows.length);
-  return fold.rows.every((row, i) => row.trimEnd() === (tail[i] ?? '').trimEnd());
-}
-
-/** The whitespace a row break may stand for: the pane replaces it by the break, or adds the
- *  continuation row's indentation where the text has none. */
-const BREAK = /[ \t\n\r]/;
 
 /** Where the text's next row starts after `pos`, or null when `row` is not the text's row there.
  *  A row that is the text's at that very position is always read as such — that normalises
- *  nothing. A `word` boundary additionally skips the whitespace run the pane broke at before the
- *  row; a `hard` one reads the text's next characters as the row carries them; a composer with no
- *  rule (`null`) reads either way, since no capture showed how that one wraps. Every character
- *  inside a row must match the text as it is: only the row break may stand for whitespace. */
+ *  nothing. A `word` boundary may in addition stand for exactly one space, the one the pane
+ *  broke at: never a run of them, never a tab or a newline, so a text whose break hides more
+ *  than one space is refused. A `hard` boundary — the composer that breaks mid-word — hides
+ *  nothing and reads the text's next characters as the row carries them. Every character inside
+ *  a row must match the text as it is: only the row break itself may stand for a space. */
 function continues(text: string, pos: number, row: string, kind: 'word' | 'hard' | null): number | null {
   if (text.startsWith(row, pos)) return pos + row.length;
   if (kind === 'hard') return null;
-  let at = pos;
-  while (at < text.length && BREAK.test(text[at] ?? '')) at++;
-  return at > pos && text.startsWith(row, at) ? at + row.length : null;
+  return text[pos] === ' ' && text.startsWith(row, pos + 1) ? pos + 1 + row.length : null;
 }
 
-/** Where a blank row sits in the typed text: the pane draws an empty row only for a blank line
- *  the text itself has. The line's own content — nothing a box row shows, so only spaces and
- *  tabs, which a pane need not paint — is consumed; an interior blank line ends at the next
- *  newline, a blank last line ends with the text. A blank row anywhere else is not the text's
- *  own and is refused, and a blank line the box does not show a row for is refused after the
- *  last row (the trailing-newline check in `holdsBox`). */
-function blankLine(text: string, pos: number): number | null {
-  if (text[pos] !== '\n') return null;
-  let at = pos + 1;
-  while (at < text.length && (text[at] === ' ' || text[at] === '\t')) at++;
-  return at === text.length || text[at] === '\n' ? at : null;
-}
-
-/** Whether the box shows exactly `text`: the first line after the prompt and every continuation
- *  row at the box's own column — no more rows, no fewer, none changed. A continuation row that
- *  does not start at that column is not the text's own row and the box is not trusted. Only the
- *  whitespace a row break itself may stand for is normalised — the run a word break was made at,
- *  or a blank line the text itself has — and inside a row every character must match, runs of
- *  spaces included. A box that is not the text waits and is refused at the deadline, never
- *  entered on trust. */
-function holdsBox(text: string, box: Box): boolean {
+/** How the box reads back against `text`: `row` is the first row drawn that is not the text's
+ *  own (an empty string for a blank row, the drawn row otherwise), and `short` says the text has
+ *  content after the box's last row. Both null/false is an exact read. The comparison is the one
+ *  `holdsBox` has always made: the first line after the prompt and every continuation row at the
+ *  box's own column — no more rows, no fewer, none changed. A continuation row that does not
+ *  start at that column is not the text's own row, and a blank row never is: the delivery is
+ *  one line, and a row break may stand for at most one space, never a newline — a blank row
+ *  belongs to no text this version types.
+ *  Only the one space a row break itself may stand for is normalised, and inside a row every
+ *  character must match, runs of spaces included. Trailing spaces and tabs after the text's last
+ *  row are not observable in a box — a pane may not paint the end of a row — so they are not
+ *  required to match. */
+function readsBack(text: string, box: Box): { row: string | null; short: boolean } {
   const pad = ' '.repeat(box.indent);
   const rows: string[] = [];
   for (const row of box.rows) {
-    if (row === '') { rows.push(''); continue; }
-    if (!row.startsWith(pad)) return false;
+    if (row === '') return { row, short: false };
+    if (!row.startsWith(pad)) return { row, short: false };
     rows.push(row.slice(pad.length));
   }
   const kind = box.wrap?.kind ?? null;
@@ -90,39 +101,32 @@ function holdsBox(text: string, box: Box): boolean {
   for (let i = 0; i < visual.length; i++) {
     const row = visual[i] ?? '';
     if (i === 0) {
-      if (!text.startsWith(row)) return false;
+      if (!text.startsWith(row)) return { row, short: false };
       at = row.length;
       continue;
     }
-    if (row === '') {
-      const next = blankLine(text, at);
-      if (next === null) return false;
-      at = next;
-      continue;
-    }
+    if (row === '') return { row, short: false };
     const next = continues(text, at, row, kind);
-    if (next === null) return false;
+    if (next === null) return { row, short: false };
     at = next;
   }
-  // What is left after the box's last row. Trailing spaces and tabs are not observable in a
-  // box — a pane may not paint the end of a row — so they are not required to match. A newline
-  // is observable: it is the box's next row, and every row has been read above; one left over
-  // is a row the box does not show, and the box is not the typed text.
-  return /^[ \t]*$/.test(text.slice(at));
+  return { row: null, short: !/^[ \t]*$/.test(text.slice(at)) };
+}
+
+/** Whether the box shows exactly `text`. A box that is not the text waits and is refused at the
+ *  deadline, never entered on trust. */
+function holdsBox(text: string, box: Box): boolean {
+  const read = readsBack(text, box);
+  return read.row === null && !read.short;
 }
 
 /** What the box holds right now: `ready` to submit, still rendering (`wait`), or a state that is
- *  never the typed text (`no`). A folded box — and one showing a fold marker whatever its count —
- *  is ready only when its tail and hidden-row count are the ones the text renders to at the width
- *  the box reports. An ordinary box is ready only when its rows read back as exactly the text
- *  typed; anything else waits, and a wait that outlives the deadline is a refusal, not an Enter. */
+ *  never the typed text (`no`). An ordinary box is ready only when its rows read back as
+ *  exactly the text typed; a box that folded the paste shows a fold marker, never its rows, so
+ *  it waits and is refused at the deadline. Anything else waits, and a wait that outlives the
+ *  deadline is a refusal, not an Enter. */
 function boxState(cli: string, text: string, screen: string | undefined): 'ready' | 'wait' | 'no' {
   const kind = readScreen(cli, screen).kind;
-  const fold = readFold(cli, screen);
-  if (fold || readFoldMark(cli, screen)) {
-    if (kind !== 'unsent' && kind !== 'unknown') return 'no';
-    return fold !== null && holdsText(text, fold) ? 'ready' : 'wait';
-  }
   if (kind === 'unsent') {
     const box = readBox(cli, screen);
     return box !== null && holdsBox(text, box) ? 'ready' : 'wait';
@@ -140,40 +144,195 @@ export function boxHoldsText(cli: string, text: string, screen: string | undefin
   return box !== null && holdsBox(text, box);
 }
 
-/** A first message is accepted only after working is observed with the composer empty again. */
-export async function deliverRules(cli: string, text: string, seconds: number, io: Delivery): Promise<boolean | 'no-agent'> {
+/** The refusal for a stop at the reading the pane shows now: nothing typed, nothing sent. */
+function stopAs(cli: string, stop: Stop, screen: string | undefined): Refusal {
+  return { stop, typed: false, sent: false, kind: readScreen(cli, screen).kind, row: null };
+}
+
+/** The refusal for a wait that ended with the line typed into the box, whatever the wait: the
+ *  first row that did not read back as the line's own. */
+function stoppedOn(cli: string, stop: Stop, screen: string | undefined, line: string): Refusal {
+  const why = stopAs(cli, stop, screen);
+  why.typed = true;
+  why.sent = stop === 'ack';
+  const box = readBox(cli, screen);
+  why.row = box === null ? null : readsBack(line, box).row;
+  return why;
+}
+
+/** What the report says the read-back saw: the reading, and the rows the box drew, when the box
+ *  was readable. */
+function reading(why: Refusal, rows: number): string {
+  const drew = rows > 0 ? `, ${rows} row${rows === 1 ? '' : 's'} seen` : '';
+  return `the screen read ${why.kind}${drew}`;
+}
+
+/** What the owner does next, per reading. */
+function nextStep(why: Refusal): string {
+  switch (why.stop) {
+    case 'leftover':
+      return `press Enter in its pane to send what is there, or clear its box (Ctrl-C), then run up again`;
+    case 'typing':
+      return `run up again`;
+    default:
+      break;
+  }
+  switch (why.kind) {
+    case 'permission':
+    case 'trust':
+    case 'question':
+      return `answer it in its pane, then run up again`;
+    case 'working':
+      return `wait for its turn to finish, then run up again`;
+    case 'unsent':
+    case 'idle':
+      return `read its box, then run up again`;
+    default:
+      return `read its pane, then run up again`;
+  }
+}
+
+/** The line a stopped delivery is reported with, and the line the log keeps: the reading and
+ *  what the owner does next. It holds no row of the screen — the caller prints `why.row` to the
+ *  terminal alone. `team` never clears a box it could not verify: the text a stop leaves behind
+ *  stays in the pane, and the line says so. */
+export function refusalReport(why: Refusal): string {
+  switch (why.stop) {
+    case 'file':
+      if (typeof why.detail === 'object' && why.detail.at === 'folder') {
+        return `rules not typed: the folder that would hold its rules file is ${why.detail.what}; `
+          + `the owner removes or repairs it, then runs up again`;
+      }
+      if (typeof why.detail === 'object' && why.detail.at === 'place') {
+        return `rules not typed: its rules file's place holds ${why.detail.what}; the owner removes it, then runs up again`;
+      }
+      if (why.detail === 'changed') {
+        return `rules not typed: its rules file did not read back as written; check the project state folder, then run up again`;
+      }
+      return `rules not typed: its rules file could not be written; check the project state folder, then run up again`;
+    case 'path':
+      return `rules not typed: its rules file's path can't be typed safely: the read-back can't prove a path outside `
+        + `letters, digits and . _ / @ + -; rename the seat or move the project, then run up again`;
+    case 'launch':
+      return `rules not typed: the CLI never appeared as its pane's foreground process (${reading(why, 0)}); `
+        + `check the seat's launch line — the wrapper it starts through, or the command itself — then run up again`;
+    case 'working':
+      return `rules not confirmed: the seat is working; run up again when it is idle`;
+    case 'screen':
+      return `rules not typed: ${reading(why, 0)}; ${nextStep(why)}`;
+    case 'leftover':
+      return `rules not typed: its box already holds text that is not the rules line; ${nextStep(why)}`;
+    case 'typing':
+      return `rules not typed: the pane took no text (${reading(why, 0)}); ${nextStep(why)}`;
+    case 'read-back':
+      return `rules typed, not sent: the read-back didn't match; the line sits in its box, unsent: `
+        + `press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again`;
+    case 'file-changed':
+      return `rules typed, not sent: the rules file changed after it was written`;
+    case 'ack':
+      // A box that still holds the line after Enter never took the key: it sits unsent, and the
+      // report says so rather than claiming a send.
+      return why.typed && why.kind === 'unsent'
+        ? `rules typed, not sent: its box still holds the line after Enter; `
+          + `press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again`
+        : `the seat did not come back to its idle prompt (${why.kind}); ${nextStep(why)}`;
+  }
+}
+
+/** One line is accepted only after working is observed with the composer empty again. The line
+ *  is typed once, at an empty idle prompt, read back row by row — every visible character in
+ *  order, at most one space hidden at a row break — and Enter is pressed once, after a re-read.
+ *  A box that already holds exactly today's line is verified and sent, never typed onto again;
+ *  a box holding anything else is left alone, and a seat mid-turn is reported as such. */
+export async function deliverRules(cli: string, line: string, seconds: number, io: Delivery): Promise<boolean | 'no-agent'> {
   const names = profileFor(cli)?.processNames ?? [];
   const live = () => reportedLiveAgent(io.foreground(), names);
   const free = () => ['idle', 'done'].includes(io.status() ?? '');
-  if (!live()) return 'no-agent';
-  if (!free() || readScreen(cli, io.screen()).kind !== 'idle' || (io.beforeInput && !io.beforeInput('type')) || !io.type(text)) return false;
-  const deadline = io.now() + seconds * 1000;
-  // Terminal rendering can lag send-text. Never press Enter until the box is verified to hold the
-  // text: an ordinary box reads `unsent`, and a box that folded the paste counts only when the
-  // tail and hidden-row count it shows are the ones the typed text renders to.
+  const report = (why: Refusal): false => { io.report?.(why); return false; };
+  // The CLI may start through a wrapper: a shell runs in the pane first, and the CLI draws
+  // behind it. Nothing is typed until the CLI itself is the pane's foreground process and its
+  // idle box is up — a line typed into the wrapper's shell would run as a command, not arrive
+  // as a message. A dialog at the CLI's first frame, or a seat already mid-turn, is refused at
+  // once; anything else is waited out, and a wait that outlives the deadline gives up saying
+  // which of the two never came: the CLI itself, or its box.
+  const untilUp = io.now() + seconds * 1000;
+  let seenLive = false;
+  let start: Screen['kind'];
   for (;;) {
-    if (!free()) return false;
-    const state = boxState(cli, text, io.screen());
-    if (state === 'ready') break;
-    if (state === 'no' || io.now() >= deadline) return false;
+    if (live()) {
+      seenLive = true;
+      const status = io.status();
+      start = readScreen(cli, io.screen()).kind;
+      if (status === 'working' || start === 'working') {
+        return report({ stop: 'working', typed: false, sent: false, kind: 'working', row: null });
+      }
+      if (start === 'trust' || start === 'permission' || start === 'question') {
+        return report(stopAs(cli, 'screen', io.screen()));
+      }
+      if ((status === 'idle' || status === 'done') && (start === 'idle' || start === 'unsent')) break;
+    }
+    if (io.now() >= untilUp) {
+      return report(seenLive ? stopAs(cli, 'screen', io.screen()) : stopAs(cli, 'launch', io.screen()));
+    }
     const before = io.now();
     await io.sleep(100);
-    if (io.now() <= before) return false;
+    if (io.now() <= before) {
+      return report(seenLive ? stopAs(cli, 'screen', io.screen()) : stopAs(cli, 'launch', io.screen()));
+    }
+  }
+  // The resumed delivery: a box that already holds exactly today's line — the same path, the
+  // same hash, the line `team` would type now — is verified and sent. A box holding anything
+  // else is left alone: `team` never types a second line onto the first, and never clears a box
+  // it could not verify.
+  const resumed = start === 'unsent' && boxState(cli, line, io.screen()) === 'ready';
+  if (!resumed) {
+    if (start !== 'idle') return report(stopAs(cli, 'leftover', io.screen()));
+    // The caller's own last check, immediately before the text: a refusal types nothing.
+    if (io.beforeInput && !io.beforeInput('type')) return false;
+    if (!io.type(line)) return report(stopAs(cli, 'typing', io.screen()));
+  }
+  const deadline = io.now() + seconds * 1000;
+  // Terminal rendering can lag send-text. Never press Enter until the box is verified to hold
+  // the line: an ordinary box reads `unsent` and every row of it reads back as the line.
+  for (;;) {
+    if (!free()) return report(stoppedOn(cli, 'read-back', io.screen(), line));
+    const state = boxState(cli, line, io.screen());
+    if (state === 'ready') break;
+    if (state === 'no' || io.now() >= deadline) return report(stoppedOn(cli, 'read-back', io.screen(), line));
+    const before = io.now();
+    await io.sleep(100);
+    if (io.now() <= before) return report(stoppedOn(cli, 'read-back', io.screen(), line));
   }
   // Re-read immediately before Enter. The agent is asked again: it may have exited since the
-  // paste, and a dialog that appeared gets no key; a folded box that no longer matches the text
-  // gets none either.
+  // line was typed, and a dialog that appeared gets no key; a box that no longer holds the line
+  // gets none either. And the file is checked once more, directly before the key: the screen
+  // proved the line, so the file must still hold the text whose hash the line names — a file
+  // that changed after it was written gets no Enter, whatever now sits at its path.
   if (!live()) return 'no-agent';
-  if (!free() || boxState(cli, text, io.screen()) !== 'ready' || (io.beforeInput && !io.beforeInput('enter')) || !io.enter()) return false;
+  if (!free() || boxState(cli, line, io.screen()) !== 'ready') {
+    return report(stoppedOn(cli, 'read-back', io.screen(), line));
+  }
+  if (!io.file()) {
+    return report({ stop: 'file-changed', typed: true, sent: false, kind: readScreen(cli, io.screen()).kind, row: null });
+  }
+  // The caller's own last check, immediately before the key: a refusal sends nothing.
+  if (io.beforeInput && !io.beforeInput('enter')) return false;
+  if (!io.enter()) {
+    return report(stoppedOn(cli, 'read-back', io.screen(), line));
+  }
   for (;;) {
     const status = io.status();
     const screen = io.screen();
     const composer = screen === undefined ? { kind: 'unknown' as const } : classifyComposer(cli, screen.split('\n'));
     if (status === 'working' && composer.kind === 'idle') return true;
+    // The line was submitted and no ready prompt was seen. Nothing about it is confirmed: the
+    // box is read as the screen shows it.
     const kind = readScreen(cli, io.screen()).kind;
-    if (kind === 'trust' || kind === 'permission' || kind === 'question' || io.now() >= deadline) return false;
+    if (kind === 'trust' || kind === 'permission' || kind === 'question' || io.now() >= deadline) {
+      return report(stoppedOn(cli, 'ack', io.screen(), line));
+    }
     const before = io.now();
     await io.sleep(100);
-    if (io.now() <= before) return false;
+    if (io.now() <= before) return report(stoppedOn(cli, 'ack', io.screen(), line));
   }
 }
