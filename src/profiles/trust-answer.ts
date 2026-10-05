@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripSgr } from '../ansi.ts';
 import { YamlError, type YamlEntry, type YamlNode } from '../yaml.ts';
@@ -11,11 +10,19 @@ export type Extract = {
   join: boolean;
   box: boolean;
   refuseLine: string | null;
+  /** With join: the continuation column the capture draws. */
+  indent: number | null;
+  /** With join: the column the capture's first wrapped row fills exactly. */
+  wrap: number | null;
 };
 
 /**
- * One trust-answer record. Eligible only when `lobbyEvidence` names a fixture the
- * conformance manifest registers as a capture. The bytes are one hex byte.
+ * One trust-answer record. Enabled only by `capture` naming the registered capture its
+ * predicate, label and extractor were taken from — the manifest's whole path, so a
+ * basename cannot stand for a different layout. Codex additionally needs
+ * `lobbyEvidence`, a capture of the folder-only layout in the real lobby: the folder
+ * question alone cannot show that the answer will trust the lobby. The bytes are one
+ * hex byte.
  */
 export type TrustRecord = {
   from: string;
@@ -24,6 +31,7 @@ export type TrustRecord = {
   mark: string | null;
   footer: string | null;
   action: string;
+  capture: string;
   lobbyEvidence: string | null;
   extract: Extract;
 };
@@ -119,9 +127,11 @@ export function trustAnswers(entry: YamlEntry | undefined): TrustRecord[] {
 
 function recordOf(node: YamlNode): TrustRecord {
   const entries = mapping(node, 'a trust answer');
-  only(entries, ['from', 'to', 'label', 'mark', 'footer', 'action', 'lobby_evidence', 'extract']);
+  only(entries, ['from', 'to', 'label', 'mark', 'footer', 'action', 'capture', 'lobby_evidence', 'extract']);
   const action = text(required(entries, 'action', node.line), 'action');
   if (!/^[0-9a-fA-F]{2}$/.test(action)) fail(required(entries, 'action', node.line).line, '"action" must be one hex byte');
+  const capture = text(required(entries, 'capture', node.line), 'capture');
+  if (!capture.includes('/')) fail(required(entries, 'capture', node.line).line, '"capture" must be the manifest path, not a basename');
   const evidence = optional(entries, 'lobby_evidence');
   return {
     from: text(required(entries, 'from', node.line), 'from'),
@@ -130,24 +140,42 @@ function recordOf(node: YamlNode): TrustRecord {
     mark: optional(entries, 'mark') ? text(optional(entries, 'mark') as YamlEntry, 'mark') : null,
     footer: optional(entries, 'footer') ? text(optional(entries, 'footer') as YamlEntry, 'footer') : null,
     action,
+    capture,
     lobbyEvidence: evidence ? text(evidence, 'lobby_evidence') : null,
     extract: extractOf(required(entries, 'extract', node.line).value),
   };
 }
 
+/** A whole, non-negative number, printed plainly. */
+function whole(entry: YamlEntry | undefined, key: string): number | null {
+  if (!entry) return null;
+  const node = entry.value;
+  if (node.kind !== 'scalar' || typeof node.value !== 'number' || !Number.isInteger(node.value) || node.value < 0) {
+    fail(node.line, `"${key}" must be a whole, non-negative number`);
+  }
+  return node.value;
+}
+
 function extractOf(node: YamlNode): Extract {
   const entries = mapping(node, 'extract');
-  only(entries, ['after', 'before', 'until_blank', 'join', 'box', 'refuse_line']);
+  only(entries, ['after', 'before', 'until_blank', 'join', 'box', 'refuse_line', 'indent', 'wrap']);
   const before = optional(entries, 'before');
   const until = flag(optional(entries, 'until_blank'), 'until_blank');
   if (!before && !until) fail(node.line, 'extract needs before or until_blank');
+  const join = flag(optional(entries, 'join'), 'join');
+  const indent = whole(optional(entries, 'indent'), 'indent');
+  const wrap = whole(optional(entries, 'wrap'), 'wrap');
+  if (join && (indent === null || wrap === null)) fail(node.line, 'extract with join needs indent and wrap');
+  if (!join && (indent !== null || wrap !== null)) fail(node.line, 'indent and wrap only apply to a joined extract');
   return {
     after: text(required(entries, 'after', node.line), 'after'),
     before: before ? text(before, 'before') : null,
     untilBlank: until,
-    join: flag(optional(entries, 'join'), 'join'),
+    join,
     box: flag(optional(entries, 'box'), 'box'),
     refuseLine: optional(entries, 'refuse_line') ? text(optional(entries, 'refuse_line') as YamlEntry, 'refuse_line') : null,
+    indent,
+    wrap,
   };
 }
 
@@ -155,6 +183,12 @@ function plain(line: string, box: boolean): string {
   const text = line.replace(/\s+$/g, '');
   if (!box) return text.trim();
   return text.replace(/[│╭╮╰╯┌┐└┘─]/g, '').trim();
+}
+
+/** The row as it is drawn: trailing spaces and, in a box, the border come off; the indent stays. */
+function drawn(line: string, box: boolean): string {
+  const text = line.replace(/\s+$/g, '');
+  return box ? text.replace(/[│╭╮╰╯┌┐└┘─]/g, '') : text;
 }
 
 /** The one folder the dialog shows, or null when it does not show exactly one. */
@@ -173,12 +207,37 @@ export function extractFolder(extract: Extract, screen: string): string | null {
     const end = rest.findIndex((line) => plain(line, extract.box) === '');
     taken = end < 0 ? rest : rest.slice(0, end);
   }
+  if (extract.join) return joinRows(taken, extract);
   const paths = taken.map((line) => plain(line, extract.box)).filter((line) => line !== '');
-  if (extract.join) {
-    const joined = paths.join('');
-    return joined === '' ? null : joined;
-  }
   return paths.length === 1 ? (paths[0] as string) : null;
+}
+
+/**
+ * The path a wrapped folder question draws, joined only when the rows prove they are one
+ * wrapped path — every row consecutive (no blank between them) inside the question's own
+ * rows, the first filling the wrap column exactly, and every later row starting at the
+ * capture's continuation indent with content after it and no wider than the wrap. The
+ * one-row layout of the same question has no continuation to prove; it is taken when it
+ * starts at the same indent. A run that fails any of this is refused rather than joined:
+ * two unrelated rows can hold the two halves of a lobby path without ever being one.
+ */
+function joinRows(taken: string[], extract: Extract): string | null {
+  const indent = ' '.repeat(extract.indent as number);
+  const wrap = extract.wrap as number;
+  const rows: string[] = [];
+  for (const line of taken) {
+    const text = drawn(line, extract.box);
+    if (text.trim() === '') return null;
+    rows.push(text);
+  }
+  const first = rows[0];
+  if (first === undefined || !first.startsWith(indent) || first.trim() === '') return null;
+  if (rows.length === 1) return first.trim();
+  if (first.length !== wrap) return null;
+  for (const row of rows.slice(1)) {
+    if (!row.startsWith(indent) || row.trim() === '' || row.length > wrap) return null;
+  }
+  return rows.map((row) => row.trim()).join('');
 }
 
 /** The recorded label is on screen, marked when the record says so, with its footer. */
@@ -198,6 +257,7 @@ type Manifest = { screens?: { file?: string; cli?: string; provenance?: string }
 
 let captures: Set<string> | null = null;
 
+/** The registered captures, keyed by their whole manifest path — never by basename. */
 function captureNames(): Set<string> {
   if (captures) return captures;
   const path = fileURLToPath(new URL('../../test/fixtures/conformance.json', import.meta.url));
@@ -205,13 +265,23 @@ function captureNames(): Set<string> {
   captures = new Set();
   for (const screen of manifest.screens ?? []) {
     if (screen.provenance !== 'capture' || !screen.cli || !screen.file) continue;
-    captures.add(`${screen.cli}/${basename(screen.file)}`);
+    captures.add(`${screen.cli} ${screen.file}`);
   }
   return captures;
 }
 
-/** True when the record names a fixture registered as a capture. Absent evidence is not eligible. */
+/** Whether `name` is a whole manifest path this CLI has a capture registered at. */
+function registered(cli: string, name: string): boolean {
+  return captureNames().has(`${cli} ${name}`);
+}
+
+/**
+ * True when the record's own capture is registered and, for Codex, when its lobby evidence
+ * is too. A record for another CLI carrying lobby evidence is not eligible: only Codex's
+ * folder question needs the lobby capture to say what its answer will trust.
+ */
 export function isEligible(cli: string, record: TrustRecord): boolean {
-  if (record.lobbyEvidence === null) return false;
-  return captureNames().has(`${cli}/${record.lobbyEvidence}`);
+  if (!registered(cli, record.capture)) return false;
+  if (cli === 'codex') return record.lobbyEvidence !== null && registered(cli, record.lobbyEvidence);
+  return record.lobbyEvidence === null;
 }

@@ -21,12 +21,15 @@ exit: /exit
 timeouts:
   idle: 90s
   exit: 30s
+# The predicate, label and extractor come from the registered
+# cursor/2026.10.01/trust.txt capture. That capture was taken in an untrusted temporary
+# directory, not the lobby, so the record claims no lobby evidence.
 trust_answer:
   - from: '2026.10.01-14929f9'
     to: '2026.10.01-14929f9'
     label: '[a] Trust this workspace'
     action: '61'
-    lobby_evidence: trust.txt
+    capture: cursor/2026.10.01/trust.txt
     extract:
       after: 'directory?'
       before: '[a] Trust this workspace'

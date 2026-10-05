@@ -183,13 +183,56 @@ describe('what the captures show', () => {
     expect(labelMatches(agyRecord, agyTrust)).toBe(true);
     expect(agyTrust).toContain('> Yes, I trust this folder');
     expect(agyTrust).toContain('enter Confirm');
+  });
+
+  test('a run of rows is joined only when it proves one wrapped path', () => {
+    const codex = profileFor('codex');
+    const codexRecord = codex?.answers[0];
+    if (!codexRecord) throw new Error('record');
+    const extract = codexRecord.extract;
+    // The reviewer's probe: two unrelated rows between the anchor and the blank that
+    // together hold the two halves of a lobby path. They are at no indent and the first
+    // fills no wrap column, so they are refused rather than joined.
+    expect(extractFolder(extract, 'Folder access\n/var/tmp/team/lob\nby\n\n')).toBeNull();
+    // A first row that does not fill the wrap column is not the start of a wrapped path,
+    // even when a later row sits at the right indent.
+    expect(extractFolder(extract, 'Folder access\n  /codex\n  /other\n\n')).toBeNull();
+    // A continuation off the capture's indent is not a continuation either.
+    expect(extractFolder(extract, 'Folder access\n  <untrusted-scratch-directory-placeholder-sandbox>\n/codex\n\n')).toBeNull();
+    // The capture's own shape — first row exactly 51 columns, then the continuation at
+    // indent 2 — is one path.
+    expect(extractFolder(extract, codexFolder)).toBe('<untrusted-scratch-directory-placeholder-sandbox>/codex');
+  });
+
+  test('a record is enabled by its own capture, and Codex also by lobby evidence', () => {
+    const codex = profileFor('codex');
+    const cursor = profileFor('cursor');
+    const agy = profileFor('antigravity');
+    const codexRecord = codex?.answers[0];
+    const cursorRecord = cursor?.answers[0];
+    const agyRecord = agy?.answers[0];
+    if (!codexRecord || !cursorRecord || !agyRecord) throw new Error('records');
     expect(isEligible('codex', codexRecord)).toBe(false);
     expect(isEligible('cursor', cursorRecord)).toBe(true);
     expect(isEligible('antigravity', agyRecord)).toBe(true);
-    const constructed: TrustRecord = { ...codexRecord, lobbyEvidence: 'lobby-constructed.txt' };
-    const captured: TrustRecord = { ...codexRecord, lobbyEvidence: 'trust.txt' };
-    expect(isEligible('codex', constructed)).toBe(false);
-    expect(isEligible('codex', captured)).toBe(true);
+    // A capture is named by the manifest's whole path: a basename never enables a record,
+    // and a constructed fixture is not a capture.
+    expect(isEligible('cursor', { ...cursorRecord, capture: 'trust.txt' })).toBe(false);
+    expect(isEligible('codex', { ...codexRecord, capture: 'codex/0.157.0/lobby-constructed.txt' })).toBe(false);
+    // Codex also needs lobby evidence, named the same way. lobby-constructed.txt is not a
+    // capture — the README says it is not a screen — and the basename stands for Codex's
+    // repository-layout capture, which was not taken in the lobby. Neither enables it, so
+    // the shipped record stays ineligible.
+    expect(isEligible('codex', { ...codexRecord, lobbyEvidence: 'codex/0.157.0/lobby-constructed.txt' })).toBe(false);
+    expect(isEligible('codex', { ...codexRecord, lobbyEvidence: 'trust.txt' })).toBe(false);
+    // The mechanism itself: evidence naming a registered capture would enable the record.
+    // No such capture exists, so no shipped record reaches this.
+    expect(isEligible('codex', { ...codexRecord, lobbyEvidence: 'codex/0.157.0/trust-folder.txt' })).toBe(true);
+    // A record for another CLI may not claim lobby evidence it does not have.
+    expect(isEligible('cursor', { ...cursorRecord, lobbyEvidence: 'cursor/2026.10.01/trust.txt' })).toBe(false);
+    expect(isEligible('antigravity', { ...agyRecord, lobbyEvidence: 'antigravity/1.2.16/trust.txt' })).toBe(false);
+    const notRenamed: TrustRecord = { ...cursorRecord, capture: 'cursor/2026.10.01/trust-54.txt' };
+    expect(isEligible('cursor', notRenamed)).toBe(true);
   });
 });
 
