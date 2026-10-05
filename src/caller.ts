@@ -194,13 +194,13 @@ export function anotherPaneRefusal(name: string, recordedPane: string): string {
  * exit, and nothing of the flagged project and no session is read. `undefined` when the flag is
  * absent or the walk places the owner. Every command whose `--file` writes or launches (add,
  * remove, worktree new / remove, answer, down, watch) asks this before it reads anything; it
- * lives here, beside `walkCaller`, so an eighth command cannot forget it. (Round 5: `add`,
- * `remove` and `worktree` read the flagged file and asked the host for its session before their
- * own `--file` check; round 6: `watch` opened the flagged file and wrote its `last_valid`, log
- * and heartbeat beside it. Round 2 of the readonly-file pull split the readers from it:
- * `status --file` went back to any caller — a read is a read, and a plain folder's own seats
- * carry the flag — with its one write made conditional on this walk instead, in currentTeam's
- * `remember`. `watch` keeps the refusal: it writes state of its own.)
+ * lives here, beside `walkCaller`, so an eighth command cannot forget it. (The gate grew command
+ * by command: `add`, `remove` and `worktree` once read the flagged file and asked the host for its
+ * session before their own `--file` check; `watch` opened the flagged file and wrote its
+ * `last_valid`, log and heartbeat beside it. The readers were then split from it: `status --file`
+ * went back to any caller — a read is a read, and a plain folder's own seats carry the flag —
+ * with its one write made conditional on this walk instead, in currentTeam's `remember`.
+ * `watch` keeps the refusal: it writes state of its own.)
  */
 export function fileOwnerRefusal(
   io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>,
