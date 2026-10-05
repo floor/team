@@ -15,7 +15,7 @@ type Errors = string[];
 const KNOWN = new Set([
   '$defs', '$schema', '$id', 'title', 'description',
   'type', 'const', 'enum', 'required', 'properties', 'additionalProperties',
-  'items', 'minItems', 'minLength', 'maxLength', 'minimum', 'pattern',
+  'items', 'minItems', 'uniqueItems', 'minLength', 'maxLength', 'minimum', 'pattern',
   'oneOf', 'anyOf', 'allOf', 'if', 'then', 'not', '$ref',
 ]);
 
@@ -68,6 +68,14 @@ function check(schema: Schema, value: unknown, at: string, root: Schema): Errors
     value.forEach((item, index) => errors.push(...check(schema.items as Schema, item, `${at}[${index}]`, root)));
   }
   if (typeof schema.minItems === 'number' && Array.isArray(value) && value.length < schema.minItems) note(`has fewer than ${schema.minItems} items`);
+  if (schema.uniqueItems === true && Array.isArray(value)) {
+    const seen = new Set<string>();
+    for (const item of value) {
+      const one = JSON.stringify(item);
+      if (seen.has(one)) note(`repeats ${one}`);
+      seen.add(one);
+    }
+  }
   if (typeof schema.minimum === 'number' && typeof value === 'number' && value < schema.minimum) note(`is below ${schema.minimum}`);
   if (typeof value === 'string') {
     if (typeof schema.minLength === 'number' && value.length < schema.minLength) note(`is shorter than ${schema.minLength}`);
