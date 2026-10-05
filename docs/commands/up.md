@@ -188,8 +188,9 @@ Those lines go to the terminal only: the log file gets the record, never the scr
 same holds for every folder the run resolves: a refusal's record holds the finding in words — the
 start folder a launch line was looked for in, the lobby a failed confirmation names — and the
 sentence with the folder is written under the record, on stderr, for this terminal alone. One line
-per final record, in file order, is the whole of what the log gets: a defect in the seat's file, or
-a note like the unread-model one below, is stderr detail and never a log line.
+per final record, in file order, plus the watch's own line — `watch: started`, or `watch:` and its
+reason in words when it did not — is the whole of what the log gets: a defect in the seat's file,
+or a note like the unread-model one below, is stderr detail and never a log line.
 
 The records are what stdout gets; a line below that is not a record is written to stderr, after the
 record it belongs to, as its meaning says.
