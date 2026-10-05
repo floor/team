@@ -14,6 +14,12 @@ const SENTENCE =
 const POSITION =
   "the status row's place: a line the row's grammar matches is the row only when the workspace line sits directly below it, that line is the pane's last non-blank one, and the input row sits above it within the captured distance";
 
+// The exception the positional rule needs to be true: Grok rows are read by their grammar alone,
+// and the captures draw them with the two spaces that grammar spells. Pinned too, so the page
+// cannot claim the place rule for every Cursor row.
+const GROK =
+  "Grok rows are the profile's exception — selected by their grammar wherever they sit — and every Grok row in the captures carries exactly the two spaces that grammar spells.";
+
 // Whitespace runs collapse before the match, so the sentences survive line wrapping but not
 // rewording: every other character is compared as written.
 function prose(path: string): string {
@@ -21,9 +27,10 @@ function prose(path: string): string {
 }
 
 describe('the watch page boundary', () => {
-  test('the screen-read sentence and the Cursor positional rule stand, verbatim', () => {
+  test('the screen-read sentence, the Cursor positional rule and its Grok exception stand, verbatim', () => {
     const page = prose('../../docs/commands/watch.md');
     expect(page.includes(SENTENCE), 'watch.md lost the boundary sentence').toBe(true);
     expect(page.includes(POSITION), 'watch.md lost the Cursor positional rule').toBe(true);
+    expect(page.includes(GROK), 'watch.md lost the Grok exception').toBe(true);
   });
 });

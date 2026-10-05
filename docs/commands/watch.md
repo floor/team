@@ -38,7 +38,9 @@ and workspace line, in place) reads idle; the live-agent check is the second lay
 profile pins the status row's place: a line the row's grammar matches is the row only when the
 workspace line sits directly below it, that line is the pane's last non-blank one, and the input
 row sits above it within the captured distance — a grammar-looking line anywhere else is ordinary
-text that names no row and no model.
+text that names no row and no model. Grok rows are the profile's exception — selected by their
+grammar wherever they sit — and every Grok row in the captures carries exactly the two spaces
+that grammar spells.
 
 ## Who may run it
 
