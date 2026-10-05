@@ -10,8 +10,10 @@ import { checkCommands, type ApprovedCheck } from '../budgets/checks.ts';
 import { parseOutput, runCommand, type CheckReading } from '../budgets/run.ts';
 import { canonicalLanding as showLanding } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
+import { migrationText } from '../file/migrate.ts';
 import { validateTeamFile } from '../file/validate.ts';
-import { canonicalLanding, insideTrust, isMigratedTrust } from '../file/paths.ts';
+import { canonicalLanding, insideTrust, isLegacyTrust } from '../file/paths.ts';
+import { isLeadSeat, relaunchRepair } from '../file/sections/lead.ts';
 import { declaredModel } from '../file/model.ts';
 import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
 import { HERDR_TESTED, herdrVersion, paneRead, sessionRunning, agentList, type HerdrAgent } from '../herdr.ts';
@@ -25,7 +27,7 @@ import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
 import { versionVerdict, type Profile } from '../profiles/profile.ts';
 import { extractFolder, isEligible, versionMatches } from '../profiles/trust-answer.ts';
 import { readState, type SeatState } from '../state.ts';
-import { canShowModel } from '../status/statusline.ts';
+import { canShowModel, seatModel } from '../status/statusline.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
 import { approvalStanding, LEGACY_LINE, type Standing } from '../store/store.ts';
 import { readScreen } from '../watch/screen.ts';
@@ -408,11 +410,20 @@ function trustFindings(team: TeamFile, dir: string, session: string, sources: Do
   return findings;
 }
 
+// The repair that relaunches one seat `up` leaves as it is: `up` never restarts a ready seat,
+// so a line that names `up` alone names a command that skips the seat. For a coordinator or
+// an operator, `team remove <seat> --keep` is refused (the file can't have a stopped lead),
+// so only the whole-team sequence is offered. For every other seat — stop it, keep it in the
+// file, add it again: the add launches it fresh, which is what records the process, writes the
+// rules file and starts the seat in the machine lobby — or the whole team at once.
+export const relaunch = (team: Pick<TeamFile, 'coordinator' | 'operator'>, name: string): string =>
+  relaunchRepair(team, name, 'markdown');
+
 // A seat the state records from a launch that predates the process identity: neither the watch
 // nor `status` can tell whether its pane still holds what team launched, and nothing would
 // notice a restore. One note per such seat; only a launch records the identity, so the note
-// says when. A seat the state doesn't record was not left running by this session, and a
-// stopped seat is never started by `up`: neither is told.
+// says what relaunches it. A seat the state doesn't record was not left running by this
+// session, and a stopped seat is never started by `up`: neither is told.
 function identityFindings(team: TeamFile, dir: string, session: string): Finding[] {
   const recorded = readState(dir).sessions[session]?.seats ?? {};
   const findings: Finding[] = [];
@@ -421,8 +432,45 @@ function identityFindings(team: TeamFile, dir: string, session: string): Finding
     if (seat.stopped || !held || held.launched) continue;
     findings.push({
       level: 'note',
-      text: `${seat.name}: launched before team recorded its process; run team up after the next restart`,
+      text: `${seat.name}: launched before team recorded its process; run ${relaunch(team, seat.name)} to launch it again`,
     });
+  }
+  return findings;
+}
+
+// A seat whose file still carries the "0" init writes before the owner fills the release
+// number. The launch no longer stops on it (the model family is still checked), so this is
+// information: what the running seat really runs, and the one edit that pins it. Said only
+// when the seat is live in a pane whose screen names a model of the declared family. When
+// the screen shows another family than the file declares, warn with the mismatch the launch
+// check will print, naming the edit to both model and version so the first upgrade edit covers it.
+function placeholderVersionFindings(team: TeamFile, dir: string, session: string, sources: DoctorSources): Finding[] {
+  if (!sources.paneText) return [];
+  const recorded = readState(dir).sessions[session]?.seats ?? {};
+  const findings: Finding[] = [];
+  for (const seat of team.seats) {
+    if (seat.stopped || seat.version !== '0') continue;
+    const held = recorded[seat.name];
+    if (!held?.pane) continue;
+    const screen = sources.paneText(session, held.pane);
+    if (screen === undefined) continue;
+    const running = seatModel(seat, screen);
+    if (!running) continue;
+    if (running.model === seat.model) {
+      findings.push({
+        level: 'note',
+        text:
+          `${seat.name}: runs ${running.model} ${running.version}; the file's version "0" is the placeholder init writes — ` +
+          `write "${running.version}" into the file, then run \`team approve\``,
+      });
+    } else {
+      findings.push({
+        level: 'warn',
+        text:
+          `${seat.name}: runs ${running.model} ${running.version}; the file says ${seat.model} 0 — ` +
+          `write model: "${running.model}" and version: "${running.version}" into the file, then run \`team approve\``,
+      });
+    }
   }
   return findings;
 }
@@ -464,7 +512,9 @@ export function doctorFindings(
   );
   // The rules file each message seat runs by, only when there is an approval that writes one.
   // A file that differs is warned about, never rewritten here. A stopped seat is not checked:
-  // `up` writes the file only at a delivery, so the repair could not fix a stopped seat's file.
+  // its file is written at the launch that starts it again. The file is written at a delivery,
+  // and a delivery happens only at a launch — which `up` skips for a ready seat, so the line
+  // names the relaunch that performs one.
   if (standing.kind === 'verified') {
     // The seats of the file as approved, against the approved rules text: a seat the approval
     // does not hold has no approved rules to check, and `up` refuses a drifted file anyway.
@@ -478,7 +528,7 @@ export function doctorFindings(
       const path = rulesFilePathOf(standing, seat.name, root, sources.home);
       if (path === null) continue;
       const check = checkRulesFile(path, rulesOf(ofRecord.ok ? ofRecord.team : approved, seat, root));
-      if (!check.ok) findings.push({ level: 'warn', text: `${seat.name}: ${check.what}; run \`team up\`` });
+      if (!check.ok) findings.push({ level: 'warn', text: `${seat.name}: ${check.what}; run ${relaunch(team, seat.name)}` });
     }
   }
 
@@ -505,6 +555,7 @@ export function doctorFindings(
   findings.push(...launchLines);
 
   findings.push(...identityFindings(team, dir, session));
+  findings.push(...placeholderVersionFindings(team, dir, session, sources));
 
   findings.push(...watchFindings(watchInForceOf(standing, team), dir, session, running, sources.now()));
   findings.push(...trustFindings(team, dir, session, sources));
@@ -552,28 +603,52 @@ export function doctorFindings(
             const isLive = Boolean(s.pane && livePanes.has(s.pane));
             return isLive || isRecovery;
           });
-          const missingStart = activeSeats.find(([, s]) => !s.start_cwd);
-          if (missingStart) {
-            findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: seat ${missingStart[0]} has no recorded start_cwd; stop it before removing the folder` });
-          } else {
-            const inOld = activeSeats.find(([, s]) => s.start_cwd === oldLanding);
-            if (inOld) {
-              findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: seat ${inOld[0]} started in it; stop it before removing the folder` });
-            } else {
-              findings.push({ level: 'ok', text: `the old lobby ${oldLobby}: may be removed` });
+          // Where a seat really started. A recorded start_cwd says it. A seat with none is read
+          // from the file the way the release before the lobby started it: a worktree-mode seat
+          // in cwd "." waited in this old lobby, and every other seat — shared, or with a cwd of
+          // its own — started elsewhere, so it never sat in the folder and is not named. A seat
+          // the file no longer names is unknown: the line keeps its hold on the folder rather
+          // than clear it wrongly.
+          const inOld: string[] = [];
+          const unknown: string[] = [];
+          for (const [name, s] of activeSeats) {
+            if (s.start_cwd) {
+              if (s.start_cwd === oldLanding) inOld.push(name);
+              continue;
             }
+            const declared = team.seats.find((seat) => seat.name === name);
+            if (!declared) unknown.push(name);
+            else if (declared.mode !== 'shared' && declared.cwd === '.') inOld.push(name);
+          }
+          if (inOld.length > 0) {
+            const who = inOld.length === 1 ? `seat ${inOld[0]} started in it` : `seats ${inOld.join(', ')} started in it`;
+            const move = inOld.length === 1
+              ? `run ${relaunch(team, inOld[0]!)} to move it into the lobby`
+              : inOld.some((name) => isLeadSeat(team, name))
+                ? 'run `team down` then `team up` to move them into the lobby (to restart the whole team)'
+                : 'run `team remove <seat> --keep` then `team add <seat>` for each to move it into the lobby (or `team down` then `team up` for the whole team)';
+            findings.push({ level: 'warn', text: `the old lobby ${oldLobby}: ${who}; ${move}, then remove the folder` });
+          } else if (unknown.length > 0) {
+            findings.push({
+              level: 'warn',
+              text: `the old lobby ${oldLobby}: where seat ${unknown.join(', ')} started is not recorded and the file no longer names it; stop it before removing the folder`,
+            });
+          } else {
+            findings.push({ level: 'ok', text: `the old lobby ${oldLobby}: may be removed` });
           }
         }
       }
     }
   }
 
-  const settled = isMigratedTrust(team.trust) && standing.kind === 'verified' && approvalDifferencesOf(standing, team).length === 0;
-  if (!settled) {
+  // The legacy note is told only while the file really is legacy: once the owner has written the
+  // absolute trust entries, the approval findings carry the next step (`run \`team approve\``),
+  // and a note that still says "migrate" would name a step already taken.
+  if (!team.trust || team.trust.length === 0 || isLegacyTrust(team.trust)) {
     const fromText = oldLobby ? `from ${oldLobby} to ${lobby}` : `to ${lobby}`;
     findings.push({
       level: 'note',
-      text: `the file is legacy: migrate ${fromText} by writing trust:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
+      text: `the file is legacy: migrate ${fromText} by writing:\n${migrationText(team, root, sources.home)}`,
     });
   }
   return findings;

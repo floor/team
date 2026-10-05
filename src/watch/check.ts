@@ -19,9 +19,10 @@ import type { Screen } from './screen.ts';
 export type Report = { key: string; text: string; to: 'operator' | 'owner' };
 
 // The one exclusive reading of a seat's screen and herdr status: a seat at a permission prompt is
-// never also merely idle. `permission` covers a permission or trust screen; `blocked` a herdr
-// status the screen doesn't explain; `unknown` a herdr status the watch doesn't know.
-export type Attention = 'permission' | 'question' | 'blocked' | 'unknown' | null;
+// never also merely idle. `permission` covers a permission or trust screen; `question` a question
+// the agent asked; `vendor notice` the CLI's own captured notice; `blocked` a herdr status the
+// screen doesn't explain; `unknown` a herdr status the watch doesn't know.
+export type Attention = 'permission' | 'question' | 'vendor notice' | 'blocked' | 'unknown' | null;
 
 // A seat's history, kept by the core across passes: what the idle clock counts from.
 export type SeatHistory = {

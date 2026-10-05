@@ -13,6 +13,7 @@
     "permission",
     "question",
     "trust",
+    "vendor notice",
     "unknown"
   ],
   "cells": {
@@ -44,6 +45,11 @@
       },
       "trust": {
         "real": 2,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "vendor notice": {
+        "real": 0,
         "constructed": 0,
         "undocumented": 0
       },
@@ -84,6 +90,11 @@
         "constructed": 1,
         "undocumented": 0
       },
+      "vendor notice": {
+        "real": 0,
+        "constructed": 0,
+        "undocumented": 0
+      },
       "unknown": {
         "real": 1,
         "constructed": 11,
@@ -112,12 +123,17 @@
         "undocumented": 0
       },
       "question": {
-        "real": 1,
+        "real": 0,
         "constructed": 0,
         "undocumented": 0
       },
       "trust": {
         "real": 3,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "vendor notice": {
+        "real": 1,
         "constructed": 0,
         "undocumented": 0
       },
@@ -155,6 +171,11 @@
       },
       "trust": {
         "real": 2,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "vendor notice": {
+        "real": 0,
         "constructed": 0,
         "undocumented": 0
       },
@@ -589,7 +610,7 @@
     {
       "file": "codex/0.157.0/startup.txt",
       "cli": "codex",
-      "kind": "question",
+      "kind": "vendor notice",
       "provenance": "capture"
     },
     {

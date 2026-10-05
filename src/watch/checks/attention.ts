@@ -1,9 +1,10 @@
 import { reported, type SeatCheck } from '../check.ts';
 
 // The one exclusive reading the core made of the seat's screen and status: a seat waits at a
-// permission prompt its owner has to answer, asks a question the operator has to act on, is
-// blocked on a screen the watch doesn't recognise, or reports a status the watch doesn't know.
-// A permission prompt and a trust question are the same seat state to the watch.
+// permission prompt its owner has to answer, asks a question the operator has to act on, shows a
+// vendor notice its owner has to act on, is blocked on a screen the watch doesn't recognise, or
+// reports a status the watch doesn't know. A permission prompt and a trust question are the same
+// seat state to the watch.
 export const attention: SeatCheck = {
   name: 'attention',
   run(seat, ctx) {
@@ -12,6 +13,9 @@ export const attention: SeatCheck = {
     }
     if (seat.attention === 'question') {
       return reported(ctx.once(`question:${seat.name}`, `${seat.name} asked a question: the operator's to act on`));
+    }
+    if (seat.attention === 'vendor notice') {
+      return reported(ctx.once(`vendor notice:${seat.name}`, `${seat.name} shows a vendor notice: its owner's to act on`, 'owner'));
     }
     if (seat.attention === 'blocked') {
       return reported(ctx.once(`blocked:${seat.name}`, `${seat.name} is blocked, and its screen is not one the watch recognises`, 'owner'));

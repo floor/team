@@ -402,9 +402,11 @@ exit 0
 ships, and nothing else: not a composer, a prompt, a footer, a launch line, a stage order, a
 case flag, a fold, a code module, nor the `status_model` rules a seat's model is read through —
 a profile whose rules declare no model names yields none, and `doctor` says the model can't be
-checked rather than claim a reading. A pattern is added after the shipped ones. It cannot take
+checked rather than claim a reading. A pattern is added after the shipped ones, and a vendor
+notice is not among the patterns an override can add: one exists only as the stage its profile
+captured, with the version range it was captured on. It cannot take
 a shipped pattern out, and it cannot make a screen read `idle` or `unsent` that does not
-already, nor stop a shipped permission, trust or question pattern from matching.
+already, nor stop a shipped permission, trust, question or vendor notice pattern from matching.
 
 `approve` records the file's text with the team file. Until it does, the approved copy stays
 in force — or the shipped profiles alone, when there is no copy, or the copy cannot be read.

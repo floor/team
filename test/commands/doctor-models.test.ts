@@ -88,9 +88,9 @@ describe('team doctor on a file of every model shape', () => {
       [
         'ok    the file is the one the owner approved (approval #1, 2026-10-03, key fe21ef6293de)',
         // the message seats' rules files: written by `up`, absent in this fixture
-        'warn  plain-codex: its rules file is missing; run `team up`',
-        'warn  plain-voyager: its rules file is missing; run `team up`',
-        'warn  plain-reviewer: its rules file is missing; run `team up`',
+        'warn  plain-codex: its rules file is missing; run `team remove plain-codex --keep` then `team add plain-codex` (or `team down` then `team up` for the whole team)',
+        'warn  plain-voyager: its rules file is missing; run `team remove plain-voyager --keep` then `team add plain-voyager` (or `team down` then `team up` for the whole team)',
+        'warn  plain-reviewer: its rules file is missing; run `team remove plain-reviewer --keep` then `team add plain-reviewer` (or `team down` then `team up` for the whole team)',
         'ok    herdr 0.7.1',
         '--    session pilot is not running',
         'ok    claude 2.1.288 (Claude Code)',
@@ -104,10 +104,11 @@ describe('team doctor on a file of every model shape', () => {
         'ok    cursor-agent 2026.10.01',
         'ok    cursor: logged in',
         `ok    the lobby ${home}/.config/team/lobby: will be created at the first launch`,
-        `--    the file is legacy: migrate to ${home}/.config/team/lobby by writing trust:`,
+        `--    the file is legacy: migrate to ${home}/.config/team/lobby by writing:`,
         'trust:',
         '  - ~/.config/team/lobby',
         `  - ${root}`,
+        `~/.config/team/lobby is the machine lobby, where every seat starts now; ${root} is the project root`,
         'team doctor: nothing missing, 5 warnings',
         '',
       ].join('\n'),
@@ -145,9 +146,9 @@ describe('team doctor on a file of every model shape', () => {
     const run = await doctor({ sessionRunning: () => true, version: versions('2.2.0 (Claude Code)') });
     const warns = run.out.split('\n').filter((line) => line.startsWith('warn'));
     expect(warns).toEqual([
-      'warn  plain-codex: its rules file is missing; run `team up`',
-      'warn  plain-voyager: its rules file is missing; run `team up`',
-      'warn  plain-reviewer: its rules file is missing; run `team up`',
+      'warn  plain-codex: its rules file is missing; run `team remove plain-codex --keep` then `team add plain-codex` (or `team down` then `team up` for the whole team)',
+      'warn  plain-voyager: its rules file is missing; run `team remove plain-voyager --keep` then `team add plain-voyager` (or `team down` then `team up` for the whole team)',
+      'warn  plain-reviewer: its rules file is missing; run `team remove plain-reviewer --keep` then `team add plain-reviewer` (or `team down` then `team up` for the whole team)',
       'warn  claude 2.2.0 (Claude Code) is newer than the tested 2.1.288: its screens are untested with this version; a seat that isn\'t read at launch is left out, never typed into',
       'warn  script-seat: the launch runs zsh, not claude, and names no model: if the launcher chooses the model, say so with model_from: launcher',
     ]);
@@ -158,8 +159,8 @@ describe('team doctor on a file of every model shape', () => {
 });
 
 // A seat the state records from a launch that predates the process identity: neither `status` nor
-// the watch can tell whether its pane still holds what team launched, so the doctor says
-// `run team up after the next restart` for it. A seat whose identity was recorded, a stopped seat
+// the watch can tell whether its pane still holds what team launched, so the doctor names the
+// repair that relaunches it for it. A seat whose identity was recorded, a stopped seat
 // (`up` never starts it) and a seat the state doesn't hold at all draw nothing.
 describe('the note for a seat launched before team recorded its process', () => {
   test('one note per recorded seat without the identity, and none for the others', async () => {
@@ -184,8 +185,8 @@ describe('the note for a seat launched before team recorded its process', () => 
     expect(run.code).toBe(0);
     const notes = run.out.split('\n').filter((line) => line.includes('launched before team recorded its process'));
     expect(notes).toEqual([
-      '--    plain-codex: launched before team recorded its process; run team up after the next restart',
-      '--    other-model: launched before team recorded its process; run team up after the next restart',
+      '--    plain-codex: launched before team recorded its process; run `team remove plain-codex --keep` then `team add plain-codex` (or `team down` then `team up` for the whole team) to launch it again',
+      '--    other-model: launched before team recorded its process; run `team remove other-model --keep` then `team add other-model` (or `team down` then `team up` for the whole team) to launch it again',
     ]);
   });
 });

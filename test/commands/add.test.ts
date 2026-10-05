@@ -265,8 +265,57 @@ describe('team add', () => {
     expect(readFileSync(join(project, '.agents/team.yaml'), 'utf8')).toContain('stopped: true');
   });
 
+  test('a file error carries the file\'s own string cleaned: no escape byte reaches the terminal', async () => {
+    // The coordinator names no declared seat, refused while the file is loaded. The name the file
+    // holds carries ESC — a YAML escape inside the double-quoted scalar — and the sentence the
+    // terminal shows is the name cleaned.
+    writeFileSync(
+      join(project, '.agents/team.yaml'),
+      FILE.replace('coordinator: lead\n', 'coordinator: "x\\u001b[31my"\n'),
+    );
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker'], io, sources(world()));
+    expect(code).toBe(2);
+    expect(io.err).toBe('team add: line 3: coordinator "xy" names no declared seat\n');
+    expect(io.err).not.toContain('\x1b');
+    expect(io.out).toBe('');
+  });
+
+  test('a refusal names the file\'s own launch word cleaned: no escape byte reaches the terminal', async () => {
+    // The launch line starts a word the check cannot find, and the word holds ESC: the refusal
+    // the terminal shows names the cleaned word, and no escape byte reaches stdout or stderr.
+    approve(FILE.replace(
+      'launch: claude --model claude-opus-5-5\n    # the seat stays in this order',
+      'launch: "./aa\\ebb"\n    # the seat stays in this order',
+    ));
+    const made = world();
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker'], io, sources(made));
+    expect(code).toBe(1);
+    expect(io.err).toBe('team add: worker: its launch line starts `./aab`, not found from its start folder .\n');
+    expect(io.err).not.toContain('\x1b');
+    expect(io.out).not.toContain('\x1b');
+    expect(made.creates).toEqual([]);
+  });
+
+  test('a dry run plan carries the file\'s own launch word cleaned: no escape byte in the plan', async () => {
+    // The launch line's last word holds ESC and is only an argument, so the plan prints the seat's
+    // `pane run` command with the word cleaned.
+    approve(FILE.replace(
+      'launch: claude --model claude-opus-5-5\n    # the seat stays in this order',
+      'launch: "claude --model claude-opus-5-5 ./aa\\ebb"\n    # the seat stays in this order',
+    ));
+    const made = world();
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker', '--dry-run'], io, sources(made));
+    expect(code).toBe(0);
+    expect(io.out).toContain('./aab');
+    expect(io.out).not.toContain('\x1b');
+    expect(made.creates).toEqual([]);
+  });
+
   test('a line for an existing unnamed pane is checked where that pane runs', async () => {
-    // The reviewer's probe: the state records the seat at pane `w9:p1` with `start_cwd` at the
+    // The adopted pane: the state records the seat at pane `w9:p1` with `start_cwd` at the
     // project root — where `../tools/x.sh` is a file — and the fresh seat would start in the
     // lobby, where it is not. The seat is adopted into the pane, not launched, so the recorded
     // folder is where its line is read: the line resolves, nothing is refused, nothing is made.
@@ -405,11 +454,28 @@ describe('team add', () => {
     expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).toContain('stopped: true');
   });
 
-  test('a temporary seat is recorded, not written into the file, and keeps its own-commits flag', async () => {
+  test('a refused caller is refused before any record: the plain sentence, no seat record, no log line', async () => {
+    // The gate sits before the writer is built: a refused caller prints the refusal exactly as
+    // main prints it — the sentence, nothing wrapped around it — and nothing that reads as a
+    // progress record is written anywhere: stdout is empty, and the log file's bytes are what
+    // they were before the run.
+    const io = testIo(project, { kind: 'seat', name: 'stranger', pane: 'w1:p1' });
+    const log = join(project, '.agents', 'team.log');
+    const logged = () => (existsSync(log) ? readFileSync(log, 'utf8') : null);
+    const before = logged();
+    expect(await runAdd(['worker'], io, sources(world()))).toBe(1);
+    expect(io.out).toBe('');
+    expect(io.err).toBe('team add: only the owner, the coordinator or the operator runs it; this call is stranger\n');
+    expect(logged()).toBe(before);
+  });
+
+  test('a temporary seat is recorded, not written into the file, keeps its own-commits flag, and the log holds its record alone', async () => {
     const made = world();
     const io = testIo(project, owner);
     const code = await runAdd(['--temporary', '--like', 'worker', '--until', 'merged:fix/fresh'], io, sources(made));
     expect(code).toBe(0);
+    // A redirected stdout holds the seat's one record, and records alone.
+    expect(io.out).toBe('worker-tmp-1: ready\n');
     expect(made.renames).toEqual(['worker-tmp-1']);
     const text = readFileSync(join(project, '.agents', 'team.yaml'), 'utf8');
     const loaded = loadTeamFile(project, { home });
@@ -419,6 +485,15 @@ describe('team add', () => {
     const seat = readState(join(project, '.agents')).sessions.acme?.seats['worker-tmp-1'];
     expect(seat?.temporary).toEqual({ like: 'worker', until: 'merged:fix/fresh', own_commits: false });
     expect(readLedger(storePath('acme', project, home)).some((entry) => entry.display === 'Claude Opus 5.5')).toBe(true);
+    // One line per final record: the log holds the seat's record alone, never the separate
+    // `started <seat>` line `add` used to write beside it. The temporary facts stay in the
+    // state file and the seat's doctor/status reading.
+    const log = readFileSync(join(project, '.agents', 'team.log'), 'utf8');
+    const mine = log.split('\n').filter((line) => line.includes('worker-tmp-1'));
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toContain('worker-tmp-1: ready');
+    expect(log).not.toContain('started worker-tmp-1');
+    expect(log).not.toContain('until merged:fix/fresh');
   });
 
   test('a temporary message seat that is left out takes its rules file with it', async () => {
@@ -434,7 +509,8 @@ describe('team add', () => {
     const file = rulesFilePath('acme', project, home, 'scribe-tmp-1') as string;
     const io = testIo(project, owner);
     expect(await runAdd(['--temporary', '--like', 'scribe', '--until', 'merged:fix/fresh'], io, sources(made))).toBe(1);
-    expect(io.out).toContain('scribe-tmp-1: trust question; its workspace was closed without an answer and the seat left out');
+    expect(io.out).toContain('scribe-tmp-1: left out: trust\n');
+    expect(io.err).toContain('  its workspace was closed without an answer and the seat left out\n');
     expect(existsSync(file)).toBe(false);
     expect(readState(join(project, '.agents')).sessions.acme?.seats['scribe-tmp-1']).toBeUndefined();
   });
@@ -517,8 +593,9 @@ describe('team add', () => {
     const io = testIo(project, owner);
     const code = await runAdd(['worker'], io, sources(made));
     expect(code).toBe(1);
-    const line = 'worker: permission; its workspace was closed without input and the seat left out';
+    const line = 'worker: left out: permission';
     expect(io.out).toContain(`${line}\n`);
+    expect(io.err).toContain('  its workspace was closed without input and the seat left out\n');
     expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8')).toContain(line);
     expect(closed).toEqual(['w1']);
   });
@@ -558,7 +635,7 @@ describe('team add', () => {
     expect(keys).toEqual([]);
     expect(closes).toEqual(['w9']);
     expect(made.creates).toEqual(['worker']);
-    expect(io.out).toContain('worker: its pane held a process team did not launch; closed without input and launched again\n');
+    expect(io.err).toContain('  its pane held a process team did not launch; closed without input and launched again\n');
     const seats = readState(join(project, '.agents')).sessions.acme?.seats ?? {};
     expect(seats.worker?.stage).toBe('ready');
     expect(seats.worker?.pane).toBe('w1:p1');
@@ -593,7 +670,7 @@ describe('team add', () => {
         workspaces: () => [{ id: 'w9' }],
       }));
       expect(code).toBe(1);
-      expect(io.out).toContain('worker: herdr no longer shows this seat on its recorded pane; nothing closed; run team status\n');
+      expect(io.out).toContain('worker: left out: herdr no longer shows this seat on its recorded pane; nothing closed; run team status\n');
       expect(closes).toEqual([]);
       expect(made.creates).toEqual([]);
       expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
@@ -610,7 +687,7 @@ describe('team add', () => {
         workspaces: () => [{ id: 'w9' }],
       }));
       expect(code).toBe(1);
-      expect(io.out).toContain('worker: its workspace holds other panes; nothing closed (close its pane there, then run team up)\n');
+      expect(io.out).toContain('worker: left out: its workspace holds other panes; nothing closed (close its pane there, then run team up)\n');
       expect(closes).toEqual([]);
       expect(made.creates).toEqual([]);
       expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
@@ -627,7 +704,7 @@ describe('team add', () => {
         workspaces: () => [{ id: 'w9' }],
       }));
       expect(code).toBe(1);
-      expect(io.out).toContain('worker: its pane could not be read; nothing closed\n');
+      expect(io.out).toContain('worker: left out: its pane could not be read; nothing closed\n');
       expect(closes).toEqual([]);
       expect(made.creates).toEqual([]);
       expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
@@ -647,7 +724,7 @@ describe('team add', () => {
         workspaces: () => [{ id: 'w9' }],
       }));
       expect(code).toBe(1);
-      expect(io.out).toContain('worker: its pane could not be read; nothing closed\n');
+      expect(io.out).toContain('worker: left out: its pane could not be read; nothing closed\n');
       expect(closes).toEqual([]);
       expect(made.creates).toEqual([]);
       expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
@@ -664,7 +741,7 @@ describe('team add', () => {
         workspaces: () => [{ id: 'w9' }],
       }));
       expect(code).toBe(1);
-      expect(io.out).toContain('worker: the process in its pane is working; nothing closed (stop it there, or run team remove worker)\n');
+      expect(io.out).toContain('worker: left out: the process in its pane is working; nothing closed (stop it there, or run team remove worker)\n');
       expect(closes).toEqual([]);
       expect(made.creates).toEqual([]);
       expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
@@ -682,7 +759,7 @@ describe('team add', () => {
         workspaces: () => [{ id: 'w9' }],
       }));
       expect(code).toBe(1);
-      expect(io.out).toContain('worker: the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove worker)\n');
+      expect(io.out).toContain('worker: left out: the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove worker)\n');
       expect(closes).toEqual([]);
       expect(made.creates).toEqual([]);
       expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);

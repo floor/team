@@ -8,18 +8,21 @@ import { runAdd, type AddSources } from '../../src/commands/add.ts';
 import { runApprove, type ApproveSources } from '../../src/commands/approve.ts';
 import { check, loadConfig } from '../../src/commands/check.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
+import { runDown } from '../../src/commands/down.ts';
+import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
 import { runStatus, standingSource, type StatusSources } from '../../src/commands/status.ts';
 import { runUp, type Launch, type UpSources } from '../../src/commands/up.ts';
 import { runWorktree, type WorktreeSources } from '../../src/commands/worktree.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
 import { absoluteTrustProblem, canonicalLanding, insideTrust } from '../../src/file/paths.ts';
+import { rulesFilePath } from '../../src/launch/rules-file.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
 import { defaultFs, findRepoRoot, lobbyDir, verifyLobby, type FsReader } from '../../src/lobby/gate.ts';
 import { seatStart } from '../../src/worktree/place.ts';
 import { readState, updateState } from '../../src/state.ts';
-import { storePath, writeApproval } from '../../src/store/store.ts';
-import { testIo } from '../helpers.ts';
+import { approvalStanding, LEGACY_LINE, storePath, writeApproval } from '../../src/store/store.ts';
+import { claudeBox, testIo } from '../helpers.ts';
 
 const NOW = new Date('2026-10-04T09:00:00Z');
 const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
@@ -1099,13 +1102,21 @@ describe('legacy files and migration', () => {
     const madeUp = world();
     const upRes = await runUpCmd([], madeUp);
     expect(upRes.code).toBe(1);
-    expect(upRes.err).toContain(`team up: the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n`);
+    // The third entry is the one the old message left out: the folder workspace.path places
+    // worktrees in, and the from-line says which key each entry comes from.
+    expect(upRes.err).toContain(
+      `team up: the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n  - ${join(base, 'worktrees', 'acme')}\n`,
+    );
+    expect(upRes.err).toContain(
+      `~/.config/team/lobby is the machine lobby, where every seat starts now; ${root} is the project root, replacing "."; `
+        + `${join(base, 'worktrees', 'acme')} is the folder workspace.path "../worktrees/{repo}/{task}" places worktrees in, replacing "../worktrees/acme/*"`,
+    );
     expect(madeUp.workspaces).toHaveLength(0);
 
     const madeAdd = world();
     const addRes = await runAddCmd(['worker'], madeAdd);
     expect(addRes.code).toBe(1);
-    expect(addRes.err).toContain(`team add: the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n`);
+    expect(addRes.err).toContain(`team add: the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n  - ${join(base, 'worktrees', 'acme')}\n`);
     expect(madeAdd.workspaces).toHaveLength(0);
   });
 
@@ -1116,12 +1127,18 @@ describe('legacy files and migration', () => {
 
     const docBefore = await runDoctorCmd();
     expect(docBefore.code).toBe(0);
-    expect(docBefore.out).toContain(`--    the file is legacy: migrate from ../worktrees/acme/.lobby to ${lobby} by writing trust:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n`);
+    expect(docBefore.out).toContain(
+      `--    the file is legacy: migrate from ../worktrees/acme/.lobby to ${lobby} by writing:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}\n  - ${join(base, 'worktrees', 'acme')}\n`
+        + `~/.config/team/lobby is the machine lobby, where every seat starts now; ${root} is the project root, replacing "."; `
+        + `${join(base, 'worktrees', 'acme')} is the folder workspace.path "../worktrees/{repo}/{task}" places worktrees in, replacing "../worktrees/acme/*"\n`,
+    );
 
-    // Migrated but unapproved: migration note still prints
+    // Migrated but unapproved: the migration note is gone — the file is no longer legacy — and
+    // the approval finding carries the next step.
     writeFileSync(join(root, '.agents', 'team.yaml'), migratedTeamYaml());
     const docUnapproved = await runDoctorCmd();
-    expect(docUnapproved.out).toContain('the file is legacy: migrate');
+    expect(docUnapproved.out).not.toContain('the file is legacy');
+    expect(docUnapproved.out).toContain('MISS  run `team approve`');
 
     approveYaml(migratedTeamYaml());
     const docAfter = await runDoctorCmd();
@@ -1184,13 +1201,14 @@ describe('start_cwd and removal check', () => {
     expect(workerRow.start_cwd).toBe(canonicalLanding(lobby).landing);
   });
 
-  test('removal check in doctor: 3 states and ignoring stopped historical seats', async () => {
+  test('removal check in doctor: states, repairs, and ignoring stopped historical seats', async () => {
     approveYaml(migratedTeamYaml());
     const oldLobby = join(base, 'worktrees', 'acme', '.lobby');
     mkdirSync(oldLobby, { recursive: true });
     const oldLanding = canonicalLanding(oldLobby).landing;
+    const fix = 'run `team remove worker --keep` then `team add worker` (or `team down` then `team up` for the whole team)';
 
-    // State 1: A live seat started in the old lobby
+    // State 1: A live seat that records its start in the old lobby
     updateState(dir, (st) => {
       st.sessions['acme'] = {
         seats: {
@@ -1203,9 +1221,11 @@ describe('start_cwd and removal check', () => {
       sessionRunning: () => true,
       agentList: () => [{ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: oldLanding }],
     });
-    expect(docState1.out).toContain(`warn  the old lobby ../worktrees/acme/.lobby: seat worker started in it; stop it before removing the folder\n`);
+    expect(docState1.out).toContain(`warn  the old lobby ../worktrees/acme/.lobby: seat worker started in it; ${fix} to move it into the lobby, then remove the folder\n`);
 
-    // State 2: A live seat without start_cwd
+    // State 2: A live seat without start_cwd — the 0.2.1 shape. The file says worktree mode with
+    // cwd ".", and that release started such a seat in the old lobby, so the warning names it as
+    // started there; the repair it names is one that moves the seat.
     updateState(dir, (st) => {
       st.sessions['acme'] = {
         seats: {
@@ -1218,7 +1238,38 @@ describe('start_cwd and removal check', () => {
       sessionRunning: () => true,
       agentList: () => [{ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: oldLanding }],
     });
-    expect(docState2.out).toContain(`warn  the old lobby ../worktrees/acme/.lobby: seat worker has no recorded start_cwd; stop it before removing the folder\n`);
+    expect(docState2.out).toContain(`warn  the old lobby ../worktrees/acme/.lobby: seat worker started in it; ${fix} to move it into the lobby, then remove the folder\n`);
+
+    // A shared seat without start_cwd started in the project root, not the old lobby: it is not
+    // named — that release never started it there — and the folder may be removed.
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1' },
+        },
+        worktrees: {},
+      };
+    });
+    const docShared = await runDoctorCmd([], {
+      sessionRunning: () => true,
+      agentList: () => [{ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: root }],
+    });
+    expect(docShared.out).toContain(`ok    the old lobby ../worktrees/acme/.lobby: may be removed\n`);
+
+    // A live seat the file no longer names: where it started is unknown, so the folder is held.
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          ghost: { stage: 'ready', pane: 'w9:p1' },
+        },
+        worktrees: {},
+      };
+    });
+    const docGhost = await runDoctorCmd([], {
+      sessionRunning: () => true,
+      agentList: () => [{ name: 'ghost', agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: oldLanding }],
+    });
+    expect(docGhost.out).toContain(`warn  the old lobby ../worktrees/acme/.lobby: where seat ghost started is not recorded and the file no longer names it; stop it before removing the folder\n`);
 
     // State 3: Live seat with start_cwd in new lobby (may be removed)
     updateState(dir, (st) => {
@@ -1282,6 +1333,715 @@ describe('start_cwd and removal check', () => {
       agentList: () => null,
     });
     expect(doc.out).toContain("can't tell if live seats are using it: herdr doesn't answer");
+  });
+});
+
+// What a person who upgraded from 0.2.1 holds, on the file and state that release left behind:
+// the skeleton's trust block uncommented, every seat on the placeholder version "0", and a
+// state that records ready with a pane but no process identity and no start folder. The
+// fixtures are those file and state shapes themselves, not 0.2.1's own functions: what the
+// upgrade turns on is exactly these literals, so they are pinned here where the assertions
+// can see them.
+describe('the upgrade from 0.2.1', () => {
+  // 0.2.1's init skeleton with the trust block uncommented, and the
+  // placeholder version "0" that release wrote where no owner had filled one in.
+  function v021TeamYaml(): string {
+    return legacyTeamYaml().replaceAll('version: "5.5"', 'version: "0"');
+  }
+
+  // The trust block exactly as the message prints it: the `  - ` lines under `trust:`.
+  function blockOf(output: string): string[] {
+    return output.split('\n').filter((line) => line.startsWith('  - ')).map((line) => line.slice(4));
+  }
+
+  // The file with its trust replaced by the block the message printed, byte for byte.
+  function pasteTrust(yaml: string, entries: readonly string[]): string {
+    return yaml.replace(/trust:\n(?:  - .*\n)+/, `trust:\n${entries.map((entry) => `  - ${entry}\n`).join('')}`);
+  }
+
+  // The store 0.2.1 left: a format-1 approval nobody signed.
+  function legacyApproval(text: string): void {
+    writeFileSync(join(root, '.agents', 'team.yaml'), text);
+    const loaded = loadTeamFile(root, { home });
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+    const store = storePath(loaded.team.project, loaded.root, home);
+    mkdirSync(store, { recursive: true });
+    writeFileSync(join(store, 'approval.json'), JSON.stringify({ ...approvalOf(loaded.team, loaded.root), format: 1, file: text }));
+  }
+
+  test('the block up prints takes the file past validation for every starting shape it met', async () => {
+    // The file exactly as init wrote it, uncommented.
+    approveYaml(v021TeamYaml());
+    const refusedA = await runUpCmd([], world());
+    expect(refusedA.code).toBe(1);
+    const entriesA = blockOf(refusedA.err);
+    expect(entriesA).toEqual(['~/.config/team/lobby', root, join(base, 'worktrees', 'acme')]);
+    writeFileSync(join(root, '.agents', 'team.yaml'), pasteTrust(v021TeamYaml(), entriesA));
+    const pastedA = loadTeamFile(root, { home });
+    expect(pastedA.ok).toBe(true);
+    if (pastedA.ok) expect(pastedA.team.trust).toEqual(entriesA);
+    const afterA = await runUpCmd([], world());
+    expect(afterA.err).not.toContain('the file is legacy');
+    expect(afterA.err).not.toContain('outside trust');
+    expect(afterA.err).toContain('the file is not the approved one');
+    expect(afterA.err).toContain('run `team approve`');
+
+    // An entry the owner added by hand under the init ones — kept, absolute, named as his.
+    const handAdded = v021TeamYaml().replace('  - ../worktrees/acme/*\n', '  - ../worktrees/acme/*\n  - ../allies/*\n');
+    approveYaml(handAdded);
+    const refusedB = await runUpCmd([], world());
+    const entriesB = blockOf(refusedB.err);
+    expect(entriesB).toEqual(['~/.config/team/lobby', root, join(base, 'worktrees', 'acme'), join(base, 'allies')]);
+    expect(refusedB.err).toContain(`${join(base, 'allies')} is your own "../allies/*" entry, kept in absolute form`);
+    writeFileSync(join(root, '.agents', 'team.yaml'), pasteTrust(handAdded, entriesB));
+    expect(loadTeamFile(root, { home }).ok).toBe(true);
+    const afterB = await runUpCmd([], world());
+    expect(afterB.err).not.toContain('the file is legacy');
+    expect(afterB.err).not.toContain('outside trust');
+    expect(afterB.err).toContain('the file is not the approved one');
+
+    // The approval 0.2.1 left is format-1 and unsigned. The block is computed from the
+    // file, so it is the same one, and pasting it leaves exactly the approval step.
+    legacyApproval(v021TeamYaml());
+    const refusedD = await runUpCmd([], world());
+    expect(refusedD.code).toBe(1);
+    expect(blockOf(refusedD.err)).toEqual(['~/.config/team/lobby', root, join(base, 'worktrees', 'acme')]);
+    expect(refusedD.err).toContain(LEGACY_LINE);
+    writeFileSync(join(root, '.agents', 'team.yaml'), pasteTrust(v021TeamYaml(), blockOf(refusedD.err)));
+    expect(loadTeamFile(root, { home }).ok).toBe(true);
+    const afterD = await runUpCmd([], world());
+    expect(afterD.err).not.toContain('the file is legacy');
+    expect(afterD.err).toContain(LEGACY_LINE);
+  });
+
+  test('worktrees inside the project: one extra edit its own rule names, then the same block', async () => {
+    // 0.2.1 refused this shape too, so no trust block can carry it past validation alone; the
+    // refusal that names the extra edit is the file's own, and once the path is moved the
+    // recomputed block is the skeleton's own shape and pastes clean.
+    const insideProjectYaml = v021TeamYaml().replace('../worktrees/{repo}/{task}', 'wt/{task}');
+    approveYaml(insideProjectYaml);
+    const made = world();
+    const refused = await runUpCmd([], made);
+    expect(refused.code).toBe(1);
+    expect(blockOf(refused.err)).toEqual(['~/.config/team/lobby', root]);
+    expect(refused.err).toContain('inside the protected checkout');
+    expect(made.workspaces).toEqual([]);
+
+    // The one extra edit: give worktrees a folder of their own. The file is still legacy, and
+    // the block recomputed for it carries the worktrees folder.
+    const moved = insideProjectYaml.replace('path: wt/{task}', 'path: ../worktrees/{repo}/{task}');
+    approveYaml(moved);
+    const recomputed = await runUpCmd([], world());
+    const entries = blockOf(recomputed.err);
+    expect(entries).toEqual(['~/.config/team/lobby', root, join(base, 'worktrees', 'acme')]);
+    writeFileSync(join(root, '.agents', 'team.yaml'), pasteTrust(moved, entries));
+    expect(loadTeamFile(root, { home }).ok).toBe(true);
+    const after = await runUpCmd([], world());
+    expect(after.err).not.toContain('the file is legacy');
+    expect(after.err).not.toContain('outside trust');
+    expect(after.err).not.toContain('inside the protected checkout');
+    expect(after.err).toContain('the file is not the approved one');
+  });
+
+  test('a folder the containment rule refuses is never suggested: the key that forces it is named', async () => {
+    // The project sits directly under the home and workspace.path puts worktrees in ~/.config,
+    // which covers the lobby and the approval store. Trust refuses that folder, so the message
+    // cannot print it as a suggestion; the key that forces it is named instead. (A legacy file
+    // loads only when workspace.path matches one of its patterns, so the hand-added pattern that
+    // covers it is part of the fixture — and is the old entry the refused folder would replace.)
+    const inside = join(home, 'acme');
+    mkdirSync(join(inside, '.agents'), { recursive: true });
+    git(inside, 'init', '-q', '-b', 'main');
+    const yaml = v021TeamYaml()
+      .replace('  - ../worktrees/acme/*\n', '  - ../worktrees/acme/*\n  - ../.config/*\n')
+      .replace('path: ../worktrees/{repo}/{task}', 'path: ../.config/{task}');
+    writeFileSync(join(inside, '.agents', 'team.yaml'), yaml);
+    const io = testIo(inside, OWNER);
+    await runDoctor(['--file', '.agents/team.yaml'], io, runDoctorCmdSources());
+    expect(io.out).toContain(
+      `workspace.path "../.config/{task}" would need ${join(home, '.config')}, which would cover `
+        + `${join(home, '.config', 'team')}, which holds the lobby and the approval store: trust a folder of the team's own; `
+        + 'team cannot choose it for you: pick a folder yourself and write it into trust',
+    );
+    // The refused folder is not suggested; the suggestions stay at the lobby and the project root.
+    expect(blockOf(io.out)).toEqual(['~/.config/team/lobby', inside]);
+    expect(io.out).not.toContain(`  - ${join(home, '.config')}\n`);
+  });
+
+  // The fake host a named repair runs on: `remove --keep` types the exit into a free seat and
+  // closes its workspace, exactly as the live command does.
+  function removeKeepSources(
+    seat: { name: string; pane: string; workspace: string },
+    agent: string,
+    box: (text: string) => string,
+  ): RemoveSources {
+    let typed: string | undefined;
+    let sent = false;
+    return {
+      sessionRunning: () => true,
+      agents: () => [{ name: seat.name, agent, pane: seat.pane, workspace: seat.workspace, status: 'idle', cwd: null }],
+      alive: () => false,
+      screen: () => ({ kind: sent ? ('unknown' as const) : ('idle' as const) }),
+      screenText: () => (typed === undefined ? undefined : box(typed)),
+      status: () => 'idle',
+      foreground: () => (sent ? [] : [agent]),
+      now: () => NOW,
+      sleep: async () => {},
+      home,
+      launch: {
+        typeText: (_session, _pane, text) => { typed = text; return true; },
+        pressEnter: () => { sent = true; return true; },
+        agentPanes: () => (sent ? [] : [seat.pane]),
+        closeWorkspace: () => true,
+        stopSession: () => false,
+        deleteSession: () => false,
+        kill: () => false,
+        sleep: async () => {},
+        now: () => NOW,
+      },
+    };
+  }
+
+  function claudeLive(name: string, pane: string, workspace: string, cwd: string | null = null) {
+    return {
+      sessionRunning: () => true,
+      agentList: () => [{ name, agent: 'claude', pane, workspace, status: 'idle', cwd }],
+    };
+  }
+
+  test("the identity note's repair works: remove --keep then add relaunches with the process recorded", async () => {
+    approveYaml(migratedTeamYaml());
+    updateState(dir, (st) => {
+      st.sessions['acme'] = { seats: { worker: { stage: 'ready', pane: 'w1:p1', workspace: 'w1' } }, worktrees: {} };
+    });
+    const live = claudeLive('worker', 'w1:p1', 'w1');
+    const before = await runDoctorCmd([], live);
+    expect(before.out).toContain(
+      'worker: launched before team recorded its process; run `team remove worker --keep` then `team add worker` '
+        + '(or `team down` then `team up` for the whole team) to launch it again',
+    );
+
+    // Run the repair the line names, on the fake host, and read the note again.
+    expect(
+      await runRemove(['worker', '--keep', ...FILE], testIo(root, OWNER), removeKeepSources({ name: 'worker', pane: 'w1:p1', workspace: 'w1' }, 'claude', claudeBox)),
+    ).toBe(0);
+    const made = world();
+    made.session = 'running';
+    made.launch.processInfo = () => ({ shell: 900, foreground: [901] });
+    expect((await runAddCmd(['worker'], made)).code).toBe(0);
+
+    const after = await runDoctorCmd([], live);
+    expect(after.out).not.toContain('launched before team recorded its process');
+    const worker = readState(dir).sessions['acme']?.seats.worker;
+    expect(worker?.launched).toEqual({ shell: 900, cli: [901] });
+    expect(worker?.start_cwd).toBe(canonicalLanding(lobby).landing);
+    expect(worker?.stage).toBe('ready');
+  });
+
+  function codexCapture(name: string): string {
+    // The captured Codex home names Terra 5.6; the file's seat says GPT Sol 6, so the status
+    // row is shown in the file's spelling, as live.test.ts does it.
+    return readFileSync(new URL(`../fixtures/codex/0.157.0/${name}.txt`, import.meta.url), 'utf8')
+      .replaceAll('GPT-5.6-Terra', 'GPT-6-Sol');
+  }
+
+  test("the rules-file line's repair works: remove --keep then add writes the file at the fresh launch", async () => {
+    // A rules file travels as a message only on a CLI that takes rules that way, so the seat
+    // the line is printed for is a Codex one.
+    const withScribe = migratedTeamYaml().replace(
+      '    count: 1\n',
+      '    count: 1\n  - role: implementer\n    name: scribe\n    label: scribe\n    cli: codex\n    vendor: openai\n    model: GPT Sol\n    version: "6"\n    launch: codex\n',
+    );
+    approveYaml(withScribe);
+    updateState(dir, (st) => {
+      st.sessions['acme'] = { seats: { scribe: { stage: 'ready', pane: 'w2:p1', workspace: 'w2' } }, worktrees: {} };
+    });
+    const live = {
+      sessionRunning: () => true,
+      agentList: () => [{ name: 'scribe', agent: 'codex', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null }],
+    };
+    const before = await runDoctorCmd([], live);
+    expect(before.out).toContain(
+      'scribe: its rules file is missing; run `team remove scribe --keep` then `team add scribe` '
+        + '(or `team down` then `team up` for the whole team)',
+    );
+
+    const codexBox = (text: string): string => codexCapture('idle').replace('› Ask Codex to do anything', `› ${text}`);
+    expect(
+      await runRemove(['scribe', '--keep', ...FILE], testIo(root, OWNER), removeKeepSources({ name: 'scribe', pane: 'w2:p1', workspace: 'w2' }, 'codex', codexBox)),
+    ).toBe(0);
+
+    // The relaunch, on a Codex-shaped host: the rules go to the file, the one line that points
+    // at it is typed at an empty idle prompt, read back row by row, then Enter.
+    const made = world();
+    made.session = 'running';
+    const idle = codexCapture('idle');
+    const working = codexCapture('working');
+    let typed = '';
+    let pasted = false;
+    let entered = false;
+    let status = 'idle';
+    const boxed = (): string => {
+      const [first = '', ...rest] = typed.split('\n');
+      return idle.replace('› Ask Codex to do anything', [`› ${first}`, ...rest.map((line) => `  ${line}`)].join('\n'));
+    };
+    made.launch.paneText = () => (pasted ? boxed() : entered ? working : idle);
+    made.launch.typeText = (_session, _pane, text) => { typed = text; pasted = true; return true; };
+    made.launch.pressEnter = () => { pasted = false; entered = true; status = 'working'; return true; };
+    made.launch.agentStatus = () => status;
+    made.launch.foreground = () => ['codex'];
+    made.launch.processInfo = () => ({ shell: 900, foreground: [901] });
+    expect((await runAddCmd(['scribe'], made)).code).toBe(0);
+
+    const file = rulesFilePath('acme', root, home, 'scribe');
+    expect(file).not.toBeNull();
+    if (file !== null) expect(existsSync(file)).toBe(true);
+    const after = await runDoctorCmd([], live);
+    expect(after.out).not.toContain('scribe: its rules file is missing');
+    expect(readState(dir).sessions['acme']?.seats.scribe).toMatchObject({ stage: 'ready', rules: 'message' });
+  });
+
+  test("the old-lobby line's repair works: remove --keep then add moves the seat into the lobby", async () => {
+    approveYaml(migratedTeamYaml());
+    const oldLobby = join(base, 'worktrees', 'acme', '.lobby');
+    mkdirSync(oldLobby, { recursive: true });
+    const oldLanding = canonicalLanding(oldLobby).landing;
+    updateState(dir, (st) => {
+      st.sessions['acme'] = { seats: { worker: { stage: 'ready', pane: 'w1:p1', workspace: 'w1', start_cwd: oldLanding } }, worktrees: {} };
+    });
+    const live = claudeLive('worker', 'w1:p1', 'w1', oldLanding);
+    const before = await runDoctorCmd([], live);
+    expect(before.out).toContain(
+      'warn  the old lobby ../worktrees/acme/.lobby: seat worker started in it; run `team remove worker --keep` then `team add worker` '
+        + '(or `team down` then `team up` for the whole team) to move it into the lobby, then remove the folder\n',
+    );
+
+    expect(
+      await runRemove(['worker', '--keep', ...FILE], testIo(root, OWNER), removeKeepSources({ name: 'worker', pane: 'w1:p1', workspace: 'w1' }, 'claude', claudeBox)),
+    ).toBe(0);
+    const made = world();
+    made.session = 'running';
+    made.launch.processInfo = () => ({ shell: 900, foreground: [901] });
+    expect((await runAddCmd(['worker'], made)).code).toBe(0);
+
+    const after = await runDoctorCmd([], live);
+    expect(after.out).toContain('ok    the old lobby ../worktrees/acme/.lobby: may be removed\n');
+    expect(after.out).not.toContain('seat worker started in it');
+    expect(readState(dir).sessions['acme']?.seats.worker?.start_cwd).toBe(canonicalLanding(lobby).landing);
+  });
+
+  function downSourcesFor(
+    seats: { name: string; pane: string; workspace: string; cli?: string }[],
+    closed?: string[],
+  ): RemoveSources {
+    let sentPane: string | null = null;
+    const typedBox = new Map<string, string>();
+    const cliMap = new Map(seats.map((s) => [s.pane, s.cli ?? 'claude']));
+    return {
+      sessionRunning: () => true,
+      agents: () => seats.map((seat) => ({ name: seat.name, agent: seat.cli ?? 'claude', pane: seat.pane, workspace: seat.workspace, status: 'idle', cwd: null })),
+      alive: () => false,
+      screen: () => ({ kind: 'idle' as const }),
+      screenText: (_session, pane, cli) => {
+        const text = typedBox.get(pane);
+        if (text === undefined) return undefined;
+        return cli === 'codex' ? codexCapture('idle').replace('› Ask Codex to do anything', `› ${text}`) : claudeBox(text);
+      },
+      status: () => 'idle',
+      foreground: (_session, pane) => (sentPane === null ? [cliMap.get(pane) ?? 'claude'] : pane === sentPane ? [] : [cliMap.get(pane) ?? 'claude']),
+      now: () => NOW,
+      sleep: async () => {},
+      home,
+      launch: {
+        typeText: (_session, pane, text) => { typedBox.set(pane, text); return true; },
+        pressEnter: (_session, pane) => { sentPane = pane; return true; },
+        agentPanes: () => seats.filter((seat) => seat.pane !== sentPane).map((seat) => seat.pane),
+        closeWorkspace: (_session, workspace) => { closed?.push(workspace); return true; },
+        stopSession: () => true,
+        deleteSession: () => true,
+        kill: () => false,
+        sleep: async () => {},
+        now: () => NOW,
+      },
+    };
+  }
+
+  test('the same note clears for the whole-team route: down, then up', async () => {
+    approveYaml(migratedTeamYaml());
+    updateState(dir, (st) => {
+      st.sessions['acme'] = { seats: { worker: { stage: 'ready', pane: 'w1:p1', workspace: 'w1' } }, worktrees: {} };
+    });
+    const live = claudeLive('worker', 'w1:p1', 'w1');
+    expect((await runDoctorCmd([], live)).out).toContain('launched before team recorded its process');
+
+    // `down` stops both seats and clears the session; `up` then launches the team from the
+    // beginning, which is what records the identity.
+    const seats = [
+      { name: 'lead', pane: 'w0:p1', workspace: 'w0' },
+      { name: 'worker', pane: 'w1:p1', workspace: 'w1' },
+    ];
+    const closed: string[] = [];
+    expect(await runDown([...FILE], testIo(root, OWNER), downSourcesFor(seats, closed))).toBe(0);
+    expect(closed.sort()).toEqual(['w0', 'w1']);
+
+    const made = world();
+    made.launch.processInfo = () => ({ shell: 900, foreground: [901] });
+    const run = await runUpCmd([], made);
+    expect(run.code).toBe(0);
+    expect(run.out).toContain('worker: ready\n');
+    const after = await runDoctorCmd([], live);
+    expect(after.out).not.toContain('launched before team recorded its process');
+    expect(readState(dir).sessions['acme']?.seats.worker?.launched).toEqual({ shell: 900, cli: [901] });
+  });
+
+  test("up's skip line says what repairs a ready seat whose process was never recorded", async () => {
+    approveYaml(migratedTeamYaml());
+    updateState(dir, (st) => {
+      st.sessions['acme'] = { seats: { worker: { stage: 'ready', pane: 'w1:p1', workspace: 'w1' } }, worktrees: {} };
+    });
+    const made = world();
+    made.session = 'running';
+    const run = await runUpCmd([], made, {
+      agents: () => [{ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null }],
+    });
+    expect(run.code).toBe(0);
+    expect(run.out).toContain('worker: ready\n');
+    expect(run.err).toContain(
+      '  already ready; left as it is; a relaunch records its process: '
+        + 'team remove worker --keep, then team add worker (or team down, then team up, for the whole team)\n',
+    );
+  });
+
+  test("up's skip line says what moves a ready seat that still starts outside the lobby", async () => {
+    approveYaml(migratedTeamYaml());
+    const oldLobby = join(base, 'worktrees', 'acme', '.lobby');
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: { worker: { stage: 'ready', pane: 'w1:p1', workspace: 'w1', launched: { shell: 1, cli: [2] }, start_cwd: canonicalLanding(oldLobby).landing } },
+        worktrees: {},
+      };
+    });
+    const made = world();
+    made.session = 'running';
+    const run = await runUpCmd([], made, {
+      agents: () => [{ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null }],
+    });
+    expect(run.code).toBe(0);
+    expect(run.out).toContain('worker: ready\n');
+    expect(run.err).toContain(
+      '  already ready; left as it is; a relaunch moves it into the lobby: '
+        + 'team remove worker --keep, then team add worker (or team down, then team up, for the whole team)\n',
+    );
+  });
+
+  test('coordinator and operator relaunch lines offer only whole-team repair, and down/up clears them', async () => {
+    // Separate coordinator and operator seats
+    const withOp = migratedTeamYaml()
+      .replace('operator: lead', 'operator: opSeat')
+      .replace(
+        '    count: 1\n',
+        '    count: 1\n  - role: operator\n    name: opSeat\n    label: opSeat\n    cli: claude-code\n    vendor: anthropic\n    model: Claude Opus\n    version: "5.5"\n    launch: claude --model claude-opus-5-5\n    count: 1\n',
+      );
+    approveYaml(withOp);
+    const oldLobby = join(base, 'worktrees', 'acme', '.lobby');
+    mkdirSync(oldLobby, { recursive: true });
+    const oldLanding = canonicalLanding(oldLobby).landing;
+
+    // 1. Identity note: coordinator and operator name only team down/up; ordinary names both
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0' },
+          opSeat: { stage: 'ready', pane: 'w1:p1', workspace: 'w1' },
+          worker: { stage: 'ready', pane: 'w2:p1', workspace: 'w2' },
+        },
+        worktrees: {},
+      };
+    });
+    const liveLeads = {
+      sessionRunning: () => true,
+      agentList: () => [
+        { name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null },
+        { name: 'opSeat', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null },
+        { name: 'worker', agent: 'claude', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null },
+      ],
+    };
+    const docIdent = await runDoctorCmd([], liveLeads);
+    expect(docIdent.out).toContain(
+      'lead: launched before team recorded its process; run `team down` then `team up` (to restart the whole team) to launch it again',
+    );
+    expect(docIdent.out).toContain(
+      'opSeat: launched before team recorded its process; run `team down` then `team up` (to restart the whole team) to launch it again',
+    );
+    expect(docIdent.out).not.toContain('team remove lead --keep');
+    expect(docIdent.out).not.toContain('team remove opSeat --keep');
+    expect(docIdent.out).toContain('team remove worker --keep');
+
+    // Run whole-team repair on fake host; afterwards the identity note is gone
+    const seatsToDown = [
+      { name: 'lead', pane: 'w0:p1', workspace: 'w0' },
+      { name: 'opSeat', pane: 'w1:p1', workspace: 'w1' },
+      { name: 'worker', pane: 'w2:p1', workspace: 'w2' },
+    ];
+    expect(await runDown([...FILE], testIo(root, OWNER), downSourcesFor(seatsToDown))).toBe(0);
+    const madeUp = world();
+    madeUp.launch.processInfo = () => ({ shell: 900, foreground: [901] });
+    expect((await runUpCmd([], madeUp)).code).toBe(0);
+    const docIdentAfter = await runDoctorCmd([], liveLeads);
+    expect(docIdentAfter.out).not.toContain('launched before team recorded its process');
+
+    // 2. Rules-file warning: coordinator and operator name only team down/up
+    const withCodexLeads = withOp
+      .replaceAll('cli: claude-code', 'cli: codex')
+      .replaceAll('vendor: anthropic', 'vendor: openai')
+      .replaceAll('model: Claude Opus', 'model: GPT Sol')
+      .replaceAll('version: "5.5"', 'version: "6"')
+      .replaceAll('launch: claude --model claude-opus-5-5', 'launch: codex');
+    approveYaml(withCodexLeads);
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0' },
+          opSeat: { stage: 'ready', pane: 'w1:p1', workspace: 'w1' },
+          worker: { stage: 'ready', pane: 'w2:p1', workspace: 'w2' },
+        },
+        worktrees: {},
+      };
+    });
+    const docRules = await runDoctorCmd([], liveLeads);
+    expect(docRules.out).toContain(
+      'lead: its rules file is missing; run `team down` then `team up` (to restart the whole team)',
+    );
+    expect(docRules.out).toContain(
+      'opSeat: its rules file is missing; run `team down` then `team up` (to restart the whole team)',
+    );
+    expect(docRules.out).not.toContain('team remove lead --keep');
+    expect(docRules.out).not.toContain('team remove opSeat --keep');
+
+    // Run whole-team repair on fake host; afterwards the rules warning is gone
+    const codexSeatsToDown = seatsToDown.map((s) => ({ ...s, cli: 'codex' }));
+    expect(await runDown([...FILE], testIo(root, OWNER), downSourcesFor(codexSeatsToDown))).toBe(0);
+    const madeCodex = world();
+    madeCodex.session = 'running';
+    const idle = codexCapture('idle');
+    const paneState = new Map<string, { typed: string; pasted: boolean; entered: boolean }>();
+    const stateFor = (pane: string) => {
+      let s = paneState.get(pane);
+      if (!s) {
+        s = { typed: '', pasted: false, entered: false };
+        paneState.set(pane, s);
+      }
+      return s;
+    };
+    madeCodex.launch.paneText = (_session, pane) => {
+      const s = stateFor(pane);
+      if (s.pasted) {
+        const [first = '', ...rest] = s.typed.split('\n');
+        return idle.replace('› Ask Codex to do anything', [`› ${first}`, ...rest.map((line) => `  ${line}`)].join('\n'));
+      }
+      return idle;
+    };
+    madeCodex.launch.typeText = (_session, pane, text) => {
+      const s = stateFor(pane);
+      s.typed = text;
+      s.pasted = true;
+      return true;
+    };
+    madeCodex.launch.pressEnter = (_session, pane) => {
+      const s = stateFor(pane);
+      s.pasted = false;
+      s.entered = true;
+      return true;
+    };
+    madeCodex.launch.agentStatus = (_session, pane) => (stateFor(pane).entered ? 'working' : 'idle');
+    madeCodex.launch.foreground = () => ['codex'];
+    madeCodex.launch.processInfo = () => ({ shell: 900, foreground: [901] });
+    expect((await runUpCmd([], madeCodex)).code).toBe(0);
+    const docRulesAfter = await runDoctorCmd([], liveLeads);
+    expect(docRulesAfter.out).not.toContain('lead: its rules file is missing');
+    expect(docRulesAfter.out).not.toContain('opSeat: its rules file is missing');
+
+    // 3. Old lobby warning: coordinator and operator name only team down/up
+    approveYaml(withOp);
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0', start_cwd: oldLanding, launched: { shell: 1, cli: [2] } },
+          opSeat: { stage: 'ready', pane: 'w1:p1', workspace: 'w1', start_cwd: oldLanding, launched: { shell: 1, cli: [2] } },
+        },
+        worktrees: {},
+      };
+    });
+    const docOld = await runDoctorCmd([], {
+      sessionRunning: () => true,
+      agentList: () => [
+        { name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: oldLanding },
+        { name: 'opSeat', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: oldLanding },
+      ],
+    });
+    expect(docOld.out).toContain(
+      'the old lobby ../worktrees/acme/.lobby: seats lead, opSeat started in it; run `team down` then `team up` to move them into the lobby (to restart the whole team), then remove the folder',
+    );
+    expect(docOld.out).not.toContain('team remove <seat> --keep');
+
+    // Single coordinator in old lobby
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0', start_cwd: oldLanding, launched: { shell: 1, cli: [2] } },
+        },
+        worktrees: {},
+      };
+    });
+    const docOldSingle = await runDoctorCmd([], {
+      sessionRunning: () => true,
+      agentList: () => [{ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: oldLanding }],
+    });
+    expect(docOldSingle.out).toContain(
+      'the old lobby ../worktrees/acme/.lobby: seat lead started in it; run `team down` then `team up` (to restart the whole team) to move it into the lobby, then remove the folder',
+    );
+    expect(docOldSingle.out).not.toContain('team remove lead --keep');
+
+    // Run whole-team repair on fake host; afterwards old lobby may be removed
+    expect(await runDown([...FILE], testIo(root, OWNER), downSourcesFor([{ name: 'lead', pane: 'w0:p1', workspace: 'w0' }]))).toBe(0);
+    const madeLobbyUp = world();
+    madeLobbyUp.launch.processInfo = () => ({ shell: 900, foreground: [901] });
+    expect((await runUpCmd([], madeLobbyUp)).code).toBe(0);
+    const docOldAfter = await runDoctorCmd([], {
+      sessionRunning: () => true,
+      agentList: () => [{ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null }],
+    });
+    expect(docOldAfter.out).toContain('ok    the old lobby ../worktrees/acme/.lobby: may be removed\n');
+
+    // 4. up's skip line: coordinator and operator name only team down/up; ordinary names both
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0' },
+          opSeat: { stage: 'ready', pane: 'w1:p1', workspace: 'w1' },
+          worker: { stage: 'ready', pane: 'w2:p1', workspace: 'w2' },
+        },
+        worktrees: {},
+      };
+    });
+    const upWorld = world();
+    upWorld.session = 'running';
+    const upRun = await runUpCmd([], upWorld, {
+      agents: () => [
+        { name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null },
+        { name: 'opSeat', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null },
+        { name: 'worker', agent: 'claude', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null },
+      ],
+    });
+    expect(upRun.code).toBe(0);
+    expect(upRun.out).toContain('lead: ready\n');
+    expect(upRun.out).toContain('worker: ready\n');
+    expect(upRun.out).toContain('opSeat: ready\n');
+    // The words main's skip line carried are each record's stderr detail now, in seat order:
+    // the coordinator and the operator name only the whole-team repair; an ordinary name both.
+    expect(upRun.err).toContain(
+      '  already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)\n'
+        + '  already ready; left as it is; a relaunch records its process: team remove worker --keep, then team add worker (or team down, then team up, for the whole team)\n'
+        + '  already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)\n',
+    );
+    expect(upRun.err).not.toContain('team remove lead --keep');
+    expect(upRun.err).not.toContain('team remove opSeat --keep');
+
+    // Old landing skip line for coordinator
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0', launched: { shell: 1, cli: [2] }, start_cwd: oldLanding },
+        },
+        worktrees: {},
+      };
+    });
+    const upOld = await runUpCmd([], upWorld, {
+      agents: () => [{ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null }],
+    });
+    expect(upOld.code).toBe(0);
+    expect(upOld.out).toContain('lead: ready\n');
+    expect(upOld.err).toContain(
+      '  already ready; left as it is; a relaunch moves it into the lobby: team down, then team up (to restart the whole team)\n',
+    );
+    expect(upOld.err).not.toContain('team remove lead --keep');
+
+    // Run whole-team repair on fake host; afterwards up launches fresh and the detail is gone
+    expect(await runDown([...FILE], testIo(root, OWNER), downSourcesFor([{ name: 'lead', pane: 'w0:p1', workspace: 'w0' }]))).toBe(0);
+    const upAfter = await runUpCmd([], world());
+    expect(upAfter.code).toBe(0);
+    expect(upAfter.out).toContain('lead: ready\n');
+    expect(upAfter.err).not.toContain('already ready');
+  });
+
+  test('version "0" — the placeholder init writes — no longer stops the first fresh launch', async () => {
+    approveYaml(migratedTeamYaml().replaceAll('version: "5.5"', 'version: "0"'));
+    const run = await runUpCmd([], world());
+    expect(run.code).toBe(0);
+    expect(run.out).toContain('lead: ready\n');
+    expect(run.out).toContain('worker: ready\n');
+  });
+
+  test('the family is still compared: a wrong model with version "0" stops exactly as today', async () => {
+    const yaml = migratedTeamYaml()
+      .replaceAll('version: "5.5"', 'version: "0"')
+      .replaceAll('model: Claude Opus', 'model: Claude Sonnet');
+    approveYaml(yaml);
+    const run = await runUpCmd([], world());
+    expect(run.code).toBe(1);
+    expect(run.out).toContain('runs Claude Opus 5.5; the file says Claude Sonnet 0; left at launched, not named');
+    expect(readState(dir).sessions['acme']?.seats.worker?.stage).toBe('launched');
+  });
+
+  test('no other spelling is the placeholder: "0.0" still stops the launch', async () => {
+    approveYaml(migratedTeamYaml().replaceAll('version: "5.5"', 'version: "0.0"'));
+    const run = await runUpCmd([], world());
+    expect(run.code).toBe(1);
+    expect(run.out).toContain('the file says Claude Opus 0.0; left at launched, not named');
+  });
+
+  test('doctor says the placeholder as information: the running model and the one edit', async () => {
+    approveYaml(migratedTeamYaml().replaceAll('version: "5.5"', 'version: "0"'));
+    updateState(dir, (st) => {
+      st.sessions['acme'] = { seats: { worker: { stage: 'ready', pane: 'w1:p1' } }, worktrees: {} };
+    });
+    const over = { paneText: () => IDLE };
+    const doc = await runDoctorCmd([], over);
+    expect(doc.out).toContain(
+      'worker: runs Claude Opus 5.5; the file\'s version "0" is the placeholder init writes — '
+        + 'write "5.5" into the file, then run `team approve`',
+    );
+    // Information, not a block: the note adds no finding that stops anything.
+    expect(doc.code).toBe(0);
+
+    // A seat that runs another family than the file's warns with the mismatch the launch
+    // check will print, naming the edit to model and version so the first upgrade edit covers it.
+    const other = migratedTeamYaml()
+      .replaceAll('version: "5.5"', 'version: "0"')
+      .replaceAll('model: Claude Opus', 'model: Claude Sonnet');
+    writeFileSync(join(root, '.agents', 'team.yaml'), other);
+    const docOther = await runDoctorCmd([], over);
+    expect(docOther.out).toContain(
+      'warn  worker: runs Claude Opus 5.5; the file says Claude Sonnet 0 — '
+        + 'write model: "Claude Opus" and version: "5.5" into the file, then run `team approve`',
+    );
+    expect(docOther.out).not.toContain('the placeholder init writes');
+
+    // A real version produces neither placeholder note nor wrong-family warning.
+    const realVersion = migratedTeamYaml()
+      .replaceAll('model: Claude Opus', 'model: Claude Sonnet');
+    writeFileSync(join(root, '.agents', 'team.yaml'), realVersion);
+    const docReal = await runDoctorCmd([], over);
+    expect(docReal.out).not.toContain('the placeholder init writes');
+    expect(docReal.out).not.toContain('the file says Claude Sonnet 0');
+
+    // A stopped team has no screen, so no placeholder finding is emitted.
+    updateState(dir, (st) => {
+      st.sessions['acme'] = { seats: {}, worktrees: {} };
+    });
+    const docStopped = await runDoctorCmd([], over);
+    expect(docStopped.out).not.toContain('the placeholder init writes');
+    expect(docStopped.out).not.toContain('the file says Claude Sonnet 0');
   });
 });
 
@@ -1352,7 +2112,7 @@ describe('a launch line that cannot run where the seat starts', () => {
     const made = world();
     const run = await runUpCmd([], made);
     expect(run.code).toBe(1);
-    expect(run.out).toContain('worker: refused: its launch line runs `../tools/x.sh`');
+    expect(run.out).toContain('worker: left out: refused: its launch line runs `../tools/x.sh`');
     expect(made.workspaces).toContainEqual({ label: 'lead', cwd: lobby });
     expect(made.workspaces.some((workspace) => workspace.label === 'worker')).toBe(false);
   });
@@ -1487,7 +2247,7 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     };
   }
 
-  test('a lobby swapped after the gate creates no workspace, no pane and no typed input', async () => {
+  test('a lobby swapped after the gate creates no workspace, no pane and no typed input: the record and the log hold the reason in words', async () => {
     approveYaml(migratedTeamYaml());
     const made = world();
     // The replacement is a real folder of the same owner, mode and emptiness: no link, no mode
@@ -1498,11 +2258,17 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     expect(made.paneIds()).toEqual([]);
     expect(made.runs).toEqual([]);
     expect(made.typed).toEqual([]);
-    expect(run.out).toContain(`lead: the lobby ${lobby}: it is not the folder the gate read`);
+    // The record holds the words; the folder it names is stderr detail, for the owner alone.
+    expect(run.out).toContain('lead: left out: the lobby: it is not the folder the gate read\n');
+    expect(run.out).not.toContain(lobby);
+    expect(run.err).toContain(`  the lobby ${lobby}: it is not the folder the gate read\n`);
+    const log = readFileSync(join(dir, 'team.log'), 'utf8');
+    expect(log).toContain('lead: left out: the lobby: it is not the folder the gate read');
+    expect(log).not.toContain(lobby);
     expect(Object.keys(readState(dir).sessions['acme']?.seats ?? {})).toEqual([]);
   });
 
-  test('add creates nothing for the same swap, and leaves the folder it names unchanged', async () => {
+  test('add creates nothing for the same swap, and leaves the folder it names unchanged: the log holds no folder', async () => {
     approveYaml(migratedTeamYaml());
     const outside = join(base, 'outside');
     mkdirSync(outside, { recursive: true });
@@ -1514,12 +2280,19 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     expect(made.paneIds()).toEqual([]);
     expect(made.runs).toEqual([]);
     expect(made.typed).toEqual([]);
-    expect(run.out).toContain(`worker: the lobby ${lobby}: canonical path`);
+    // The record holds the words; the canonical paths the check compared are stderr detail.
+    expect(run.out).toContain('worker: left out: the lobby: its canonical path leads somewhere else\n');
+    expect(run.out).not.toContain(lobby);
+    expect(run.err).toContain('  the lobby ');
+    expect(run.err).toContain('canonical path');
+    const log = readFileSync(join(dir, 'team.log'), 'utf8');
+    expect(log).toContain('worker: left out: the lobby: its canonical path leads somewhere else');
+    expect(log).not.toContain(lobby);
     expect(readdirSync(outside)).toEqual([]);
     expect(statSync(outside).mode & 0o777).toBe(0o755);
   });
 
-  test('a swap between two seats stops the next one and leaves the first running', async () => {
+  test('a swap between two seats stops the next one and leaves the first running: the stopped seat’s record and log hold no folder', async () => {
     approveYaml(migratedTeamYaml());
     const made = world();
     // The gate reads first, the lead's confirmation second (the swap is not there yet), the
@@ -1528,7 +2301,12 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     expect(run.code).toBe(1);
     expect(made.workspaces).toEqual([{ label: 'lead', cwd: lobby }]);
     expect(run.out).toContain('lead: ready');
-    expect(run.out).toContain(`worker: the lobby ${lobby}: it is not the folder the gate read`);
+    expect(run.out).toContain('worker: left out: the lobby: it is not the folder the gate read\n');
+    expect(run.out).not.toContain(lobby);
+    expect(run.err).toContain(`  the lobby ${lobby}: it is not the folder the gate read\n`);
+    const log = readFileSync(join(dir, 'team.log'), 'utf8');
+    expect(log).toContain('worker: left out: the lobby: it is not the folder the gate read');
+    expect(log).not.toContain(lobby);
     // The first seat was created while the path was the verified lobby; nothing closes it.
     expect(made.closed).toEqual([]);
     expect(made.launch.agentPanes('acme')).toEqual(['w1:p1']);
@@ -1643,7 +2421,10 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
   test('doctor notes a migrated file that has never been approved', async () => {
     writeFileSync(join(root, '.agents', 'team.yaml'), migratedTeamYaml());
     const doc = await runDoctorCmd();
-    expect(doc.out).toContain('the file is legacy: migrate');
+    // The file is no longer legacy, so the migration note stays away; the next step the owner
+    // has is the approval.
+    expect(doc.out).not.toContain('the file is legacy');
+    expect(doc.out).toContain('MISS  run `team approve`');
   });
 
   test('a resumed launch from a migrated approved file keeps the recorded start folder', async () => {

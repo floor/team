@@ -5,7 +5,9 @@ import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/
 import { readArgs } from '../args.ts';
 import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
+import { migrationText } from '../file/migrate.ts';
 import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
+import { relaunchRepair } from '../file/sections/lead.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import {
   agentList,
@@ -29,12 +31,14 @@ import {
   type PaneProcesses,
   type SessionState,
 } from '../herdr.ts';
-import type { Command, Io } from '../io.ts';
+import { cleanedIo, type Command, type Io } from '../io.ts';
 import type { Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
 import { seatProcessVerdict } from '../launch/identity.ts';
 import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
+import { plainLine, plainText } from '../launch/plain.ts';
+import { progressWriter } from '../launch/progress.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { rulesFileHash, rulesFileHolds, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
 import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
@@ -231,7 +235,10 @@ function seatPlan(
   }
   const named = agents.find((agent) => agent.name === seat.name);
   const onPane = recorded.pane ? agents.some((agent) => agent.pane === recorded.pane) : false;
-  if (recorded.stage === 'ready') return named || onPane ? { ...planned, stage: 'ready' } : planned;
+  if (recorded.stage === 'ready') {
+    if (named || onPane) return { ...planned, stage: 'ready', ...restartNote(team, seat.name, recorded, home) };
+    return planned;
+  }
   const workspaceLive =
     recorded.workspace && workspaces ? workspaces.some((workspace) => workspace.id === recorded.workspace) : null;
   const live = Boolean(named || onPane || workspaceLive);
@@ -245,10 +252,31 @@ function seatPlan(
   };
 }
 
+// What only a relaunch repairs, for a ready seat this `up` leaves as it is: a process team it
+// never recorded (a launch from before identities were), or a start outside the machine lobby
+// (an old release's start). The skip line says what does repair it; both repairs relaunch the
+// seat — one seat at a time, or the whole team (for a coordinator or operator, only the whole team).
+function restartNote(
+  team: Pick<TeamFile, 'coordinator' | 'operator'>,
+  name: string,
+  recorded: SeatState,
+  home: string,
+): { restartNote: string } | Record<string, never> {
+  const fix = relaunchRepair(team, name, 'plain');
+  if (!recorded.launched) return { restartNote: `a relaunch records its process: ${fix}` };
+  if (recorded.start_cwd && recorded.start_cwd !== lobbyDir(home)) {
+    return { restartNote: `a relaunch moves it into the lobby: ${fix}` };
+  }
+  return {};
+}
+
 export async function runUp(argv: string[], io: Io, sources: UpSources): Promise<number> {
+  // Every line this run writes goes through the cleaned writers from here; the raw pair stays
+  // reachable for the progress writer alone, which draws its own `\r\x1b[K` on a TTY.
+  const out = cleanedIo(io);
   const args = readArgs(argv, ['session', 'file'], ['dry-run']);
   if (args.error || args.rest.length) {
-    io.stderr(`team up: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
+    out.stderr(`team up: ${plainText(args.error ?? `unexpected "${args.rest[0]}"`)}\n${USAGE}`);
     // exit: up.invocation
     return 2;
   }
@@ -256,7 +284,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
-      io.stderr(`team up: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
+      out.stderr(`team up: ${problem.line ? `line ${problem.line}: ` : ''}${plainText(problem.message)}\n`);
     }
     // exit: up.not-a-repo
     // exit: up.file
@@ -322,8 +350,10 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
 
   const lobby = lobbyDir(sources.home);
   if (!team.trust || team.trust.length === 0 || isLegacyTrust(team.trust)) {
+    // The block names every entry the next `up` will require, computed from the file, so one
+    // edit takes the file past validation. The same block is what `doctor` and `add` print.
     refusals.push(
-      `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\ntrust:\n  - ~/.config/team/lobby\n  - ${root}`,
+      `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\n${migrationText(team, root, sources.home)}`,
     );
   }
 
@@ -348,6 +378,12 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const budgetGate = sources.seatBudget ?? seatBudget;
   const budgetOf = (seat: (typeof team.seats)[number]) =>
     standing.kind === 'verified' ? budgetGate(budgets, readings, seat, readAt(), spend) : { kind: 'clear' as const };
+  // One writer per run: a seat's provisional line on a terminal, its one final record either
+  // way, and every other line of the run on stderr, after the record it belongs to. It exists
+  // from here, before the planning pass, because the launch-line note is one of its detail lines.
+  // It is handed the raw pair on purpose: the writer cleans its own fields and draws its own
+  // `\r\x1b[K` on a TTY, and the cleaned pair would strip those bytes.
+  const records = progressWriter({ stdout: io.stdout, stderr: io.stderr, isTTY: io.stdoutIsTTY ?? false });
   const seats: UpSeat[] = [];
   const refused = new Set<string>();
   for (const seat of team.seats) {
@@ -383,8 +419,23 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
               why: 'its launch line was not checked: the seat is resumed and its state records no start folder',
             }
       : null;
-    if (line?.level === 'note') (dry ? io.stdout : io.stderr)(`  note ${seat.name}: ${line.why}\n`);
-    const launchProblem = line?.level === 'miss' ? { launchProblem: line.why } : {};
+    // The note is the writer's detail line on a real run: one line, cleaned like a record's
+    // fields, whatever the launch line's word holds. A dry run has no run, and its note goes to
+    // stdout with the plan it belongs to.
+    if (line?.level === 'note') {
+      const note = `  note ${seat.name}: ${line.why}`;
+      if (dry) out.stdout(`${plainLine(note)}\n`);
+      else records.detail(note);
+    }
+    // The plan, the record and the log hold the reason in words (`record`); the full finding —
+    // the start folder it names — rides along as the record's stderr detail only.
+    const launchProblem =
+      line?.level === 'miss'
+        ? {
+            launchProblem: line.record ?? line.why,
+            ...(line.record ? { launchProblemDetail: line.why } : {}),
+          }
+        : {};
     if (!placed) {
       const budget = budgetOf(seat);
       seats.push({ ...planned, ...launchProblem, ...(budget.kind === 'clear' ? {} : { budget }) });
@@ -443,13 +494,13 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   if (dry) {
     // The same cause can reach the list twice — the gate and `doctor` both read the
     // approval — so a refusal is said once.
-    for (const refusal of [...new Set(refusals)]) io.stdout(`! up would refuse: ${refusal}\n`);
-    io.stdout(formatPlan(plan));
+    for (const refusal of [...new Set(refusals)]) out.stdout(`! up would refuse: ${plainText(refusal)}\n`);
+    out.stdout(plainText(formatPlan(plan)));
     // exit: up.dry-run
     return 0;
   }
   if (refusals.length) {
-    for (const refusal of [...new Set(refusals)]) io.stderr(`team up: ${refusal}\n`);
+    for (const refusal of [...new Set(refusals)]) out.stderr(`team up: ${plainText(refusal)}\n`);
     // exit: up.not-owner
     // exit: up.never-approved
     // exit: up.differs
@@ -464,7 +515,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   }
   const launch = sources.launch;
   if (!launch) {
-    io.stderr('team up: this call has no way to reach herdr\n');
+    out.stderr('team up: this call has no way to reach herdr\n');
     // exit: up.no-launch
     return 1;
   }
@@ -568,7 +619,18 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
         if (seats) delete seats[name];
       });
     },
-    say: (line) => io.stdout(line),
+    // What is not a record — a skip line, a session failure, the watch's sentence — is cleaned
+    // here with the same function the records use: no escape sequence or bidi override reaches
+    // the terminal from a file's word, a screen's word or a folder's name.
+    say: (line) => out.stderr(plainText(line)),
+    progress: (seat, state) => records.progress(seat, state),
+    final: (seat, record) => records.final(seat, record),
+    detail: (line) => records.detail(line),
+    cliVersion(cli) {
+      const profile = profileFor(cli);
+      if (!profile || !sources.doctor) return null;
+      return sources.doctor.version(profile.binary);
+    },
     log: (who, what) => logLine(dir, 'up', describeCaller(caller), `${who}: ${what}`, now()),
   };
 
