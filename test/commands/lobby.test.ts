@@ -872,6 +872,27 @@ seats:
     }
   });
 
+  test('containment: worktrees never land in a protected checkout', () => {
+    const yaml = migratedTeamYaml()
+      .replace('protected: [.]', 'protected: [src]')
+      .replace('path: ../worktrees/{repo}/{task}', 'path: src/acme/{task}');
+    writeFileSync(join(root, '.agents', 'team.yaml'), yaml);
+    // The full load refuses the file with its own sentence...
+    const full = loadTeamFile(root, { home });
+    expect(full.ok).toBe(false);
+    if (!full.ok) expect(full.errors.map((e) => e.message).join('\n')).toContain('puts worktrees inside the protected checkout src');
+    // ...and a validation-only load, which skips the placement checks, still meets the seat guard.
+    const checked = loadTeamFile(root, { home, checkOnly: true });
+    expect(checked.ok).toBe(true);
+    if (checked.ok) {
+      const lead = checked.team.seats.find((seat) => seat.name === 'lead');
+      if (!lead) throw new Error('no lead seat');
+      const start = seatStart(checked.team, lead, root, home);
+      expect('problem' in start && start.problem).toContain('worktrees never land in a protected checkout');
+      if ('problem' in start) expect(start.problem).toContain('inside the protected checkout src');
+    }
+  });
+
   test('containment: worktrees folder symlinked into project in migrated file is refused', () => {
     const liveDir = join(root, 'live');
     mkdirSync(liveDir, { recursive: true });
