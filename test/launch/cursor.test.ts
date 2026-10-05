@@ -1153,6 +1153,7 @@ describe('a border anywhere else stays unknown (Cursor)', () => {
   const top = source.findIndex((line) => /^ ▄+$/.test(line));
   const input = source.findIndex((line) => /^ {2}→/.test(line));
   const bottom = source.findIndex((line) => /^ ▀+$/.test(line));
+  const status = source.findIndex((line) => /^ {2}(?:Grok|GPT-|Gemini |Composer )/.test(line));
   const text = (lines: string[]) => lines.join('\n');
   const unknown = (screen: string) => {
     expect(readScreen('cursor', screen).kind).toBe('unknown');
@@ -1280,7 +1281,7 @@ describe('a border anywhere else stays unknown (Cursor)', () => {
   });
 
   test('border rows of unequal width fail the equal-width check', () => {
-    // Both rows match ^ ▄+$ and ^ ▀+$ and are >= status row length (51), but differ in length
+    // Both rows match ^ ▄+$ and ^ ▀+$, but differ in length
     const unequalBottom = [...source];
     unequalBottom[bottom] = ' ' + '▀'.repeat(50); // length 51 !== TOP.length (52)
     expect(unequalBottom[bottom].length).toBe(51);
@@ -1292,6 +1293,37 @@ describe('a border anywhere else stays unknown (Cursor)', () => {
     expect(unequalTop[top].length).toBe(51);
     expect(BOTTOM.length).toBe(52);
     unknown(text(unequalTop));
+  });
+
+  test('a border the same length as the status row reads unknown', () => {
+    // In every real frame the border row is exactly one character longer than the status row;
+    // here both border rows are 51 characters, equal to the 51-character status row.
+    const sameLen = [...source];
+    sameLen[top] = ' ' + '▄'.repeat(50);
+    sameLen[bottom] = ' ' + '▀'.repeat(50);
+    expect(sameLen[top].length).toBe(source[status].length);
+    expect(sameLen[bottom].length).toBe(source[status].length);
+    unknown(text(sameLen));
+  });
+
+  test('a border two characters longer than the status row reads unknown', () => {
+    // Both border rows are 53 characters, two characters longer than the 51-character status row.
+    const twoLonger = [...source];
+    twoLonger[top] = ' ' + '▄'.repeat(52);
+    twoLonger[bottom] = ' ' + '▀'.repeat(52);
+    expect(twoLonger[top].length).toBe(source[status].length + 2);
+    expect(twoLonger[bottom].length).toBe(source[status].length + 2);
+    unknown(text(twoLonger));
+  });
+
+  test('a border shorter than the status row reads unknown', () => {
+    // Both border rows are 50 characters, shorter than the 51-character status row.
+    const shorter = [...source];
+    shorter[top] = ' ' + '▄'.repeat(49);
+    shorter[bottom] = ' ' + '▀'.repeat(49);
+    expect(shorter[top].length).toBeLessThan(source[status].length);
+    expect(shorter[bottom].length).toBeLessThan(source[status].length);
+    unknown(text(shorter));
   });
 
   test('a bottom border with trailing text at the same width', () => {

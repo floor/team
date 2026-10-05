@@ -11,12 +11,13 @@ import type { ComposerReading } from './screen-profile.ts';
 
 const BUDGET_MS = 100;
 
-/**
- * The status row's closed grammar for Grok in a bordered frame: model family and version,
- * then only tokens the captures show (context size, effort, quota, files edited), runs of
- * spaces and `Run Everything` at the end.
- */
-const CLOSED_GROK = /^  Grok \d+(?:\.\d+)*(?: 256K| 272K)?(?: (?:None|Minimal|Low|Medium|High|Extra High|Max))?(?: · \d+(?:\.\d+)?%)?(?: · \d+ files edited)?  +Run Everything$/;
+/** Whether a regular expression source is anchored at both ends to match a line whole. */
+function anchored(source: string): boolean {
+  if (!source.startsWith('^') || !source.endsWith('$')) return false;
+  let slashes = 0;
+  for (let i = source.length - 2; i >= 0 && source[i] === '\\'; i--) slashes++;
+  return slashes % 2 === 0;
+}
 
 // The rule a `below_last_rule` pattern has to sit under. It is the core's, not the profile's.
 const RULE_LINE = /^\s*[─━]{8,}\s*$/;
@@ -692,7 +693,7 @@ function statusLast(
   // The frame above the input row. Every 2026-10-01 capture draws blank rows there — four in
   // idle.txt (rows 5-8 above the input at 9), one to four in the others — and a non-blank row
   // against the prompt from above is a shape no capture draws. A composer that declares its
-  // `border` (the CLI's own frame, as the captures of 2026-10-05 draw the Cursor box: a ` ▄…`
+  // `border` (the CLI's own frame, as the captures of 2026-10-05 draw the box: a ` ▄…`
   // row above the input row and a ` ▀…` row under the input rows) reads the row directly
   // above the input row as the frame's top instead, beside the blank frame. The frame's place
   // is the captures' own and is pinned here, not by the patterns: the bottom row must sit
@@ -722,10 +723,8 @@ function statusLast(
     if (!border.bottom.test(under) || under.length !== above.length) return { kind: 'unknown' };
     if ((lines[status - 2] ?? '').trim() === '') return { kind: 'unknown' };
     const statusLine = lines[status] ?? '';
-    if (under.length < statusLine.length) return { kind: 'unknown' };
-    if (statusLine.startsWith('  Grok')) {
-      if (!CLOSED_GROK.test(statusLine)) return { kind: 'unknown' };
-    } else if (!composer.statusLine.some((re) => re.test(statusLine) && re.source.endsWith('Run Everything$'))) {
+    if (under.length !== statusLine.length + 1) return { kind: 'unknown' };
+    if (!composer.statusLine.some((re) => anchored(re.source) && re.test(statusLine))) {
       return { kind: 'unknown' };
     }
     const workspace = lines[status + 1];
