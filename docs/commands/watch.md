@@ -32,7 +32,8 @@ may run — reads and reports, says so once, and saves no reading, budget or spe
 ## How a screen is read
 
 A pane's screen is read by the profile's own expressions — the words a CLI paints for its idle
-prompt, its working frame, its dialogs and its questions — and the reading and the live-agent check
+prompt, its working frame, its dialogs, its questions and the vendor notices it was captured on —
+and the reading and the live-agent check
 are separate layers. A screen that reproduces a CLI's complete idle frame (input row, status row
 and workspace line, in place) reads idle; the live-agent check is the second layer. Old dialog
 text standing in the scrollback above a complete idle frame does not change that reading, for the
@@ -94,6 +95,7 @@ or a machine that stays full, is said once, not every pass.
 | `<seat> is no longer the process team launched (its session was restored, or its CLI was restarted)` | the process in the seat's pane is not the one recorded when `team` launched it: the pane runs no CLI, or one `team` did not launch |
 | `<seat> waits at a permission prompt: its owner's to answer` | a permission dialog or a trust question; only its owner answers those |
 | `<seat> asked a question: the operator's to act on` | a question the seat is waiting on |
+| `<seat> shows a vendor notice: its owner's to act on` | a screen the seat's profile captures as a vendor notice — today, Codex 0.157.0's update screen; `team` never answers one |
 | `<seat> is blocked, and its screen is not one the watch recognises` | herdr says blocked and the screen says nothing the watch knows |
 | `<seat>: herdr reports the status "<status>"` | a status that is neither idle, done, working nor blocked |
 | `<seat> holds text in its input box that was never sent` | unsent text for `watch.unsent_after` |
@@ -117,7 +119,8 @@ or a machine that stays full, is said once, not every pass.
 | `<account> is unknown while <seat> runs on it` | nothing counts for an account whose seats are running |
 
 Each report is addressed to the owner or to the operator. The operator's is what the nudge stands
-for, and `--no-notify` can drop its desktop notification. The owner's — a permission prompt, an approval difference, a
+for, and `--no-notify` can drop its desktop notification. The owner's — a permission prompt, a
+vendor notice, an approval difference, a
 machine figure, an account inside its reserve or at its floor — is notified anyway, and so are the
 watch's own notices: the file can't be read, herdr doesn't answer, the operator could not be nudged,
 a typed nudge was not sent, and the watch stopped. Neither flag
@@ -445,8 +448,10 @@ session twice:
 
 ```console
 $ team up ; echo "exit $?"
-  skip claude-keeper: already ready; left as it is
-  skip claude-beacon: already ready; left as it is
+claude-keeper: ready
+  already ready; left as it is
+claude-beacon: ready
+  already ready; left as it is
 watch: started
 exit 0
 $ team watch ; echo "exit $?"

@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { stripSgr } from '../ansi.ts';
 import { classifyLines, composerBox, composeLines, foldMarked, foldOf, statusRowOf, type Box, type Fold } from './screen-core.ts';
-import type { ScreenData } from './screen-data.ts';
+import type { ScreenData, VersionRange } from './screen-data.ts';
 import { loadScreen } from './screen-file.ts';
 
 export type { Box, Fold };
@@ -17,6 +17,8 @@ export type Screen =
   | { kind: 'permission' }           // a permission dialog: its owner's to answer
   | { kind: 'trust' }                // a workspace trust question: left unanswered
   | { kind: 'question' }             // a question the agent asked: the operator's to act on
+  | { kind: 'vendor notice' }        // the CLI's own notice, an update screen for one: carried
+                                     // only by a captured, versioned record, and never answered
   | { kind: 'unknown' };
 
 function load(name: string): ScreenData {
@@ -34,6 +36,12 @@ const DATA: Record<string, ScreenData> = {
 /** The shipped screen for a CLI, or null when this version has none. */
 export function screenData(cli: string): ScreenData | null {
   return DATA[cli] ?? null;
+}
+
+/** The version range a vendor notice's record was captured on, or null when this CLI has none.
+ *  A vendor notice exists only as such a record: no record, no vendor notice. */
+export function vendorNoticeRange(cli: string): VersionRange | null {
+  return DATA[cli]?.vendor_notice?.tested ?? null;
 }
 
 // The window every pattern sees: the pane's last 20 lines. Styled lines are trimmed only past

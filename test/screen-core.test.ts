@@ -540,6 +540,10 @@ describe('codex, cursor and antigravity through the screen core', () => {
         // or unsent-comments dialogs and read each unknown. Their own test follows the loop.
         if (name === 'permission-write-54.txt' || name === 'permission-edit-54.txt'
           || name === 'question-54.txt' || name === 'question-unsent-54.txt') continue;
+        // Captured at startup, and the one reading this slice changes: main read the update
+        // screen as a question, and the profile now names it a vendor notice. Its own test
+        // follows the loop.
+        if (cli === 'codex' && name === 'startup.txt') continue;
         const text = readFileSync(new URL(`./fixtures/${cli}/${version}/${name}`, import.meta.url), 'utf8');
         const before = read(windowOf(text));
         const after = readScreen(cli, text).kind;
@@ -601,6 +605,35 @@ describe('codex, cursor and antigravity through the screen core', () => {
     const both = `${trust}\nTo resume this session:\n`;
     expect(mainCursor(windowOf(both))).toBe('trust');
     expect(readScreen('cursor', both).kind).toBe('unknown');
+  });
+
+  test('the one re-read: the Codex update screen is a vendor notice, not a question', () => {
+    const text = readFileSync(new URL('./fixtures/codex/0.157.0/startup.txt', import.meta.url), 'utf8');
+    // Main read the same option line and footer as a question. The profile now carries it as
+    // the vendor's own notice: still left unanswered, and never typed into.
+    expect(mainCodex(windowOf(text))).toBe('question');
+    expect(readScreen('codex', text).kind).toBe('vendor notice');
+    expect(classify('codex', text.split('\n')).kind).toBe('vendor notice');
+  });
+
+  test('the update words without their option row and footer are ordinary output', () => {
+    // The notice is read whole: its own line and option row, under the footer it was captured
+    // with. The same words in ordinary output — an answer quoting the screen, a release note —
+    // are not the notice, and read exactly as main read them.
+    const words = '  Update available · 0.157.0 → 0.160.0\n';
+    const screens = [
+      // Ordinary output: no option row, no footer.
+      `${words}  Release notes: https://example.com\n\nDone. Nothing to update here.\n`,
+      // The option row without the captured footer.
+      `${words}\n› 1. Update now\n  2. Skip\n`,
+      // The footer without the option row.
+      `${words}\n  1. Skip\n\nenter continue · esc skip\n`,
+    ];
+    for (const screen of screens) {
+      expect(`${mainCodex(windowOf(screen))}`).toBe('unknown');
+      expect(readScreen('codex', screen).kind).toBe('unknown');
+      expect(classify('codex', screen.split('\n')).kind).toBe('unknown');
+    }
   });
 });
 

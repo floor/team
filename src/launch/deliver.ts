@@ -181,6 +181,7 @@ function nextStep(why: Refusal): string {
     case 'permission':
     case 'trust':
     case 'question':
+    case 'vendor notice':
       return `answer it in its pane, then run up again`;
     case 'working':
       return `wait for its turn to finish, then run up again`;
@@ -266,7 +267,7 @@ export async function deliverRules(cli: string, line: string, seconds: number, i
       if (status === 'working' || start === 'working') {
         return report({ stop: 'working', typed: false, sent: false, kind: 'working', row: null });
       }
-      if (start === 'trust' || start === 'permission' || start === 'question') {
+      if (start === 'trust' || start === 'permission' || start === 'question' || start === 'vendor notice') {
         return report(stopAs(cli, 'screen', io.screen()));
       }
       if ((status === 'idle' || status === 'done') && (start === 'idle' || start === 'unsent')) break;
@@ -328,7 +329,7 @@ export async function deliverRules(cli: string, line: string, seconds: number, i
     // The line was submitted and no ready prompt was seen. Nothing about it is confirmed: the
     // box is read as the screen shows it.
     const kind = readScreen(cli, io.screen()).kind;
-    if (kind === 'trust' || kind === 'permission' || kind === 'question' || io.now() >= deadline) {
+    if (kind === 'trust' || kind === 'permission' || kind === 'question' || kind === 'vendor notice' || io.now() >= deadline) {
       return report(stoppedOn(cli, 'ack', io.screen(), line));
     }
     const before = io.now();

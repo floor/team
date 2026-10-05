@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { executePlan, paneExcerpt, plainPaneText, stripControlStrings, type Host } from '../../src/launch/execute.ts';
+import { executePlan, paneExcerpt, type Host } from '../../src/launch/execute.ts';
+import { plainLine, plainPaneText, plainText, stripControlStrings } from '../../src/launch/plain.ts';
 import { downPlan, formatPlan, herdr, upPlan, type DownSeat, type Step, type UpSeat } from '../../src/launch/plan.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
 import { profileFor } from '../../src/profiles/index.ts';
@@ -510,6 +511,52 @@ describe('the pane lines a report carries', () => {
     expect(plainPaneText('plain\x9ctext')).toBe('plaintext');
   });
 
+  test('a C1 CSI written as its introducer plus the 7-bit tail is removed whole, tail included', () => {
+    // `\x9b` is the 8-bit CSI introducer; a mangled writing puts the 7-bit `[` after it. The
+    // introducer, the bracket and the sequence's own tail are one sequence: the whole of it goes,
+    // and none of it is left in the line as if it were text.
+    expect(plainPaneText('a\x9b[2Jb')).toBe('ab');
+    expect(plainPaneText('r\x9b[31mX')).toBe('rX');
+    expect(plainPaneText('  d\x9b[2Je')).toBe('  de');
+    // A lone introducer, with no tail to introduce, goes and its neighbours stay.
+    expect(plainPaneText('x\x9b\u202ey')).toBe('xy');
+    // A 7-bit CSI, the same sequence written with ESC, is removed whole as before.
+    expect(plainPaneText('a\x1b[2Jb')).toBe('ab');
+  });
+
+  test('the invisible format characters are removed from a pane line, and letters of any script stay', () => {
+    // The same class the writer removes of every field: the bidi embeddings, overrides and
+    // isolates, the direction marks, the zero-width characters and the byte-order mark. Each
+    // reorders or hides what a line shows, so a report row could display other words than it
+    // holds. Ordinary letters — Arabic, Hebrew — are text, not format, and are kept as written.
+    const invisible = '\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u200e\u200f\u061c\u200b\u200c\u200d\u2060\ufeff';
+    expect(plainPaneText(`before${invisible}after`)).toBe('beforeafter');
+    for (const character of invisible) expect(plainPaneText(character)).toBe('');
+    expect(plainPaneText('مراجعة: لا صلاحية للكتابة')).toBe('مراجعة: لا صلاحية للكتابة');
+    expect(plainPaneText('ביקורת: לא אושר')).toBe('ביקורת: לא אושר');
+  });
+
+  test('the rule’s newer classes: soft hyphen, U+180E, the tag block, the separators folded like LF, selectors kept', () => {
+    // The rule at `plainText` rather than a list of characters: every Cf character goes — the
+    // soft hyphen U+00AD and U+180E among them, and the assigned tag characters U+E0001–U+E007F
+    // — and the tag block goes whole, because U+E0000 and U+E001F are unassigned, not Cf. U+2028
+    // and U+2029 fold to LF exactly as a line feed does, so `plainLine` folds all three alike.
+    // The variation selectors stay: they only choose how the character before them is drawn.
+    // U+200D goes with the Cf class: a joiner-joined emoji prints as the parts the string holds.
+    const tags = '\u{e0000}\u{e0001}\u{e001f}\u{e0020}\u{e007f}';
+    expect(plainPaneText(`before\u00ad\u180e${tags}after`)).toBe('beforeafter');
+    expect(plainPaneText('a\u2028b\u2029c')).toBe('a\nb\nc');
+    expect(plainLine('a\u2028b\u2029c')).toBe('a b c');
+    expect(plainLine('a\n\u2028\u2029b')).toBe('a b');
+    expect(plainPaneText('a\u{fe0e}b\u{fe0f}c\u{e0100}d')).toBe('a\u{fe0e}b\u{fe0f}c\u{e0100}d');
+    expect(plainPaneText('👩\u200d💻')).toBe('👩💻');
+    // The cleaning is idempotent: over its own output a second pass changes nothing, so a value
+    // cleaned at the call site and again at the writer (or at the log) is cleaned once, really.
+    const mixed = 'a\u00ad\u2028\x1b[31mb\u202ec\u{e0001}\u{fe0f}d\r';
+    expect(plainLine(plainLine(mixed))).toBe(plainLine(mixed));
+    expect(plainText(plainText(mixed))).toBe(plainText(mixed));
+  });
+
   test('stress test: 200-line 2 MB text with unterminated openers finishes in well under 1000 ms', () => {
     // Guards against quadratic backtracking: the previous regular expressions searched from
     // every unterminated opener to the end of the text before the second regex dropped it,
@@ -724,9 +771,11 @@ describe('the row a stopped delivery prints', () => {
     const row = '\u0007bad-row\r\u001b]0;secret\u0007after\u001b[?25l';
     const { said, logged, run } = stoppedOn(row);
     await run();
-    expect(said.length).toBe(2);
-    expect(said[0]).toBe(`${ROW_SAYED}bad-rowafter\n`);
-    expect(said[1]).toContain("rules typed, not sent: the read-back didn't match");
+    // One say for the seat: its record, then — on the next line, as the record's detail — the row.
+    expect(said.length).toBe(1);
+    const lines = (said[0] ?? '').split('\n');
+    expect(lines[0]).toContain("rules typed, not sent: the read-back didn't match");
+    expect(lines[1]).toBe(`${ROW_SAYED}bad-rowafter`);
     expect(said.join('')).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
     expect(said.join('')).not.toContain('secret');
     expect(logged).toEqual([{ who: 'coder', what: expect.stringContaining("rules typed, not sent: the read-back didn't match") }]);
@@ -737,8 +786,9 @@ describe('the row a stopped delivery prints', () => {
     const row = `${'x'.repeat(4_994)}\u0007${'y'.repeat(5)}`;
     const { said, logged, run } = stoppedOn(row);
     await run();
-    expect(said[0]).toBe(`${ROW_SAYED}${'x'.repeat(200)}…\n`);
-    expect(said[0]?.length).toBe(ROW_SAYED.length + 200 + '…'.length + '\n'.length);
+    const lines = (said[0] ?? '').split('\n');
+    expect(lines[1]).toBe(`${ROW_SAYED}${'x'.repeat(200)}…`);
+    expect(lines[1]?.length).toBe(ROW_SAYED.length + 200 + '…'.length);
     expect(said.join('')).not.toContain('y'.repeat(5));
     expect(logged[0]?.what).not.toMatch(/x{10}/);
   });

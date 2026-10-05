@@ -1705,8 +1705,9 @@ describe('the upgrade from 0.2.1', () => {
       agents: () => [{ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null }],
     });
     expect(run.code).toBe(0);
-    expect(run.out).toContain(
-      '  skip worker: already ready; left as it is; a relaunch records its process: '
+    expect(run.out).toContain('worker: ready\n');
+    expect(run.err).toContain(
+      '  already ready; left as it is; a relaunch records its process: '
         + 'team remove worker --keep, then team add worker (or team down, then team up, for the whole team)\n',
     );
   });
@@ -1726,8 +1727,9 @@ describe('the upgrade from 0.2.1', () => {
       agents: () => [{ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null }],
     });
     expect(run.code).toBe(0);
-    expect(run.out).toContain(
-      '  skip worker: already ready; left as it is; a relaunch moves it into the lobby: '
+    expect(run.out).toContain('worker: ready\n');
+    expect(run.err).toContain(
+      '  already ready; left as it is; a relaunch moves it into the lobby: '
         + 'team remove worker --keep, then team add worker (or team down, then team up, for the whole team)\n',
     );
   });
@@ -1932,17 +1934,18 @@ describe('the upgrade from 0.2.1', () => {
       ],
     });
     expect(upRun.code).toBe(0);
-    expect(upRun.out).toContain(
-      '  skip lead: already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)\n',
+    expect(upRun.out).toContain('lead: ready\n');
+    expect(upRun.out).toContain('worker: ready\n');
+    expect(upRun.out).toContain('opSeat: ready\n');
+    // The words main's skip line carried are each record's stderr detail now, in seat order:
+    // the coordinator and the operator name only the whole-team repair; an ordinary name both.
+    expect(upRun.err).toContain(
+      '  already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)\n'
+        + '  already ready; left as it is; a relaunch records its process: team remove worker --keep, then team add worker (or team down, then team up, for the whole team)\n'
+        + '  already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)\n',
     );
-    expect(upRun.out).toContain(
-      '  skip opSeat: already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)\n',
-    );
-    expect(upRun.out).toContain(
-      '  skip worker: already ready; left as it is; a relaunch records its process: team remove worker --keep, then team add worker (or team down, then team up, for the whole team)\n',
-    );
-    expect(upRun.out).not.toContain('team remove lead --keep');
-    expect(upRun.out).not.toContain('team remove opSeat --keep');
+    expect(upRun.err).not.toContain('team remove lead --keep');
+    expect(upRun.err).not.toContain('team remove opSeat --keep');
 
     // Old landing skip line for coordinator
     updateState(dir, (st) => {
@@ -1957,17 +1960,18 @@ describe('the upgrade from 0.2.1', () => {
       agents: () => [{ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null }],
     });
     expect(upOld.code).toBe(0);
-    expect(upOld.out).toContain(
-      '  skip lead: already ready; left as it is; a relaunch moves it into the lobby: team down, then team up (to restart the whole team)\n',
+    expect(upOld.out).toContain('lead: ready\n');
+    expect(upOld.err).toContain(
+      '  already ready; left as it is; a relaunch moves it into the lobby: team down, then team up (to restart the whole team)\n',
     );
-    expect(upOld.out).not.toContain('team remove lead --keep');
+    expect(upOld.err).not.toContain('team remove lead --keep');
 
-    // Run whole-team repair on fake host; afterwards up launches fresh and skip line is gone
+    // Run whole-team repair on fake host; afterwards up launches fresh and the detail is gone
     expect(await runDown([...FILE], testIo(root, OWNER), downSourcesFor([{ name: 'lead', pane: 'w0:p1', workspace: 'w0' }]))).toBe(0);
     const upAfter = await runUpCmd([], world());
     expect(upAfter.code).toBe(0);
     expect(upAfter.out).toContain('lead: ready\n');
-    expect(upAfter.out).not.toContain('skip lead');
+    expect(upAfter.err).not.toContain('already ready');
   });
 
   test('version "0" — the placeholder init writes — no longer stops the first fresh launch', async () => {
@@ -2108,7 +2112,7 @@ describe('a launch line that cannot run where the seat starts', () => {
     const made = world();
     const run = await runUpCmd([], made);
     expect(run.code).toBe(1);
-    expect(run.out).toContain('worker: refused: its launch line runs `../tools/x.sh`');
+    expect(run.out).toContain('worker: left out: refused: its launch line runs `../tools/x.sh`');
     expect(made.workspaces).toContainEqual({ label: 'lead', cwd: lobby });
     expect(made.workspaces.some((workspace) => workspace.label === 'worker')).toBe(false);
   });
@@ -2243,7 +2247,7 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     };
   }
 
-  test('a lobby swapped after the gate creates no workspace, no pane and no typed input', async () => {
+  test('a lobby swapped after the gate creates no workspace, no pane and no typed input: the record and the log hold the reason in words', async () => {
     approveYaml(migratedTeamYaml());
     const made = world();
     // The replacement is a real folder of the same owner, mode and emptiness: no link, no mode
@@ -2254,11 +2258,17 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     expect(made.paneIds()).toEqual([]);
     expect(made.runs).toEqual([]);
     expect(made.typed).toEqual([]);
-    expect(run.out).toContain(`lead: the lobby ${lobby}: it is not the folder the gate read`);
+    // The record holds the words; the folder it names is stderr detail, for the owner alone.
+    expect(run.out).toContain('lead: left out: the lobby: it is not the folder the gate read\n');
+    expect(run.out).not.toContain(lobby);
+    expect(run.err).toContain(`  the lobby ${lobby}: it is not the folder the gate read\n`);
+    const log = readFileSync(join(dir, 'team.log'), 'utf8');
+    expect(log).toContain('lead: left out: the lobby: it is not the folder the gate read');
+    expect(log).not.toContain(lobby);
     expect(Object.keys(readState(dir).sessions['acme']?.seats ?? {})).toEqual([]);
   });
 
-  test('add creates nothing for the same swap, and leaves the folder it names unchanged', async () => {
+  test('add creates nothing for the same swap, and leaves the folder it names unchanged: the log holds no folder', async () => {
     approveYaml(migratedTeamYaml());
     const outside = join(base, 'outside');
     mkdirSync(outside, { recursive: true });
@@ -2270,12 +2280,19 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     expect(made.paneIds()).toEqual([]);
     expect(made.runs).toEqual([]);
     expect(made.typed).toEqual([]);
-    expect(run.out).toContain(`worker: the lobby ${lobby}: canonical path`);
+    // The record holds the words; the canonical paths the check compared are stderr detail.
+    expect(run.out).toContain('worker: left out: the lobby: its canonical path leads somewhere else\n');
+    expect(run.out).not.toContain(lobby);
+    expect(run.err).toContain('  the lobby ');
+    expect(run.err).toContain('canonical path');
+    const log = readFileSync(join(dir, 'team.log'), 'utf8');
+    expect(log).toContain('worker: left out: the lobby: its canonical path leads somewhere else');
+    expect(log).not.toContain(lobby);
     expect(readdirSync(outside)).toEqual([]);
     expect(statSync(outside).mode & 0o777).toBe(0o755);
   });
 
-  test('a swap between two seats stops the next one and leaves the first running', async () => {
+  test('a swap between two seats stops the next one and leaves the first running: the stopped seat’s record and log hold no folder', async () => {
     approveYaml(migratedTeamYaml());
     const made = world();
     // The gate reads first, the lead's confirmation second (the swap is not there yet), the
@@ -2284,7 +2301,12 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     expect(run.code).toBe(1);
     expect(made.workspaces).toEqual([{ label: 'lead', cwd: lobby }]);
     expect(run.out).toContain('lead: ready');
-    expect(run.out).toContain(`worker: the lobby ${lobby}: it is not the folder the gate read`);
+    expect(run.out).toContain('worker: left out: the lobby: it is not the folder the gate read\n');
+    expect(run.out).not.toContain(lobby);
+    expect(run.err).toContain(`  the lobby ${lobby}: it is not the folder the gate read\n`);
+    const log = readFileSync(join(dir, 'team.log'), 'utf8');
+    expect(log).toContain('worker: left out: the lobby: it is not the folder the gate read');
+    expect(log).not.toContain(lobby);
     // The first seat was created while the path was the verified lobby; nothing closes it.
     expect(made.closed).toEqual([]);
     expect(made.launch.agentPanes('acme')).toEqual(['w1:p1']);

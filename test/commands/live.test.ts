@@ -204,9 +204,9 @@ describe('team up, live', () => {
     expect(code).toBe(1);
     expect(sent).toEqual([]);
     expect(io.out).toContain(
-      'codex-acme: rules not typed: the CLI never appeared as its pane\'s foreground process '
+      'codex-acme: left out: rules not typed: the CLI never appeared as its pane\'s foreground process '
         + '(the screen read idle); check the seat\'s launch line — the wrapper it starts through, '
-        + 'or the command itself — then run up again',
+        + 'or the command itself — then run up again\n',
     );
   });
 
@@ -234,6 +234,10 @@ describe('team up, live', () => {
     made.launch.pressEnter = () => { sent.push('Enter'); if (outcome === 'accepted') { status = 'working'; pasted = false; } return true; };
     made.launch.paneText = (session, pane) => pane === codexPane
       ? (pasted ? boxed() : capture('working')) : read(session, pane);
+    // The idle wait's polls: a dialog or a vendor notice is the first read's, never waited out.
+    let naps = 0;
+    const napping = made.launch.sleep;
+    made.launch.sleep = async (ms) => { naps++; return napping(ms); };
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['codex-acme'];
@@ -257,21 +261,32 @@ describe('team up, live', () => {
       expect(seat?.rules).toBeUndefined();
       // The line was typed and Enter was pressed, and the box still holds it: the report says
       // the rules sit unsent and names what to do, instead of a generic failure.
-      expect(io.out).toContain('codex-acme: rules typed, not sent: its box still holds the line after Enter; '
-        + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again');
+      expect(io.out).toContain('codex-acme: left out: rules typed, not sent: its box still holds the line after Enter; '
+        + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again\n');
     } else {
       expect(code).toBe(1);
       expect(sent).toEqual([]);
       expect(seat).toBeUndefined();
       expect(made.closes).toContain('w2');
       expect(made.renames).not.toContain('codex-acme');
-      // The reading, the close included, names the seat on the terminal and in the log.
-      const line =
-        outcome === 'trust'
-          ? 'codex-acme: trust question; its workspace was closed without an answer and the seat left out'
-          : 'codex-acme: question; its workspace was closed without input and the seat left out';
+      // The record names the reading; the close follows it on stderr, and the log keeps the
+      // record alone.
+      const line = outcome === 'trust' ? 'codex-acme: left out: trust' : 'codex-acme: left out: vendor notice';
+      const close = outcome === 'trust'
+        ? '  its workspace was closed without an answer and the seat left out\n'
+        : '  its workspace was closed without input and the seat left out\n';
       expect(io.out).toContain(`${line}\n`);
+      expect(io.err).toContain(close);
       expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain(line);
+      // The wait ended at the first read — a dialog and a vendor notice alike are never polled.
+      expect(naps).toBe(0);
+    }
+    // Whatever the outcome, a redirected stdout holds records alone: the final ones, one per
+    // seat, in the record's own grammar — no provisional text, and nothing else.
+    const lines = io.out.split('\n').filter((entry) => entry !== '');
+    expect(lines.length).toBeGreaterThan(0);
+    for (const entry of lines) {
+      expect(entry).toMatch(/^.+: (ready|left out: .+|waiting for owner \(.+\))$/);
     }
   });
 
@@ -332,8 +347,8 @@ describe('team up, live', () => {
       expect(seat?.stage).toBe('named');
       expect(seat?.rules).toBeUndefined();
       // Same reading as the Codex case: the box still shows the line, unsent.
-      expect(io.out).toContain('gemini-acme: rules typed, not sent: its box still holds the line after Enter; '
-        + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again');
+      expect(io.out).toContain('gemini-acme: left out: rules typed, not sent: its box still holds the line after Enter; '
+        + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again\n');
     } else {
       expect(code).toBe(1);
       expect(sent).toEqual([]);
@@ -358,9 +373,9 @@ describe('team up, live', () => {
     ]);
     expect(made.renames).toEqual(['claude-coordinator-acme', 'deepseek-acme', 'deepseek-acme-2']);
     expect(io.out).toContain('claude-coordinator-acme: ready\n');
-    expect(io.out).toContain('watch: started\n');
-    expect(io.out).toContain('skip codex-acme:');
-    expect(io.out).toContain('skip grok-acme:');
+    expect(io.err).toContain('watch: started\n');
+    expect(io.err).toContain('skip codex-acme:');
+    expect(io.err).toContain('skip grok-acme:');
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']?.stage).toBe('ready');
     expect(seats['claude-coordinator-acme']?.rules).toBe('option');
@@ -392,10 +407,11 @@ describe('team up, live', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: permission; its workspace was closed without input');
-    // The reading, the close included, is what the log keeps.
+    expect(io.out).toContain('claude-coordinator-acme: left out: permission\n');
+    expect(io.err).toContain('  its workspace was closed without input and the seat left out\n');
+    // The record is what the log keeps; the close is its detail on stderr, never written.
     expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain(
-      'claude-coordinator-acme: permission; its workspace was closed without input and the seat left out',
+      'claude-coordinator-acme: left out: permission',
     );
     expect(made.closes).toEqual(['w1']);
     expect(made.renames).not.toContain('claude-coordinator-acme');
@@ -412,9 +428,10 @@ describe('team up, live', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
-    // The line names the seat, the reading and the close; the same goes to the log.
-    const line = 'claude-coordinator-acme: trust question; its workspace was closed without an answer and the seat left out';
+    // The record names the reading; the close is its stderr detail; the log keeps the record.
+    const line = 'claude-coordinator-acme: left out: trust';
     expect(io.out).toContain(`${line}\n`);
+    expect(io.err).toContain('  its workspace was closed without an answer and the seat left out\n');
     expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain(line);
     expect(made.closes).toEqual(['w1']);
     expect(made.renames).not.toContain('claude-coordinator-acme');
@@ -425,7 +442,7 @@ describe('team up, live', () => {
 
   // A close that fails is not a close: no line may claim one, and the seat keeps its state.
   test.each([
-    ['trust', 'Do you trust this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n', 'trust question'],
+    ['trust', 'Do you trust this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n', 'trust'],
     ['permission', PERMISSION, 'permission'],
     ['question', 'Which branch should this start from?\n\n❯ 1. main\n  2. next\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n', 'question'],
   ] as const)('a %s reading whose close fails leaves the seat as it is', async (_reading, screen, reading) => {
@@ -439,13 +456,14 @@ describe('team up, live', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
-    // The line names the seat, the reading and the failed close; the same goes to the log.
-    const line = `claude-coordinator-acme: ${reading}; its workspace did not close; left as it is`;
+    // The record names the reading and the failed close; the log keeps the record alone.
+    const line = `claude-coordinator-acme: left out: ${reading}; its workspace did not close; left as it is`;
     expect(io.out).toContain(`${line}\n`);
     expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain(line);
     // It tried; nothing else claims the workspace was closed.
     expect(closed).toEqual(['w1']);
     expect(io.out).not.toContain('was closed');
+    expect(io.err).not.toContain('was closed');
     // The seat's state is kept as it is: a later `up` finds it at launched, on its pane.
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']).toMatchObject({ stage: 'launched', pane: 'w1:p1', workspace: 'w1' });
@@ -460,21 +478,23 @@ describe('team up, live', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
-    expect(io.out).toContain(
-      'claude-coordinator-acme: timed out after 90 s waiting for its idle prompt; ' +
+    expect(io.out).toContain('claude-coordinator-acme: left out: timeout\n');
+    expect(io.err).toContain(
+      '  timed out after 90 s waiting for its idle prompt; ' +
         'the screen last read unknown; left at launched\n',
     );
-    expect(io.out).toContain('  | ❯ zsh ../tools/launcher.sh\n');
-    expect(io.out).toContain("  | zsh: can't open input file: ../tools/launcher.sh\n");
-    expect(io.out).toContain('  run `team up` again to resume it\n');
+    expect(io.err).toContain('  | ❯ zsh ../tools/launcher.sh\n');
+    expect(io.err).toContain("  | zsh: can't open input file: ../tools/launcher.sh\n");
+    expect(io.err).toContain('  run `team up` again to resume it\n');
     expect(made.closes).toEqual([]);
     expect(made.renames).toEqual([]);
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']?.stage).toBe('launched');
     expect(seats['claude-coordinator-acme']?.pane).toBe('w1:p1');
-    // The log keeps the reading only: the pane's text is said on the terminal, never written.
+    // The log keeps the record only: the detail and the pane's text are said on the terminal,
+    // never written.
     const log = readFileSync(join(root, '.agents/team.log'), 'utf8');
-    expect(log).toContain('timed out after 90 s waiting for its idle prompt; the screen last read unknown');
+    expect(log).toContain('claude-coordinator-acme: left out: timeout');
     expect(log).not.toContain('zsh');
   });
 
@@ -502,15 +522,16 @@ describe('team up, live', () => {
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
     expect(io.out).toContain(
-      'claude-coordinator-acme: its pane has been back at its shell for 6 s and shows no CLI prompt; left at launched\n',
+      'claude-coordinator-acme: left out: its pane has been back at its shell for 6 s and shows no CLI prompt; left at launched\n',
     );
     // Three pauses per ended seat — the three full polls the stretch takes — not the 90-second
     // deadline's worth of them.
     expect(naps).toBeLessThanOrEqual(9);
-    expect(io.out).toContain('  | ❯ AGENT_UNATTENDED=1 claude --model claude-opus-5-5 ');
-    expect(io.out).toContain('  | zsh: command not found\n');
-    expect(io.out).toContain('  run `team up` again to resume it\n');
+    expect(io.err).toContain('  | ❯ AGENT_UNATTENDED=1 claude --model claude-opus-5-5 ');
+    expect(io.err).toContain('  | zsh: command not found\n');
+    expect(io.err).toContain('  run `team up` again to resume it\n');
     expect(io.out).not.toContain('timed out');
+    expect(io.err).not.toContain('timed out');
     // Left at launched, workspace kept: a later `up` resumes the seat.
     expect(made.closes).toEqual([]);
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
@@ -528,8 +549,10 @@ describe('team up, live', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: timed out after 90 s waiting for its idle prompt');
+    expect(io.out).toContain('claude-coordinator-acme: left out: timeout\n');
+    expect(io.err).toContain('timed out after 90 s waiting for its idle prompt');
     expect(io.out).not.toContain('shows no CLI prompt');
+    expect(io.err).not.toContain('shows no CLI prompt');
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']?.stage).toBe('launched');
   });
@@ -555,6 +578,7 @@ describe('team up, live', () => {
     expect(code).toBe(0);
     expect(io.out).toContain('claude-coordinator-acme: ready\n');
     expect(io.out).not.toContain('shows no CLI prompt');
+    expect(io.err).not.toContain('shows no CLI prompt');
     // The CLI arrived, so the seat is the state's ready — not left at launched by an early end.
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']?.stage).toBe('ready');
@@ -586,16 +610,18 @@ describe('team up, live', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: timed out after 90 s waiting for its idle prompt');
+    expect(io.out).toContain('claude-coordinator-acme: left out: timeout\n');
+    expect(io.err).toContain('timed out after 90 s waiting for its idle prompt');
     expect(io.out).not.toContain('shows no CLI prompt');
+    expect(io.err).not.toContain('shows no CLI prompt');
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']?.stage).toBe('launched');
   });
 
   test('the wrapper that draws its CLI on the fourth poll is not reported as ended', async () => {
     await approve();
-    // The reviewer's slow-start probe: a wrapper keeps the shell in front for three polls and
-    // the CLI draws on the fourth. The shell-back reading must hold through the fourth reading —
+    // A slow start: a wrapper keeps the shell in front for three polls and the CLI draws on the
+    // fourth. The shell-back reading must hold through the fourth reading —
     // three full poll intervals — before an end is said; two readings ended it at the second.
     const made = world();
     const commands = new Map<string, string>();
@@ -621,6 +647,7 @@ describe('team up, live', () => {
     expect(code).toBe(0);
     expect(io.out).toContain('claude-coordinator-acme: ready\n');
     expect(io.out).not.toContain('shows no CLI prompt');
+    expect(io.err).not.toContain('shows no CLI prompt');
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']?.stage).toBe('ready');
   });
@@ -639,8 +666,10 @@ describe('team up, live', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: timed out after 90 s waiting for its idle prompt');
+    expect(io.out).toContain('claude-coordinator-acme: left out: timeout\n');
+    expect(io.err).toContain('timed out after 90 s waiting for its idle prompt');
     expect(io.out).not.toContain('shows no CLI prompt');
+    expect(io.err).not.toContain('shows no CLI prompt');
     expect(made.closes).toEqual([]);
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']?.stage).toBe('launched');
@@ -704,7 +733,13 @@ describe('team up, live', () => {
       ),
     );
     expect(code).toBe(0);
-    expect(io.out).toContain('skip claude-coordinator-acme: already ready; left as it is');
+    expect(io.out).toContain('claude-coordinator-acme: ready\n');
+    // The state records no process for it, so the detail carries the note main added: how to
+    // relaunch it. It is the coordinator, so the repair is the whole team's.
+    expect(io.err).toContain(
+      '  already ready; left as it is; a relaunch records its process: ' +
+        'team down, then team up (to restart the whole team)\n',
+    );
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(made.creates).not.toContain('deepseek flash v4.1');
     expect(made.renames).toContain('deepseek-acme');
@@ -779,8 +814,8 @@ describe('team up, live', () => {
     // sent, no workspace is closed, and the seat's state is left byte for byte as it was.
     expect(code).toBe(1);
     expect(io.out).toContain(
-      'codex-acme: rules not typed: its box already holds text that is not the rules line; '
-      + 'press Enter in its pane to send what is there, or clear its box (Ctrl-C), then run up again',
+      'codex-acme: left out: rules not typed: its box already holds text that is not the rules line; '
+      + 'press Enter in its pane to send what is there, or clear its box (Ctrl-C), then run up again\n',
     );
     expect(sent).toEqual([]);
     expect(made.closes).toEqual([]);
@@ -875,8 +910,8 @@ describe('team up, live', () => {
     const code = await runUp(FILE, io, resumed(again));
     expect(code).toBe(1);
     expect(io.out).toContain(
-      'codex-acme: rules typed, not sent: its box still holds the line after Enter; '
-      + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again',
+      'codex-acme: left out: rules typed, not sent: its box still holds the line after Enter; '
+      + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again\n',
     );
     // The resume verifies the box and sends the one Enter; this stub's pane never takes the
     // key — the box is read again after it, to the deadline, and nothing else is ever typed.
@@ -903,7 +938,7 @@ describe('team up, live', () => {
     expect([...new Set(after)].sort()).toEqual(['agentStatus w2:p1', 'paneText w2:p1']);
   });
 
-  test('a resumed seat is checked where its pane runs, not where the file would put it', async () => {
+  test('a resumed seat is checked where its pane runs, not where the file would put it; its record and log hold no folder', async () => {
     // The file's deepseek seats work in worktrees and would start in the lobby; their recorded
     // panes run in the project root, where `../tools/x.sh` is a file. Only the state's `start_cwd`
     // says so, and the reading names that folder — the same line, a different folder, a different end.
@@ -961,15 +996,109 @@ describe('team up, live', () => {
     expect(atRoot.code).toBe(0);
     expect(atRoot.out).toContain('deepseek-acme: ready');
     expect(atRoot.out).not.toContain('would refuse');
-    expect(atRoot.err).not.toContain('not checked');
+    expect(atRoot.err).not.toContain('launch line was not checked');
     // The lobby — where the file's own seats would start — is where it does not resolve: refused at
     // the recorded folder, with the file that is at the project root named for the line to use.
     const atLobby = await run(lobby);
     expect(atLobby.code).toBe(1);
-    expect(atLobby.out).toContain(
-      'deepseek-acme: refused: its launch line runs `../tools/x.sh`, not found from its start folder ' +
-        `${lobby}; the same file is at \`${join(base, 'tools', 'x.sh')}\` from the project root — write that path`,
+    // The record holds the finding in words; the full sentence — the folder the check looked
+    // in and the path to write — is stderr detail, for the owner's terminal alone.
+    const words = 'its launch line runs `../tools/x.sh`, not found from its start folder';
+    expect(atLobby.out).toContain(`deepseek-acme: left out: refused: ${words}\n`);
+    expect(atLobby.err).toContain(
+      `  ${words} ${lobby}; the same file is at \`${join(base, 'tools', 'x.sh')}\` from the project root — write that path\n`,
     );
+    // The log's bytes: the record's words and no folder — not the one the check looked in, not
+    // the one to write — because the folder is terminal detail alone, whatever the terminal
+    // prints just above.
+    const log = readFileSync(join(root, '.agents/team.log'), 'utf8');
+    expect(log).toContain(`deepseek-acme: left out: refused: ${words}`);
+    expect(log).not.toContain(lobby);
+    expect(log).not.toContain(join(base, 'tools'));
+  });
+
+  test('a launch-line miss is cleaned once, before the log and the writer: no control, escape or bidi byte is logged', async () => {
+    // A launch word holding ESC and U+202E — both written as YAML escapes in a double-quoted
+    // scalar, so the file holds them. The record, the log line and the terminal line are the
+    // same cleaned words; before this, the log was written from the raw record, and its bytes
+    // held `1b` (and `e2 80 ae`).
+    writeFileSync(
+      join(root, '.agents/team.yaml'),
+      makeExample(base, root, EXAMPLE.replace('launch: claude --model claude-opus-5-5', 'launch: "./aa\\ebb\\u202ecc"')),
+    );
+    await approve();
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({ doctor: doctor() }, made));
+    expect(code).toBe(1);
+    // The record the seat's machine printed, and the terminal line: the same words.
+    expect(io.out).toContain(
+      'claude-coordinator-acme: left out: refused: its launch line starts `./aabcc`, not found from its start folder\n',
+    );
+    expect(io.err).toContain('  its launch line starts `./aabcc`, not found from its start folder .\n');
+    expect(io.out).not.toContain('\x1b');
+    expect(io.err).not.toContain('\x1b');
+    expect(io.err).not.toContain('\u202e');
+    const log = readFileSync(join(root, '.agents/team.log'), 'utf8');
+    expect(log).toContain('up [owner] claude-coordinator-acme: left out: refused: its launch line starts `./aabcc`, not found from its start folder\n');
+    expect(log).not.toContain('\x1b');
+    expect(log).not.toContain('\u202e');
+    for (const byte of Buffer.from(log, 'utf8')) expect(byte === 0x0a || byte >= 0x20).toBe(true);
+  });
+
+  test('the launch-line note is the writer’s detail line: an escape byte in the word is cleaned at the writer', async () => {
+    // The note carries the file's own word (an argument this time, so the line is told, never
+    // refused). The word reaches the terminal only through the writer's detail line, cleaned.
+    writeFileSync(
+      join(root, '.agents/team.yaml'),
+      makeExample(base, root, EXAMPLE.replace('launch: claude --model claude-opus-5-5', 'launch: "claude --model claude-opus-5-5 ./aa\\ebb"')),
+    );
+    await approve();
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({ doctor: doctor() }, made));
+    expect(code).toBe(0);
+    expect(io.err).toContain(
+      '  note claude-coordinator-acme: its launch line runs `./aab`, not found from its start folder .; not checked: the command may create it\n',
+    );
+    expect(io.err).not.toContain('\x1b');
+    expect(io.out).toContain('claude-coordinator-acme: ready\n');
+    const log = readFileSync(join(root, '.agents/team.log'), 'utf8');
+    expect(log).not.toContain('\x1b');
+    expect(log).not.toContain('./aab');
+  });
+
+  test('a file error carries the file\'s own string cleaned: no escape byte reaches the terminal', async () => {
+    // The coordinator names no declared seat, refused while the file is loaded. The name the file
+    // holds carries ESC — a YAML escape inside the double-quoted scalar — and the sentence the
+    // terminal shows is the name cleaned: the writers clean by construction, not by what the
+    // message's own caller remembered to do.
+    writeFileSync(
+      join(root, '.agents/team.yaml'),
+      makeExample(base, root, EXAMPLE.replace('coordinator: claude-coordinator-acme', 'coordinator: "x\\u001b[31my"')),
+    );
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({ doctor: doctor() }, world()));
+    expect(code).toBe(2);
+    expect(io.err).toBe('team up: line 5: coordinator "xy" names no declared seat\n');
+    expect(io.err).not.toContain('\x1b');
+    expect(io.out).toBe('');
+  });
+
+  test('a dry run plan carries the file\'s own launch word cleaned: no escape byte in the plan', async () => {
+    // The launch line's last word holds ESC (again a YAML escape) and is only an argument, so the
+    // seat launches and the plan prints its `pane run` command: the plan holds the word cleaned.
+    writeFileSync(
+      join(root, '.agents/team.yaml'),
+      makeExample(base, root, EXAMPLE.replace('launch: claude --model claude-opus-5-5', 'launch: "claude --model claude-opus-5-5 ./aa\\ebb"')),
+    );
+    await approve();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(['--dry-run', ...FILE], io, sources({ doctor: doctor() }, world()));
+    expect(code).toBe(0);
+    expect(io.out).toContain('./aab');
+    expect(io.out).not.toContain('\x1b');
+    expect(io.out).toContain('dry run: nothing was run\n');
   });
 
   test('a resumed seat whose state records no start folder is not checked at all', async () => {
@@ -1142,7 +1271,7 @@ describe('team up, live', () => {
     expect(code).toBe(1);
     expect(made.creates).toContain('claude opus 5.5');
     expect(made.creates).not.toContain('deepseek flash v4.1');
-    expect(io.out).toContain('deepseek-acme: swap grew by 2.0 GB in 10 minutes, above 1.0 GB');
+    expect(io.out).toContain('deepseek-acme: left out: swap grew by 2.0 GB in 10 minutes, above 1.0 GB');
   });
 
   test('readings inside every limit launch the seats', async () => {
@@ -1284,11 +1413,14 @@ describe('team up, a session that was restored', () => {
     expect(made.runs.find(({ pane }) => pane === 'w1:p1')?.command).toContain('--append-system-prompt');
     expect(made.runs.find(({ pane }) => pane === 'w1:p1')?.command).toContain('Agent: Claude Opus 5.5 · project coordinator');
     expect(made.runs.find(({ pane }) => pane === 'w2:p1')?.command).toContain('DeepSeek V4.1 Flash');
-    // The report: the same seat skipped, the two relaunches said in one line each, the missing
-    // pane launched the way it always was.
-    expect(io.out).toContain('skip codex-acme: already ready; left as it is');
-    expect(io.out).toContain('claude-coordinator-acme: its pane held no CLI; closed without input and launched again\n');
-    expect(io.out).toContain('deepseek-acme: its pane held a process team did not launch; closed without input and launched again\n');
+    // The report: the same seat already ready, the two relaunches as each one's record plus its
+    // stderr detail, the missing pane launched the way it always was.
+    expect(io.out).toContain('codex-acme: ready\n');
+    expect(io.err).toContain('  already ready; left as it is\n');
+    expect(io.out).toContain('claude-coordinator-acme: ready\n');
+    expect(io.err).toContain('  its pane held no CLI; closed without input and launched again\n');
+    expect(io.out).toContain('deepseek-acme: ready\n');
+    expect(io.err).toContain('  its pane held a process team did not launch; closed without input and launched again\n');
     expect(io.out).toContain('deepseek-acme-2: ready\n');
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['codex-acme']).toMatchObject({ stage: 'ready', pane: 'w92:p1', launched: { shell: 410, cli: [411] } });
@@ -1334,7 +1466,7 @@ describe('team up, a session that was restored', () => {
       ),
     );
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: its workspace did not close; left as it is\n');
+    expect(io.out).toContain('claude-coordinator-acme: left out: its workspace did not close; left as it is\n');
     expect(made.creates).not.toContain('claude opus 5.5');
     // Nothing was cleared: the seat's record still names the pane whose process is not the seat's.
     expect((readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {})['claude-coordinator-acme'])
@@ -1407,7 +1539,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(0);
-    expect(io.out).toContain("claude-coordinator-acme: its pane is the seat's again; left as it is\n");
+    expect(io.out).toContain("claude-coordinator-acme: left out: its pane is the seat's again; left as it is\n");
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(seatState('claude-coordinator-acme'))
@@ -1425,7 +1557,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: herdr no longer shows this seat on its recorded pane; nothing closed; run team status\n');
+    expect(io.out).toContain('claude-coordinator-acme: left out: herdr no longer shows this seat on its recorded pane; nothing closed; run team status\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(seatState('claude-coordinator-acme'))
@@ -1444,7 +1576,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: herdr no longer shows this seat on its recorded pane; nothing closed; run team status\n');
+    expect(io.out).toContain('claude-coordinator-acme: left out: herdr no longer shows this seat on its recorded pane; nothing closed; run team status\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(seatState('claude-coordinator-acme'))
@@ -1462,7 +1594,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: its workspace holds other panes; nothing closed (close its pane there, then run team up)\n');
+    expect(io.out).toContain('claude-coordinator-acme: left out: its workspace holds other panes; nothing closed (close its pane there, then run team up)\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(seatState('claude-coordinator-acme'))
@@ -1480,7 +1612,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: its pane could not be read; nothing closed\n');
+    expect(io.out).toContain('claude-coordinator-acme: left out: its pane could not be read; nothing closed\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(seatState('claude-coordinator-acme'))
@@ -1498,7 +1630,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: its pane could not be read; nothing closed\n');
+    expect(io.out).toContain('claude-coordinator-acme: left out: its pane could not be read; nothing closed\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(seatState('claude-coordinator-acme'))
@@ -1516,7 +1648,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: its pane could not be read; nothing closed\n');
+    expect(io.out).toContain('claude-coordinator-acme: left out: its pane could not be read; nothing closed\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(seatState('claude-coordinator-acme'))
@@ -1534,7 +1666,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: its pane could not be read; nothing closed\n');
+    expect(io.out).toContain('claude-coordinator-acme: left out: its pane could not be read; nothing closed\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(seatState('claude-coordinator-acme'))
@@ -1557,7 +1689,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: its pane could not be read; nothing closed\n');
+    expect(io.out).toContain('claude-coordinator-acme: left out: its pane could not be read; nothing closed\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(seatState('claude-coordinator-acme'))
@@ -1574,7 +1706,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: its pane could not be read; nothing closed\n');
+    expect(io.out).toContain('claude-coordinator-acme: left out: its pane could not be read; nothing closed\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(seatState('claude-coordinator-acme'))
@@ -1594,7 +1726,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(1);
-    expect(io.out).toContain('deepseek-acme: the process in its pane is working; nothing closed (stop it there, or run team remove deepseek-acme)\n');
+    expect(io.out).toContain('deepseek-acme: left out: the process in its pane is working; nothing closed (stop it there, or run team remove deepseek-acme)\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('deepseek flash v4.1');
     expect(seatState('deepseek-acme')).toMatchObject({ stage: 'ready', pane: 'w93:p1', launched: { shell: 430, cli: [431] } });
@@ -1614,7 +1746,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(1);
-    expect(io.out).toContain('deepseek-acme: the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove deepseek-acme)\n');
+    expect(io.out).toContain('deepseek-acme: left out: the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove deepseek-acme)\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('deepseek flash v4.1');
     expect(seatState('deepseek-acme')).toMatchObject({ stage: 'ready', pane: 'w93:p1', launched: { shell: 430, cli: [431] } });
@@ -1635,7 +1767,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources(restoredSources(), made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: its pane could not be read; nothing closed\n');
+    expect(io.out).toContain('claude-coordinator-acme: left out: its pane could not be read; nothing closed\n');
     expect(made.closes).toEqual([]);
     expect(made.creates).not.toContain('claude opus 5.5');
     expect(seatState('claude-coordinator-acme'))
@@ -1659,7 +1791,7 @@ describe('team up, a session that was restored', () => {
     // The reading is the delivery's own — the pane took no text — and the seat it leaves at
     // named is the record the identity rides in.
     expect(io.out).toContain(
-      'codex-acme: rules not typed: the pane took no text (the screen read idle); run up again\n',
+      'codex-acme: left out: rules not typed: the pane took no text (the screen read idle); run up again\n',
     );
     expect(readState(join(root, '.agents')).sessions['acme-web']?.seats['codex-acme'])
       .toMatchObject({ stage: 'named', launched: { shell: 400, cli: [401] } });
@@ -1675,7 +1807,7 @@ describe('team up, a session that was restored', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: was not in the agent list in time; left at launched\n');
+    expect(io.out).toContain('claude-coordinator-acme: left out: was not in the agent list in time; left at launched\n');
     expect(readState(join(root, '.agents')).sessions['acme-web']?.seats['claude-coordinator-acme'])
       .toMatchObject({ stage: 'launched', launched: { shell: 400, cli: [401] } });
   });
@@ -1738,7 +1870,8 @@ describe('team up, a session that was restored', () => {
       workspaces: () => [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }],
     }, made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: trust question; its workspace was closed without an answer and the seat left out\n');
+    expect(io.out).toContain('claude-coordinator-acme: left out: trust\n');
+    expect(io.err).toContain('  its workspace was closed without an answer and the seat left out\n');
     expect(calls).toEqual(['paneText:w1:p1', 'close:w1']);
     expect(made.closes).toEqual(['w1']);
   });
@@ -1750,7 +1883,7 @@ describe('team up, a session that was restored', () => {
     ['a family the grammar does not know', 'unknown-family', 'refused'],
     ['an output line where the footer was', 'spoof', 'refused'],
     ['a full status row where the footer was', 'full-row', 'drift'],
-    ['a row whose version is not a token', 'unreadable', 'unchecked'],
+    ['a row whose version is not a token, and one log line for the seat', 'unreadable', 'unchecked'],
   ] as const)('cursor launch, screen shows %s', async (_label, screen, expectCase) => {
     const path = join(root, '.agents/team.yaml');
     const cursorSeat = [
@@ -1831,7 +1964,9 @@ describe('team up, a session that was restored', () => {
     };
     const io = testIo(root, { kind: 'owner' });
     const say = io.stdout;
-    io.stdout = (text: string) => { calls.push(text.includes('not checked') ? 'not-checked' : 'report'); say(text); };
+    io.stdout = (text: string) => { calls.push('report'); say(text); };
+    const detail = io.stderr;
+    io.stderr = (text: string) => { calls.push(text.includes('not checked') ? 'not-checked' : 'detail'); detail(text); };
     const code = await runUp(FILE, io, sources({}, made));
     const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['cursor-acme'];
     if (expectCase === 'drift') {
@@ -1840,7 +1975,7 @@ describe('team up, a session that was restored', () => {
       expect(made.renames).not.toContain('cursor-acme');
       expect(seat?.stage).toBe('launched');
       expect(io.out).toContain(
-        'cursor-acme: runs GPT Sol 5.6; the file says Grok 4.7; left at launched, not named. Add --model grok-4.7-high to its launch, or correct the file\'s model and version and run `team approve`\n',
+        'cursor-acme: left out: runs GPT Sol 5.6; the file says Grok 4.7; left at launched, not named. Add --model grok-4.7-high to its launch, or correct the file\'s model and version and run `team approve`\n',
       );
       return;
     }
@@ -1849,7 +1984,8 @@ describe('team up, a session that was restored', () => {
       expect(sent).toEqual([]);
       expect(made.renames).not.toContain('cursor-acme');
       expect(seat?.stage).toBe('launched');
-      expect(io.out).toContain('cursor-acme: timed out after 90 s waiting for its idle prompt; the screen last read unknown; left at launched\n');
+      expect(io.out).toContain('cursor-acme: left out: timeout\n');
+      expect(io.err).toContain('timed out after 90 s waiting for its idle prompt; the screen last read unknown; left at launched');
       return;
     }
     if (expectCase === 'unchecked') {
@@ -1860,18 +1996,25 @@ describe('team up, a session that was restored', () => {
       expect(seat).toMatchObject({ stage: 'ready', rules: 'message' });
       expect(made.renames).toContain('cursor-acme');
       expect(sent.length).toBeGreaterThan(0);
-      expect(io.out).toContain("cursor-acme: its screen doesn't show a model this version knows; not checked\n");
+      expect(io.err).toContain("cursor-acme: its screen doesn't show a model this version knows; not checked\n");
+      // The note is stderr detail, not a record: the log holds the seat's one line, the record
+      // itself — `ready` — and nothing of the note.
+      const log = readFileSync(join(root, '.agents/team.log'), 'utf8');
+      const mine = log.split('\n').filter((line) => line.includes('cursor-acme'));
+      expect(mine).toHaveLength(1);
+      expect(mine[0]).toContain('cursor-acme: ready');
+      expect(log).not.toContain("doesn't show a model");
       // The seat's own calls, in order: the wait's read and the model check's read of the
-      // screen, the report that no model was checked, the rename, then the delivery — read,
-      // typed, read back, entered — and the ready report after it. The not-checked report comes
-      // before the rename, so the seat is named only after the check has had its say.
+      // screen, the rename, then the delivery — read, typed, read back, entered — and the ready
+      // report after it. The not-checked note was held when the check made it (before the
+      // rename, so the seat is named only after the check has had its say) and is written after
+      // the record, as the record's stderr detail.
       const from = calls.indexOf('create:grok 4.7');
       expect(calls.slice(from, from + 14)).toEqual([
         'create:grok 4.7',
         'paneRun:AGENT_UNATTENDED=1',
         'paneText',
         'paneText',
-        'not-checked',
         'agentPanes',
         'renameAgent',
         'paneText',
@@ -1881,6 +2024,7 @@ describe('team up, a session that was restored', () => {
         'pressEnter',
         'paneText',
         'report',
+        'not-checked',
       ]);
       return;
     }
@@ -2548,8 +2692,8 @@ describe('scratch session', () => {
         const doctor = upReal.doctor ? { ...upReal.doctor, home: scratchHome } : undefined;
         const upCode = await runUp(file, owner, { ...upReal, home: scratchHome, doctor });
         expect(upCode).toBe(1);
-        if (!owner.out.includes('trust question; its workspace was closed without an answer and the seat left out')) {
-          throw new Error(owner.out.split('\n').slice(-20).join('\n'));
+        if (!owner.out.includes(': left out: trust') || !owner.err.includes('its workspace was closed without an answer and the seat left out')) {
+          throw new Error((owner.out + owner.err).split('\n').slice(-20).join('\n'));
         }
         await runDown(file, owner, downReal);
       } finally {

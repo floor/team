@@ -1002,14 +1002,22 @@ describe('up over the v0.2.1 state', () => {
       }),
     );
     expect(code).toBe(0);
-    // The 0.2.1 state records no process identity, so each skip names the relaunch that
-    // records it; the seat itself is still left exactly as it is.
+    // One final record per seat: a seat that was already ready is `ready`, and the words the
+    // skip line carried are the detail under the record, on stderr. The 0.2.1 state records no
+    // process identity, so each detail names the relaunch that records it; the seat itself is
+    // still left exactly as it is. What this test is about — nothing is started, closed or
+    // renamed — is the state and `counts` below.
     expect(io.out).toBe(
-      `  skip ${COORDINATOR}: already ready; left as it is; a relaunch records its process: ` +
+      `${COORDINATOR}: ready\n` +
+        `${OPERATOR}: ready\n` +
+        `${SEAT}: ready\n`,
+    );
+    expect(io.err).toBe(
+      '  already ready; left as it is; a relaunch records its process: ' +
         'team down, then team up (to restart the whole team)\n' +
-        `  skip ${OPERATOR}: already ready; left as it is; a relaunch records its process: ` +
+        '  already ready; left as it is; a relaunch records its process: ' +
         'team down, then team up (to restart the whole team)\n' +
-        `  skip ${SEAT}: already ready; left as it is; a relaunch records its process: ` +
+        '  already ready; left as it is; a relaunch records its process: ' +
         `team remove ${SEAT} --keep, then team add ${SEAT} ` +
         '(or team down, then team up, for the whole team)\n',
     );

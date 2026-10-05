@@ -130,7 +130,7 @@ export function paneStillRunning(foreground: readonly string[] | null, processNa
 
 export function stateOf(status: string, screen: Screen): DownSeat['state'] {
   if (screen.kind === 'unsent') return 'unsent';
-  if (screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question') return 'blocked';
+  if (screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question' || screen.kind === 'vendor notice') return 'blocked';
   // A screen showing a running turn is working even when herdr's status has not caught up:
   // `--wait` waits for it, and it is never typed into.
   if (screen.kind === 'working') return 'working';

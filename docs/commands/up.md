@@ -16,7 +16,8 @@ ownership by the invoking user, no symbolic links anywhere in the chain, directo
 path. The lobby is checked again — the gate's checks, plus that it is still the folder the gate
 read: the same canonical path, device and inode — directly before every workspace this run creates
 in it, with nothing between that confirmation and herdr's create call. A failed confirmation
-creates nothing: the seat is left out with the gate's own refusal line, and the rest of the
+creates nothing: the seat is left out with the gate's cause in words — the gate's own line, the
+folders it resolved, is written under the record on stderr — and the rest of the
 launch stops, so no further workspace is made, not even the watchdog's. A seat created earlier
 in the same run is left running: its workspace was created while the path was the verified
 lobby, and `up` never closes a workspace it may already have started a CLI in. One window
@@ -27,8 +28,8 @@ A seat goes to its real folder itself: a worktree seat to the worktree its brief
 seat to its configured `cwd` before any project work.
 
 The lobby is a folder no CLI has seen before, and `up` reads a trust question and never answers one:
-the first `up` leaves each seat out with `<seat>: trust question; its
-workspace was closed without an answer and the seat left out` — nothing run — until the owner trusts
+the first `up` leaves each seat out with `<seat>: left out: trust`, and the detail under the record
+says its workspace was closed without an answer — nothing run — until the owner trusts
 the lobby once in that CLI. Then it starts.
 
 ## Synopsis
@@ -62,26 +63,39 @@ exits 0.
 
 ## What it prints
 
-    claude-keeper: ready
-      skip claude-qa: stopped in the file; start it with `team add claude-qa`
-    watch: started
+One record per seat, in the file's order, is the run's whole account of that seat:
 
-A seat that reaches its idle prompt with its rules delivered prints `<seat>: ready`. A seat already
-ready, stopped in the file, or on a CLI with no launch profile prints one `  skip` line and is left
-as it is. A ready seat the state records without its process identity, or with a start outside the
-machine lobby, is left as it is too — only a relaunch repairs either — and its skip line says so:
-`  skip <seat>: already ready; left as it is; a relaunch records its process: team remove <seat>
---keep, then team add <seat> (or team down, then team up, for the whole team)`, or the same line
-saying `a relaunch moves it into the lobby`. For a seat the file names as coordinator or operator,
-the line offers only `team down, then team up (to restart the whole team)`. The watch prints `watch: started`.
+    claude-keeper: ready
+    claude-beacon: ready
+
+A seat that reaches its idle prompt with its rules delivered prints `<seat>: ready`. A seat left out
+prints `<seat>: left out: <what stopped it>` — a classification (`trust`, `permission`, `question`,
+`vendor notice`, `login`, `unknown`, `unsent`, `timeout`) or the reason in the seat's own words, in
+the table below. On a terminal the line is drawn before the seat's workspace is created, as
+`<seat>: launching`, and rewritten in place as the seat advances — `waiting for its prompt`,
+`naming`, `sending its rules` — until its one final record ends the line with a newline. A
+redirected stdout receives the final records only: one newline-terminated line per seat, nothing
+provisional, no escape sequence. Everything else a run says about a seat — the indented detail
+under the record, the `skip` line for a seat stopped in the file, a note, a timeout's last reading
+and the pane's last lines — is written to stderr, after the record it belongs to; a seat on a CLI
+with no launch profile prints the `left out` record above, on stdout. `watch: started` is on stderr
+too.
+
+A seat already ready is left as it is, and the words it was left with are the detail under its
+record. A ready seat the state records without its process identity, or with a start outside the
+machine lobby, is left as it is too — only a relaunch repairs either — and its detail says so:
+`  already ready; left as it is; a relaunch records its process: team remove <seat> --keep, then
+team add <seat> (or team down, then team up, for the whole team)`, or the same words saying `a
+relaunch moves it into the lobby`. For a seat the file names as coordinator or operator, the detail
+offers only `team down, then team up (to restart the whole team)`.
 
 A seat is its pane only while the process `team` launched is still in it. A seat the state records
 whose pane no longer holds that process is not "already ready": its workspace is closed without a
 key and without input — its pane runs no CLI, or one team did not launch, and nothing in it is the
-seat — and the seat is launched fresh with its rules. Its one line says both:
-`<seat>: its pane held no CLI; closed without input and launched again` when the pane was back at
-its shell, `<seat>: its pane held a process team did not launch; closed without input and launched
-again` when another process held it.
+seat — and the seat is launched fresh with its rules. Its record is `<seat>: ready`, and the detail
+under it says both: `  its pane held no CLI; closed without input and launched again` when the pane
+was back at its shell, `  its pane held a process team did not launch; closed without input and
+launched again` when another process held it.
 
 The reading that decides the repair is taken while the plan is built, and the close can be minutes
 later, after every seat before this one was created, waited for and delivered to. `up` reads herdr
@@ -92,16 +106,16 @@ must hold no other panes (named or not), the process reading must still say the 
 another process, and a pane held by another process must not read `working` or `unsent` — a process
 that is working or holds unsent text is never closed by `up`, whoever started it.
 When any of that does not hold, nothing is closed, nothing is launched for that seat, its state is
-left as it is, the seat is out of the run, and `up` exits 1 with one line:
+left as it is, the seat is out of the run, and `up` exits 1 with one record:
 
-| Line | When |
+| Record | When |
 | --- | --- |
-| `<seat>: its pane is the seat's again; left as it is` | the pane now holds the recorded process — its owner restarted the CLI between the plan and the close. Not an error: the seat is skipped as ready and the exit code is unaffected |
-| `<seat>: herdr no longer shows this seat on its recorded pane; nothing closed; run team status` | the agent list no longer names the seat on the recorded pane, or that pane's workspace is no longer the recorded one |
-| `<seat>: its workspace holds other panes; nothing closed (close its pane there, then run team up)` | herdr's pane listing for the recorded workspace holds more than the seat's recorded pane |
-| `<seat>: the process in its pane is working; nothing closed (stop it there, or run team remove <seat>)` | a process team did not launch holds the pane and its screen reads `working` |
-| `<seat>: the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove <seat>)` | a process team did not launch holds the pane and its screen reads `unsent` |
-| `<seat>: its pane could not be read; nothing closed` | herdr can't give the workspace's panes, the pane's processes, or its screen reads as nothing this version knows |
+| `<seat>: left out: its pane is the seat's again; left as it is` | the pane now holds the recorded process — its owner restarted the CLI between the plan and the close. Not an error: the seat is skipped as ready and the exit code is unaffected |
+| `<seat>: left out: herdr no longer shows this seat on its recorded pane; nothing closed; run team status` | the agent list no longer names the seat on the recorded pane, or that pane's workspace is no longer the recorded one |
+| `<seat>: left out: its workspace holds other panes; nothing closed (close its pane there, then run team up)` | herdr's pane listing for the recorded workspace holds more than the seat's recorded pane |
+| `<seat>: left out: the process in its pane is working; nothing closed (stop it there, or run team remove <seat>)` | a process team did not launch holds the pane and its screen reads `working` |
+| `<seat>: left out: the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove <seat>)` | a process team did not launch holds the pane and its screen reads `unsent` |
+| `<seat>: left out: its pane could not be read; nothing closed` | herdr can't give the workspace's panes, the pane's processes, or its screen reads as nothing this version knows |
 
 This comparison is wrong in the safe direction, but it is wrong: a CLI that replaces its own
 process — an updater that re-executes, a wrapper that hands over — changes the foreground pids, and
@@ -115,7 +129,7 @@ the CLI there is the one `team` launched.
 
 When the workspace does not close, nothing is launched in its
 place and the seat is left as it is:
-`<seat>: its workspace did not close; left as it is`, with `up` exiting 1. A seat with no `launched`
+`<seat>: left out: its workspace did not close; left as it is`, with `up` exiting 1. A seat with no `launched`
 record in state (one launched before this version recorded process identity, or one stopped at a
 dialog before its idle prompt: the reading is taken once, after the idle prompt and after the launch
 model check) keeps today's behaviour: nothing checks its pane. (An `up` run without a terminal closes
@@ -123,7 +137,7 @@ a waiting dialog's workspace without input and prints `left out`; interactive ha
 seats and `trust-sent-recovery` at a terminal, alongside recording process identity before an idle
 prompt, is a separate planned change and is not altered here.)
 
-When the idle screen names no model this version can read, `up` says `<seat>: its screen doesn't show a model this version knows; not checked` and continues. Nothing is assumed about which model is running.
+When the idle screen names no model this version can read, `up` writes `<seat>: its screen doesn't show a model this version knows; not checked` to stderr, after the seat's record, and continues. It is detail, not a record: the log keeps the seat's one line, the record `ready`. Nothing is assumed about which model is running.
 
 A seat whose rules travel as a first message (codex, cursor, antigravity) gets them from a file:
 `up` writes the approved rules text to `<project state folder>/rules/<seat>.md` — owner-only,
@@ -172,48 +186,59 @@ could not verify: a stop leaves the text where it is.
   and without following a link, before it unlinks anything — so its window is the writer's own
   and no wider.
 
-A seat that doesn't get there is printed once with what stopped it, and `up` exits 1. For a seat
-whose wait ended without a prompt, the last non-empty lines the pane showed — the launch line's own
+A seat that doesn't get there prints its one record with what stopped it, and `up` exits 1. For a
+seat whose wait ended without a prompt, the record is `<seat>: left out: timeout` (or the
+ended-at-its-shell reason below), and the detail under the record, on stderr, carries the last
+non-empty lines the pane showed — the launch line's own
 echo first when it is within reach, six at most, every escape sequence and every control character
-but the line breaks removed, each line cut to 200 characters with `…` — are printed under the
-reading, each on `  | `; `  run \`team up\` again to resume it` names how the seat is finished.
-Those lines go to the terminal only: the log file gets the reading, never the screen's text.
+but the line breaks removed, each line cut to 200 characters with `…` — each on `  | `;
+`  run \`team up\` again to resume it` names how the seat is finished.
+Those lines go to the terminal only: the log file gets the record, never the screen's text. The
+same holds for every folder the run resolves: a refusal's record holds the finding in words — the
+start folder a launch line was looked for in, the lobby a failed confirmation names — and the
+sentence with the folder is written under the record, on stderr, for this terminal alone. One line
+per final record, in file order, plus the watch's own line — `watch: started`, or `watch:` and its
+reason in words when it did not — is the whole of what the log gets: a defect in the seat's file,
+or a note like the unread-model one below, is stderr detail and never a log line.
+
+The records are what stdout gets; a line below that is not a record is written to stderr, after the
+record it belongs to, as its meaning says.
 
 | Line | Meaning |
 | --- | --- |
-| `<seat>: trust question; its workspace was closed without an answer and the seat left out` | the CLI asked whether to trust the folder, and `up` never answers one |
-| `<seat>: permission; its workspace was closed without input and the seat left out` | a permission dialog, or a question, was left for its owner to answer |
-| `<seat>: <reading>; its workspace did not close; left as it is` | the close of that workspace failed: nothing claims it was closed, and the seat is left exactly as it was, its state kept — a later `up` resumes it |
-| `<seat>: runs <model> <version>; the file says <model> <version>; left at launched, not named. Add <flag> <id> to its launch, or correct the file's model and version and run team approve` | the idle screen shows a different model than the file. The seat is not renamed and gets no rules; its pane stays open. The flag is that CLI's model flag, and the id is the one the profile maps to the file's model. When the profile knows no id, the line says `<id>` |
-| `<seat>: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched` | herdr's process info says the pane's foreground program is back at its shell through three full polls on end, four readings, the screen matches no CLI shape, and the launch line's own echo is visible on the screen. A pane read before the line arrived, one whose echo scrolled away, one whose program is slow to draw, or a herdr that can't say (no shell process info), is waited out to the deadline — the end is never inferred from the screen's text, and a single reading can never reach the three polls. The workspace is kept, and the pane's last lines follow on the terminal |
-| `<seat>: timed out after <n> s waiting for its idle prompt; the screen last read <kind>; left at launched` | the prompt never came within the profile's own time limit; the last reading and the pane's last lines follow on the terminal |
-| `<seat>: was not in the agent list in time; left at launched` | herdr listed no agent in the pane to name |
-| `<seat>: rules not typed: the folder that would hold its rules file is <what>; the owner removes or repairs it, then runs up again` | a folder from `team`'s per-user state root down to `rules/` is not a real directory of this user's — a symbolic link, not a directory, another user's, or (for `rules/` and the project folder) a mode wider than `0700`, never `chmod`'d closer; `<what>` says which. Nothing was written, nothing typed |
-| `<seat>: rules not typed: its rules file's place holds <what>; the owner removes it, then runs up again` | the final name holds anything other than this user's `0600` regular file — a symbolic link, a FIFO, a directory, a wider mode, another owner — and is never replaced; `<what>` says what is there |
-| `<seat>: rules not typed: its rules file did not read back as written; check the project state folder, then run up again` | the write landed but did not read back (no-follow) as the hash the line carries; nothing was typed |
-| `<seat>: rules not typed: its rules file could not be written; check the project state folder, then run up again` | the write failed; nothing was typed |
-| `<seat>: rules not typed: its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -; rename the seat or move the project, then run up again` | the path holds a character the read-back cannot prove; nothing was typed, nothing quoted |
-| `<seat>: rules not typed: the CLI never appeared as its pane's foreground process (the screen read <kind>); check the seat's launch line — the wrapper it starts through, or the command itself — then run up again` | within the profile's own time limit the pane's foreground process was never the CLI — a wrapper's shell still in front of it, or a launch line that exited. A CLI that starts through a wrapper is waited out, its first frame included; nothing is typed into the wrapper's shell |
-| `<seat>: rules not confirmed: the seat is working; run up again when it is idle` | the seat is mid-turn; nothing was typed |
-| `<seat>: rules not typed: <what stopped it>; <what to do>` | nothing was typed: the screen was not an empty idle prompt, or the box already held text that is not the rules line |
-| `<seat>: rules typed, not sent: the read-back didn't match; the line sits in its box, unsent: <what to do>` | the line was typed and its box did not read back as the line; `up` does not clear it. When the box drew a row that is not the line's own, the first such row is printed above this line, stripped of control characters and cut to 200 characters |
-| `<seat>: rules typed, not sent: the rules file changed after it was written` | the line read back, but the file — read again without following a link, directly before Enter — no longer held the text whose hash the line names. Enter was not pressed; the line sits in the box, unsent, and the owner checks the project state folder before running `up` again |
-| `<seat>: rules typed, not sent: its box still holds the line after Enter; <what to do>` | Enter was pressed and the box still shows the line: the key did not take, and nothing was sent |
-| `<seat>: the seat did not come back to its idle prompt (<reading>); <what to do>` | the line was submitted and the seat never came back to its idle prompt — a running turn, or a dialog to answer |
-| `<seat>: its rules were not delivered; left at named` | the pane could not be read at all; nothing was typed |
-| `<seat>: its workspace did not close; left as it is` | its pane no longer held the process `team` launched, and closing that workspace failed, so nothing was launched in its place |
-| `<seat>: its workspace was not created; left at launched` | herdr made no workspace for it |
-| `<seat>: its lobby folder was not created; left out` | the folder a seat that works in worktrees waits in could not be made |
-| `<seat>: its launch command did not run; left at launched` | the pane took no command |
-| `<seat>: the approval allows 3 seats; 4 would be running` | the approval's ceiling, from the record, not the file |
-| `<seat>: refused: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | a counted reading is inside that account's reserve and this run would launch the seat; this seat is not started, and the others still are. `accounts with room: none` when no other account has room |
-| `<seat>: refused: <account> spend <amount> <CUR>, at or below its <floor> <CUR> floor, read <age> ago; accounts with room: <accounts>` | the money its check counted is at or below the account's floor, and this run would launch the seat; this seat is not started, and the others still are |
-| `<seat>: refused: its launch line starts `<word>`, which is not on the PATH` / `…, which does not exist` / `…, which is not executable` / `…, not found from `~`` / `…, not found from its start folder <folder>` | the program the line starts is missing where the seat starts — the lobby for a seat that works in worktrees. A first word that is one fully quoted literal (`"claude"`, `'zcash'`) is checked with the quotes removed, the way a shell would run it, and `<word>` is the word as written, quotes and all — a quoted `"~/x"` is a pathname with a literal `~` folder, resolved from the start folder, never the home. A path written as the program is read as main's launcher check read it: it must be there and executable, not merely there. This seat is not started, and the others still are |
-| `<seat>: refused: its launch line runs `<path>`, not found from its start folder <folder>; the same file is at `<absolute>` from the project root — write that path` | the line runs a shell — `sh`, `bash` or `zsh`, by name or by path — whose first argument is a relative script path, not an option, and that script resolves from the project root but not from the folder the line will run in: the shell exits 127 without starting anything. This seat is not started, and the others still are |
-| `<seat>: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | the same reading, and the seat is already running; setup continues and the line is only a notice |
-| `<seat>: <account> spend <amount> <CUR>, at or below its <floor> <CUR> floor, read <age> ago; accounts with room: <accounts>` | the same money reading, and the seat is already running; setup continues and the line is only a notice |
-| `<seat>: <account> is unknown` | the account is in the file and its figure is unknown — a subscription with no counted reading, or a spend account whose money reading is missing, older than `budgets.stale_after`, or in another currency than the floor's. A subscription figure with no known reset is unknown while it could still matter — inside its reserve, or within the reserve again outside it; further out — more than the reserve again — it counts, the room the figure last held, and the launch decision is clear: no unknown line. The seat still starts |
-| `<seat>: <account>: first sight only, not yet counted` | the account's only readings are unconfirmed; the seat still starts |
+| `<seat>: left out: trust` | the CLI asked whether to trust the folder, and `up` never answers one; the detail under the record says its workspace was closed without an answer and the seat left out |
+| `<seat>: left out: permission` / `<seat>: left out: question` | a permission dialog, or a question, was left for its owner to answer; the detail under the record says its workspace was closed without input and the seat left out |
+| `<seat>: left out: vendor notice` | the CLI shows a vendor notice its owner has to act on: a screen its profile captured as one — today, Codex 0.157.0's update screen. `team` never answers one, and treats it at least as strictly as a question: nothing is typed, the watch reports it, and delivery stops on it. The detail under the record says its workspace was closed without input and the seat left out, and adds `untested on <version>` when the CLI installed here is outside the range the notice was captured on — the reading itself is never made less cautious by a version |
+| `<seat>: left out: <reading>; its workspace did not close; left as it is` | the close of that workspace failed, with `<reading>` one of `trust`, `permission`, `question` or `vendor notice`: nothing claims it was closed, and the seat is left exactly as it was, its state kept — a later `up` resumes it |
+| `<seat>: left out: runs <model> <version>; the file says <model> <version>; left at launched, not named. Add <flag> <id> to its launch, or correct the file's model and version and run team approve` | the idle screen shows a different model than the file. The seat is not renamed and gets no rules; its pane stays open. The flag is that CLI's model flag, and the id is the one the profile maps to the file's model. When the profile knows no id, the line says `<id>` |
+| `<seat>: left out: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched` | herdr's process info says the pane's foreground program is back at its shell through three full polls on end, four readings, the screen matches no CLI shape, and the launch line's own echo is visible on the screen. A pane read before the line arrived, one whose echo scrolled away, one whose program is slow to draw, or a herdr that can't say (no shell process info), is waited out to the deadline — the end is never inferred from the screen's text, and a single reading can never reach the three polls. The workspace is kept, and the pane's last lines follow on stderr, under the record |
+| `<seat>: left out: timeout` | the prompt never came within the profile's own time limit; the detail under the record, on stderr, says after how long it waited, the screen it last read, the pane's last lines, and that `team up` again resumes it |
+| `<seat>: left out: was not in the agent list in time; left at launched` | herdr listed no agent in the pane to name |
+| `<seat>: left out: rules not typed: the folder that would hold its rules file is <what>; the owner removes or repairs it, then runs up again` | a folder from `team`'s per-user state root down to `rules/` is not a real directory of this user's — a symbolic link, not a directory, another user's, or (for `rules/` and the project folder) a mode wider than `0700`, never `chmod`'d closer; `<what>` says which. Nothing was written, nothing typed |
+| `<seat>: left out: rules not typed: its rules file's place holds <what>; the owner removes it, then runs up again` | the final name holds anything other than this user's `0600` regular file — a symbolic link, a FIFO, a directory, a wider mode, another owner — and is never replaced; `<what>` says what is there |
+| `<seat>: left out: rules not typed: its rules file did not read back as written; check the project state folder, then run up again` | the write landed but did not read back (no-follow) as the hash the line carries; nothing was typed |
+| `<seat>: left out: rules not typed: its rules file could not be written; check the project state folder, then run up again` | the write failed; nothing was typed |
+| `<seat>: left out: rules not typed: its rules file's path can't be typed safely: the read-back can't prove a path outside letters, digits and . _ / @ + -; rename the seat or move the project, then run up again` | the path holds a character the read-back cannot prove; nothing was typed, nothing quoted |
+| `<seat>: left out: rules not typed: the CLI never appeared as its pane's foreground process (the screen read <kind>); check the seat's launch line — the wrapper it starts through, or the command itself — then run up again` | within the profile's own time limit the pane's foreground process was never the CLI — a wrapper's shell still in front of it, or a launch line that exited. A CLI that starts through a wrapper is waited out, its first frame included; nothing is typed into the wrapper's shell |
+| `<seat>: left out: rules not confirmed: the seat is working; run up again when it is idle` | the seat is mid-turn; nothing was typed |
+| `<seat>: left out: rules not typed: <what stopped it>; <what to do>` | nothing was typed: the screen was not an empty idle prompt, or the box already held text that is not the rules line |
+| `<seat>: left out: rules typed, not sent: the read-back didn't match; the line sits in its box, unsent: <what to do>` | the line was typed and its box did not read back as the line; `up` does not clear it. When the box drew a row that is not the line's own, the first such row is written under the record on stderr, stripped of control characters and cut to 200 characters |
+| `<seat>: left out: rules typed, not sent: the rules file changed after it was written` | the line read back, but the file — read again without following a link, directly before Enter — no longer held the text whose hash the line names. Enter was not pressed; the line sits in the box, unsent, and the owner checks the project state folder before running `up` again |
+| `<seat>: left out: rules typed, not sent: its box still holds the line after Enter; <what to do>` | Enter was pressed and the box still shows the line: the key did not take, and nothing was sent |
+| `<seat>: left out: the seat did not come back to its idle prompt (<reading>); <what to do>` | the line was submitted and the seat never came back to its idle prompt — a running turn, or a dialog to answer |
+| `<seat>: left out: its rules were not delivered; left at named` | the pane could not be read at all; nothing was typed |
+| `<seat>: left out: its workspace did not close; left as it is` | its pane no longer held the process `team` launched, and closing that workspace failed, so nothing was launched in its place |
+| `<seat>: left out: its workspace was not created; left at launched` | herdr made no workspace for it |
+| `<seat>: left out: its launch command did not run; left at launched` | the pane took no command |
+| `<seat>: left out: the approval allows 3 seats; 4 would be running` | the approval's ceiling, from the record, not the file |
+| `<seat>: left out: refused: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | a counted reading is inside that account's reserve and this run would launch the seat; this seat is not started, and the others still are. `accounts with room: none` when no other account has room |
+| `<seat>: left out: refused: <account> spend <amount> <CUR>, at or below its <floor> <CUR> floor, read <age> ago; accounts with room: <accounts>` | the money its check counted is at or below the account's floor, and this run would launch the seat; this seat is not started, and the others still are |
+| `<seat>: left out: refused: its launch line starts `<word>`, which is not on the PATH` / `…, which does not exist` / `…, which is not executable` / `…, not found from `~`` / `…, not found from its start folder` | the program the line starts is missing where the seat starts — the lobby for a seat that works in worktrees. When the check looked in a folder it resolved, the record's reason stops at `…, not found from its start folder` and the sentence naming the folder is written under the record, on stderr. A first word that is one fully quoted literal (`"claude"`, `'zcash'`) is checked with the quotes removed, the way a shell would run it, and `<word>` is the word as written, quotes and all — a quoted `"~/x"` is a pathname with a literal `~` folder, resolved from the start folder, never the home. A path written as the program is read as main's launcher check read it: it must be there and executable, not merely there. This seat is not started, and the others still are |
+| `<seat>: left out: refused: its launch line runs `<path>`, not found from its start folder` | the line runs a shell — `sh`, `bash` or `zsh`, by name or by path — whose first argument is a relative script path, not an option, and that script resolves from the project root but not from the folder the line will run in: the shell exits 127 without starting anything. The record's reason stops at `…, not found from its start folder`; the sentence naming the folder it looked in and the absolute path to write is written under the record, on stderr. This seat is not started, and the others still are |
+| `<seat>: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | the same reading, and the seat is already running; setup continues and the line is only a notice — on a real run it is written to stderr, under the seat's record |
+| `<seat>: <account> spend <amount> <CUR>, at or below its <floor> <CUR> floor, read <age> ago; accounts with room: <accounts>` | the same money reading, and the seat is already running; setup continues and the line is only a notice — on a real run it is written to stderr, under the seat's record |
+| `<seat>: <account> is unknown` | the account is in the file and its figure is unknown — a subscription with no counted reading, or a spend account whose money reading is missing, older than `budgets.stale_after`, or in another currency than the floor's. A subscription figure with no known reset is unknown while it could still matter — inside its reserve, or within the reserve again outside it; further out — more than the reserve again — it counts, the room the figure last held, and the launch decision is clear: no unknown line. The seat still starts, and the line is a notice written to stderr, under the seat's record, on a real run |
+| `<seat>: <account>: first sight only, not yet counted` | the account's only readings are unconfirmed; the seat still starts, and the line is a notice written to stderr, under the seat's record, on a real run |
 
 A `version: "0"` — exactly that literal, the placeholder a fresh `init` writes before the owner
 fills the release number — is read as *no version declared*: the seat's first launch is not stopped
@@ -353,8 +378,10 @@ The same command for real runs exactly that:
 
 ```console
 $ team up ; echo "exit $?"
-  skip claude-keeper: already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)
-  skip claude-beacon: already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
+claude-keeper: ready
+  already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)
+claude-beacon: ready
+  already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
   skip claude-qa: stopped in the file; start it with `team add claude-qa`
 watch: started
 exit 0

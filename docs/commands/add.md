@@ -66,12 +66,16 @@ A seat that reaches its idle prompt with its rules delivered prints `<seat>: rea
 seat prints `<name>: ready` under the name it was given. A seat the state records whose pane no
 longer holds the process `team` launched is not `already running`: its workspace is closed without
 input and the seat is launched fresh, with the line `up` prints for it. Everything else a launch
-can print is the same as `up`'s, with the seat's name in front: `its workspace was not created; left at launched`,
-`timed out after <n> s waiting for its idle prompt; the screen last read <kind>; left at launched`,
-`its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched`, `permission; its
-workspace was closed without input and the seat left out`, and the rest of the table on the
-[team up](up.md) page. A wait that ended without a prompt prints the pane's last lines under the
-reading, on the terminal only, as `up` does. First-message rules go to the seat's file in the project state folder and arrive as
+can print is the same as `up`'s, with the seat's name in front: one record per seat —
+`<name>: ready`, or `<name>: left out: <what stopped it>` — and the detail that explains it
+written to stderr under the record, exactly as `up`'s table reads: `left out: its workspace was
+not created; left at launched`, `left out: timeout`,
+`left out: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched`, `left out: permission`,
+`left out: vendor notice`, and the rest of the table on the
+[team up](up.md) page. A wait that ended without a prompt writes the pane's last lines under the
+record, on stderr, as `up` does. The log file gets each record's line alone, once per final record:
+its reason in words, never a folder the run resolved, a pane's text or a file's content — the
+detail under the record is stderr's alone. First-message rules go to the seat's file in the project state folder and arrive as
 the one line `up` types, read back and entered, exactly as that page describes. A seat
 `add` leaves out takes its rules file with it; a temporary seat removed with `team
 remove` or stopped by `team down` loses its file with the seat, while a declared seat's
