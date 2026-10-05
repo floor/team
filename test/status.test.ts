@@ -448,8 +448,8 @@ describe('team status', () => {
     expect(doc.differences.length).toBe(4);
   });
 
-  test('A: order: missing watch comes first and marks add repairs (after: ...); running watch has no mark; unapproved file comes first', async () => {
-    // 1. Missing watch and two seats not running
+  test('A: the approval repair comes first and marks the repairs that wait on it; a missing watch marks nothing', async () => {
+    // 1. A missing watch and two seats not running: the watch moves nothing and marks nothing
     live = {
       ...built(),
       agents: built().agents.filter(
@@ -462,33 +462,27 @@ describe('team status', () => {
 
     const missingWatch = await status();
     expect(missingWatch.code).toBe(1);
-    const watchIdx = missingWatch.out.indexOf('difference: no watch has run for this session\n  repair: team watch --session acme-web');
-    const add1Idx = missingWatch.out.indexOf('difference: deepseek-acme is in the file and is not running\n  repair: team add deepseek-acme (after: team watch --session acme-web)');
-    const add2Idx = missingWatch.out.indexOf('difference: deepseek-acme-2 is in the file and is not running\n  repair: team add deepseek-acme-2 (after: team watch --session acme-web)');
-    expect(watchIdx).toBeGreaterThanOrEqual(0);
-    expect(add1Idx).toBeGreaterThan(watchIdx);
-    expect(add2Idx).toBeGreaterThan(watchIdx);
+    const add1 = missingWatch.out.indexOf('difference: deepseek-acme is in the file and is not running\n  repair: team add deepseek-acme\n');
+    const add2 = missingWatch.out.indexOf('difference: deepseek-acme-2 is in the file and is not running\n  repair: team add deepseek-acme-2\n');
+    const watch = missingWatch.out.indexOf('difference: no watch has run for this session\n  repair: team watch --session acme-web\n');
+    expect(add1).toBeGreaterThanOrEqual(0);
+    expect(add2).toBeGreaterThanOrEqual(0);
+    // The differences keep the order they were created in: the watch's, made after them, stays after them.
+    expect(watch).toBeGreaterThan(add1);
+    expect(watch).toBeGreaterThan(add2);
+    expect(missingWatch.out).not.toContain('(after:');
 
-    // 2. With the watch running: no mark
-    updateState(join(dir, '.agents'), (state) => {
-      state.sessions['acme-web'] = { ...emptySession(), watch: { pid: 1, heartbeat: '2026-10-03T14:09:00Z' } };
-    });
-    const runningWatch = await status();
-    expect(runningWatch.code).toBe(1);
-    expect(runningWatch.out).not.toContain('no watch has run');
-    expect(runningWatch.out).toContain('difference: deepseek-acme is in the file and is not running\n  repair: team add deepseek-acme\n');
-    expect(runningWatch.out).toContain('difference: deepseek-acme-2 is in the file and is not running\n  repair: team add deepseek-acme-2\n');
-    expect(runningWatch.out).not.toContain('(after:');
-
-    // 3. An unapproved file: the approve difference first
+    // 2. An unapproved file: the approval difference first, then the repairs that name a command
+    //    that refuses on it. The watch is not blocked by the approval and is not marked either.
     standing = { kind: 'none' };
     const unapproved = await status();
     expect(unapproved.code).toBe(1);
-    const approveIdx = unapproved.out.indexOf('difference: the file was never approved on this machine\n  repair: the owner runs team approve');
-    const unapprovedAdd1 = unapproved.out.indexOf('difference: deepseek-acme is in the file and is not running');
-    expect(approveIdx).toBeGreaterThanOrEqual(0);
-    expect(unapprovedAdd1).toBeGreaterThan(approveIdx);
+    const approve = unapproved.out.indexOf('difference: the file was never approved on this machine\n  repair: the owner runs team approve');
+    expect(approve).toBeGreaterThanOrEqual(0);
     expect(unapproved.out).toContain('repair: team add deepseek-acme (after: the owner runs team approve)');
+    expect(unapproved.out).toContain('repair: team add deepseek-acme-2 (after: the owner runs team approve)');
+    expect(unapproved.out.indexOf('difference: deepseek-acme is in the file and is not running')).toBeGreaterThan(approve);
+    expect(unapproved.out).toContain('difference: no watch has run for this session\n  repair: team watch --session acme-web\n');
   });
 
   test('B: whose repair: each repair string that names an owner command asserted exactly', async () => {

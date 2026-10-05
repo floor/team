@@ -13,7 +13,7 @@ import type { Command, Io } from '../io.ts';
 import { emptySession, readState } from '../state.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
 import { approvalStanding, type Standing } from '../store/store.ts';
-import { compare, isOwnerRepair, orderAndAnnotateDifferences } from '../status/compare.ts';
+import { APPROVAL_REPAIR, compare, orderAndAnnotateDifferences } from '../status/compare.ts';
 import type { Comparison, Difference, Live } from '../status/compare.ts';
 
 // What `status` reads from outside the file and the state, so tests can stand in for it.
@@ -149,7 +149,9 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
       session,
       rows: comparison.rows,
       notes: comparison.notes,
-      differences: comparison.differences,
+      // Format 1: the extra facts a difference carries (needs/owner/approval) are for the
+      // renderer, not the document.
+      differences: comparison.differences.map(({ what, repair }) => ({ what, repair })),
       notice: current.notice ?? null,
       ...(budgets.length ? { budgets } : {}),
     };
@@ -168,22 +170,23 @@ function emptyOverrides(): OverrideForce {
 
 function overrideDrift(report: OverrideForce): Difference[] {
   return [
-    ...report.differences.map((line) => ({
+    ...report.differences.map((line): Difference => ({
       what: `the overrides differ from the approved copy: ${line}`,
-      repair: 'the owner runs team approve',
+      repair: APPROVAL_REPAIR,
+      approval: true,
+      owner: true,
     })),
-    ...report.problems.map((problem) => ({ what: problem, repair: 'fix the overrides file' })),
+    ...report.problems.map((problem): Difference => ({ what: problem, repair: 'fix the overrides file' })),
   ];
 }
 
 // A file that was never approved, or was changed since, runs nothing until the owner approves it.
 // A legacy or refused record is the whole case and its repair in one line of its own.
 export function approvalDrift(approval: { differences: string[] | null; reason: string | null }): Difference[] {
-  if (approval.reason !== null) return [{ what: approval.reason, repair: 'the owner runs team approve' }];
-  if (approval.differences === null) {
-    return [{ what: 'the file was never approved on this machine', repair: 'the owner runs team approve' }];
-  }
-  return approval.differences.map((line) => ({ what: `the file differs from the approved one: ${line}`, repair: 'the owner runs team approve' }));
+  const withApproval = (what: string): Difference => ({ what, repair: APPROVAL_REPAIR, approval: true, owner: true });
+  if (approval.reason !== null) return [withApproval(approval.reason)];
+  if (approval.differences === null) return [withApproval('the file was never approved on this machine')];
+  return approval.differences.map((line) => withApproval(`the file differs from the approved one: ${line}`));
 }
 
 function protectedCheckouts(team: TeamFile, root: string, sources: StatusSources): Difference[] {
@@ -198,6 +201,7 @@ function protectedCheckouts(team: TeamFile, root: string, sources: StatusSources
     out.push({
       what: `the protected checkout "${shown}" is on ${branch === 'HEAD' ? 'a detached commit' : `"${branch}"`}, not on "${base}"`,
       repair: `the owner switches it back: git -C ${shown} switch ${base}`,
+      owner: true,
     });
   }
   return out;
@@ -223,7 +227,7 @@ function render(team: TeamFile, session: string, comparison: Comparison, budgets
   for (const difference of comparison.differences) {
     lines.push(`difference: ${difference.what}`, `  repair: ${difference.repair}`);
   }
-  const ownerCount = comparison.differences.filter((d) => isOwnerRepair(d.repair)).length;
+  const ownerCount = comparison.differences.filter((difference) => difference.owner === true).length;
   if (ownerCount > 0) {
     lines.push(`${comparison.differences.length} difference(s), ${ownerCount} for the owner`);
   } else {

@@ -103,10 +103,12 @@ CODEX_HOME=/path/to/codex exec /path/to/codex-quota
 | `approved before records were signed: run `team approve` once`, or the case a refused record names | the owner runs `team approve` |
 | `the file differs from the approved one: <line>` | the owner runs `team approve` |
 
-Differences are printed in runnable order so that no repair depends on one printed after it:
-an unapproved file's repair comes first, then a missing or stale watch, then the repairs they block.
-A repair blocked by a precondition marks it: `(after: …)`. When at least one repair is the owner's,
-the summary line reports `N difference(s), M for the owner`.
+The one precondition `status` knows and orders is the real one: the file is not the approved one.
+That difference is printed first, and a repair that names a command that refuses on an unapproved
+file — `team up`, `team add`, `team worktree` — is marked `(after: …)`. Nothing else is reordered
+or marked: a missing or stale watch blocks no repair, and what blocks a launch is `team doctor`'s
+to report. When at least one repair is the owner's, the summary line reports
+`N difference(s), M for the owner`.
 
 ## The JSON
 
