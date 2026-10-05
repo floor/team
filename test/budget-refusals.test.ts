@@ -343,7 +343,7 @@ describe('a stored reading refuses one seat', () => {
     made.seed('w7:p1', IDLE, true);
     const live = await up([], made, {
       agents: () => [agent],
-      workspaces: () => [{ id: 'w7' }],
+      workspaces: () => [{ id: 'w7', label: 'deepseek flash v4.1' }],
     });
     expect(live.code).toBe(0);
     expect(live.err).toContain(`worker: ${TAIL}\n`);
@@ -355,7 +355,7 @@ describe('a stored reading refuses one seat', () => {
     const blocked = world();
     blocked.session = 'running';
     const dry = await up(['--dry-run'], blocked, {
-      workspaces: () => [{ id: 'w7' }],
+      workspaces: () => [{ id: 'w7', label: 'deepseek flash v4.1' }],
     });
     expect(dry.out).toContain(`skip worker: would refuse: ${TAIL}`);
     expect(dry.out).not.toContain('rename w7:p1 worker');
@@ -364,7 +364,7 @@ describe('a stored reading refuses one seat', () => {
     const named = await up(['--dry-run'], world(), {
       sessionState: () => 'running',
       agents: () => [agent],
-      workspaces: () => [{ id: 'w7' }],
+      workspaces: () => [{ id: 'w7', label: 'deepseek flash v4.1' }],
     });
     expect(named.out).not.toContain('would refuse');
     expect(named.out).toContain(`(${TAIL})`);

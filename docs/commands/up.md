@@ -186,8 +186,17 @@ again at once, under the new classification. The deadline also keeps `manual` an
 `timeout`. `o` stays available after every re-prompt. `manual` is cleared only when this same `up`
 makes the seat ready, or closes it with `s` or `q`.
 
-`s` takes the lock, closes that seat's workspace without input, clears its launch state — the
-`waiting` field with it — and records `<seat>: left out: skipped by owner`.
+`s` takes the lock and closes the seat's workspace without input — the workspace the multiplexer
+returns for the pane just verified, never the workspace id the state stores when the two differ
+(then nothing is closed, and the record is `<seat>: left out: its pane is in workspace <live>, not
+its recorded <stored>; nothing renamed, nothing closed, the state as it was`). The workspace's
+panes are read from herdr directly before the close, with nothing between that read and it, and it
+is closed only when it holds the verified pane and no other agent pane: a workspace holding any
+other seat's pane is never closed — `<seat>: left out: its workspace holds another seat's pane;
+nothing closed (close its pane there, then run team up)` — and a pane whose process is no longer
+the recorded one is left as it is, `<seat>: left out: left as it is: its process changed`. It
+clears the seat's launch state — the `waiting` field with it — and records
+`<seat>: left out: skipped by owner`.
 
 `q`, and a Ctrl-C, closes without input every workspace **this invocation created** that is not
 already ready, and clears those seats' state. The herdr session is stopped only when this
@@ -204,6 +213,21 @@ not a reason to launch again: nothing is created, the record kept, and the final
 `team remove <seat> --keep`, then `team up`. A pane that still exists but no longer holds the
 recorded process fails the same way, with `its waiting pane holds another process`.
 
+A waiting record is a hint of where to look, never an authority — the state file is in the project
+and any seat can write it. Before a later `up` resumes, opens, skips or closes a recorded waiting
+seat it proves, from fresh reads, that the pane is still this seat's: no other seat's record of
+this session names that pane or that workspace (then it is refused, `<seat>: left out: the state
+names one pane for two seats (<seat> and <other>); nothing renamed, nothing closed, the state as it
+was`, and nothing is acted on); the multiplexer lists that pane with its agent unnamed or already
+carrying this seat's name; the workspace's live label is the one this seat's launch gives it (what
+`up` set when it created the workspace); and the pane's process is still the recorded one. A
+waiting record with no process identity proves nothing: it is never resumed, opened, skipped or
+closed from the record, and the run fails closed with `<seat>: left out: its waiting record has no
+process identity`, the repair under the record on stderr — run `team remove <seat> --keep`, then
+`team add <seat>`, to establish one by a run.
+own read against the closed list above: anything else the file holds reads `unknown` in the record,
+the log line, the prompt, `team status` and `team doctor`.
+
 Under `dialogs.trust: coordinator`, a seat waiting at `trust` is also re-read on a tick: every
 prompt timeout and every return from `o` takes the lock and reads the state and the pane fresh,
 and follows what they show — a seat `team answer` made ready in the meantime, the
@@ -218,6 +242,12 @@ ordinary `timeout` record and the detail under it.
 
 ### Known limits
 
+- The waiting proof is placement, and no more: the state file is in the project, and a process of
+  the same user that writes its own pane, workspace and process identity into this seat's waiting
+  record — or another seat's — renames the pane to this seat and relabels the workspace to match
+  passes every check above. The proof guards a mistaken or corrupted record, not a hostile process
+  running as the same user; nothing here can tell the two apart, because nothing distinguishes
+  them: the same user may do all of it by hand.
 - The final read of the box and the pressing of Enter are two separate `herdr` calls. Something
   can change the pane in the gap between them; `team` reads the pane again right before the
   Enter, but it cannot make the two one action. Closing that needs a key herdr itself does not

@@ -28,6 +28,7 @@ import {
   workspaceList,
   workspacePanes,
   type HerdrAgent,
+  type HerdrWorkspace,
   type PaneProcesses,
   type SessionState,
 } from '../herdr.ts';
@@ -64,7 +65,9 @@ export type UpSources = {
   sessionRunning(session: string): boolean | null;
   sessionState?(session: string): SessionState | null;
   agents(session: string): HerdrAgent[] | null;
-  workspaces?(session: string): { id: string }[] | null;
+  /** The session's workspaces with their labels now; null when herdr can't tell. The waiting
+   *  proof compares a pane's workspace label with the seat's launch label. */
+  workspaces?(session: string): HerdrWorkspace[] | null;
   home: string;
   getuid?(): number;
   fs?: FsReader;
@@ -213,7 +216,7 @@ function seatPlan(
   seat: Seat,
   recorded: SeatState | undefined,
   agents: readonly HerdrAgent[],
-  workspaces: { id: string }[] | null,
+  workspaces: HerdrWorkspace[] | null,
   resume: boolean,
   root: string,
   home: string,
@@ -593,6 +596,10 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     kill: () => false,
     agentPanes: launch.agentPanes,
     agentList: launch.agents,
+    // The session's workspaces with their labels now; the pause compares the label of the pane's
+    // live workspace with the one this seat's launch gives (`pause.ts`, `waitingProblem`).
+    workspaces: () => sources.workspaces?.(session) ?? null,
+    seatStates: () => readState(dir).sessions[session]?.seats ?? null,
     workspacePanes: launch.workspacePanes ? (session, workspace) => launch.workspacePanes!(session, workspace) : undefined,
     classify: (name, pane, cli) => readScreen(cli, launch.paneText(name, pane) ?? undefined).kind,
     paneText: (session, pane) => launch.paneText(session, pane),
@@ -705,6 +712,9 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     screen: () => readScreen(seatCli(input.seat), launch.paneText(session, input.pane) ?? undefined).kind,
     process: () => launch.processInfo?.(session, input.pane) ?? null,
     agents: () => launch.agents(session),
+    workspaces: () => sources.workspaces?.(session) ?? null,
+    workspacePanes: (workspace) => launch.workspacePanes?.(session, workspace) ?? null,
+    seats: () => readState(dir).sessions[session]?.seats ?? null,
     focus: () => launch.focus?.(session, input.pane) ?? false,
     close: (workspace) => launch.closeWorkspace(session, workspace),
     record: (label) => records.waiting(input.seat, label),

@@ -1,14 +1,22 @@
 // The pause, against a fake host: what it says, what it writes, and in which order it touches
 // the world. Nothing here is a real terminal, session or pane.
 import { describe, expect, test } from 'bun:test';
-import type { HerdrAgent, PaneProcesses } from '../../src/herdr.ts';
+import type { HerdrAgent, HerdrWorkspace, PaneProcesses } from '../../src/herdr.ts';
+import { launchedIdentity } from '../../src/launch/identity.ts';
 import { IDLE_POLL_MS } from '../../src/launch/plan.ts';
 import { runPause } from '../../src/launch/pause.ts';
 import type { PauseHost, PauseInput, ScreenReading, WaitingRecord } from '../../src/launch/pause.ts';
 import type { Key } from '../../src/launch/terminal.ts';
 import type { SeatState } from '../../src/state.ts';
 
-const agent = (pane: string): HerdrAgent => ({ name: null, agent: 'claude', pane, workspace: pane.split(':')[0] ?? '', status: 'idle', cwd: null });
+const agent = (pane: string, name: string | null = null, workspace?: string): HerdrAgent => ({
+  name,
+  agent: 'claude',
+  pane,
+  workspace: workspace ?? pane.split(':')[0] ?? '',
+  status: 'idle',
+  cwd: null,
+});
 
 type Fake = {
   calls: string[];
@@ -18,6 +26,9 @@ type Fake = {
   readings: ScreenReading[];
   agents: HerdrAgent[] | null;
   process: PaneProcesses | null;
+  workspaces: HerdrWorkspace[] | null;
+  seats: Record<string, SeatState> | null;
+  panes: string[] | null;
   focused: boolean;
   closeResult: boolean;
   lockHeld: number | null;
@@ -31,6 +42,9 @@ function fake(over: Partial<Fake> = {}): Fake {
     readings: ['idle'],
     agents: [agent('w2:p1')],
     process: { shell: 10, foreground: [11] },
+    workspaces: [{ id: 'w2', label: 'claude opus 5.5' }],
+    seats: null,
+    panes: ['w2:p1'],
     focused: true,
     closeResult: true,
     lockHeld: null,
@@ -52,7 +66,16 @@ function fake(over: Partial<Fake> = {}): Fake {
       const prior = own.state.current?.waiting;
       const written = change(prior);
       waiting.push(written);
-      own.state.current = { ...(own.state.current ?? { stage: 'launched' }), waiting: written };
+      // As `up`'s host writes it: the identity read at this moment goes in the same write,
+      // and a prior identity stands when this read cannot tell (`up.ts`, `pauseHostFor`).
+      const identity = launchedIdentity(own.process);
+      own.state.current = {
+        ...(own.state.current ?? { stage: 'launched' }),
+        waiting: written,
+        pane: 'w2:p1',
+        workspace: 'w2',
+        ...(identity ? { launched: identity } : own.state.current?.launched ? { launched: own.state.current.launched } : {}),
+      };
       own.calls.push(`write:${written.state}:${written.classification}${written.manual ? ':manual' : ''}`);
     },
     clear() {
@@ -78,6 +101,19 @@ function fake(over: Partial<Fake> = {}): Fake {
     agents() {
       own.calls.push('agents');
       return own.agents;
+    },
+    workspaces() {
+      own.calls.push('workspaces');
+      return own.workspaces;
+    },
+    seats() {
+      own.calls.push('seats');
+      if (own.seats !== null) return own.seats;
+      return own.state.current ? { beta: own.state.current } : {};
+    },
+    workspacePanes(workspace) {
+      own.calls.push(`panes:${workspace}`);
+      return own.panes;
     },
     focus() {
       own.calls.push('focus');
@@ -131,7 +167,7 @@ const OWN_CLOCK = {
 };
 
 function input(over: Partial<PauseInput> = {}): PauseInput {
-  return { seat: 'beta', classification: 'trust', pane: 'w2:p1', workspace: 'w2', ...over };
+  return { seat: 'beta', classification: 'trust', pane: 'w2:p1', workspace: 'w2', label: 'claude opus 5.5', ...over };
 }
 
 const PROMPT = 'beta is waiting at trust: [o] open pane, [s] skip seat, [q] stop cleanly';
@@ -183,14 +219,18 @@ describe('o, open the pane', () => {
       'key:block',
       'lock',
       'state',
+      'seats',
       'agents',
+      'workspaces',
       'process',
       'write:waiting-owner:trust:manual',
       'release',
       'focus',
       'lock',
       'state',
+      'seats',
       'agents',
+      'workspaces',
       'process',
       `screen:idle`,
       'clear',
@@ -267,7 +307,7 @@ describe('o, open the pane', () => {
     const f = fake({
       keys: ['o', 'q'],
       readings: ['idle'],
-      state: { current: { stage: 'launched', pane: 'w2:p1', waiting: { state: 'trust-sent-recovery', classification: 'trust' } } },
+      state: { current: { stage: 'launched', pane: 'w2:p1', launched: { shell: 10, cli: [11] }, waiting: { state: 'trust-sent-recovery', classification: 'trust' } } },
     });
     await runPause(input({ recorded: { state: 'trust-sent-recovery', classification: 'trust' } }), f.host);
     expect(f.calls).toContain('record:trust sent; recovery required');
@@ -296,7 +336,12 @@ describe('s, skip the seat', () => {
       'key:block',
       'lock',
       'state',
+      'seats',
       'agents',
+      'workspaces',
+      'process',
+      'agents',
+      'panes:w2',
       'process',
       'close:w2',
       'drop',
@@ -327,6 +372,166 @@ describe('s, skip the seat', () => {
   });
 });
 
+describe('the waiting proof: the state is a hint, never an authority', () => {
+  const refusal = (seat: string, what: string) =>
+    `the state names one ${what} for two seats (beta and ${seat}); nothing renamed, nothing closed, the state as it was`;
+
+  test('a record with no process identity is never opened: it names the repair', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o'], process: null });
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: 'its waiting record has no process identity' });
+    expect((result as { detail: string }).detail).toContain('`team remove beta --keep`, then `team add beta`');
+    expect(f.calls).not.toContain('focus');
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+  });
+
+  test('a record with no process identity is never skipped: nothing closed, the state kept', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['s'], process: null });
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: 'its waiting record has no process identity' });
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+    expect(f.calls).not.toContain('drop');
+    expect(f.state.current?.waiting?.state).toBe('waiting-owner');
+  });
+
+  test('(a) another seat recorded on the same pane refuses it: nothing renamed, nothing closed', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({
+      keys: ['o'],
+      seats: {
+        beta: { stage: 'launched', pane: 'w2:p1', workspace: 'w2', launched: { shell: 10, cli: [11] } },
+        gamma: { stage: 'ready', pane: 'w2:p1', workspace: 'w2' },
+      },
+    });
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: refusal('gamma', 'pane') });
+    expect(f.calls).not.toContain('focus');
+  });
+
+  test('(a) another seat recorded on the same workspace alone refuses it too', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({
+      keys: ['s'],
+      seats: {
+        beta: { stage: 'launched', pane: 'w2:p1', workspace: 'w2', launched: { shell: 10, cli: [11] } },
+        gamma: { stage: 'launched', pane: 'w7:p1', workspace: 'w2' },
+      },
+    });
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: refusal('gamma', 'workspace') });
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+  });
+
+  test('(b) an agent named for another seat refuses it', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o'], agents: [agent('w2:p1', 'gamma')] });
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({
+      kind: 'left out',
+      reason: 'the multiplexer names gamma in its pane, not beta; nothing renamed, nothing closed, the state as it was',
+    });
+    expect(f.calls).not.toContain('focus');
+  });
+
+  test('(b) an agent already carrying this seat\'s name is its own', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o'], agents: [agent('w2:p1', 'beta')], state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2' } } });
+    expect(await runPause(input(), f.host)).toEqual({ kind: 'idle' });
+  });
+
+  test('(c) a workspace labelled for another launch refuses it', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o'], workspaces: [{ id: 'w2', label: 'gpt sol 6' }] });
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: 'its workspace is labelled gpt sol 6, not claude opus 5.5; nothing renamed, nothing closed, the state as it was' });
+    expect(f.calls).not.toContain('focus');
+  });
+
+  test('a pane the multiplexer put in another workspace refuses it', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o'], agents: [agent('w2:p1', null, 'w9')] });
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: 'its pane is in workspace w9, not its recorded w2; nothing renamed, nothing closed, the state as it was' });
+  });
+
+  test('a seat record read that fails refuses it', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['o'] });
+    f.host.seats = () => null;
+    expect(await runPause(input(), f.host)).toMatchObject({ kind: 'left out', reason: "its session's seat records could not be read" });
+  });
+});
+
+describe('the close: the workspace of the pane just verified', () => {
+  test('s closes the live workspace of its own pane, never the stored one when they differ', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['s'], state: { current: { stage: 'launched', pane: 'w2:p1' } } });
+    // The record says w9; the multiplexer says the verified pane 'w2:p1' lives in w2.
+    const result = await runPause(input({ workspace: 'w9' }), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: 'its pane is in workspace w2, not its recorded w9; nothing renamed, nothing closed, the state as it was' });
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+    expect(f.calls).not.toContain('drop');
+  });
+
+  test('a workspace holding another agent pane is never closed', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({
+      keys: ['s'],
+      agents: [agent('w2:p1'), agent('w2:p2')],
+      panes: ['w2:p1', 'w2:p2'],
+      state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2' } },
+    });
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: "its workspace holds another seat's pane; nothing closed (close its pane there, then run team up)" });
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+  });
+
+  test('a workspace that does not hold the pane is never closed', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['s'], panes: ['w2:p7'], state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2' } } });
+    expect(await runPause(input(), f.host)).toMatchObject({ kind: 'left out', reason: 'its workspace does not hold its pane; nothing closed' });
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+  });
+
+  test('a workspace whose panes cannot be read is never closed', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['s'], panes: null, state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2' } } });
+    expect(await runPause(input(), f.host)).toMatchObject({ kind: 'left out', reason: 'its workspace could not be read; nothing closed' });
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+  });
+
+  test('a process replaced between the proof and the close is refused at the close', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['s'], state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2' } } });
+    // The proof reads it once (same); the close's own read, directly before it, sees another.
+    let reads = 0;
+    f.host.process = () => {
+      reads += 1;
+      f.calls.push('process');
+      return reads === 1 ? { shell: 10, foreground: [11] } : { shell: 10, foreground: [98] };
+    };
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: 'left as it is: its process changed' });
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+  });
+
+  test('a pane moved to another workspace between the proof and the close is refused at the close', async () => {
+    OWN_CLOCK.reset();
+    const f = fake({ keys: ['s'], state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2' } } });
+    let reads = 0;
+    f.host.agents = () => {
+      reads += 1;
+      f.calls.push('agents');
+      return [reads === 1 ? agent('w2:p1', null, 'w2') : agent('w2:p1', null, 'w9')];
+    };
+    const result = await runPause(input(), f.host);
+    expect(result).toMatchObject({ kind: 'left out', reason: 'its pane is in workspace w9, not its recorded w2; nothing closed, the state as it was' });
+    expect(f.calls.filter((call) => call.startsWith('close:')).length).toBe(0);
+  });
+});
+
 describe('q and Ctrl-C', () => {
   test('stop cleanly: no close here, the caller owns what this run created', async () => {
     OWN_CLOCK.reset();
@@ -341,7 +546,7 @@ describe('the recovery record', () => {
   test('is kept exactly as the answer left it: no entry write, shown, and the keys still work', async () => {
     OWN_CLOCK.reset();
     const recorded = { state: 'trust-sent-recovery' as const, classification: 'trust' as const, sentAt: '2026-10-05T00:00:00.000Z' };
-    const f = fake({ keys: ['s'], state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2', waiting: recorded } } });
+    const f = fake({ keys: ['s'], state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2', launched: { shell: 10, cli: [11] }, waiting: recorded } } });
     const result = await runPause(input({ recorded }), f.host);
     expect(result).toEqual({ kind: 'skipped' });
     expect(f.calls.filter((call) => call.startsWith('write:')).length).toBe(0);
@@ -355,7 +560,7 @@ describe('the recovery record', () => {
     const f = fake({
       keys: ['o', 'q'],
       readings: ['trust'],
-      state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2', waiting: recorded } },
+      state: { current: { stage: 'launched', pane: 'w2:p1', workspace: 'w2', launched: { shell: 10, cli: [11] }, waiting: recorded } },
     });
     await runPause(input({ recorded }), f.host);
     expect(f.calls).toContain('write:trust-sent-recovery:trust:manual');

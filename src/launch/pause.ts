@@ -1,4 +1,4 @@
-import type { HerdrAgent, PaneProcesses } from '../herdr.ts';
+import type { HerdrAgent, HerdrWorkspace, PaneProcesses } from '../herdr.ts';
 import { seatProcessVerdict, type LaunchedIdentity } from './identity.ts';
 import { IDLE_POLL_MS } from './plan.ts';
 import type { Classification } from './progress.ts';
@@ -35,6 +35,10 @@ export type PauseInput = {
   classification: Classification;
   pane: string;
   workspace?: string;
+  /** The label this seat's launch gives its workspace — what `up` set when it created one
+   *  (`plan.ts` labels a seat's workspace with `seat.label`). The proof compares it with the
+   *  workspace's live label before anything acts on the pane. */
+  label: string;
   /** The waiting record this run resumed into, when the seat was already recorded waiting. */
   recorded?: WaitingRecord;
 };
@@ -67,6 +71,14 @@ export type PauseHost = {
   process(): PaneProcesses | null;
   /** The session's agents now; null when herdr can't tell. */
   agents(): HerdrAgent[] | null;
+  /** The session's workspaces with their labels now; null when herdr can't tell. */
+  workspaces(): HerdrWorkspace[] | null;
+  /** The session's recorded seats now, as the state file has them; null when unreadable. The
+   *  proof reads them to refuse a pane or workspace the state names for two seats. */
+  seats(): Record<string, SeatState> | null;
+  /** Pane ids in a workspace as herdr lists them now; null when the list can't be read. A close
+   *  reads it directly before closing, to bind the workspace to the pane just verified. */
+  workspacePanes(workspace: string): string[] | null;
   /** Brings the pane to the owner's attention. Sends no key and no text. */
   focus(): boolean;
   /** Closes the seat's workspace, without input. */
@@ -106,22 +118,171 @@ export function goneDetail(seat: string): string {
   return `  its record still names it; \`team remove ${seat} --keep\`, then \`team up\`, clears it\n`;
 }
 
-/** The two reads that say whether a pane is still the seat's: herdr's agent list and the pane's
- *  process. A `PauseHost` has both; so does `execute`'s host, through its two hooks. */
-export type PaneReads = {
+/** The fresh reads that prove a waiting record's pane is still the seat's: herdr's agent list,
+ *  the pane's process, the workspaces with their labels, and the session's recorded seats. A
+ *  `PauseHost` has all four; so does `execute`'s host, through its four hooks. */
+export type WaitingReads = {
   agents(): HerdrAgent[] | null;
+  process(): PaneProcesses | null;
+  workspaces(): HerdrWorkspace[] | null;
+  seats(): Record<string, SeatState> | null;
+};
+
+/** What must be proven about a pane before anything acts on the waiting record that names it. */
+export type WaitingProof = {
+  seat: string;
+  pane: string;
+  /** The workspace the record names; the proof refuses when the pane lives in another one. */
+  workspace?: string;
+  /** The label this seat's launch gives its workspace (`up` sets it when it creates one). */
+  label: string;
+  /** The process identity recorded with the waiting record. Absent: nothing is acted on — the
+   *  record alone cannot prove the pane is the seat's, and a run must establish one. */
+  launched?: LaunchedIdentity;
+};
+
+/** A refusal: the words for the seat's record, and the detail line said under it. */
+export type WaitingProblem = { reason: string; detail: string };
+
+/** The repair for a waiting record that can prove nothing: the record is cleared and the seat is
+ *  started again by a run, so the next wait is recorded with the identity read in that same
+ *  write. `team remove <seat> --keep` leaves the seat stopped and drops its state; `team add` is
+ *  what clears the mark and starts it (`docs/commands/add.md`). */
+function identityDetail(seat: string): string {
+  return `  run \`team remove ${seat} --keep\`, then \`team add ${seat}\`, to establish one by a run\n`;
+}
+
+/**
+ * Whether the pane a waiting record names is proven this seat's, from fresh reads alone. The
+ * state file lives in the project and any seat can write it: a waiting record is a hint of where
+ * to look, never an authority. The pane must not be named by any other seat's record of this
+ * session (neither its pane nor its workspace), the multiplexer must list its agent as unnamed
+ * or already carrying this seat's name, the workspace must carry the label this seat's launch
+ * set, and the process must still be the recorded one. Anything else, or a read that cannot be
+ * made, refuses. What this cannot tell apart is same-user limit, not a bug: a seat that also
+ * renames the pane and relabels the workspace to match, and edits every seat's record, is
+ * indistinguishable from the seat itself.
+ */
+export function waitingProblem(reads: WaitingReads, proof: WaitingProof): WaitingProblem | null {
+  if (!proof.launched) {
+    return {
+      reason: 'its waiting record has no process identity',
+      detail: identityDetail(proof.seat),
+    };
+  }
+  const seats = reads.seats();
+  if (seats === null) return { reason: 'its session\'s seat records could not be read', detail: '' };
+  const other = Object.entries(seats).find(
+    ([name, state]) =>
+      name !== proof.seat
+      && (state.pane === proof.pane || (proof.workspace !== undefined && state.workspace === proof.workspace)),
+  );
+  if (other) {
+    const what = other[1].pane === proof.pane ? 'pane' : 'workspace';
+    return {
+      reason:
+        `the state names one ${what} for two seats (${proof.seat} and ${other[0]}); ` +
+        'nothing renamed, nothing closed, the state as it was',
+      detail: '',
+    };
+  }
+  const agents = reads.agents();
+  if (!agents) return { reason: 'its waiting pane could not be read', detail: goneDetail(proof.seat) };
+  const listed = agents.find((agent) => agent.pane === proof.pane);
+  if (!listed) return { reason: 'its waiting pane is gone', detail: goneDetail(proof.seat) };
+  if (listed.name !== null && listed.name !== proof.seat) {
+    return {
+      reason: `the multiplexer names ${listed.name} in its pane, not ${proof.seat}; nothing renamed, nothing closed, the state as it was`,
+      detail: '',
+    };
+  }
+  if (proof.workspace !== undefined && listed.workspace !== proof.workspace) {
+    return {
+      reason: `its pane is in workspace ${listed.workspace}, not its recorded ${proof.workspace}; nothing renamed, nothing closed, the state as it was`,
+      detail: '',
+    };
+  }
+  const workspaces = reads.workspaces();
+  if (!workspaces) return { reason: 'its workspace could not be read', detail: goneDetail(proof.seat) };
+  const space = workspaces.find((workspace) => workspace.id === listed.workspace);
+  if (!space) return { reason: 'its workspace is gone', detail: goneDetail(proof.seat) };
+  if (space.label !== proof.label) {
+    return {
+      reason: `its workspace is labelled ${space.label}, not ${proof.label}; nothing renamed, nothing closed, the state as it was`,
+      detail: '',
+    };
+  }
+  const verdict = seatProcessVerdict(proof.launched, reads.process());
+  if (verdict === 'gone' || verdict === 'replaced') {
+    return { reason: 'its waiting pane holds another process', detail: goneDetail(proof.seat) };
+  }
+  if (verdict === 'unknown') {
+    return { reason: 'its waiting pane could not be read', detail: goneDetail(proof.seat) };
+  }
+  return null;
+}
+
+/** What must be proven about a workspace before it is closed. */
+export type CloseProof = {
+  seat: string;
+  pane: string;
+  /** The workspace the record names. A live id that differs refuses; it is never closed. */
+  workspace?: string;
+  launched?: LaunchedIdentity;
+};
+
+/** The fresh reads a close is proven with: the agent list, the workspace's panes, the process. */
+export type CloseReads = {
+  agents(): HerdrAgent[] | null;
+  workspacePanes(workspace: string): string[] | null;
   process(): PaneProcesses | null;
 };
 
-/** Why the pane is not the one the seat was recorded on, or null when it still is. */
-export function paneProblem(reads: PaneReads, pane: string, launched: LaunchedIdentity | undefined): string | null {
+/**
+ * The workspace to close, or the refusal that says why nothing is closed. The workspace is the
+ * one the multiplexer returned for the pane just verified, never the stored one when they
+ * differ; it must hold that pane and be its only agent pane; and the pane's process must still
+ * be the recorded one. Reads are made by the caller directly before this call, with nothing
+ * between it and the close.
+ */
+export function closeTarget(reads: CloseReads, proof: CloseProof): { workspace: string } | { problem: WaitingProblem } {
   const agents = reads.agents();
-  if (!agents) return 'its waiting pane could not be read';
-  if (!agents.some((agent) => agent.pane === pane)) return 'its waiting pane is gone';
-  const verdict = seatProcessVerdict(launched, reads.process());
-  if (verdict === 'gone' || verdict === 'replaced') return 'its waiting pane holds another process';
-  if (verdict === 'unknown' && launched) return 'its waiting pane could not be read';
-  return null;
+  if (!agents) return { problem: { reason: 'its waiting pane could not be read', detail: goneDetail(proof.seat) } };
+  const listed = agents.find((agent) => agent.pane === proof.pane);
+  if (!listed) return { problem: { reason: 'its waiting pane is gone', detail: goneDetail(proof.seat) } };
+  if (proof.workspace !== undefined && listed.workspace !== proof.workspace) {
+    return {
+      problem: {
+        reason: `its pane is in workspace ${listed.workspace}, not its recorded ${proof.workspace}; nothing closed, the state as it was`,
+        detail: '',
+      },
+    };
+  }
+  const panes = reads.workspacePanes(listed.workspace);
+  if (panes === null) return { problem: { reason: 'its workspace could not be read; nothing closed', detail: goneDetail(proof.seat) } };
+  if (!panes.includes(proof.pane)) {
+    return { problem: { reason: 'its workspace does not hold its pane; nothing closed', detail: goneDetail(proof.seat) } };
+  }
+  const agentPanes = new Set(agents.map((agent) => agent.pane));
+  if (panes.some((pane) => pane !== proof.pane && agentPanes.has(pane))) {
+    return {
+      problem: {
+        reason: 'its workspace holds another seat\'s pane; nothing closed (close its pane there, then run team up)',
+        detail: '',
+      },
+    };
+  }
+  if (!proof.launched) {
+    return { problem: { reason: 'its process is not recorded; left as it is', detail: '' } };
+  }
+  const verdict = seatProcessVerdict(proof.launched, reads.process());
+  if (verdict === 'gone' || verdict === 'replaced') {
+    return { problem: { reason: 'left as it is: its process changed', detail: goneDetail(proof.seat) } };
+  }
+  if (verdict === 'unknown') {
+    return { problem: { reason: 'its pane could not be read; nothing closed', detail: goneDetail(proof.seat) } };
+  }
+  return { workspace: listed.workspace };
 }
 
 type Outcome =
@@ -130,7 +291,22 @@ type Outcome =
   /** The lock is another command's: nothing was done, the prompt asks again. */
   | { kind: 'held' };
 
-const leftOut = (reason: string, seat: string): Outcome => ({ kind: 'done', result: { kind: 'left out', reason, detail: goneDetail(seat) } });
+const leftOut = (problem: WaitingProblem): Outcome => ({
+  kind: 'done',
+  result: { kind: 'left out', reason: problem.reason, detail: problem.detail },
+});
+
+/** The proof a `PauseHost` can make of its own pane, against one fresh state read. */
+function proofOf(input: PauseInput, state: SeatState | undefined): WaitingProof {
+  const workspace = input.workspace ?? state?.workspace;
+  return {
+    seat: input.seat,
+    pane: input.pane,
+    ...(workspace ? { workspace } : {}),
+    label: input.label,
+    ...(state?.launched ? { launched: state.launched } : {}),
+  };
+}
 
 export async function runPause(input: PauseInput, host: PauseHost): Promise<PauseResult> {
   // The first write. A seat resumed out of a recovery keeps the record exactly as the answer
@@ -199,8 +375,8 @@ async function open(input: PauseInput, host: PauseHost): Promise<Outcome> {
   try {
     const state = host.state();
     if (state?.stage === 'ready') return { kind: 'done', result: ready(input.seat) };
-    const problem = paneProblem(host, input.pane, state?.launched);
-    if (problem) return leftOut(problem, input.seat);
+    const problem = waitingProblem(host, proofOf(input, state));
+    if (problem) return leftOut(problem);
     host.write((prior) => ({
       ...(prior ?? { state: 'waiting-owner', classification: input.classification }),
       manual: true,
@@ -219,8 +395,8 @@ async function open(input: PauseInput, host: PauseHost): Promise<Outcome> {
     try {
       const state = host.state();
       if (state?.stage === 'ready') return { kind: 'done', result: ready(input.seat) };
-      const problem = paneProblem(host, input.pane, state?.launched);
-      if (problem) return leftOut(problem, input.seat);
+      const problem = waitingProblem(host, proofOf(input, state));
+      if (problem) return leftOut(problem);
       if (state?.waiting?.state === 'trust-sent-recovery') {
         return { kind: 'view', view: { classification: state.waiting.classification, recovery: true } };
       }
@@ -248,10 +424,15 @@ async function skip(input: PauseInput, host: PauseHost, at: string): Promise<Out
   }
   try {
     const state = host.state();
-    const problem = paneProblem(host, input.pane, state?.launched);
-    if (problem) return leftOut(problem, input.seat);
-    const workspace = input.workspace ?? state?.workspace;
-    if (workspace && !host.close(workspace)) {
+    const problem = waitingProblem(host, proofOf(input, state));
+    if (problem) return leftOut(problem);
+    // The close is the one destructive act here, and the state's workspace id is a hint: the
+    // workspace read from the multiplexer for the pane just verified is the one closed, and only
+    // when it holds that pane and no other seat's. `closeTarget` is called with the reads above
+    // as the last reads before the close.
+    const target = closeTarget(host, proofOf(input, state));
+    if ('problem' in target) return leftOut(target.problem);
+    if (!host.close(target.workspace)) {
       return { kind: 'done', result: { kind: 'left out', reason: `${at}; its workspace did not close; left as it is`, detail: '' } };
     }
     host.drop();
@@ -269,8 +450,8 @@ async function refresh(input: PauseInput, host: PauseHost, view: View): Promise<
   try {
     const state = host.state();
     if (state?.stage === 'ready') return { kind: 'done', result: ready(input.seat) };
-    const problem = paneProblem(host, input.pane, state?.launched);
-    if (problem) return leftOut(problem, input.seat);
+    const problem = waitingProblem(host, proofOf(input, state));
+    if (problem) return leftOut(problem);
     if (state?.waiting?.state === 'trust-sent-recovery') {
       return { kind: 'view', view: { classification: state.waiting.classification, recovery: true } };
     }

@@ -4,11 +4,19 @@ import { profileFor, versionVerdict } from '../profiles/profile.ts';
 import { modelDiffers, seatModel, type Running } from '../status/statusline.ts';
 import { launchedIdentity, seatProcessVerdict, type LaunchedIdentity } from './identity.ts';
 import { IDLE_POLL_MS, type Step } from './plan.ts';
-import { paneProblem, goneDetail, type PauseInput, type PauseResult, type PaneReads } from './pause.ts';
+import {
+  closeTarget,
+  waitingProblem,
+  type CloseReads,
+  type PauseInput,
+  type PauseResult,
+  type WaitingProblem,
+  type WaitingReads,
+} from './pause.ts';
 import { plainPaneText } from './plain.ts';
 import { recordWhat, cleanRecord, type Classification, type FinalRecord, type ProgressState } from './progress.ts';
 import type { LobbyRefusal } from '../lobby/gate.ts';
-import type { WaitingRecord } from '../state.ts';
+import type { SeatState, WaitingRecord } from '../state.ts';
 import { vendorNoticeRange } from '../watch/screen.ts';
 
 export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'vendor notice' | 'unsent' | 'unknown';
@@ -53,6 +61,12 @@ export type Host = {
   /** Pane ids in a workspace as herdr lists them now; null when the list can't be read. The repair
    *  step checks that the workspace holds only the seat's pane before closing it. */
   workspacePanes?(session: string, workspace: string): string[] | null;
+  /** The session's workspaces with their labels as herdr lists them now; null when unreadable.
+   *  The waiting proof compares the pane's workspace label with the seat's launch label. */
+  workspaces?(session: string): { id: string; label: string }[] | null;
+  /** The session's recorded seats, read fresh; null when unreadable. The waiting proof refuses a
+   *  pane or workspace any other seat's record names. */
+  seatStates?(session: string): Record<string, SeatState> | null;
   classify(session: string, pane: string, cli: string): ScreenKind;
   /** The pane's visible text, ANSI styling and all, or null when the pane can't be read. */
   paneText?(session: string, pane: string): string | null;
@@ -292,15 +306,28 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     return made;
   };
 
-  /** The seat's pane and process as herdr lists them now, for the pause's fail-closed checks. */
-  const paneReads = (pane: string): PaneReads => ({
+  /** The reads a waiting record's proof and its closes are made of: herdr's list, the pane's
+   *  process, the workspaces with their labels, the session's recorded seats, the workspace's
+   *  panes. Every one is read at the moment it is called — directly before the act it guards. */
+  const waitingReads = (pane: string): WaitingReads & CloseReads => ({
     agents: () => host.agentList?.(session) ?? null,
     process: () => host.processInfo?.(session, pane) ?? null,
+    workspaces: () => host.workspaces?.(session) ?? null,
+    seats: () => host.seatStates?.(session) ?? null,
+    workspacePanes: (workspace) => host.workspacePanes?.(session, workspace) ?? null,
   });
 
   /** A fresh seat found at a dialog. `prompt` asks the owner; `keep` records the wait and
-   *  leaves the seat out; `close-no-terminal` closes without input and says so. */
-  const atDialog = async (seat: string, here: Place, classification: Classification): Promise<'idle' | 'settled'> => {
+   *  leaves the seat out; `close-no-terminal` closes without input and says so. `launched` is the
+   *  seat's process identity as it was read when the dialog was found — never read again at the
+   *  close, which is judged against it. */
+  const atDialog = async (
+    seat: string,
+    here: Place,
+    label: string,
+    classification: Classification,
+    launched?: LaunchedIdentity,
+  ): Promise<'idle' | 'settled'> => {
     const dialog = host.dialog;
     if (dialog?.mode === 'prompt') {
       return settle(
@@ -309,6 +336,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           seat,
           classification,
           pane: here.pane,
+          label,
           ...(here.workspace ? { workspace: here.workspace } : {}),
         }),
       );
@@ -340,6 +368,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
   const resumeWaiting = async (op: {
     seat: string;
     cli: string;
+    label: string;
     pane: string;
     workspace?: string;
     record: WaitingRecord;
@@ -355,8 +384,19 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     if (lock && 'held' in lock) return leftOut(op.seat, 'another command holds it; left as it is');
     let classification: Classification = op.record.classification;
     try {
-      const problem = paneProblem(paneReads(op.pane), op.pane, op.launched);
-      if (problem) return leftOut(op.seat, problem, goneDetail(op.seat));
+      // The state is a hint of where to look, never an authority: the pane is proven this seat's
+      // from fresh reads before anything acts on the record — nothing else's record names the
+      // pane or the workspace, the multiplexer's agent is unnamed or this seat, the workspace
+      // carries this seat's launch label, and the process is still the recorded one (`pause.ts`).
+      const proof = {
+        seat: op.seat,
+        pane: op.pane,
+        ...(op.workspace ? { workspace: op.workspace } : {}),
+        label: op.label,
+        ...(op.launched ? { launched: op.launched } : {}),
+      };
+      const problem = waitingProblem(waitingReads(op.pane), proof);
+      if (problem) return leftOut(op.seat, problem.reason, problem.detail);
       const kind = host.classify(session, op.pane, op.cli);
       if (kind === 'idle') {
         // The owner answered in the pane between runs: the seat carries on and finishes.
@@ -373,7 +413,13 @@ export async function executePlan(steps: readonly Step[], session: string, host:
       if (dialog.mode === 'close-no-terminal') {
         // A pane mid-work is nobody's dialog: it keeps everything it has.
         if (kind === 'working') return leftOut(op.seat, 'its pane is working; left as it is');
-        if (!op.workspace || !host.closeWorkspace(session, op.workspace)) {
+        if (!op.workspace) return leftOut(op.seat, `${classification}; its workspace did not close; left as it is`);
+        // The same reads the stop pass makes, directly before this close: the workspace herdr
+        // returns for the pane, holding that pane and no other seat's, and the process still the
+        // recorded one. A close that cannot be proven leaves everything as it is.
+        const target = closeTarget(waitingReads(op.pane), { seat: op.seat, pane: op.pane, workspace: op.workspace, launched: op.launched });
+        if ('problem' in target) return leftOut(op.seat, target.problem.reason, target.problem.detail);
+        if (!host.closeWorkspace(session, target.workspace)) {
           return leftOut(op.seat, `${classification}; its workspace did not close; left as it is`);
         }
         host.drop(op.seat);
@@ -395,6 +441,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           seat: op.seat,
           classification,
           pane: op.pane,
+          label: op.label,
           ...(op.workspace ? { workspace: op.workspace } : {}),
           recorded: op.record,
         }),
@@ -570,6 +617,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           const settled = await resumeWaiting({
             seat: op.seat,
             cli: op.cli,
+            label: op.label,
             pane: here.pane,
             ...(here.workspace ? { workspace: here.workspace } : {}),
             record: op.waiting.record,
@@ -634,8 +682,18 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         if (outcome === 'permission' || outcome === 'trust' || outcome === 'question' || outcome === 'vendor notice') {
           const reading = outcome === 'trust' ? 'trust' : outcome;
           if (host.dialog) {
-            // The seat's owner decides what happens next, at their own keyboard.
-            const settled = await atDialog(op.seat, here, reading);
+            // The seat's owner decides what happens next, at their own keyboard. The identity is
+            // read once, now that the dialog is found, and the close that may follow (a
+            // no-terminal owner's) is judged against this read: a pane whose process changed
+            // while the owner looked is not closed. This run's own read wins; the state's record
+            // is the fallback for a seat an earlier run launched; a live read is all that is left
+            // for a dialog found before the seat was ever recorded.
+            const launched =
+              identities.get(op.seat)
+              ?? host.seatStates?.(session)?.[op.seat]?.launched
+              ?? launchedIdentity(host.processInfo?.(session, here.pane) ?? null)
+              ?? undefined;
+            const settled = await atDialog(op.seat, here, op.label, reading, launched);
             if (settled === 'idle') idleOnwards();
             break;
           }
@@ -662,8 +720,14 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         }
         if (outcome === 'timeout' && host.dialog?.mode === 'prompt') {
           // The idle wait ran out with the owner at a terminal: the owner is asked about the
-          // timeout itself — open the pane, skip the seat, or stop cleanly.
-          const settled = await atDialog(op.seat, here, 'timeout');
+          // timeout itself — open the pane, skip the seat, or stop cleanly. (The identity read is
+          // the same one a found dialog makes; a prompt never closes on it.)
+          const launched =
+            identities.get(op.seat)
+            ?? host.seatStates?.(session)?.[op.seat]?.launched
+            ?? launchedIdentity(host.processInfo?.(session, here.pane) ?? null)
+            ?? undefined;
+          const settled = await atDialog(op.seat, here, op.label, 'timeout', launched);
           if (settled === 'idle') idleOnwards();
           break;
         }

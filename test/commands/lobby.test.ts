@@ -1685,7 +1685,7 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
         { name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: lobby },
         { name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: lobby },
       ],
-      workspaces: () => [{ id: 'w0' }, { id: 'w1' }],
+      workspaces: () => [{ id: 'w0', label: 'lead' }, { id: 'w1', label: 'worker' }],
     });
     expect(run.err).not.toContain('the file is legacy');
     expect(run.code).toBe(0);
