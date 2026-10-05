@@ -46,6 +46,10 @@ export interface Delivery {
   foreground(): string[] | null;
   now(): number;
   sleep(ms: number): Promise<void>;
+  /** The caller's own last check, immediately before the one terminal input it gates — the
+   *  typed line, then the Enter — for the caller that needs it (`answer`): a refusal sends
+   *  nothing, and the caller says why in its own words. */
+  beforeInput?(action: 'type' | 'enter'): boolean;
   /** Why a delivery stopped, when the caller wants the detail for its report. */
   report?(why: Refusal): void;
 }
@@ -257,14 +261,15 @@ export async function deliverRules(cli: string, line: string, seconds: number, i
   for (;;) {
     if (live()) {
       seenLive = true;
+      const status = io.status();
       start = readScreen(cli, io.screen()).kind;
-      if (io.status() === 'working' || start === 'working') {
+      if (status === 'working' || start === 'working') {
         return report({ stop: 'working', typed: false, sent: false, kind: 'working', row: null });
       }
       if (start === 'trust' || start === 'permission' || start === 'question') {
         return report(stopAs(cli, 'screen', io.screen()));
       }
-      if (free() && (start === 'idle' || start === 'unsent')) break;
+      if ((status === 'idle' || status === 'done') && (start === 'idle' || start === 'unsent')) break;
     }
     if (io.now() >= untilUp) {
       return report(seenLive ? stopAs(cli, 'screen', io.screen()) : stopAs(cli, 'launch', io.screen()));
@@ -282,15 +287,18 @@ export async function deliverRules(cli: string, line: string, seconds: number, i
   const resumed = start === 'unsent' && boxState(cli, line, io.screen()) === 'ready';
   if (!resumed) {
     if (start !== 'idle') return report(stopAs(cli, 'leftover', io.screen()));
+    // The caller's own last check, immediately before the text: a refusal types nothing.
+    if (io.beforeInput && !io.beforeInput('type')) return false;
     if (!io.type(line)) return report(stopAs(cli, 'typing', io.screen()));
   }
   const deadline = io.now() + seconds * 1000;
   // Terminal rendering can lag send-text. Never press Enter until the box is verified to hold
   // the line: an ordinary box reads `unsent` and every row of it reads back as the line.
   for (;;) {
+    if (!free()) return report(stoppedOn(cli, 'read-back', io.screen(), line));
     const state = boxState(cli, line, io.screen());
     if (state === 'ready') break;
-    if (!free() || state === 'no' || io.now() >= deadline) return report(stoppedOn(cli, 'read-back', io.screen(), line));
+    if (state === 'no' || io.now() >= deadline) return report(stoppedOn(cli, 'read-back', io.screen(), line));
     const before = io.now();
     await io.sleep(100);
     if (io.now() <= before) return report(stoppedOn(cli, 'read-back', io.screen(), line));
@@ -307,6 +315,8 @@ export async function deliverRules(cli: string, line: string, seconds: number, i
   if (!io.file()) {
     return report({ stop: 'file-changed', typed: true, sent: false, kind: readScreen(cli, io.screen()).kind, row: null });
   }
+  // The caller's own last check, immediately before the key: a refusal sends nothing.
+  if (io.beforeInput && !io.beforeInput('enter')) return false;
   if (!io.enter()) {
     return report(stoppedOn(cli, 'read-back', io.screen(), line));
   }

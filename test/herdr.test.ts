@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { paneRead, setPaneExec } from '../src/herdr.ts';
+import { paneRead, setHerdrRun, setPaneExec, workspacePanes } from '../src/herdr.ts';
 
 // paneRead's process call is injectable, so these tests ask what it requests, what it falls
 // back to and when it gives up — without a live herdr. The timeout error it must recognise
@@ -48,5 +48,57 @@ describe('paneRead', () => {
     });
     expect(paneRead('%1', 8)).toBeNull();
     expect(calls.length).toBe(1);
+  });
+});
+
+describe('workspacePanes', () => {
+  afterEach(() => setHerdrRun(null));
+
+  test('valid entries for the requested workspace return string pane ids', () => {
+    setHerdrRun(() => ({
+      panes: [
+        { pane_id: 'w1:p1', workspace_id: 'w1' },
+        { pane_id: 'w1:p2', workspace_id: 'w1' },
+      ],
+    }));
+    expect(workspacePanes('w1')).toEqual(['w1:p1', 'w1:p2']);
+  });
+
+  test('the right pane id under another workspace id reads null', () => {
+    setHerdrRun(() => ({
+      panes: [{ pane_id: 'w1:p1', workspace_id: 'w2' }],
+    }));
+    expect(workspacePanes('w1')).toBeNull();
+  });
+
+  test('entry under no workspace id reads null', () => {
+    setHerdrRun(() => ({
+      panes: [{ pane_id: 'w1:p1' }],
+    }));
+    expect(workspacePanes('w1')).toBeNull();
+  });
+
+  test('a non-object entry reads null', () => {
+    setHerdrRun(() => ({
+      panes: ['w1:p1'],
+    }));
+    expect(workspacePanes('w1')).toBeNull();
+  });
+
+  test('a pane id that is not a string reads null', () => {
+    setHerdrRun(() => ({
+      panes: [{ pane_id: 123, workspace_id: 'w1' }],
+    }));
+    expect(workspacePanes('w1')).toBeNull();
+  });
+
+  test('the right entry plus one malformed entry reads null', () => {
+    setHerdrRun(() => ({
+      panes: [
+        { pane_id: 'w1:p1', workspace_id: 'w1' },
+        { pane_id: 'w1:p2' },
+      ],
+    }));
+    expect(workspacePanes('w1')).toBeNull();
   });
 });

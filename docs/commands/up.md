@@ -62,6 +62,54 @@ A seat that reaches its idle prompt with its rules delivered prints `<seat>: rea
 ready, stopped in the file, or on a CLI with no launch profile prints one `  skip` line and is left
 as it is. The watch prints `watch: started`.
 
+A seat is its pane only while the process `team` launched is still in it. A seat the state records
+whose pane no longer holds that process is not "already ready": its workspace is closed without a
+key and without input — its pane runs no CLI, or one team did not launch, and nothing in it is the
+seat — and the seat is launched fresh with its rules. Its one line says both:
+`<seat>: its pane held no CLI; closed without input and launched again` when the pane was back at
+its shell, `<seat>: its pane held a process team did not launch; closed without input and launched
+again` when another process held it.
+
+The reading that decides the repair is taken while the plan is built, and the close can be minutes
+later, after every seat before this one was created, waited for and delivered to. `up` reads herdr
+again immediately before it, with nothing between those reads and the close, and closes only a pane
+that is provably still the seat's stale one: the agent list must name this seat on the recorded
+pane, that pane's workspace as herdr reports it now must be the recorded workspace, that workspace
+must hold no other panes (named or not), the process reading must still say the pane runs no CLI or
+another process, and a pane held by another process must not read `working` or `unsent` — a process
+that is working or holds unsent text is never closed by `up`, whoever started it.
+When any of that does not hold, nothing is closed, nothing is launched for that seat, its state is
+left as it is, the seat is out of the run, and `up` exits 1 with one line:
+
+| Line | When |
+| --- | --- |
+| `<seat>: its pane is the seat's again; left as it is` | the pane now holds the recorded process — its owner restarted the CLI between the plan and the close. Not an error: the seat is skipped as ready and the exit code is unaffected |
+| `<seat>: herdr no longer shows this seat on its recorded pane; nothing closed; run team status` | the agent list no longer names the seat on the recorded pane, or that pane's workspace is no longer the recorded one |
+| `<seat>: its workspace holds other panes; nothing closed (close its pane there, then run team up)` | herdr's pane listing for the recorded workspace holds more than the seat's recorded pane |
+| `<seat>: the process in its pane is working; nothing closed (stop it there, or run team remove <seat>)` | a process team did not launch holds the pane and its screen reads `working` |
+| `<seat>: the process in its pane holds unsent text; nothing closed (send or clear it there, or run team remove <seat>)` | a process team did not launch holds the pane and its screen reads `unsent` |
+| `<seat>: its pane could not be read; nothing closed` | herdr can't give the workspace's panes, the pane's processes, or its screen reads as nothing this version knows |
+
+This comparison is wrong in the safe direction, but it is wrong: a CLI that replaces its own
+process — an updater that re-executes, a wrapper that hands over — changes the foreground pids, and
+the seat then reads `restored, not launched by team` although nothing was restored. `up` closes
+that pane without input and launches the seat fresh, and the conversation in it is lost. The record
+holds every pid the launch left in front, and accepts the seat while **any** recorded pid is still
+there; no reading of a CLI after its first message was taken when this record was made, though a
+review's runs of a CLI with a helper beside it and of one behind a pipeline kept every pid. Before
+running `up`, the owner looks: `team status` names such a seat, and the pane itself says whether
+the CLI there is the one `team` launched.
+
+When the workspace does not close, nothing is launched in its
+place and the seat is left as it is:
+`<seat>: its workspace did not close; left as it is`, with `up` exiting 1. A seat with no `launched`
+record in state (one launched before this version recorded process identity, or one stopped at a
+dialog before its idle prompt: the reading is taken once, after the idle prompt and after the launch
+model check) keeps today's behaviour: nothing checks its pane. (An `up` run without a terminal closes
+a waiting dialog's workspace without input and prints `left out`; interactive handling of waiting
+seats and `trust-sent-recovery` at a terminal, alongside recording process identity before an idle
+prompt, is a separate planned change and is not altered here.)
+
 When the idle screen names no model this version can read, `up` says `<seat>: its screen doesn't show a model this version knows; not checked` and continues. Nothing is assumed about which model is running.
 
 A seat whose rules travel as a first message (codex, cursor, antigravity) gets them from a file:
@@ -127,6 +175,7 @@ Those lines go to the terminal only: the log file gets the reading, never the sc
 | `<seat>: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched` | herdr's process info says the pane's foreground program is back at its shell through three full polls on end, four readings, the screen matches no CLI shape, and the launch line's own echo is visible on the screen. A pane read before the line arrived, one whose echo scrolled away, one whose program is slow to draw, or a herdr that can't say (no shell process info), is waited out to the deadline — the end is never inferred from the screen's text, and a single reading can never reach the three polls. The workspace is kept, and the pane's last lines follow on the terminal |
 | `<seat>: timed out after <n> s waiting for its idle prompt; the screen last read <kind>; left at launched` | the prompt never came within the profile's own time limit; the last reading and the pane's last lines follow on the terminal |
 | `<seat>: was not in the agent list in time; left at launched` | herdr listed no agent in the pane to name |
+<<<<<<< HEAD
 | `<seat>: rules not typed: the folder that would hold its rules file is <what>; the owner removes or repairs it, then runs up again` | a folder from `team`'s per-user state root down to `rules/` is not a real directory of this user's — a symbolic link, not a directory, another user's, or (for `rules/` and the project folder) a mode wider than `0700`, never `chmod`'d closer; `<what>` says which. Nothing was written, nothing typed |
 | `<seat>: rules not typed: its rules file's place holds <what>; the owner removes it, then runs up again` | the final name holds anything other than this user's `0600` regular file — a symbolic link, a FIFO, a directory, a wider mode, another owner — and is never replaced; `<what>` says what is there |
 | `<seat>: rules not typed: its rules file did not read back as written; check the project state folder, then run up again` | the write landed but did not read back (no-follow) as the hash the line carries; nothing was typed |
@@ -140,6 +189,7 @@ Those lines go to the terminal only: the log file gets the reading, never the sc
 | `<seat>: rules typed, not sent: its box still holds the line after Enter; <what to do>` | Enter was pressed and the box still shows the line: the key did not take, and nothing was sent |
 | `<seat>: the seat did not come back to its idle prompt (<reading>); <what to do>` | the line was submitted and the seat never came back to its idle prompt — a running turn, or a dialog to answer |
 | `<seat>: its rules were not delivered; left at named` | the pane could not be read at all; nothing was typed |
+| `<seat>: its workspace did not close; left as it is` | its pane no longer held the process `team` launched, and closing that workspace failed, so nothing was launched in its place |
 | `<seat>: its workspace was not created; left at launched` | herdr made no workspace for it |
 | `<seat>: its lobby folder was not created; left out` | the folder a seat that works in worktrees waits in could not be made |
 | `<seat>: its launch command did not run; left at launched` | the pane took no command |

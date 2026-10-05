@@ -643,6 +643,126 @@ describe('team status', () => {
   });
 });
 
+// A pane is its seat only while the process team launched is still in it. Each case records a
+// launch for codex-acme and hands the comparison one process-info reading for its pane.
+describe('a pane that no longer holds the process team launched', () => {
+  const GONE_REPAIR = '  repair: the owner runs team up\n';
+
+  function recordCodex(patch: Record<string, unknown> = {}) {
+    updateState(join(dir, '.agents'), (state) => {
+      const session = (state.sessions['acme-web'] ??= emptySession());
+      session.seats['codex-acme'] = {
+        stage: 'ready',
+        pane: 'w2:p1',
+        workspace: 'w2',
+        launched: { shell: 400, cli: [401] },
+        ...patch,
+      };
+    });
+  }
+
+  test('gone: the table cell, the difference, the repair and the JSON row', async () => {
+    recordCodex();
+    // The CLI ended, or the session was restored: the pane's own shell is what is left in front.
+    live = { ...built(), processes: { 'w2:p1': { shell: 400, foreground: [400] } } };
+    const { code, out } = await status();
+    expect(code).toBe(1);
+    expect(out).toMatch(/codex-acme\s+missing\s+GPT-6 Sol\s+w2:p1/);
+    expect(out).toContain(
+      'difference: codex-acme: its pane runs no CLI (the CLI ended or the session was restored)\n' + GONE_REPAIR,
+    );
+    expect(out).toContain('1 difference(s), 1 for the owner\n');
+    const doc = JSON.parse((await status('--json')).out);
+    expect(doc.rows.find((row: { name: string }) => row.name === 'codex-acme')).toEqual({
+      name: 'codex-acme',
+      state: 'missing',
+      model: 'GPT-6 Sol',
+      pane: 'w2:p1',
+    });
+  });
+
+  test('replaced: never idle, never under the declared model', async () => {
+    recordCodex();
+    // Another CLI runs in the pane — the session was restored with a program team did not launch.
+    live = { ...built(), processes: { 'w2:p1': { shell: 400, foreground: [500] } } };
+    const { code, out } = await status();
+    expect(code).toBe(1);
+    expect(out).toMatch(/codex-acme\s+restored, not launched by team\s+-\s+w2:p1/);
+    expect(out).not.toMatch(/codex-acme\s+idle/);
+    expect(out).toContain(
+      'difference: codex-acme: the process in its pane is not the one team launched; nothing checks its model, account or rules\n' +
+        GONE_REPAIR,
+    );
+    const doc = JSON.parse((await status('--json')).out);
+    expect(doc.rows.find((row: { name: string }) => row.name === 'codex-acme')).toEqual({
+      name: 'codex-acme',
+      state: 'restored, not launched by team',
+      model: '-',
+      pane: 'w2:p1',
+    });
+  });
+
+  test('gone with no agent listed: its pane is read, not called a missing seat', async () => {
+    recordCodex();
+    // The name went from herdr's agent list with the CLI. Its recorded pane still stands, and the
+    // shell in it is read: this is the launch that ended, not a seat a rename could put right.
+    live = {
+      ...built(),
+      agents: built().agents.filter((one) => one.name !== 'codex-acme'),
+      processes: { 'w2:p1': { shell: 400, foreground: [400] } },
+    };
+    const { code, out } = await status();
+    expect(code).toBe(1);
+    expect(out).toMatch(/codex-acme\s+missing\s+GPT-6 Sol\s+w2:p1/);
+    expect(out).toContain(
+      'difference: codex-acme: its pane runs no CLI (the CLI ended or the session was restored)\n' + GONE_REPAIR,
+    );
+    expect(out).not.toContain('codex-acme is in the file and is not running');
+  });
+
+  test('replaced with no agent listed: the pane is not renamed into a seat', async () => {
+    recordCodex();
+    // A stranger runs in the recorded pane under no name of the file's: before, this pane was a
+    // stray to rename into the seat. It is not the seat, and it is not ours to name.
+    live = {
+      ...built(),
+      agents: [
+        ...built().agents.filter((one) => one.name !== 'codex-acme'),
+        agent('stranger', 'w2', 'idle', 'codex'),
+      ],
+      processes: { 'w2:p1': { shell: 400, foreground: [500] } },
+    };
+    const { code, out } = await status();
+    expect(code).toBe(1);
+    expect(out).toMatch(/codex-acme\s+restored, not launched by team\s+-\s+w2:p1/);
+    expect(out).toContain(
+      'difference: codex-acme: the process in its pane is not the one team launched; nothing checks its model, account or rules\n' +
+        GONE_REPAIR,
+    );
+    expect(out).not.toContain('is named "stranger"');
+    expect(out).not.toContain('agent rename');
+  });
+
+  test('a reading herdr cannot give keeps today: the seat reads as it did before', async () => {
+    recordCodex();
+    live = { ...built(), processes: { 'w2:p1': null } };
+    const { code, out } = await status();
+    expect(code).toBe(0);
+    expect(out).toMatch(/codex-acme\s+idle, parked/);
+    expect(out).not.toContain('its pane runs no CLI');
+  });
+
+  test('a seat with no record keeps today, even with the shell in front of its pane', async () => {
+    // An older version wrote this state; nothing was recorded, so nothing is compared.
+    recordCodex({ launched: undefined });
+    live = { ...built(), processes: { 'w2:p1': { shell: 400, foreground: [400] } } };
+    const { code, out } = await status();
+    expect(code).toBe(0);
+    expect(out).toMatch(/codex-acme\s+idle, parked/);
+    expect(out).not.toContain('its pane runs no CLI');
+  });
+});
+
 describe('the status line of Claude Code', () => {
   test('is read from a real screen', () => {
     const screen = `❯\n${'─'.repeat(40)}\n  main · …/floor/docs · Opus 5.5 · S: $5.8 ⣿⣄⣀⣀⣀ 24% · L: 20% (2h6m) · W: 12% (+13.3%) (125h26m)\n  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents\n`;
