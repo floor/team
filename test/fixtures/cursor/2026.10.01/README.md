@@ -132,6 +132,50 @@ A later launch of `cursor-agent --force --sandbox disabled` with no `--model`, a
   never sent, cleared with ctrl+c (once clears the whole box), the box verified empty.
   The whole-message captures above stay as documentation of why a whole paste cannot
   be proved on this CLI: past this line, the rules arrive in a file the line points at.
+## The bordered box (2026-10-05)
+
+Captured from the same installed `cursor-agent` `2026.10.01-14929f9` (the build the
+fixtures above were read from) with herdr 0.7.1, `pane read --source visible --lines 80`,
+in a scratch session started for these captures, in the scratch folder the Round 2
+captures used. Launched as a seat is launched:
+
+`AGENT_UNATTENDED=1 cursor-agent --model grok-4.7-high --force --sandbox disabled`
+
+The pane was 53 columns by 23 rows. Herdr set the size from its own configuration
+(`HERDR_CONFIG_PATH` pointing at a scratch `config.toml` with `mobile_width_threshold = 60`
+and `sidebar_min_width`/`sidebar_max_width` 27, then `server reload-config`); herdr could
+not set 120 or 173 columns or 50 rows — a split and a `pane resize` left the pane's child
+tty at `23 53` (`stty size` in the pane, before the split, after the split and after the
+resize) — so these frames are at the one size herdr can set for this work.
+
+These captures draw the CLI's own border around its box — ` ▄▄…▄` directly above the
+input row, ` ▀▀…▀` directly below the input rows, the status row and the workspace line
+directly under it — where the 2026-10-01 captures above draw up to four empty rows above
+the input row and two under the text. Both frames come from the same installed build;
+the owner's CLI files are not read here, so what differs between the two capture days is
+not established by these fixtures.
+
+- `bordered-idle.txt`: the settled home screen, the `  → Plan, search, build anything`
+  placeholder between the border rows.
+- `bordered-typed-one.txt`, `bordered-typed-three.txt`: `alpha bordered line one`, and
+  one line followed by `beta bordered line two` / `gamma bordered line three`, typed into
+  the CLI's own box and never sent (the three lines in one multi-line paste, the Round 2
+  pasted form). The box was cleared with ctrl+c afterwards; the cleared frame is
+  byte-for-byte `bordered-idle.txt`, so it is not stored twice.
+- `bordered-after-round.txt`: the one message these captures sent — `Reply with the
+  single word ok.` — typed, submitted with Enter, the settled frame after the reply
+  (`ok`) came back. No other message was sent.
+- `bordered-working.txt`, `bordered-working-typed.txt`: during that turn — the spinner
+  frame with the sent text still in the box, and `delta typed` typed after it while the
+  turn ran, never sent.
+- `bordered-after-exit.txt`: `/exit` sent at the settled frame; the box's rows and the
+  resume line are visible, and the shell prompt is back.
+
+Sanitised as the captures above: the shell scrollback before Cursor Agent's header is
+reduced to the launch command itself (the `cd` into the scratch folder and its path
+dropped; what remains wrapped at the pane's width, as the pane drew it), the workspace
+path is `<workspace>`, and the resume session id is `<session>`. All other visible text
+is retained.
 
 ## Constructed
 

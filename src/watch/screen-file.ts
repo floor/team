@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DialectError, compilePattern } from './dialect.ts';
-import type { Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage, StatusBelow, VersionRange, Wrap } from './screen-data.ts';
+import type { Border, Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage, StatusBelow, VersionRange, Wrap } from './screen-data.ts';
 import type { ScreenProfile } from './screen-profile.ts';
 import type { Screen } from './screen.ts';
 import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts';
@@ -427,15 +427,17 @@ function composerOf(node: YamlNode): Composer {
     };
   }
   if (name === 'status-last') {
-    only(entries, ['mode', 'status_line', 'status_below', 'prompt', 'placeholders', 'placeholder_style', 'wrap', 'frame_rows']);
+    only(entries, ['mode', 'status_line', 'status_below', 'prompt', 'placeholders', 'placeholder_style', 'wrap', 'frame_rows', 'border']);
     const below = optional(entries, 'status_below');
-    return { mode: name, statusLine: statusLineField(entries, node.line), ...(below ? { statusBelow: statusBelowOf(below) } : {}), prompt: regexField(entries, 'prompt', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value), placeholderStyle, wrap, frameRows };
+    const border = optional(entries, 'border');
+    return { mode: name, statusLine: statusLineField(entries, node.line), ...(below ? { statusBelow: statusBelowOf(below) } : {}), prompt: regexField(entries, 'prompt', node.line), placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value), placeholderStyle, wrap, frameRows, ...(border ? { border: borderOf(border) } : {}) };
   }
   if (name === 'status-then-one') {
-    only(entries, ['mode', 'status_line', 'status_below', 'prompt', 'placeholders', 'placeholder_style', 'strip_suffix', 'fallback', 'wrap', 'frame_rows']);
+    only(entries, ['mode', 'status_line', 'status_below', 'prompt', 'placeholders', 'placeholder_style', 'strip_suffix', 'fallback', 'wrap', 'frame_rows', 'border']);
     const suffix = optional(entries, 'strip_suffix');
     const fallback = required(entries, 'fallback', node.line);
     const below = optional(entries, 'status_below');
+    const border = optional(entries, 'border');
     return {
       mode: name,
       statusLine: statusLineField(entries, node.line),
@@ -447,6 +449,7 @@ function composerOf(node: YamlNode): Composer {
       fallback: fallbackOf(fallback.value),
       wrap,
       frameRows,
+      ...(border ? { border: borderOf(border) } : {}),
     };
   }
   if (name === 'two-rules-footer-below') {
@@ -495,6 +498,19 @@ function frameRowsOf(entry: YamlEntry): number {
     fail(entry.line, '"frame_rows" must be a whole number of rows, zero or more');
   }
   return value.value;
+}
+
+// The box's own border rows, for a CLI whose captures draw them: the row directly above the
+// input row and the row directly below the input rows. Both sides are required — a border with
+// one row is not a frame a capture draws — and the core fixes their place (the captures pin
+// both against the input row and the status row); the patterns name the rows' shape only.
+function borderOf(entry: YamlEntry): Border {
+  const entries = mapping(entry.value, 'border');
+  only(entries, ['top', 'bottom']);
+  return {
+    top: composerString(required(entries, 'top', entry.line).value, 'border', entry.line),
+    bottom: composerString(required(entries, 'bottom', entry.line).value, 'border', entry.line),
+  };
 }
 
 function footersOf(entry: YamlEntry, ignoreCase: boolean): RegExp[] {

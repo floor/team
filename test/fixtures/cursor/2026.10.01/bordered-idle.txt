@@ -1,0 +1,15 @@
+❯ AGENT_UNATTENDED=1 cursor-agent --model grok-4.7-hi
+gh --force --sandbox disabled
+
+
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Use /plan to iterate on an implementation
+  plan before code changes.
+
+
+ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+  → Plan, search, build anything
+ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  Grok 4.7 256K High                 Run Everything
+  <workspace>

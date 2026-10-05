@@ -62,7 +62,15 @@ export type StatusBelow = { line: RegExp; except: RegExp | null };
  *  cap. A line is a candidate when it matches any of them. */
 export type StatusLine = RegExp[];
 
-type StatusLast = { mode: 'status-last'; statusLine: StatusLine; statusBelow?: StatusBelow; prompt: RegExp; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle; wrap?: Wrap; frameRows: number };
+/** The box's own border rows, declared only for a CLI whose captures draw them: `top` is the row
+ *  directly above the input row, `bottom` the row directly below the input rows and directly
+ *  above the status row, both whole rows at one width (the captures draw them at the pane's
+ *  width). The bordered frame is read beside the blank one; a frame with only one of the two
+ *  rows, a row displaced from the input row or the status row, or a border-shaped row inside
+ *  the box is refused. A composer without this field reads only the blank frame. */
+export type Border = { top: RegExp; bottom: RegExp };
+
+type StatusLast = { mode: 'status-last'; statusLine: StatusLine; statusBelow?: StatusBelow; prompt: RegExp; placeholders: Placeholder[]; placeholderStyle?: PlaceholderStyle; wrap?: Wrap; frameRows: number; border?: Border };
 type StatusThenOne = {
   mode: 'status-then-one';
   statusLine: StatusLine;
@@ -74,6 +82,7 @@ type StatusThenOne = {
   fallback: FallbackRule[];
   wrap?: Wrap;
   frameRows: number;
+  border?: Border;
 };
 type TwoRules = {
   mode: 'two-rules-footer-below';
