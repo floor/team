@@ -350,15 +350,19 @@ function modelRules(node: YamlNode, key: string): ModelRule[] {
 /**
  * The model names a rule declares it reads. Absent: none — a rule that names no model on purpose
  * says so by leaving the key out or giving the empty list, and both read as yielding nothing.
+ * A name twice is refused: the list is a closed set, and a repeat can only be a mistake.
  */
 function yieldsOf(entry: YamlEntry | undefined): string[] {
   if (!entry) return [];
   if (entry.value.kind !== 'seq') fail(entry.line, '"yields" must be a list of model names');
-  return entry.value.items.map((item) => {
+  const names: string[] = [];
+  for (const item of entry.value.items) {
     const name = stringOf(item);
     if (!name) fail(item.line, '"yields" entries must be non-empty strings');
-    return name;
-  });
+    if (names.includes(name)) fail(item.line, `"yields" lists ${JSON.stringify(name)} twice`);
+    names.push(name);
+  }
+  return names;
 }
 
 /**

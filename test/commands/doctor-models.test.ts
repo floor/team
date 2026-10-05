@@ -487,6 +487,19 @@ describe('the declared models and versions, on the captured screens', () => {
     expect(canShowModel({ cli: 'claude-code', model: 'Claude Opus', version: '5.5 ' })).toBe(false);
   });
 
+  test('a duplicate name in yields is refused as the rule loads', () => {
+    const rule = (yields: string) => `
+- match: '^M-([0-9]+)$'
+  model: 'M {1}'
+  version: '{1}'
+  yields: ${yields}
+`;
+    expect(() => statusModelRulesOf(rule('[M, M]'))).toThrow(YamlError);
+    expect(() => statusModelRulesOf(rule('[M, M]'))).toThrow(/"yields" lists "M" twice/);
+    // a trailing space makes the string a different name, not a duplicate
+    expect(statusModelRulesOf(rule('[M, "M "]')).flatMap((one) => one.yields)).toEqual(['M', 'M ']);
+  });
+
   test('a constructed rule carries its version shapes, and one without the keys yields nothing', () => {
     const declared = statusModelRulesOf(`
 - match: '^M-([0-9]+(?:\\.[0-9]+)*)$'

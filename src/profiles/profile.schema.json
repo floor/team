@@ -251,7 +251,8 @@
         "yields": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
-          "description": "The exact model names this rule's templates spell, as the reader reads them back — a closed list, never a pattern. Absent or empty: the rule yields no model (a template that cannot fill, like an id a launch line shows but the screen never does)."
+          "uniqueItems": true,
+          "description": "The exact model names this rule's templates spell, as the reader reads them back — a closed list, never a pattern, each name once. Absent or empty: the rule yields no model (a template that cannot fill, like an id a launch line shows but the screen never does)."
         },
         "version_like": {
           "type": "string",
