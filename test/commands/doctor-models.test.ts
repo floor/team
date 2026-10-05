@@ -117,11 +117,13 @@ describe('team doctor on a file of every model shape', () => {
       join(root, '.agents/team.state.json'),
       JSON.stringify({ format: 1, sessions: { pilot: { seats: {}, worktrees: {}, watch: { pid: 1, heartbeat: NOW.toISOString() } } } }),
     );
-    const run = await doctor({ sessionRunning: () => true });
+    const run = await doctor({ sessionRunning: () => true, version: versions('2.2.0 (Claude Code)') });
     const warns = run.out.split('\n').filter((line) => line.startsWith('warn'));
-    expect(warns).toEqual([]);
+    expect(warns).toEqual([
+      'warn  claude 2.2.0 (Claude Code) is newer than the tested 2.1.288: its screens are untested with this version; a seat that isn\'t read at launch is left out, never typed into',
+    ]);
     expect(run.out).toContain('ok    the watch is running\n');
-    expect(run.out).toEndWith('team doctor: nothing missing, 0 warnings\n');
+    expect(run.out).toEndWith('team doctor: nothing missing, 1 warning\n');
     expect(run.code).toBe(0);
   });
 });

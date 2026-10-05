@@ -100,11 +100,13 @@ function range(tested: { from: string; to: string }): string {
   return tested.from === tested.to ? tested.from : `${tested.from} to ${tested.to}`;
 }
 
-function versionFinding(name: string, printed: string, tested: { from: string; to: string }): Finding {
+function versionFinding(name: string, printed: string, tested: { from: string; to: string }, cli: boolean): Finding {
   const verdict = versionVerdict(printed, tested);
   if (verdict === 'tested') return { level: 'ok', text: `${name} ${printed}` };
   if (verdict === 'unread') return { level: 'warn', text: `${name}: its version can't be read from "${printed}"` };
-  return { level: 'warn', text: `${name} ${printed} is ${verdict} than the tested ${range(tested)}` };
+  // Only a CLI has screens to misread; herdr's version line says just where it sits.
+  const tail = cli ? ": its screens are untested with this version; a seat that isn't read at launch is left out, never typed into" : '';
+  return { level: 'warn', text: `${name} ${printed} is ${verdict} than the tested ${range(tested)}${tail}` };
 }
 
 // The command a launch line starts: its first word that is not a variable assignment.
@@ -257,7 +259,7 @@ function cliFindings(cli: string, seats: Seat[], sources: DoctorSources): Findin
   if (printed === null) {
     return [{ level: 'miss', text: `install \`${profile.binary}\`: it is not on the PATH (${cli}: ${names})` }];
   }
-  const findings = [versionFinding(profile.binary, printed, profile.tested)];
+  const findings = [versionFinding(profile.binary, printed, profile.tested, true)];
   const loggedIn = sources.loggedIn(profile);
   if (loggedIn === false) findings.push({ level: 'miss', text: `log in to ${cli}: \`${profile.loginHint}\`` });
   else if (loggedIn === null)
@@ -378,7 +380,7 @@ export function doctorFindings(
   const running = herdr === null ? null : sources.sessionRunning(session);
   if (herdr === null) findings.push({ level: 'miss', text: 'install herdr: it is not on the PATH' });
   else {
-    findings.push(versionFinding('herdr', herdr, HERDR_TESTED));
+    findings.push(versionFinding('herdr', herdr, HERDR_TESTED, false));
     if (running === null) findings.push({ level: 'miss', text: "herdr doesn't answer" });
     else findings.push({ level: 'note', text: `session ${session} is ${running ? 'running' : 'not running'}` });
   }
