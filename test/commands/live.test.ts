@@ -1862,7 +1862,7 @@ describe('scratch session', () => {
         const doctor = upReal.doctor ? { ...upReal.doctor, home: scratchHome } : undefined;
         const upCode = await runUp(file, owner, { ...upReal, home: scratchHome, doctor });
         expect(upCode).toBe(1);
-        if (!owner.out.includes('left out: trust question')) {
+        if (!owner.out.includes('trust question; its workspace was closed without an answer and the seat left out')) {
           throw new Error(owner.out.split('\n').slice(-20).join('\n'));
         }
         await runDown(file, owner, downReal);
