@@ -52,6 +52,12 @@ export interface UpSeat {
   /** The seat works in worktrees: it waits in the lobby until a brief names its worktree. */
   lobby?: boolean;
   /**
+   * Set when the seat's own launch line can't run where the seat starts — the program is not
+   * there, or a relative path in it resolves from neither the start folder nor the root. The
+   * seat is left out before its workspace is made; the other seats go on.
+   */
+  launchProblem?: string;
+  /**
    * Set when a counted reading is inside the reserve, or the figure is unknown
    * or a first sight. A refusal stops the seat only when this plan would launch it.
    */
@@ -127,6 +133,14 @@ export function upPlan(input: UpInput): Step[] {
     // The same condition as the launch step below. A seat already running keeps
     // its idle wait, rename and rules, and hears the reading as a notice.
     const wouldLaunch = fresh || (seat.stage === 'launched' && !seat.agentLive);
+    if (seat.launchProblem && wouldLaunch) {
+      steps.push({
+        kind: 'skip',
+        text: `${seat.name}: would refuse: ${seat.launchProblem}`,
+        do: { do: 'refuse', seat: seat.name, why: seat.launchProblem },
+      });
+      continue;
+    }
     if (seat.budget?.kind === 'refuse' && wouldLaunch) {
       steps.push({
         kind: 'skip',

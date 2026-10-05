@@ -29,6 +29,7 @@ import {
 import type { Command, Io } from '../io.ts';
 import type { Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
+import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { rulesText } from '../launch/rules.ts';
 import { deliverRules } from '../launch/deliver.ts';
@@ -319,9 +320,16 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       continue;
     }
     const placed = planned.stage === undefined || !planned.pane;
+    // The seat's own launch line, checked where the seat starts: a `miss` leaves this seat out
+    // before its workspace is made, and the other seats go on. A note is told, never refused.
+    const doctor = sources.doctor;
+    const line = doctor
+      ? launchLineFinding(team, seat, root, { onPath: (binary) => doctor.onPath(binary), home: doctor.home })
+      : null;
+    const launchProblem = line?.level === 'miss' ? { launchProblem: line.why } : {};
     if (!placed) {
       const budget = budgetOf(seat);
-      seats.push({ ...planned, ...(budget.kind === 'clear' ? {} : { budget }) });
+      seats.push({ ...planned, ...launchProblem, ...(budget.kind === 'clear' ? {} : { budget }) });
       continue;
     }
     const start = seatStart(team, seat, root);
@@ -337,6 +345,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       ...planned,
       cwd: start.cwd,
       ...(start.lobby ? { lobby: true } : {}),
+      ...launchProblem,
       ...(budget.kind === 'clear' ? {} : { budget }),
     });
   }

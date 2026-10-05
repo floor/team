@@ -20,6 +20,7 @@ import {
 } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { executePlan, type Host } from '../launch/execute.ts';
+import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -232,13 +233,23 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     // exit: add.start
     return 1;
   }
+  // Its own launch line, checked where the seat will start: a `miss` leaves this seat out
+  // before the file is edited and before any workspace is made.
+  const line = launchLineFinding(prepared.team, built.seat, root, {
+    onPath: (binary) => sources.doctor.onPath(binary),
+    home: sources.doctor.home,
+  });
   const doctorTeam = built.temporary
     ? { ...prepared.team, seats: prepared.team.seats.map((item) => item.name === built.temporary?.like ? { ...item, stopped: false } : item) }
     : prepared.team;
   // `team` is the file on disk, already the approved one. `doctorTeam` is the
   // seat about to run, so a stopped seat's CLI is still checked. The digest is
-  // recorded with the write, after a refusal has left the file alone.
-  for (const finding of doctorFindings(doctorTeam, root, dir, session, sources.doctor, prepared.warnings, standing, team)) {
+  // recorded with the write, after a refusal has left the file alone. The seat's own launch
+  // line is the last finding, so a miss there refuses this `add` like any other.
+  for (const finding of [
+    ...doctorFindings(doctorTeam, root, dir, session, sources.doctor, prepared.warnings, standing, team),
+    ...(line?.level === 'miss' ? [{ level: 'miss' as const, text: `${built.name}: ${line.why}` }] : []),
+  ]) {
     if (blocksLaunch(finding)) {
       io.stderr(`team add: ${finding.text}\n`);
       // exit: add.doctor

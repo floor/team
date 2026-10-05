@@ -77,6 +77,7 @@ A seat that doesn't get there is printed once with what stopped it, and `up` exi
 | `<seat>: the approval allows 3 seats; 4 would be running` | the approval's ceiling, from the record, not the file |
 | `<seat>: refused: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | a counted reading is inside that account's reserve and this run would launch the seat; this seat is not started, and the others still are. `accounts with room: none` when no other account has room |
 | `<seat>: refused: <account> spend <amount> <CUR>, at or below its <floor> <CUR> floor, read <age> ago; accounts with room: <accounts>` | the money its check counted is at or below the account's floor, and this run would launch the seat; this seat is not started, and the others still are |
+| `<seat>: refused: its launch line starts `<program>`, which is not on the PATH` / `… runs `<path>`, not found from its start folder <folder>; the same file is at `<absolute>` from the project root — write that path` | the seat's launch line can't run where the seat starts — the lobby for a seat that works in worktrees; this seat is not started, and the others still are |
 | `<seat>: <account> <window> left <n>%, inside its <reserve>% reserve, changed <age> ago; accounts with room: <accounts>` | the same reading, and the seat is already running; setup continues and the line is only a notice |
 | `<seat>: <account> spend <amount> <CUR>, at or below its <floor> <CUR> floor, read <age> ago; accounts with room: <accounts>` | the same money reading, and the seat is already running; setup continues and the line is only a notice |
 | `<seat>: <account> is unknown` | the account is in the file and its figure is unknown — a subscription with no counted reading, or a spend account whose money reading is missing, older than `budgets.stale_after`, or in another currency than the floor's. A subscription figure with no known reset is unknown while it could still matter — inside its reserve, or within the reserve again outside it; further out — more than the reserve again — it counts, the room the figure last held, and the launch decision is clear: no unknown line. The seat still starts |
@@ -89,7 +90,9 @@ The plan a `--dry-run` prints is also what `team down --dry-run` prints: `+ <com
 that would run, a `    (<note>)` line under one that carries a note, `  wait <text>` for a wait,
 `  skip <text>` for a seat left out, and `dry run: nothing was run` at the end. A seat a stored
 reading would refuse, and that this run would launch, is `  skip <seat>: would refuse: …` and is not
-in the commands. The words after `would refuse:` are the same as the words after `refused:`. A seat
+in the commands — the same line a seat whose launch line can't run where it starts is left out with,
+before its workspace is made. The words after `would refuse:` are the same as the words after
+`refused:`. A seat
 already running keeps its setup, with that reading in a note. A seat whose account is unknown
 carries `(<account> is unknown; would launch)` under its first command. A first sight carries
 `(<account>: first sight only, not yet counted; would launch)`. A launch carries the seat's rules,
@@ -108,7 +111,7 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | ``approved before records were signed: run `team approve` once`` — the record was written by an earlier `team` |
 | ``the record <case>: run `team approve` once`` — a signed record that does not verify |
 | ``the file is not the approved one (<differences>): run `team approve` `` |
-| a `MISS` finding from [team doctor](doctor.md) — herdr or a CLI not installed, a CLI not logged in, a launch naming another model than the file |
+| a `MISS` finding from [team doctor](doctor.md) — herdr or a CLI not installed, or a CLI not logged in. A seat's own launch line is not this: it leaves that seat out alone, in the lines above |
 | `the load is 1.2 per core, above 1` / `free memory is 8%, below 25%` / `free disk is 3.0 GB, below 10.0 GB` / `free swap is 1.0 GB, below 2.0 GB` |
 | `herdr doesn't answer` |
 | ``session beacon is stopped; clear it with `herdr session delete beacon` `` |

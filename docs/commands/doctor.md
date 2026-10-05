@@ -2,7 +2,8 @@
 
 Reads the machine and says what the team needs before it can run: whether this file is the one the
 owner approved, whether herdr and each seat's CLI are installed, at the tested version and logged in,
-whether each launch names the model the file says, whether a watch has run for the session, and what
+whether each launch names the model the file says, whether each seat's launch line can run in the
+folder the seat starts in, whether a watch has run for the session, and what
 each approved budget check reads right now. `up` and `add` refuse until the missing ones are done.
 
 ## Synopsis
@@ -14,7 +15,11 @@ each approved budget check reads right now. `up` and `add` refuse until the miss
 Reads the team file (or the one `--file` names) and its warnings, this machine's approval store, the
 session's state (`.agents/team.state.json`, for the watch's heartbeat), herdr's version and whether
 the session is running, and, for each CLI a seat uses, `<binary> --version` and its login check. A
-seat's own launcher is looked for on the `PATH`, never run to find out. The owner's `doctor` also
+launch line is read the way `team` splits it — the first word that isn't a variable assignment, and
+the arguments written `./…`, `../…` or `~/…` — and each is looked for where the line will run: the
+folder the seat starts in, which for a seat that works in worktrees is the lobby, never a launcher
+run to find out. A line that quotes or substitutes text is left alone and reported as not checked,
+never refused. The owner's `doctor` also
 runs each approved account's check command once, the way the watch runs it; the command's raw output
 is parsed and dropped, never shown. It writes nothing.
 
@@ -61,8 +66,10 @@ shipped profiles, when nothing was approved), each account whose `check`
 command is unapproved, or no longer matches the file hashed at approval (a warning either way: that
 account reads unknown, and `up` and `add` still
 run), the budget checks, herdr, one CLI at a time (its
-version, its login, then each of its seats' launchers and models), the watch, and the `trust` note.
-A seat the file stops is left out of the CLI findings. The last line counts them:
+version, its login, then each of its seats' models), one line per seat whose launch line can't run
+where the seat starts (the `MISS` names the start folder, and when the same file resolves from the
+project root, its path to write instead), the watch, and the `trust` note.
+A seat the file stops is left out of the CLI findings and the launch lines. The last line counts them:
 
     team doctor: nothing missing, 1 warning
     team doctor: 2 missing, 0 warnings: `up` and `add` refuse until the missing ones are done
