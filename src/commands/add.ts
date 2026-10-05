@@ -584,7 +584,13 @@ function hostOf(input: {
         if (seats) delete seats[name];
       });
     },
-    say: (line) => input.io.stdout(line),
+    say: (line) => {
+      if (line.startsWith(`${input.seat.name}: its pane is the seat's again;`)) {
+        input.io.stderr(`team add: ${input.seat.name} is already running\n`);
+        return;
+      }
+      input.io.stdout(line);
+    },
     log: (who, what) => logLine(dir, 'add', input.caller, `${who}: ${what}`, input.now()),
   };
 }

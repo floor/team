@@ -599,6 +599,135 @@ describe('team answer', () => {
       expect(readFileSync(join(dir, 'team.state.json'), 'utf8')).toBe(before);
       expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
     });
+
+    test('normal path: process changes between key and delivery: no type, state stays recovery', async () => {
+      const { root, home, dir, host } = setupIdentitySeat();
+      await approve(root, home);
+      let reads = 0;
+      host.processInfo = () => {
+        reads += 1;
+        // First 2 reads (in inspect) return same; 3rd read (before rules delivery) returns replaced.
+        return reads <= 2 ? { shell: 400, foreground: [400, 401] } : { shell: 400, foreground: [500] };
+      };
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(host.keys).toEqual(['a']);
+      expect(host.typed).toEqual([]);
+      expect(io.err).toBe('lead: the process in its pane is not the one team launched\n');
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting?.state).toBe('trust-sent-recovery');
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+    });
+  });
+
+  describe('process identity checks on recovery path', () => {
+    function setupRecoverySeat() {
+      const { root, home, lobby, dir } = world();
+      writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+      updateState(dir, (state) => {
+        state.sessions.acme = {
+          seats: {
+            lead: {
+              stage: 'launched',
+              pane: 'w1:p1',
+              workspace: 'w1',
+              launched: { shell: 400, cli: [401] },
+              waiting: { state: 'trust-sent-recovery', classification: 'trust' },
+            },
+          },
+          worktrees: {},
+        };
+      });
+      const host = fake(home, root, cursorIdle, 'cursor');
+      return { root, home, lobby, dir, host };
+    }
+
+    test('regression: recovery + replaced + idle screen -> no type and exits 1', async () => {
+      const { root, home, dir, host } = setupRecoverySeat();
+      await approve(root, home);
+      host.processInfo = () => ({ shell: 400, foreground: [500] });
+      const before = readFileSync(join(dir, 'team.state.json'), 'utf8');
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(host.keys).toEqual([]);
+      expect(host.typed).toEqual([]);
+      expect(io.err).toBe('lead: the process in its pane is not the one team launched\n');
+      expect(readFileSync(join(dir, 'team.state.json'), 'utf8')).toBe(before);
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+    });
+
+    test('recovery + gone -> no type and exits 1', async () => {
+      const { root, home, dir, host } = setupRecoverySeat();
+      await approve(root, home);
+      host.processInfo = () => ({ shell: 400, foreground: [400] });
+      const before = readFileSync(join(dir, 'team.state.json'), 'utf8');
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(host.keys).toEqual([]);
+      expect(host.typed).toEqual([]);
+      expect(io.err).toBe('lead: the process in its pane is not the one team launched\n');
+      expect(readFileSync(join(dir, 'team.state.json'), 'utf8')).toBe(before);
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+    });
+
+    test('recovery + unreadable -> no type and exits 1', async () => {
+      const { root, home, dir, host } = setupRecoverySeat();
+      await approve(root, home);
+      host.processInfo = () => null;
+      const before = readFileSync(join(dir, 'team.state.json'), 'utf8');
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(1);
+      expect(host.keys).toEqual([]);
+      expect(host.typed).toEqual([]);
+      expect(io.err).toBe('lead: its pane could not be read\n');
+      expect(readFileSync(join(dir, 'team.state.json'), 'utf8')).toBe(before);
+      expect(readFileSync(join(dir, 'team.log'), 'utf8')).toContain('refused trust: process');
+    });
+
+    test('recovery + same -> delivers rules and ordered calls include processInfo', async () => {
+      const { root, home, dir, host } = setupRecoverySeat();
+      await approve(root, home);
+      const calls: string[] = [];
+      const origAgents = host.agents.bind(host);
+      host.agents = (session) => { calls.push('agents'); return origAgents(session); };
+      const origPane = host.pane.bind(host);
+      host.pane = (session, pane) => { calls.push(`pane:${pane}`); return origPane(session, pane); };
+      host.processInfo = (_session, pane) => {
+        calls.push(`processInfo:${pane}`);
+        return { shell: 400, foreground: [400, 401] };
+      };
+      const origFg = host.foreground.bind(host);
+      host.foreground = (session, pane) => { calls.push('foreground'); return origFg(session, pane); };
+      const origStatus = host.status.bind(host);
+      host.status = (session, pane) => { calls.push('status'); return origStatus(session, pane); };
+      const origType = host.type.bind(host);
+      host.type = (session, pane, text) => { calls.push('type'); return origType(session, pane, text); };
+      const origEnter = host.enter.bind(host);
+      host.enter = (session, pane) => { calls.push('enter'); return origEnter(session, pane); };
+
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runAnswer([...FILE, 'lead', 'trust'], io, host);
+      expect(code).toBe(0);
+      expect(io.out).toBe('lead: trust answered; ready\n');
+      expect(host.keys).toEqual([]);
+      expect(host.typed.length).toBe(1);
+      expect(calls.slice(0, 8)).toEqual([
+        'agents',
+        'pane:w1:p1',
+        'agents',
+        'processInfo:w1:p1',
+        'foreground',
+        'status',
+        'pane:w1:p1',
+        'type',
+      ]);
+      expect(calls).toContain('enter');
+      expect(readState(dir).sessions.acme?.seats.lead?.stage).toBe('ready');
+      expect(readState(dir).sessions.acme?.seats.lead?.waiting).toBeUndefined();
+    });
   });
 
   test('a lobby path in another case sends nothing', async () => {

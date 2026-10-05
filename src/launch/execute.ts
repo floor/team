@@ -615,7 +615,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           break;
         }
         const panes = host.workspacePanes ? host.workspacePanes(session, op.workspace) : null;
-        if (panes === null) {
+        if (panes === null || panes.length === 0) {
           held = true;
           dropped.add(op.seat);
           finish(op.seat, 'its pane could not be read; nothing closed');

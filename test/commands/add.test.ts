@@ -685,11 +685,12 @@ describe('team add', () => {
         workspaces: () => [{ id: 'w9' }],
       }));
       expect(code).toBe(1);
-      expect(io.out).toContain("worker: its pane is the seat's again; left as it is\n");
+      expect(io.err).toContain('team add: worker is already running\n');
+      expect(io.out).not.toContain("worker: its pane is the seat's again; left as it is\n");
       expect(closes).toEqual([]);
       expect(made.creates).toEqual([]);
       expect(readFileSync(join(project, '.agents/team.state.json'), 'utf8')).toBe(before);
     });
   });
-  });
 });
+

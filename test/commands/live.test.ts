@@ -1482,6 +1482,23 @@ describe('team up, a session that was restored', () => {
       .toMatchObject({ stage: 'ready', pane: 'w91:p1', launched: { shell: 420, cli: [421] } });
   });
 
+  test('workspacePanes with an empty listing: nothing is closed and line is unreadable', async () => {
+    restoredFile();
+    await approve();
+    const made = restored();
+    const read = made.launch.processInfo!;
+    made.launch.processInfo = (session, pane) => (pane === 'w91:p1' ? { shell: 420, foreground: [420] } : read(session, pane));
+    made.launch.workspacePanes = () => [];
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources(restoredSources(), made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('claude-coordinator-acme: its pane could not be read; nothing closed\n');
+    expect(made.closes).toEqual([]);
+    expect(made.creates).not.toContain('claude opus 5.5');
+    expect(seatState('claude-coordinator-acme'))
+      .toMatchObject({ stage: 'ready', pane: 'w91:p1', launched: { shell: 420, cli: [421] } });
+  });
+
   test('a replaced pane whose screen reads working is never closed', async () => {
     restoredFile();
     await approve();
@@ -1635,7 +1652,7 @@ describe('team up, a session that was restored', () => {
       workspaces: () => [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }],
     }, made));
     expect(code).toBe(1);
-    expect(io.out).toContain('claude-coordinator-acme: left out: trust question\n');
+    expect(io.out).toContain('claude-coordinator-acme: trust question; its workspace was closed without an answer and the seat left out\n');
     expect(calls).toEqual(['paneText:w1:p1', 'close:w1']);
     expect(made.closes).toEqual(['w1']);
   });
