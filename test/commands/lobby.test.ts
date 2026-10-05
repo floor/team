@@ -2010,14 +2010,34 @@ describe('the upgrade from 0.2.1', () => {
     // Information, not a block: the note adds no finding that stops anything.
     expect(doc.code).toBe(0);
 
-    // A seat that runs another family than the file's is not told this: the note names a
-    // version only where the family already matches.
+    // A seat that runs another family than the file's warns with the mismatch the launch
+    // check will print, naming the edit to model and version so the first upgrade edit covers it.
     const other = migratedTeamYaml()
       .replaceAll('version: "5.5"', 'version: "0"')
       .replaceAll('model: Claude Opus', 'model: Claude Sonnet');
     writeFileSync(join(root, '.agents', 'team.yaml'), other);
     const docOther = await runDoctorCmd([], over);
+    expect(docOther.out).toContain(
+      'warn  worker: runs Claude Opus 5.5; the file says Claude Sonnet 0 — '
+        + 'write model: "Claude Opus" and version: "5.5" into the file, then run `team approve`',
+    );
     expect(docOther.out).not.toContain('the placeholder init writes');
+
+    // A real version produces neither placeholder note nor wrong-family warning.
+    const realVersion = migratedTeamYaml()
+      .replaceAll('model: Claude Opus', 'model: Claude Sonnet');
+    writeFileSync(join(root, '.agents', 'team.yaml'), realVersion);
+    const docReal = await runDoctorCmd([], over);
+    expect(docReal.out).not.toContain('the placeholder init writes');
+    expect(docReal.out).not.toContain('the file says Claude Sonnet 0');
+
+    // A stopped team has no screen, so no placeholder finding is emitted.
+    updateState(dir, (st) => {
+      st.sessions['acme'] = { seats: {}, worktrees: {} };
+    });
+    const docStopped = await runDoctorCmd([], over);
+    expect(docStopped.out).not.toContain('the placeholder init writes');
+    expect(docStopped.out).not.toContain('the file says Claude Sonnet 0');
   });
 });
 

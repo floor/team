@@ -441,7 +441,9 @@ function identityFindings(team: TeamFile, dir: string, session: string): Finding
 // A seat whose file still carries the "0" init writes before the owner fills the release
 // number. The launch no longer stops on it (the model family is still checked), so this is
 // information: what the running seat really runs, and the one edit that pins it. Said only
-// when the seat is live in a pane whose screen names a model of the declared family.
+// when the seat is live in a pane whose screen names a model of the declared family. When
+// the screen shows another family than the file declares, warn with the mismatch the launch
+// check will print, naming the edit to both model and version so the first upgrade edit covers it.
 function placeholderVersionFindings(team: TeamFile, dir: string, session: string, sources: DoctorSources): Finding[] {
   if (!sources.paneText) return [];
   const recorded = readState(dir).sessions[session]?.seats ?? {};
@@ -453,13 +455,22 @@ function placeholderVersionFindings(team: TeamFile, dir: string, session: string
     const screen = sources.paneText(session, held.pane);
     if (screen === undefined) continue;
     const running = seatModel(seat, screen);
-    if (!running || running.model !== seat.model) continue;
-    findings.push({
-      level: 'note',
-      text:
-        `${seat.name}: runs ${running.model} ${running.version}; the file's version "0" is the placeholder init writes — ` +
-        `write "${running.version}" into the file, then run \`team approve\``,
-    });
+    if (!running) continue;
+    if (running.model === seat.model) {
+      findings.push({
+        level: 'note',
+        text:
+          `${seat.name}: runs ${running.model} ${running.version}; the file's version "0" is the placeholder init writes — ` +
+          `write "${running.version}" into the file, then run \`team approve\``,
+      });
+    } else {
+      findings.push({
+        level: 'warn',
+        text:
+          `${seat.name}: runs ${running.model} ${running.version}; the file says ${seat.model} 0 — ` +
+          `write model: "${running.model}" and version: "${running.version}" into the file, then run \`team approve\``,
+      });
+    }
   }
   return findings;
 }
