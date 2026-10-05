@@ -53,41 +53,56 @@ type Place = { pane: string; workspace?: string };
  *  OSC sequences terminate at BEL (\x07) or ST (7-bit ESC \ or 8-bit C1 \x9c).
  *  DCS, APC, PM and SOS sequences terminate only at ST (7-bit ESC \ or 8-bit C1 \x9c).
  *  An unterminated sequence drops everything to the end of the text. */
-function stripControlStrings(text: string): string {
-  let result = '';
+export function stripControlStrings(text: string): string {
+  const slices: string[] = [];
   let plainStart = 0;
   // States: 0: PLAIN, 1: PLAIN_ESC, 2: IN_OSC, 3: IN_OSC_ESC, 4: IN_OTHER, 5: IN_OTHER_ESC
   let state = 0;
+  let escCount = 0;
+  let hadPrecedingEsc = false;
+
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
     switch (state) {
       case 0: // PLAIN
         if (c === '\x1b') {
-          if (i > plainStart) result += text.slice(plainStart, i);
+          if (i > plainStart) slices.push(text.slice(plainStart, i));
           state = 1;
+          escCount = 1;
         } else if (c === '\x9d') {
-          if (i > plainStart) result += text.slice(plainStart, i);
+          if (i > plainStart) slices.push(text.slice(plainStart, i));
           state = 2;
+          hadPrecedingEsc = false;
         } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
-          if (i > plainStart) result += text.slice(plainStart, i);
+          if (i > plainStart) slices.push(text.slice(plainStart, i));
           state = 4;
+          hadPrecedingEsc = false;
         }
         break;
       case 1: // PLAIN_ESC
         if (c === ']') {
           state = 2;
+          hadPrecedingEsc = escCount > 1;
+          escCount = 0;
         } else if (c === 'P' || c === 'X' || c === '^' || c === '_') {
           state = 4;
+          hadPrecedingEsc = escCount > 1;
+          escCount = 0;
         } else if (c === '\x1b') {
-          result += '\x1b';
+          escCount++;
         } else if (c === '\x9d') {
-          result += '\x1b';
+          // Drop pending ESC: it was followed by a string opener and must not reach across the removed string.
           state = 2;
+          hadPrecedingEsc = true;
+          escCount = 0;
         } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
-          result += '\x1b';
+          // Drop pending ESC: it was followed by a string opener and must not reach across the removed string.
           state = 4;
+          hadPrecedingEsc = true;
+          escCount = 0;
         } else {
-          result += '\x1b';
+          slices.push('\x1b'.repeat(escCount));
+          escCount = 0;
           plainStart = i;
           state = 0;
         }
@@ -96,6 +111,16 @@ function stripControlStrings(text: string): string {
         if (c === '\x07' || c === '\x9c') {
           state = 0;
           plainStart = i + 1;
+          // Invariant: the scanner never makes two input characters adjacent that were
+          // separated by a removed sequence in a way that forms a new control sequence.
+          if (hadPrecedingEsc) {
+            const next = text[i + 1];
+            if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
+              i++;
+              plainStart = i + 1;
+            }
+            hadPrecedingEsc = false;
+          }
         } else if (c === '\x1b') {
           state = 3;
         }
@@ -104,6 +129,16 @@ function stripControlStrings(text: string): string {
         if (c === '\\' || c === '\x07' || c === '\x9c') {
           state = 0;
           plainStart = i + 1;
+          // Invariant: the scanner never makes two input characters adjacent that were
+          // separated by a removed sequence in a way that forms a new control sequence.
+          if (hadPrecedingEsc) {
+            const next = text[i + 1];
+            if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
+              i++;
+              plainStart = i + 1;
+            }
+            hadPrecedingEsc = false;
+          }
         } else if (c === '\x1b') {
           // stay in 3 (IN_OSC_ESC)
         } else {
@@ -114,6 +149,16 @@ function stripControlStrings(text: string): string {
         if (c === '\x9c') {
           state = 0;
           plainStart = i + 1;
+          // Invariant: the scanner never makes two input characters adjacent that were
+          // separated by a removed sequence in a way that forms a new control sequence.
+          if (hadPrecedingEsc) {
+            const next = text[i + 1];
+            if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
+              i++;
+              plainStart = i + 1;
+            }
+            hadPrecedingEsc = false;
+          }
         } else if (c === '\x1b') {
           state = 5;
         }
@@ -122,6 +167,16 @@ function stripControlStrings(text: string): string {
         if (c === '\\' || c === '\x9c') {
           state = 0;
           plainStart = i + 1;
+          // Invariant: the scanner never makes two input characters adjacent that were
+          // separated by a removed sequence in a way that forms a new control sequence.
+          if (hadPrecedingEsc) {
+            const next = text[i + 1];
+            if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
+              i++;
+              plainStart = i + 1;
+            }
+            hadPrecedingEsc = false;
+          }
         } else if (c === '\x1b') {
           // stay in 5 (IN_OTHER_ESC)
         } else {
@@ -130,13 +185,14 @@ function stripControlStrings(text: string): string {
         break;
     }
   }
+
   if (state === 0) {
-    if (plainStart === 0 && result === '') return text;
-    if (plainStart < text.length) result += text.slice(plainStart);
+    if (plainStart === 0 && slices.length === 0) return text;
+    if (plainStart < text.length) slices.push(text.slice(plainStart));
   } else if (state === 1) {
-    result += '\x1b';
+    slices.push('\x1b'.repeat(escCount));
   }
-  return result;
+  return slices.join('');
 }
 
 /** Pane text as it is safe to show, each line cut to `limit` characters: every escape sequence

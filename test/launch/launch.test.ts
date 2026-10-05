@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { paneExcerpt, plainPaneText } from '../../src/launch/execute.ts';
+import { paneExcerpt, plainPaneText, stripControlStrings } from '../../src/launch/execute.ts';
 import { downPlan, formatPlan, herdr, upPlan, type DownSeat, type UpSeat } from '../../src/launch/plan.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
 import { profileFor } from '../../src/profiles/index.ts';
@@ -522,6 +522,173 @@ describe('the pane lines a report carries', () => {
     const duration = performance.now() - start;
     expect(out).toBe('');
     expect(duration).toBeLessThan(1000);
+  });
+
+  test('a pending ESC does not reach across a removed string to consume text or form new control sequences', () => {
+    // When a lone ESC is followed by a string opener, the ESC is dropped so it never reaches
+    // across the removed string to consume plain text in subsequent passes.
+    expect(plainPaneText('\x1b\x9dhidden\x9cafter')).toBe('after');
+
+    // The mirror case: plain text ending in ESC, then a removed string, then ] or P.
+    // The intervening removed string does not synthesize a new control sequence.
+    expect(plainPaneText('\x1b\x9d\x9c]visible')).toBe('visible');
+    expect(plainPaneText('\x1b\x9d\x9cPvisible')).toBe('visible');
+
+    // Without a preceding ESC, ] is ordinary text and is preserved.
+    expect(plainPaneText('\x9d\x9c]visible')).toBe(']visible');
+
+    // Multiple ESCs before a string opener are all dropped before the removed sequence.
+    expect(plainPaneText('\x1b\x1b]0;title\x07after')).toBe('after');
+  });
+
+  test('randomised comparison: scanner and reference state machine agree on all cases', () => {
+    function referenceStrip(text: string): string {
+      let out = '';
+      // States: 0: PLAIN, 1: PLAIN_ESC, 2: IN_OSC, 3: IN_OSC_ESC, 4: IN_OTHER, 5: IN_OTHER_ESC
+      let state = 0;
+      let escCount = 0;
+      let hadPrecedingEsc = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        switch (state) {
+          case 0: // PLAIN
+            if (c === '\x1b') {
+              state = 1;
+              escCount = 1;
+            } else if (c === '\x9d') {
+              state = 2;
+              hadPrecedingEsc = false;
+            } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
+              state = 4;
+              hadPrecedingEsc = false;
+            } else {
+              out += c;
+            }
+            break;
+          case 1: // PLAIN_ESC
+            if (c === ']') {
+              state = 2;
+              hadPrecedingEsc = escCount > 1;
+              escCount = 0;
+            } else if (c === 'P' || c === 'X' || c === '^' || c === '_') {
+              state = 4;
+              hadPrecedingEsc = escCount > 1;
+              escCount = 0;
+            } else if (c === '\x1b') {
+              escCount++;
+            } else if (c === '\x9d') {
+              state = 2;
+              hadPrecedingEsc = true;
+              escCount = 0;
+            } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
+              state = 4;
+              hadPrecedingEsc = true;
+              escCount = 0;
+            } else {
+              out += '\x1b'.repeat(escCount) + c;
+              escCount = 0;
+              state = 0;
+            }
+            break;
+          case 2: // IN_OSC
+            if (c === '\x07' || c === '\x9c') {
+              state = 0;
+              if (hadPrecedingEsc) {
+                const next = text[i + 1];
+                if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
+                  i++;
+                }
+                hadPrecedingEsc = false;
+              }
+            } else if (c === '\x1b') {
+              state = 3;
+            }
+            break;
+          case 3: // IN_OSC_ESC
+            if (c === '\\' || c === '\x07' || c === '\x9c') {
+              state = 0;
+              if (hadPrecedingEsc) {
+                const next = text[i + 1];
+                if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
+                  i++;
+                }
+                hadPrecedingEsc = false;
+              }
+            } else if (c === '\x1b') {
+              // stay in 3
+            } else {
+              state = 2;
+            }
+            break;
+          case 4: // IN_OTHER
+            if (c === '\x9c') {
+              state = 0;
+              if (hadPrecedingEsc) {
+                const next = text[i + 1];
+                if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
+                  i++;
+                }
+                hadPrecedingEsc = false;
+              }
+            } else if (c === '\x1b') {
+              state = 5;
+            }
+            break;
+          case 5: // IN_OTHER_ESC
+            if (c === '\\' || c === '\x9c') {
+              state = 0;
+              if (hadPrecedingEsc) {
+                const next = text[i + 1];
+                if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
+                  i++;
+                }
+                hadPrecedingEsc = false;
+              }
+            } else if (c === '\x1b') {
+              // stay in 5
+            } else {
+              state = 4;
+            }
+            break;
+        }
+      }
+
+      if (state === 1) {
+        out += '\x1b'.repeat(escCount);
+      }
+      return out;
+    }
+
+    function mulberry32(seed: number) {
+      return function() {
+        let t = seed += 0x6D2B79F5;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    const rand = mulberry32(0x12345678);
+    const alphabet = [
+      'a', 'b', 'c', '\n', '\x1b', '\x07',
+      ']', 'P', 'X', '^', '_',
+      '\x9d', '\x90', '\x98', '\x9e', '\x9f',
+      '\\', '\x9c',
+    ];
+
+    const trials = 5000;
+    for (let t = 0; t < trials; t++) {
+      const len = Math.floor(rand() * 40);
+      let str = '';
+      for (let i = 0; i < len; i++) {
+        const idx = Math.floor(rand() * alphabet.length);
+        str += alphabet[idx];
+      }
+      const fast = stripControlStrings(str);
+      const ref = referenceStrip(str);
+      expect(fast).toBe(ref);
+    }
   });
 });
 
