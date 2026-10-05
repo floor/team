@@ -1368,26 +1368,28 @@ describe('the gate fails closed and the launch uses the path it verified', () =>
     }
   });
 
-  test('a link swapped between mkdir and the next lstat is refused before chmod', () => {
-    let chmodmed = false;
+  test('a link swapped at the last moment the gate allows is refused and leaves the folder it names unchanged', () => {
+    const outside = join(base, 'outside-mode');
+    mkdirSync(outside, { recursive: true });
+    chmodSync(outside, 0o755);
+    let seen = 0;
     const fs: FsReader = {
       ...defaultFs,
-      mkdir(p, opts) {
-        defaultFs.mkdir(p, opts);
-        if (p === lobby) {
-          rmSync(p, { recursive: true });
-          symlinkSync(join(base, 'swapped-after-mkdir'), p);
+      lstat(p) {
+        const stat = defaultFs.lstat(p);
+        // The swap lands after the read that returns a directory and before whatever the gate
+        // does next with the path — the last moment the gate allows.
+        if (p === lobby && stat.isDirectory() && ++seen === 2) {
+          rmSync(lobby, { recursive: true });
+          symlinkSync(outside, lobby, 'dir');
         }
-      },
-      chmod(p, mode) {
-        chmodmed = true;
-        defaultFs.chmod(p, mode);
+        return stat;
       },
     };
     const res = verifyLobby(home, { create: true, fs });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.problem).toBe('symlink');
-    expect(chmodmed).toBe(false);
+    expect(statSync(outside).mode & 0o777).toBe(0o755);
   });
 
   test('a link swapped after the lobby is created is caught by the second pass', () => {
