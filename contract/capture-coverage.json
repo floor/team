@@ -28,7 +28,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 2,
+        "real": 3,
         "constructed": 0,
         "undocumented": 0
       },
@@ -102,7 +102,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 12,
+        "real": 13,
         "constructed": 0,
         "undocumented": 0
       },
@@ -139,7 +139,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 16,
+        "real": 17,
         "constructed": 0,
         "undocumented": 0
       },
@@ -242,6 +242,12 @@
       "file": "antigravity/1.2.16/rules-accepted.txt",
       "cli": "antigravity",
       "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "antigravity/1.2.16/rules-line.txt",
+      "cli": "antigravity",
+      "kind": "unsent",
       "provenance": "capture"
     },
     {
@@ -665,6 +671,12 @@
       "provenance": "capture"
     },
     {
+      "file": "codex/0.160.0/rules-line.txt",
+      "cli": "codex",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "codex/0.160.0/rules-medium.txt",
       "cli": "codex",
       "kind": "unknown",
@@ -768,6 +780,12 @@
     },
     {
       "file": "cursor/2026.10.01/rules-fit-7.txt",
+      "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-line.txt",
       "cli": "cursor",
       "kind": "unsent",
       "provenance": "capture"

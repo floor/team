@@ -47,6 +47,16 @@ reading below was taken from the returned text, as delivery reads it.
   answered. The transcript above it holds the echo of the sent message and the reply;
   the box still reads `unsent` and its rows read back as exactly the typed text, which
   is what a second part of a split delivery sees.
+- `rules-line.txt`: the one line delivery types instead of the whole message, captured
+  2026-10-05 in a fresh scratch session (stopped and deleted) with the same launch
+  line, pane size and read. The line, a neutral store path of the same shape,
+  166 characters: `Read /home/owner/.config/team/demo-3f9c2a8e1d7b/rules/implementer.md
+  (sha256 5e1d0a9c4b2f): your standing rules for this session; reply ready and wait for
+  your brief.` The pane draws it in four rows; a break after a `/` hides nothing and a
+  break at a space hides that one space. Read `unsent`. Typed with `pane send-text`,
+  never sent, cleared with Ctrl+C, the box verified empty. The whole-message captures
+  above stay as documentation of why a whole paste cannot be proved on this CLI: past
+  this line, the rules arrive in a file the line points at.
 - `rules-scrolled-narrow.txt`: the same seven-rule message in a 27-column pane — a split
   pane whose tty was set to 27 columns before the CLI started (`stty cols 27 rows 23`,
   then the launch; the session's panes otherwise keep a 54-column tty whatever `pane

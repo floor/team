@@ -51,6 +51,27 @@ before Antigravity's header banner is removed. All other visible text is retaine
 box borders, prompts, and model footer (`Gemini 3.8 Flash · high`). Unknown screens permit no input.
 No vendor configuration in `~/.gemini` was edited.
 
+## Round 2: the rules line
+
+- `rules-line.txt`: the one line delivery types instead of the whole message, captured
+  2026-10-05 with herdr 0.7.1, `pane read --source visible --lines 200` (plain), in a
+  fresh scratch session (stopped and deleted), one Antigravity seat launched as a seat
+  is launched (`AGENT_UNATTENDED=1 agy --dangerously-skip-permissions`), in a 54-by-23
+  pane, in a folder the owner had already trusted for the purpose: a fresh scratch
+  folder showed the workspace-trust dialog of `trust-54.txt` first, and it was left
+  with Escape, unanswered. The line, a neutral store path of the same shape,
+  166 characters: `Read /home/owner/.config/team/demo-3f9c2a8e1d7b/rules/implementer.md
+  (sha256 5e1d0a9c4b2f): your standing rules for this session; reply ready and wait for
+  your brief.` The pane draws it in five rows, hard-wrapped mid-word (`…rules/im` /
+  `plementer.md…`): no marker, no fold, and a break inside a word hides nothing. Read
+  `unsent`. Typed with `pane send-text`, never sent. The CLI has no clear-the-box key:
+  one ctrl+c armed `press ctrl+c again to exit` with the text still in the box, and a
+  second ctrl+c exited the CLI; the text was never sent and the CLI was closed.
+  Sanitised as the captures above: the account line's address is replaced (the tier is
+  kept) and the banner's project line is `~/project`. The whole-message `unsent.txt`
+  stays as documentation of a paste this CLI folds; past this line, the rules arrive in
+  a file the line points at.
+
 ## Constructed
 
 - `permission.txt`: reconstructed from an operator's quote of a real pane, not a capture

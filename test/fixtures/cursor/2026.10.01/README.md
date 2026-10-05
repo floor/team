@@ -102,6 +102,21 @@ and otherwise read as the plain captures do.
 
 No trust, login, or settings dialog was answered, and no vendor configuration was edited.
 
+## Round 2: the rules line
+
+- `rules-line.txt`: the one line delivery types instead of the whole message, captured
+  2026-10-05 with herdr 0.7.1, `pane read --source visible --lines 200` (plain), in a
+  fresh scratch session (stopped and deleted), one Cursor seat launched as a seat is
+  launched, with the same model flag, in a 54-by-23 pane. The line, a neutral store
+  path of the same shape, 166 characters: `Read
+  /home/owner/.config/team/demo-3f9c2a8e1d7b/rules/implementer.md (sha256
+  5e1d0a9c4b2f): your standing rules for this session; reply ready and wait for your
+  brief.` The pane draws it in four rows; a break before a `/` hides nothing and a
+  break at a space hides that one space. Read `unsent`. Typed with `pane send-text`,
+  never sent, cleared with ctrl+c (once clears the whole box), the box verified empty.
+  The whole-message captures above stay as documentation of why a whole paste cannot
+  be proved on this CLI: past this line, the rules arrive in a file the line points at.
+
 ## Constructed
 
 - `working-no-spinner.txt`: constructed from `working.txt` by removing the braille spinner line. Not a capture. That line sits several lines above the prompt, so a longer tool transcript pushes it out of the 20-line window. The prompt still ends in `ctrl+c to stop`.

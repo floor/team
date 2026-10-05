@@ -85,6 +85,13 @@
       "provenance": "capture"
     },
     {
+      "file": "antigravity/1.2.16/rules-line.txt",
+      "cli": "antigravity",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "antigravity/1.2.16/trust-54.txt",
       "cli": "antigravity",
       "classify": "trust",
@@ -575,6 +582,13 @@
       "provenance": "capture"
     },
     {
+      "file": "codex/0.160.0/rules-line.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "codex/0.160.0/rules-medium.txt",
       "cli": "codex",
       "classify": "unknown",
@@ -695,6 +709,13 @@
     },
     {
       "file": "cursor/2026.10.01/rules-fit-7.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/rules-line.txt",
       "cli": "cursor",
       "classify": "unsent",
       "composer": "unsent",
