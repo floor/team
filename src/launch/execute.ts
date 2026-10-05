@@ -59,8 +59,10 @@ export function stripControlStrings(text: string): string {
   // States: 0: PLAIN, 1: PLAIN_ESC, 2: IN_OSC, 3: IN_OSC_ESC, 4: IN_OTHER, 5: IN_OTHER_ESC
   let state = 0;
   let escCount = 0;
-  let hadPrecedingEsc = false;
 
+  // Invariant, both halves:
+  // - No output character comes from inside a string sequence.
+  // - No plain input character outside every sequence is missing from the scanner's output.
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
     switch (state) {
@@ -72,33 +74,27 @@ export function stripControlStrings(text: string): string {
         } else if (c === '\x9d') {
           if (i > plainStart) slices.push(text.slice(plainStart, i));
           state = 2;
-          hadPrecedingEsc = false;
         } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
           if (i > plainStart) slices.push(text.slice(plainStart, i));
           state = 4;
-          hadPrecedingEsc = false;
         }
         break;
       case 1: // PLAIN_ESC
         if (c === ']') {
           state = 2;
-          hadPrecedingEsc = escCount > 1;
           escCount = 0;
         } else if (c === 'P' || c === 'X' || c === '^' || c === '_') {
           state = 4;
-          hadPrecedingEsc = escCount > 1;
           escCount = 0;
         } else if (c === '\x1b') {
           escCount++;
         } else if (c === '\x9d') {
           // Drop pending ESC: it was followed by a string opener and must not reach across the removed string.
           state = 2;
-          hadPrecedingEsc = true;
           escCount = 0;
         } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
           // Drop pending ESC: it was followed by a string opener and must not reach across the removed string.
           state = 4;
-          hadPrecedingEsc = true;
           escCount = 0;
         } else {
           slices.push('\x1b'.repeat(escCount));
@@ -111,16 +107,6 @@ export function stripControlStrings(text: string): string {
         if (c === '\x07' || c === '\x9c') {
           state = 0;
           plainStart = i + 1;
-          // Invariant: the scanner never makes two input characters adjacent that were
-          // separated by a removed sequence in a way that forms a new control sequence.
-          if (hadPrecedingEsc) {
-            const next = text[i + 1];
-            if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
-              i++;
-              plainStart = i + 1;
-            }
-            hadPrecedingEsc = false;
-          }
         } else if (c === '\x1b') {
           state = 3;
         }
@@ -129,16 +115,6 @@ export function stripControlStrings(text: string): string {
         if (c === '\\' || c === '\x07' || c === '\x9c') {
           state = 0;
           plainStart = i + 1;
-          // Invariant: the scanner never makes two input characters adjacent that were
-          // separated by a removed sequence in a way that forms a new control sequence.
-          if (hadPrecedingEsc) {
-            const next = text[i + 1];
-            if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
-              i++;
-              plainStart = i + 1;
-            }
-            hadPrecedingEsc = false;
-          }
         } else if (c === '\x1b') {
           // stay in 3 (IN_OSC_ESC)
         } else {
@@ -149,16 +125,6 @@ export function stripControlStrings(text: string): string {
         if (c === '\x9c') {
           state = 0;
           plainStart = i + 1;
-          // Invariant: the scanner never makes two input characters adjacent that were
-          // separated by a removed sequence in a way that forms a new control sequence.
-          if (hadPrecedingEsc) {
-            const next = text[i + 1];
-            if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
-              i++;
-              plainStart = i + 1;
-            }
-            hadPrecedingEsc = false;
-          }
         } else if (c === '\x1b') {
           state = 5;
         }
@@ -167,16 +133,6 @@ export function stripControlStrings(text: string): string {
         if (c === '\\' || c === '\x9c') {
           state = 0;
           plainStart = i + 1;
-          // Invariant: the scanner never makes two input characters adjacent that were
-          // separated by a removed sequence in a way that forms a new control sequence.
-          if (hadPrecedingEsc) {
-            const next = text[i + 1];
-            if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
-              i++;
-              plainStart = i + 1;
-            }
-            hadPrecedingEsc = false;
-          }
         } else if (c === '\x1b') {
           // stay in 5 (IN_OTHER_ESC)
         } else {

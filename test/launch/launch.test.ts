@@ -529,140 +529,123 @@ describe('the pane lines a report carries', () => {
     // across the removed string to consume plain text in subsequent passes.
     expect(plainPaneText('\x1b\x9dhidden\x9cafter')).toBe('after');
 
-    // The mirror case: plain text ending in ESC, then a removed string, then ] or P.
-    // The intervening removed string does not synthesize a new control sequence.
-    expect(plainPaneText('\x1b\x9d\x9c]visible')).toBe('visible');
-    expect(plainPaneText('\x1b\x9d\x9cPvisible')).toBe('visible');
+    // For each of ], P, X, ^, _: ESC + C1 OSC + ST + that character + visible
+    // produces that character + visible; the same without the leading ESC.
+    const probeChars = [']', 'P', 'X', '^', '_'];
+    for (const ch of probeChars) {
+      expect(plainPaneText(`\x1b\x9d\x9c${ch}visible`)).toBe(`${ch}visible`);
+      expect(plainPaneText(`\x9d\x9c${ch}visible`)).toBe(`${ch}visible`);
+    }
 
-    // Without a preceding ESC, ] is ordinary text and is preserved.
-    expect(plainPaneText('\x9d\x9c]visible')).toBe(']visible');
+    // Path probe: text starting with P after a removed sequence is preserved intact.
+    expect(plainPaneText('\x1b\x9dx\x9cPath: /tmp')).toBe('Path: /tmp');
 
     // Multiple ESCs before a string opener are all dropped before the removed sequence.
     expect(plainPaneText('\x1b\x1b]0;title\x07after')).toBe('after');
   });
 
-  test('randomised comparison: scanner and reference state machine agree on all cases', () => {
+  test('randomised comparison: scanner and independent range-oriented reference agree on all cases', () => {
+    // Independent reference: walks the text, searches forward from each opener for its
+    // legal terminator only, drops the run of ESC immediately before the opener, opener,
+    // payload, and terminator, and copies all other characters. No shared helper with scanner.
     function referenceStrip(text: string): string {
-      let out = '';
-      // States: 0: PLAIN, 1: PLAIN_ESC, 2: IN_OSC, 3: IN_OSC_ESC, 4: IN_OTHER, 5: IN_OTHER_ESC
-      let state = 0;
-      let escCount = 0;
-      let hadPrecedingEsc = false;
+      let result = '';
+      let i = 0;
+      while (i < text.length) {
+        const escStart = i;
+        while (i < text.length && text[i] === '\x1b') {
+          i++;
+        }
+        const escCount = i - escStart;
 
-      for (let i = 0; i < text.length; i++) {
         const c = text[i];
-        switch (state) {
-          case 0: // PLAIN
-            if (c === '\x1b') {
-              state = 1;
-              escCount = 1;
-            } else if (c === '\x9d') {
-              state = 2;
-              hadPrecedingEsc = false;
-            } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
-              state = 4;
-              hadPrecedingEsc = false;
-            } else {
-              out += c;
-            }
+        let isOsc = false;
+        let isOther = false;
+        let openerLen = 0;
+
+        if (escCount > 0) {
+          if (c === ']') {
+            isOsc = true;
+            openerLen = 1;
+          } else if (c === 'P' || c === 'X' || c === '^' || c === '_') {
+            isOther = true;
+            openerLen = 1;
+          } else if (c === '\x9d') {
+            isOsc = true;
+            openerLen = 1;
+          } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
+            isOther = true;
+            openerLen = 1;
+          }
+        } else {
+          if (c === '\x9d') {
+            isOsc = true;
+            openerLen = 1;
+          } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
+            isOther = true;
+            openerLen = 1;
+          }
+        }
+
+        if (!isOsc && !isOther) {
+          if (escCount > 0) {
+            result += '\x1b'.repeat(escCount);
+          }
+          if (i < text.length) {
+            result += c;
+            i++;
+          }
+          continue;
+        }
+
+        const payloadStart = i + openerLen;
+        let termEnd = -1;
+
+        let j = payloadStart;
+        while (j < text.length) {
+          const ch = text[j];
+          if (isOsc && (ch === '\x07' || ch === '\x9c')) {
+            termEnd = j + 1;
             break;
-          case 1: // PLAIN_ESC
-            if (c === ']') {
-              state = 2;
-              hadPrecedingEsc = escCount > 1;
-              escCount = 0;
-            } else if (c === 'P' || c === 'X' || c === '^' || c === '_') {
-              state = 4;
-              hadPrecedingEsc = escCount > 1;
-              escCount = 0;
-            } else if (c === '\x1b') {
-              escCount++;
-            } else if (c === '\x9d') {
-              state = 2;
-              hadPrecedingEsc = true;
-              escCount = 0;
-            } else if (c === '\x90' || c === '\x98' || c === '\x9e' || c === '\x9f') {
-              state = 4;
-              hadPrecedingEsc = true;
-              escCount = 0;
-            } else {
-              out += '\x1b'.repeat(escCount) + c;
-              escCount = 0;
-              state = 0;
-            }
+          }
+          if (isOther && ch === '\x9c') {
+            termEnd = j + 1;
             break;
-          case 2: // IN_OSC
-            if (c === '\x07' || c === '\x9c') {
-              state = 0;
-              if (hadPrecedingEsc) {
-                const next = text[i + 1];
-                if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
-                  i++;
-                }
-                hadPrecedingEsc = false;
+          }
+          if (ch === '\x1b') {
+            let k = j;
+            while (k < text.length && text[k] === '\x1b') {
+              k++;
+            }
+            if (k < text.length) {
+              const next = text[k];
+              if (isOsc && (next === '\\' || next === '\x07' || next === '\x9c')) {
+                termEnd = k + 1;
+                break;
               }
-            } else if (c === '\x1b') {
-              state = 3;
-            }
-            break;
-          case 3: // IN_OSC_ESC
-            if (c === '\\' || c === '\x07' || c === '\x9c') {
-              state = 0;
-              if (hadPrecedingEsc) {
-                const next = text[i + 1];
-                if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
-                  i++;
-                }
-                hadPrecedingEsc = false;
+              if (isOther && (next === '\\' || next === '\x9c')) {
+                termEnd = k + 1;
+                break;
               }
-            } else if (c === '\x1b') {
-              // stay in 3
-            } else {
-              state = 2;
             }
-            break;
-          case 4: // IN_OTHER
-            if (c === '\x9c') {
-              state = 0;
-              if (hadPrecedingEsc) {
-                const next = text[i + 1];
-                if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
-                  i++;
-                }
-                hadPrecedingEsc = false;
-              }
-            } else if (c === '\x1b') {
-              state = 5;
-            }
-            break;
-          case 5: // IN_OTHER_ESC
-            if (c === '\\' || c === '\x9c') {
-              state = 0;
-              if (hadPrecedingEsc) {
-                const next = text[i + 1];
-                if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
-                  i++;
-                }
-                hadPrecedingEsc = false;
-              }
-            } else if (c === '\x1b') {
-              // stay in 5
-            } else {
-              state = 4;
-            }
-            break;
+            j = k;
+            continue;
+          }
+          j++;
+        }
+
+        if (termEnd === -1) {
+          break;
+        } else {
+          i = termEnd;
         }
       }
-
-      if (state === 1) {
-        out += '\x1b'.repeat(escCount);
-      }
-      return out;
+      return result;
     }
 
     function mulberry32(seed: number) {
       return function() {
-        let t = seed += 0x6D2B79F5;
+        let t = (seed += 0x6d2b79f5);
         t = Math.imul(t ^ (t >>> 15), t | 1);
         t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
