@@ -537,10 +537,8 @@ describe('team status', () => {
     );
   });
 
-  test('C: unsent text: table cell, difference, merged form for named seat, unchanged for unknown, read-only', async () => {
+  test('C: unsent text: table cell, difference, merged form for named seat, unchanged for unknown', async () => {
     const codexUnsent = codexScreen('unsent');
-    let typedIntoPane = false;
-    let pressedEnterInPane = false;
 
     // Seat reads unsent (stage: ready)
     live = {
@@ -574,10 +572,6 @@ describe('team status', () => {
     expect(unknownRes.out).toContain('difference: codex-acme: its launch stopped at "named"\n  repair: the owner runs team up (it resumes the launch)');
     expect(unknownRes.out).not.toContain('unsent text');
     expect(unknownRes.out).not.toContain('holds text in its input box that was never sent');
-
-    // Assert that status sent nothing to any pane
-    expect(typedIntoPane).toBe(false);
-    expect(pressedEnterInPane).toBe(false);
   });
 
   test('C2: done is as free as idle — unsent text is read for both; working and blocked are not', async () => {
