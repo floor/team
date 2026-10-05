@@ -370,7 +370,11 @@ export function pass({
   memory.active = current;
 
   // The nudge: kept until the operator is free, never typed into anything but an empty idle prompt.
-  for (const report of reports) if (report.to === 'operator') memory.pending.push(report.text);
+  for (const report of reports) {
+    if (report.to === 'operator' && !memory.pending.includes(report.text)) {
+      memory.pending.push(report.text);
+    }
+  }
   let nudge: PassResult['nudge'] = null;
   let fallback: string | null = null;
   if (memory.pending.length) {

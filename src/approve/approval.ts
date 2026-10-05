@@ -12,7 +12,7 @@ import {
   type Ceilings,
   type Standing,
 } from '../store/store.ts';
-import { compare, describe, fingerprints, legacyLabelDigests, legacySeatDigests, OWNER_SECTIONS, type Fingerprints } from './fingerprint.ts';
+import { compare, describe, fingerprints, legacyLabelDigests, legacySeatDigests, legacyWatchDigest, OWNER_SECTIONS, type Fingerprints } from './fingerprint.ts';
 
 /** The ceilings an approval fixes: `up` and `add` read them from the record, never from the file. */
 export function ceilingsOf(team: TeamFile): Ceilings {
@@ -63,6 +63,15 @@ export function approvedFingerprints(record: ApprovalRecord): Fingerprints {
   let sections = stored.sections;
   if (!OWNER_SECTIONS.every((name) => stored.sections[name] !== undefined) && checked.ok) {
     sections = { ...fingerprints(checked.team).sections, ...stored.sections };
+  }
+  if (checked.ok && checked.team.watch.idleRepeat === undefined) {
+    const legacy = legacyWatchDigest(checked.team);
+    if (legacy && stored.sections['watch'] === legacy) {
+      const currentWatch = fingerprints(checked.team).sections['watch'];
+      if (currentWatch && sections['watch'] !== currentWatch) {
+        sections = { ...sections, watch: currentWatch };
+      }
+    }
   }
   const seats = checked.ok ? adoptLegacyDigests(stored.seats, checked.team) : stored.seats;
   if (sections === stored.sections && seats === stored.seats) return stored;
