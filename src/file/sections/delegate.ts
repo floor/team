@@ -43,7 +43,7 @@ export const delegates: Section = {
         },
       },
     },
-    $comment: 'the panes that may run these of up, down, add, remove and approve. Omitted means no delegate',
+    $comment: 'the panes that may run these of up, down, add and remove. Omitted means no delegate',
   },
 };
 
@@ -123,7 +123,10 @@ function readPane(entry: YamlEntry | undefined, check: Check, line: number, sess
   return pane;
 }
 
-/** A non-empty ordered list of distinct lower-case `up`, `down`, `add`, `remove` and `approve`. */
+/**
+ * A non-empty ordered list of distinct lower-case `up`, `down`, `add` and `remove`. `approve` is
+ * refused by name: approval is the owner's, and a delegate is never given it.
+ */
 function readCommands(entry: YamlEntry | undefined, check: Check, line: number): DelegateCommand[] | null {
   if (!entry) {
     check.fail(line, 'a delegate: commands is required');
@@ -142,6 +145,10 @@ function readCommands(entry: YamlEntry | undefined, check: Check, line: number):
   }
   const commands: DelegateCommand[] = [];
   for (const item of items) {
+    if (item.value === 'approve') {
+      check.fail(item.line, "a delegate: approve is the owner's; a delegate may not be given it");
+      continue;
+    }
     if (!(DELEGATE_COMMANDS as readonly string[]).includes(item.value)) {
       check.fail(item.line, `a delegate: commands must name ${NAMES}: "${item.value}" is not one`);
       continue;
