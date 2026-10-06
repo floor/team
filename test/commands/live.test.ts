@@ -313,7 +313,7 @@ describe('team up, live', () => {
       // The line was typed and Enter was pressed, and the box still holds it: the report says
       // the rules sit unsent and names what to do, instead of a generic failure.
       expect(io.out).toContain('codex-acme: left out: rules typed, not sent: its box still holds the line after Enter; '
-        + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again\n');
+        + 'press Enter in its pane to send it, or clear the box (Ctrl+U), then run up again\n');
     } else {
       expect(code).toBe(1);
       expect(sent).toEqual([]);
@@ -413,8 +413,10 @@ describe('team up, live', () => {
       expect(seat?.stage).toBe('named');
       expect(seat?.rules).toBeUndefined();
       // Same reading as the Codex case: the box still shows the line, unsent.
+      // Antigravity has no clearing key established (its trust dialog blocks the composer), so
+      // the advice names no key.
       expect(io.out).toContain('gemini-acme: left out: rules typed, not sent: its box still holds the line after Enter; '
-        + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again\n');
+        + 'press Enter in its pane to send it, or clear the box, then run up again\n');
     } else {
       expect(code).toBe(1);
       expect(sent).toEqual([]);
@@ -1193,7 +1195,30 @@ describe('team up, live', () => {
     expect(code).toBe(1);
     expect(io.out).toContain(
       'codex-acme: left out: rules not typed: its box already holds text that is not the rules line; '
-      + 'press Enter in its pane to send what is there, or clear its box (Ctrl-C), then run up again\n',
+      + 'press Enter in its pane to send what is there, or clear its box (Ctrl+U), then run up again\n',
+    );
+    expect(sent).toEqual([]);
+    expect(made.closes).toEqual([]);
+    expect(JSON.parse(readFileSync(join(root, '.agents/team.state.json'), 'utf8'))).toEqual(namedState());
+  });
+
+  test("the incident's other face: a box holding the CLI's own exit text is named, not typed onto", async () => {
+    // The same shape one step further: the unsent text is exactly the CLI's exit text, typed
+    // by an earlier stop that never confirmed it. Enter would send the exit and a clearing key
+    // is the owner's press, not this run's — nothing is sent, and the line names the text and
+    // the one key for it.
+    const made = incident(captureCodex('exit-typed'));
+    await approve();
+    const sent: string[] = [];
+    made.launch.agentStatus = () => 'idle';
+    made.launch.typeText = (_session, _pane, text) => { sent.push(text); return true; };
+    made.launch.pressEnter = () => { sent.push('Enter'); return true; };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, resumed(made));
+    expect(code).toBe(1);
+    expect(io.out).toContain(
+      "codex-acme: left out: rules not typed: its box already holds this CLI's exit text (/exit), "
+      + 'unsent from an earlier stop; press Ctrl+U in its pane to clear it, then run up again\n',
     );
     expect(sent).toEqual([]);
     expect(made.closes).toEqual([]);
@@ -1289,7 +1314,7 @@ describe('team up, live', () => {
     expect(code).toBe(1);
     expect(io.out).toContain(
       'codex-acme: left out: rules typed, not sent: its box still holds the line after Enter; '
-      + 'press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again\n',
+      + 'press Enter in its pane to send it, or clear the box (Ctrl+U), then run up again\n',
     );
     // The resume verifies the box and sends the one Enter; this stub's pane never takes the
     // key — the box is read again after it, to the deadline, and nothing else is ever typed.
@@ -3828,6 +3853,7 @@ describe('team down, live', () => {
 
   function harness(screen: Screen, status = 'idle') {
     const typed: string[] = [];
+    const keys: string[] = [];
     const entered: string[] = [];
     const closed: string[] = [];
     const killed: number[] = [];
@@ -3837,13 +3863,19 @@ describe('team down, live', () => {
     let gone = false;
     let current = status;
     let onSleep = () => {};
-    // What the pane shows after a typing: the box with the typed text, as the CLI renders it.
-    let box: string | undefined;
+    // What the pane shows: the empty idle box before any typing, the box with the typed
+    // text after one, as the CLI renders it.
+    let box: string | undefined = claudeBox('');
     let clearFails = false;
     const launch: DownLaunch = {
       typeText(_session, _pane, text) {
         typed.push(text);
         box = claudeBox(text);
+        return true;
+      },
+      sendKey(_session, _pane, key) {
+        keys.push(key);
+        box = claudeBox('');
         return true;
       },
       pressEnter() {
@@ -3890,6 +3922,7 @@ describe('team down, live', () => {
     });
     return {
       typed,
+      keys,
       entered,
       closed,
       killed,
@@ -3905,6 +3938,12 @@ describe('team down, live', () => {
       },
       failClear: () => {
         clearFails = true;
+      },
+      // What the pane shows, set from outside the launch calls: a run that arrives at a box
+      // already holding text — the leftover exit text of an earlier stop — reads it from the
+      // first plan-build read on.
+      setBox: (raw: string) => {
+        box = raw;
       },
     };
   }
@@ -4036,19 +4075,19 @@ describe('team down, live', () => {
 
   test('a pinned Codex permission after the exit text gets no Enter', async () => {
     const pinnedRaw = readFileSync(new URL('../fixtures/codex/0.157.0/permission-pinned.txt', import.meta.url), 'utf8');
-    const pinned = readScreen('codex', pinnedRaw);
+    const codexIdle = readFileSync(new URL('../fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
     const run = harness({ kind: 'idle' });
-    let screen: Screen = { kind: 'idle' };
+    // The pane is idle before the typing; the dialog is what it shows after it.
+    let raw = codexIdle;
     run.launch.typeText = (_session, _pane, text) => {
       run.typed.push(text);
-      screen = pinned;
+      raw = pinnedRaw;
       return true;
     };
     const io = testIo(root, { kind: 'owner' });
     const code = await runDown(FILE, io, run.sourcesOf({
-      screen: () => screen,
-      // The pane really shows the dialog after the typing: the box read-back refuses it.
-      screenText: () => pinnedRaw,
+      screen: () => readScreen('codex', raw),
+      screenText: () => raw,
       agents: () => [{ ...agent('codex-acme', 'w3:p1', 'idle'), agent: 'codex' }],
     }));
     expect(code).toBe(1);
@@ -4066,7 +4105,7 @@ describe('team down, live', () => {
     // (unsent-typed-ansi.txt): the extra row is content the exit text does not have, so the
     // box does not hold it. The exit is typed, and not sent.
     const run = harness({ kind: 'idle' });
-    let shown: string | undefined;
+    let shown = claudeBox('');
     run.launch.typeText = (_session, _pane, text) => {
       run.typed.push(text);
       shown = claudeBox([text, '─'.repeat(40)].join('\n'));
@@ -4078,7 +4117,8 @@ describe('team down, live', () => {
     expect(run.typed).toEqual(['/exit']);
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
-    expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is\n');
+    expect(run.keys).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; its box holds text that is not only the exit text (first row that differs: ────────────────────────────────────────); nothing more was sent; left running\n');
   });
 
   test('a prompt-glyph continuation row after the exit text gets no Enter', async () => {
@@ -4088,7 +4128,7 @@ describe('team down, live', () => {
     // not read back as the exit text — read by glyph it did, and the exit and the person's
     // text were submitted together. The exit is typed, and not sent.
     const run = harness({ kind: 'idle' });
-    let shown: string | undefined;
+    let shown = claudeBox('');
     run.launch.typeText = (_session, _pane, text) => {
       run.typed.push(text);
       shown = claudeBox(`person text\n❯ ${text}`);
@@ -4099,8 +4139,9 @@ describe('team down, live', () => {
     expect(code).toBe(1);
     expect(run.typed).toEqual(['/exit']);
     expect(run.entered).toEqual([]);
+    expect(run.keys).toEqual([]);
     expect(run.closed).toEqual([]);
-    expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is\n');
+    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; its box holds text that is not only the exit text (first row that differs: person text); nothing more was sent; left running\n');
   });
 
   test('a second glyph row at the prompt column after the exit text gets no Enter', async () => {
@@ -4112,7 +4153,7 @@ describe('team down, live', () => {
     // exit is typed, and not sent.
     const codexIdle = readFileSync(new URL('../fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
     const run = harness({ kind: 'idle' });
-    let shown: string | undefined;
+    let shown = codexIdle;
     run.launch.typeText = (_session, _pane, text) => {
       run.typed.push(text);
       shown = codexIdle.replace('› Ask Codex to do anything', `› person text\n› ${text}`);
@@ -4128,6 +4169,153 @@ describe('team down, live', () => {
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
     expect(io.out).toContain('codex-acme: its exit was not typed; left as it is\n');
+  });
+
+  // The leftover exit text: an earlier `down` typed `/exit`, read it back, and never pressed
+  // Enter — a stop mid-sequence leaves the text in the box. This run never types onto it and
+  // never sends it: with the profile's one clearing key it empties the box first and types the
+  // exit fresh, on the same read-back proof as an empty box; without a key the seat is named
+  // and left for its owner.
+  test('a box already holding the exit text is cleared with the profile key, typed fresh, and stopped', async () => {
+    const run = harness({ kind: 'unsent' });
+    run.setBox(claudeBox('/exit'));
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(0);
+    expect(run.keys).toEqual(['ctrl+c']);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.entered).toEqual(['enter']);
+    expect(run.closed).toEqual(['w3']);
+    expect(io.out).toContain('deepseek-acme: stopped\n');
+  });
+
+  test('a dry run notes the clearing key on the run step, and skips nothing for it', async () => {
+    const run = harness({ kind: 'unsent' });
+    run.setBox(claudeBox('/exit'));
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(['--dry-run', ...FILE], io, run.sourcesOf());
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(io.out).toContain('+ herdr --session acme-web pane run w3:p1 /exit\n');
+    expect(io.out).toContain('    (its box already holds this exit text; it is cleared first (ctrl+c))\n');
+    expect(io.out).not.toContain('left running');
+    expect(io.out).toContain('dry run: nothing was run\n');
+  });
+
+  test('a clearing key the pane does not take leaves the leftover text, and nothing is typed onto it', async () => {
+    const run = harness({ kind: 'unsent' });
+    run.setBox(claudeBox('/exit'));
+    // The key is delivered and the pane keeps showing the text: the run gives up before any
+    // typing, and the leftover stays for its owner.
+    run.launch.sendKey = (_session, _pane, key) => {
+      run.keys.push(key);
+      return true;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(1);
+    expect(run.keys).toEqual(['ctrl+c']);
+    expect(run.typed).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: its box already held this exit text; the clearing key (ctrl+c) left the screen reading unsent; left running\n');
+  });
+
+  test('a half-drawn exit text that completes before the clearing key is cleared, and the seat left running', async () => {
+    // The pane drew only the first rows of the text by the read-back, and finished the draw
+    // while herdr answered the caller check that precedes the key: the key goes to a box that
+    // holds exactly the text and empties it. The Enter is not sent after a clearing key — the
+    // seat is left running, with the box empty again.
+    const run = harness({ kind: 'idle' });
+    run.launch.typeText = (_session, _pane, text) => {
+      run.typed.push(text);
+      run.setBox(claudeBox('exi'));
+      return true;
+    };
+    let looks = 0;
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({
+      foreground: () => {
+        looks += 1;
+        if (looks === 3) run.setBox(claudeBox('/exit'));
+        return ['claude'];
+      },
+    }));
+    expect(code).toBe(1);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.keys).toEqual(['ctrl+c']);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; the text was cleared; left running\n');
+  });
+
+  test('a text the pane never drew is left empty, and the seat left running', async () => {
+    const run = harness({ kind: 'idle' });
+    run.launch.typeText = (_session, _pane, text) => {
+      run.typed.push(text);
+      return true;
+    };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf());
+    expect(code).toBe(1);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.keys).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; the pane never drew the typed text; its box is empty; left running\n');
+  });
+
+  test('an undelivered clearing key leaves the text in the box for its owner', async () => {
+    const run = harness({ kind: 'idle' });
+    run.launch.typeText = (_session, _pane, text) => {
+      run.typed.push(text);
+      run.setBox(claudeBox('exi'));
+      return true;
+    };
+    run.launch.sendKey = (_session, _pane, key) => {
+      run.keys.push(key);
+      return false;
+    };
+    let looks = 0;
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({
+      foreground: () => {
+        looks += 1;
+        if (looks === 3) run.setBox(claudeBox('/exit'));
+        return ['claude'];
+      },
+    }));
+    expect(code).toBe(1);
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.keys).toEqual(['ctrl+c']);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; the clearing key (ctrl+c) was not delivered; the text was left; left running\n');
+  });
+
+  test("a CLI with no clearing key names its leftover exit text and leaves it", async () => {
+    // Antigravity has no key that empties the box, so the seat cannot be asked again this run:
+    // the skip line says the box holds this CLI's own exit text, and the owner sends it or
+    // clears it in the pane.
+    writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace(
+      /  - role: implementer\n    name: deepseek-acme[\s\S]*?count: 2[^\n]*\n/,
+      ['  - role: implementer', '    name: gemini-acme', '    cli: antigravity', '    vendor: google',
+        '    model: Gemini Flash', '    version: "3.8"', '    launch: agy'].join('\n') + '\n',
+    ));
+    const exitTyped = readFileSync(new URL('../fixtures/antigravity/1.2.16/exit-typed.txt', import.meta.url), 'utf8');
+    const run = harness(readScreen('antigravity', exitTyped));
+    run.setBox(exitTyped);
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({
+      agents: () => [agent('gemini-acme', 'w3:p1', 'idle')],
+    }));
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.keys).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(io.out).toContain("gemini-acme: holds this CLI's exit text (/exit) unsent in its input box; left running (the owner sends it or clears it in its pane)\n");
+    expect(io.out).toContain('session acme-web: not stopped, 1 agent left in it\n');
   });
 
   // The refused shapes on the exit path, on both CLIs: the read-back before the Enter must
@@ -4201,7 +4389,8 @@ describe('team down, live', () => {
           '    model: Gemini Flash', '    version: "3.8"', '    launch: agy'].join('\n') + '\n',
       ));
       const run = harness({ kind: 'idle' });
-      let shown: string | undefined;
+      const idle = readFileSync(new URL('../fixtures/antigravity/1.2.16/idle.txt', import.meta.url), 'utf8');
+      let shown = idle;
       run.launch.typeText = (_session, _pane, text) => {
         run.typed.push(text);
         shown = agyMismatchedFrame(shape, text);

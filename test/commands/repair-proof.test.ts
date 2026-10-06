@@ -215,6 +215,7 @@ function table() {
       known.box = claudeBox(text);
       return true;
     },
+    sendKey: () => true,
     pressEnter(_session, pane) {
       const known = panes.get(pane);
       if (!known) return false;

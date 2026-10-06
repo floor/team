@@ -18,6 +18,11 @@ login:
     - status
   hint: cursor-agent login
 exit: /exit
+# The one key that empties the box, from the 2026.10.01 capture: ctrl+u returns the
+# composer to its empty placeholder. ctrl+c also empties it but leaves a
+# "Press Ctrl+C again to exit" row, so it is not named. Used only to clear an exit
+# text that did not read back as typed, and only when the box holds exactly that text.
+exit_clear: ctrl+u
 timeouts:
   idle: 90s
   exit: 30s

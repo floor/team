@@ -403,6 +403,9 @@ export interface DownSeat {
   workspace: string;
   /** What the watch's reading says of the seat: only a free seat is stopped. */
   state: 'free' | 'working' | 'blocked' | 'unknown' | 'unsent';
+  /** The seat's box holds exactly the profile's exit text — left by an earlier run that never
+   *  confirmed it — and the profile carries the key that empties the box. */
+  exitInBox?: boolean;
 }
 
 export interface DownInput {
@@ -479,15 +482,31 @@ export function downPlan(input: DownInput): Step[] {
         });
         continue;
       }
-      steps.push({ kind: 'skip', text: `${seat.name}: ${LEFT[seat.state]}; left running` });
-      left++;
-      continue;
+      if (!(seat.state === 'unsent' && seat.exitInBox && profile.exitClear !== null)) {
+        // An unsent box holding exactly the exit text, on a CLI with no key for it, is named:
+        // the owner sends it or clears it. Every other not-free seat keeps its own line.
+        steps.push({
+          kind: 'skip',
+          text: seat.state === 'unsent' && seat.exitInBox
+            ? `${seat.name}: holds this CLI's exit text (${profile.exit}) unsent in its input box; left running (the owner sends it or clears it in its pane)`
+            : `${seat.name}: ${LEFT[seat.state]}; left running`,
+        });
+        left++;
+        continue;
+      }
+      // The box already holds exactly this exit text and the profile carries the key: the
+      // typing step below clears it first and then asks the seat to exit exactly as on an
+      // empty box.
     }
     // The printed command is `pane run`. The live step types with `typeText` and `pressEnter`:
     // `/exit` has to go into the idle prompt, and the screen is read again before the Enter.
+    // A seat that arrives holding its exit text gets the clearing key before the typing.
     steps.push({
       kind: 'run',
       argv: herdr(session, 'pane', 'run', seat.pane, profile.exit),
+      ...(seat.exitInBox && profile.exitClear !== null
+        ? { note: `its box already holds this exit text; it is cleared first (${profile.exitClear})` }
+        : {}),
       do: { do: 'type', seat: seat.name, pane: seat.pane, text: profile.exit },
     });
     steps.push({

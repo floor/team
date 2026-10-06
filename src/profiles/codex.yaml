@@ -22,6 +22,10 @@ login:
     - status
   hint: codex login
 exit: /exit
+# The one key that empties the box, from the 0.160.0 capture: ctrl+u returns the
+# composer to its empty placeholder. Used only to clear an exit text that did not read
+# back as typed, and only when the box holds exactly that text.
+exit_clear: ctrl+u
 timeouts:
   idle: 90s
   exit: 30s

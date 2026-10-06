@@ -1475,14 +1475,16 @@ describe('the upgrade from 0.2.1', () => {
     agent: string,
     box: (text: string) => string,
   ): RemoveSources {
-    let typed: string | undefined;
+    // The pane's box, physically: the empty box before any typing, the typed text after it,
+    // empty again after the one clearing key.
+    let typed = '';
     let sent = false;
     return {
       sessionRunning: () => true,
       agents: () => [{ name: seat.name, agent, pane: seat.pane, workspace: seat.workspace, status: 'idle', cwd: null }],
       alive: () => false,
       screen: () => ({ kind: sent ? ('unknown' as const) : ('idle' as const) }),
-      screenText: () => (typed === undefined ? undefined : box(typed)),
+      screenText: () => box(typed),
       status: () => 'idle',
       foreground: () => (sent ? [] : [agent]),
       now: () => NOW,
@@ -1490,6 +1492,7 @@ describe('the upgrade from 0.2.1', () => {
       home,
       launch: {
         typeText: (_session, _pane, text) => { typed = text; return true; },
+        sendKey: () => { typed = ''; return true; },
         pressEnter: () => { sent = true; return true; },
         agentPanes: () => (sent ? [] : [seat.pane]),
         closeWorkspace: () => true,
@@ -1643,8 +1646,7 @@ describe('the upgrade from 0.2.1', () => {
       alive: () => false,
       screen: () => ({ kind: 'idle' as const }),
       screenText: (_session, pane, cli) => {
-        const text = typedBox.get(pane);
-        if (text === undefined) return undefined;
+        const text = typedBox.get(pane) ?? '';
         return cli === 'codex' ? codexCapture('idle').replace('› Ask Codex to do anything', `› ${text}`) : claudeBox(text);
       },
       status: () => 'idle',
@@ -1654,6 +1656,7 @@ describe('the upgrade from 0.2.1', () => {
       home,
       launch: {
         typeText: (_session, pane, text) => { typedBox.set(pane, text); return true; },
+        sendKey: (_session, pane) => { typedBox.set(pane, ''); return true; },
         pressEnter: (_session, pane) => { sentPane = pane; return true; },
         agentPanes: () => seats.filter((seat) => seat.pane !== sentPane).map((seat) => seat.pane),
         closeWorkspace: (_session, workspace) => { closed?.push(workspace); return true; },

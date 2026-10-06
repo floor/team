@@ -22,6 +22,14 @@ import { vendorNoticeRange } from '../watch/screen.ts';
 export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'vendor notice' | 'unsent' | 'unknown';
 
 /** What a live `up` or `down` can do, apart from deciding it. Tests stand in for all of it. */
+/** What one live exit typing ended in. `true`: the box read back as the typed text and the
+ *  Enter was pressed. `false`: nothing was confirmed, nothing was sent — the step's own line.
+ *  `'no-agent'`: the CLI was not the pane's foreground process when a key was due. `'cleared'`:
+ *  the text did not read back, and the profile's one clearing key emptied the box. `{ left }`:
+ *  the text was not confirmed and the box was left holding something; `left` is the line that
+ *  says what is in the box now. */
+export type ExitTyping = boolean | 'no-agent' | 'cleared' | { left: string };
+
 export type Host = {
   startServer(session: string): boolean;
   sessionUp(session: string): boolean | null;
@@ -34,7 +42,9 @@ export type Host = {
   confirmLobby?(): LobbyRefusal | null;
   createWorkspace(session: string, cwd: string, label: string): { pane: string; workspace: string } | null;
   paneRun(session: string, pane: string, command: string): boolean;
-  typeLine(session: string, pane: string, text: string): boolean | 'no-agent';
+  /** The live exit typing; see `ExitTyping`. May wait: the pane draws typed text late, and the
+   *  reading that decides the Enter or the clearing key waits for it. */
+  typeLine(session: string, pane: string, text: string): ExitTyping | Promise<ExitTyping>;
   /** `false` is a delivery that stopped without a reading worth reporting (no host, or no live
    *  pane); a `Refusal` is one that stopped on a screen the report can name. `file` is the
    *  seat's rules delivery: the text the file holds, the file's path, the one line typed, and
@@ -898,11 +908,23 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'type': {
-        const typed = host.typeLine(session, op.pane, op.text);
+        const typed = await host.typeLine(session, op.pane, op.text);
         if (typed === 'no-agent') {
           held = true;
           dropped.add(op.seat);
           finish(op.seat, 'no live agent in its pane; its exit was not typed');
+          break;
+        }
+        if (typed === 'cleared') {
+          held = true;
+          dropped.add(op.seat);
+          finish(op.seat, 'its exit was not confirmed; the text was cleared; left running');
+          break;
+        }
+        if (typeof typed === 'object') {
+          held = true;
+          dropped.add(op.seat);
+          finish(op.seat, typed.left);
           break;
         }
         if (!typed) {

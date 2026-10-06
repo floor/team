@@ -612,6 +612,21 @@ describe('Antigravity rules delivery of the one line (1.2.16 capture)', () => {
     expect(refusalReport(why!)).toContain('its box already holds text that is not the rules line');
   });
 
+  test('a box already holding this CLI\'s exit text is named for its owner, not typed onto', async () => {
+    // An earlier stop typed `/exit` and never confirmed it. Antigravity has no clearing key,
+    // so nothing is sent: the report names the text and leaves the box to its owner.
+    const d = delivery();
+    d.showText(fixture('exit-typed'));
+    expect(await deliverRules('antigravity', capturedLine, 1, d.io)).toBe(false);
+    expect(d.calls).toEqual([]);
+    const why = d.refusals.at(-1);
+    expect(why?.stop).toBe('leftover');
+    expect(refusalReport(why!)).toBe(
+      "rules not typed: its box already holds this CLI's exit text (/exit), unsent from an earlier stop; "
+      + 'clear its box in its pane, then run up again',
+    );
+  });
+
   test('a resumed seat whose box already holds the line is verified and entered, never typed onto', async () => {
     const d = delivery();
     d.showText(fixture('rules-line'));
@@ -696,7 +711,7 @@ describe('Antigravity rules delivery through a wrapper', () => {
     const d = wrapper(Number.POSITIVE_INFINITY);
     expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(false);
     expect(d.calls).toEqual([]);
-    expect(d.refusals).toEqual([{ stop: 'launch', typed: false, sent: false, kind: 'unknown', row: null }]);
+    expect(d.refusals).toEqual([{ stop: 'launch', typed: false, sent: false, kind: 'unknown', row: null, clearKey: null }]);
     expect(d.at()).toBe(1000); // the whole second, not a refusal at the first poll
     expect(refusalReport(d.refusals[0]!)).toContain(
       'the CLI never appeared as its pane\'s foreground process (the screen read unknown)',
@@ -720,7 +735,7 @@ describe('Antigravity rules delivery through a wrapper', () => {
       sleep: async (ms) => { clock += ms; },
     };
     expect(await deliverRules('antigravity', 'Rules.', 1, io)).toBe(false);
-    expect(refusals).toEqual([{ stop: 'screen', typed: false, sent: false, kind: 'unknown', row: null }]);
+    expect(refusals).toEqual([{ stop: 'screen', typed: false, sent: false, kind: 'unknown', row: null, clearKey: null }]);
   });
 
   test('a dialog at the CLI\'s first frame is refused at once, nothing typed', async () => {
@@ -729,7 +744,7 @@ describe('Antigravity rules delivery through a wrapper', () => {
     const d = wrapper(100, 'trust');
     expect(await deliverRules('antigravity', 'Rules.', 1, d.io)).toBe(false);
     expect(d.calls).toEqual([]);
-    expect(d.refusals).toEqual([{ stop: 'screen', typed: false, sent: false, kind: 'trust', row: null }]);
+    expect(d.refusals).toEqual([{ stop: 'screen', typed: false, sent: false, kind: 'trust', row: null, clearKey: null }]);
     expect(d.at()).toBe(100);
   });
 });
