@@ -267,6 +267,17 @@ repository is read from `.agents/team.yaml` in that folder only, not from a pare
 `.agents` or at the file is not followed. Every command
 that reads the file also takes `--file <path>` for a file other than `.agents/team.yaml`.
 
+A pane outside the team's session can be an approved **delegate**: the file's `delegates` section
+names panes — `<herdr session>/<pane id>` — and, per pane, which of `up`, `down`, `add` and
+`remove` it may run. The caller is matched on the session and pane id, never on a seat, a role or
+an agent name, and a delegated run happens only while the live file is exactly the approved one: a
+drifted file, a command the entry does not list, or a prohibited flag is refused with the gate's
+own words and exit id, and `--file` and `--session` are refused outright. Every delegated run
+writes one line to the file's log naming the pane and the command. `approve` is never delegated —
+adding, changing or removing the section, like every other owner section, is the owner's
+approval, and `team approve` prints the section's entries as `Delegate:` lines before the
+seat-count question.
+
 `team status --json` prints the facts `status` prints as one JSON document (`format: 1`) on stdout:
 `project`, `session`, `rows` (`name`, `state`, `model`, `pane`), `notes`, `differences` (`what`, `repair`), and `notice`.
 

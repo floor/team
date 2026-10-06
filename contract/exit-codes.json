@@ -102,6 +102,69 @@
     {
       "code": 1,
       "command": "add",
+      "id": "add.delegate",
+      "meaning": "the caller is not the approved delegate",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.delegate-approval",
+      "meaning": "delegation needs a verified approval",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.delegate-approved-copy",
+      "meaning": "delegation needs a readable approved copy",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.delegate-command",
+      "meaning": "the approved delegate may not run add",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.delegate-drift",
+      "meaning": "delegation needs the approved file",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.delegate-edit",
+      "meaning": "the delegate's add would edit the file or the approval",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.delegate-evidence",
+      "meaning": "the delegate's placement or seats can't be verified",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.delegate-flag",
+      "meaning": "the delegate may not use this flag",
+      "trigger": "team add worker --temporary"
+    },
+    {
+      "code": 1,
+      "command": "add",
+      "id": "add.delegate-placement",
+      "meaning": "the approved delegate must be an external non-seat pane",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
       "id": "add.differs",
       "meaning": "the file differs from its approval",
       "trigger": "team add worker"
@@ -760,6 +823,62 @@
     {
       "code": 1,
       "command": "down",
+      "id": "down.delegate",
+      "meaning": "the caller is not the approved delegate of any entry",
+      "trigger": "team down, from a pane no delegate entry names"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-approval",
+      "meaning": "delegation needs a verified approval",
+      "trigger": "team down, with no approval in force"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-approved-copy",
+      "meaning": "delegation needs a readable approved copy",
+      "trigger": "team down, when the approved copy can't be read"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-command",
+      "meaning": "the approved delegate may not run `down`",
+      "trigger": "team down, from the approved delegate whose commands leave it out"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-drift",
+      "meaning": "the file is not the approved one",
+      "trigger": "team down, after the file changed since approval"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-evidence",
+      "meaning": "delegation cannot verify its placement or seats",
+      "trigger": "team down, when herdr or the state can't be read for the gate"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-flag",
+      "meaning": "a prohibited flag is the owner's",
+      "trigger": "team down --abandon, from the approved delegate"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-placement",
+      "meaning": "the approved delegate must be an external non-seat pane",
+      "trigger": "team down, with a delegate entry naming a seat's pane"
+    },
+    {
+      "code": 1,
+      "command": "down",
       "id": "down.file-owner",
       "meaning": "--file is the owner's",
       "trigger": "team down --file .agents/team.yaml"
@@ -1026,6 +1145,62 @@
     {
       "code": 1,
       "command": "remove",
+      "id": "remove.delegate",
+      "meaning": "the caller is not the approved delegate",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.delegate-approval",
+      "meaning": "delegation needs a verified approval",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.delegate-approved-copy",
+      "meaning": "delegation needs a readable approved copy",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.delegate-command",
+      "meaning": "the approved delegate may not run remove",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.delegate-drift",
+      "meaning": "delegation needs the approved file",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.delegate-evidence",
+      "meaning": "the delegate's placement or seats can't be verified",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.delegate-flag",
+      "meaning": "the delegate may not use this flag",
+      "trigger": "team remove worker --keep"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.delegate-placement",
+      "meaning": "the approved delegate must be an external non-seat pane",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
       "id": "remove.file-owner",
       "meaning": "--file is the owner's",
       "trigger": "team remove worker --file .agents/team.yaml"
@@ -1245,6 +1420,62 @@
       "command": "up",
       "id": "up.agents",
       "meaning": "the agents can't be read",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate",
+      "meaning": "only the owner or the approved delegate runs up",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-approval",
+      "meaning": "the delegate gate needs a verified approval",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-approved-copy",
+      "meaning": "the delegate gate needs a readable approved copy",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-command",
+      "meaning": "the approved delegate may not run up",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-drift",
+      "meaning": "the delegate gate needs the approved file",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-evidence",
+      "meaning": "the delegate gate can't verify its placement or seats",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-flag",
+      "meaning": "--session or --file is the owner's on a delegated run",
+      "trigger": "team up --session other"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-placement",
+      "meaning": "the approved delegate must be an external non-seat pane",
       "trigger": "team up"
     },
     {

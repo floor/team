@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerLabel, callerOf, describeCaller, mayLaunchSeats } from '../caller.ts';
+import { delegateGate, logDelegated } from '../delegate.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { migrationText } from '../file/migrate.ts';
 import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
@@ -90,6 +91,10 @@ export type UpSources = {
   // The budget gate, overridable so a test can count its calls. Absent: the real gate.
   // A standing that is not verified refuses below before this is consulted at all.
   seatBudget?: typeof seatBudget;
+  // The delegate gate, overridable so a test can fake its verdict without the real preflight.
+  // Absent: the real gate. The audit line of a delegated run, overridable the same way.
+  delegateGate?: typeof delegateGate;
+  logDelegated?: typeof logDelegated;
   // Present on the shipped command. A dry run never calls it.
   launch?: Launch;
 };
@@ -341,7 +346,41 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     return 2;
   }
   const dry = args.flags.has('dry-run');
-  const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
+  // §RFC0007: a caller the ordinary rule refuses is judged by the delegate gate against the
+  // DEFAULT live file of this cwd, read with no flag — before any `--file` or `--session` is
+  // honoured. Both are the owner's alone: the gate refuses them for a delegated run, and a
+  // delegate's eligibility never comes from a file the caller names. A gate refusal replaces the
+  // ordinary caller refusal below and the flagged target is never read; a passed verdict makes
+  // the run the delegate's, on that same default file. The owner's runs never come here, and
+  // with no `delegates` section — or no readable default file — nothing changes: today's order,
+  // today's texts.
+  const caller = callerOf(io);
+  const defaultLoad = mayLaunchSeats(caller) ? null : loadTeamFile(io.cwd, { home: sources.home });
+  const delegateTeam = defaultLoad !== null && defaultLoad.ok && defaultLoad.team.delegates ? defaultLoad : null;
+  const verdict = delegateTeam
+    ? (sources.delegateGate ?? delegateGate)({
+        command: 'up',
+        team: delegateTeam.team,
+        root: delegateTeam.root,
+        dir: dirname(delegateTeam.path),
+        flags: [...args.flags, ...Object.keys(args.values)],
+        io,
+        home: sources.home,
+      })
+    : null;
+  // The approved `<session>/<pane id>` when this run is a delegated one: the ordinary caller rule
+  // refused, the default file's `delegates` section named a pane, and the gate passed it.
+  let delegated: string | null = null;
+  if (verdict?.kind === 'passed') delegated = verdict.pane;
+  // The file this run is whole on: the default one whenever the gate decided on it — a refused
+  // run stops on the gate's words without reading a flagged target, a delegated one runs the
+  // file its delegation was read from — and otherwise today's load, `--file` honoured exactly
+  // as before.
+  const loaded =
+    delegateTeam ??
+    (defaultLoad !== null && !args.values.file
+      ? defaultLoad
+      : loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home }));
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
       out.stderr(`team up: ${problem.line ? `line ${problem.line}: ` : ''}${plainText(problem.message)}\n`);
@@ -352,15 +391,22 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     return 2;
   }
   const { team, root } = loaded;
-  const session = args.values.session ?? team.session;
+  // Owner-only targets are honoured only when no gate decided: a delegated run is the default
+  // file's own session, and a refused one never adopts the session its caller tried to name.
+  const session = verdict === null ? (args.values.session ?? team.session) : team.session;
   const dir = dirname(loaded.path);
   const state = resolveState(sources, session);
 
   // What would make `up` refuse. A dry run prints the plan anyway; a real run stops first.
   const refusals: string[] = [];
-  const caller = callerOf(io);
   if (!mayLaunchSeats(caller)) {
-    refusals.push(`only the owner runs \`up\`, from a terminal outside herdr; this call is ${describeCaller(caller)}`);
+    if (verdict === null) {
+      refusals.push(
+        `only the owner runs \`up\`, from a terminal outside herdr; this call is ${describeCaller(caller)}`,
+      );
+    } else if (verdict.kind === 'refused') {
+      refusals.push(verdict.text);
+    }
   }
   // One verified snapshot carries the whole command: the refusal when there is
   // one, and the ceilings the launch holds. A legacy or refused record is not
@@ -596,6 +642,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   if (refusals.length) {
     for (const refusal of [...new Set(refusals)]) out.stderr(`team up: ${plainText(refusal)}\n`);
     // exit: up.not-owner
+    // exit: up.delegate
+    // exit: up.delegate-approval
+    // exit: up.delegate-approved-copy
+    // exit: up.delegate-drift
+    // exit: up.delegate-evidence
+    // exit: up.delegate-placement
+    // exit: up.delegate-command
+    // exit: up.delegate-flag
     // exit: up.never-approved
     // exit: up.differs
     // exit: up.doctor
@@ -613,6 +667,11 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     // exit: up.no-launch
     return 1;
   }
+
+  // The audit line of a delegated run: the gate passed it and this run is about to have effects,
+  // so the delegation is on the record before the first workspace is made. A dry run returned
+  // above and writes nothing; a run that refused never got here.
+  if (delegated !== null) (sources.logDelegated ?? logDelegated)(dir, delegated, 'up', sources.now?.());
 
   // The ceilings the launch holds are the verified record's own, fixed at approval.
   const ceilings: Ceilings | null = standing.kind === 'verified' ? standing.record.approval.ceilings : null;
@@ -738,12 +797,17 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     /**
      * §3/§4: what happens to a seat this run finds at a dialog. The owner at a terminal is
      * asked, in `pause.ts`, with `o`/`s`/`q`; an owner whose stdin is not a terminal never
-     * reads it — the workspace is closed without input and the record says so (§2).
+     * reads it — the workspace is closed without input and the record says so (§2). A delegated
+     * run takes that no-terminal path whatever its stdin: it never prompts, never focuses a pane,
+     * never sends a key or a text, and its idle wait's timeout is a dialog like any other stop —
+     * closed without input, not left at launched.
      */
     dialog:
-      caller.kind === 'owner'
-        ? { mode: 'prompt', run: (input: PauseInput) => runPause(input, pauseHostFor(input)) }
-        : { mode: 'close-no-terminal' },
+      delegated !== null
+        ? { mode: 'close-no-terminal', timeoutIsDialog: true }
+        : caller.kind === 'owner'
+          ? { mode: 'prompt', run: (input: PauseInput) => runPause(input, pauseHostFor(input)) }
+          : { mode: 'close-no-terminal' },
     clearWaiting(name) {
       updateState(dir, (file) => {
         const seatState = file.sessions[session]?.seats[name];

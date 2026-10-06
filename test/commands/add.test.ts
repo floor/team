@@ -872,3 +872,254 @@ describe('team add', () => {
   });
 });
 
+// The delegated runs: the file names a delegate — a pane outside the team's session — and the
+// caller is a named agent standing on that pane, a seat of another session the ordinary rule
+// refuses. The gate itself is faked here (the contract's verdicts, handed in through
+// `sources.delegateGate`); its own tests cover what the real one reads to decide.
+const DELEGATES = `delegates:
+  - pane: main/w1:p1
+    commands: [add, remove]
+`;
+const DELEGATE_FILE = FILE + DELEGATES;
+const pilot = { kind: 'seat' as const, name: 'pilot', pane: 'w1:p1', session: 'main' };
+const passed = { kind: 'passed' as const, pane: 'main/w1:p1' };
+const EDIT_REFUSAL = 'team add: the approved delegate cannot change the file or the approval; the owner adds a missing or stopped seat\n';
+// A gate that fails the test the moment it is asked where the run must not ask it: the ordinary
+// rule's own callers never reach the delegate branch, and neither does a file with no delegates.
+const THROWING_GATE: NonNullable<AddSources['delegateGate']> = () => {
+  throw new Error('the gate is asked only after the ordinary rule refused, and only when the file names a delegate');
+};
+
+describe('team add delegated', () => {
+  test('no delegates in the file: the refusal is today\'s and the gate is never asked', async () => {
+    const made = world();
+    const io = testIo(project, pilot);
+    let asked = 0;
+    const code = await runAdd(['worker'], io, sources(made, {
+      delegateGate: () => { asked += 1; return passed; },
+    }));
+    expect(code).toBe(1);
+    expect(io.err).toBe('team add: only the owner, the coordinator or the operator runs it; this call is pilot\n');
+    expect(asked).toBe(0);
+  });
+
+  test('a refused verdict takes the ordinary refusal\'s place, on a real run and on a dry run', async () => {
+    approve(DELEGATE_FILE);
+    for (const argv of [['worker'], ['worker', '--dry-run']] as const) {
+      const made = world();
+      const io = testIo(project, pilot);
+      const code = await runAdd([...argv], io, sources(made, {
+        delegateGate: () => ({
+          kind: 'refused' as const,
+          id: 'add.delegate-command',
+          text: 'the approved delegate main/w1:p1 may not run `add`; its approved commands are remove',
+        }),
+      }));
+      // `add --dry-run` stays behind the caller gate: no plan, no would-refuse line, exit 1.
+      expect(code).toBe(1);
+      expect(io.err).toBe('team add: the approved delegate main/w1:p1 may not run `add`; its approved commands are remove\n');
+      expect(io.out).toBe('');
+      expect(made.creates).toEqual([]);
+    }
+    expect(readFileSync(join(project, '.agents/team.yaml'), 'utf8')).toContain('stopped: true');
+  });
+
+  test('the gate is asked once, with the live file, the project and the flags the caller passed', async () => {
+    approve(DELEGATE_FILE);
+    const made = world();
+    const io = testIo(project, pilot);
+    const asked: Parameters<NonNullable<AddSources['delegateGate']>>[0][] = [];
+    const code = await runAdd(['--temporary', '--like', 'lead', '--until', 'result:notes/r.md'], io, sources(made, {
+      delegateGate: (input) => {
+        asked.push(input);
+        return { kind: 'refused' as const, id: 'add.delegate-flag', text: '--temporary is the owner\'s; the approved delegate cannot use it' };
+      },
+    }));
+    expect(code).toBe(1);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.command).toBe('add');
+    expect(asked[0]!.team.delegates).toEqual([{ pane: 'main/w1:p1', commands: ['add', 'remove'] }]);
+    expect(asked[0]!.root).toBe(project);
+    expect(asked[0]!.dir).toBe(join(project, '.agents'));
+    expect(asked[0]!.flags).toEqual(['temporary', 'like', 'until']);
+    expect(asked[0]!.io).toBe(io);
+  });
+
+  test('a delegated add that would clear stopped is refused before any write or signing', async () => {
+    approve(DELEGATE_FILE);
+    const made = world();
+    const record = readFileSync(join(storePath('acme', project, home), 'approval.json'), 'utf8');
+    const io = testIo(project, pilot);
+    const code = await runAdd(['worker'], io, sources(made, { delegateGate: () => passed }));
+    expect(code).toBe(1);
+    expect(io.err).toBe(EDIT_REFUSAL);
+    expect(readFileSync(join(project, '.agents/team.yaml'), 'utf8')).toContain('stopped: true');
+    expect(readFileSync(join(storePath('acme', project, home), 'approval.json'), 'utf8')).toBe(record);
+    expect(made.creates).toEqual([]);
+    expect(existsSync(join(project, '.agents', 'team.log'))).toBe(false);
+  });
+
+  test('a delegated add that would restore a missing seat is refused the same way', async () => {
+    // `limits.seats` is fixed in the file, so a seat taken out of the live file is not drift —
+    // a seat taken out needs no new approval — and putting it back is still the owner's: the
+    // entry returns only with the approval.
+    const LIMITS = 'limits:\n  seats: 5\n  temporary: 2\n';
+    approve(FILE.replace('seats:\n', `${LIMITS}seats:\n`) + DELEGATES);
+    const path = join(project, '.agents', 'team.yaml');
+    const live = readFileSync(path, 'utf8');
+    const from = live.indexOf('  - role: implementer\n    name: worker');
+    const to = live.indexOf('  - role: implementer\n    name: scribe');
+    writeFileSync(path, live.slice(0, from) + live.slice(to));
+    const made = world();
+    const record = readFileSync(join(storePath('acme', project, home), 'approval.json'), 'utf8');
+    const io = testIo(project, pilot);
+    const code = await runAdd(['worker'], io, sources(made, { delegateGate: () => passed }));
+    expect(code).toBe(1);
+    expect(io.err).toBe(EDIT_REFUSAL);
+    expect(readFileSync(path, 'utf8')).not.toContain('name: worker');
+    expect(readFileSync(join(storePath('acme', project, home), 'approval.json'), 'utf8')).toBe(record);
+    expect(made.creates).toEqual([]);
+    expect(existsSync(join(project, '.agents', 'team.log'))).toBe(false);
+  });
+
+  test('a delegated add of a declared, not-stopped seat starts it, writes no file, signs nothing', async () => {
+    approve(DELEGATE_FILE);
+    const made = world();
+    const record = readFileSync(join(storePath('acme', project, home), 'approval.json'), 'utf8');
+    const before = readFileSync(join(project, '.agents', 'team.yaml'), 'utf8');
+    const io = testIo(project, pilot);
+    const code = await runAdd(['lead'], io, sources(made, { delegateGate: () => passed }));
+    expect(code).toBe(0);
+    expect(made.creates).toEqual(['lead']);
+    expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).toBe(before);
+    expect(readFileSync(join(storePath('acme', project, home), 'approval.json'), 'utf8')).toBe(record);
+    // The audit line is the log's first line: the run is attributed before its effects.
+    expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8').startsWith(
+      `${NOW.toISOString()} delegate [delegate] main/w1:p1 add\n`,
+    )).toBe(true);
+  });
+
+  test('a delegated dry run plans and never logs the delegate line', async () => {
+    approve(DELEGATE_FILE);
+    const made = world();
+    const io = testIo(project, pilot);
+    const code = await runAdd(['lead', '--dry-run'], io, sources(made, { delegateGate: () => passed }));
+    expect(code).toBe(0);
+    expect(io.out).toContain('lead');
+    expect(made.creates).toEqual([]);
+    expect(existsSync(join(project, '.agents', 'team.log'))).toBe(false);
+  });
+
+  test('the coordinator\'s ordinary restoring add re-signs as today, and the gate is never asked', async () => {
+    // Amendment 3, with the reviewer's finding on it: a caller the ordinary rule accepts never
+    // enters the delegate branch — the injected gate throws the moment it is asked, so the run
+    // below passes only because it never reached it. The coordinator's restoring `add` is the
+    // role path that edits the file and re-signs the approval — it must keep working with a
+    // `delegates` section in the file, unreachable from the delegate branch.
+    approve(DELEGATE_FILE);
+    updateState(join(project, '.agents'), (state) => {
+      const session = state.sessions.acme ?? emptySession();
+      session.seats.lead = { stage: 'ready', pane: 'w0:p1' };
+      state.sessions.acme = session;
+    });
+    const made = world();
+    const store = storePath('acme', project, home);
+    const before = readFileSync(join(store, 'approval.json'), 'utf8');
+    const io = testIo(project, { kind: 'seat', name: 'lead', pane: 'w0:p1', session: 'acme' });
+    const code = await runAdd(['worker'], io, sources(made, { delegateGate: THROWING_GATE }));
+    expect(code).toBe(0);
+    expect(made.creates).toEqual(['worker']);
+    expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).not.toMatch(/# the seat stays in this order\n    stopped: true/);
+    // The role path re-signed the seat digest, exactly as today, and no audit line was written:
+    // the log holds the run's own records and no delegate attribution.
+    expect(readFileSync(join(store, 'approval.json'), 'utf8')).not.toBe(before);
+    expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8')).not.toContain('delegate [delegate]');
+  });
+
+  test('the owner\'s ordinary restoring add runs as today too: the gate is not for it', async () => {
+    // The finding's own words: the ordinary owner, coordinator or operator rule runs first. The
+    // owner's restoring `add` is the widest of those paths, and it too must run with a `delegates`
+    // section in the file as though the section were not there.
+    approve(DELEGATE_FILE);
+    const made = world();
+    const store = storePath('acme', project, home);
+    const before = readFileSync(join(store, 'approval.json'), 'utf8');
+    const code = await runAdd(['worker'], testIo(project, owner), sources(made, { delegateGate: THROWING_GATE }));
+    expect(code).toBe(0);
+    expect(made.creates).toEqual(['worker']);
+    expect(readFileSync(join(store, 'approval.json'), 'utf8')).not.toBe(before);
+    expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8')).not.toContain('delegate [delegate]');
+  });
+
+  test('a delegate\'s --file and --session are the gate\'s to refuse, before either is read', async () => {
+    // The reviewer's finding on down and up, checked here: once the file names a delegate, the
+    // owner-only flags are the gate's too, and the refusal still comes before the flagged file
+    // or the flag's session is read — the `--file` below names a path that does not exist, so a
+    // run that opened it would print the loader's refusal, not the gate's. Eligibility is the
+    // default live file's, never the flagged one's.
+    approve(DELEGATE_FILE);
+    const asked: Parameters<NonNullable<AddSources['delegateGate']>>[0][] = [];
+    const gate: NonNullable<AddSources['delegateGate']> = (input) => {
+      asked.push(input);
+      const flag = input.flags.includes('file') ? 'file' : 'session';
+      return { kind: 'refused' as const, id: 'add.delegate-flag', text: `--${flag} is the owner's; the approved delegate cannot use it` };
+    };
+    for (const argv of [['worker', '--file', join(project, 'elsewhere.yaml')], ['worker', '--session', 'other']] as const) {
+      const made = world();
+      const io = testIo(project, pilot);
+      const code = await runAdd([...argv], io, sources(made, { delegateGate: gate }));
+      expect(code).toBe(1);
+      expect(io.err).toBe(`team add: --${argv[2] === 'other' ? 'session' : 'file'} is the owner's; the approved delegate cannot use it\n`);
+      expect(made.creates).toEqual([]);
+    }
+    expect(asked).toHaveLength(2);
+    expect(asked[0]!.team.delegates).toEqual([{ pane: 'main/w1:p1', commands: ['add', 'remove'] }]);
+    expect(asked[0]!.root).toBe(project);
+    expect(asked[0]!.dir).toBe(join(project, '.agents'));
+    expect(asked[0]!.flags).toContain('file');
+    expect(asked[1]!.flags).toContain('session');
+    expect(existsSync(join(project, 'elsewhere.yaml'))).toBe(false);
+  });
+
+  test('with no delegates in the default file, a non-owner\'s --file and --session are today\'s, byte for byte', async () => {
+    // The finding's other half: eligibility is the default live file's alone. The flagged file
+    // below names a delegate and is never read for it; the refusals stay today's sentences, in
+    // today's order, and the gate is never asked.
+    approve();
+    writeFileSync(join(project, 'elsewhere.yaml'), DELEGATE_FILE);
+    for (const [argv, text] of [
+      [['worker', '--file', join(project, 'elsewhere.yaml')], '--file is the owner\'s, from a terminal outside herdr; this call is pilot'],
+      [['worker', '--session', 'other'], '--session is the owner\'s, from a terminal outside herdr; this call is pilot'],
+    ] as const) {
+      const io = testIo(project, pilot);
+      const code = await runAdd([...argv], io, sources(world(), { delegateGate: THROWING_GATE }));
+      expect(code).toBe(1);
+      expect(io.err).toBe(`team add: ${text}\n`);
+    }
+  });
+
+  test('a delegate named like the coordinator gets no restoring add', async () => {
+    // Amendment 3: a delegate does not reach the role path by being named like a lead. This
+    // caller carries the coordinator's name — recorded at its own pane elsewhere — but stands
+    // on the delegate's pane in another session: the run is a delegated one, and an add that
+    // would edit the file is refused whatever name it brought.
+    approve(DELEGATE_FILE);
+    updateState(join(project, '.agents'), (state) => {
+      const session = state.sessions.acme ?? emptySession();
+      session.seats.lead = { stage: 'ready', pane: 'w0:p1' };
+      state.sessions.acme = session;
+    });
+    const made = world();
+    const store = storePath('acme', project, home);
+    const before = readFileSync(join(store, 'approval.json'), 'utf8');
+    const io = testIo(project, { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'main' });
+    const code = await runAdd(['worker'], io, sources(made, { delegateGate: () => passed }));
+    expect(code).toBe(1);
+    expect(io.err).toBe(EDIT_REFUSAL);
+    expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).toContain('stopped: true');
+    expect(readFileSync(join(store, 'approval.json'), 'utf8')).toBe(before);
+    expect(made.creates).toEqual([]);
+    expect(existsSync(join(project, '.agents', 'team.log'))).toBe(false);
+  });
+});
+

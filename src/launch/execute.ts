@@ -113,12 +113,14 @@ export type Host = {
    * waiting state. `prompt`: the owner is at a terminal — `pause.ts` asks with `o`/`s`/`q`.
    * `keep`: `add` — the workspace stays, the waiting record is written, the seat is left out.
    * `close-no-terminal`: an owner whose stdin is not a terminal — the workspace is closed
-   * without input and the record says so. Absent: the close path that predates the pause.
+   * without input and the record says so. `timeoutIsDialog` on that mode: a delegated run,
+   * whose idle wait's timeout is a dialog like any other stop — closed without input, never
+   * left at launched. Absent: the close path that predates the pause.
    */
   dialog?:
     | { mode: 'prompt'; run(input: PauseInput): Promise<PauseResult> }
     | { mode: 'keep' }
-    | { mode: 'close-no-terminal' };
+    | { mode: 'close-no-terminal'; timeoutIsDialog?: boolean };
   /** Records a seat's waiting state, with the process identity read at that moment in the same
    *  write. `add`'s keep path; `up`'s prompt path records through `pause.ts`'s own write. */
   recordWaiting?(seat: string, waiting: WaitingRecord, pane: string, workspace?: string): void;
@@ -774,10 +776,16 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           final(op.seat, { kind: 'left out', reason: reading }, untested() + closed);
           break;
         }
-        if (outcome === 'timeout' && host.dialog?.mode === 'prompt') {
+        if (
+          outcome === 'timeout' &&
+          (host.dialog?.mode === 'prompt' ||
+            (host.dialog?.mode === 'close-no-terminal' && host.dialog.timeoutIsDialog === true))
+        ) {
           // The idle wait ran out with the owner at a terminal: the owner is asked about the
           // timeout itself — open the pane, skip the seat, or stop cleanly. (The identity read is
-          // the same one a found dialog makes; a prompt never closes on it.)
+          // the same one a found dialog makes; a prompt never closes on it.) A delegated run
+          // takes the same stop as any dialog it finds: closed without input, its record saying
+          // the timeout — never left at launched, which only a run that can ask may do.
           const settled = await atDialog(op.seat, here, op.label, 'timeout', dialogIdentity(op.seat, here.pane), op.repairLine);
           if (settled === 'idle') idleOnwards();
           break;
