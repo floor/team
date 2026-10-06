@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { runApprove } from '../../src/commands/approve.ts';
 import { realSources as downReal, runDown, type DownLaunch, type DownSources } from '../../src/commands/down.ts';
 import { realSources as upReal, runUp, type Launch, type UpSources } from '../../src/commands/up.ts';
+import { delegateGate } from '../../src/delegate.ts';
 import type { DoctorSources } from '../../src/commands/doctor.ts';
 import { sessionState, setHerdrRun, workspacePanes, type HerdrAgent, type HerdrWorkspace } from '../../src/herdr.ts';
 import { readApproval, storePath, writeApproval } from '../../src/store/store.ts';
@@ -4094,6 +4095,115 @@ describe('team up, delegated', () => {
     expect(made.closes).toEqual(['w1']);
     expect(made.terminal.reads).toBe(0);
     expect(readState(join(root, '.agents')).sessions['acme-web']?.seats['claude-coordinator-acme']).toBeUndefined();
+  });
+
+  // The three states a target session can be in, with the REAL gate: only its two herdr reads
+  // about the team's session are faked, with the answers herdr 0.7.1 really gives — an absent or
+  // stopped session fails `agent list` while `session list` still reports it, running false, and
+  // an unreachable herdr answers neither. Everything else the gate reads is real: the approval
+  // `approve()` wrote into `home`, the approved copy, the drift and the state.
+  type GateInput = Parameters<typeof delegateGate>[0];
+  const gateReading = (running: boolean | null) => (input: GateInput) =>
+    delegateGate({
+      ...input,
+      sources: {
+        agents: (session) => (session === 'acme-web' ? null : []),
+        sessionRunning: () => running,
+      },
+    });
+  const STATES = [
+    {
+      name: 'stopped',
+      live: () => 'stopped' as const,
+      running: false,
+      real: ['session acme-web is stopped; clear it with `herdr session delete acme-web`'],
+      starts: 0,
+    },
+    { name: 'absent', live: () => 'absent' as const, running: false, real: [], starts: 1 },
+    {
+      name: 'unreachable',
+      live: () => null,
+      running: null,
+      real: [
+        `delegation cannot verify its placement or seats: herdr doesn't answer`,
+        `herdr doesn't answer`,
+      ],
+      starts: 1,
+    },
+  ] as const;
+
+  for (const state of STATES) {
+    test(`a delegated up with the session ${state.name}: the gate's answer, then the run's`, async () => {
+      delegateFile();
+      await approve();
+      const made = world();
+      const io = delegatedIo();
+      const code = await runUp([], io, sources({
+        sessionState: state.live,
+        delegateGate: gateReading(state.running),
+        machine: () => fine,
+      }, made));
+      const said = io.err.split('\n').filter((line) => line.startsWith('team up: ')).map((line) => line.slice('team up: '.length));
+      expect(said).toEqual([...state.real]);
+      if (state.real.length === 0) {
+        expect(code).toBe(0);
+        expect(made.starts).toBe(1);
+        expect(made.creates.length).toBeGreaterThan(0);
+      } else {
+        expect(code).toBe(1);
+        expect(made.creates).toEqual([]);
+      }
+      expect(io.out).not.toContain('would refuse');
+    });
+
+    test(`a delegated up --dry-run with the session ${state.name}: the same refusals, the plan, exit 0`, async () => {
+      delegateFile();
+      await approve();
+      const made = world();
+      const io = delegatedIo();
+      const code = await runUp(['--dry-run'], io, sources({
+        sessionState: state.live,
+        delegateGate: gateReading(state.running),
+        machine: () => fine,
+      }, made));
+      const would = io.out
+        .split('\n')
+        .filter((line) => line.startsWith('! up would refuse: '))
+        .map((line) => line.slice('! up would refuse: '.length));
+      expect(code).toBe(0);
+      expect(would).toEqual([...state.real]);
+      expect(made.starts).toBe(0);
+      expect(made.creates).toEqual([]);
+    });
+  }
+
+  test('the dry run and the real run agree on every refusal, in all three states', async () => {
+    delegateFile();
+    await approve();
+    for (const state of STATES) {
+      const realMade = world();
+      const realIo = delegatedIo();
+      const real = await runUp([], realIo, sources({
+        sessionState: state.live,
+        delegateGate: gateReading(state.running),
+        machine: () => fine,
+      }, realMade));
+      const dryMade = world();
+      const dryIo = delegatedIo();
+      const dry = await runUp(['--dry-run'], dryIo, sources({
+        sessionState: state.live,
+        delegateGate: gateReading(state.running),
+        machine: () => fine,
+      }, dryMade));
+      const said = realIo.err.split('\n').filter((line) => line.startsWith('team up: ')).map((line) => line.slice('team up: '.length));
+      const would = dryIo.out
+        .split('\n')
+        .filter((line) => line.startsWith('! up would refuse: '))
+        .map((line) => line.slice('! up would refuse: '.length));
+      expect(would).toEqual(said);
+      expect(dry).toBe(0);
+      expect(real).toBe(state.real.length === 0 ? 0 : 1);
+    }
   });
 });
 
