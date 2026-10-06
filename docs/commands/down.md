@@ -45,12 +45,15 @@ team never stops the coordinator's or the operator's seat — only the owner doe
 ## The approved delegate
 
 A pane the team file's `delegates` section lists for `down` — a pane outside the team's session —
-may stop the team too. It is judged as a delegate's call only when the file has that section and
-the caller is not the owner: the delegate gate reads the live team file directly, never the
-remembered copy and never the last copy that validated, so a file that does not load carries no
-delegate and the rules above stand. A gate refusal takes the place of the rule above, in the
-gate's own words, wherever that rule would have refused: a real run exits 1, and a dry run prints
-`! down would refuse: <the gate's text>` and then the plan, exit 0.
+may stop the team too. The section judges no other caller, and it never judges first: the ordinary
+rule above is applied exactly as it is without a `delegates` section, and only where it has refused
+does the delegate gate read the live team file directly — never the remembered copy and never the
+last copy that validated, so a file that does not load carries no delegate and the rules above
+stand. A caller that rule accepts keeps its own authority whatever the section says: the owner's
+call never reaches the gate, and neither does the coordinator's or the operator's. A gate refusal
+takes the place of the rule above, in the gate's own words, wherever that rule would have refused:
+a real run exits 1, and a dry run prints `! down would refuse: <the gate's text>` and then the
+plan, exit 0.
 
 A delegated run stops the whole team — the coordinator's and the operator's seats included — and
 never abandons. `--abandon`, `--session` and `--file` are the owner's: a delegate that passes one
