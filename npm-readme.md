@@ -1,0 +1,55 @@
+# team
+
+Set up and run a team of AI agents for your project. Agents propose, you decide.
+
+`team` is a command-line tool: a project declares its team in `.agents/team.yaml` — the seats, the
+model each one runs, the rules it works under, the folders it may touch — and the commands check
+that file against the machine and start and watch the team. Nothing runs until you approve the
+file on your machine. It runs the team in [herdr](https://herdr.dev), needs nothing else at
+runtime (no dependencies), and Node 22 or later runs it.
+
+## Install
+
+```sh
+npm install -g team
+```
+
+The launcher `@teamcli/cli` installs the same tool:
+
+```sh
+npm install -g @teamcli/cli
+```
+
+## Start
+
+In your project's git repository, from the owner's terminal:
+
+```sh
+team init                # writes .agents/team.yaml: one seat, and comments to edit
+team approve             # reads the file back for a last look, then records it on this machine
+team doctor              # what this machine still needs
+team up                  # starts the session and its seats
+```
+
+Edit `.agents/team.yaml` between `init` and `approve`: the comments it writes name every field, and
+the file stays private to your clone (it goes in `.git/info/exclude`, never `.gitignore`).
+
+## What it needs
+
+- Node 22 or later, and [herdr](https://herdr.dev), the terminal multiplexer the team runs in.
+- Each seat's CLI, installed and signed in: Claude Code, Codex, Cursor or Antigravity. `team doctor`
+  says what is missing; `team doctor --login` checks the sign-ins read-only.
+- The owner's terminal, outside herdr, for `approve` and `up`. A seat, or an agent-run CLI, cannot
+  approve a file or start a team.
+
+## Links
+
+- The site: [teamcli.io](https://teamcli.io)
+- The full README, and the command reference: [github.com/floor/team](https://github.com/floor/team#readme)
+- Changelog: [CHANGELOG.md](https://github.com/floor/team/blob/main/CHANGELOG.md)
+- Upgrading from an earlier release: [UPGRADE-0.3.md](https://github.com/floor/team/blob/main/UPGRADE-0.3.md)
+- RFC 000, what the project stands on: [floor/team discussion 147](https://github.com/floor/team/discussions/147)
+
+## License
+
+MIT, see [LICENSE](https://github.com/floor/team/blob/main/LICENSE).
