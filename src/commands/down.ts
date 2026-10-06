@@ -218,6 +218,41 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
     if (other === null) return '';
     return ` (first row that differs: ${other === '' ? 'a blank row' : other})`;
   };
+  // The Enter above sends the exit text. A second key is only the profile's `exit_confirm`,
+  // and only once the screen reads as that CLI's own exit question. A quote of the choice
+  // row is an ordinary question and gets nothing. A question the profile cannot confirm, or
+  // one that stays after the key, is reported at once: the seat could not be stopped by asking.
+  const sendExit = async (): Promise<ExitTyping> => {
+    if (!io.pressEnter()) return false;
+    const confirm = profileFor(cli)?.exitConfirm ?? null;
+    const deadline = io.now() + CLEAR_WAIT_MS;
+    let confirmed = false;
+    for (;;) {
+      if (!live()) return true;
+      if (kindOf() === 'exit question') {
+        if (confirm === null) {
+          return { left: 'its exit was not confirmed; its profile names no key for the exit question; left running' };
+        }
+        if (!confirmed) {
+          if (!live()) return 'no-agent';
+          if (!io.sendKey(confirm)) {
+            return { left: 'its exit was not confirmed; the exit question was not answered; left running' };
+          }
+          confirmed = true;
+          continue;
+        }
+      }
+      if (io.now() >= deadline) break;
+      const before = io.now();
+      await io.sleep(100);
+      if (io.now() <= before) break;
+    }
+    if (!live()) return true;
+    if (kindOf() === 'exit question') {
+      return { left: 'its exit was not confirmed; the exit question stayed open; left running' };
+    }
+    return true;
+  };
 
   if (!live()) return 'no-agent';
   if (!resting()) return false;
@@ -241,10 +276,10 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // An idle screen right after the typing is the text not rendered yet, not an empty box; the
   // wait settles that before the comparison. Only a box that reads back as exactly the typed
   // text gets the Enter.
-  if (boxHoldsText(cli, text, io.screen())) return io.pressEnter();
+  if (boxHoldsText(cli, text, io.screen())) return sendExit();
   const kind = await settle('idle');
   if (kind !== 'unsent' && kind !== 'idle') return false;
-  if (boxHoldsText(cli, text, io.screen())) return io.pressEnter();
+  if (boxHoldsText(cli, text, io.screen())) return sendExit();
   if (kind === 'idle') {
     return { left: 'its exit was not confirmed; the pane never drew the typed text; its box is empty; left running' };
   }
