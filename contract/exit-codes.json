@@ -557,6 +557,13 @@
     {
       "code": 1,
       "command": "approve",
+      "id": "approve.input-waiting",
+      "meaning": "input was waiting on the terminal",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
       "id": "approve.key",
       "meaning": "the signing key can't be read",
       "trigger": "team approve"

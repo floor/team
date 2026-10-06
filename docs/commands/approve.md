@@ -5,7 +5,8 @@ the record this machine holds it to. By default it asks nothing — the summary 
 printed and the write follows it; `--confirm` brings back the question for the number of seats.
 Every command that starts, moves or changes a team checks that record first, so an edit to the file
 needs a new approval before it can run. `--show` prints the same comparison and stops, writing
-nothing. It writes only from a real terminal.
+nothing. It writes only from a real terminal, and refuses, before writing, when input is already
+waiting there — the rest of a pasted block, which must not be left to approve on its own.
 
 ## Synopsis
 
@@ -82,18 +83,21 @@ refuse a drifted file before the gate.
 | `team approve: line <n>: <message>` / `team approve: <message>` | 2 |
 | `team approve: the approval store <store> is inside <folder>, where seats work` | 1 |
 | `team approve: only the owner approves a team file, from a terminal outside herdr; this call is <caller>` | 1 |
+| `team approve: input was waiting on the terminal: run \`team approve\` on its own line` | 1 |
 | `team approve: not approved; nothing was written` (`--confirm`) | 1 |
 
 A file that loads with warnings prints them on stderr as
 `team approve: warning, line <n>: <message>` and goes on. The last refusal is what `--confirm`'s
 answer gets when it is not the number of seats: a blank answer, a wrong one, and a closed terminal
-are all the same answer.
+are all the same answer. The input-waiting refusal is the default path's: one line of terminal input
+already queued is taken as a pasted block and refuses the call, and the line waiting is consumed in
+the reading — which is why the refusal says to run the command by itself.
 
 ## Exit codes
 
 - `0` — approved, or `--show` printed the comparison and stopped before anything was written.
-- `1` — refused: a seat ran it, the store sits where seats work, or (`--confirm`) the answer was
-  not the number of seats. Nothing is written.
+- `1` — refused: a seat ran it, the store sits where seats work, input was waiting on the terminal,
+  or (`--confirm`) the answer was not the number of seats. Nothing is written.
 - `2` — the invocation, the team file or the file's validation is bad.
 
 ## The signed record
@@ -362,6 +366,32 @@ approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 
 Type the number of seats (2) to approve this file, and its commands and rules, to run: 1
 team approve: not approved; nothing was written
+exit 1
+```
+
+The same protection without `--confirm`: a line already waiting on the terminal — the rest of a
+pasted block — makes the run refuse before anything is written:
+
+```console waiting="1"
+$ team approve ; echo "exit $?"
+./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
+
+  + 9:   - ~/Code/worktrees/beacon
+  + 23:   - role: implementer
+  + 24:     name: claude-beacon
+  + 25:     label: implementer
+  + 26:     cli: claude-code
+  + 27:     vendor: anthropic
+  + 28:     model: Claude Opus
+  + 29:     version: "5.5"
+  + 30:     launch: claude --model claude-opus-5-5
+
+Needs a new approval: `trust` changed; `limits` changed; seat claude-beacon is not in the approved file.
+Ceilings approved: 3 seats at most, 2 temporary.
+Ceilings this approval fixes: 4 seats at most, 2 temporary.
+Seats: 2 (claude-keeper, claude-beacon).
+approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
+team approve: input was waiting on the terminal: run `team approve` on its own line
 exit 1
 ```
 

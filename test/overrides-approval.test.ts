@@ -55,7 +55,7 @@ const path = () => overridesPath('acme-web', root, home);
 
 async function approve(answer: string | null = '5') {
   const io = testIo(root, OWNER);
-  const code = await runApprove(FILE, io, { ask: async () => answer, now: () => NOW, home });
+  const code = await runApprove(FILE, io, { ask: async () => answer, waiting: () => false, now: () => NOW, home });
   return { code, out: io.out, err: io.err };
 }
 
@@ -124,7 +124,7 @@ describe('an override is the owner\'s, by approval', () => {
     mkdirSync(join(other, '.agents'), { recursive: true });
     writeFileSync(join(other, '.agents/team.yaml'), EXAMPLE);
     const io = testIo(other, OWNER);
-    expect(await runApprove(FILE, io, { ask: async () => '5', now: () => NOW, home })).toBe(0);
+    expect(await runApprove(FILE, io, { ask: async () => '5', waiting: () => false, now: () => NOW, home })).toBe(0);
     // The approval is keyed on the project root's path: a second checkout of the same
     // project name has its own store, and this one's patterns are not in it.
     expect(storePath('acme-web', other, home)).not.toBe(storePath('acme-web', root, home));

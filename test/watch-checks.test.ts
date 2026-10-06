@@ -255,6 +255,7 @@ describe('team approve and watch.checks', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runApprove(['--file', '.agents/team.yaml'], io, {
       ask: async () => '6',
+      waiting: () => false,
       now: () => new Date('2026-10-04T00:00:00Z'),
       home,
     });

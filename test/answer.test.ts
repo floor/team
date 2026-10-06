@@ -82,7 +82,7 @@ seats:
 }
 
 async function approve(root: string, home: string): Promise<void> {
-  const code = await runApprove(FILE, testIo(root, { kind: 'owner' }), { ask: async () => '2', now: () => NOW, home });
+  const code = await runApprove(FILE, testIo(root, { kind: 'owner' }), { ask: async () => '2', waiting: () => false, now: () => NOW, home });
   expect(code).toBe(0);
 }
 

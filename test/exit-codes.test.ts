@@ -333,8 +333,8 @@ function statusSources(live: Live | null, standing: Standing = { kind: 'none' })
   };
 }
 
-function approveSources(place: Place, answer: string | null, home = place.home): ApproveSources {
-  return { ask: async () => answer, now: () => NOW, home };
+function approveSources(place: Place, answer: string | null, home = place.home, waiting = false): ApproveSources {
+  return { ask: async () => answer, waiting: () => waiting, now: () => NOW, home };
 }
 
 function worktreeSources(place: Place): WorktreeSources {
@@ -735,6 +735,10 @@ scene('approve.store', async (place) => {
 scene('approve.check', async (place) => {
   write(place, CHECK_ACCOUNT);
   return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'cannot be resolved');
+});
+scene('approve.input-waiting', async (place) => {
+  write(place, TEAM);
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1', place.home, true)), 'was waiting on the terminal');
 });
 scene('approve.key', async (place) => {
   write(place, TEAM);

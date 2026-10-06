@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs';
+import { closeSync, constants, openSync, readSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -21,6 +21,9 @@ import { keyFingerprint, keyOf, keyState, recordedGeneration } from '../store/ke
 export type ApproveSources = {
   // The owner's answer to a question on the terminal, or null when there is none.
   ask(question: string): Promise<string | null>;
+  // Whether a line of input was already waiting on the terminal at the moment approve would
+  // write: the rest of a pasted block, which must not be left to approve by itself.
+  waiting(): boolean;
   now(): Date;
   home: string;
 };
@@ -34,6 +37,30 @@ export const realSources: ApproveSources = {
       return null;
     } finally {
       terminal.close();
+    }
+  },
+  // Read the terminal's own input without blocking and without consuming anything when it is
+  // empty: `/dev/tty` is opened non-blocking, and one canonical-mode line is read — a waiting
+  // line answers the read, nothing waiting is EAGAIN. One read takes one line — the line a
+  // pasted block would have fed the question — and that line is dropped: the refusal this
+  // feeds writes nothing, so nothing could have used it, and no call in this runtime peeks
+  // without consuming. A line still being typed (no newline yet) is not readable in cooked
+  // mode and is not seen; a question could not have consumed it either. A process with no
+  // controlling terminal (stdin a tty of another device) cannot be checked this way: the open
+  // fails and this is false — and the walk has already refused every caller without a terminal.
+  // Proven on macOS only, quoted in the commit; Linux's /dev/tty + O_NONBLOCK is the same
+  // interface but was not run here, and the guard's logic on top is covered by the tests.
+  waiting() {
+    try {
+      const fd = openSync('/dev/tty', constants.O_RDONLY | constants.O_NONBLOCK);
+      try {
+        const line = Buffer.alloc(4096);
+        return readSync(fd, line, 0, line.length, null) > 0;
+      } finally {
+        closeSync(fd);
+      }
+    } catch {
+      return false;
     }
   },
   now: () => new Date(),
@@ -227,8 +254,9 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   }
 
   // The default path asks nothing: the summary above is the last thing printed, and the
-  // record is written. The owner check above still holds — the input is a terminal — and
-  // `--confirm` brings the question back for anyone who wants the seat count typed out.
+  // record is written. Two things keep the question's protection: the owner check above
+  // (the input is a terminal) and this guard — input already waiting on that terminal is a
+  // pasted block's remainder, which must not be left to approve anything.
   if (args.flags.has('confirm')) {
     const answer = await sources.ask(
       `\nType the number of seats (${seats}) to approve this file, and its commands and rules, to run: `,
@@ -238,6 +266,10 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
       // exit: approve.answer
       return 1;
     }
+  } else if (sources.waiting()) {
+    io.stderr('team approve: input was waiting on the terminal: run `team approve` on its own line\n');
+    // exit: approve.input-waiting
+    return 1;
   }
 
   const now = sources.now();

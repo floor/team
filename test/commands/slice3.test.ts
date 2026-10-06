@@ -53,7 +53,7 @@ const store = () => storePath('acme-web', root, home);
 const edit = (change: (text: string) => string) =>
   writeFileSync(join(root, '.agents/team.yaml'), change(readFileSync(join(root, '.agents/team.yaml'), 'utf8')));
 
-async function approve(argv: string[], caller: Caller, answer: string | null = '5') {
+async function approve(argv: string[], caller: Caller, answer: string | null = '5', waiting = false) {
   const io = testIo(root, caller);
   const asked: string[] = [];
   const code = await runApprove([...argv, ...FILE], io, {
@@ -61,6 +61,7 @@ async function approve(argv: string[], caller: Caller, answer: string | null = '
       asked.push(question);
       return answer;
     },
+    waiting: () => waiting,
     now: () => NOW,
     home,
   });
@@ -106,6 +107,23 @@ describe('team approve', () => {
     expect(run.out).toContain('Ceilings this approval fixes: 6 seats at most, 2 temporary, openai 1, deepseek 3.\n');
     expect(run.out).toContain('Approved. The record is in ');
     expect(readApproval(store())?.file).toBe(EXAMPLE);
+  });
+
+  test('refuses input already waiting on the terminal before writing anything', async () => {
+    const run = await approve([], OWNER, '5', true);
+    expect(run.code).toBe(1);
+    expect(run.err).toBe('team approve: input was waiting on the terminal: run `team approve` on its own line\n');
+    expect(run.asked).toEqual([]);
+    expect(existsSync(store())).toBe(false);
+  });
+
+  test('a waiting line does not change a refusal made earlier: a seat still gets the owner refusal', async () => {
+    const run = await approve([], COORDINATOR, '5', true);
+    expect(run.code).toBe(1);
+    expect(run.err).toBe(
+      'team approve: only the owner approves a team file, from a terminal outside herdr; this call is claude-coordinator-acme\n',
+    );
+    expect(existsSync(store())).toBe(false);
   });
 
   test.each([['4'], ['yes'], [''], [null]])('--confirm writes nothing when the owner types %p', async (answer) => {
@@ -171,14 +189,14 @@ describe('team approve', () => {
 
   test('refuses a store that sits where seats work', async () => {
     const io = testIo(root, OWNER);
-    const inProject = await runApprove(FILE, io, { ask: async () => '5', now: () => NOW, home: root });
+    const inProject = await runApprove(FILE, io, { ask: async () => '5', waiting: () => false, now: () => NOW, home: root });
     expect(inProject).toBe(1);
     expect(io.err).toContain(`is inside ${root}, where seats work`);
 
     const trusted = join(base, 'worktrees/acme-web');
     mkdirSync(trusted, { recursive: true });
     const other = testIo(root, OWNER);
-    expect(await runApprove(FILE, other, { ask: async () => '5', now: () => NOW, home: trusted })).toBe(1);
+    expect(await runApprove(FILE, other, { ask: async () => '5', waiting: () => false, now: () => NOW, home: trusted })).toBe(1);
     expect(other.err).toContain(`is inside ${trusted}, where seats work`);
   });
 

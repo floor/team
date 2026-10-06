@@ -85,6 +85,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `approve.show` | `approve` | 0 | the comparison was printed | `team approve --show` |
 | `approve.answer` | `approve` | 1 | the answer was not the number of seats | `team approve --confirm` |
 | `approve.check` | `approve` | 1 | an approved check cannot be resolved | `team approve` |
+| `approve.input-waiting` | `approve` | 1 | input was waiting on the terminal | `team approve` |
 | `approve.key` | `approve` | 1 | the signing key can't be read | `team approve` |
 | `approve.not-owner` | `approve` | 1 | a seat ran it | `team approve` |
 | `approve.store` | `approve` | 1 | the approval store sits where seats work | `team approve` |

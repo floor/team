@@ -141,6 +141,7 @@ async function setup(page: Page): Promise<void> {
     const seats = page.team.seats.length;
     const code = await runApprove([], io, {
       ask: async () => page.spec.answer ?? String(seats),
+      waiting: () => false,
       now: () => new Date(page.spec.now),
       home: fixture.home,
     });
@@ -149,7 +150,7 @@ async function setup(page: Page): Promise<void> {
   page.ready = true;
 }
 
-async function command(page: Page, line: string, io: Io, answer?: string): Promise<number> {
+async function command(page: Page, line: string, io: Io, answer?: string, blockWaiting = false): Promise<number> {
   const [first, ...argv] = words(line);
   if (first !== 'team') throw new Error(`a console line runs \`team …\`, not "${first ?? ''}"`);
   const name = argv[0];
@@ -170,6 +171,9 @@ async function command(page: Page, line: string, io: Io, answer?: string): Promi
           io.stdout(`${question}${typed}\n`);
           return typed;
         },
+        // A page that shows the refusal writes `waiting="1"` on its fence; every other page's
+        // terminal has nothing waiting.
+        waiting: () => blockWaiting,
         now: () => new Date(spec.now),
         home: fixture.home,
       });
@@ -301,7 +305,7 @@ async function consoleBlock(page: Page, block: Block, failures: Failure[]): Prom
       };
       let code: number;
       try {
-        code = await command(page, step.command, io, block.attrs.answer);
+        code = await command(page, step.command, io, block.attrs.answer, block.attrs.waiting === '1');
       } catch (error) {
         failures.push({ page: page.name, line: step.line, message: (error as Error).message });
         continue;

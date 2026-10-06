@@ -278,6 +278,7 @@ async function runApproveCmd(argv: string[] = []) {
   const io = testIo(root, OWNER);
   const sources: ApproveSources = {
     ask: async () => '5',
+    waiting: () => false,
     now: () => NOW,
     home,
   };
