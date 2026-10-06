@@ -94,6 +94,14 @@ function readEntry(item: YamlNode, check: Check, session: string): Delegate | nu
   return { pane, commands };
 }
 
+// The pane is herdr's `pane_id`, not an agent name or a workspace label, because the ID is what
+// survives a restart. On herdr 0.7.1, in a scratch session made and deleted for the check:
+// workspaces w1, w2 and w3 held panes w1:p1, w2:p1 and w3:p1; closing w2 left the next workspace
+// w4, not w2; after `herdr session stop` and a new server the same w1, w3 and w4 came back under
+// those IDs, the next workspace was w5, and w1:p1's shell PID had changed (83767 to 84315). The
+// ID therefore names the same place holding a fresh process — a closed pane made again has a new
+// ID, so delegation is off until the owner approves that new ID.
+
 /** `<herdr session>/<pane id>`: one `/`, two non-empty components, no whitespace, case kept. */
 function readPane(entry: YamlEntry | undefined, check: Check, line: number, session: string): string | undefined {
   const pane = check.required(entry, 'a delegate: pane', line);
