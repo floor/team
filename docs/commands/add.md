@@ -51,8 +51,11 @@ and the approval in force, never a remembered copy — and a caller it passes ru
 that delegate. The delegated `add` is the ordinary one for a declared seat: `--temporary`, `--like`,
 `--until`, `--worktree`, `--session` and `--file` stay the owner's, and so does any add that would
 edit the file or the approval — restoring a seat the file no longer holds, or clearing
-`stopped: true`, both of which write the file and re-sign the approval. With no `delegates`
-section nothing changes: the same refusals, the same words, the same exit codes. A delegated run
+`stopped: true`, both of which write the file and re-sign the approval. A `--file` or `--session`
+a non-owner aims is the gate's too, once the file names a delegate: the gate refuses it before the
+flagged file or the flag's session is read, on the eligibility of the default live file alone —
+the flagged file is never opened. With no `delegates` section nothing changes: the same refusals,
+the same words, the same exit codes, those two flags' included. A delegated run
 that proceeds is attributed in the log before its effects, as
 `<time> delegate [delegate] <session>/<pane id> add`.
 

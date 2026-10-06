@@ -48,6 +48,22 @@ export const realSources: RemoveSources = {
 
 export const USAGE = 'Usage: team remove <name> [--keep] [--abandon] [--session <name>] [--file <path>]\n';
 
+/** The gate's refusal as this command prints it: the verdict's own sentence behind the prefix.
+ *  Both delegate branches print it — the caller rule's below and the owner-only flags' — so the
+ *  exit ids sit at one site. */
+function delegateRefused(io: { stderr(text: string): void }, verdict: { text: string }): number {
+  io.stderr(`team remove: ${verdict.text}\n`);
+  // exit: remove.delegate-approval
+  // exit: remove.delegate-approved-copy
+  // exit: remove.delegate-drift
+  // exit: remove.delegate-evidence
+  // exit: remove.delegate-placement
+  // exit: remove.delegate
+  // exit: remove.delegate-command
+  // exit: remove.delegate-flag
+  return 1;
+}
+
 const LEFT: Record<Exclude<DownSeat['state'], 'free'>, string> = {
   working: 'is working; left as it is',
   blocked: 'is blocked at a prompt, which team never answers',
@@ -79,24 +95,33 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   // `--file` must not make this command read and validate another project's team file, nor leave
   // its `last_valid` in that project's state. The one place every command whose `--file` is the owner's
   // decides it is `fileOwnerRefusal` (caller.ts).
-  const fileRefusal = fileOwnerRefusal(io, args.values.file);
-  if (fileRefusal !== undefined) {
-    io.stderr(`team remove: ${fileRefusal}\n`);
-    // exit: remove.file-owner
-    return 1;
-  }
-
-  // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
-  // `--session` is refused here, before the flag's session is read — no agent list, no pane root,
-  // no state write, no log line. (A seat cannot be named in this refusal: placing it would read a
-  // session, and that is what must not happen yet.)
-  if (args.values.session !== undefined) {
-    const walked = walkCaller(io);
-    if (!isOwner(walked)) {
-      io.stderr(`team remove: ${sessionOwnerRefusal(walked)}\n`);
-      // exit: remove.session-owner
-      return 1;
+  //
+  // A `delegates` section hands these owner-only flags to the gate as well: a non-owner aiming
+  // either is still refused before the flagged file or the flag's session is read — never the
+  // walk's sentence but the gate's verdict, which names the flag for the approved delegate and
+  // the caller for anyone else. The eligibility that asks is the default live file's alone, so
+  // the flagged file is not read at all; with no `delegates` section there, today's refusal
+  // stands, byte for byte.
+  const walked = args.values.session !== undefined ? walkCaller(io) : undefined;
+  const flagRefusal = fileOwnerRefusal(io, args.values.file)
+    ?? (walked !== undefined && !isOwner(walked) ? sessionOwnerRefusal(walked) : undefined);
+  if (flagRefusal !== undefined) {
+    const named = loadTeamFile(io.cwd, { ...(sources.home ? { home: sources.home } : {}) });
+    if (named.ok && named.team.delegates) {
+      const flagged = (sources.delegateGate ?? delegateGate)({
+        command: 'remove',
+        team: named.team,
+        root: named.root,
+        dir: dirname(named.path),
+        flags: [...args.flags, ...Object.keys(args.values)],
+        io,
+      });
+      if (flagged.kind === 'refused') return delegateRefused(io, flagged);
     }
+    io.stderr(`team remove: ${flagRefusal}\n`);
+    // exit: remove.file-owner
+    // exit: remove.session-owner
+    return 1;
   }
   const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), ...(sources.home ? { home: sources.home } : {}) });
   if (!loaded.ok) {
@@ -138,18 +163,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
       flags: [...args.flags, ...Object.keys(args.values)],
       io,
     });
-    if (decided.kind === 'refused') {
-      io.stderr(`team remove: ${decided.text}\n`);
-      // exit: remove.delegate-approval
-      // exit: remove.delegate-approved-copy
-      // exit: remove.delegate-drift
-      // exit: remove.delegate-evidence
-      // exit: remove.delegate-placement
-      // exit: remove.delegate
-      // exit: remove.delegate-command
-      // exit: remove.delegate-flag
-      return 1;
-    }
+    if (decided.kind === 'refused') return delegateRefused(io, decided);
     delegatePane = decided.pane;
   }
   if (verdict.kind === 'no-pane' && delegatePane === null) {

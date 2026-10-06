@@ -563,6 +563,11 @@ const DELEGATES = `delegates:
 `;
 const pilot = { kind: 'seat' as const, name: 'pilot', pane: 'w1:p1', session: 'main' };
 const passed = { kind: 'passed' as const, pane: 'main/w1:p1' };
+// A gate that fails the test the moment it is asked where the run must not ask it: the ordinary
+// rule's own callers never reach the delegate branch, and neither does a file with no delegates.
+const THROWING_GATE: NonNullable<RemoveSources['delegateGate']> = () => {
+  throw new Error('the gate is asked only after the ordinary rule refused, and only when the file names a delegate');
+};
 
 // The file and the approval in force for it, together: a delegated run needs both, and the
 // `delegates` section they carry is the one the gate reads. Returns the record's own path, so a
@@ -724,6 +729,59 @@ describe('team remove delegated', () => {
     const after = validateTeamFile(readFileSync(file, 'utf8'));
     if (!after.ok) throw new Error('written file');
     expect(approvalDifferences(after.team, rootOf(dir), home)).toEqual([]);
+  });
+
+  test('a delegate\'s --file and --session are the gate\'s to refuse, before either is read', async () => {
+    // The reviewer's finding on down and up, checked here: once the file names a delegate, the
+    // owner-only flags are the gate's too, and the refusal still comes before the flagged file
+    // or the flag's session is read — the `--file` below names a path that does not exist, so a
+    // run that opened it would print the loader's refusal, not the gate's. Eligibility is the
+    // default live file's, never the flagged one's.
+    const store = approveFile(FILE + DELEGATES);
+    const record = readFileSync(join(store, 'approval.json'), 'utf8');
+    const asked: Parameters<NonNullable<RemoveSources['delegateGate']>>[0][] = [];
+    const gate: NonNullable<RemoveSources['delegateGate']> = (input) => {
+      asked.push(input);
+      const flag = input.flags.includes('file') ? 'file' : 'session';
+      return { kind: 'refused' as const, id: 'remove.delegate-flag', text: `--${flag} is the owner's; the approved delegate cannot use it` };
+    };
+    for (const argv of [['worker', '--file', join(dir, 'elsewhere.yaml')], ['worker', '--session', 'other']] as const) {
+      const made = world();
+      const io = testIo(dir, pilot);
+      const code = await runRemove([...argv], io, { ...made.sources, delegateGate: gate });
+      expect(code).toBe(1);
+      expect(io.err).toBe(`team remove: --${argv[2] === 'other' ? 'session' : 'file'} is the owner's; the approved delegate cannot use it\n`);
+      expect(made.typed).toEqual([]);
+      expect(made.closed).toEqual([]);
+    }
+    expect(asked).toHaveLength(2);
+    expect(asked[0]!.team.delegates).toEqual([{ pane: 'main/w1:p1', commands: ['add', 'remove'] }]);
+    expect(asked[0]!.root).toBe(rootOf(dir));
+    expect(asked[0]!.dir).toBe(join(rootOf(dir), '.agents'));
+    expect(asked[0]!.flags).toContain('file');
+    expect(asked[1]!.flags).toContain('session');
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+    expect(readFileSync(join(store, 'approval.json'), 'utf8')).toBe(record);
+  });
+
+  test('with no delegates in the default file, a non-owner\'s --file and --session are today\'s, byte for byte', async () => {
+    // The finding's other half: eligibility is the default live file's alone. The flagged file
+    // below names a delegate and is never read for it; the refusals stay today's sentences, in
+    // today's order, and the gate is never asked.
+    approveFile(FILE);
+    writeFileSync(join(dir, 'elsewhere.yaml'), FILE + DELEGATES);
+    for (const [argv, text] of [
+      [['worker', '--file', join(dir, 'elsewhere.yaml')], '--file is the owner\'s, from a terminal outside herdr; this call is pilot'],
+      [['worker', '--session', 'other'], '--session is the owner\'s, from a terminal outside herdr; this call is pilot'],
+    ] as const) {
+      const made = world();
+      const io = testIo(dir, pilot);
+      const code = await runRemove([...argv], io, { ...made.sources, delegateGate: THROWING_GATE });
+      expect(code).toBe(1);
+      expect(io.err).toBe(`team remove: ${text}\n`);
+      expect(made.typed).toEqual([]);
+      expect(readFileSync(file, 'utf8')).toContain('name: worker');
+    }
   });
 
   test('a delegate named like the coordinator gets none of the coordinator\'s --keep', async () => {

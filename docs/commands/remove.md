@@ -49,8 +49,11 @@ and the approval in force, never a remembered copy — and a caller it passes ru
 that delegate. The delegated `remove` is the ordinary removal of a named seat: `--keep`, `--abandon`,
 `--session` and `--file` stay the owner's, the coordinator's and the operator's seats stay the
 owner's, and a delegated remove never re-signs the approval — the one signing a `--keep` does is
-closed to it. With no `delegates` section nothing changes: the same refusals, the same words, the
-same exit codes. A delegated run that proceeds is attributed in the log before its effects, as
+closed to it. A `--file` or `--session` a non-owner aims is the gate's too, once the file names a
+delegate: the gate refuses it before the flagged file or the flag's session is read, on the
+eligibility of the default live file alone — the flagged file is never opened. With no `delegates`
+section nothing changes: the same refusals, the same words, the same exit codes, those two flags'
+included. A delegated run that proceeds is attributed in the log before its effects, as
 `<time> delegate [delegate] <session>/<pane id> remove`.
 
 ## Flags
