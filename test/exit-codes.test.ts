@@ -660,11 +660,11 @@ scene('add.server', async (place) => {
 // (no record under the home it answers for, so its first read refuses the run before herdr is
 // ever asked) and `delegate-edit` (a passed gate, an add that would edit the file). The verdicts'
 // reasons are the gate's tests'.
-const DELEGATED = TWO + `delegates:
+const DELEGATED_ADD_REMOVE = TWO + `delegates:
   - pane: main/w1:p1
     commands: [add, remove]
 `;
-const delegateCaller = { kind: 'seat', name: 'pilot', pane: 'w1:p1', session: 'main' } as const;
+const addRemoveCaller = { kind: 'seat', name: 'pilot', pane: 'w1:p1', session: 'main' } as const;
 const refused = (id: string, text: string) => ({ kind: 'refused' as const, id, text });
 
 const ADD_GATE_REFUSALS: [suffix: string, sentence: string, needle: string][] = [
@@ -677,25 +677,25 @@ const ADD_GATE_REFUSALS: [suffix: string, sentence: string, needle: string][] = 
 ];
 for (const [suffix, sentence, needle] of ADD_GATE_REFUSALS) {
   scene(`add.${suffix}`, async (place) => {
-    write(place, DELEGATED);
-    return show(await added(place, ['worker'], delegateCaller, addSources(place, {
+    write(place, DELEGATED_ADD_REMOVE);
+    return show(await added(place, ['worker'], addRemoveCaller, addSources(place, {
       delegateGate: () => refused(`add.${suffix}`, sentence),
     })), needle);
   });
 }
 scene('add.delegate-flag', async (place) => {
-  write(place, DELEGATED);
-  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'result:out.md'], delegateCaller, addSources(place, {
+  write(place, DELEGATED_ADD_REMOVE);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'result:out.md'], addRemoveCaller, addSources(place, {
     delegateGate: () => refused('add.delegate-flag', "--temporary is the owner's; the approved delegate cannot use it"),
   })), 'cannot use it');
 });
 scene('add.delegate-approval', async (place) => {
-  write(place, DELEGATED);
-  return show(await added(place, ['worker'], delegateCaller, addSources(place)), 'delegation needs a verified approval');
+  write(place, DELEGATED_ADD_REMOVE);
+  return show(await added(place, ['worker'], addRemoveCaller, addSources(place)), 'delegation needs a verified approval');
 });
 scene('add.delegate-edit', async (place) => {
-  approve(place, DELEGATED);
-  return show(await added(place, ['worker'], delegateCaller, addSources(place, {
+  approve(place, DELEGATED_ADD_REMOVE);
+  return show(await added(place, ['worker'], addRemoveCaller, addSources(place, {
     delegateGate: () => ({ kind: 'passed' as const, pane: 'main/w1:p1' }),
   })), 'cannot change the file or the approval');
 });
@@ -1256,23 +1256,23 @@ const REMOVE_GATE_REFUSALS: [suffix: string, sentence: string, needle: string][]
 ];
 for (const [suffix, sentence, needle] of REMOVE_GATE_REFUSALS) {
   scene(`remove.${suffix}`, async (place) => {
-    write(place, DELEGATED);
-    return show(await removed(place, ['worker'], delegateCaller, downSources({
+    write(place, DELEGATED_ADD_REMOVE);
+    return show(await removed(place, ['worker'], addRemoveCaller, downSources({
       home: place.home,
       delegateGate: () => refused(`remove.${suffix}`, sentence),
     })), needle);
   });
 }
 scene('remove.delegate-flag', async (place) => {
-  write(place, DELEGATED);
-  return show(await removed(place, ['worker', '--keep'], delegateCaller, downSources({
+  write(place, DELEGATED_ADD_REMOVE);
+  return show(await removed(place, ['worker', '--keep'], addRemoveCaller, downSources({
     home: place.home,
     delegateGate: () => refused('remove.delegate-flag', "--keep is the owner's; the approved delegate cannot use it"),
   })), 'cannot use it');
 });
 scene('remove.delegate-approval', async (place) => {
-  write(place, DELEGATED);
-  return show(await removed(place, ['worker'], delegateCaller, downSources({ home: place.home })), 'delegation needs a verified approval');
+  write(place, DELEGATED_ADD_REMOVE);
+  return show(await removed(place, ['worker'], addRemoveCaller, downSources({ home: place.home })), 'delegation needs a verified approval');
 });
 
 const RELEASE_TEAM = `format: 1
