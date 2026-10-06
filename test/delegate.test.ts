@@ -88,6 +88,7 @@ type Scene = {
   state?: State | null;
   stateError?: string;
   agents?: (session: string) => HerdrAgent[] | null;
+  sessionRunning?: (session: string) => boolean | null;
   ancestors?: Process[] | null;
   roots?: Record<string, number | null>;
   stdinIsTTY?: boolean;
@@ -124,6 +125,7 @@ function gate(scene: Scene = {}): DelegateVerdict {
         return scene.state === undefined ? empty : scene.state;
       },
       agents,
+      sessionRunning: scene.sessionRunning ?? (() => null),
       callerSources: sources,
     },
   });
@@ -302,6 +304,61 @@ describe('placement', () => {
     }).text).toBe(`delegation cannot verify its placement or seats: it runs under herdr, and herdr doesn't answer`);
     expect(refused({ ancestors: terminal, agents: () => null }).text).toBe(`delegation cannot verify its placement or seats: herdr doesn't answer`);
     expect(refused({ roots: { 'w1:p1': null } }).text).toBe(`delegation cannot verify its placement or seats: it runs under herdr, and no pane root can be read`);
+  });
+});
+
+describe('the team session that is not running', () => {
+  // What herdr really answers for a stopped or absent session: `agent list --session <name>`
+  // fails (its server is gone), while `session list --json` still answers with running false.
+  // The delegate's own session is a different session and stays readable throughout.
+  const unlisted = (session: string) => (session === 'other' ? [agent('worker', 'w1:p1')] : null);
+
+  test('a stopped or absent session has no seats to collide with: every command passes', () => {
+    for (const command of DELEGATE_COMMANDS) {
+      expect(gate({ command, agents: unlisted, sessionRunning: () => false })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+    }
+  });
+
+  test('a running session whose list cannot be read is still refused with today\'s text', () => {
+    const verdict = refused({ agents: unlisted, sessionRunning: () => true });
+    expect(verdict.id).toBe('up.delegate-evidence');
+    expect(verdict.text).toBe(`delegation cannot verify its placement or seats: herdr doesn't answer`);
+  });
+
+  test('a herdr that cannot say, or a read that throws, keeps the refusal', () => {
+    expect(refused({ agents: unlisted, sessionRunning: () => null }).text).toBe(
+      `delegation cannot verify its placement or seats: herdr doesn't answer`,
+    );
+    const thrown = refused({
+      agents: unlisted,
+      sessionRunning: () => {
+        throw new Error('EIO');
+      },
+    });
+    expect(thrown.id).toBe('up.delegate-evidence');
+    expect(thrown.text).toBe(`delegation cannot verify its placement or seats: herdr doesn't answer`);
+  });
+
+  test('the delegate\'s own session is still read: a silent team session does not excuse it', () => {
+    expect(refused({
+      agents: (session: string) => (session === 'other' ? null : []),
+      sessionRunning: () => false,
+    }).text).toBe(`delegation cannot verify its placement or seats: it runs under herdr, and herdr doesn't answer`);
+  });
+
+  test('the state is still read, and the session is asked only when the list is null', () => {
+    expect(refused({ agents: unlisted, sessionRunning: () => false, stateError: 'team.state.json is not valid JSON' }).text).toBe(
+      'delegation cannot verify its placement or seats: team.state.json is not valid JSON',
+    );
+    const asked: string[] = [];
+    expect(gate({
+      agents: (session: string) => (session === 'other' ? [agent('worker', 'w1:p1')] : []),
+      sessionRunning: (session) => {
+        asked.push(session);
+        return false;
+      },
+    })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+    expect(asked).toEqual([]);
   });
 });
 
