@@ -4,7 +4,7 @@ import type { Delegate, DelegateCommand } from './delegate-types.ts';
 import { DELEGATE_COMMANDS } from './delegate-types.ts';
 import type { TeamFile } from './file/types.ts';
 import { validateTeamFile } from './file/validate.ts';
-import { agentList, paneRootPid, type HerdrAgent } from './herdr.ts';
+import { agentList, paneRootPid, sessionRunning, type HerdrAgent } from './herdr.ts';
 import type { Io } from './io.ts';
 import { logLine } from './log.ts';
 import { readState, type State } from './state.ts';
@@ -34,6 +34,8 @@ export type DelegateSources = {
   state?: (dir: string) => State | null;
   /** Null when herdr doesn't answer for that session. */
   agents?: (session: string) => HerdrAgent[] | null;
+  /** False when the session is stopped or absent, null when herdr can't say. */
+  sessionRunning?: (session: string) => boolean | null;
   /**
    * Placement sources for one session, when a test does not put them on `io`. The real
    * path uses `io.callerSources`.
@@ -184,6 +186,12 @@ type Evidence =
  * for a delegate's session and for the team's session, then the state. A null from herdr is
  * its own refusal, distinct from a caller who is simply somewhere else. The herdr read stays
  * for that refusal; the live list is not a seat.
+ *
+ * The team's session is read in two steps. An agent list is null both when herdr refuses the
+ * call and when the session does not run, and a session that does not run has no seats to
+ * collide with: `sessionRunning` tells the two apart. False — stopped or absent — is the
+ * evidence of an empty session and the gate goes on. True, null or a throw leaves the seats
+ * unread, and the refusal keeps its text.
  */
 function evidenceOf(
   team: TeamFile,
@@ -207,7 +215,16 @@ function evidenceOf(
   } catch (error) {
     return { ok: false, reason: reasonOf(error) };
   }
-  if (listed === null) return { ok: false, reason: 'herdr doesn\'t answer' };
+  if (listed === null) {
+    let running: boolean | null;
+    try {
+      running = (sources.sessionRunning ?? sessionRunning)(team.session);
+    } catch {
+      running = null;
+    }
+    // Only a session herdr reports as not running is known to have no seats in it.
+    if (running !== false) return { ok: false, reason: 'herdr doesn\'t answer' };
+  }
   try {
     const state = (sources.state ?? readState)(dir);
     if (state === null) return { ok: false, reason: 'the state can\'t be read' };
