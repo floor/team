@@ -3397,6 +3397,117 @@ describe('team up, delegated', () => {
     expect(made.creates).toEqual([]);
   });
 
+  // Today's order, byte for byte, when the default file has no `delegates` section: the flagged
+  // file is read first and its own failure answers — exit 2, the caller refusal never reached,
+  // the gate never asked. The owner's side of the same order, with a section present: the
+  // owner's `--file` is honoured exactly as before and the gate is not asked either.
+  test('with no delegates a missing --file is today\'s exit 2, gate never asked', async () => {
+    await approve();
+    const made = world();
+    let asked = 0;
+    const caller = testIo(root, { kind: 'seat', name: 'work', pane: 'w1:p1', session: 'main' });
+    const code = await runUp(['--file', join(root, 'missing.yaml')], caller, sources({
+      delegateGate: () => {
+        asked++;
+        return { kind: 'passed', pane: 'main/w1:p1' };
+      },
+    }, made));
+    expect(code).toBe(2);
+    expect(asked).toBe(0);
+    expect(caller.err).toBe(`team up: no team file at ${join(root, 'missing.yaml')}\n`);
+  });
+
+  test('the owner\'s missing --file stays exit 2 even with a delegates section: gate never asked', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    let asked = 0;
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(['--file', join(root, 'missing.yaml')], io, sources({
+      delegateGate: () => {
+        asked++;
+        return { kind: 'passed', pane: 'main/w1:p1' };
+      },
+    }, made));
+    expect(code).toBe(2);
+    expect(asked).toBe(0);
+    expect(io.err).toBe(`team up: no team file at ${join(root, 'missing.yaml')}\n`);
+  });
+
+  // The review's reproduction: an unplaced caller, a valid default file with a `delegates`
+  // section, `team up --file <missing>`. Eligibility is read from the DEFAULT file — the gate
+  // sees its team and the flag — and the flagged target is never read: the gate's refusal
+  // answers, not today's exit 2. The same on a dry run: the would-refuse line and the plan of
+  // the DEFAULT file, exit 0.
+  test('an unplaced caller with a delegates file and a missing --file gets the gate\'s refusal, not exit 2', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    let asked = 0;
+    let seen: { team: { delegates: unknown }; root: string; flags: readonly string[] } | undefined;
+    const io = testIo(root, { kind: 'unplaced', reason: 'its parent processes can\'t be read to the top' });
+    const code = await runUp(['--file', join(root, 'missing.yaml')], io, sources({
+      delegateGate: (input) => {
+        asked++;
+        seen = input;
+        return {
+          kind: 'refused',
+          id: 'up.delegate',
+          text: 'only the owner or the approved delegate runs `up`; this call is unplaced (its parent processes can\'t be read to the top)',
+        };
+      },
+    }, made));
+    expect(code).toBe(1);
+    expect(asked).toBe(1);
+    expect(seen?.root).toBe(root);
+    expect(seen?.team.delegates).not.toBeNull();
+    expect(seen?.flags).toContain('file');
+    expect(io.err).toBe(
+      'team up: only the owner or the approved delegate runs `up`; this call is unplaced (its parent processes can\'t be read to the top)\n',
+    );
+    expect(io.err).not.toContain('no team file');
+    expect(made.starts).toBe(0);
+  });
+
+  test('the same caller on a dry run: the would-refuse line, the default file\'s plan, exit 0', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    const io = testIo(root, { kind: 'unplaced', reason: 'its parent processes can\'t be read to the top' });
+    const code = await runUp(['--dry-run', '--file', join(root, 'missing.yaml')], io, sources({
+      delegateGate: () => ({
+        kind: 'refused',
+        id: 'up.delegate-flag',
+        text: "--file is the owner's; the approved delegate cannot use it",
+      }),
+    }, made));
+    expect(code).toBe(0);
+    expect(io.out).toContain("! up would refuse: --file is the owner's; the approved delegate cannot use it\n");
+    expect(io.out).toContain('dry run: nothing was run\n');
+    expect(io.out + io.err).not.toContain('no team file');
+    expect(made.starts).toBe(0);
+  });
+
+  // The delegate's own prohibited flags reach the gate with the run still unread: `--session`
+  // is refused exactly as `--file` is, and the session the caller tried to name is not adopted.
+  test('a delegated run\'s --session is the gate\'s to refuse, and never adopted', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    let seen: { flags: readonly string[] } | undefined;
+    const io = delegatedIo();
+    const code = await runUp(['--session', 'elsewhere'], io, sources({
+      delegateGate: (input) => {
+        seen = input;
+        return { kind: 'refused', id: 'up.delegate-flag', text: "--session is the owner's; the approved delegate cannot use it" };
+      },
+    }, made));
+    expect(code).toBe(1);
+    expect(seen?.flags).toContain('session');
+    expect(io.err).toBe("team up: --session is the owner's; the approved delegate cannot use it\n");
+    expect(made.starts).toBe(0);
+  });
+
   test('the owner is never gated: a delegates section changes nothing for the owner at a terminal', async () => {
     delegateFile();
     await approve();

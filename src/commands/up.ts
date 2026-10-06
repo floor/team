@@ -346,7 +346,40 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     return 2;
   }
   const dry = args.flags.has('dry-run');
-  const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
+  // §RFC0007: a caller the ordinary rule refuses is judged by the delegate gate against the
+  // DEFAULT live file of this cwd, read with no flag — before any `--file` or `--session` is
+  // honoured. Both are the owner's alone: the gate refuses them for a delegated run, and a
+  // delegate's eligibility never comes from a file the caller names. A gate refusal replaces the
+  // ordinary caller refusal below and the flagged target is never read; a passed verdict makes
+  // the run the delegate's, on that same default file. The owner's runs never come here, and
+  // with no `delegates` section — or no readable default file — nothing changes: today's order,
+  // today's texts.
+  const caller = callerOf(io);
+  const defaultLoad = mayLaunchSeats(caller) ? null : loadTeamFile(io.cwd, { home: sources.home });
+  const delegateTeam = defaultLoad !== null && defaultLoad.ok && defaultLoad.team.delegates ? defaultLoad : null;
+  const verdict = delegateTeam
+    ? (sources.delegateGate ?? delegateGate)({
+        command: 'up',
+        team: delegateTeam.team,
+        root: delegateTeam.root,
+        dir: dirname(delegateTeam.path),
+        flags: [...args.flags, ...Object.keys(args.values)],
+        io,
+      })
+    : null;
+  // The approved `<session>/<pane id>` when this run is a delegated one: the ordinary caller rule
+  // refused, the default file's `delegates` section named a pane, and the gate passed it.
+  let delegated: string | null = null;
+  if (verdict?.kind === 'passed') delegated = verdict.pane;
+  // The file this run is whole on: the default one whenever the gate decided on it — a refused
+  // run stops on the gate's words without reading a flagged target, a delegated one runs the
+  // file its delegation was read from — and otherwise today's load, `--file` honoured exactly
+  // as before.
+  const loaded =
+    delegateTeam ??
+    (defaultLoad !== null && !args.values.file
+      ? defaultLoad
+      : loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home }));
   if (!loaded.ok) {
     for (const problem of loaded.errors) {
       out.stderr(`team up: ${problem.line ? `line ${problem.line}: ` : ''}${plainText(problem.message)}\n`);
@@ -357,36 +390,21 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     return 2;
   }
   const { team, root } = loaded;
-  const session = args.values.session ?? team.session;
+  // Owner-only targets are honoured only when no gate decided: a delegated run is the default
+  // file's own session, and a refused one never adopts the session its caller tried to name.
+  const session = verdict === null ? (args.values.session ?? team.session) : team.session;
   const dir = dirname(loaded.path);
   const state = resolveState(sources, session);
 
   // What would make `up` refuse. A dry run prints the plan anyway; a real run stops first.
   const refusals: string[] = [];
-  const caller = callerOf(io);
-  // The approved `<session>/<pane id>` when this run is a delegated one: the ordinary caller rule
-  // refused, the file's `delegates` section named a pane, and the gate passed it. A `refused`
-  // verdict takes the ordinary caller refusal's place — same list, same exit rules — and without a
-  // `delegates` section nothing here changes: the same refusal, the same ids, as before.
-  let delegated: string | null = null;
   if (!mayLaunchSeats(caller)) {
-    const verdict = team.delegates
-      ? (sources.delegateGate ?? delegateGate)({
-          command: 'up',
-          team,
-          root,
-          dir,
-          flags: [...args.flags, ...Object.keys(args.values)],
-          io,
-        })
-      : null;
-    if (verdict?.kind === 'passed') delegated = verdict.pane;
-    else {
+    if (verdict === null) {
       refusals.push(
-        verdict?.kind === 'refused'
-          ? verdict.text
-          : `only the owner runs \`up\`, from a terminal outside herdr; this call is ${describeCaller(caller)}`,
+        `only the owner runs \`up\`, from a terminal outside herdr; this call is ${describeCaller(caller)}`,
       );
+    } else if (verdict.kind === 'refused') {
+      refusals.push(verdict.text);
     }
   }
   // One verified snapshot carries the whole command: the refusal when there is

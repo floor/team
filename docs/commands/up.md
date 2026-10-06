@@ -60,19 +60,22 @@ A pane of another session the approved file's `delegates` section names may run 
 entry's `commands` list names it. The ordinary rule above refuses such a caller first, and only
 then — the section is in the file — does the delegate gate decide, against the live file and the
 approved copy, never a cached team: refused, the gate's own words replace the ordinary refusal
-(same list, same dry-run line, same exit); passed, the run is the delegate's. A delegated run
-writes `delegate [delegate] <pane> up` to `.agents/team.log` before its first effect — a dry run
-writes nothing — and never has `--session` or `--file`: both are the owner's, and the gate refuses
-them. With no `delegates` section in the file none of this exists: the ordinary refusal stands,
-the same words, the same exit.
+(same list, same dry-run line, same exit); passed, the run is the delegate's. The section is read
+from the folder's own default file, never one the caller names: a delegated run never has
+`--session` or `--file` — both are the owner's, the gate refuses them before the file or the
+session they name is read, and a refused run answers in the gate's words without reading the
+flagged target at all. A delegated run writes `delegate [delegate] <pane> up` to
+`.agents/team.log` before its first effect — a dry run writes nothing. With no `delegates`
+section in the default file none of this exists: the ordinary order, the ordinary refusal, the
+same words, the same exit.
 
 ## Flags
 
 | Flag | Meaning |
 | --- | --- |
 | `--dry-run` | print the plan, and the refusals the real run would stop on, and exit 0 |
-| `--session <name>` | the herdr session to start, instead of `team.session`. The owner's alone: the delegate gate refuses it for a delegated run |
-| `--file <path>` | the team file, instead of `.agents/team.yaml`. The owner's alone: the delegate gate refuses it for a delegated run |
+| `--session <name>` | the herdr session to start, instead of `team.session`. The owner's alone: the delegate gate refuses it for a delegated run, before the session it names is used |
+| `--file <path>` | the team file, instead of `.agents/team.yaml`. The owner's alone: the delegate gate refuses it for a delegated run, before the file it names is read |
 | `--help`, `-h` | the usage, and exit 0 |
 
 ## What it prints
@@ -453,7 +456,7 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | --- |
 | ``only the owner runs `up`, from a terminal outside herdr; this call is <caller>`` — the owner without a terminal is not refused: it runs, and never prompts. With a `delegates` section in the file, this refusal is the delegate gate's to say, in its own words below |
 | ``only the owner or the approved delegate runs `up`; this call is <caller>`` — the delegate gate: the file's `delegates` section names panes, and this caller is none of them |
-| ``--<flag> is the owner's; the approved delegate cannot use it`` — the delegate gate, for `--session` and `--file` on a delegated run |
+| ``--<flag> is the owner's; the approved delegate cannot use it`` — the delegate gate, for `--session` and `--file` on a delegated run, refused before the file or the session the flag names is read |
 | the delegate gate's other refusals, each in its own words — no verified approval in force on this machine, the approved copy unreadable, the live file drifted from the approved copy, the caller's placement in its pane unproven, or the caller's entry not naming `up` in `commands` — printed like every refusal here, and on a dry run above the plan |
 | ``the file was never approved on this machine: run `team approve` `` |
 | ``approved before records were signed: run `team approve` once`` — the record was written by an earlier `team` |
