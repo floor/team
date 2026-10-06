@@ -137,12 +137,21 @@ describe('team status', () => {
       state.sessions['acme-web'] = session;
     });
     const agents = built().agents.map((one) => (one.name === 'deepseek-acme' ? { ...one, name: null } : one.name === 'codex-acme' ? { ...one, name: 'codex-old' } : one));
-    live = { ...built(), agents };
+    live = {
+      ...built(),
+      agents,
+      screens: { ...built().screens, 'w2:p1': codexScreen('idle'), 'w3:p1': claudeScreen('Opus 5.5') },
+    };
     const { out } = await status();
     expect(out).toContain('deepseek-acme: the agent in w3:p1 is unnamed\n  repair: herdr --session acme-web agent rename w3:p1 deepseek-acme');
     expect(out).toContain('codex-acme: the agent in w2:p1 is named "codex-old"');
-    expect(out).not.toContain('deepseek flash v4.1');
-    expect(out).not.toContain('gpt sol 6');
+    // The model column is what the screen names. Codex's captured footer names GPT Terra 5.6.
+    // DeepSeek's seat runs through Claude Code, whose screen cannot name that model, so the
+    // cell is unread — never the file's display, and never the workspace label.
+    expect(out).toMatch(/codex-acme\s+wrong name\s+GPT Terra 5\.6\s+w2:p1/);
+    expect(out).toMatch(/deepseek-acme\s+wrong name\s+\(unread\)\s+w3:p1/);
+    expect(out).not.toMatch(/codex-acme\s+wrong name\s+GPT-6 Sol/);
+    expect(out).not.toMatch(/deepseek-acme\s+wrong name\s+DeepSeek/);
     expect(out).toContain('2 difference(s)');
   });
 
@@ -700,6 +709,25 @@ describe('a pane that no longer holds the process team launched', () => {
       model: 'GPT-6 Sol',
       pane: 'w2:p1',
     });
+  });
+
+  test('replaced: the screen\'s model is a note, and an unreadable screen has none', async () => {
+    recordCodex();
+    live = {
+      ...built(),
+      processes: { 'w2:p1': { shell: 400, foreground: [500] } },
+      screens: { ...built().screens, 'w2:p1': codexScreen('idle') },
+    };
+    const readable = await status();
+    expect(readable.code).toBe(1);
+    expect(readable.out).toMatch(/codex-acme\s+restored, not launched by team\s+-\s+w2:p1/);
+    expect(readable.out).toContain('note: codex-acme: its pane runs GPT Terra 5.6; that process is not the one team launched');
+    expect(readable.out).not.toMatch(/codex-acme\s+restored, not launched by team\s+GPT/);
+    live = { ...built(), processes: { 'w2:p1': { shell: 400, foreground: [500] } } };
+    const unread = await status();
+    expect(unread.out).toMatch(/codex-acme\s+restored, not launched by team\s+-\s+w2:p1/);
+    expect(unread.out).not.toContain('its pane runs');
+    expect(unread.code).toBe(1);
   });
 
   test('replaced: never idle, never under the declared model', async () => {

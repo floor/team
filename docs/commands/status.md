@@ -46,7 +46,8 @@ file and nothing is running for it, or when the pane the state recorded for it r
 CLI ended, or the session was restored, and the pane is back at its shell; or `restored, not
 launched by team` when its pane runs a process `team` did not launch — another session's restore,
 or a CLI started by hand; or `stopped` when the file marks it stopped; or `wrong name`
-when an agent sits in the seat's workspace under another name.
+when an agent sits in the seat's workspace under another name. A `wrong name` row's model is
+the one that pane's screen names, or `(unread)` when the screen names none — never the file's.
 
 A pane is its seat only while the process `team` launched is still in it. The state records, for
 each seat `up` or `add` launched, the pane's own shell process and the processes the launch left in
@@ -56,7 +57,8 @@ again after a first message. Wherever `status` reads the seat as running, the tw
 `same` is the pane team launched, `missing` a pane back at its shell, `restored, not launched by
 team` a pane held by another process. The comparison is pids only, and it accepts the seat while
 **any** recorded CLI pid is still in front: an extra pid beside them, or another order, changes
-nothing. A restored row's model is `-`, never the file's: nothing checks what that process runs. A
+nothing. A restored row's model is `-`, never the file's: nothing checks what that process runs.
+When that pane's screen names a model, a note names it — `<seat>: its pane runs <model> <version>; that process is not the one team launched` — and the note does not change the exit. A
 seat with no `launched` record — a seat launched before this record existed, or one whose process
 herdr could not read (the reading is taken once, after the seat's idle prompt; a seat stopped at a
 dialog records it in the same write as its waiting record) — is shown as it always was;

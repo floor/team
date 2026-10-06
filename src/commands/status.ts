@@ -52,8 +52,9 @@ export const realSources: StatusSources = {
     if (!agents || !workspaces) return null;
     const screens: Record<string, string> = {};
     const processes: Record<string, PaneProcesses | null> = {};
+    // Every agent's pane, not only one whose name is a seat: a stray in a seat's workspace has a
+    // screen too. A null screen is left out, and that pane is then unread.
     for (const agent of agents) {
-      if (!team.seats.some((seat) => seat.name === agent.name)) continue;
       const screen = paneRead(agent.pane, PANE_WINDOW, session);
       if (screen !== null) screens[agent.pane] = screen;
       // The pane's process identity, for the comparison with the one the state recorded: a pane
@@ -63,10 +64,14 @@ export const realSources: StatusSources = {
     // A recorded seat herdr no longer lists an agent for still has its pane standing where it was
     // launched: that pane is read too, so one left holding its shell is told apart from one that is
     // gone. Only a seat with a recorded process is read — one with no record is never compared.
+    // The screen is the same read: a pane with no agent still has visible text, and a null leaves
+    // the restored row with no note.
     for (const seat of team.seats) {
       const held = state.seats[seat.name];
       if (!held?.launched || !held.pane || held.pane in processes) continue;
       processes[held.pane] = paneProcesses(held.pane, session);
+      const screen = paneRead(held.pane, PANE_WINDOW, session);
+      if (screen !== null) screens[held.pane] = screen;
     }
     return { running: true, agents, workspaces, screens, processes };
   },
