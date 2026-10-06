@@ -124,6 +124,38 @@ describe('the delegates section', () => {
     expect(problems(`delegates:\n${entry('main/w1:p1', 'Up')}`).join('\n')).toContain('"Up" is not one');
   });
 
+  test('the power word `abandon` loads beside down or remove, and only there', () => {
+    expect(team(`delegates:\n${entry('main/w1:p1', 'down, abandon')}`).delegates).toEqual([
+      { pane: 'main/w1:p1', commands: ['down', 'abandon'] },
+    ]);
+    expect(team(`delegates:\n${entry('main/w1:p1', 'abandon, remove, down')}`).delegates).toEqual([
+      { pane: 'main/w1:p1', commands: ['abandon', 'remove', 'down'] },
+    ]);
+    for (const alone of ['abandon', 'up, abandon', 'add, abandon, up']) {
+      expect(problems(`delegates:\n${entry('main/w1:p1', alone)}`).join('\n')).toContain(
+        'a delegate: abandon needs down, remove or restart in the same list',
+      );
+    }
+    expect(problems(`delegates:\n${entry('main/w1:p1', 'down, abandon, abandon')}`).join('\n')).toContain(
+      'a delegate: commands names "abandon" twice',
+    );
+    expect(problems(`delegates:\n${entry('main/w1:p1', 'Abandon, down')}`).join('\n')).toContain('"Abandon" is not one');
+    // `restart` is not a command, so a list naming it is refused as an unknown one; the word's
+    // rule beside `restart` is provable only once `restart` is a command.
+    expect(problems(`delegates:\n${entry('main/w1:p1', 'restart, abandon')}`).join('\n')).toContain(
+      '"restart" is not one',
+    );
+  });
+
+  test('the word is part of the fingerprint: adding, removing or reordering it differs', () => {
+    const without = fingerprints(team(`delegates:\n${entry('main/w1:p1', 'down, remove')}`));
+    const with1 = fingerprints(team(`delegates:\n${entry('main/w1:p1', 'down, remove, abandon')}`));
+    const with2 = fingerprints(team(`delegates:\n${entry('main/w1:p1', 'down, abandon, remove')}`));
+    expect(with1.sections.delegates).not.toBe(without.sections.delegates);
+    expect(with2.sections.delegates).not.toBe(with1.sections.delegates);
+    expect(compare(without, with1)).toEqual([{ kind: 'section', name: 'delegates' }]);
+  });
+
   test('nothing smuggles a different delegate past the parser', () => {
     // Anchors and aliases are refused by the parser itself, so a section cannot be shared with,
     // or re-pointed at, another node in the file.

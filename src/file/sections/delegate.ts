@@ -1,5 +1,12 @@
 import type { YamlEntry, YamlNode } from '../../yaml.ts';
-import { DELEGATE_COMMANDS, type Delegate, type Delegates, type DelegateCommand } from '../../delegate-types.ts';
+import {
+  ABANDON,
+  DELEGATE_COMMANDS,
+  DELEGATE_WORDS,
+  type Delegate,
+  type Delegates,
+  type DelegateWord,
+} from '../../delegate-types.ts';
 import type { Check } from '../check.ts';
 import type { Section } from './section.ts';
 import { valueOf } from './section.ts';
@@ -39,11 +46,11 @@ export const delegates: Section = {
           type: 'array',
           minItems: 1,
           uniqueItems: true,
-          items: { enum: DELEGATE_COMMANDS },
+          items: { enum: DELEGATE_WORDS },
         },
       },
     },
-    $comment: 'the panes that may run these of up, down, add and remove. Omitted means no delegate',
+    $comment: 'the panes that may run these of up, down, add and remove, with the word abandon beside them. Omitted means no delegate',
   },
 };
 
@@ -124,10 +131,12 @@ function readPane(entry: YamlEntry | undefined, check: Check, line: number, sess
 }
 
 /**
- * A non-empty ordered list of distinct lower-case `up`, `down`, `add` and `remove`. `approve` is
- * refused by name: approval is the owner's, and a delegate is never given it.
+ * A non-empty ordered list of distinct lower-case `up`, `down`, `add` and `remove`, with the
+ * power word `abandon` accepted beside them. The word grants nothing by itself and is a load
+ * error unless the same list names `down`, `remove` or `restart`. `approve` is refused by name:
+ * approval is the owner's, and a delegate is never given it.
  */
-function readCommands(entry: YamlEntry | undefined, check: Check, line: number): DelegateCommand[] | null {
+function readCommands(entry: YamlEntry | undefined, check: Check, line: number): DelegateWord[] | null {
   if (!entry) {
     check.fail(line, 'a delegate: commands is required');
     return null;
@@ -143,21 +152,29 @@ function readCommands(entry: YamlEntry | undefined, check: Check, line: number):
     check.fail(node.line, `a delegate: commands must name at least one of: ${NAMES}`);
     return null;
   }
-  const commands: DelegateCommand[] = [];
+  const commands: DelegateWord[] = [];
+  let abandon: number | undefined;
   for (const item of items) {
     if (item.value === 'approve') {
       check.fail(item.line, "a delegate: approve is the owner's; a delegate may not be given it");
       continue;
     }
-    if (!(DELEGATE_COMMANDS as readonly string[]).includes(item.value)) {
+    if (item.value !== ABANDON && !(DELEGATE_COMMANDS as readonly string[]).includes(item.value)) {
       check.fail(item.line, `a delegate: commands must name ${NAMES}: "${item.value}" is not one`);
       continue;
     }
-    if (commands.includes(item.value as DelegateCommand)) {
+    if (commands.includes(item.value as DelegateWord)) {
       check.fail(item.line, `a delegate: commands names "${item.value}" twice`);
       continue;
     }
-    commands.push(item.value as DelegateCommand);
+    if (item.value === ABANDON) abandon = item.line;
+    commands.push(item.value as DelegateWord);
+  }
+  // The word rides a command the flag could be passed with: alone or beside `up` or `add` it is
+  // refused. `restart` is named in the message as the third command it may ride; it is not in
+  // `DELEGATE_COMMANDS`, so a list naming it is already refused above for another reason.
+  if (abandon !== undefined && !commands.some((word) => word === 'down' || word === 'remove')) {
+    check.fail(abandon, 'a delegate: abandon needs down, remove or restart in the same list');
   }
   return commands.length ? commands : null;
 }

@@ -81,6 +81,15 @@ describe('team approve and the delegates section', () => {
     expect(atQuestion).not.toContain('Delegate:');
   });
 
+  test('a granted abandon is printed in the list, in its place', async () => {
+    const { code, out, atQuestion } = await approve(
+      `delegates:\n  - pane: main/w1:p1\n    commands: [down, remove, abandon]\n${minimal}`,
+    );
+    expect(code).toBe(0);
+    expect(out).toContain('Delegate: pane main/w1:p1 may run down, remove, abandon.\n');
+    expect(atQuestion).toContain('Delegate: pane main/w1:p1 may run down, remove, abandon.\n');
+  });
+
   test('--show prints the lines too, and writes nothing', async () => {
     const { code, out } = await approve(`${two}${minimal}`, ['--show']);
     expect(code).toBe(0);
