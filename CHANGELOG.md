@@ -89,6 +89,19 @@ team.**
 - `--until` on the commands that take it is not validated.
 - A seat stopped on its provider's error screen can read as idle or working.
 
+### Not checked on a real session before the tag
+
+Three things in this release were checked by tests and by runs in process on a test host, not on a
+real herdr session. They are due on the owner's own upgrade.
+
+- The caller gate from a coordinator's pane and from another pane (`add`, `remove`, `worktree`,
+  `down` with no `--session`): covered by the caller and command tests; not typed in a real pane.
+- A real trust dialog during `team up` (`o`, `s`, `q`): covered by the launch tests with an injected
+  terminal; not answered on a real CLI.
+- A seat left at launch for a model family its CLI doesn't run, the refusal of the next `team up`,
+  the pane closed by hand, and `team up` again: run in process, where it ends with every seat ready;
+  not on a real multiplexer.
+
 ## [0.2.1] - 2026-10-04
 
 A safety patch: on Codex and Cursor the composer's input row is read only under the box's frame, so a
