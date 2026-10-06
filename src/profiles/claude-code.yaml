@@ -83,23 +83,27 @@ screen:
   # before `question` — the core's order runs it first, and a profile cannot move it. Nothing
   # but a stop reads this screen to press a key; every other reader only reports it.
   #
-  # The two lines are read as one dialog at the bottom, never as three transcript-wide hits:
-  # an ordinary question whose prose merely quotes them above its own box (a pasted transcript
-  # or capture) is not this screen, and no Enter may go to it. What the real dialog has after
-  # its preselected row is its own tail only — the second choice, a blank, its footer — and the
-  # captures draw no rule line, no second title and no bare prompt glyph there. A quote above a
-  # live box has the box after it; whichever of the three it carries, the rule refuses it.
+  # The dialog is read by its own frame, never by phrases found anywhere in the window: a
+  # transcript that quotes the lines above an ordinary question still reads as that question,
+  # and no Enter may go to it. Three reads carry that, each one positive evidence the captures
+  # show: the preselected marker `❯` is on the "Exit and stop tasks" row itself — the row the
+  # confirming Enter acts on — the footer is the window's last non-blank line, and `only_after`
+  # admits nothing below the choice row but the dialog's own tail, "2. Stay" and that footer.
+  # A quote of the lines fails the moment one row of the dialog it was quoted above (a title,
+  # a choice, a rule) follows the quoted choice row, which is exactly what an ordinary question
+  # drawn below a quote puts there. A frame the window cannot show whole — the choice row
+  # without its marker, a quote with the live box cut away — is never read as this dialog: it
+  # stays the ordinary question it looks like, and a stop fails closed.
   exit_question:
     - all:
         - 'Background work is running'
-        - '^\s*[❯›>]?\s*1\.\s+Exit and stop tasks\b'
+        - '^\s*[❯›>]\s*1\.\s+Exit and stop tasks\b'
       footer: 'Enter to confirm · Esc to cancel'
-      none_after:
-        anchor: '^\s*[❯›>]?\s*1\.\s+Exit and stop tasks\b'
+      only_after:
+        anchor: '^\s*[❯›>]\s*1\.\s+Exit and stop tasks\b'
         patterns:
-          - '^\s*[─━]{8,}\s*$'
-          - 'Background work is running'
-          - '^\s*[❯›>]\s*$'
+          - '^\s*2\.\s+Stay\b'
+          - '^\s*Enter to confirm · Esc to cancel\s*$'
   question:
     # The phrase is the dialog's last line, as a permission footer is. Prose
     # above the box is not a question.

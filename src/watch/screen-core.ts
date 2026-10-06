@@ -497,12 +497,8 @@ function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => 
     if (at < 0 || at <= ruleAt) return false;
   }
   if (rule.noneAfter) {
-    let anchor = -1;
-    for (let i = 0; i < lines.length; i++) {
-      const hit = matches(data, lines, i, rule.noneAfter.anchor, tick, true);
-      if (hit === 'stop') return 'stop';
-      if (hit) anchor = i;
-    }
+    const anchor = lastAnchor(data, lines, rule.noneAfter.anchor, tick);
+    if (anchor === 'stop') return 'stop';
     if (anchor < 0) return false;
     for (let i = anchor + 1; i < lines.length; i++) {
       for (const pattern of rule.noneAfter.patterns) {
@@ -512,7 +508,39 @@ function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => 
       }
     }
   }
+  if (rule.onlyAfter) {
+    const anchor = lastAnchor(data, lines, rule.onlyAfter.anchor, tick);
+    if (anchor === 'stop') return 'stop';
+    if (anchor < 0) return false;
+    // The block's own tail, and nothing else: the first non-blank row that is not one of
+    // the patterns means the screen carries another dialog's rows below this block, so the
+    // block is not the live one. Blank rows are the spacing a dialog draws.
+    for (let i = anchor + 1; i < lines.length; i++) {
+      if (!(lines[i] ?? '').trim()) continue;
+      let allowed = false;
+      for (const pattern of rule.onlyAfter.patterns) {
+        const row = matches(data, lines, i, pattern, tick, true);
+        if (row === 'stop') return 'stop';
+        if (row) {
+          allowed = true;
+          break;
+        }
+      }
+      if (!allowed) return false;
+    }
+  }
   return true;
+}
+
+/** The last row an anchor pattern matches: a block's bottom edge, read from below. */
+function lastAnchor(data: ScreenData, lines: string[], anchor: LinePattern, tick: () => boolean): number | 'stop' {
+  let at = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const hit = matches(data, lines, i, anchor, tick, true);
+    if (hit === 'stop') return 'stop';
+    if (hit) at = i;
+  }
+  return at;
 }
 
 function anyLine(data: ScreenData, lines: string[], patterns: LinePattern[], tick: () => boolean, inWindow = true): boolean | 'stop' {

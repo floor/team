@@ -199,7 +199,8 @@
         { "required": ["all"] },
         { "required": ["footer"] },
         { "required": ["below_last_rule"] },
-        { "required": ["none_after"] }
+        { "required": ["none_after"] },
+        { "required": ["only_after"] }
       ],
       "properties": {
         "any": { "$ref": "#/$defs/patterns" },
@@ -209,6 +210,15 @@
         "below_last_rule": { "type": "string", "maxLength": 200 },
         "without_rule": { "type": "boolean" },
         "none_after": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["anchor", "patterns"],
+          "properties": {
+            "anchor": { "$ref": "#/$defs/pattern" },
+            "patterns": { "$ref": "#/$defs/patterns" }
+          }
+        },
+        "only_after": {
           "type": "object",
           "additionalProperties": false,
           "required": ["anchor", "patterns"],

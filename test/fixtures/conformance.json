@@ -953,6 +953,13 @@
       "provenance": "capture"
     },
     {
+      "file": "exit-typing/claude-code-exit-lines-quoted-no-rule-question.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
       "file": "exit-typing/claude-code-exit-lines-quoted-question.txt",
       "cli": "claude-code",
       "classify": "question",

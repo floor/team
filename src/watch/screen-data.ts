@@ -14,6 +14,9 @@ export type Rule = {
   /** The window has no composer rule: the dialog is the pane. */
   withoutRule?: boolean;
   noneAfter?: { anchor: LinePattern; patterns: LinePattern[] };
+  /** Every non-blank row after the block's last anchor must match one of these: the block's
+   *  own tail, with nothing of another dialog's after it. */
+  onlyAfter?: { anchor: LinePattern; patterns: LinePattern[] };
 };
 
 /** The versions a captured record was taken on, as the profile's `tested:` range reads. */

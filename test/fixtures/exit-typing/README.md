@@ -105,16 +105,26 @@ run that found none.
 
 The exit question's stage reads three phrases, and prose quoting them above a live box must not
 be read as the CLI's dialog: a rule matching them anywhere read an ordinary question as an exit
-question, and a later stop would have sent its Enter into it. The two screens below pin that
-boundary. Neither is a capture; each names the file it was built from.
+question, and a later stop would have sent its Enter into it. The three screens below pin that
+boundary. None is a capture; each names the file it was built from.
 
 - `claude-code-exit-lines-quoted-question.txt`: constructed from
   `claude-code/2.1.289/question-plain.txt`. The exit question's two lines
   (`Background work is running`, `❯ 1. Exit and stop tasks`) are quoted in the transcript
   directly above the box's first rule — the box's own title, choices and rule lines are the
   capture's — and the footer is the common `Enter to confirm · Esc to cancel`. Reads `question`;
-  before the rule's `none_after` bound the three phrases matched anywhere and this read
+  before the stage read the dialog's own frame the three phrases matched anywhere and this read
   `exit question`.
+- `claude-code-exit-lines-quoted-no-rule-question.txt`: constructed from the ordinary-question
+  shape `test/screen-core.test.ts` pins for a question whose composer rule has scrolled out,
+  with the same two quoted lines and that same shared footer quoted above it, the live title,
+  `❯ 1. main` / `2. next` choices and footer below. A rule reading the three phrases anywhere
+  still read this `exit question`; what tells it apart is the frame below the quoted choice
+  row, where the live question draws rows that are no part of the exit dialog. With the stage's
+  frame reads — the `❯` marker on the choice row itself, the footer as the window's last
+  non-blank line, and `only_after`, which admits nothing under the choice row but the dialog's
+  own `2. Stay` and that footer — a quote whose block has any other row below it is not the
+  live dialog, and this reads `question`.
 - `claude-code-exit-question-below-quote.txt`: constructed from
   `exit-typing/claude-code-shell-question-ansi.txt`, whose last 17 lines (the `▔` bar down to
   the footer) are kept byte for byte, with a three-line transcript quoting the same two lines

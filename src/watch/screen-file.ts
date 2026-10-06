@@ -325,7 +325,7 @@ function testedOf(entry: YamlEntry): VersionRange {
 
 function ruleOf(node: YamlNode, ignoreCase: boolean, allowCase = true): Rule {
   const entries = mapping(node, 'a rule');
-  only(entries, ['any', 'all', 'footer', 'on_footer', 'below_last_rule', 'without_rule', 'none_after']);
+  only(entries, ['any', 'all', 'footer', 'on_footer', 'below_last_rule', 'without_rule', 'none_after', 'only_after']);
   if (entries.length === 0) fail(node.line, 'a rule has no primitive');
   const rule: Rule = {};
   const any = optional(entries, 'any');
@@ -335,18 +335,23 @@ function ruleOf(node: YamlNode, ignoreCase: boolean, allowCase = true): Rule {
   const below = optional(entries, 'below_last_rule');
   const withoutRule = optional(entries, 'without_rule');
   const noneAfter = optional(entries, 'none_after');
+  const onlyAfter = optional(entries, 'only_after');
   if (any) rule.any = patternsOf(any.value, 'any', ignoreCase, allowCase);
   if (all) rule.all = patternsOf(all.value, 'all', ignoreCase, allowCase);
   if (footer) rule.footer = stringOf(footer.value) ?? fail(footer.line, '"footer" must be a string');
   if (onFooter) rule.onFooter = boolOf(onFooter.value, 'on_footer');
   if (below) rule.belowLastRule = patternOf(stringOf(below.value) ?? fail(below.line, '"below_last_rule" must be a string'), ignoreCase, below.line);
   if (withoutRule) rule.withoutRule = boolOf(withoutRule.value, 'without_rule');
-  if (noneAfter) rule.noneAfter = noneAfterOf(noneAfter.value, ignoreCase, allowCase);
+  if (noneAfter) rule.noneAfter = afterOf(noneAfter.value, 'none_after', ignoreCase, allowCase);
+  if (onlyAfter) rule.onlyAfter = afterOf(onlyAfter.value, 'only_after', ignoreCase, allowCase);
   return rule;
 }
 
-function noneAfterOf(node: YamlNode, ignoreCase: boolean, allowCase = true): NonNullable<Rule['noneAfter']> {
-  const entries = mapping(node, 'none_after');
+// `none_after` and `only_after` read the same shape: an anchor whose last row the window
+// goes by, and the rows after it. They differ in what the rows after must be — none of
+// the patterns, or only the patterns — so one parser reads both.
+function afterOf(node: YamlNode, key: string, ignoreCase: boolean, allowCase = true): NonNullable<Rule['noneAfter']> {
+  const entries = mapping(node, key);
   only(entries, ['anchor', 'patterns']);
   const anchor = required(entries, 'anchor', node.line);
   const patterns = required(entries, 'patterns', node.line);

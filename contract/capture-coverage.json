@@ -88,7 +88,7 @@
       },
       "question": {
         "real": 4,
-        "constructed": 1,
+        "constructed": 2,
         "undocumented": 0
       },
       "exit question": {
@@ -1029,6 +1029,12 @@
       "cli": "cursor",
       "kind": "working",
       "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-lines-quoted-no-rule-question.txt",
+      "cli": "claude-code",
+      "kind": "question",
+      "provenance": "constructed"
     },
     {
       "file": "exit-typing/claude-code-exit-lines-quoted-question.txt",

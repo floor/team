@@ -2,7 +2,7 @@
 // Enter on the second reading only — the box that reads back as exactly the typed text — never
 // on the reading taken the instant after the send, which is still the idle screen because the
 // pane has not drawn the text yet. The screens below are captures from a live pane (plain
-// claude, codex and cursor-agent under herdr 0.7.1), except two constructed boundary screens
+// claude, codex and cursor-agent under herdr 0.7.1), except three constructed boundary screens
 // named as constructed in test/fixtures/exit-typing/README.md, which says how each file was
 // taken, built and what the box holds.
 import { describe, expect, test } from 'bun:test';
@@ -187,6 +187,17 @@ describe('the kind is kept apart from the ordinary question', () => {
     // which carries the common confirmation footer. The three phrases match transcript-wide;
     // only the dialog's own frame may read them, or a stop's Enter would go to this question.
     expect(readScreen('claude-code', fixture('claude-code-exit-lines-quoted-question.txt')).kind).toBe('question');
+  });
+
+  test('the quoted lines above a question whose own rule has scrolled out are prose as well', () => {
+    // The boundary the first fix still let through: a quote is not enough to tell the kind,
+    // because the ordinary question this reader supports with no rule drawn (the shape
+    // test/screen-core.test.ts pins) has the shared footer too. Here the quote carries the
+    // dialog's two lines and that footer, and the live question follows below; nothing under
+    // the quoted choice row but the quote, so the block is not the live dialog and the
+    // reading is the ordinary question — before `only_after`, the three phrases matched
+    // anywhere and this read `exit question`, and a stop's Enter would have gone into it.
+    expect(readScreen('claude-code', fixture('claude-code-exit-lines-quoted-no-rule-question.txt')).kind).toBe('question');
   });
 
   test('the real exit question below a transcript that quotes it still reads as its own kind', () => {
