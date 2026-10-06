@@ -5,9 +5,11 @@ screens, the file, the approval, the machine — prints what is wrong, and close
 a merged worktree whose end holds. When a seat asks a question, or goes idle, it types one fixed
 line into the operator's pane — the nudge — so the operator reads its log. It types nothing into a
 screen it can't read as an empty idle prompt, so a permission dialog and a half-typed sentence are
-left alone. A screen hatch is an escape hatch for a CLI whose screens the data primitives cannot
-express. The guarantees cover what a hatch returns and what load accepts; a hatch is trusted package
-code, not a sandbox.
+left alone. A box that already holds the nudge's own line is sent, not typed into twice — and only
+by the watch process that typed it: the same text from anyone else, or found after a restart, is
+its owner's, and is never sent or cleared. A screen hatch is an escape hatch for a CLI whose
+screens the data primitives cannot express. The guarantees cover what a hatch returns and what load
+accepts; a hatch is trusted package code, not a sandbox.
 
 ## Synopsis
 
@@ -106,7 +108,7 @@ or a machine that stays full, is said once, not every pass.
 | `<seat> shows a vendor notice: its owner's to act on` | a screen the seat's profile captures as a vendor notice — today, Codex 0.157.0's update screen; `team` never answers one |
 | `<seat> is blocked, and its screen is not one the watch recognises` | herdr says blocked and the screen says nothing the watch knows |
 | `<seat>: herdr reports the status "<status>"` | a status that is neither idle, done, working nor blocked |
-| `<seat> holds text in its input box that was never sent` | unsent text for `watch.unsent_after` |
+| `<seat> holds text in its input box that was never sent` | unsent text for `watch.unsent_after`; the watch never sends or clears text it cannot show it typed itself |
 | `<seat> has been idle since the watch started` | quiet for `watch.idle_first`, and never seen working (reported once; repeated every `watch.idle_repeat` when set) |
 | `<seat> has been idle for <n> minutes` | quiet for `watch.idle_first` since its last turn (reported once per idle period; repeated every `watch.idle_repeat` when set) |
 | `every agent is idle` | every seat that is not the coordinator, the operator or parked, quiet for `watch.team_idle` |
@@ -141,8 +143,9 @@ A report that is the operator's to act on is also what the nudge stands for. The
 | --- | --- |
 | `watching the session "<session>" every <n>s` | at the start; `, without nudges` is added by `--no-nudge` |
 | `nudged the operator: Team watch: reports are waiting in .agents/team.log` | the nudge was typed and sent |
+| `nudged the operator (its own unsent line was already in its box): <nudge>` | the box still held the line this same watch process had typed, its Enter never sent; that line is sent instead of typed again |
 | `nudge not typed (--no-nudge): <nudge>` | `--no-nudge`, with reports waiting |
-| `a nudge was typed and not sent: the operator's screen changed before the Enter` | a dialog opened between the typing and the Enter; the reports wait for the next pass |
+| `a nudge was typed and not sent: the operator's box does not hold it` | the pane had not drawn the typed line, or held something else, when the bounded wait for it ended; nothing is sent, and the reports wait for the next pass |
 | `the operator could not be nudged for <n> minutes; <k> report(s) wait: <reports>` | the operator was busy for `watch.nudge_wait`; this one is a desktop notification too |
 | `herdr doesn't answer; the watch keeps trying` | the pass is skipped and the watch goes on |
 | `<account>: its check is unreadable` | the check command failed, timed out, or printed something other than one to three lines for a subscription or one line for a spend account; its output is never logged |

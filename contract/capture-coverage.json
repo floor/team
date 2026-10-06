@@ -67,7 +67,7 @@
     },
     "claude-code": {
       "idle": {
-        "real": 5,
+        "real": 6,
         "constructed": 2,
         "undocumented": 0
       },
@@ -77,7 +77,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 7,
+        "real": 8,
         "constructed": 2,
         "undocumented": 0
       },
@@ -1123,6 +1123,18 @@
     {
       "file": "exit-typing/cursor-unsent-ansi.txt",
       "cli": "cursor",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "nudge-typing/claude-code-nudge-idle-ansi.txt",
+      "cli": "claude-code",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "nudge-typing/claude-code-nudge-unsent-ansi.txt",
+      "cli": "claude-code",
       "kind": "unsent",
       "provenance": "capture"
     }

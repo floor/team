@@ -90,6 +90,7 @@ function sources(over: Partial<WatchSources> = {}): WatchSources {
     foreground: () => ['claude'],
     typeText: () => true,
     pressEnter: () => true,
+    sleep: async () => {},
     notify: () => {},
     now: () => new Date('2026-10-03T14:00:00Z'),
     wait: async () => false,

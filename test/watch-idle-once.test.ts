@@ -250,6 +250,64 @@ describe('watch idle reports (once per period by default, repeat on request)', (
     expect(memory.pending).toEqual([]);
   });
 
+  test('a box holding exactly the watch\'s line, that this process never typed, is not free', () => {
+    // The reviewer's case: the line is one fixed public constant, so a person or an agent who
+    // typed it themselves holds a box that reads exactly like a leftover of the watch's. The
+    // text proves nothing: with no record in this process of typing it, the box is its owner's,
+    // and the pass raises no nudge into it.
+    const file = valid(defaultExample
+      .replace('  idle_first: 10m', '  idle_first: 1m\n  idle_repeat: 2m')
+      .replace('  unsent_after: 1m', '  unsent_after: 1h'));
+    const memory = newMemory();
+    const nudgeBox = `${RULE}\n❯ ${NUDGE_TEXT}\n${RULE}\n${STATUS}\n`;
+    const live = liveScene({
+      'claude-operator-acme': { status: 'idle', screen: nudgeBox },
+      'deepseek-acme': { status: 'idle', screen: idleScreen },
+    });
+    pass({ team: file, watch: file.watch, state: emptySession(), live, machine: fine, now: 0, memory });
+    const p1 = pass({ team: file, watch: file.watch, state: emptySession(), live, machine: fine, now: 1 * MIN, memory });
+    expect(p1.nudge).toBeNull();
+    expect(memory.pending).toEqual(['deepseek-acme has been idle since the watch started']);
+  });
+
+  test('a box holding the line this process recorded typing is free: the pass raises the nudge', () => {
+    // The same box, after this process typed the line itself and its Enter never went out. The
+    // pass acts on the record of the typing, in this pane — and on nothing else.
+    const file = valid(defaultExample
+      .replace('  idle_first: 10m', '  idle_first: 1m\n  idle_repeat: 2m')
+      .replace('  unsent_after: 1m', '  unsent_after: 1h'));
+    const memory = newMemory();
+    memory.ownNudge = { pane: 'w0:p1', text: NUDGE_TEXT };
+    const nudgeBox = `${RULE}\n❯ ${NUDGE_TEXT}\n${RULE}\n${STATUS}\n`;
+    const live = liveScene({
+      'claude-operator-acme': { status: 'idle', screen: nudgeBox },
+      'deepseek-acme': { status: 'idle', screen: idleScreen },
+    });
+    pass({ team: file, watch: file.watch, state: emptySession(), live, machine: fine, now: 0, memory });
+    const p1 = pass({ team: file, watch: file.watch, state: emptySession(), live, machine: fine, now: 1 * MIN, memory });
+    expect(p1.nudge).toEqual({
+      pane: 'w0:p1',
+      text: NUDGE_TEXT,
+      pending: ['deepseek-acme has been idle since the watch started'],
+    });
+  });
+
+  test('a box holding any other text is not free, and the pass raises no nudge', () => {
+    const file = valid(defaultExample
+      .replace('  idle_first: 10m', '  idle_first: 1m\n  idle_repeat: 2m')
+      .replace('  unsent_after: 1m', '  unsent_after: 1h'));
+    const memory = newMemory();
+    const otherBox = `${RULE}\n❯ Brief: take the next task from the queue\n${RULE}\n${STATUS}\n`;
+    const live = liveScene({
+      'claude-operator-acme': { status: 'idle', screen: otherBox },
+      'deepseek-acme': { status: 'idle', screen: idleScreen },
+    });
+    pass({ team: file, watch: file.watch, state: emptySession(), live, machine: fine, now: 0, memory });
+    const p1 = pass({ team: file, watch: file.watch, state: emptySession(), live, machine: fine, now: 1 * MIN, memory });
+    expect(p1.nudge).toBeNull();
+    expect(memory.pending).toEqual(['deepseek-acme has been idle since the watch started']);
+  });
+
   test('idle_repeat: 20m set repeats every 20 minutes (assert against sequence)', () => {
     const file = valid(repeatExample);
     expect(file.watch.idleRepeat).toBe(1200);
