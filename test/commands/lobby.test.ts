@@ -897,6 +897,79 @@ describe('the lobby gate with files declared', () => {
       detail: `the lobby ${lobby}: is not empty`,
     });
   });
+
+  test('up and a temporary add pass a lobby holding the declared file of their seats’ CLI', async () => {
+    approveYaml(migratedTeamYaml());
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+
+    const made = world();
+    const run = await runUpCmd([], made);
+    expect(run.code).toBe(0);
+    expect(made.workspaces).toContainEqual({ label: 'lead', cwd: lobby });
+    expect(made.workspaces).toContainEqual({ label: 'worker', cwd: lobby });
+
+    const addRun = await runAddCmd(['--temporary', '--like', 'worker', '--until', 'merged:main'], made);
+    expect(addRun.code).toBe(0);
+    expect(made.workspaces).toContainEqual({ label: 'worker-tmp-1', cwd: lobby });
+  });
+
+  test('up refuses an undeclared sibling beside the declared file with today’s bytes', async () => {
+    approveYaml(migratedTeamYaml());
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+    writeFileSync(join(lobby, '.claude', 'settings.json'), '{}\n');
+
+    const made = world();
+    const run = await runUpCmd([], made);
+    expect(run.code).toBe(1);
+    expect(run.err).toContain(`team up: the lobby ${lobby}: is not empty\n`);
+    expect(made.workspaces).toEqual([]);
+  });
+
+  /** Replaces the declared file — a fresh inode under the same name — on the `n`th read of its
+   *  parent, after the gate's read, against the check that comes next: the confirm directly
+   *  before a workspace is made. A rename hands the lock a new inode for certain, where unlink
+   *  and write could hand the old one back. */
+  function swapLockAt(n: number): FsReader {
+    let seen = 0;
+    return {
+      ...defaultFs,
+      readdir(p) {
+        if (p === join(lobby, '.claude') && ++seen === n) {
+          const fresh = `${lock()}.replacement`;
+          writeFileSync(fresh, '{}\n');
+          renameSync(fresh, lock());
+        }
+        return defaultFs.readdir(p);
+      },
+    };
+  }
+
+  test('the declared file swapped after the gate creates no workspace: the record and the log hold the reason in words', async () => {
+    approveYaml(migratedTeamYaml());
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+
+    const made = world();
+    // The gate reads the lock first, the lead seat's confirmation second — the swap lands there.
+    const run = await runUpCmd([], made, { fs: swapLockAt(2) });
+    expect(run.code).toBe(1);
+    expect(made.workspaces).toEqual([]);
+    expect(made.paneIds()).toEqual([]);
+    expect(made.runs).toEqual([]);
+    expect(made.typed).toEqual([]);
+    expect(run.out).toContain('lead: left out: the lobby: .claude/scheduled_tasks.lock is not the file the gate read\n');
+    expect(run.out).not.toContain(lobby);
+    expect(run.err).toContain(`  the lobby ${lobby}: .claude/scheduled_tasks.lock is not the file the gate read\n`);
+    const log = readFileSync(join(dir, 'team.log'), 'utf8');
+    expect(log).toContain('lead: left out: the lobby: .claude/scheduled_tasks.lock is not the file the gate read');
+    expect(log).not.toContain(lobby);
+    expect(Object.keys(readState(dir).sessions['acme']?.seats ?? {})).toEqual([]);
+  });
 });
 
 describe('trust: validation', () => {
