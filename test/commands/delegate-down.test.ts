@@ -248,6 +248,36 @@ describe('a delegated down', () => {
     expect(r.audits).toEqual([]);
   });
 
+  // The three states a target session can be in, as `down` reads them: a stopped session and an
+  // absent one are the same `false` from `sessionRunning`, and both are the idle answer every
+  // caller gets — the gate is never asked, because the idle check comes before it. A herdr that
+  // doesn't answer is the second state's own refusal, before the gate too. `neverAsked` is the
+  // proof: it fails the test the moment the gate is reached.
+  test('a target session that is stopped or absent is the idle answer, real and dry, gate unasked', async () => {
+    for (const argv of [[], ['--dry-run']] as const) {
+      const r = rig({ gate: neverAsked, sessionRunning: () => false });
+      expect(await r.run([...argv])).toBe(0);
+      expect(r.io.out).toBe(
+        `session acme-web is not running: nothing to stop${argv.length === 0 ? '' : '\ndry run: nothing was run'}\n`,
+      );
+      expect(r.io.err).toBe('');
+      expect(r.gateCalls).toEqual([]);
+      expect(r.audits).toEqual([]);
+      expect(r.typed).toEqual([]);
+    }
+  });
+
+  test('a herdr that does not answer is exit 2 with its own line, gate unasked', async () => {
+    for (const argv of [[], ['--dry-run']] as const) {
+      const r = rig({ gate: neverAsked, sessionRunning: () => null });
+      expect(await r.run([...argv])).toBe(2);
+      expect(r.io.out).toBe('');
+      expect(r.io.err).toBe("team down: herdr doesn't answer; is it installed and running?\n");
+      expect(r.gateCalls).toEqual([]);
+      expect(r.typed).toEqual([]);
+    }
+  });
+
   test('--wait is a delegate form: it waits, then stops the whole team', async () => {
     let clock = NOW.getTime();
     let working = true;
