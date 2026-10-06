@@ -7,6 +7,7 @@
 // taken, built and what the box holds.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { stripSgr } from '../src/ansi.ts';
 import { type ExitIo, typeExit } from '../src/commands/down.ts';
 import { boxHoldsOther, boxHoldsText } from '../src/launch/deliver.ts';
 import { exitConfirmKey, profileFor } from '../src/profiles/profile.ts';
@@ -508,6 +509,136 @@ describe('the kind is kept apart from the ordinary question', () => {
     expect(screen.indexOf('     3. Stay')).toBeLessThan(screen.indexOf('     2. Move to background and exit'));
     expect(readScreen('claude-code', screen).kind).toBe('question');
   });
+
+  test('"Move to background and exit" above the marked row is an ordinary question', () => {
+    // Round three's hole, from the head it was found against: the tail's rows were matched each
+    // on its own line, so the three-choice form's "2. Move to background and exit" lifted above
+    // the marked first choice — only "3. Stay" left under it — still read as this dialog and a
+    // stop's confirming Enter was sent into it. The block names the rows after its marked row:
+    // exactly "2. Stay", or the move row with its "3. Stay", or none. This screen draws the move
+    // row before the marked row, which no form does, so it reads `question`. Read on `f65b95b` —
+    // the pushed head before the block — this same file reads `exit question`.
+    const screen = fixture('claude-code-exit-question-move-above-marked.txt');
+    expect(screen.indexOf('     2. Move to background and exit')).toBeLessThan(screen.indexOf('   ❯ 1. Exit and stop tasks'));
+    expect(screen.indexOf('   ❯ 1. Exit and stop tasks')).toBeLessThan(screen.indexOf('     3. Stay'));
+    expect(readScreen('claude-code', screen).kind).toBe('question');
+  });
+
+  // Round three's other half, generated rather than named one screen at a time: each real
+  // capture's dialog is changed one row at a time — a row dropped, a row doubled, two rows under
+  // each other swapped (the block's first row also with the row over it), a row given a suffix —
+  // and what each change leaves must read as the ordinary question it looks like.
+  //
+  // Which changes may keep the reading is the whole of the block's design, and each is named
+  // where it is expected:
+  //   * a row the block draws — the title, the "will stop" row, the marked row, a choice row, the
+  //     footer — or a blank it draws: a change to one is a screen no form draws;
+  //   * a row of the CLI's own work list: its text is not the block's, so a row appended to, two
+  //     of its rows swapped or one of several dropped leaves exactly this dialog — the marked row
+  //     and the tail the block draws untouched, a stop's Enter still on the same row. A row of
+  //     that list doubled is not: nothing in the block is read twice, and it reads `question`;
+  //   * the only choice row dropped: what is left — marked row, blank, footer — is exactly the
+  //     clipped form a short pane draws, its marked row the same row, so it stays this dialog;
+  //   * the footer dropped: no line of the screen carries a footer at all, and it reads
+  //     `unknown`, a screen matching no shape — nothing sends a key on it;
+  //   * the first row doubled: the copy above the block is a transcript row and the dialog under
+  //     it is whole, the reading `claude-code-exit-question-below-quote.txt` pins as well.
+  // Every row above the block is swept too, and no change to it reaches the reading: the block is
+  // the screen's bottom, and a transcript that quotes the dialog is not the dialog.
+  const REAL_BLOCKS = [
+    'claude-code-shell-question-ansi.txt',
+    'claude-code-scheduled-question-ansi.txt',
+    'claude-code-shell-move-question.txt',
+    'claude-code-shell-scheduled-move-question-ansi.txt',
+    'claude-code-shell-scheduled-move-question-clipped-ansi.txt',
+  ] as const;
+
+  /** The rows the block's three forms draw, the footer among them. A non-blank block row outside
+   *  this set is a row of the CLI's work list; a blank one is a blank the block draws. */
+  const DRAWN = new Set([
+    'Background work is running',
+    'The following will stop when you exit:',
+    '❯ 1. Exit and stop tasks',
+    '2. Stay',
+    '2. Move to background and exit',
+    '3. Stay',
+    'Enter to confirm · Esc to cancel',
+  ]);
+  const CHOICES = new Set(['2. Stay', '2. Move to background and exit', '3. Stay']);
+  const TITLE = 'Background work is running';
+  const FOOTER = 'Enter to confirm · Esc to cancel';
+
+  for (const name of REAL_BLOCKS) {
+    test(`${name}: every one-row change to the dialog leaves a screen that reads as the question it looks like`, () => {
+      const lines = fixture(name).split('\n');
+      const line = (at: number): string => lines[at] ?? '';
+      const row = (at: number): string => stripSgr(line(at)).trim();
+      const start = lines.reduce((last, _line, at) => (row(at) === TITLE ? at : last), -1);
+      const end = lines.reduce((last, _line, at) => (row(at) === '' ? last : at), -1);
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(row(end)).toBe(FOOTER);
+      const block = lines.slice(start, end + 1).map((_line, at) => row(start + at));
+      const work = block.filter((text) => text !== '' && !DRAWN.has(text));
+      const choices = block.filter((text) => CHOICES.has(text));
+      expect(work.length).toBeGreaterThanOrEqual(1);
+
+      const kind = (next: string[]): string => readScreen('claude-code', next.join('\n')).kind;
+      const without = (at: number): string[] => [...lines.slice(0, at), ...lines.slice(at + 1)];
+      const doubled = (at: number): string[] => [...lines.slice(0, at + 1), line(at), ...lines.slice(at + 1)];
+      const swapped = (one: number, other: number): string[] =>
+        lines.map((text, at) => (at === one ? line(other) : at === other ? line(one) : text));
+      const suffixed = (at: number): string[] => lines.map((text, at2) => (at2 === at ? `${text} — x` : text));
+
+      /** What this row's change leaves, by the rules named above the sweep. */
+      const leaves = (at: number, change: 'drop' | 'double' | 'swap' | 'suffix'): string => {
+        const text = row(at);
+        const under = at + 1 <= end ? row(at + 1) : null;
+        if (text !== '' && !DRAWN.has(text)) {
+          if (change === 'drop') return work.length > 1 ? 'exit question' : 'question';
+          if (change === 'suffix') return 'exit question';
+          if (change === 'swap') {
+            return under !== null && under !== '' && !DRAWN.has(under) ? 'exit question' : 'question';
+          }
+          return 'question';
+        }
+        if (change === 'drop') {
+          if (text === FOOTER) return 'unknown';
+          if (CHOICES.has(text) && choices.length === 1) return 'exit question';
+        }
+        if (change === 'double' && text === TITLE) return 'exit question';
+        return 'question';
+      };
+
+      const cases: Array<{ what: string; kind: string; next: string[] }> = [];
+      const more: Array<{ what: string; kind: string; next: string[] }> = [];
+      for (let at = start; at <= end; at++) {
+        const text = row(at);
+        cases.push({ what: `${text} dropped`, kind: leaves(at, 'drop'), next: without(at) });
+        cases.push({ what: `${text} doubled`, kind: leaves(at, 'double'), next: doubled(at) });
+        if (at < end) cases.push({ what: `${text} swapped with the row under it`, kind: leaves(at, 'swap'), next: swapped(at, at + 1) });
+        if (at === start && at > 0) cases.push({ what: `${text} swapped with the row over it`, kind: 'question', next: swapped(at, at - 1) });
+        cases.push({ what: `${text} given a suffix`, kind: leaves(at, 'suffix'), next: suffixed(at) });
+      }
+      // Three changes on every block row (dropped, doubled, suffixed), a swap with the row under
+      // it on all but the last, and a swap with the row over it on the first: four per row.
+      expect(cases.length).toBe(4 * (end - start + 1));
+      // The rows above the block, the same four changes each, inside the transcript: the dialog
+      // below is untouched by any of them, and the reading is its own.
+      for (let at = 0; at < start; at++) {
+        if (row(at) === '') continue;
+        more.push({ what: `${row(at)} dropped above the block`, kind: 'exit question', next: without(at) });
+        more.push({ what: `${row(at)} doubled above the block`, kind: 'exit question', next: doubled(at) });
+        if (at + 1 < start) {
+          more.push({ what: `${row(at)} swapped with the row under it above the block`, kind: 'exit question', next: swapped(at, at + 1) });
+        }
+        more.push({ what: `${row(at)} given a suffix above the block`, kind: 'exit question', next: suffixed(at) });
+      }
+      expect(more.length).toBeGreaterThanOrEqual(start);
+      for (const one of [...cases, ...more]) {
+        expect({ what: one.what, kind: kind(one.next) }).toEqual({ what: one.what, kind: one.kind });
+      }
+    });
+  }
 
   test('the stage is the profile\'s, and beside it the one key that confirms that screen', () => {
     expect(screenData('claude-code')?.exit_question).toBeDefined();

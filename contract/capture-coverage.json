@@ -88,7 +88,7 @@
       },
       "question": {
         "real": 4,
-        "constructed": 13,
+        "constructed": 14,
         "undocumented": 0
       },
       "exit question": {
@@ -1050,6 +1050,12 @@
     },
     {
       "file": "exit-typing/claude-code-exit-question-marker-on-move.txt",
+      "cli": "claude-code",
+      "kind": "question",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-move-above-marked.txt",
       "cli": "claude-code",
       "kind": "question",
       "provenance": "constructed"

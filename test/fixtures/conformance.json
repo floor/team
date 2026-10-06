@@ -981,6 +981,13 @@
       "provenance": "constructed"
     },
     {
+      "file": "exit-typing/claude-code-exit-question-move-above-marked.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
       "file": "exit-typing/claude-code-exit-question-move-footer-suffix.txt",
       "cli": "claude-code",
       "classify": "question",

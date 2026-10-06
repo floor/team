@@ -83,9 +83,10 @@ never `idle`, never `unsent` — so nothing that reads the screen would type int
 kind is kept apart from the ordinary `question`, which no stop may ever answer. The profile
 names both halves of the answer for this CLI: the stage this screen is read from
 (`screen.exit_question`) and the one key that confirms it (`exit_confirm: enter`, beside the
-screens' evidence in src/profiles/claude-code.yaml). The stage admits each of the two forms
-below exactly, and a tail it cannot name reads as the ordinary question it looks like — the
-comment beside the rules says why. Nothing but a stop presses that key.
+screens' evidence in src/profiles/claude-code.yaml). The stage reads the dialog as one block of
+rows — the title down to the footer as the screen's last line — and admits only the forms below,
+whole; a screen that is not one of them reads as the ordinary question it looks like, and the
+comment beside the rule says why. Nothing but a stop presses that key.
 
 What the other two CLIs do with background work, from their own runs of 2026-10-06 in the same
 scratch session: Codex 0.160.0 asks nothing. With a backgrounded shell running, one Enter on
@@ -150,7 +151,8 @@ The exit question's stage reads three phrases, and prose quoting them above a li
 be read as the CLI's dialog: a rule matching them anywhere read an ordinary question as an exit
 question, and a later stop would have sent its Enter into it. The screens below pin that
 boundary: the first three quote the dialog's lines above a live question, and the rest carry
-rows no run has drawn. None is a capture; each names the file it was built from.
+rows no run has drawn, or the form's own rows in an order no form draws. None is a capture; each
+names the file it was built from.
 
 - `claude-code-exit-lines-quoted-question.txt`: constructed from
   `claude-code/2.1.289/question-plain.txt`. The exit question's two lines
@@ -186,8 +188,17 @@ rows no run has drawn. None is a capture; each names the file it was built from.
   `2. Move to background and exit`, row 1 left unmarked. The reader takes the marker as the row
   the confirming key acts on; a stop means stop, so a screen whose selection sits on the move
   row is not the screen whose key this program may send. Reads `question`.
+- `claude-code-exit-question-move-above-marked.txt`: the same capture with its
+  `2. Move to background and exit` row lifted above the marked `❯ 1. Exit and stop tasks`, only
+  `3. Stay` left under the mark — the form's own rows in an order no form draws. Every row of it
+  is a row some form draws, so the reader that checked the rows one at a time read it
+  `exit question`; with the block read (`### One block, from the title to the footer` below) it
+  reads `question`.
 
 ### Whole rows, in the form's order (the reviewer's MUST-FIX on 81ae276)
+
+*The eight screens below stay; what reads them is the block at the end of this file, and they read
+the same `question` there (each is also pinned by its own case in `test/exit-typing.test.ts`).*
 
 The choice rows were anchored at their start only (`\b`), so a row that began like a form's row
 and continued with anything at all still read as this dialog: the reviewer drove `typeExit`
@@ -214,3 +225,36 @@ comparison was already whole-row, are the exception).
   swapped — the dialog's own rows in an order no form draws. `only_after` reads the tail's rows
   in the order the patterns name, so this reads `question`; with the rows read in any order it
   read `exit question`.
+
+### One block, from the title to the footer (the reviewer's MUST-FIX on f65b95b)
+
+Rules that read a screen row by row — this row anywhere, that row in this order — admit a frame
+whose rows were each drawn by some form but stand in no form's order, and three review rounds
+each found another such frame between the rules. The dialog is now read as one block instead: from
+the last `Background work is running` the window draws down to the screen's last non-blank line,
+every row the block draws is that row, whole, after the frame's own indentation, and the block is
+the one the captured forms describe. Anything else — a row added, changed, dropped,
+doubled, moved, or another dialog's row under the footer — is a step no path of the block takes,
+and the screen reads as the ordinary question it looks like. The profile carries the block
+(`screen.exit_question` in src/profiles/claude-code.yaml); the reader is in
+src/watch/screen-core.ts, and the stage's own comment says why.
+
+The reviewer's frame for it is `claude-code-exit-question-move-above-marked.txt` (the bullet
+above): the release run's capture with its `2. Move to background and exit` row lifted above the
+marked `❯ 1. Exit and stop tasks`, only `3. Stay` left under the mark. Every row of that screen
+is a row some form draws, in an order no form draws, so a reader that checks the rows one at a
+time accepts it — read on `f65b95b`, the pushed head before the block, it is `exit question`, and
+a stop's confirming Enter would have gone into a frame no run has drawn. With the block it is
+`question`.
+
+The sweep in `test/exit-typing.test.ts` is generated rather than named: each real capture's dialog
+is changed one row at a time — a row dropped, a row doubled, two rows under each other swapped,
+a row given a suffix — and every change must read as the ordinary question it looks like, with
+four named exceptions, each a screen that is still this dialog: a row of the CLI's own work list
+changed (its text is the CLI's to fill; the marked row and the tail are untouched), the only
+choice row dropped (what is left *is* the clipped form the captures show, marked row and footer
+intact), the
+first row doubled (a copy above the block is a transcript, the dialog under it is whole — the same
+reading as `claude-code-exit-question-below-quote.txt`), and the footer dropped (no line carries a
+footer at all, so the screen reads `unknown` and nothing sends a key on it). The rows above the
+block are swept too: no change to a transcript reaches the reading.
