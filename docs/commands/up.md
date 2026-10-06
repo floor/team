@@ -13,8 +13,11 @@ not clear is refused too (`session <name> is stopped and did not clear`).
 Every seat, shared and worktree-mode alike, starts in `~/.config/team/lobby`. It is shared
 by all projects on the machine. Before creating anything, `team` verifies the lobby gate:
 ownership by the invoking user, no symbolic links anywhere in the chain, directory mode exactly
-`0700`, nothing but the files the started CLIs' profiles declare (a claude-code seat declares
-`.claude/scheduled_tasks.lock`), and not inside a git repository or worktree. The launch uses
+`0700`, nothing but the files the profiles the tool ships declare (claude-code declares
+`.claude/scheduled_tasks.lock`), and not inside a git repository or worktree. The set is the
+same for every team on the machine: the lobby is one folder shared by all of them, so what it
+may hold cannot depend on this team's seats — a lock another team's claude-code seat wrote
+must not block a team with no claude-code seat. The launch uses
 that verified path. The lobby is checked again — the gate's checks, plus that it is still the
 folder the gate read: the same canonical path, device and inode — directly before every
 workspace this run creates in it, with nothing between that confirmation and herdr's create

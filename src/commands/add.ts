@@ -36,7 +36,7 @@ import { plainLine, plainText } from '../launch/plain.ts';
 import { progressWriter, type Progress } from '../launch/progress.ts';
 import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
 import { logLine } from '../log.ts';
-import { profileFor } from '../profiles/index.ts';
+import { profileFor, shippedLobbyFiles } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock, type SeatState, type SessionState } from '../state.ts';
 import { approvalStanding, recordLedger, storePath, type Ceilings, type Standing } from '../store/store.ts';
 import { launchLimit, readMachine, type Machine, type SwapSample } from '../watch/machine.ts';
@@ -369,12 +369,11 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   let startProblem: string | null = null;
   let verifiedLobby: string | null = null;
   let lobbySeen: LobbySeen | null = null;
-  // What the lobby may hold beside the seats: the files the profiles of the CLIs that run
-  // there declare — every seat of the edited file, this run's added seat included, for a
-  // migrated file seats every one of them in the lobby (`place.ts`).
-  const declaredLobbyFiles = [...new Set(
-    prepared.team.seats.flatMap((seat) => profileFor(seat.cli)?.lobbyFiles ?? []),
-  )].sort();
+  // What the lobby may hold beside the seats: the `lobby_files` of every profile the tool
+  // ships — the same set `up`'s gate and `doctor`'s finding read, so the three cannot disagree
+  // about a declared file. The lobby is one folder per machine, shared by every team on it:
+  // another team's CLI may hold the folder whatever this file's seats are.
+  const declaredLobbyFiles = shippedLobbyFiles();
   if (!prepared.team.trust || prepared.team.trust.length === 0 || isLegacyTrust(prepared.team.trust)) {
     startProblem = `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\n${migrationText(prepared.team, root, sources.home)}`;
   } else {

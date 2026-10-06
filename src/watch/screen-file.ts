@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DialectError, compilePattern } from './dialect.ts';
-import type { Border, Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage, StatusBelow, VersionRange, Wrap } from './screen-data.ts';
+import type { BlockStep, Border, Composer, FallbackRule, LinePattern, Placeholder, Rule, ScreenData, Stage, StatusBelow, VersionRange, Wrap } from './screen-data.ts';
 import type { ScreenProfile } from './screen-profile.ts';
 import type { Screen } from './screen.ts';
 import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts';
@@ -325,8 +325,15 @@ function testedOf(entry: YamlEntry): VersionRange {
 
 function ruleOf(node: YamlNode, ignoreCase: boolean, allowCase = true): Rule {
   const entries = mapping(node, 'a rule');
-  only(entries, ['any', 'all', 'footer', 'on_footer', 'below_last_rule', 'without_rule', 'none_after', 'only_after']);
+  only(entries, ['any', 'all', 'footer', 'on_footer', 'below_last_rule', 'without_rule', 'none_after', 'only_after', 'block']);
   if (entries.length === 0) fail(node.line, 'a rule has no primitive');
+  const block = optional(entries, 'block');
+  // A block spells the rows it draws, the footer among them, so it stands alone: a rule that
+  // also carried another primitive would read that one on the screen the block rejects.
+  if (block) {
+    if (entries.length !== 1) fail(block.line, '"block" is the rule\'s only key');
+    return { block: blockOf(block.value) };
+  }
   const rule: Rule = {};
   const any = optional(entries, 'any');
   const all = optional(entries, 'all');
@@ -358,6 +365,45 @@ function afterOf(node: YamlNode, key: string, ignoreCase: boolean, allowCase = t
   return {
     anchor: linePattern(anchor.value, ignoreCase, allowCase),
     patterns: patternsOf(patterns.value, 'patterns', ignoreCase, allowCase),
+  };
+}
+
+// A block reads a dialog as one run of rows, top to bottom. A string is a row the block draws —
+// an empty string is one blank row of its spacing, the only way to write one — `list: true` is
+// the run of rows it fills with its own text, and `one_of` holds the alternatives a form's tail
+// can take, each a list of the same steps (an empty list for a form that draws no row there).
+function blockOf(node: YamlNode): BlockStep[] {
+  if (node.kind !== 'seq' || node.items.length === 0) fail(node.line, '"block" must be a non-empty list of rows');
+  const steps = node.items.map((item) => blockStep(item));
+  const first = steps[0];
+  if (first === undefined || !('row' in first)) fail(node.line, 'a block starts with the row it first draws');
+  return steps;
+}
+
+function blockStep(node: YamlNode): BlockStep {
+  if (node.kind === 'scalar') {
+    const text = stringOf(node);
+    if (text === null) fail(node.line, 'a block row must be a string');
+    if (text === '') return { blank: true };
+    return { row: text };
+  }
+  const entries = mapping(node, 'a block step');
+  only(entries, ['list', 'one_of']);
+  const list = optional(entries, 'list');
+  if (list) {
+    if (entries.length !== 1) fail(list.line, '"list" stands alone');
+    if (boolOf(list.value, 'list') !== true) fail(list.line, '"list" must be true');
+    return { list: true };
+  }
+  const oneOf = required(entries, 'one_of', node.line);
+  if (oneOf.value.kind !== 'seq' || oneOf.value.items.length === 0) {
+    fail(oneOf.line, '"one_of" must name at least one alternative');
+  }
+  return {
+    oneOf: oneOf.value.items.map((alt) => {
+      if (alt.kind !== 'seq') fail(alt.line, 'an alternative is a list of the rows it draws');
+      return alt.items.map((item) => blockStep(item));
+    }),
   };
 }
 

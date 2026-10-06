@@ -306,6 +306,7 @@ describe('a seat the approval lists as changed', () => {
       status: () => 'idle',
       typeText: () => false,
       pressEnter: () => false,
+      sleep: async () => {},
       notify: () => {},
       now: () => new Date(NOW),
       wait: async () => --left > 0,

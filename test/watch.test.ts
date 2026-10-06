@@ -787,6 +787,7 @@ describe('team watch', () => {
       foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = claudeBox(text); return true; },
       pressEnter: (pane) => { typed.push(`${pane} <enter>`); return true; },
+      sleep: async (ms) => { clock += ms; },
       notify: (text) => { notified.push(text); },
       now: () => new Date(clock),
       wait: async (seconds) => { clock += seconds * 1000; return --left > 0; },
@@ -869,6 +870,93 @@ describe('team watch', () => {
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
   });
 
+  test('a nudge the pane has not drawn yet is waited for, read back, and then sent', async () => {
+    // The pair of real Claude Code captures: the instant after the nudge line was typed the
+    // pane still reads idle with its placeholder, and about two seconds later the box holds
+    // exactly the line, wrapped onto its continuation row. The reading that decides the Enter
+    // waits for the draw — the fault was reading back once, at once, and telling 'typed and
+    // not sent' about a pane that had simply not drawn yet.
+    const justTyped = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-idle-ansi.txt', import.meta.url), 'utf8');
+    const drawn = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-unsent-ansi.txt', import.meta.url), 'utf8');
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = justTyped; return true; },
+      sleep: async (ms) => { clock += ms; screenNow = drawn; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+    expect(io.out).toContain('nudged the operator');
+    expect(io.out).not.toContain('a nudge was typed and not sent');
+  });
+
+  test('a pane that never draws the nudge is left, with the line that says so', async () => {
+    // The wait is bounded, as the exit typing's is: a screen still idle at the deadline is the
+    // text never drawn, and nothing but the typing was sent.
+    const justTyped = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-idle-ansi.txt', import.meta.url), 'utf8');
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = justTyped; return true; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was typed and not sent');
+  });
+
+  test('the same line typed by someone else is never sent, typed over or cleared', async () => {
+    // The reviewer's case: the line is one fixed public constant, so a person or an agent who
+    // typed it themselves leaves a box that reads exactly like the watch's own leftover. The
+    // pass saw the scene's idle prompt; the read before delivery finds this box. With no record
+    // in this process of typing it, the text is its owner's — no key goes out, nothing is typed
+    // over it, and nothing clears it.
+    const held = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-unsent-ansi.txt', import.meta.url), 'utf8');
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, { screen: () => held }));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain('nudged the operator');
+  });
+
+  test('a line this watch typed itself, left unsent, is sent by a later pass and not typed again', async () => {
+    // Pass 1 types the line; the pane never draws it, so the Enter does not go out and the line
+    // stays in the box — this process's own leftover, recorded at the typing. Pass 2 finds the
+    // box holding exactly that line and sends it, instead of typing the same text a second time.
+    const justTyped = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-idle-ansi.txt', import.meta.url), 'utf8');
+    const held = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-unsent-ansi.txt', import.meta.url), 'utf8');
+    let waits = 0;
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(2, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = justTyped; return true; },
+      // The pane draws the line between the passes: unsent, and this watch's own.
+      wait: async (seconds) => { clock += seconds * 1000; screenNow = held; return waits++ === 0; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+    expect(io.out).toContain('nudged the operator (its own unsent line was already in its box)');
+    expect(io.out).toContain('a nudge was typed and not sent');
+  });
+
+  test('after a restart, the line the watch left unsent is someone\'s text: no key is sent', async () => {
+    // Run 1 leaves the box holding this watch's own line, unsent. Run 2 is a new watch process:
+    // it remembers no typing, so the same box is text it cannot claim, and it is never sent —
+    // the unsent report from the check is what a person or the next stop acts on.
+    const justTyped = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-idle-ansi.txt', import.meta.url), 'utf8');
+    const held = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-unsent-ansi.txt', import.meta.url), 'utf8');
+    await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = justTyped; return true; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    // The pane drew the line between the runs: the box now holds exactly the watch's line.
+    screenNow = held;
+    typed = [];
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain('nudged the operator');
+  });
+
+  test('a box holding any other text is never sent into, typed over or cleared', async () => {
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, { screen: () => unsent }));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain('nudged the operator');
+  });
+
   test('a pane with no live agent is not typed into', async () => {
     const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(2, { foreground: () => ['zsh'] }));
@@ -886,6 +974,23 @@ describe('team watch', () => {
     }));
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
     expect(io.out).toContain('a nudge was not typed: no live agent in the operator\'s pane');
+  });
+
+  test('an operator that turns working during the draw wait is not sent the Enter', async () => {
+    // The reviewer's focused case: the pass saw the operator free, the typing goes in, and while
+    // the pane draws the box the operator starts a turn. The status read before the wait must not
+    // clear the key: the Enter's checks are the live agent, the status as it reads at the key and
+    // the box, all taken with no await between them, so a turn that began under the wait leaves
+    // the nudge typed and unsent. Read before the fix, this sent `w0:p1 <enter>` anyway.
+    const justTyped = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-idle-ansi.txt', import.meta.url), 'utf8');
+    const drawn = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-unsent-ansi.txt', import.meta.url), 'utf8');
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = justTyped; return true; },
+      sleep: async (ms) => { clock += ms; screenNow = drawn; statusNow = 'working'; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was typed and not sent');
   });
 
   test('an operator that started working since the pass is not typed into', async () => {

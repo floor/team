@@ -26,7 +26,7 @@ import { executePlan } from '../launch/execute.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
 import { downPlan, formatPlan, type DownSeat } from '../launch/plan.ts';
 import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
-import { boxHoldsOther, boxHoldsText } from '../launch/deliver.ts';
+import { boxHoldsOther, boxHoldsText, DRAW_WAIT_MS, settleScreen } from '../launch/deliver.ts';
 import { removeRulesFile } from '../launch/rules-file.ts';
 import { approvalStanding } from '../store/store.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -159,12 +159,6 @@ export function stateOf(status: string, screen: Screen): DownSeat['state'] {
   return 'unknown';
 }
 
-/** How long a reading waits for the pane to draw what a send left. `send-text` returns before
- *  the pane renders — a capture taken the instant after typing `/exit` still read the idle
- *  screen, and read the text a moment later — so the reading that decides the next key waits,
- *  ending the moment the screen is decisive either way. */
-export const CLEAR_WAIT_MS = 5000;
-
 /** What `typeExit` may do to one pane, so `down` and `remove` share the whole sequence and the
  *  tests can stand in for every part of it. */
 export type ExitIo = {
@@ -202,20 +196,9 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // disagree. A screen that is not the CLI's composer — a dialog over it, a shell after it —
   // never reaches a key.
   const kindOf = () => readScreen(cli, io.screen()).kind;
-  // The reading that decides a key, waiting out the pane's late drawing: `undrawn` is what the
-  // screen still reads while the send it has not drawn sits behind it — idle after a typing,
-  // unsent after a clearing key. The wait ends the moment the screen is decisive either way,
-  // and at the deadline the screen reads as it reads.
-  const settle = async (undrawn: Screen['kind']): Promise<Screen['kind']> => {
-    const deadline = io.now() + CLEAR_WAIT_MS;
-    for (;;) {
-      const kind = kindOf();
-      if (kind !== undrawn || io.now() >= deadline) return kind;
-      const before = io.now();
-      await io.sleep(100);
-      if (io.now() <= before) return kindOf();
-    }
-  };
+  // The reading that decides a key, waiting out the pane's late drawing — the one wait the exit
+  // typing, the watch's nudge and delivery share (settleScreen in launch/deliver.ts).
+  const settle = (undrawn: Screen['kind']): Promise<Screen['kind']> => settleScreen(undrawn, kindOf, io);
   const otherRow = (): string => {
     const other = boxHoldsOther(cli, text, io.screen());
     if (other === null) return '';
@@ -228,7 +211,7 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   const sendExit = async (): Promise<ExitTyping> => {
     if (!io.pressEnter()) return false;
     const confirm = profileFor(cli)?.exitConfirm ?? null;
-    const deadline = io.now() + CLEAR_WAIT_MS;
+    const deadline = io.now() + DRAW_WAIT_MS;
     let confirmed = false;
     for (;;) {
       if (!live()) return true;
@@ -266,9 +249,15 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   if (start !== 'idle') {
     if (start !== 'unsent' || !boxHoldsText(cli, text, io.screen())) return false;
     const key = profileFor(cli)?.exitClear ?? null;
-    if (key === null || !live()) return false;
+    // The caller check first: a CLI gone at this key is `no-agent` whether or not the profile
+    // carries a clearing key, and "not typed" is for a key-less profile the CLI is still on.
+    if (!live()) return 'no-agent';
+    if (key === null) return false;
     if (!io.sendKey(key)) return false;
     const after = await settle('unsent');
+    // The wait can swallow the CLI as well: the caller check precedes the typing, exactly as it
+    // precedes every key.
+    if (!live()) return 'no-agent';
     if (after !== 'idle' || !resting()) {
       return { left: `its box already held this exit text; the clearing key (${key}) left the screen reading ${after}; left running` };
     }
@@ -281,7 +270,21 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // text gets the Enter.
   if (boxHoldsText(cli, text, io.screen())) return sendExit();
   const kind = await settle('idle');
-  if (kind !== 'unsent' && kind !== 'idle') return false;
+  // The wait is a window the pane's state can change in — the CLI can go, a turn can start —
+  // so the caller check is taken again here, before the Enter this reading leads to.
+  if (!live()) return 'no-agent';
+  if (!resting()) return false;
+  if (kind !== 'unsent' && kind !== 'idle') {
+    // A dialog the CLI drew over the composer hides the box without emptying it: the text typed
+    // a moment ago is still in it, so "its exit was not typed" would be the wrong report — the
+    // line says what the screen was reading instead. Every other reading (a turn that started, a
+    // screen the reader cannot name) proves nothing about where the typed text went, and keeps
+    // that report.
+    const dialog =
+      kind === 'permission' || kind === 'trust' || kind === 'question' || kind === 'exit question';
+    if (!dialog) return false;
+    return { left: `its exit was not confirmed; the screen was reading ${kind} before the Enter; left running` };
+  }
   if (boxHoldsText(cli, text, io.screen())) return sendExit();
   if (kind === 'idle') {
     return { left: 'its exit was not confirmed; the pane never drew the typed text; its box is empty; left running' };
@@ -664,7 +667,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       // refused. Wait out that report, then delete, and retry the delete until it takes.
       async deleteSession(name) {
         const sleep = sources.sleep ?? launch.sleep;
-        const deadline = sources.now().getTime() + CLEAR_WAIT_MS;
+        const deadline = sources.now().getTime() + DRAW_WAIT_MS;
         const wait = async (): Promise<boolean> => {
           if (sources.now().getTime() >= deadline) return false;
           const before = sources.now().getTime();

@@ -155,9 +155,10 @@ function confirmKeyOf(entry: YamlEntry): string {
 /**
  * The value of `lobby_files`: the exact relative paths of regular files this CLI may leave in
  * its working folder. A path is plain components — none `.`, `..` or empty, no absolute path,
- * no trailing `/`, which would declare a folder — and no path may run through another, which
- * would declare one path both a file and a folder. The refusal is the profile's own, before
- * any check of the disk: a declaration is a value, not a folder.
+ * no trailing `/`, which would declare a folder, no pattern character, which would read as a
+ * glob the gate never runs — and no path may run through another, which would declare one
+ * path both a file and a folder. The refusal is the profile's own, before any check of the
+ * disk: a declaration is a value, not a folder.
  */
 function lobbyFilesOf(entry: YamlEntry): readonly string[] {
   if (entry.value.kind !== 'seq' || entry.value.items.length === 0) {
@@ -169,6 +170,12 @@ function lobbyFilesOf(entry: YamlEntry): readonly string[] {
     const parts = value.split('/');
     if (value.startsWith('/') || value.endsWith('/') || parts.some((part) => part === '' || part === '.' || part === '..')) {
       fail(item.line, `"lobby_files" holds "${value}": not a relative path of a file inside the lobby`);
+    }
+    // A declaration is one exact name at one exact place: the gate matches what the folder
+    // holds byte for byte, so a pattern character would never be a pattern — but it would
+    // read as one, and the grammar stays closed.
+    if (parts.some((part) => /[*?\[]/.test(part))) {
+      fail(item.line, `"lobby_files" holds "${value}": a path is one exact name, not a pattern`);
     }
     return value;
   });
@@ -194,6 +201,32 @@ const SHIPPED: Record<string, Shipped> = loadShipped();
 /** The profiles this version launches. A `cli` without one is reported and left out. */
 export function profileFor(cli: string): Profile | null {
   return Object.hasOwn(SHIPPED, cli) ? (SHIPPED[cli]?.profile ?? null) : null;
+}
+
+/** The `lobby_files` of every profile the tool ships: all a lobby may hold beside the seats.
+ *  The lobby is one folder per machine, shared by every team on it, so the set cannot depend
+ *  on which seats a run starts nor on a team's file — a file another team's CLI left must not
+ *  block a team with no seat of that CLI. Only a shipped profile can declare the key — the
+ *  loader reads no profile from outside the tool — so nothing a user writes widens the set. */
+export function shippedLobbyFiles(): readonly string[] {
+  const paths = new Set<string>();
+  for (const shipped of Object.values(SHIPPED)) for (const path of shipped.profile.lobbyFiles) paths.add(path);
+  return [...paths].sort();
+}
+
+/** Which shipped profiles declare each lobby file, by the profile's own `cli` name. Two
+ *  profiles may declare one path; the reader then names them both. For `doctor`, which says
+ *  of every declared file present in the lobby whose it is. */
+export function lobbyFileOwners(): ReadonlyMap<string, readonly string[]> {
+  const owners = new Map<string, string[]>();
+  for (const shipped of Object.values(SHIPPED)) {
+    for (const path of shipped.profile.lobbyFiles) {
+      const named = owners.get(path) ?? [];
+      if (!named.includes(shipped.profile.cli)) named.push(shipped.profile.cli);
+      owners.set(path, named);
+    }
+  }
+  return owners;
 }
 
 /** The quota patterns shipped with a CLI. An unknown CLI, or one with none, has an empty list. */

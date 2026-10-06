@@ -103,9 +103,9 @@ export interface VerifyLobbyOptions {
   create?: boolean;
   getuid?: () => number;
   fs?: FsReader;
-  /** The exact relative paths of regular files the lobby may hold, from the profiles of the
-   *  CLIs being started. Absent, no path is tolerated: the lobby holds nothing but the seats,
-   *  as it always has. */
+  /** The exact relative paths of regular files the lobby may hold, from the profiles the tool
+   *  ships. Absent, no path is tolerated: the lobby holds nothing but the seats, as it
+   *  always has. */
   files?: readonly string[];
 }
 
@@ -248,7 +248,7 @@ function checkClosedTree(lobby: string, declared: readonly string[], fs: FsReade
  * the lobby returned. A read-only check of a lobby that is simply absent — including when
  * `~/.config` or `team` is not there yet — is `{ missing: true }`, not a failure.
  *
- * With `files`, the exact relative paths the profiles of the CLIs being started declare, the
+ * With `files`, the exact relative paths the profiles the tool ships declare, the
  * lobby's tree is closed around them: nothing undeclared may remain, and each declared file
  * that is there must be the running user's regular file, no link anywhere on its path. The
  * successful result records each one's full identity — device and inode, size, inode change

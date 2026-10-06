@@ -20,7 +20,7 @@ import { HERDR_TESTED, herdrVersion, paneRead, sessionRunning, agentList, type H
 import type { Command, Io } from '../io.ts';
 import { lobbyDir, verifyLobby } from '../lobby/gate.ts';
 import { launchBinary, launchLineFindings } from '../launch/line.ts';
-import { profileFor } from '../profiles/index.ts';
+import { lobbyFileOwners, profileFor, shippedLobbyFiles } from '../profiles/index.ts';
 import { checkRulesFile, rulesFilePathOf } from '../launch/rules-file.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { overridesInForceOf, quotaWith } from '../profiles/overrides.ts';
@@ -561,12 +561,11 @@ export function doctorFindings(
   findings.push(...trustFindings(team, dir, session, sources));
 
   const lobby = lobbyDir(sources.home);
-  // The same closed tree the launch's gate walks: the files the profiles of this file's seats'
-  // CLIs declare, so this finding says of the lobby exactly what `up`'s gate would — a `miss`
-  // here blocks the launch, and the two must not disagree about a declared file.
-  const declaredLobbyFiles = [...new Set(
-    team.seats.flatMap((seat) => profileFor(seat.cli)?.lobbyFiles ?? []),
-  )].sort();
+  // The same closed tree the launch's gate walks: the `lobby_files` of every profile the tool
+  // ships, the one set `up`, `add` and this finding all read, so this finding says of the
+  // lobby exactly what the launch's gate would — a `miss` here blocks the launch, and the
+  // callers cannot disagree about a declared file.
+  const declaredLobbyFiles = shippedLobbyFiles();
   const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid, files: declaredLobbyFiles });
   if (!gate.ok) {
     findings.push({ level: 'miss', text: gate.text });
@@ -574,6 +573,15 @@ export function doctorFindings(
     findings.push({ level: 'ok', text: `the lobby ${lobby}: will be created at the first launch` });
   } else {
     findings.push({ level: 'ok', text: `the lobby ${lobby}: verified` });
+    // Each declared file the lobby holds is named with the profile it belongs to, so an owner
+    // reading this knows whose file is sitting in the shared folder (`lobbyFileOwners`). Every
+    // present file has an owner by construction: the gate holds only names the shipped
+    // profiles declare, which is where the owners come from.
+    const owners = lobbyFileOwners();
+    for (const file of gate.files) {
+      const whose = owners.get(file.path);
+      if (whose !== undefined) findings.push({ level: 'ok', text: `the lobby ${lobby}: ${file.path} is ${whose.join("'s and ")}'s` });
+    }
   }
 
   const oldLobby = derivedLobby(team);

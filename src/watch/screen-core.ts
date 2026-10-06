@@ -3,9 +3,9 @@
 // pattern, and it cannot move a stage or turn the floor off.
 import { allDimAfter, hasSgr, stripSgr } from '../ansi.ts';
 import type { Screen } from './screen.ts';
-import type { LinePattern, Rule, ScreenData, Wrap } from './screen-data.ts';
+import type { BlockStep, LinePattern, Rule, ScreenData, Wrap } from './screen-data.ts';
 
-export type { Composer, FallbackRule, LinePattern, Placeholder, PlaceholderStyle, Rule, ScreenData, Stage, Wrap } from './screen-data.ts';
+export type { BlockStep, Composer, FallbackRule, LinePattern, Placeholder, PlaceholderStyle, Rule, ScreenData, Stage, Wrap } from './screen-data.ts';
 export type { ScreenProfile, ComposerReading } from './screen-profile.ts';
 import type { ComposerReading } from './screen-profile.ts';
 
@@ -514,22 +514,144 @@ function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => 
     if (anchor < 0) return false;
     // The block's own tail, and nothing else: the first non-blank row that is not one of
     // the patterns means the screen carries another dialog's rows below this block, so the
-    // block is not the live one. Blank rows are the spacing a dialog draws.
+    // block is not the live one. Blank rows are the spacing a dialog draws. The patterns are
+    // read in their own order — the order the block draws them — so a tail whose named rows
+    // are shuffled is not that block's tail either. A block that draws fewer rows than the
+    // patterns name (a dialog a short pane clipped) skips one and is still in order.
+    let seen = -1;
     for (let i = anchor + 1; i < lines.length; i++) {
       if (!(lines[i] ?? '').trim()) continue;
-      let allowed = false;
-      for (const pattern of rule.onlyAfter.patterns) {
+      let at = -1;
+      for (const [p, pattern] of rule.onlyAfter.patterns.entries()) {
         const row = matches(data, lines, i, pattern, tick, true);
         if (row === 'stop') return 'stop';
         if (row) {
-          allowed = true;
+          at = p;
           break;
         }
       }
-      if (!allowed) return false;
+      if (at < 0) return false;
+      if (at < seen) return false;
+      seen = at;
     }
   }
+  if (rule.block) {
+    const hit = blockMatches(data, lines, rule.block, tick);
+    if (hit === 'stop') return 'stop';
+    if (!hit) return false;
+  }
   return true;
+}
+
+/** The rows a numbered menu draws — a run of rows a block fills with its own text never draws
+ *  one, so a choice row the block does not name is not a row of that run. */
+const MENU_ROW = /^(?:[❯›>]\s*)?\d+\.\s/;
+
+/**
+ * A `block` rule: the dialog read as one contiguous block of rows, from the last row that
+ * matches its first step to the screen's last non-blank line. Every row the block draws is
+ * compared whole — after the frame's own indentation — against the captured text, so a row
+ * with anything on it the capture does not carry is not that row; the blanks are the spacing
+ * the block draws; and the `list` run is the rows it fills with its own text, bounded by what
+ * the block names: a blank, a row the block draws (in any alternative), a numbered menu row
+ * and a row already read are none of them rows of that run. A block whose rows are not the
+ * screen's own bottom — one of its rows changed, dropped, doubled or moved, another dialog's
+ * row under it, or the same row drawn twice — is not this block, and the screen reads as the
+ * ordinary question it then is.
+ */
+function blockMatches(data: ScreenData, lines: string[], steps: BlockStep[], tick: () => boolean): boolean | 'stop' {
+  if (tick()) return 'stop';
+  const first = steps[0];
+  if (first === undefined || !('row' in first)) return false;
+  // The block's first row is the last row that matches it: a transcript above the live dialog
+  // may quote the same row, and the dialog that follows it is the one the block reads.
+  let start = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if ((lines[i] ?? '').trim() === first.row) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) return false;
+  const named = new Set<string>();
+  blockRows(steps, named);
+  const ends = blockEnds(lines, steps, 0, start, new Set(), named, tick);
+  if (ends === 'stop') return 'stop';
+  for (const end of ends) {
+    // The block runs to the screen's last line: only blanks may follow its own last row.
+    let open = true;
+    for (let i = end.at; i < lines.length; i++) {
+      if ((lines[i] ?? '').trim()) {
+        open = false;
+        break;
+      }
+    }
+    if (open) return true;
+  }
+  return false;
+}
+
+/** Every row the block draws, in any alternative: the rows its `list` run may not hold. */
+function blockRows(steps: BlockStep[], into: Set<string>): void {
+  for (const step of steps) {
+    if ('row' in step) into.add(step.row);
+    else if ('oneOf' in step) for (const alt of step.oneOf) blockRows(alt, into);
+  }
+}
+
+type BlockEnd = { at: number; seen: Set<string> };
+
+/**
+ * Where the block's steps can end, read in place: each path carries the rows it has read, so a
+ * repeated row fails the path. `si === steps.length` ends at whatever row the steps reached —
+ * the caller decides whether that is the screen's bottom. A `list` run is tried one row longer
+ * at a time, so a row the steps below it draw is reached rather than swallowed; an alternative
+ * is followed by the steps after it, so the row a tail draws is read by the block, not by the
+ * run.
+ */
+function blockEnds(lines: string[], steps: BlockStep[], si: number, li: number, seen: Set<string>, named: Set<string>, tick: () => boolean): BlockEnd[] | 'stop' {
+  if (tick()) return 'stop';
+  if (si === steps.length) return [{ at: li, seen }];
+  const step = steps[si];
+  if (step === undefined) return [];
+  if ('row' in step) {
+    const line = lines[li];
+    if (line === undefined) return [];
+    const text = line.trim();
+    if (text !== step.row || seen.has(text)) return [];
+    const next = new Set(seen);
+    next.add(text);
+    return blockEnds(lines, steps, si + 1, li + 1, next, named, tick);
+  }
+  if ('blank' in step) {
+    const line = lines[li];
+    if (line === undefined || line.trim() !== '') return [];
+    return blockEnds(lines, steps, si + 1, li + 1, seen, named, tick);
+  }
+  if ('list' in step) {
+    const ends: BlockEnd[] = [];
+    const run = new Set(seen);
+    for (let at = li; at < lines.length; at++) {
+      const text = (lines[at] ?? '').trim();
+      if (!text || run.has(text) || MENU_ROW.test(text) || named.has(text)) break;
+      run.add(text);
+      const rest = blockEnds(lines, steps, si + 1, at + 1, new Set(run), named, tick);
+      if (rest === 'stop') return 'stop';
+      ends.push(...rest);
+    }
+    return ends;
+  }
+  const ends: BlockEnd[] = [];
+  for (const alt of step.oneOf) {
+    const inner = blockEnds(lines, alt, 0, li, seen, named, tick);
+    if (inner === 'stop') return 'stop';
+    for (const end of inner) {
+      const rest = blockEnds(lines, steps, si + 1, end.at, end.seen, named, tick);
+      if (rest === 'stop') return 'stop';
+      ends.push(...rest);
+    }
+  }
+  return ends;
 }
 
 /** The last row an anchor pattern matches: a block's bottom edge, read from below. */

@@ -56,7 +56,7 @@ import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts'
 import { lobbyDir, recheckLobby, verifyLobby, type FsReader, type LobbySeen } from '../lobby/gate.ts';
 import { logLine } from '../log.ts';
 import { shellQuote } from '../profiles/profile.ts';
-import { profileFor } from '../profiles/index.ts';
+import { profileFor, shippedLobbyFiles } from '../profiles/index.ts';
 import { approvalStanding, type Ceilings, type Standing } from '../store/store.ts';
 import { emptySession, readState, updateState, type SeatState } from '../state.ts';
 import { seatBudget } from '../budgets/gate.ts';
@@ -608,12 +608,12 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   let verifiedLobby: string | null = null;
   let lobbySeen: LobbySeen | null = null;
   let createLobby = false;
-  // What the lobby may hold beside the seats: the files the profiles of the CLIs that run
-  // there declare, every lobby seat's CLI taken — a resumed seat's CLI is as much in the
-  // lobby as one this run launches (`profiles/*.yaml`, the capture behind each entry).
-  const declaredLobbyFiles = [...new Set(
-    seats.filter((seat) => seat.lobby).flatMap((seat) => profileFor(seat.cli)?.lobbyFiles ?? []),
-  )].sort();
+  // What the lobby may hold beside the seats: the `lobby_files` of every profile the tool
+  // ships. The lobby is one folder per machine, shared by every team on it, so what it may
+  // hold cannot depend on which seats this run starts nor on this team's file: a seat already
+  // ready is planned without the lobby mark, and another team's CLI may hold the folder too
+  // (`profiles/*.yaml`, the capture behind each entry).
+  const declaredLobbyFiles = shippedLobbyFiles();
   if (isMigratedTrust(team.trust)) {
     const launching = seats.some((seat) => {
       if (seat.stopped || seat.launchProblem) return false;

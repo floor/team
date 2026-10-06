@@ -34,6 +34,11 @@ exit_confirm: enter
 # minutes; one scheduler call (CronCreate) made the folder ".claude" and, inside it, the
 # regular file below — the scheduler's one lock — and at /exit the CLI deleted the lock
 # and left the empty folder. The lobby may hold exactly these paths for this CLI.
+# Why no shipped CLI reads the file as configuration or instructions when started in the
+# lobby: it is the scheduler's lock alone — written by one call, deleted at exit, never
+# read back — and no shipped profile names a file its CLI reads at start in its working
+# folder. This CLI's instructions travel as the `--append-system-prompt` launch option
+# and the others' as a first message, so a seat of any CLI obeys nothing it finds there.
 lobby_files:
   - .claude/scheduled_tasks.lock
 timeouts:
@@ -84,33 +89,73 @@ screen:
         anchor: '^\s*❯?\s*[0-9]\. (Yes|No)\b'
         patterns:
           - '^\s*[❯›>]\s*$'
-  # The CLI's own question after the exit text, from the 2.1.291 captures: it names the
+  # The CLI's own question after the exit text, from the 2.1.291/2.1.292 captures: it names the
   # background work that will stop and preselects "Exit and stop tasks", whose confirming key
   # is `exit_confirm` above. Its footer is an ordinary question's own, so this stage must read
   # before `question` — the core's order runs it first, and a profile cannot move it. Nothing
   # but a stop reads this screen to press a key; every other reader only reports it.
   #
-  # The dialog is read by its own frame, never by phrases found anywhere in the window: a
-  # transcript that quotes the lines above an ordinary question still reads as that question,
-  # and no Enter may go to it. Three reads carry that, each one positive evidence the captures
-  # show: the preselected marker `❯` is on the "Exit and stop tasks" row itself — the row the
-  # confirming Enter acts on — the footer is the window's last non-blank line, and `only_after`
-  # admits nothing below the choice row but the dialog's own tail, "2. Stay" and that footer.
-  # A quote of the lines fails the moment one row of the dialog it was quoted above (a title,
-  # a choice, a rule) follows the quoted choice row, which is exactly what an ordinary question
-  # drawn below a quote puts there. A frame the window cannot show whole — the choice row
-  # without its marker, a quote with the live box cut away — is never read as this dialog: it
-  # stays the ordinary question it looks like, and a stop fails closed.
+  # The dialog is read as one block of rows, and the block is the screen's own bottom: it starts
+  # at the last "Background work is running" the window draws — a transcript above it may quote
+  # the same row — and only blanks may follow the footer. Every row the block draws is compared
+  # whole, after the frame's own indentation, against the captured text, and the blanks are the
+  # spacing the captures show. A row a form does not carry is never that row: "3. Stay — but
+  # leave tasks running", "2. Stay and delete work" and a footer with anything appended are rows
+  # no run has drawn, and the screen reads as the ordinary question it looks like. Nor is a row
+  # changed, dropped, doubled or moved the row the block draws: another second row, "2. Move to
+  # background and exit" above the marked row with only "3. Stay" below it, the move row without
+  # its "3. Stay", the marker off the first choice, two adjacent rows swapped, a row of another
+  # dialog under the footer — each fails a step, and a stop fails closed then: it stays the
+  # ordinary question the window looks like (test/fixtures/exit-typing/ names every such screen
+  # and its README says how each was built).
+  #
+  # The CLI draws two tails and a form draws no other. Holding the selection where it started,
+  # each draws the title row, the "will stop" row, the rows the CLI fills with its own text and
+  # the marked "Exit and stop tasks" row, then:
+  #
+  #     ❯ 1. Exit and stop tasks          ❯ 1. Exit and stop tasks
+  #       2. Stay                           2. Move to background and exit
+  #                                          3. Stay
+  #     Enter to confirm · Esc to cancel  Enter to confirm · Esc to cancel
+  #
+  # and, in the pane the CLI draws its own row budget into, the marked row and the footer alone:
+  #
+  #     ❯ 1. Exit and stop tasks
+  #
+  #     Enter to confirm · Esc to cancel
+  #
+  # The middle form is what a session the CLI can move into the background draws
+  # (test/fixtures/exit-typing/, `claude-code-shell-move-question.txt` from the release run's
+  # capture, and `claude-code-shell-scheduled-move-question-ansi.txt` from this profile's own
+  # scratch capture of a seat holding a shell and a scheduled task at once). Its value "Move to
+  # background and exit" is never confirmed here: `exit_confirm` is the confirming key of the
+  # marked row above it, and a stop means stop. The last is the clipped render — a pane too
+  # short for the choice list, drawn as one task row, its own `… +1 item` row, the marked choice
+  # and the footer, no other choice at all
+  # (`claude-code-shell-scheduled-move-question-clipped-ansi.txt`).
+  #
+  # The rows the CLI fills with its own text are the one part the block cannot name. What they
+  # may be is bounded by what the captures draw — the item list of the work that will stop: a
+  # shell's `shell · sleep 600`; a scheduled task's label and text over two rows, the
+  # description wrapped under its column; the `… +1 item` row of a clipped list. So a row of
+  # that run is a row that is not blank, is not any row the block draws in any of the three
+  # forms, is not a numbered menu row (`2. Stay` and its like are the block's to name, never the
+  # list's), and is not a row already read — nothing is drawn twice. The run is read one row at
+  # a time, so a row the block draws below it ends it rather than being swallowed by it.
   exit_question:
-    - all:
+    - block:
         - 'Background work is running'
-        - '^\s*[❯›>]\s*1\.\s+Exit and stop tasks\b'
-      footer: 'Enter to confirm · Esc to cancel'
-      only_after:
-        anchor: '^\s*[❯›>]\s*1\.\s+Exit and stop tasks\b'
-        patterns:
-          - '^\s*2\.\s+Stay\b'
-          - '^\s*Enter to confirm · Esc to cancel\s*$'
+        - 'The following will stop when you exit:'
+        - ''
+        - list: true
+        - ''
+        - '❯ 1. Exit and stop tasks'
+        - one_of:
+            - ['2. Stay']
+            - ['2. Move to background and exit', '3. Stay']
+            - []
+        - ''
+        - 'Enter to confirm · Esc to cancel'
   question:
     # The phrase is the dialog's last line, as a permission footer is. Prose
     # above the box is not a question.
