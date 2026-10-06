@@ -42,6 +42,17 @@ coordinator's and the operator's own seats are the owner's alone to remove, and 
 `--file` and `--session` are the owner's alone, from a terminal outside herdr: a non-owner aiming
 either is refused before the flagged file or session is read at all.
 
+A file with a `delegates` section also admits one more caller: the approved delegate, a pane the
+owner named in that section as `<session>/<pane id>`, outside the team. When the ordinary rule
+above refuses and the file names a delegate, the delegate gate decides — it re-reads the live file
+and the approval in force, never a remembered copy — and a caller it passes runs this command as
+that delegate. The delegated `remove` is the ordinary removal of a named seat: `--keep`, `--abandon`,
+`--session` and `--file` stay the owner's, the coordinator's and the operator's seats stay the
+owner's, and a delegated remove never re-signs the approval — the one signing a `--keep` does is
+closed to it. With no `delegates` section nothing changes: the same refusals, the same words, the
+same exit codes. A delegated run that proceeds is attributed in the log before its effects, as
+`<time> delegate [delegate] <session>/<pane id> remove`.
+
 ## Flags
 
 | Flag | Meaning |
@@ -77,6 +88,12 @@ A seat that doesn't leave cleanly is printed once with what stopped it, and `rem
 | `team remove: unknown option --x` / `team remove: a seat name is required` / `team remove: unexpected "x"` (each with the usage) | 2 |
 | `team remove: line <n>: <message>` | 2 |
 | `team remove: only the owner, the coordinator or the operator runs it; this call is <caller>` | 1 |
+| `team remove: only the owner, the coordinator, the operator or the approved delegate runs it; this call is <caller>` — the file names a delegate, and this call is not it | 1 |
+| ``team remove: delegation needs a verified approval: <reason>`` / ``team remove: delegation needs a readable approved copy: run `team approve` `` / ``team remove: delegation needs the approved file: the file is not the approved one (<differences>): run `team approve` `` — the delegate gate, reading the same approval every other check reads | 1 |
+| ``team remove: delegation cannot verify its placement or seats: <reason>`` | 1 |
+| `team remove: the approved delegate must be an external non-seat pane` | 1 |
+| ``team remove: the approved delegate <session>/<pane id> may not run `remove`; its approved commands are <list>`` | 1 |
+| `team remove: --<flag> is the owner's; the approved delegate cannot use it` — `--keep`, `--abandon`, `--session` or `--file` | 1 |
 | `team remove: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | `team remove: --session is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | ``team remove: no pane is recorded for seat <name> in this session: the owner stops that seat and runs `team up` `` | 1 |
