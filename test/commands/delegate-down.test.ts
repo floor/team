@@ -12,6 +12,7 @@ import { runDown, type DownSources } from '../../src/commands/down.ts';
 import type { DelegateVerdict } from '../../src/delegate.ts';
 import { currentTeam } from '../../src/file/current.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
+import { emptySession, updateState } from '../../src/state.ts';
 import { claudeBox, testIo } from '../helpers.ts';
 
 const EXAMPLE = readFileSync(new URL('../fixtures/example.yaml', import.meta.url), 'utf8');
@@ -143,6 +144,41 @@ describe('a file with no delegate', () => {
     expect(await r.run(['--dry-run'])).toBe(0);
     expect(r.io.out).toContain('claude-coordinator-acme:p1 /exit');
   });
+
+  // The coordinator and the operator carry a name the delegate branch knows too. Their ordinary
+  // rule is answered by the placement the state records, and when it accepts them the gate is
+  // never asked: a caller the ordinary rule lets through never enters the delegate branch, and a
+  // delegates section in the file cannot take the seat's own authority away from it.
+  const COORDINATOR: Caller = { kind: 'seat', name: 'claude-coordinator-acme', pane: 'w1:p1', session: 'acme-web' };
+
+  const recordStanding = (pane: string, session = 'acme-web'): void => {
+    updateState(join(root, '.agents'), (state) => {
+      const held = (state.sessions[session] ??= emptySession());
+      held.seats[COORDINATOR.name] = { stage: 'ready', pane };
+    });
+  };
+
+  test('a standing coordinator asks nothing, and its plan keeps the team\'s own seats', async () => {
+    recordStanding('w1:p1');
+    const r = rig({ gate: neverAsked }, COORDINATOR);
+    expect(await r.run(['--dry-run'])).toBe(0);
+    expect(r.gateCalls).toEqual([]);
+    expect(r.io.err).toBe('');
+    // Today's plan for a seat: the coordinator and the operator are left running.
+    expect(r.io.out).toContain('left running');
+  });
+
+  test('a pane named like the coordinator but standing elsewhere is a delegate, and keeps nobody', async () => {
+    recordStanding('w9:p9', 'work');
+    // The name matches; the placement does not — the state recorded another pane, in a session
+    // this call is not in. So the ordinary rule refuses it, the gate is asked, and the run it
+    // passes is the delegate's: every seat is stopped, the name on the pane notwithstanding.
+    const r = rig({ gate: () => PASSED }, { ...COORDINATOR, session: 'work' });
+    expect(await r.run(['--dry-run'])).toBe(0);
+    expect(r.gateCalls.length).toBe(1);
+    for (const name of RUNNING) expect(r.io.out).toContain(`${name}:p1 /exit`);
+    expect(r.io.out).not.toContain('left running');
+  });
 });
 
 describe('a delegated down', () => {
@@ -174,10 +210,13 @@ describe('a delegated down', () => {
     expect(r.audits).toEqual([{ dir: join(root, '.agents'), pane: PANE, command: 'down', now: NOW }]);
   });
 
-  test('an already-idle down stops nothing and writes no audit line', async () => {
-    const r = rig({ gate: () => PASSED, sessionRunning: () => false });
+  test('an already-idle down stops nothing, asks nothing and writes no audit line', async () => {
+    // It returns before any caller check, as today: the gate is not a caller check that happens
+    // first, and a delegate's idle run is the same "nothing to stop" every caller gets.
+    const r = rig({ gate: neverAsked, sessionRunning: () => false });
     expect(await r.run()).toBe(0);
     expect(r.io.out).toBe('session acme-web is not running: nothing to stop\n');
+    expect(r.gateCalls).toEqual([]);
     expect(r.typed).toEqual([]);
     expect(r.audits).toEqual([]);
   });
