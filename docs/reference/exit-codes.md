@@ -47,6 +47,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `add.placed` | `add` | 1 | the seat would be placed outside the project | `team add worker` |
 | `add.result-absolute` | `add` | 1 | a result path is absolute | `team add --temporary --like lead --until result:/tmp/out.md` |
 | `add.result-exists` | `add` | 1 | the result path already exists | `team add --temporary --like lead --until result:README.md` |
+| `add.run-lock` | `add` | 1 | another session-mutating run is holding the session | `team add worker` |
 | `add.server` | `add` | 1 | the session's server did not start | `team add worker` |
 | `add.session-owner` | `add` | 1 | --session is the owner's | `team add worker --session other` |
 | `add.start` | `add` | 1 | the seat has nowhere to start | `team add worker` |
@@ -135,6 +136,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `down.held` | `down` | 1 | a step was held | `team down` |
 | `down.no-launch` | `down` | 1 | this call has no way to reach herdr | `team down` |
 | `down.no-pane` | `down` | 1 | the state records no pane for the caller's seat | `team down` |
+| `down.run-lock` | `down` | 1 | another session-mutating run is holding the session | `team down` |
 | `down.session-owner` | `down` | 1 | --session is the owner's | `team down --session other` |
 | `down.agents` | `down` | 2 | the agents can't be read | `team down` |
 | `down.file` | `down` | 2 | the team file can't be read | `team down --file missing.yaml` |
@@ -185,6 +187,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `remove.no-pane` | `remove` | 1 | the state records no pane for the caller's seat | `team remove worker` |
 | `remove.no-profile` | `remove` | 1 | the running seat has no launch profile | `team remove worker` |
 | `remove.no-seat` | `remove` | 1 | the team has no such seat | `team remove missing` |
+| `remove.run-lock` | `remove` | 1 | another session-mutating run is holding the session | `team remove worker` |
 | `remove.session-owner` | `remove` | 1 | --session is the owner's | `team remove worker --session other` |
 | `remove.stop-failed` | `remove` | 1 | the seat could not be stopped | `team remove worker` |
 | `remove.edit` | `remove` | 2 | the edit would not validate | `team remove lead` |
@@ -209,7 +212,6 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `up.dry-run` | `up` | 0 | a dry run printed the plan | `team up --dry-run` |
 | `up.ready` | `up` | 0 | the launch finished | `team up` |
 | `up.agents` | `up` | 1 | the agents can't be read | `team up` |
-| `up.busy` | `up` | 1 | another team up is running for the session | `team up` |
 | `up.delegate` | `up` | 1 | only the owner or the approved delegate runs up | `team up` |
 | `up.delegate-approval` | `up` | 1 | the delegate gate needs a verified approval | `team up` |
 | `up.delegate-approved-copy` | `up` | 1 | the delegate gate needs a readable approved copy | `team up` |
@@ -228,6 +230,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `up.not-owner` | `up` | 1 | only the owner runs up | `team up` |
 | `up.pending` | `up` | 1 | a seat was left short of ready | `team up` |
 | `up.placement` | `up` | 1 | a seat has nowhere to start | `team up` |
+| `up.run-lock` | `up` | 1 | another session-mutating run is holding the session | `team up` |
 | `up.server` | `up` | 1 | the session's server did not start | `team up` |
 | `up.stopped` | `up` | 1 | the session is stopped | `team up` |
 | `up.unknown` | `up` | 1 | a running agent is not in this file's state | `team up` |

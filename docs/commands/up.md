@@ -46,13 +46,14 @@ Writes `.agents/team.state.json` (each seat's stage, pane, workspace and the CLI
 with; a waiting seat's classification, process identity and `manual` flag; the watch's pid and
 heartbeat), `.agents/team.log`, the machine lobby folder
 (`~/.config/team/lobby`) every seat starts in, and, through herdr: the server, one workspace per seat
-and one for the watchdog, each seat's launch, and the watch. A real run holds the run lock
-(`<state dir>/seat-locks/<session>/.run`) from before its first effect to its end — its first
-effect being the make of an absent lobby, itself under the lock, so two fresh runs cannot race
-their components. One `up` per session at a time, under a name no seat can have (a leading dot;
-`seat-locks` otherwise holds one lock per seat, the launch's and `answer`'s). A second real run,
-delegated or not, stops on it before the first step, with the refusal below; `--dry-run` takes no
-lock, makes nothing and still plans.
+and one for the watchdog, each seat's launch, and the watch. A real run holds the session mutator
+lock (`<state dir>/seat-locks/<session>/.run`), the one lock `up`, `add`, `down` and `remove`
+share, from before its first effect to its end — its first effect being the make of an absent
+lobby, itself under the lock, so two fresh runs cannot race their components. One session-mutating
+run per session at a time, under a name no seat can have (a leading dot; `seat-locks` otherwise
+holds one lock per seat, the launch's and `answer`'s). A second real run, delegated or not, stops
+on it before the first step, with the refusal below; `--dry-run` takes no lock, makes nothing and
+still plans.
 
 ## Who may run it
 
@@ -472,13 +473,13 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | `the load is 1.2 per core, above 1` / `free memory is 8%, below 25%` / `free disk is 3.0 GB, below 10.0 GB` / `free swap is 1.0 GB, below 2.0 GB` |
 | `herdr doesn't answer` |
 | ``session beacon is stopped; clear it with `herdr session delete beacon` `` |
-| ``session beacon has 2 agents this file's state doesn't record: `up` never touches a running team`` |
+| ``session beacon has 2 agents this file's state doesn't record: `up` never touches a running team`` — an agent on a pane no record names, or on a pane this state records for a seat at another stage: a seat at `named` or `ready` whose pane now holds a foreign agent is refused here, with the whole team. An agent on the pane this state records for a seat left at `launched` — the run stopped after its pane was made and before its rename — is not refused: it is the run's own half-finished seat, and this run finishes it, the idle wait and the rename like any launched seat |
 | ``the file is legacy: migrate trust to absolute paths including the lobby ~/.config/team/lobby: ...`` — followed by the whole `trust:` block to paste: every entry the next `up` requires, one line saying which key of the file each entry comes from, and, for an entry a rule of `trust` refuses, one line naming the key that forces it |
 | ``the lobby ~/.config/team/lobby: <check>`` — gate check failed (symbolic link, permissions, mode, not empty, inside git repo) |
 | ``the lobby <path>: failed to create <component>: <code>`` — the run had to make an absent lobby, and the make itself failed at `<component>`: a component that cannot be written, or one another process took first. The read-only check above found the lobby missing and made nothing; the make runs under the run lock, after a delegated run's audit line and before any seat's own effect, and the run stops here (exit 1) |
 | ``seat beacon-qa would start in live, inside the protected checkout live; a seat that isn't `mode: shared` never starts in one`` — the folder the file gives it, or its lobby, is a protected checkout |
-| ``another `team up` is running for session <session> (pid <pid>); try again when it is done`` — another run holds the session's run lock: this run stopped before its first step, and a delegated run gets the same line. `--dry-run` takes no lock and never shows it |
-| ``another `team up` may be running for session <session>, and its lock cannot be read; if no `team up` is running, delete <state dir>/seat-locks/<session>/.run`` — the lock file does not read as a token (empty, corrupt, unreadable), so its holder is unknown: a run that cannot be proven finished counts as running, the same as a lock left by a run whose pid is still alive, and only the owner clears it — the line names the file |
+| ``another session-mutating run is holding session <session> (pid <pid>); try again when it is done`` — another run holds the session's mutator lock, the one lock `up`, `add`, `down` and `remove` share: this run stopped before its first step, and a delegated run gets the same line. The line names no command, because the lock is shared and its token records only a pid. `--dry-run` takes no lock and never shows it |
+| ``another session-mutating run may be holding session <session>, and its lock cannot be read; if no run is using it, delete <state dir>/seat-locks/<session>/.run`` — the lock file does not read as a token (empty, corrupt, unreadable), so its holder is unknown: a run that cannot be proven finished counts as running, the same as a lock left by a run whose pid is still alive, and only the owner clears it — the line names the file |
 
 A watch that has not run, or whose heartbeat is old, is not a reason to refuse: `up` starts the
 watch itself.

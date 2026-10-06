@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +9,7 @@ import { loadTeamFile } from '../../src/file/load.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
 import { storePath, writeApproval } from '../../src/store/store.ts';
 import { rulesFileHash, rulesFilePath, writeRulesFile } from '../../src/launch/rules-file.ts';
+import { seatLockPath } from '../../src/launch/seat-lock.ts';
 import type { DownLaunch } from '../../src/commands/down.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { emptySession, readState, updateState } from '../../src/state.ts';
@@ -912,5 +913,97 @@ describe('team remove delegated', () => {
     const after = validateTeamFile(readFileSync(file, 'utf8'));
     if (!after.ok) throw new Error('written file');
     expect(approvalDifferences(after.team, rootOf(dir), home)).toEqual(['seat worker changed']);
+  });
+});
+
+// The session mutator lock, `remove`'s side: the same `.run` under `seat-locks/<session>/` that
+// `up`, `add` and `down` take — one file per session, shared by every mutator — taken after
+// every refusal and held through the stop, the file edit and the state drops. A refused run
+// never takes one; a lock a killed run left is taken over by the next one.
+describe('team remove, the session mutator lock', () => {
+  const lockFile = (): string => seatLockPath(join(dir, '.agents'), 'acme', '.run');
+  const hold = (token: string): void => {
+    mkdirSync(join(dir, '.agents', 'seat-locks', 'acme'), { recursive: true });
+    writeFileSync(lockFile(), token);
+  };
+
+  test("a held lock refuses the removal, with the holder's pid, before any effect", async () => {
+    hold(`${process.pid} 0a1b2c3d\n`);
+    const made = world();
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    expect(io.err).toBe(
+      `team remove: another session-mutating run is holding session acme (pid ${process.pid}); try again when it is done\n`,
+    );
+    expect(io.out).toBe('');
+    expect(made.typed).toEqual([]);
+    expect(made.keys).toEqual([]);
+    expect(made.closed).toEqual([]);
+    // Nothing was written: the seat's line is still in the file, and the lock a live holder owns
+    // is left as it was.
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+    expect(readFileSync(lockFile(), 'utf8')).toBe(`${process.pid} 0a1b2c3d\n`);
+  });
+
+  test('the lock is held through the stop and released at the end', async () => {
+    const made = world();
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const held: boolean[] = [];
+    const launch = made.sources.launch;
+    if (!launch) throw new Error('fixture');
+    const typeText = launch.typeText;
+    launch.typeText = (session, pane, text) => {
+      held.push(existsSync(lockFile()));
+      return typeText(session, pane, text);
+    };
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(0);
+    expect(held).toEqual([true]);
+    expect(held).not.toContain(false);
+    // The edit went in under the same lock, and the lock is gone with the run: the next session
+    // command takes it again.
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+    expect(existsSync(lockFile())).toBe(false);
+  });
+
+  test('a lock left by a dead run is taken over and released by this one', async () => {
+    const dead = spawnSync('sh', ['-c', 'exit 0']).pid;
+    expect(typeof dead).toBe('number');
+    hold(`${dead} 0a1b2c3d\n`);
+    const made = world();
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(0);
+    expect(made.typed).toEqual(['/exit']);
+    expect(existsSync(lockFile())).toBe(false);
+  });
+
+  test('a refusal decided above the lock leaves no lock behind', async () => {
+    const made = world();
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    // No approval under this home: `remove.never-approved` is decided before the lock site, so
+    // the refused run must not leave a lock file the next real run would meet.
+    made.sources.home = join(dir, 'nowhere');
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    expect(io.err).toContain('never approved');
+    expect(made.typed).toEqual([]);
+    expect(existsSync(lockFile())).toBe(false);
+  });
+
+  test('a lock that cannot be read refuses with the file to clear', async () => {
+    hold('not a token\n');
+    const made = world();
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    // An unreadable lock is held, never stale (`seat-lock.ts`), so the owner is the only way
+    // out and the message names the file.
+    expect(io.err).toBe(
+      'team remove: another session-mutating run may be holding session acme, and its lock cannot be read; '
+        + `if no run is using it, delete ${lockFile()}\n`,
+    );
+    expect(made.typed).toEqual([]);
   });
 });

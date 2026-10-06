@@ -23,6 +23,7 @@ import { emptySession, readState, updateState, withLock } from '../state.ts';
 import { paneStillRunning, realSources as downSources, stateOf, typeExit, type DownSources } from './down.ts';
 import { boxHoldsText } from '../launch/deliver.ts';
 import { removeRulesFile } from '../launch/rules-file.ts';
+import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
 
 export type RemoveSources = DownSources & {
   /** Foreground process names in the pane, or null when the pane can't be read. */
@@ -283,77 +284,91 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     // exit: remove.never-approved
     return 1;
   }
-  // The audit line, exactly at the effects boundary: a delegated run that reaches here is
-  // committed to its effects — the stop below when the seat runs, the file edit after it. Every
-  // refusal came sooner; a `--keep` run never got past the gate.
-  if (delegatePane !== null) logDelegated(dir, delegatePane, 'remove', sources.now());
-
-  if (agent) {
-    const screen = sources.screen(session, agent.pane, cli);
-    const where = stateOf(agent.status, screen);
-    const profile = profileFor(cli);
-    const exitInBox = where === 'unsent' && profile !== null && profile.exitClear !== null
-      && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));
-    const stopped = await stopRunning({
-      io, dir, session, sources, logCommand: 'remove', caller: describeCaller(caller),
-      seat: {
-        name, cli, pane: agent.pane, workspace: agent.workspace,
-        state: where === 'free' ? 'free' : where,
-        ...(exitInBox ? { exitInBox: true } : {}),
-      },
-      abandon: abandon && where !== 'free',
-    });
-    // exit: remove.no-launch
-    // exit: remove.stop-failed
-    if (!stopped) return 1;
+  // The session mutator lock: this run has effects from here — the delegated audit line, the
+  // stop of a running seat below, the file edit and the state drops — and no other session
+  // command may interleave its own. Every refusal above is decided first; a `--keep` run never
+  // got past the gate. The lock is released on every exit path (`launch/run-lock.ts`).
+  const runLock = acquireRunLock(dir, session);
+  if ('held' in runLock) {
+    io.stderr(`team remove: ${runLockText(runLock.held, session, dir)}\n`);
+    // exit: remove.run-lock
+    return 1;
   }
+  try {
+    // The audit line, exactly at the effects boundary: a delegated run that reaches here is
+    // committed to its effects — the stop below when the seat runs, the file edit after it. Every
+    // refusal came sooner; a `--keep` run never got past the gate.
+    if (delegatePane !== null) logDelegated(dir, delegatePane, 'remove', sources.now());
 
-  let kept: string | null = null;
-  if (!temporary) {
-    const refused = withLock(dir, () => {
-      const text = readFileSync(path, 'utf8');
-      const next = args.flags.has('keep') ? markStopped(text, name) : takeOut(text, name);
-      if (next === text) return null;
-      const wrote = writeTeamFile(path, next);
-      if (!wrote.ok) return wrote.errors;
-      if (args.flags.has('keep')) kept = next;
-      return null;
-    });
-    if (refused) {
-      for (const problem of refused) {
-        io.stderr(`team remove: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
-      }
-      // exit: remove.locked
-      return 2;
+    if (agent) {
+      const screen = sources.screen(session, agent.pane, cli);
+      const where = stateOf(agent.status, screen);
+      const profile = profileFor(cli);
+      const exitInBox = where === 'unsent' && profile !== null && profile.exitClear !== null
+        && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));
+      const stopped = await stopRunning({
+        io, dir, session, sources, logCommand: 'remove', caller: describeCaller(caller),
+        seat: {
+          name, cli, pane: agent.pane, workspace: agent.workspace,
+          state: where === 'free' ? 'free' : where,
+          ...(exitInBox ? { exitInBox: true } : {}),
+        },
+        abandon: abandon && where !== 'free',
+      });
+      // exit: remove.no-launch
+      // exit: remove.stop-failed
+      if (!stopped) return 1;
     }
+
+    let kept: string | null = null;
+    if (!temporary) {
+      const refused = withLock(dir, () => {
+        const text = readFileSync(path, 'utf8');
+        const next = args.flags.has('keep') ? markStopped(text, name) : takeOut(text, name);
+        if (next === text) return null;
+        const wrote = writeTeamFile(path, next);
+        if (!wrote.ok) return wrote.errors;
+        if (args.flags.has('keep')) kept = next;
+        return null;
+      });
+      if (refused) {
+        for (const problem of refused) {
+          io.stderr(`team remove: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
+        }
+        // exit: remove.locked
+        return 2;
+      }
+    }
+    if (kept !== null) {
+      const parsed = validateTeamFile(kept);
+      // A delegated remove never re-signs the approval: `--keep` is the gate's to refuse, and the
+      // signing itself stays the owner's for a delegate whatever reached here.
+      if (parsed.ok && delegatePane === null) recordSeatDigestOf(standing, parsed.team, root, name, home);
+    }
+    if (!agent && recorded) {
+      updateState(dir, (file) => {
+        const seats = file.sessions[session]?.seats;
+        if (seats) delete seats[name];
+      });
+    }
+    // A temporary seat's rules file goes with the seat: nothing of it is left in the state
+    // folder. A declared seat's stays — a stopped seat comes back to its own file. No home set
+    // is a test that stands in for no store at all. The remover builds the path itself, from the
+    // approval in force and the seat's name, and walks the writer's checked chain.
+    if (temporary && sources.home) {
+      removeRulesFile(sources.standing?.(root) ?? approvalStanding(root, sources.home), name, root, sources.home);
+    }
+    const who = describeCaller(caller);
+    const what = temporary ? `removed temporary ${name}` : args.flags.has('keep') ? `stopped ${name}` : `removed ${name}`;
+    logLine(dir, 'remove', who, what, sources.now());
+    io.stdout(`${what}\n`);
+    // exit: remove.removed
+    // exit: remove.kept
+    // exit: remove.temporary
+    return 0;
+  } finally {
+    runLock.release();
   }
-  if (kept !== null) {
-    const parsed = validateTeamFile(kept);
-    // A delegated remove never re-signs the approval: `--keep` is the gate's to refuse, and the
-    // signing itself stays the owner's for a delegate whatever reached here.
-    if (parsed.ok && delegatePane === null) recordSeatDigestOf(standing, parsed.team, root, name, home);
-  }
-  if (!agent && recorded) {
-    updateState(dir, (file) => {
-      const seats = file.sessions[session]?.seats;
-      if (seats) delete seats[name];
-    });
-  }
-  // A temporary seat's rules file goes with the seat: nothing of it is left in the state
-  // folder. A declared seat's stays — a stopped seat comes back to its own file. No home set
-  // is a test that stands in for no store at all. The remover builds the path itself, from the
-  // approval in force and the seat's name, and walks the writer's checked chain.
-  if (temporary && sources.home) {
-    removeRulesFile(sources.standing?.(root) ?? approvalStanding(root, sources.home), name, root, sources.home);
-  }
-  const who = describeCaller(caller);
-  const what = temporary ? `removed temporary ${name}` : args.flags.has('keep') ? `stopped ${name}` : `removed ${name}`;
-  logLine(dir, 'remove', who, what, sources.now());
-  io.stdout(`${what}\n`);
-  // exit: remove.removed
-  // exit: remove.kept
-  // exit: remove.temporary
-  return 0;
 }
 
 /** Types the exit, waits for the shell, and closes the workspace. False leaves the seat as it is. */
