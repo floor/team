@@ -3353,6 +3353,474 @@ describe('team up, the pause', () => {
     expect(io.out).not.toContain('not checked');
   });
 
+describe('team up, delegated', () => {
+  // A caller in a pane of another session, as the `delegates` section names one. The gate is
+  // faked everywhere here — its preflights are its own file's tests; these pin what `up` does
+  // with either verdict. Every run's stdin is a terminal, the one caller that would prompt
+  // today, because a delegated run takes the no-terminal path whatever its stdin is.
+  const delegateFile = () => {
+    writeFileSync(join(root, '.agents/team.yaml'), `${makeExample(base, root)}\ndelegates:\n  - pane: main/w1:p1\n    commands: [up]\n`);
+  };
+  const delegatedIo = () => {
+    const io = testIo(root, { kind: 'seat', name: 'work', pane: 'w1:p1', session: 'main' });
+    io.stdinIsTTY = true;
+    return io;
+  };
+  const passed = { delegateGate: () => ({ kind: 'passed' as const, pane: 'main/w1:p1' }) };
+  // The audit line, captured — with the server count at the moment it was written, the proof
+  // it lands before the run's first effect.
+  const auditsOf = (made?: World) => {
+    const audits: { dir: string; pane: string; command: string; now?: Date; starts?: number }[] = [];
+    return {
+      audits,
+      logDelegated: (dir: string, pane: string, command: string, now?: Date) => {
+        audits.push({ dir, pane, command, now, ...(made ? { starts: made.starts } : {}) });
+      },
+    };
+  };
+
+  test('a file with no delegates keeps the ordinary refusal: the gate is never asked', async () => {
+    await approve();
+    const made = world();
+    let asked = 0;
+    const io = testIo(root, { kind: 'seat', name: 'work', pane: 'w1:p1', session: 'main' });
+    const code = await runUp(FILE, io, sources({
+      delegateGate: () => {
+        asked++;
+        return { kind: 'passed', pane: 'main/w1:p1' };
+      },
+    }, made));
+    expect(code).toBe(1);
+    expect(asked).toBe(0);
+    expect(io.err).toBe('team up: only the owner runs `up`, from a terminal outside herdr; this call is work\n');
+    expect(io.out).toBe('');
+    expect(made.creates).toEqual([]);
+  });
+
+  // Today's order, byte for byte, when the default file has no `delegates` section: the flagged
+  // file is read first and its own failure answers — exit 2, the caller refusal never reached,
+  // the gate never asked. The owner's side of the same order, with a section present: the
+  // owner's `--file` is honoured exactly as before and the gate is not asked either.
+  test('with no delegates a missing --file is today\'s exit 2, gate never asked', async () => {
+    await approve();
+    const made = world();
+    let asked = 0;
+    const caller = testIo(root, { kind: 'seat', name: 'work', pane: 'w1:p1', session: 'main' });
+    const code = await runUp(['--file', join(root, 'missing.yaml')], caller, sources({
+      delegateGate: () => {
+        asked++;
+        return { kind: 'passed', pane: 'main/w1:p1' };
+      },
+    }, made));
+    expect(code).toBe(2);
+    expect(asked).toBe(0);
+    expect(caller.err).toBe(`team up: no team file at ${join(root, 'missing.yaml')}\n`);
+  });
+
+  test('the owner\'s missing --file stays exit 2 even with a delegates section: gate never asked', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    let asked = 0;
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(['--file', join(root, 'missing.yaml')], io, sources({
+      delegateGate: () => {
+        asked++;
+        return { kind: 'passed', pane: 'main/w1:p1' };
+      },
+    }, made));
+    expect(code).toBe(2);
+    expect(asked).toBe(0);
+    expect(io.err).toBe(`team up: no team file at ${join(root, 'missing.yaml')}\n`);
+  });
+
+  // The review's reproduction: an unplaced caller, a valid default file with a `delegates`
+  // section, `team up --file <missing>`. Eligibility is read from the DEFAULT file — the gate
+  // sees its team and the flag — and the flagged target is never read: the gate's refusal
+  // answers, not today's exit 2. The same on a dry run: the would-refuse line and the plan of
+  // the DEFAULT file, exit 0.
+  test('an unplaced caller with a delegates file and a missing --file gets the gate\'s refusal, not exit 2', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    let asked = 0;
+    let seen: { team: { delegates: unknown }; root: string; flags: readonly string[] } | undefined;
+    const io = testIo(root, { kind: 'unplaced', reason: 'its parent processes can\'t be read to the top' });
+    const code = await runUp(['--file', join(root, 'missing.yaml')], io, sources({
+      delegateGate: (input) => {
+        asked++;
+        seen = input;
+        return {
+          kind: 'refused',
+          id: 'up.delegate',
+          text: 'only the owner or the approved delegate runs `up`; this call is unplaced (its parent processes can\'t be read to the top)',
+        };
+      },
+    }, made));
+    expect(code).toBe(1);
+    expect(asked).toBe(1);
+    expect(seen?.root).toBe(root);
+    expect(seen?.team.delegates).not.toBeNull();
+    expect(seen?.flags).toContain('file');
+    expect(io.err).toBe(
+      'team up: only the owner or the approved delegate runs `up`; this call is unplaced (its parent processes can\'t be read to the top)\n',
+    );
+    expect(io.err).not.toContain('no team file');
+    expect(made.starts).toBe(0);
+  });
+
+  test('the same caller on a dry run: the would-refuse line, the default file\'s plan, exit 0', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    const io = testIo(root, { kind: 'unplaced', reason: 'its parent processes can\'t be read to the top' });
+    const code = await runUp(['--dry-run', '--file', join(root, 'missing.yaml')], io, sources({
+      delegateGate: () => ({
+        kind: 'refused',
+        id: 'up.delegate-flag',
+        text: "--file is the owner's; the approved delegate cannot use it",
+      }),
+    }, made));
+    expect(code).toBe(0);
+    expect(io.out).toContain("! up would refuse: --file is the owner's; the approved delegate cannot use it\n");
+    expect(io.out).toContain('dry run: nothing was run\n');
+    expect(io.out + io.err).not.toContain('no team file');
+    expect(made.starts).toBe(0);
+  });
+
+  // The delegate's own prohibited flags reach the gate with the run still unread: `--session`
+  // is refused exactly as `--file` is, and the session the caller tried to name is not adopted.
+  test('a delegated run\'s --session is the gate\'s to refuse, and never adopted', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    let seen: { flags: readonly string[] } | undefined;
+    const io = delegatedIo();
+    const code = await runUp(['--session', 'elsewhere'], io, sources({
+      delegateGate: (input) => {
+        seen = input;
+        return { kind: 'refused', id: 'up.delegate-flag', text: "--session is the owner's; the approved delegate cannot use it" };
+      },
+    }, made));
+    expect(code).toBe(1);
+    expect(seen?.flags).toContain('session');
+    expect(io.err).toBe("team up: --session is the owner's; the approved delegate cannot use it\n");
+    expect(made.starts).toBe(0);
+  });
+
+  test('the owner is never gated: a delegates section changes nothing for the owner at a terminal', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    let asked = 0;
+    const { audits, logDelegated } = auditsOf();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({
+      delegateGate: () => {
+        asked++;
+        return { kind: 'passed', pane: 'main/w1:p1' };
+      },
+      logDelegated,
+    }, made));
+    expect(code).toBe(0);
+    expect(asked).toBe(0);
+    expect(audits).toEqual([]);
+    expect(io.out).toContain('claude-coordinator-acme: ready\n');
+  });
+
+  test("the gate's refusal replaces the caller's on a real run: exit 1, no effects, no audit line", async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    const { audits, logDelegated } = auditsOf();
+    const io = delegatedIo();
+    const code = await runUp(FILE, io, sources({
+      delegateGate: () => ({
+        kind: 'refused',
+        id: 'up.delegate-flag',
+        text: "--file is the owner's; the approved delegate cannot use it",
+      }),
+      logDelegated,
+    }, made));
+    expect(code).toBe(1);
+    expect(io.err).toBe("team up: --file is the owner's; the approved delegate cannot use it\n");
+    expect(io.out).toBe('');
+    expect(made.starts).toBe(0);
+    expect(made.creates).toEqual([]);
+    expect(audits).toEqual([]);
+  });
+
+  test("the gate's refusal on a dry run: the would-refuse line, then the plan, exit 0", async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    const { audits, logDelegated } = auditsOf();
+    const io = delegatedIo();
+    const code = await runUp(['--dry-run', ...FILE], io, sources({
+      delegateGate: () => ({
+        kind: 'refused',
+        id: 'up.delegate-command',
+        text: 'the delegate pane main/w1:p1 runs only what its commands list names, and up is not in it',
+      }),
+      logDelegated,
+    }, made));
+    expect(code).toBe(0);
+    expect(io.out).toContain('! up would refuse: the delegate pane main/w1:p1 runs only what its commands list names, and up is not in it\n');
+    expect(io.out).toContain('dry run: nothing was run\n');
+    expect(made.starts).toBe(0);
+    expect(audits).toEqual([]);
+  });
+
+  test('a passed gate runs the team and writes the audit line once, before its first effect', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    const { audits, logDelegated } = auditsOf(made);
+    const io = delegatedIo();
+    const code = await runUp(FILE, io, sources({ ...passed, logDelegated }, made));
+    expect(code).toBe(0);
+    expect(made.starts).toBe(1);
+    expect(made.creates).toEqual(['claude opus 5.5', 'deepseek flash v4.1', 'deepseek flash v4.1-2', 'watchdog']);
+    expect(io.out).toContain('claude-coordinator-acme: ready\n');
+    expect(made.terminal.reads).toBe(0);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ dir: join(root, '.agents'), pane: 'main/w1:p1', command: 'up' });
+    expect(audits[0]?.now).toBeInstanceOf(Date);
+    // The line is on the record before the run reached herdr at all.
+    expect(audits[0]?.starts).toBe(0);
+  });
+
+  test('a passed gate on a dry run plans only: no effects and no audit line', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    const { audits, logDelegated } = auditsOf();
+    const io = delegatedIo();
+    const code = await runUp(['--dry-run', ...FILE], io, sources({ ...passed, logDelegated }, made));
+    expect(code).toBe(0);
+    expect(io.out).toContain('dry run: nothing was run\n');
+    expect(io.out).not.toContain('would refuse');
+    expect(made.starts).toBe(0);
+    expect(made.creates).toEqual([]);
+    expect(audits).toEqual([]);
+  });
+
+  // The RFC's table: every dialog a delegated run can find is closed without input and the
+  // record carries the classification with `(no terminal for owner)` — the path an owner
+  // without a terminal takes — even though this caller's stdin is a terminal. Never a prompt,
+  // never a focus, never a key or a text sent.
+  test.each([
+    ['trust', 'Do you trust this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n'],
+    ['permission', PERMISSION],
+    ['question', 'Which branch should this start from?\n\n❯ 1. main\n  2. next\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n'],
+  ] as const)('a delegated run at a %s dialog closes without input and never prompts', async (classification, screen) => {
+    delegateFile();
+    await approve();
+    const made = world((_pane, label) => (label === 'claude opus 5.5' ? screen : IDLE));
+    made.launch.agents = (session) =>
+      (made.launch.agentPanes(session) ?? []).map((pane) => ({
+        name: null,
+        agent: 'claude',
+        pane,
+        workspace: pane.split(':')[0] ?? pane,
+        status: 'idle',
+        cwd: null,
+      }));
+    made.launch.processInfo = () => ({ shell: 400, foreground: [400, 401] });
+    const focused: string[] = [];
+    made.launch.focus = (_session, pane) => {
+      focused.push(pane);
+      return true;
+    };
+    const { audits, logDelegated } = auditsOf(made);
+    const io = delegatedIo();
+    const code = await runUp(FILE, io, sources({ ...passed, logDelegated }, made));
+    expect(code).toBe(1);
+    expect(io.out).toContain(`claude-coordinator-acme: left out: ${classification} (no terminal for owner)\n`);
+    expect(io.err).toContain('  its workspace was closed without input\n');
+    expect(io.out + io.err).not.toContain('[o] open pane');
+    expect(made.terminal.reads).toBe(0);
+    expect(focused).toEqual([]);
+    expect(made.closes).toEqual(['w1']);
+    // The run began, so the delegation is on the record before the first effect.
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.starts).toBe(0);
+  });
+
+  test('a vendor notice closes the same way: a delegated run never answers it', async () => {
+    writeFileSync(
+      join(root, '.agents/team.yaml'),
+      `${makeExample(base, root, EXAMPLE.replace('stopped: true\n', 'parked: true\n'))}\ndelegates:\n  - pane: main/w1:p1\n    commands: [up]\n`,
+    );
+    await approve();
+    const startup = readFileSync(join(import.meta.dir, '../fixtures/codex/0.157.0/startup.txt'), 'utf8');
+    const made = world((_pane, label) => (label === 'gpt sol 6' ? fileModel(startup) : IDLE));
+    made.launch.agents = (session) =>
+      (made.launch.agentPanes(session) ?? []).map((pane) => ({
+        name: null,
+        agent: 'codex',
+        pane,
+        workspace: pane.split(':')[0] ?? pane,
+        status: 'idle',
+        cwd: null,
+      }));
+    made.launch.processInfo = () => ({ shell: 700, foreground: [700, 701] });
+    const { logDelegated } = auditsOf();
+    const io = delegatedIo();
+    const code = await runUp(FILE, io, sources({ ...passed, logDelegated }, made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('codex-acme: left out: vendor notice (no terminal for owner)\n');
+    expect(io.err).toContain('  its workspace was closed without input\n');
+    expect(made.closes).toEqual(['w2']);
+    expect(made.terminal.reads).toBe(0);
+  });
+
+  test("a delegated run's idle timeout is a dialog too: closed without input, never left at launched", async () => {
+    delegateFile();
+    await approve();
+    // A screen that never idles and never reads as a dialog: only the deadline ends the wait.
+    const made = world("❯ zsh ../tools/launcher.sh\nzsh: can't open input file: ../tools/launcher.sh\n~ ❯\n");
+    made.launch.agents = (session) =>
+      (made.launch.agentPanes(session) ?? []).map((pane) => ({
+        name: null,
+        agent: 'claude',
+        pane,
+        workspace: pane.split(':')[0] ?? pane,
+        status: 'idle',
+        cwd: null,
+      }));
+    made.launch.processInfo = () => ({ shell: 400, foreground: [400, 401] });
+    const { logDelegated } = auditsOf();
+    const io = delegatedIo();
+    const code = await runUp(FILE, io, sources({ ...passed, logDelegated }, made));
+    expect(code).toBe(1);
+    // The delegated record carries the no-terminal suffix — not the plain `timeout` an owner
+    // without a terminal is left with today, which leaves the seat at launched.
+    expect(io.out).toContain('claude-coordinator-acme: left out: timeout (no terminal for owner)\n');
+    expect(io.out).not.toContain('claude-coordinator-acme: left out: timeout\n');
+    expect(io.err).toContain('  its workspace was closed without input\n');
+    expect(io.err).not.toContain('left at launched');
+    expect(made.closes).toContain('w1');
+    expect(made.terminal.reads).toBe(0);
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['claude-coordinator-acme']).toBeUndefined();
+  });
+
+  // Amendment 3's role-path hold, for `up`: the ordinary rule reads kinds, not names, so a
+  // delegate carrying the coordinator's own name is gated all the same — and a delegated run,
+  // whatever it is named, never reaches the owner's prompt path.
+  test('a delegate named like the coordinator is gated all the same, and never the owner path', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    let asked = 0;
+    const { audits, logDelegated } = auditsOf(made);
+    const io = testIo(root, { kind: 'seat', name: 'claude-coordinator-acme', pane: 'w1:p1', session: 'main' });
+    io.stdinIsTTY = true;
+    const code = await runUp(FILE, io, sources({
+      delegateGate: () => {
+        asked++;
+        return { kind: 'passed', pane: 'main/w1:p1' };
+      },
+      logDelegated,
+    }, made));
+    expect(code).toBe(0);
+    expect(asked).toBe(1);
+    expect(audits).toHaveLength(1);
+    // Named like the lead or not, the run is a delegated one: it never reads the terminal.
+    expect(made.terminal.reads).toBe(0);
+    expect(io.out + io.err).not.toContain('[o] open pane');
+  });
+
+  // The other side of the same hold: a caller the ordinary rule accepts never enters the
+  // delegate branch. The owner without a terminal keeps everything as today — the gate is not
+  // asked, and its idle timeout stays the plain record that leaves the seat at launched, not
+  // the delegated run's close.
+  test('an owner without a terminal never enters the delegate branch: gate unasked, plain timeout', async () => {
+    delegateFile();
+    await approve();
+    const made = world("❯ zsh ../tools/launcher.sh\nzsh: can't open input file: ../tools/launcher.sh\n~ ❯\n");
+    let asked = 0;
+    const { audits, logDelegated } = auditsOf();
+    const io = testIo(root, { kind: 'owner-no-tty' });
+    const code = await runUp(FILE, io, sources({
+      delegateGate: () => {
+        asked++;
+        return { kind: 'passed', pane: 'main/w1:p1' };
+      },
+      logDelegated,
+    }, made));
+    expect(code).toBe(1);
+    expect(asked).toBe(0);
+    expect(audits).toEqual([]);
+    expect(io.out).toContain('claude-coordinator-acme: left out: timeout\n');
+    expect(io.err).toContain('left at launched\n');
+    expect(made.closes).toEqual([]);
+  });
+
+  // The classifications a fresh seat's polls never produce reach the same close through a
+  // resumed waiting seat — and the fresh read names the stop, never the stored classification.
+  test.each([
+    ['unsent', `${'─'.repeat(40)}\n❯ left unsent in the box\n${'─'.repeat(40)}\n  main · Opus 5.5\n`],
+    ['unknown', 'a screen no shape matches\n'],
+  ] as const)('a resumed waiting seat reading %s is closed without input', async (classification, screen) => {
+    delegateFile();
+    await approve();
+    writeFileSync(join(root, '.agents/team.state.json'), JSON.stringify({
+      format: 1,
+      sessions: {
+        'acme-web': {
+          seats: {
+            'claude-coordinator-acme': {
+              stage: 'launched',
+              pane: 'w1:p1',
+              workspace: 'w1',
+              launched: { shell: 400, cli: [401] },
+              waiting: { state: 'waiting-owner', classification: 'vendor notice' },
+            },
+            'deepseek-acme': { stage: 'ready', pane: 'w2:p1', workspace: 'w2', launched: { shell: 500, cli: [501] } },
+            'deepseek-acme-2': { stage: 'ready', pane: 'w3:p1', workspace: 'w3', launched: { shell: 510, cli: [511] } },
+          },
+          worktrees: {},
+        },
+      },
+    }));
+    const made = world();
+    made.session = 'running';
+    made.seed('w1:p1', screen, true);
+    const listed = [
+      agent('claude-coordinator-acme', 'w1:p1'),
+      agent('deepseek-acme', 'w2:p1'),
+      agent('deepseek-acme-2', 'w3:p1'),
+    ];
+    made.launch.agents = () => listed;
+    made.launch.agentPanes = () => ['w1:p1', 'w2:p1', 'w3:p1'];
+    made.launch.processInfo = (_session, pane) =>
+      pane === 'w1:p1' ? { shell: 400, foreground: [400, 401] }
+        : pane === 'w2:p1' ? { shell: 500, foreground: [500, 501] }
+          : { shell: 510, foreground: [510, 511] };
+    const { logDelegated } = auditsOf();
+    const io = delegatedIo();
+    const code = await runUp(FILE, io, sources({
+      sessionState: () => 'running',
+      agents: () => listed,
+      workspaces: () => [
+        { id: 'w1', label: 'claude opus 5.5' },
+        { id: 'w2', label: 'deepseek flash v4.1' },
+        { id: 'w3', label: 'deepseek flash v4.1-2' },
+      ],
+      ...passed,
+      logDelegated,
+    }, made));
+    expect(code).toBe(1);
+    expect(io.out).toContain(`claude-coordinator-acme: left out: ${classification} (no terminal for owner)\n`);
+    expect(io.err).toContain('  its workspace was closed without input\n');
+    expect(made.closes).toEqual(['w1']);
+    expect(made.terminal.reads).toBe(0);
+    expect(readState(join(root, '.agents')).sessions['acme-web']?.seats['claude-coordinator-acme']).toBeUndefined();
+  });
+});
+
 describe('team down, live', () => {
   function seat(status = 'idle'): HerdrAgent {
     return agent('deepseek-acme', 'w3:p1', status);

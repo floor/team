@@ -12,7 +12,7 @@ import { runRelease, USAGE as RELEASE_USAGE } from '../../src/commands/release.t
 import { main } from '../../src/cli.ts';
 import { realFetch, BODY_LIMIT } from '../../src/release/http.ts';
 import type { KeyReader } from '../../src/release/keychain.ts';
-import { testIo, type TestIo } from '../helpers.ts';
+import { gitEnv, testIo, type TestIo } from '../helpers.ts';
 import {
   KEY, URLS, activityFile, fakeFetch, fixture, happy, happyRecords, json, linearAnswer, type Answers, type Recorded,
 } from './world.ts';
@@ -581,7 +581,7 @@ describe('the --file option', () => {
   });
 
   test('in a linked worktree, the default is the main checkout\'s file and --file reads the named one', async () => {
-    execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'Start'], { cwd: project, stdio: ['ignore', 'ignore', 'ignore'] });
+    execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'Start'], { cwd: project, stdio: ['ignore', 'ignore', 'ignore'], env: gitEnv() });
     const worktree = join(project, 'wt');
     execFileSync('git', ['worktree', 'add', '--quiet', '-b', 'side', worktree], { cwd: project, stdio: ['ignore', 'ignore', 'ignore'] });
     mkdirSync(join(worktree, '.agents'), { recursive: true });

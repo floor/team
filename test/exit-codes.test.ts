@@ -22,6 +22,7 @@ import { runUp, type Launch, type UpSources } from '../src/commands/up.ts';
 import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import { runWorktree, type WorktreeSources } from '../src/commands/worktree.ts';
 import { main, reportFailure, version } from '../src/cli.ts';
+import { delegateGate, type DelegateSources } from '../src/delegate.ts';
 import { listFolder } from '../src/file/landing.ts';
 import { loadTeamFile } from '../src/file/load.ts';
 import { defaultFs, lobbyDir } from '../src/lobby/gate.ts';
@@ -34,7 +35,7 @@ import type { Machine } from '../src/watch/machine.ts';
 import { analyze, loadContract, problems, render, type ExitRow } from '../scripts/exit-codes.ts';
 import { runRelease } from '../src/commands/release.ts';
 import { fakeFetch, fixture, happy, json, URLS, type Answers } from './release/world.ts';
-import { claudeBox, testIo } from './helpers.ts';
+import { claudeBox, gitEnv, testIo } from './helpers.ts';
 
 const NOW = new Date('2026-10-04T09:00:00Z');
 const owner = { kind: 'owner' } as const;
@@ -156,6 +157,7 @@ function git(cwd: string, ...args: string[]): string {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
+    env: gitEnv(),
   });
 }
 
@@ -649,6 +651,55 @@ scene('add.server', async (place) => {
   return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { launch: launching(IDLE, () => true, false) })), 'its server did not start');
 });
 
+// The delegated runs. The file names a delegate — a pane outside the team's session — and the
+// caller stands on it as a seat of that other session, a caller the ordinary rule refuses before
+// the gate is asked. The scenes below hand the command the contract's verdicts through the test's
+// own injection (`sources.delegateGate`), each with the sentence the real gate gives; what they
+// prove is the command's own behaviour — the verdict printed behind its prefix, exit 1, nothing
+// started. The two registered without an injection are the real gate's own: `delegate-approval`
+// (no record under the home it answers for, so its first read refuses the run before herdr is
+// ever asked) and `delegate-edit` (a passed gate, an add that would edit the file). The verdicts'
+// reasons are the gate's tests'.
+const DELEGATED_ADD_REMOVE = TWO + `delegates:
+  - pane: main/w1:p1
+    commands: [add, remove]
+`;
+const addRemoveCaller = { kind: 'seat', name: 'pilot', pane: 'w1:p1', session: 'main' } as const;
+const refused = (id: string, text: string) => ({ kind: 'refused' as const, id, text });
+
+const ADD_GATE_REFUSALS: [suffix: string, sentence: string, needle: string][] = [
+  ['delegate-approved-copy', 'delegation needs a readable approved copy: run `team approve`', 'readable approved copy'],
+  ['delegate-drift', 'delegation needs the approved file: the file is not the approved one (seat worker changed): run `team approve`', 'not the approved one'],
+  ['delegate-evidence', "delegation cannot verify its placement or seats: herdr doesn't answer", 'placement or seats'],
+  ['delegate-placement', 'the approved delegate must be an external non-seat pane', 'non-seat pane'],
+  ['delegate', 'only the owner, the coordinator, the operator or the approved delegate runs it; this call is pilot', 'or the approved delegate runs it'],
+  ['delegate-command', 'the approved delegate main/w1:p1 may not run `add`; its approved commands are remove', 'may not run'],
+];
+for (const [suffix, sentence, needle] of ADD_GATE_REFUSALS) {
+  scene(`add.${suffix}`, async (place) => {
+    write(place, DELEGATED_ADD_REMOVE);
+    return show(await added(place, ['worker'], addRemoveCaller, addSources(place, {
+      delegateGate: () => refused(`add.${suffix}`, sentence),
+    })), needle);
+  });
+}
+scene('add.delegate-flag', async (place) => {
+  write(place, DELEGATED_ADD_REMOVE);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'result:out.md'], addRemoveCaller, addSources(place, {
+    delegateGate: () => refused('add.delegate-flag', "--temporary is the owner's; the approved delegate cannot use it"),
+  })), 'cannot use it');
+});
+scene('add.delegate-approval', async (place) => {
+  write(place, DELEGATED_ADD_REMOVE);
+  return show(await added(place, ['worker'], addRemoveCaller, addSources(place)), 'delegation needs a verified approval');
+});
+scene('add.delegate-edit', async (place) => {
+  approve(place, DELEGATED_ADD_REMOVE);
+  return show(await added(place, ['worker'], addRemoveCaller, addSources(place, {
+    delegateGate: () => ({ kind: 'passed' as const, pane: 'main/w1:p1' }),
+  })), 'cannot change the file or the approval');
+});
+
 scene('approve.invocation', async (place) => show(await approved(place, ['extra'], owner, approveSources(place, null)), 'unexpected'));
 scene('approve.not-a-repo', async (place) => show(await approved(place, [], owner, approveSources(place, null)), 'not inside a git repository'), false);
 scene('approve.file', async (place) => show(await approved(place, ['--file', 'missing.yaml'], owner, approveSources(place, null)), 'no team file'));
@@ -735,7 +786,7 @@ scene('check.refused', async (place) => {
   writeFileSync(join(place.root, 'note.txt'), 'note\n');
   git(place.root, 'add', 'note.txt');
   execFileSync('git', ['-c', 'user.name=Other', '-c', 'user.email=other@example.com', 'commit', '-q', '-m', 'fix: unsigned'], {
-    cwd: place.root, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: place.root, stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv(),
   });
   const io = testIo(place.root, owner);
   return show({ code: await check(['HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'refused');
@@ -884,6 +935,54 @@ scene('down.another-pane', async (place) => {
 scene('down.abandon', async (place) => {
   write(place, TEAM);
   return show(await down(place, ['--abandon'], leadSeat, downSources({ sessionRunning: () => true, agents: () => [] })), 'only the owner abandons');
+});
+
+// The delegate branch's own refusals. The file carries a `delegates` section, the caller is a
+// pane the ordinary rule refuses — `other`, whose name is no coordinator's — and the gate's
+// verdict is injected: what these scenes pin is the command's side of the contract, the text
+// and the exit code of each id. The gate's own decisions are its own test file's.
+const DELEGATED = `${TEAM}delegates:\n  - pane: hook/w2:p9\n    commands: [up, down]\n`;
+const refusedBy = (id: string, text: string) => (): { kind: 'refused'; id: string; text: string } => ({ kind: 'refused', id, text });
+const delegated = (id: string, text: string) => downSources({ sessionRunning: () => true, agents: () => [], gate: refusedBy(id, text) });
+
+scene('down.delegate', async (place) => {
+  write(place, DELEGATED);
+  const text = 'only the owner, the coordinator, the operator or the approved delegate stops the team; this call is other';
+  const ran = await down(place, [], other, delegated('down.delegate', text));
+  expect(ran.err).toBe(`team down: ${text}\n`);
+  return ran;
+});
+scene('down.delegate-approval', async (place) => {
+  write(place, DELEGATED);
+  return show(await down(place, [], other, delegated('down.delegate-approval', 'delegation needs a verified approval: no approval is in force')), 'delegation needs a verified approval');
+});
+scene('down.delegate-approved-copy', async (place) => {
+  write(place, DELEGATED);
+  return show(await down(place, [], other, delegated('down.delegate-approved-copy', 'delegation needs a readable approved copy: run `team approve`')), 'readable approved copy');
+});
+scene('down.delegate-command', async (place) => {
+  write(place, DELEGATED);
+  return show(await down(place, [], other, delegated('down.delegate-command', 'the approved delegate hook/w2:p9 may not run `down`; its approved commands are up')), 'its approved commands are up');
+});
+scene('down.delegate-drift', async (place) => {
+  write(place, DELEGATED);
+  return show(await down(place, [], other, delegated('down.delegate-drift', 'delegation needs the approved file: the file is not the approved one (seats: a seat was added): run `team approve`')), 'is not the approved one');
+});
+scene('down.delegate-evidence', async (place) => {
+  write(place, DELEGATED);
+  return show(await down(place, [], other, delegated('down.delegate-evidence', "delegation cannot verify its placement or seats: herdr doesn't answer")), 'cannot verify its placement or seats');
+});
+scene('down.delegate-flag', async (place) => {
+  write(place, DELEGATED);
+  const text = "--abandon is the owner's; the approved delegate cannot use it";
+  const ran = await down(place, ['--abandon'], other, delegated('down.delegate-flag', text));
+  // The gate's flag refusal is the run's only refusal: today's abandon line stays out of it.
+  expect(ran.err).toBe(`team down: ${text}\n`);
+  return ran;
+});
+scene('down.delegate-placement', async (place) => {
+  write(place, DELEGATED);
+  return show(await down(place, [], other, delegated('down.delegate-placement', 'the approved delegate must be an external non-seat pane')), 'external non-seat pane');
 });
 scene('down.no-launch', async (place) => {
   write(place, TEAM);
@@ -1143,6 +1242,39 @@ scene('remove.temporary', async (place) => {
   return show(await removed(place, ['worker'], owner, downSources({ home: place.home })), 'removed temporary worker');
 });
 
+// The delegated `remove`: the same shape as add's scenes above, with the verdicts the gate gives
+// this command. `delegate-approval` runs the real gate, which refuses on its first read before
+// herdr is asked; the rest hand the verdict in, and the scene proves the command prints it and
+// exits 1 with nothing stopped.
+const REMOVE_GATE_REFUSALS: [suffix: string, sentence: string, needle: string][] = [
+  ['delegate-approved-copy', 'delegation needs a readable approved copy: run `team approve`', 'readable approved copy'],
+  ['delegate-drift', 'delegation needs the approved file: the file is not the approved one (seat worker changed): run `team approve`', 'not the approved one'],
+  ['delegate-evidence', "delegation cannot verify its placement or seats: herdr doesn't answer", 'placement or seats'],
+  ['delegate-placement', 'the approved delegate must be an external non-seat pane', 'non-seat pane'],
+  ['delegate', 'only the owner, the coordinator, the operator or the approved delegate runs it; this call is pilot', 'or the approved delegate runs it'],
+  ['delegate-command', 'the approved delegate main/w1:p1 may not run `remove`; its approved commands are add', 'may not run'],
+];
+for (const [suffix, sentence, needle] of REMOVE_GATE_REFUSALS) {
+  scene(`remove.${suffix}`, async (place) => {
+    write(place, DELEGATED_ADD_REMOVE);
+    return show(await removed(place, ['worker'], addRemoveCaller, downSources({
+      home: place.home,
+      delegateGate: () => refused(`remove.${suffix}`, sentence),
+    })), needle);
+  });
+}
+scene('remove.delegate-flag', async (place) => {
+  write(place, DELEGATED_ADD_REMOVE);
+  return show(await removed(place, ['worker', '--keep'], addRemoveCaller, downSources({
+    home: place.home,
+    delegateGate: () => refused('remove.delegate-flag', "--keep is the owner's; the approved delegate cannot use it"),
+  })), 'cannot use it');
+});
+scene('remove.delegate-approval', async (place) => {
+  write(place, DELEGATED_ADD_REMOVE);
+  return show(await removed(place, ['worker'], addRemoveCaller, downSources({ home: place.home })), 'delegation needs a verified approval');
+});
+
 const RELEASE_TEAM = `format: 1
 project: acme
 coordinator: lead
@@ -1312,6 +1444,46 @@ scene('up.watch', async (place) => {
   return show(await up(place, ['--file', place.file], owner, upSources(place, {
     launch: launching(IDLE, (command) => !command.includes(' watch')),
   })), 'watch: it did not start');
+});
+
+// §RFC0007: one run per delegate refusal of `up`. The gate is the real one in every scene — the
+// command calls it with no stand-ins of its own — and only the reads it cannot make here are
+// stood in: the approval store this harness owns (the gate reads the user's own), and herdr,
+// which no scene here has. `DELEGATES` names an external pane whose commands list `up`; the
+// approved copy holds the same text, so no scene drifts.
+const DELEGATES = `\ndelegates:\n  - pane: main/w1:p1\n    commands: [up]\n`;
+const delegateCaller = { kind: 'seat', name: 'other', pane: 'w1:p1', session: 'main' } as const;
+const gateAt = (place: Place, over: DelegateSources = {}): Partial<UpSources> => ({
+  delegateGate: (input) => delegateGate({ ...input, sources: { standing: () => approvalStanding(input.root, place.home), ...over } }),
+});
+scene('up.delegate-approval', async (place) => {
+  write(place, `${TEAM}${DELEGATES}`);
+  return show(await up(place, ['--file', place.file], other, upSources(place, gateAt(place))), 'delegation needs a verified approval');
+});
+scene('up.delegate-approved-copy', async (place) => {
+  approve(place, `${TEAM}${DELEGATES}`);
+  return show(await up(place, ['--file', place.file], other, upSources(place, gateAt(place, { approvedCopy: () => null }))), 'delegation needs a readable approved copy');
+});
+scene('up.delegate-drift', async (place) => {
+  approve(place, `${TEAM}${DELEGATES}`);
+  write(place, `${TEAM.replace('label: lead', 'label: renamed')}${DELEGATES}`);
+  return show(await up(place, ['--file', place.file], other, upSources(place, gateAt(place))), 'delegation needs the approved file');
+});
+scene('up.delegate-evidence', async (place) => {
+  approve(place, `${TEAM}${DELEGATES}`);
+  return show(await up(place, ['--file', place.file], other, upSources(place, gateAt(place, { agents: () => null }))), 'cannot verify its placement or seats');
+});
+scene('up.delegate', async (place) => {
+  approve(place, `${TEAM}${DELEGATES}`);
+  return show(await up(place, ['--file', place.file], other, upSources(place, gateAt(place, { agents: () => [] }))), 'only the owner or the approved delegate');
+});
+scene('up.delegate-command', async (place) => {
+  approve(place, `${TEAM}${DELEGATES.replace('commands: [up]', 'commands: [down]')}`);
+  return show(await up(place, ['--file', place.file], delegateCaller, upSources(place, gateAt(place, { agents: () => [] }))), 'may not run `up`');
+});
+scene('up.delegate-flag', async (place) => {
+  approve(place, `${TEAM}${DELEGATES}`);
+  return show(await up(place, ['--session', 'elsewhere'], delegateCaller, upSources(place, gateAt(place, { agents: () => [] }))), "--session is the owner's");
 });
 
 async function watched(place: Place, argv: string[], caller: Caller, sources: WatchSources = watchSources()): Promise<Ran> {
@@ -1859,7 +2031,12 @@ scene('answer.ready', async (place) => {
 // that reports false now leaves the recovery state (`answer.recovery`), so the only action
 // refusal left is a record whose byte the build does not send, and the shipped profiles record
 // 0d, 31 and 61 — all keys the build sends. The check defends against a profile that does not.
-const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed', 'answer.action']);
+// `up.delegate-placement` joins them: the gate's collision backstop, whose three ways to fire —
+// a malformed pane, a pane in the team's own session, a pane the state or the agent list
+// records as a seat's — are each refused by the file's own load (`sections/delegate.ts` reads
+// the shape, the session and the duplicates before `up` ever calls the gate), so no file this
+// version loads can reach it. The gate's own tests hold the verdict itself.
+const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed', 'answer.action', 'up.delegate-placement']);
 
 const contract = loadContract();
 for (const row of contract.rows) {

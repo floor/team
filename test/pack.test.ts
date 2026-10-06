@@ -27,28 +27,33 @@ test('package.json files allows the shipped entries only', () => {
 });
 
 test('the packed tarball ships the schema and nothing it should not', () => {
-  const result = spawnSync('npm', ['pack', '--dry-run', '--json'], { cwd: repo, encoding: 'utf8' });
-  expect(result.status).toBe(0);
-  const files: { path: string }[] = JSON.parse(result.stdout)[0]?.files ?? [];
-  expect(files.length).toBeGreaterThan(0);
-  const paths = files.map((f) => f.path);
+  const home = mkdtempSync(join(tmpdir(), 'team-pack-home-'));
+  try {
+    const result = npmRun(home, ['pack', '--dry-run', '--json'], repo);
+    expect(result.status).toBe(0);
+    const files: { path: string }[] = JSON.parse(result.stdout)[0]?.files ?? [];
+    expect(files.length).toBeGreaterThan(0);
+    const paths = files.map((f) => f.path);
 
-  // Required in every package, and the CLI itself whenever dist has been built.
-  for (const required of ['schema/team.schema.json', 'package.json', 'README.md', 'LICENSE']) {
-    expect(paths).toContain(required);
-  }
-  if (existsSync(join(repo, 'dist'))) {
-    expect(paths).toContain('dist/cli.js');
-  }
+    // Required in every package, and the CLI itself whenever dist has been built.
+    for (const required of ['schema/team.schema.json', 'package.json', 'README.md', 'LICENSE']) {
+      expect(paths).toContain(required);
+    }
+    if (existsSync(join(repo, 'dist'))) {
+      expect(paths).toContain('dist/cli.js');
+    }
 
-  // Every packed path under the allowed top-level entries…
-  const allowed = ['dist/', 'examples/', 'schema/', 'package.json', 'README.md', 'LICENSE'];
-  for (const path of paths) {
-    expect(allowed.some((prefix) => path === prefix || path.startsWith(prefix))).toBe(true);
-  }
-  // …and the folders that must never ship stay absent.
-  for (const forbidden of ['contract/', 'test/', 'scripts/', '.github/', 'docs/', 'src/']) {
-    expect(paths.some((p) => p.startsWith(forbidden))).toBe(false);
+    // Every packed path under the allowed top-level entries…
+    const allowed = ['dist/', 'examples/', 'schema/', 'package.json', 'README.md', 'LICENSE'];
+    for (const path of paths) {
+      expect(allowed.some((prefix) => path === prefix || path.startsWith(prefix))).toBe(true);
+    }
+    // …and the folders that must never ship stay absent.
+    for (const forbidden of ['contract/', 'test/', 'scripts/', '.github/', 'docs/', 'src/']) {
+      expect(paths.some((p) => p.startsWith(forbidden))).toBe(false);
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
   }
 });
 
@@ -116,10 +121,16 @@ test('what ships today: a pack of the tree as it is lists README.md and not npm-
   // The today-half of the rehearsal above: 0.3.0's release workflow packs the tree as it
   // is, npm always packs README.md, and npm-readme.md is not in `files` — so this
   // release's npm page shows the long README, and the short one only once a later release
-  // adds the copy step.
-  const result = spawnSync('npm', ['pack', '--dry-run', '--json'], { cwd: repo, encoding: 'utf8' });
-  expect(result.status).toBe(0);
-  const paths: string[] = (JSON.parse(result.stdout)[0]?.files ?? []).map((file: { path: string }) => file.path);
-  expect(paths).toContain('README.md');
-  expect(paths).not.toContain('npm-readme.md');
+  // adds the copy step. Like the rehearsal, the call runs offline in a temporary home of
+  // this test's own: no machine npm state is read or written and no network is touched.
+  const home = mkdtempSync(join(tmpdir(), 'team-pack-home-'));
+  try {
+    const result = npmRun(home, ['pack', '--dry-run', '--json'], repo);
+    expect(result.status).toBe(0);
+    const paths: string[] = (JSON.parse(result.stdout)[0]?.files ?? []).map((file: { path: string }) => file.path);
+    expect(paths).toContain('README.md');
+    expect(paths).not.toContain('npm-readme.md');
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });

@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { recordSeatDigestOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { anotherPaneRefusal, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, judgeCallerOf, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller } from '../caller.ts';
+import { delegateGate, logDelegated } from '../delegate.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { markStopped, takeOut } from '../file/lines.ts';
 import type { Problem } from '../file/types.ts';
@@ -31,6 +32,9 @@ export type RemoveSources = DownSources & {
   // The approval store's one read, done before anything is stopped or written and reused by the
   // amending branch, overridable so a test can count it or swap the record after the read.
   standing?(root: string): Standing;
+  // The delegate gate, overridable so a test can hand a delegated run its verdict. Absent: the
+  // real gate (`src/delegate.ts`).
+  delegateGate?: typeof delegateGate;
 };
 
 function aim(session: string): string | undefined {
@@ -43,6 +47,22 @@ export const realSources: RemoveSources = {
 };
 
 export const USAGE = 'Usage: team remove <name> [--keep] [--abandon] [--session <name>] [--file <path>]\n';
+
+/** The gate's refusal as this command prints it: the verdict's own sentence behind the prefix.
+ *  Both delegate branches print it — the caller rule's below and the owner-only flags' — so the
+ *  exit ids sit at one site. */
+function delegateRefused(io: { stderr(text: string): void }, verdict: { text: string }): number {
+  io.stderr(`team remove: ${verdict.text}\n`);
+  // exit: remove.delegate-approval
+  // exit: remove.delegate-approved-copy
+  // exit: remove.delegate-drift
+  // exit: remove.delegate-evidence
+  // exit: remove.delegate-placement
+  // exit: remove.delegate
+  // exit: remove.delegate-command
+  // exit: remove.delegate-flag
+  return 1;
+}
 
 const LEFT: Record<Exclude<DownSeat['state'], 'free'>, string> = {
   working: 'is working; left as it is',
@@ -75,24 +95,34 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   // `--file` must not make this command read and validate another project's team file, nor leave
   // its `last_valid` in that project's state. The one place every command whose `--file` is the owner's
   // decides it is `fileOwnerRefusal` (caller.ts).
-  const fileRefusal = fileOwnerRefusal(io, args.values.file);
-  if (fileRefusal !== undefined) {
-    io.stderr(`team remove: ${fileRefusal}\n`);
-    // exit: remove.file-owner
-    return 1;
-  }
-
-  // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
-  // `--session` is refused here, before the flag's session is read — no agent list, no pane root,
-  // no state write, no log line. (A seat cannot be named in this refusal: placing it would read a
-  // session, and that is what must not happen yet.)
-  if (args.values.session !== undefined) {
-    const walked = walkCaller(io);
-    if (!isOwner(walked)) {
-      io.stderr(`team remove: ${sessionOwnerRefusal(walked)}\n`);
-      // exit: remove.session-owner
-      return 1;
+  //
+  // A `delegates` section hands these owner-only flags to the gate as well: a non-owner aiming
+  // either is still refused before the flagged file or the flag's session is read — never the
+  // walk's sentence but the gate's verdict, which names the flag for the approved delegate and
+  // the caller for anyone else. The eligibility that asks is the default live file's alone, so
+  // the flagged file is not read at all; with no `delegates` section there, today's refusal
+  // stands, byte for byte.
+  const walked = args.values.session !== undefined ? walkCaller(io) : undefined;
+  const flagRefusal = fileOwnerRefusal(io, args.values.file)
+    ?? (walked !== undefined && !isOwner(walked) ? sessionOwnerRefusal(walked) : undefined);
+  if (flagRefusal !== undefined) {
+    const named = loadTeamFile(io.cwd, { ...(sources.home ? { home: sources.home } : {}) });
+    if (named.ok && named.team.delegates) {
+      const flagged = (sources.delegateGate ?? delegateGate)({
+        command: 'remove',
+        team: named.team,
+        root: named.root,
+        dir: dirname(named.path),
+        flags: [...args.flags, ...Object.keys(args.values)],
+        io,
+        home: sources.home,
+      });
+      if (flagged.kind === 'refused') return delegateRefused(io, flagged);
     }
+    io.stderr(`team remove: ${flagRefusal}\n`);
+    // exit: remove.file-owner
+    // exit: remove.session-owner
+    return 1;
   }
   const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), ...(sources.home ? { home: sources.home } : {}) });
   if (!loaded.ok) {
@@ -115,17 +145,40 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   const { caller, shown } = judged;
   const session = judged.session;
   const verdict = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
-  if (verdict.kind === 'no-pane') {
+  // The delegate branch, tried only when the ordinary rule just refused and the file names a
+  // delegate at all: with no `delegates` section every refusal below stays exactly today's, and
+  // the gate is never asked. A refused verdict takes the ordinary refusal's place; a passed one
+  // sends this run on as the approved delegate's — the gate has by then verified the approval,
+  // the approved copy, the drift and the placement, that this caller is the entry's pane, that
+  // `remove` is in its list and that no flag of the owner's was passed. The rest of this command
+  // is then a delegated run: an ordinary removal of a named seat, never `--keep` (the gate
+  // refused it, so nothing re-signs the approval), the coordinator and the operator still
+  // refused below, and `logDelegated` attributing it at its effects.
+  let delegatePane: string | null = null;
+  if (verdict.kind !== 'ok' && team.delegates) {
+    const decided = (sources.delegateGate ?? delegateGate)({
+      command: 'remove',
+      team,
+      root,
+      dir,
+      flags: [...args.flags, ...Object.keys(args.values)],
+      io,
+      home: sources.home,
+    });
+    if (decided.kind === 'refused') return delegateRefused(io, decided);
+    delegatePane = decided.pane;
+  }
+  if (verdict.kind === 'no-pane' && delegatePane === null) {
     io.stderr(`team remove: ${noPaneRefusal(verdict.name)}\n`);
     // exit: remove.no-pane
     return 1;
   }
-  if (verdict.kind === 'another-pane') {
+  if (verdict.kind === 'another-pane' && delegatePane === null) {
     io.stderr(`team remove: ${anotherPaneRefusal(verdict.name, verdict.recordedPane)}\n`);
     // exit: remove.another-pane
     return 1;
   }
-  if (verdict.kind === 'refused') {
+  if (verdict.kind === 'refused' && delegatePane === null) {
     io.stderr(`team remove: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(shown)}\n`);
     // exit: remove.caller
     return 1;
@@ -221,6 +274,10 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     // exit: remove.never-approved
     return 1;
   }
+  // The audit line, exactly at the effects boundary: a delegated run that reaches here is
+  // committed to its effects — the stop below when the seat runs, the file edit after it. Every
+  // refusal came sooner; a `--keep` run never got past the gate.
+  if (delegatePane !== null) logDelegated(dir, delegatePane, 'remove', sources.now());
 
   if (agent) {
     const screen = sources.screen(session, agent.pane, cli);
@@ -256,7 +313,9 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   }
   if (kept !== null) {
     const parsed = validateTeamFile(kept);
-    if (parsed.ok) recordSeatDigestOf(standing, parsed.team, root, name, home);
+    // A delegated remove never re-signs the approval: `--keep` is the gate's to refuse, and the
+    // signing itself stays the owner's for a delegate whatever reached here.
+    if (parsed.ok && delegatePane === null) recordSeatDigestOf(standing, parsed.team, root, name, home);
   }
   if (!agent && recorded) {
     updateState(dir, (file) => {

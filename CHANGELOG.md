@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-06
+
+A release about delegation: a team's owner approves, once, which panes outside the team's own
+session may run `up`, `down`, `add` and `remove` for that team, and every delegated run is
+matched on session and pane id against a file that is exactly the approved one.
+
+### Added
+
+- **`delegates`**, a team-file section (owner section, one to eight entries): each entry names a
+  pane — `<herdr session>/<pane id>`, matched whole and case-sensitively — and the operational
+  commands of `up`, `down`, `add`, `remove` it may run. Entry order and command order are part
+  of what the owner approves. A pane in the team's own session is refused at load, and so is
+  `seat:` or any other key.
+- The **delegate gate**: the four commands decide a delegated run in preflight order and refuse
+  a caller that is not the approved pane, a command the entry does not list, prohibited flags, a
+  file that is not exactly the approved one, or a pane that collides with a seat or with the
+  team's session. A delegated run writes one line to the file's log naming the pane and the
+  command, and the four commands' own delegate refusal ids are in the exit-code contract.
+- `team approve` prints one `Delegate: pane <pane> may run <commands>.` line per entry, before
+  the seat-count question.
+- `docs/team-file.md`: the format page, with the `delegates` section.
+
+### Known limits
+
+Not in this release: `approve` by a delegate — never, approval is the owner's, and a `commands`
+list naming `approve` is a load error; `--abandon` by a delegate — never; restarting a running
+seat (needs a `team restart` that changes no file); status, doctor and their JSON for a delegate
+— next.
+
 ## [0.3.0] - 2026-10-06
 
 A release about setting a team up and upgrading it: one lobby per machine, signed approvals, a

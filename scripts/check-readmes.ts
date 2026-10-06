@@ -6,7 +6,10 @@
 // **The opening sentence.** The first line under the title of README.md, the
 // first line under the title of npm-readme.md, and package.json's `description`
 // are one sentence; packages/teamcli/package.json carries the same description
-// only when it has one. The check fails when any place holds the placeholder
+// only when it has one. The caller also passes the build's own first line —
+// `team --help`'s, which src/cli.ts reads from that same description — and it is
+// held to the same sentence, so the places cannot drift apart. The check fails
+// when any place holds the placeholder
 // `OPENING SENTENCE PENDING: THE OWNER'S CHOICE` (how the owner marks a sentence
 // not chosen yet; it must never ship), and when the places differ from one
 // another.
@@ -35,6 +38,7 @@
 // be read (a check that cannot read the files must not report them clean).
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { helpText } from '../src/cli.ts';
 
 export type Failure = { file: string; message: string };
 
@@ -103,7 +107,12 @@ function names(claim: string, version: string): boolean {
   return claim === wanted;
 }
 
-export function checkReadmes(root: string): Failure[] {
+/** The first line of `team --help`, exactly as this build prints it. */
+export function helpOpeningLine(): string {
+  return helpText().split('\n')[0] ?? '';
+}
+
+export function checkReadmes(root: string, help: string): Failure[] {
   const failures: Failure[] = [];
   const pkg = manifest(root, 'package.json');
   const version = typeof pkg.version === 'string' ? pkg.version : '';
@@ -119,6 +128,7 @@ export function checkReadmes(root: string): Failure[] {
     const description = manifest(root, launcher).description;
     if (typeof description === 'string') places.push({ file: launcher, sentence: description });
   }
+  places.push({ file: 'team --help', sentence: help });
 
   const first = places[0] as { file: string; sentence: string | undefined };
   for (const place of places) {
@@ -155,7 +165,7 @@ if (import.meta.main) {
   const root = process.argv[2] ?? process.cwd();
   let failures: Failure[];
   try {
-    failures = checkReadmes(root);
+    failures = checkReadmes(root, helpOpeningLine());
   } catch (error) {
     console.error(`readmes:check: ${(error as Error).message}`);
     process.exit(2);

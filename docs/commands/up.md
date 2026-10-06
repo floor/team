@@ -56,13 +56,26 @@ the owner (below). `--dry-run` is open to anyone: it reaches nothing and
 changes nothing, prints the refusals it would hit as `! up would refuse: …` above the plan, and
 exits 0.
 
+A pane of another session the approved file's `delegates` section names may run `up` when that
+entry's `commands` list names it. The ordinary rule above refuses such a caller first, and only
+then — the section is in the file — does the delegate gate decide, against the live file and the
+approved copy, never a cached team: refused, the gate's own words replace the ordinary refusal
+(same list, same dry-run line, same exit); passed, the run is the delegate's. The section is read
+from the folder's own default file, never one the caller names: a delegated run never has
+`--session` or `--file` — both are the owner's, the gate refuses them before the file or the
+session they name is read, and a refused run answers in the gate's words without reading the
+flagged target at all. A delegated run writes `delegate [delegate] <pane> up` to
+`.agents/team.log` before its first effect — a dry run writes nothing. With no `delegates`
+section in the default file none of this exists: the ordinary order, the ordinary refusal, the
+same words, the same exit.
+
 ## Flags
 
 | Flag | Meaning |
 | --- | --- |
 | `--dry-run` | print the plan, and the refusals the real run would stop on, and exit 0 |
-| `--session <name>` | the herdr session to start, instead of `team.session` |
-| `--file <path>` | the team file, instead of `.agents/team.yaml` |
+| `--session <name>` | the herdr session to start, instead of `team.session`. The owner's alone: the delegate gate refuses it for a delegated run, before the session it names is used |
+| `--file <path>` | the team file, instead of `.agents/team.yaml`. The owner's alone: the delegate gate refuses it for a delegated run, before the file it names is read |
 | `--help`, `-h` | the usage, and exit 0 |
 
 ## What it prints
@@ -295,6 +308,13 @@ rather than adopting its named, idle pane or refusing the whole session over an 
 does not record. A seat stopped at the idle wait's `timeout` is not a dialog: that owner keeps the
 ordinary `timeout` record and the detail under it.
 
+A delegated run takes the no-terminal path above whatever its stdin is, terminal or not: it never
+prompts, never focuses a pane, never sends a key or a text. Every dialog it meets is closed without
+input and recorded `<seat>: left out: <classification> (no terminal for owner)` exactly as above,
+and its idle wait's `timeout` is a dialog like any other stop for it — closed without input under
+the same proof as every close here, never left at launched. The owner's runs are unchanged: at a
+terminal the owner is asked, and without one the owner keeps the ordinary records above.
+
 ### Known limits
 
 - The waiting proof is placement, and no more: the state file is in the project, and a process of
@@ -353,9 +373,9 @@ record it belongs to, as its meaning says.
 
 | Line | Meaning |
 | --- | --- |
-| `<seat>: left out: trust (no terminal for owner)` | the CLI asked whether to trust the folder, and `up` never answers one; the run had no terminal to ask on, and the detail under the record says its workspace was closed without an answer and the seat left out. A run at a terminal asks its owner instead — the pause, above |
-| `<seat>: left out: permission (no terminal for owner)` / `<seat>: left out: question (no terminal for owner)` | a permission dialog, or a question, was left for its owner to answer; the run had no terminal to ask on, and the detail under the record says its workspace was closed without input and the seat left out. A run at a terminal asks its owner instead |
-| `<seat>: left out: vendor notice (no terminal for owner)` | the CLI shows a vendor notice its owner has to act on: a screen its profile captured as one — today, Codex 0.157.0's update screen. `team` never answers one, and treats it at least as strictly as a question: nothing is typed, the watch reports it, and delivery stops on it. The detail under the record says its workspace was closed without input and the seat left out, and adds `untested on <version>` when the CLI installed here is outside the range the notice was captured on — the reading itself is never made less cautious by a version. A run at a terminal asks its owner instead |
+| `<seat>: left out: trust (no terminal for owner)` | the CLI asked whether to trust the folder, and `up` never answers one; the run had no terminal to ask on, and the detail under the record says its workspace was closed without an answer and the seat left out. A run at a terminal asks its owner instead — the pause, above. A delegated run closes without input like this one, whatever its stdin |
+| `<seat>: left out: permission (no terminal for owner)` / `<seat>: left out: question (no terminal for owner)` | a permission dialog, or a question, was left for its owner to answer; the run had no terminal to ask on, and the detail under the record says its workspace was closed without input and the seat left out. A run at a terminal asks its owner instead; a delegated run closes without input like this one, whatever its stdin |
+| `<seat>: left out: vendor notice (no terminal for owner)` | the CLI shows a vendor notice its owner has to act on: a screen its profile captured as one — today, Codex 0.157.0's update screen. `team` never answers one, and treats it at least as strictly as a question: nothing is typed, the watch reports it, and delivery stops on it. The detail under the record says its workspace was closed without input and the seat left out, and adds `untested on <version>` when the CLI installed here is outside the range the notice was captured on — the reading itself is never made less cautious by a version. A run at a terminal asks its owner instead; a delegated run closes without input like this one, whatever its stdin |
 | `<seat>: waiting for owner (<classification>)` | the provisional record drawn while the seat's owner is asked, at a terminal (the pause, above); it is rewritten in place when the classification changes, and is not the seat's final record |
 | `<seat>: left out: skipped by owner` | the owner pressed `[s]`: the seat's workspace was closed without input and its launch state cleared, the `waiting` record with it |
 | `<seat>: left out: stopped cleanly` | the owner pressed `[q]` (or Ctrl-C) at this or an earlier seat, and this seat had no final record: a workspace this invocation created for it — not already ready or closed — was closed without input and its state cleared |
@@ -364,6 +384,7 @@ record it belongs to, as its meaning says.
 | `<seat>: left out: runs <model> <version>; the file says <model> <version>; left at launched, not named. Add <flag> <id> to its launch, or correct the file's model and version and run team approve` | the idle screen shows a different model than the file. The seat is not renamed and gets no rules; its pane stays open. The flag is that CLI's model flag, and the id is the one the profile maps to the file's model. When the profile knows no id, the line says `<id>` |
 | `<seat>: left out: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched` | herdr's process info says the pane's foreground program is back at its shell through three full polls on end, four readings, the screen matches no CLI shape, and the launch line's own echo is visible on the screen. A pane read before the line arrived, one whose echo scrolled away, one whose program is slow to draw, or a herdr that can't say (no shell process info), is waited out to the deadline — the end is never inferred from the screen's text, and a single reading can never reach the three polls. The workspace is kept, and the pane's last lines follow on stderr, under the record |
 | `<seat>: left out: timeout` | the prompt never came within the profile's own time limit; the detail under the record, on stderr, says after how long it waited, the screen it last read, the pane's last lines, and that `team up` again resumes it |
+| `<seat>: left out: timeout (no terminal for owner)` | a delegated run's idle wait ran out: for it the timeout is a dialog like any other stop, so the workspace is closed without input — the same proof as every close above — and the seat left out. The owner at a terminal is asked instead (the pause, above), and the owner without one keeps the plain `timeout` record above |
 | `<seat>: left out: was not in the agent list in time; left at launched` | herdr listed no agent in the pane to name |
 | `<seat>: left out: rules not typed: the folder that would hold its rules file is <what>; the owner removes or repairs it, then runs up again` | a folder from `team`'s per-user state root down to `rules/` is not a real directory of this user's — a symbolic link, not a directory, another user's, or (for `rules/` and the project folder) a mode wider than `0700`, never `chmod`'d closer; `<what>` says which. Nothing was written, nothing typed |
 | `<seat>: left out: rules not typed: its rules file's place holds <what>; the owner removes it, then runs up again` | the final name holds anything other than this user's `0600` regular file — a symbolic link, a FIFO, a directory, a wider mode, another owner — and is never replaced; `<what>` says what is there |
@@ -433,7 +454,10 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 
 | Reason |
 | --- |
-| ``only the owner runs `up`, from a terminal outside herdr; this call is <caller>`` — the owner without a terminal is not refused: it runs, and never prompts |
+| ``only the owner runs `up`, from a terminal outside herdr; this call is <caller>`` — the owner without a terminal is not refused: it runs, and never prompts. With a `delegates` section in the file, this refusal is the delegate gate's to say, in its own words below |
+| ``only the owner or the approved delegate runs `up`; this call is <caller>`` — the delegate gate: the file's `delegates` section names panes, and this caller is none of them |
+| ``--<flag> is the owner's; the approved delegate cannot use it`` — the delegate gate, for `--session` and `--file` on a delegated run, refused before the file or the session the flag names is read |
+| the delegate gate's other refusals, each in its own words — no verified approval in force on this machine, the approved copy unreadable, the live file drifted from the approved copy, the caller's placement in its pane unproven, or the caller's entry not naming `up` in `commands` — printed like every refusal here, and on a dry run above the plan |
 | ``the file was never approved on this machine: run `team approve` `` |
 | ``approved before records were signed: run `team approve` once`` — the record was written by an earlier `team` |
 | ``the record <case>: run `team approve` once`` — a signed record that does not verify |
