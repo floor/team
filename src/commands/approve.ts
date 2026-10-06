@@ -190,6 +190,10 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   }
   io.stdout(`Ceilings this approval fixes: ${ceilingsLine(ceilings)}.\n`);
   io.stdout(`Seats: ${seats} (${team.seats.map((seat) => seat.name).join(', ')}).\n`);
+  // One line per delegates entry, in file order; nothing when the file has no section.
+  for (const delegate of team.delegates ?? []) {
+    io.stdout(`Delegate: pane ${delegate.pane} may run ${delegate.commands.join(', ')}.\n`);
+  }
   // The generation this signing will carry, and when the last one was, with the
   // fingerprint of the key that will sign it. A process that reads or replaces
   // the key can re-sign at the same generation, so this is evidence of what
