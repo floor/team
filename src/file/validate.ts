@@ -7,6 +7,7 @@ import { SECTIONS } from './sections/index.ts';
 import type { Ctx } from './sections/section.ts';
 import { valueOf } from './sections/section.ts';
 import type { Budgeted } from './sections/budgets.ts';
+import type { Leads } from './sections/leads.ts';
 import type { ReleaseDecl } from './sections/releases.ts';
 import type { DraftSeat } from './sections/seats.ts';
 import type { Watched } from './sections/watch.ts';
@@ -86,6 +87,7 @@ function readTeam(root: YamlNode, check: Check, home?: string, fs?: FsReader, ro
     machine: valueOf<TeamFile['machine']>(ctx, 'machine'),
     limits: valueOf<TeamFile['limits']>(ctx, 'limits'),
     releases: valueOf<ReleaseDecl[]>(ctx, 'releases'),
+    leads: valueOf<Leads>(ctx, 'leads'),
     delegates: valueOf<TeamFile['delegates']>(ctx, 'delegates'),
     seats: seats as Seat[],
   };

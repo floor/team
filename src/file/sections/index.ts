@@ -17,6 +17,7 @@ import { watch } from './watch.ts';
 import { watchChecks } from './watch-checks.ts';
 import { seats } from './seats.ts';
 import { releases } from './releases.ts';
+import { leads } from './leads.ts';
 import { delegates } from './delegate.ts';
 import type { Section } from './section.ts';
 
@@ -47,6 +48,9 @@ export const SECTIONS: readonly Section[] = [
   watchChecks,
   seats,
   releases,
+  // Before `delegates`, so `delegates` stays the last entry and the sections before both keep
+  // the relative order records were written with.
+  leads,
   // Last, after every owner section there was: the owner-section list is filtered from this one,
   // so `delegates` is the last entry of the approval digest and of a difference report, and the
   // sections before it keep the relative order records were written with.

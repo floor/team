@@ -562,6 +562,27 @@
       },
       "$comment": "the packages `team release check` verifies; the validator also refuses a package named twice, a non-boolean trusted_publishing, half of the linear or activity pair, and a malformed project, service, file or marker"
     },
+    "leads": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "abandon"
+      ],
+      "properties": {
+        "abandon": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "coordinator",
+              "operator"
+            ]
+          }
+        }
+      },
+      "$comment": "the seats that may pass --abandon: coordinator, operator or both. Omitted means neither"
+    },
     "delegates": {
       "type": "array",
       "minItems": 1,

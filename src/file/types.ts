@@ -1,6 +1,7 @@
 export type Problem = { line: number; message: string };
 
 import type { Delegates } from '../delegate-types.ts';
+import type { Leads } from './sections/leads.ts';
 import type { ReleaseDecl } from './sections/releases.ts';
 
 export type Position = 'last-line' | 'trailer' | 'anywhere';
@@ -119,6 +120,11 @@ export type TeamFile = {
   limits: { seats: number; temporary: number; vendors: Record<string, number> };
   /** The packages `team release check` verifies; empty when the file declares none. */
   releases: ReleaseDecl[];
+  /**
+   * The team seats the owner has handed `--abandon` to, or null when the file has no `leads`
+   * section and neither lead has the power. An owner section: changing it needs a new approval.
+   */
+  leads: Leads;
   /**
    * The panes outside the team's session that may run named operational commands, or null when
    * the file has no `delegates` section. An owner section: changing it needs a new approval.
