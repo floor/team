@@ -126,9 +126,10 @@ export function compare(
       // never shown idle, working or ready, and never under its model as if it were running.
       const verdict = seatProcessVerdict(recorded?.launched, live.processes?.[agent.pane] ?? null);
       if (verdict === 'gone' || verdict === 'replaced') {
-        const { row, difference } = notLaunched(seat, agent.pane, verdict);
+        const { row, difference, note } = notLaunched(seat, agent.pane, verdict, live.screens[agent.pane]);
         rows.push(row);
         differences.push(difference);
+        if (note) notes.push(note);
         continue;
       }
       const model = modelOf(seat, agent, live, differences, notes);
@@ -224,9 +225,10 @@ export function compare(
     const verdict = seatProcessVerdict(recorded?.launched, held ? live.processes?.[held] ?? null : null);
     if (held && (verdict === 'gone' || verdict === 'replaced')) {
       claimed.add(held);
-      const { row, difference } = notLaunched(seat, held, verdict);
+      const { row, difference, note } = notLaunched(seat, held, verdict, live.screens[held]);
       rows.push(row);
       differences.push(difference);
+      if (note) notes.push(note);
       continue;
     }
     // A waiting record is read only of a pane that may still hold the seat: one that lost the
@@ -256,7 +258,7 @@ export function compare(
       rows.push({
         name: seat.name,
         state: 'wrong name',
-        model: seat.display,
+        model: unverifiedModel(seat, live.screens[stray.pane]),
         pane: stray.pane,
         ...(recorded?.start_cwd ? { start_cwd: recorded.start_cwd } : {}),
       });
@@ -346,7 +348,13 @@ export function compare(
 // A pane that no longer holds the process team launched: no CLI at all, or a foreground CLI that
 // is not the recorded one. The row and the difference read the same wherever the pane is found —
 // a pane herdr still lists an agent in, and one the agent went with its CLI.
-function notLaunched(seat: Seat, pane: string, verdict: 'gone' | 'replaced'): { row: Row; difference: Difference } {
+function notLaunched(
+  seat: Seat,
+  pane: string,
+  verdict: 'gone' | 'replaced',
+  screen: string | undefined,
+): { row: Row; difference: Difference; note?: string } {
+  const running = seatModel(seat, screen);
   return {
     row: {
       name: seat.name,
@@ -365,7 +373,18 @@ function notLaunched(seat: Seat, pane: string, verdict: 'gone' | 'replaced'): { 
       needs: 'approve',
       owner: true,
     },
+    // A note, not a difference: it names what the screen shows and does not change the exit.
+    ...(running
+      ? { note: `${seat.name}: its pane runs ${running.model} ${running.version}; that process is not the one team launched` }
+      : {}),
   };
+}
+
+/** What an unverified pane may show in the model column: the model its screen names, or
+ *  `(unread)`. Never the file's model, and never a difference — this is not a comparison. */
+function unverifiedModel(seat: Seat, screen: string | undefined): string {
+  const running = seatModel(seat, screen);
+  return running ? `${running.model} ${running.version}` : '(unread)';
 }
 
 function modelOf(seat: Seat, agent: HerdrAgent, live: Live, differences: Difference[], notes: string[]): string {
