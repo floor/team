@@ -4,5 +4,11 @@ export type DelegateCommand = 'up' | 'down' | 'add' | 'remove' | 'approve';
 /** The five, in the order the documentation lists them. */
 export const DELEGATE_COMMANDS: readonly DelegateCommand[] = ['up', 'down', 'add', 'remove', 'approve'];
 
-/** The file's `delegate` section: null when absent. `pane` is `<herdr session>/<pane id>`. */
-export type Delegate = { pane: string; commands: DelegateCommand[] } | null;
+/** One approved pane and the commands it may run. `pane` is `<herdr session>/<pane id>`. */
+export type Delegate = { pane: string; commands: DelegateCommand[] };
+
+/**
+ * The file's `delegates` section: null when absent. A non-empty list, at most eight entries,
+ * two entries naming one pane refused; each entry's commands a non-empty list of distinct ones.
+ */
+export type Delegates = Delegate[] | null;
