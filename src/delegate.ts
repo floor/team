@@ -128,7 +128,7 @@ export function delegateGate(input: {
   const io = sources.callerSources ? { ...input.io, callerSources: sources.callerSources } : input.io;
   const evidence = evidenceOf(team, dir, io, sources, entries);
   if (!evidence.ok) return refuse('delegate-evidence', `delegation cannot verify its placement or seats: ${evidence.reason}`);
-  if (entries.some((entry) => collides(team, entry, evidence.state, evidence.agents))) {
+  if (entries.some((entry) => collides(team, entry, evidence.state))) {
     return refuse('delegate-placement', 'the approved delegate must be an external non-seat pane');
   }
 
@@ -176,14 +176,14 @@ function reasonOf(error: unknown): string {
 }
 
 type Evidence =
-  | { ok: true; state: State; agents: HerdrAgent[] }
+  | { ok: true; state: State }
   | { ok: false; reason: string };
 
 /**
  * The first unreadable read, in the order a refusal names it: the caller's ancestors, herdr
  * for a delegate's session and for the team's session, then the state. A null from herdr is
- * its own refusal, distinct from a caller who is simply somewhere else. The state and the
- * team's agent list come back with the answer, so the collision check reads them once.
+ * its own refusal, distinct from a caller who is simply somewhere else. The herdr read stays
+ * for that refusal; the live list is not a seat.
  */
 function evidenceOf(
   team: TeamFile,
@@ -211,7 +211,7 @@ function evidenceOf(
   try {
     const state = (sources.state ?? readState)(dir);
     if (state === null) return { ok: false, reason: 'the state can\'t be read' };
-    return { ok: true, state, agents: listed };
+    return { ok: true, state };
   } catch (error) {
     return { ok: false, reason: reasonOf(error) };
   }
@@ -276,16 +276,15 @@ function placementReason(sources: CallerSources, pane: string | undefined): stri
   return null;
 }
 
-function collides(team: TeamFile, entry: Delegate, state: State, agents: readonly HerdrAgent[]): boolean {
+/**
+ * A seat collision is exactly two things: the entry's session is the team's configured
+ * session, or a seat the state records — under the session it was recorded in — is this pane.
+ * A live agent's name is not one. Any process can rename a pane, and the delegate's own pane
+ * may bear a name the team also uses.
+ */
+function collides(team: TeamFile, entry: Delegate, state: State): boolean {
   const split = splitPane(entry.pane);
   if (split === null || split.session === team.session) return true;
-  // `agents` is the live list read for the team's own session. A configured seat is that
-  // session plus its pane. A recorded seat is the session the state stored it under, which
-  // is another session when the team was brought up with `--session`.
-  const names = new Set<string>([team.coordinator, team.operator, ...team.seats.map((seat) => seat.name)]);
-  for (const agent of agents) {
-    if (agent.name !== null && names.has(agent.name) && `${team.session}/${agent.pane}` === entry.pane) return true;
-  }
   for (const [session, recorded] of Object.entries(state.sessions)) {
     for (const seat of Object.values(recorded.seats)) {
       if (seat.pane && `${session}/${seat.pane}` === entry.pane) return true;
