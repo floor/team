@@ -34,7 +34,7 @@ import type { Machine } from '../src/watch/machine.ts';
 import { analyze, loadContract, problems, render, type ExitRow } from '../scripts/exit-codes.ts';
 import { runRelease } from '../src/commands/release.ts';
 import { fakeFetch, fixture, happy, json, URLS, type Answers } from './release/world.ts';
-import { claudeBox, testIo } from './helpers.ts';
+import { claudeBox, gitEnv, testIo } from './helpers.ts';
 
 const NOW = new Date('2026-10-04T09:00:00Z');
 const owner = { kind: 'owner' } as const;
@@ -156,6 +156,7 @@ function git(cwd: string, ...args: string[]): string {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
+    env: gitEnv(),
   });
 }
 
@@ -735,7 +736,7 @@ scene('check.refused', async (place) => {
   writeFileSync(join(place.root, 'note.txt'), 'note\n');
   git(place.root, 'add', 'note.txt');
   execFileSync('git', ['-c', 'user.name=Other', '-c', 'user.email=other@example.com', 'commit', '-q', '-m', 'fix: unsigned'], {
-    cwd: place.root, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: place.root, stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv(),
   });
   const io = testIo(place.root, owner);
   return show({ code: await check(['HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'refused');

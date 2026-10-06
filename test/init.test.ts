@@ -10,13 +10,13 @@ import { version } from '../src/cli.ts';
 import { storePath, writeApproval } from '../src/store/store.ts';
 import { loadTeamFile } from '../src/file/load.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
-import { testIo } from './helpers.ts';
+import { gitEnv, testIo } from './helpers.ts';
 
 let base: string;
 let project: string;
 
 function git(cwd: string, ...args: string[]): string {
-  return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv() });
 }
 
 beforeEach(() => {
