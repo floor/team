@@ -10,11 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.2] - 2026-10-06
 
 A release about repairs, found on the first day of 0.3.1: `down` and `remove` stop a seat and
-clear what the stop leaves, a CLI's own exit question is answered where its profile declares
-the key, a delegate can start a team whose session is down, one run at a time takes a session,
-a CLI profile may name the file the CLI itself leaves in the lobby, `up` resumes its own
-interrupted launch, `status` shows no model it did not verify, and a stop clears only the exit
-text it typed.
+clear what the stop leaves, a CLI's own exit question is answered in both the forms it draws
+where its profile declares the key, every key follows a fresh check of the pane, a delegate can
+start a team whose session is down, one run at a time takes a session, the lobby may hold the
+files the shipped profiles declare, the watch's nudge waits for its text and is sent only as
+the watch's own, `up` resumes its own interrupted launch, `status` shows no model it did not
+verify, and a stop clears only the exit text it typed.
+
+### Added
+
+- `SECURITY.md`: how to report a weakness in private — the repository's security advisories,
+  never a public issue, discussion or pull request — what to include, what we do, which
+  versions get fixes, and what is not one.
 
 ### Fixed
 
@@ -22,9 +29,14 @@ text it typed.
   back, and only a box that reads back as exactly the typed text gets the Enter (0.3.0 and
   0.3.1 read the screen once, an instant after the typing, too early for the pane to have drawn
   the text, and never pressed it).
-- A CLI's own exit question — Claude Code's "Exit and stop tasks", preselected after the exit
-  text — is answered where the profile declares a key for it; a profile that declares none
-  leaves the seat running, and the line says so.
+- A CLI's own exit question is answered where the profile declares a key for it, in both forms
+  Claude Code draws — its second row "2. Stay", or "2. Move to background and exit" with
+  "3. Stay" under the marked "1. Exit and stop tasks" — and never when the frame is anything
+  else: the second choice is never what a stop sends. A profile that declares no key leaves
+  the seat running, and the line says so.
+- Every key the stop sends — and the watch's nudge — follows a fresh check of the pane taken
+  after each wait: the CLI is the pane's foreground process and is not mid-turn, read again at
+  the key, never reused from before the wait.
 - `--abandon` closes a seat this run asked whose exit could not be typed or confirmed, and the
   line names that close.
 - `down` clears the session it stopped itself: it waits until herdr lists the session stopped,
@@ -35,9 +47,11 @@ text it typed.
   before its first effect, a second run is refused naming the pid that holds it (`up.run-lock`,
   `add.run-lock`, `down.run-lock`, `remove.run-lock`), and a lock left by a dead run is taken
   over by the next.
-- A CLI profile may declare the exact files that CLI may leave in the lobby — Claude Code's
-  scheduler lock `.claude/scheduled_tasks.lock` — so `up` and `add` are no longer refused over
-  a file the CLI itself left there.
+- The lobby's allowed files are the union of what the shipped profiles declare, whichever seats
+  a run starts: one folder per machine, so another team's Claude Code lock
+  (`.claude/scheduled_tasks.lock`) no longer blocks a team with no Claude Code seat, `up`, `add`
+  and `doctor` read the one set, and `doctor` names the profile each declared file present
+  belongs to.
 - `up` resumes its own interrupted launch: a seat whose pane was made but never renamed — a run
   interrupted in between — is read as this team's half-finished seat and resumed, not refused
   as a stranger.
@@ -46,6 +60,10 @@ text it typed.
 - `down` and `remove` clear only the exit text they typed: a box holding other text is not
   typed onto, and a box already holding exactly this exit text is cleared with the profile's
   one key first, never sent.
+- The watch's nudge waits for its text to be drawn, reads the box back and re-reads the pane
+  before the Enter, and a box it finds already holding the line is sent only on the record of
+  the same watch process's own typing — the same fixed line typed by a person, or found by a
+  restarted watch, is never typed over, sent or cleared.
 
 ### Known limits
 
@@ -53,11 +71,13 @@ Unchanged by this release:
 
 - `add` on a stopped session still asks for a manual clear: `herdr session delete <name>`.
 - A delegate still cannot pass `--abandon`.
-- The watch's nudge can still be typed and not sent: the read-back that decides its Enter runs
-  the instant after the typing, before the pane has drawn the text. Fixed in the next release.
 - `team approve` still asks its question.
+- A delegated `up` never answers a trust dialog or a vendor notice: the seat is left out —
+  reported, its workspace closed without input, nothing typed into the dialog — and the dialog
+  is the owner's to answer.
 - The lobby recheck cannot see a rewrite in place inside one filesystem timestamp tick that
   changes no size — every number it reads would be the same.
+- The default machine check asks for 2 GB of free swap before a launch; under it, `up` refuses.
 
 ## [0.3.1] - 2026-10-06
 
