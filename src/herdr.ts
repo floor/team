@@ -315,8 +315,18 @@ export function sessionStop(name: string): boolean {
 export function sessionDelete(name: string): boolean {
   const out = capture(['session', 'delete', name]);
   if (out === null) return false;
-  const body = parsed(out);
-  return body !== null && body.type !== 'error';
+  return sessionCleared(out);
+}
+
+// Herdr 0.7.1's answer when `session delete` worked, captured on a scratch session: stdout is
+// `deleted session <name>` and a newline, exit 0, and `session list` no longer has it. That
+// line is not JSON. A session that is still running exits 1 with a JSON error on stderr and
+// empty stdout, so `capture` returns null and this is not asked. A JSON body is a clear only
+// when it is not an error.
+export function sessionCleared(stdout: string): boolean {
+  const body = parsed(stdout);
+  if (body) return body.type !== 'error';
+  return /^deleted session \S+\n$/.test(stdout);
 }
 
 // The process call behind paneRead, injectable for tests: it returns the call's stdout and

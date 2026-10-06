@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { paneRead, setHerdrRun, setPaneExec, workspacePanes } from '../src/herdr.ts';
+import { paneRead, sessionCleared, setHerdrRun, setPaneExec, workspacePanes } from '../src/herdr.ts';
 
 // paneRead's process call is injectable, so these tests ask what it requests, what it falls
 // back to and when it gives up — without a live herdr. The timeout error it must recognise
@@ -100,5 +100,23 @@ describe('workspacePanes', () => {
       ],
     }));
     expect(workspacePanes('w1')).toBeNull();
+  });
+});
+
+describe('sessionCleared', () => {
+  test('the captured plain delete line is a clear', () => {
+    expect(sessionCleared('deleted session scratch-clear-032\n')).toBe(true);
+  });
+
+  test('a stop line is not a clear', () => {
+    expect(sessionCleared('stopped session scratch-clear-032\n')).toBe(false);
+  });
+
+  test('an empty answer is not a clear', () => {
+    expect(sessionCleared('')).toBe(false);
+  });
+
+  test('a JSON error is not a clear', () => {
+    expect(sessionCleared('{"type":"error"}\n')).toBe(false);
   });
 });
