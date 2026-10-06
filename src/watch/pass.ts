@@ -56,10 +56,23 @@ export type Memory = {
   active: Set<string>;
   pending: string[];
   pendingSince: number | null;
+  // The nudge line this watch typed itself and has not seen sent, recorded at the typing: the
+  // pane, and the exact text. Only this record — never the text, which is one fixed public
+  // constant — can make an unsent box the watch's own, and it lives in this process: a restarted
+  // watch has none, and text it did not type is left as its owner left it.
+  ownNudge: { pane: string; text: string } | null;
 };
 
 export function newMemory(): Memory {
-  return { history: {}, slots: {}, active: new Set(), pending: [], pendingSince: null };
+  return { history: {}, slots: {}, active: new Set(), pending: [], pendingSince: null, ownNudge: null };
+}
+
+/** Whether a box, already read as unsent, holds this watch's own line: this process recorded
+ *  typing exactly this text into this same pane, and the box still holds it. The record is the
+ *  identity — the same text typed by anyone else, or found after a restart, is theirs. */
+export function ownUnsent(memory: Memory, pane: string, text: string, cli: string, screen: string | undefined): boolean {
+  return memory.ownNudge !== null && memory.ownNudge.pane === pane && memory.ownNudge.text === text
+    && boxHoldsText(cli, text, screen);
 }
 
 export type { Report } from './check.ts';
@@ -371,9 +384,9 @@ export function pass({
 
   memory.active = current;
 
-  // The nudge: kept until the operator is free — an empty idle prompt, or a box holding exactly
-  // this watch's own unsent line, which is sent rather than typed again — and typed into nothing
-  // else.
+  // The nudge: kept until the operator is free — an empty idle prompt, or a box holding the line
+  // this watch typed itself and never saw sent, which is sent rather than typed again — and
+  // typed into nothing else.
   for (const report of reports) {
     if (report.to === 'operator' && !memory.pending.includes(report.text)) {
       memory.pending.push(report.text);
@@ -386,12 +399,13 @@ export function pass({
     const operator = live.agents.find((agent) => agent.name === team.operator);
     const cli = team.seats.find((seat) => seat.name === team.operator)?.cli ?? '';
     const screen = operator ? read(cli, live.screens[operator.pane]) : null;
-    // A box holding exactly this watch's own line — one fixed constant — is the watch's own
-    // unsent nudge: left by a pass whose Enter never went out, or by the watch before it was
-    // restarted. The text is the whole identity, so nothing has to be remembered across runs.
-    // That box is free to send into; any other text is never typed over, sent or cleared.
+    // The operator's box, read once more: an empty idle prompt is free to type into, and so is a
+    // box still holding the line this watch typed itself, recorded in memory at the typing. The
+    // line is one fixed public constant, so the text alone proves nothing: the same text typed
+    // by a person or an agent, or found by a restarted watch, is someone's text — never typed
+    // over, sent or cleared, and left to them or to the next stop.
     const mine = operator !== undefined && screen?.kind === 'unsent'
-      && boxHoldsText(cli, NUDGE_TEXT, live.screens[operator.pane]);
+      && ownUnsent(memory, operator.pane, NUDGE_TEXT, cli, live.screens[operator.pane]);
     const free = operator !== undefined && (operator.status === 'idle' || operator.status === 'done')
       && (screen?.kind === 'idle' || mine);
     if (operator && free) {

@@ -250,16 +250,34 @@ describe('watch idle reports (once per period by default, repeat on request)', (
     expect(memory.pending).toEqual([]);
   });
 
-  test('a box already holding exactly this watch\'s own line is free: the pass raises the nudge', () => {
-    // The leftover of a pass whose Enter never went out, or of a watch restarted since: the box
-    // reads back as the watch's own one fixed line, so the pass is free to send it. The text is
-    // the whole identity — nothing is remembered, so a restarted watch reads it the same way.
-    // unsent_after is pushed out of the way: what is read here is the nudge's own gate, and a
-    // box an hour old would also raise the unsent report beside it.
+  test('a box holding exactly the watch\'s line, that this process never typed, is not free', () => {
+    // The reviewer's case: the line is one fixed public constant, so a person or an agent who
+    // typed it themselves holds a box that reads exactly like a leftover of the watch's. The
+    // text proves nothing: with no record in this process of typing it, the box is its owner's,
+    // and the pass raises no nudge into it.
     const file = valid(defaultExample
       .replace('  idle_first: 10m', '  idle_first: 1m\n  idle_repeat: 2m')
       .replace('  unsent_after: 1m', '  unsent_after: 1h'));
     const memory = newMemory();
+    const nudgeBox = `${RULE}\n❯ ${NUDGE_TEXT}\n${RULE}\n${STATUS}\n`;
+    const live = liveScene({
+      'claude-operator-acme': { status: 'idle', screen: nudgeBox },
+      'deepseek-acme': { status: 'idle', screen: idleScreen },
+    });
+    pass({ team: file, watch: file.watch, state: emptySession(), live, machine: fine, now: 0, memory });
+    const p1 = pass({ team: file, watch: file.watch, state: emptySession(), live, machine: fine, now: 1 * MIN, memory });
+    expect(p1.nudge).toBeNull();
+    expect(memory.pending).toEqual(['deepseek-acme has been idle since the watch started']);
+  });
+
+  test('a box holding the line this process recorded typing is free: the pass raises the nudge', () => {
+    // The same box, after this process typed the line itself and its Enter never went out. The
+    // pass acts on the record of the typing, in this pane — and on nothing else.
+    const file = valid(defaultExample
+      .replace('  idle_first: 10m', '  idle_first: 1m\n  idle_repeat: 2m')
+      .replace('  unsent_after: 1m', '  unsent_after: 1h'));
+    const memory = newMemory();
+    memory.ownNudge = { pane: 'w0:p1', text: NUDGE_TEXT };
     const nudgeBox = `${RULE}\n❯ ${NUDGE_TEXT}\n${RULE}\n${STATUS}\n`;
     const live = liveScene({
       'claude-operator-acme': { status: 'idle', screen: nudgeBox },

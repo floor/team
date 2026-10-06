@@ -900,17 +900,54 @@ describe('team watch', () => {
     expect(io.out).toContain('a nudge was typed and not sent');
   });
 
-  test('a box already holding exactly this watch\'s line is sent, not typed again', async () => {
-    // What a pass leaves when its Enter never went out — and what a watch restarted since finds:
-    // the box holds this watch's own line, unsent (the real capture). One fixed constant is the
-    // whole identity, so nothing has to be remembered across runs: the pass reads it back,
-    // types nothing, clears nothing, and sends it.
+  test('the same line typed by someone else is never sent, typed over or cleared', async () => {
+    // The reviewer's case: the line is one fixed public constant, so a person or an agent who
+    // typed it themselves leaves a box that reads exactly like the watch's own leftover. The
+    // pass saw the scene's idle prompt; the read before delivery finds this box. With no record
+    // in this process of typing it, the text is its owner's — no key goes out, nothing is typed
+    // over it, and nothing clears it.
     const held = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-unsent-ansi.txt', import.meta.url), 'utf8');
     const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(1, { screen: () => held }));
-    expect(typed).toEqual(['w0:p1 <enter>']);
-    expect(io.out).toContain('nudged the operator (the line was already in its box)');
-    expect(io.out).not.toContain('a nudge was typed and not sent');
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain('nudged the operator');
+  });
+
+  test('a line this watch typed itself, left unsent, is sent by a later pass and not typed again', async () => {
+    // Pass 1 types the line; the pane never draws it, so the Enter does not go out and the line
+    // stays in the box — this process's own leftover, recorded at the typing. Pass 2 finds the
+    // box holding exactly that line and sends it, instead of typing the same text a second time.
+    const justTyped = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-idle-ansi.txt', import.meta.url), 'utf8');
+    const held = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-unsent-ansi.txt', import.meta.url), 'utf8');
+    let waits = 0;
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(2, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = justTyped; return true; },
+      // The pane draws the line between the passes: unsent, and this watch's own.
+      wait: async (seconds) => { clock += seconds * 1000; screenNow = held; return waits++ === 0; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+    expect(io.out).toContain('nudged the operator (its own unsent line was already in its box)');
+    expect(io.out).toContain('a nudge was typed and not sent');
+  });
+
+  test('after a restart, the line the watch left unsent is someone\'s text: no key is sent', async () => {
+    // Run 1 leaves the box holding this watch's own line, unsent. Run 2 is a new watch process:
+    // it remembers no typing, so the same box is text it cannot claim, and it is never sent —
+    // the unsent report from the check is what a person or the next stop acts on.
+    const justTyped = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-idle-ansi.txt', import.meta.url), 'utf8');
+    const held = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-unsent-ansi.txt', import.meta.url), 'utf8');
+    await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = justTyped; return true; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    // The pane drew the line between the runs: the box now holds exactly the watch's line.
+    screenNow = held;
+    typed = [];
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain('nudged the operator');
   });
 
   test('a box holding any other text is never sent into, typed over or cleared', async () => {

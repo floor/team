@@ -14,7 +14,7 @@ import type { Live } from '../status/compare.ts';
 import { readMachine } from '../watch/machine.ts';
 import type { Machine } from '../watch/machine.ts';
 import { notify } from '../watch/notify.ts';
-import { newMemory, pass } from '../watch/pass.ts';
+import { newMemory, ownUnsent, pass } from '../watch/pass.ts';
 import { readScreen } from '../watch/screen.ts';
 import { judgeTemporary, judgeWorktree } from '../watch/close.ts';
 import { readEnd, type EndView } from '../watch/end.ts';
@@ -342,8 +342,9 @@ function spendOf(outcomes: readonly CheckOutcome[]): SpendReading[] {
 }
 
 // Types the nudge, after reading the operator's screen once more: the pass saw it free, and a
-// prompt may have appeared since. An empty idle prompt is typed into; a box already holding
-// exactly this watch's own line is sent instead of typed; anything else keeps the nudge pending.
+// prompt may have appeared since. An empty idle prompt is typed into; a box still holding the
+// line this same process typed itself and never sent is sent instead of typed into; anything
+// else — another person's or agent's text, or the same text found after a restart — stays.
 async function deliver(
   nudge: { pane: string; text: string; pending: string[] }, team: TeamFile, session: string, sources: WatchSources,
   memory: ReturnType<typeof newMemory>, say: (text: string, desktop: boolean) => void,
@@ -368,16 +369,25 @@ async function deliver(
     return;
   }
   told.delete(noAgent);
-  // The box may already hold this line — the watch's own unsent nudge, left by a pass whose
-  // Enter never went out, or by the watch before it was restarted. The line is one fixed
-  // constant, so reading it back is the whole identity: nothing is remembered, and any other
-  // text in the box is never typed over, sent or cleared. Such a box is sent, not typed into.
-  const kind = look();
-  const mine = kind === 'unsent' && holds();
+  // The box may already hold this line — but only the record of this process's own typing, in
+  // this same pane, can make it the watch's. The line is one fixed public constant, so the same
+  // text typed by a person or an agent, or found by a restarted watch, is theirs: never typed
+  // over, sent or cleared. One read settles both the kind and the claim.
+  const raw = sources.screen(nudge.pane, session);
+  const kind = readScreen(cli, raw ?? undefined).kind;
+  const mine = kind === 'unsent' && ownUnsent(memory, nudge.pane, nudge.text, cli, raw ?? undefined);
+  // A legible box shows what stands: a record that no longer matches it — the line was sent,
+  // cleared or written over — is forgotten here, before anything is typed or sent.
+  if ((kind === 'idle' || kind === 'unsent') && memory.ownNudge?.pane === nudge.pane && !mine) {
+    memory.ownNudge = null;
+  }
   if ((status !== 'idle' && status !== 'done') || (!mine && (kind !== 'idle' || !sources.typeText(nudge.pane, nudge.text, session)))) {
     keep();
     return;
   }
+  // The typing, and the record of whose it is: from here this process can claim the line, and a
+  // later pass may send it. Nothing of this survives a restart — a new process starts with none.
+  if (!mine) memory.ownNudge = { pane: nudge.pane, text: nudge.text };
   // The text is in the box. The agent is read again before Enter: it may have exited
   // since the text was typed, and an unframed line is not a box to send.
   if (!live()) {
@@ -406,8 +416,10 @@ async function deliver(
     return;
   }
   if (sources.pressEnter(nudge.pane, session)) {
+    // Sent: the line has left the box, so nothing here can claim it any more.
+    memory.ownNudge = null;
     say(mine
-      ? `nudged the operator (the line was already in its box): ${nudge.text}`
+      ? `nudged the operator (its own unsent line was already in its box): ${nudge.text}`
       : `nudged the operator: ${nudge.text}`, false);
   } else keep();
 }
