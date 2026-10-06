@@ -648,6 +648,16 @@ scene('add.not-ready', async (place) => {
   approve(place, TWO);
   return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { launch: launching('') })), 'timed out');
 });
+scene('add.run-lock', async (place) => {
+  approve(place, TWO);
+  // The session mutator lock another run holds, in the file every session mutator shares: this
+  // test process's pid is alive, so the token is never judged stale. Nothing else is stood in,
+  // so the run reaches the lock on the ordinary path — the refusals above it are all decided.
+  const dir = join(place.root, '.agents');
+  mkdirSync(join(dir, 'seat-locks', 'acme'), { recursive: true });
+  writeFileSync(seatLockPath(dir, 'acme', '.run'), `${process.pid} 0a1b2c3d\n`);
+  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { launch: launching(IDLE) })), 'another session-mutating run is holding');
+});
 scene('add.server', async (place) => {
   approve(place, TWO);
   return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { launch: launching(IDLE, () => true, false) })), 'its server did not start');
@@ -996,6 +1006,18 @@ scene('down.stopped', async (place) => {
     sessionRunning: () => true, agents: () => [], launch: downLaunch(),
   })), 'stopped');
 });
+scene('down.run-lock', async (place) => {
+  write(place, TEAM);
+  // The session mutator lock another run holds, in the file every session mutator shares: this
+  // test process's pid is alive, so the token is never judged stale. The session with nothing to
+  // stop and a dry run both return before the lock; this scene is a real stop that meets it.
+  const dir = join(place.root, '.agents');
+  mkdirSync(join(dir, 'seat-locks', 'acme'), { recursive: true });
+  writeFileSync(seatLockPath(dir, 'acme', '.run'), `${process.pid} 0a1b2c3d\n`);
+  return show(await down(place, [], owner, downSources({
+    sessionRunning: () => true, agents: () => [], launch: downLaunch(),
+  })), 'another session-mutating run is holding');
+});
 scene('down.held', async (place) => {
   write(place, TEAM);
   return show(await down(place, [], owner, downSources({
@@ -1235,6 +1257,16 @@ scene('remove.removed', async (place) => {
   approve(place, TWO);
   return show(await removed(place, ['worker'], owner, downSources({ home: place.home })), 'removed worker');
 });
+scene('remove.run-lock', async (place) => {
+  approve(place, TWO);
+  // The session mutator lock another run holds, in the file every session mutator shares: this
+  // test process's pid is alive, so the token is never judged stale. The never-approved refusal
+  // is decided before the lock; this scene is an approved, ordinary removal that meets it.
+  const dir = join(place.root, '.agents');
+  mkdirSync(join(dir, 'seat-locks', 'acme'), { recursive: true });
+  writeFileSync(seatLockPath(dir, 'acme', '.run'), `${process.pid} 0a1b2c3d\n`);
+  return show(await removed(place, ['worker'], owner, downSources({ home: place.home })), 'another session-mutating run is holding');
+});
 scene('remove.kept', async (place) => {
   approve(place, TWO);
   return show(await removed(place, ['worker', '--keep'], owner, downSources({ home: place.home })), 'stopped worker');
@@ -1417,15 +1449,15 @@ scene('up.agents', async (place) => {
   approve(place, TEAM);
   return show(await up(place, ['--file', place.file], owner, upSources(place, { sessionState: () => 'running', agents: () => null })), "can't be read");
 });
-scene('up.busy', async (place) => {
+scene('up.run-lock', async (place) => {
   approve(place, TEAM);
-  // The run lock another `team up` holds: this test process's pid is alive, so the token is
+  // The session mutator lock another run holds: this test process's pid is alive, so the token is
   // never judged stale. It sits where the run looks for it — the session's lock folder beside
   // the state, the session defaulting to the project's name — and nothing else is stood in.
   const dir = join(place.root, '.agents');
   mkdirSync(join(dir, 'seat-locks', 'acme'), { recursive: true });
   writeFileSync(seatLockPath(dir, 'acme', '.run'), `${process.pid} 0a1b2c3d\n`);
-  return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching(IDLE) })), 'another `team up` is running');
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching(IDLE) })), 'another session-mutating run is holding');
 });
 scene('up.lobby', async (place) => {
   approve(place, TEAM);

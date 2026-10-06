@@ -25,6 +25,7 @@ import type { ExitTyping, Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
 import { downPlan, formatPlan, type DownSeat } from '../launch/plan.ts';
+import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
 import { boxHoldsOther, boxHoldsText } from '../launch/deliver.ts';
 import { removeRulesFile } from '../launch/rules-file.ts';
 import { approvalStanding } from '../store/store.ts';
@@ -569,84 +570,99 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     // exit: down.no-launch
     return 1;
   }
-  // The audit line goes in exactly when the delegate's run passes its gate and proceeds to
-  // effects — never on a dry run (returned above), never on an already-idle `down` (which
-  // returns at its own check, before any caller rule), never when a refusal held the run, and
-  // never when herdr is out of reach.
-  if (granted !== undefined) (sources.audit ?? logDelegated)(dir, granted, 'down', sources.now());
+  // The session mutator lock: this run has effects from here — the delegated audit line, the
+  // typing and closes of the plan below, the session stop — and no other session command may
+  // interleave its own. Every refusal above is decided first, a dry run returned above, an
+  // idle `down` returned at its own check, and the lock is released on every exit path
+  // (`launch/run-lock.ts`).
+  const runLock = acquireRunLock(dir, session);
+  if ('held' in runLock) {
+    io.stderr(`team down: ${runLockText(runLock.held, session, dir)}\n`);
+    // exit: down.run-lock
+    return 1;
+  }
+  try {
+    // The audit line goes in exactly when the delegate's run passes its gate and proceeds to
+    // effects — never on a dry run (returned above), never on an already-idle `down` (which
+    // returns at its own check, before any caller rule), never when a refusal held the run, and
+    // never when herdr is out of reach.
+    if (granted !== undefined) (sources.audit ?? logDelegated)(dir, granted, 'down', sources.now());
 
-  const now = () => sources.now();
-  const host: Host = {
-    startServer: () => false,
-    sessionUp: () => true,
-    createWorkspace: () => null,
-    paneRun: () => false,
-    async typeLine(sessionName, pane, text) {
-      // Free was decided when the plan was built. Look again, and once more between the text and
-      // the Enter: a prompt that appeared would take the key, as the watch's nudge does. Herdr's
-      // status is asked both times; the Enter waits until it is idle or done and the box reads
-      // back as exactly the typed text. The whole sequence, the clearing key included, is
-      // `typeExit`'s, shared with `remove`.
-      const cli = seats.find((seat) => seat.pane === pane)?.cli ?? '';
-      return typeExit({
-        typeText: (line) => launch.typeText(sessionName, pane, line),
-        sendKey: (key) => launch.sendKey(sessionName, pane, key),
-        pressEnter: () => launch.pressEnter(sessionName, pane),
-        screen: () => sources.screenText(sessionName, pane, cli),
-        status: () => sources.status(sessionName, pane),
-        foreground: () => sources.foreground(sessionName, pane),
-        sleep: sources.sleep ?? launch.sleep,
-        now: () => sources.now().getTime(),
-      }, cli, text);
-    },
-    renameAgent: () => false,
-    closeWorkspace: launch.closeWorkspace,
-    stopSession: launch.stopSession,
-    // Only the session this run has itself just stopped, and only once herdr agrees it is no
-    // longer running: anything else — still running, or herdr silent — is left to its owner, with
-    // the command the line in `executePlan` names. `up` never deletes a session at all.
-    deleteSession(name) {
-      return sources.sessionRunning(name) === false && launch.deleteSession(name);
-    },
-    kill: launch.kill,
-    agentPanes(sessionName) {
-      const listed = launch.agentPanes(sessionName);
-      if (!listed) return null;
-      // A pane back at its shell is no longer the seat. `gone` then finishes and the workspace
-      // closes. The wait keeps an unreadable list (`paneStillRunning`); the watch's quota read
-      // asks the other way — `reportedLiveAgent`, a figure only where the CLI was seen.
-      return listed.filter((pane) => {
-        const cli = seats.find((seat) => seat.pane === pane)?.cli;
-        const names = cli ? profileFor(cli)?.processNames : undefined;
-        if (!names) return true;
-        return paneStillRunning(sources.foreground(sessionName, pane), names);
-      });
-    },
-    classify: () => 'unknown',
-    sleep: sources.sleep ?? launch.sleep,
-    now: () => now().getTime(),
-    allow: () => null,
-    record() {},
-    running() {},
-    drop(name) {
-      updateState(dir, (file) => {
-        const seatsOf = (file.sessions[session] ??= emptySession()).seats;
-        delete seatsOf[name];
-      });
-      // A temporary seat's rules file goes with the seat, as `remove` takes one; a declared
-      // seat's stays, ready for the next `up`. No home set is a test with no store at all. The
-      // remover builds the path itself, from the approval in force and the seat's name.
-      if (state?.seats[name]?.temporary && sources.home) {
-        removeRulesFile(approvalStanding(root, sources.home), name, root, sources.home);
-      }
-    },
-    say: (line) => io.stdout(line),
-    log: (who, what) => logLine(dir, 'down', describeCaller(caller), `${who}: ${what}`, now()),
-  };
-  const report = await executePlan(plan, session, host);
-  // exit: down.stopped
-  // exit: down.held
-  return report.held ? 1 : 0;
+    const now = () => sources.now();
+    const host: Host = {
+      startServer: () => false,
+      sessionUp: () => true,
+      createWorkspace: () => null,
+      paneRun: () => false,
+      async typeLine(sessionName, pane, text) {
+        // Free was decided when the plan was built. Look again, and once more between the text and
+        // the Enter: a prompt that appeared would take the key, as the watch's nudge does. Herdr's
+        // status is asked both times; the Enter waits until it is idle or done and the box reads
+        // back as exactly the typed text. The whole sequence, the clearing key included, is
+        // `typeExit`'s, shared with `remove`.
+        const cli = seats.find((seat) => seat.pane === pane)?.cli ?? '';
+        return typeExit({
+          typeText: (line) => launch.typeText(sessionName, pane, line),
+          sendKey: (key) => launch.sendKey(sessionName, pane, key),
+          pressEnter: () => launch.pressEnter(sessionName, pane),
+          screen: () => sources.screenText(sessionName, pane, cli),
+          status: () => sources.status(sessionName, pane),
+          foreground: () => sources.foreground(sessionName, pane),
+          sleep: sources.sleep ?? launch.sleep,
+          now: () => sources.now().getTime(),
+        }, cli, text);
+      },
+      renameAgent: () => false,
+      closeWorkspace: launch.closeWorkspace,
+      stopSession: launch.stopSession,
+      // Only the session this run has itself just stopped, and only once herdr agrees it is no
+      // longer running: anything else — still running, or herdr silent — is left to its owner, with
+      // the command the line in `executePlan` names. `up` never deletes a session at all.
+      deleteSession(name) {
+        return sources.sessionRunning(name) === false && launch.deleteSession(name);
+      },
+      kill: launch.kill,
+      agentPanes(sessionName) {
+        const listed = launch.agentPanes(sessionName);
+        if (!listed) return null;
+        // A pane back at its shell is no longer the seat. `gone` then finishes and the workspace
+        // closes. The wait keeps an unreadable list (`paneStillRunning`); the watch's quota read
+        // asks the other way — `reportedLiveAgent`, a figure only where the CLI was seen.
+        return listed.filter((pane) => {
+          const cli = seats.find((seat) => seat.pane === pane)?.cli;
+          const names = cli ? profileFor(cli)?.processNames : undefined;
+          if (!names) return true;
+          return paneStillRunning(sources.foreground(sessionName, pane), names);
+        });
+      },
+      classify: () => 'unknown',
+      sleep: sources.sleep ?? launch.sleep,
+      now: () => now().getTime(),
+      allow: () => null,
+      record() {},
+      running() {},
+      drop(name) {
+        updateState(dir, (file) => {
+          const seatsOf = (file.sessions[session] ??= emptySession()).seats;
+          delete seatsOf[name];
+        });
+        // A temporary seat's rules file goes with the seat, as `remove` takes one; a declared
+        // seat's stays, ready for the next `up`. No home set is a test with no store at all. The
+        // remover builds the path itself, from the approval in force and the seat's name.
+        if (state?.seats[name]?.temporary && sources.home) {
+          removeRulesFile(approvalStanding(root, sources.home), name, root, sources.home);
+        }
+      },
+      say: (line) => io.stdout(line),
+      log: (who, what) => logLine(dir, 'down', describeCaller(caller), `${who}: ${what}`, now()),
+    };
+    const report = await executePlan(plan, session, host);
+    // exit: down.stopped
+    // exit: down.held
+    return report.held ? 1 : 0;
+  } finally {
+    runLock.release();
+  }
 }
 
 /** A team file read directly, with the project root and the `.agents` directory beside it. */

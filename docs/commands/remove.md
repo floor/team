@@ -123,6 +123,8 @@ with the text named, in the refusal below.
 | ``team remove: no launch profile for `<cli>`; left as it is`` | 1 |
 | ``team remove: the file was never approved on this machine: run `team approve` `` | 1 |
 | ``team remove: approved before records were signed: run `team approve` once`` — the record was written by an earlier `team`; the same line, with the case, for a record that does not verify | 1 |
+| ``team remove: another session-mutating run is holding session <session> (pid <pid>); try again when it is done`` — another run holds the session's mutator lock, the one lock `up`, `add`, `down` and `remove` share; the line names no command, because the lock is shared. The lock is taken before this run's first effect and released at its end; every refusal above is decided first and never shows it | 1 |
+| ``team remove: another session-mutating run may be holding session <session>, and its lock cannot be read; if no run is using it, delete <state dir>/seat-locks/<session>/.run`` — the lock file does not read as a token, so its holder is unknown and only the owner clears it; the line names the file | 1 |
 
 `--abandon` answers the last five: the seat is not asked anything, its workspace is closed as it is,
 and its pane's text is lost.

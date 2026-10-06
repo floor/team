@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +12,7 @@ import { emptySession, readState, updateState } from '../../src/state.ts';
 import { readLedger, storePath, writeApproval } from '../../src/store/store.ts';
 import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
 import { rulesFilePath } from '../../src/launch/rules-file.ts';
+import { seatLockPath } from '../../src/launch/seat-lock.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
 import { gitEnv, testIo } from '../helpers.ts';
 import type { Machine } from '../../src/watch/machine.ts';
@@ -1124,3 +1125,93 @@ describe('team add delegated', () => {
   });
 });
 
+
+// The session mutator lock, `add`'s side: the same `.run` under `seat-locks/<session>/` that
+// `up`, `down` and `remove` take — one file per session, shared by every mutator — taken before
+// this run's first effect (the lobby make, the audit line, the file edit, the launch) and
+// released on every exit path. A dry run and a refusal decided above the lock never take one; a
+// lock a killed run left is taken over by the next one.
+describe('team add, the session mutator lock', () => {
+  const lockFile = (): string => seatLockPath(join(project, '.agents'), 'acme', '.run');
+  const hold = (token: string): void => {
+    mkdirSync(join(project, '.agents', 'seat-locks', 'acme'), { recursive: true });
+    writeFileSync(lockFile(), token);
+  };
+
+  test("a held lock refuses the add, with the holder's pid, before any effect", async () => {
+    hold(`${process.pid} 0a1b2c3d\n`);
+    const made = world();
+    const io = testIo(project, owner);
+    expect(await runAdd(['worker'], io, sources(made))).toBe(1);
+    expect(io.err).toBe(
+      `team add: another session-mutating run is holding session acme (pid ${process.pid}); try again when it is done\n`,
+    );
+    expect(io.out).toBe('');
+    expect(made.session).toBe('absent');
+    expect(made.creates).toEqual([]);
+    expect(made.renames).toEqual([]);
+    // Nothing was written: the seat's stopped line is still exactly where the file had it, the
+    // state records no seat, and the lock a live holder owns is left as it was.
+    expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).toContain('stopped: true');
+    expect(readState(join(project, '.agents')).sessions.acme?.seats.worker).toBeUndefined();
+    expect(readFileSync(lockFile(), 'utf8')).toBe(`${process.pid} 0a1b2c3d\n`);
+  });
+
+  test('the lock is held from the launch to the audit line, and released at the end', async () => {
+    const made = world();
+    const held: boolean[] = [];
+    const create = made.launch.createWorkspace;
+    made.launch.createWorkspace = (session, cwd, label) => {
+      held.push(existsSync(lockFile()));
+      return create(session, cwd, label);
+    };
+    const io = testIo(project, owner);
+    expect(await runAdd(['worker'], io, sources(made))).toBe(0);
+    expect(held).toEqual([true]);
+    expect(held).not.toContain(false);
+    expect(existsSync(lockFile())).toBe(false);
+  });
+
+  test('a lock left by a dead run is taken over and released by this one', async () => {
+    const dead = spawnSync('sh', ['-c', 'exit 0']).pid;
+    expect(typeof dead).toBe('number');
+    hold(`${dead} 0a1b2c3d\n`);
+    const made = world();
+    const io = testIo(project, owner);
+    expect(await runAdd(['worker'], io, sources(made))).toBe(0);
+    expect(made.creates).toEqual(['worker']);
+    expect(existsSync(lockFile())).toBe(false);
+  });
+
+  test('a dry run takes no lock while another run holds one', async () => {
+    hold(`${process.pid} 0a1b2c3d\n`);
+    const made = world();
+    const io = testIo(project, owner);
+    expect(await runAdd(['worker', '--dry-run'], io, sources(made))).toBe(0);
+    expect(io.out).toContain('dry run: nothing was run\n');
+    expect(made.creates).toEqual([]);
+    expect(readFileSync(lockFile(), 'utf8')).toBe(`${process.pid} 0a1b2c3d\n`);
+  });
+
+  test('a refusal decided above the lock leaves no lock behind', async () => {
+    const made = world();
+    const io = testIo(project, owner);
+    // `missing` is not in the file: the refusal is decided long before the lock site, so this
+    // run must not leave a lock file the next real run would meet.
+    expect(await runAdd(['missing'], io, sources(made))).toBe(1);
+    expect(io.err).toContain('no seat "missing"');
+    expect(existsSync(lockFile())).toBe(false);
+  });
+
+  test('a lock that cannot be read refuses with the file to clear', async () => {
+    hold('not a token\n');
+    const made = world();
+    const io = testIo(project, owner);
+    expect(await runAdd(['worker'], io, sources(made))).toBe(1);
+    expect(io.err).toBe(
+      'team add: another session-mutating run may be holding session acme, and its lock cannot be read; '
+        + `if no run is using it, delete ${lockFile()}\n`,
+    );
+    expect(made.creates).toEqual([]);
+  });
+});
