@@ -1,13 +1,19 @@
 import { expect, test } from 'bun:test';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { walkCaller } from '../src/caller.ts';
 
 const repo = join(import.meta.dir, '..');
 
-function readJson(path: string): { version: string; dependencies?: { team?: string } } {
+function readJson(path: string): {
+  name?: string;
+  version: string;
+  dependencies?: { team?: string };
+  publishConfig?: { access?: string };
+  bin?: { teamcli?: string; team?: string };
+} {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
@@ -30,8 +36,13 @@ function npmRun(home: string, args: string[], cwd: string, timeout?: number) {
 test('teamcli is the same version as team, and depends on that exact version', () => {
   const root = readJson(join(repo, 'package.json'));
   const teamcli = readJson(join(repo, 'packages/teamcli/package.json'));
+  expect(teamcli.name).toBe('@teamcli/cli');
+  expect(teamcli.publishConfig?.access).toBe('public');
+  expect(teamcli.bin).toEqual({ teamcli: 'cli.js', team: 'cli.js' });
   expect(teamcli.version).toBe(root.version);
+  expect(teamcli.version).toBe('0.2.1');
   expect(teamcli.dependencies?.team).toBe(root.version);
+  expect(teamcli.dependencies?.team).toBe('0.2.1');
 });
 
 test('the teamcli tarball lists exactly the package manifest, the shim and the readme', () => {
@@ -40,6 +51,9 @@ test('the teamcli tarball lists exactly the package manifest, the shim and the r
   const packed = npmRun(home, ['pack', '--json', '--pack-destination', dest], join(repo, 'packages/teamcli'));
   expect(packed.status).toBe(0);
   const report = JSON.parse(packed.stdout)[0];
+  expect(report.name).toBe('@teamcli/cli');
+  expect(report.version).toBe('0.2.1');
+  expect(report.filename).toBe('teamcli-cli-0.2.1.tgz');
   const tarball = join(dest, report.filename);
   const listed = spawnSync('tar', ['-tzf', tarball], { encoding: 'utf8' });
   expect(listed.status).toBe(0);
@@ -97,6 +111,7 @@ test('packed team and teamcli bins match the team cli, and a signal reaches the 
   expect(teamcliPack.status).toBe(0);
   const teamcliReport = JSON.parse(teamcliPack.stdout)[0];
 
+  expect(teamcliReport.filename).toBe('teamcli-cli-0.2.1.tgz');
   const teamcliTarball = join(dest, teamcliReport.filename);
   const published = mkdtempSync(join(tmpdir(), 'teamcli-published-'));
   installPair(published, publishedTeam(mkdtempSync(join(tmpdir(), 'teamcli-published-pack-')), home), teamcliTarball, home);
@@ -106,6 +121,10 @@ test('packed team and teamcli bins match the team cli, and a signal reaches the 
 
   const prefix = mkdtempSync(join(tmpdir(), 'teamcli-prefix-'));
   installPair(prefix, join(dest, rootReport.filename), teamcliTarball, home);
+  const installed = readJson(join(prefix, 'node_modules/@teamcli/cli/package.json'));
+  expect(installed.name).toBe('@teamcli/cli');
+  // A scoped package still installs the unscoped teamcli command from its bin map.
+  expect(readlinkSync(join(prefix, 'node_modules/.bin/teamcli'))).toContain('@teamcli/cli');
 
   const own = spawnSync(process.execPath, [join(repo, 'dist/cli.js'), '--version'], { encoding: 'utf8' });
   const team = spawnSync(join(prefix, 'node_modules/.bin/team'), ['--version'], { encoding: 'utf8' });
