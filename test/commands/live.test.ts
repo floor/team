@@ -4652,12 +4652,14 @@ describe('team down, live', () => {
       run.setBox(claudeBox('exi'));
       return true;
     };
+    // The caller check before the clearing key is the fourth read of the foreground — opening
+    // check, after the typing, after the draw wait, then this one.
     let looks = 0;
     const io = testIo(root, { kind: 'owner' });
     const code = await runDown(FILE, io, run.sourcesOf({
       foreground: () => {
         looks += 1;
-        if (looks === 3) run.setBox(claudeBox('/exit'));
+        if (looks === 4) run.setBox(claudeBox('/exit'));
         return ['claude'];
       },
     }));
@@ -4696,12 +4698,14 @@ describe('team down, live', () => {
       run.keys.push(key);
       return false;
     };
+    // The pane finishes the draw at the caller check before the clearing key, as in the test
+    // above: the fourth read of the foreground.
     let looks = 0;
     const io = testIo(root, { kind: 'owner' });
     const code = await runDown(FILE, io, run.sourcesOf({
       foreground: () => {
         looks += 1;
-        if (looks === 3) run.setBox(claudeBox('/exit'));
+        if (looks === 4) run.setBox(claudeBox('/exit'));
         return ['claude'];
       },
     }));

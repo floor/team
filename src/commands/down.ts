@@ -269,6 +269,9 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
     if (key === null || !live()) return false;
     if (!io.sendKey(key)) return false;
     const after = await settle('unsent');
+    // The wait can swallow the CLI as well: the caller check precedes the typing, exactly as it
+    // precedes every key.
+    if (!live()) return 'no-agent';
     if (after !== 'idle' || !resting()) {
       return { left: `its box already held this exit text; the clearing key (${key}) left the screen reading ${after}; left running` };
     }
@@ -281,6 +284,10 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // text gets the Enter.
   if (boxHoldsText(cli, text, io.screen())) return sendExit();
   const kind = await settle('idle');
+  // The wait is a window the pane's state can change in — the CLI can go, a turn can start —
+  // so the caller check is taken again here, before the Enter this reading leads to.
+  if (!live()) return 'no-agent';
+  if (!resting()) return false;
   if (kind !== 'unsent' && kind !== 'idle') return false;
   if (boxHoldsText(cli, text, io.screen())) return sendExit();
   if (kind === 'idle') {

@@ -42,41 +42,59 @@ type Sent = { key: string; kind: string; holds: boolean };
  *  and the pane has drawn it — herdr's `send-text` returns before the pane renders, so the
  *  drawing is the sleep — and `after` from then on. `status()` is herdr's own reading and stays
  *  resting; `foreground()` is what `pane process-info` answers for a seat launched by name
- *  (`"argv0":"claude"`), which is the caller check every key waits for. */
-function paneOf(cli: string, binary: string, before: string, after: string): { io: ExitIo; sent: Sent[] } {
+ *  (`"argv0":"claude"`), which is the caller check every key waits for. `opts` lets a case move
+ *  the seat while the pane is drawing — the window the caller check has to survive — and `types`
+ *  records every typing that went out, so a case can show one did not. */
+function paneOf(
+  cli: string,
+  binary: string,
+  before: string,
+  after: string,
+  opts: { foreground?: (drawn: boolean) => string[]; status?: (drawn: boolean) => string } = {},
+): { io: ExitIo; sent: Sent[]; types: string[] } {
   const text = exitText(cli);
   let typed = false;
   let drawn = false;
   let clock = 1_000_000;
   const sent: Sent[] = [];
+  const types: string[] = [];
   const screen = () => (typed && drawn ? after : before);
   const send = (key: string): boolean => {
     sent.push({ key, kind: readScreen(cli, screen()).kind, holds: boxHoldsText(cli, text, screen()) });
     return true;
   };
   const io: ExitIo = {
-    typeText: () => {
+    typeText: (line) => {
+      types.push(line);
       typed = true;
       return true;
     },
     sendKey: send,
     pressEnter: () => send('enter'),
     screen,
-    status: () => 'idle',
-    foreground: () => [binary],
+    status: () => opts.status?.(drawn) ?? 'idle',
+    foreground: () => opts.foreground?.(drawn) ?? [binary],
     sleep: async (ms) => {
       drawn = true;
       clock += ms;
     },
     now: () => clock,
   };
-  return { io, sent };
+  return { io, sent, types };
 }
 
 /** One pane whose box already holds exactly the exit text when the run starts — the leftover of
- *  an earlier attempt: `leftover` until the profile's clearing key has gone out, then `idle`
- *  until the text is typed and drawn, then `leftover` again. */
-function leftoverPane(cli: string, binary: string, leftover: string, idle: string): { io: ExitIo; sent: Sent[] } {
+ *  an earlier attempt: `leftover` until the profile's clearing key has gone out and the pane has
+ *  drawn the cleared box, then `idle` until the text is typed and drawn, then `leftover` again.
+ *  `opts.foreground` can move the seat while the cleared box is waited for; `types` records every
+ *  typing, as in `paneOf`. */
+function leftoverPane(
+  cli: string,
+  binary: string,
+  leftover: string,
+  idle: string,
+  opts: { foreground?: (drawn: boolean) => string[] } = {},
+): { io: ExitIo; sent: Sent[]; types: string[] } {
   const text = exitText(cli);
   const key = profileFor(cli)?.exitClear ?? '';
   let cleared = false;
@@ -84,9 +102,10 @@ function leftoverPane(cli: string, binary: string, leftover: string, idle: strin
   let drawn = false;
   let clock = 1_000_000;
   const sent: Sent[] = [];
+  const types: string[] = [];
   const screen = () => {
-    if (!cleared) return leftover;
-    return typed && drawn ? leftover : idle;
+    if (!cleared || !drawn) return leftover;
+    return typed ? leftover : idle;
   };
   const send = (keySent: string): boolean => {
     sent.push({ key: keySent, kind: readScreen(cli, screen()).kind, holds: boxHoldsText(cli, text, screen()) });
@@ -94,7 +113,8 @@ function leftoverPane(cli: string, binary: string, leftover: string, idle: strin
     return true;
   };
   const io: ExitIo = {
-    typeText: () => {
+    typeText: (line) => {
+      types.push(line);
       typed = true;
       return true;
     },
@@ -102,14 +122,14 @@ function leftoverPane(cli: string, binary: string, leftover: string, idle: strin
     pressEnter: () => send('enter'),
     screen,
     status: () => 'idle',
-    foreground: () => [binary],
+    foreground: () => opts.foreground?.(drawn) ?? [binary],
     sleep: async (ms) => {
       drawn = true;
       clock += ms;
     },
     now: () => clock,
   };
-  return { io, sent };
+  return { io, sent, types };
 }
 
 describe('the captured pairs', () => {
@@ -240,6 +260,42 @@ describe("the CLI's own exit question", () => {
     expect(result).toEqual({ left: 'its exit was not confirmed; the exit question stayed open; left running' });
   });
 
+  // The confirm key is the same caller check as every other key: the CLI as the pane's foreground
+  // process and the question on screen are both read in the same unbroken stretch, right before
+  // the key goes out — so a CLI that stopped being it at the question gets no key.
+  test('a CLI that is not the foreground process at the question gets no confirm key', async () => {
+    const question = fixture('claude-code-shell-question-ansi.txt');
+    const idle = fixture('claude-code-idle-ansi.txt');
+    const unsent = fixture('claude-code-unsent-ansi.txt');
+    let phase = 0;
+    let clock = 1_000_000;
+    const sent: string[] = [];
+    const io: ExitIo = {
+      typeText: () => {
+        phase = 1;
+        return true;
+      },
+      sendKey: (key) => {
+        sent.push(key);
+        return true;
+      },
+      pressEnter: () => {
+        sent.push('enter');
+        phase = 2;
+        return true;
+      },
+      screen: () => (phase === 0 ? idle : phase === 1 ? unsent : question),
+      status: () => 'idle',
+      foreground: () => (phase === 2 ? ['zsh'] : ['claude']),
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      now: () => clock,
+    };
+    expect(await typeExit(io, 'claude-code', '/exit')).toBe(true);
+    expect(sent).toEqual(['enter']);
+  });
+
   test('a pane that draws that question after the typing gets no Enter', async () => {
     const pane = paneOf('claude-code', 'claude', fixture('claude-code-idle-ansi.txt'), fixture('claude-code-shell-question-ansi.txt'));
     expect(await typeExit(pane.io, 'claude-code', exitText('claude-code'))).toBe(false);
@@ -328,5 +384,43 @@ describe('a box that already holds exactly the exit text', () => {
       left: 'its box already held this exit text; the clearing key (ctrl+c) left the screen reading unsent; left running',
     });
     expect(pane.sent).toEqual([{ key: 'ctrl+c', kind: 'unsent', holds: true }]);
+  });
+});
+
+describe('the caller check is taken again after a wait', () => {
+  // C10: the pane draws the typed /exit one poll into the wait, and the CLI is suspended while it
+  // does — a shell in front of the composer. The stale check sent the Enter to that shell, and
+  // the very next step of a stop then took the seat for gone and closed it though it was never
+  // asked. The caller check is taken again after the wait, so nothing goes.
+  test('the CLI suspended during the draw wait: no Enter goes to what is in front', async () => {
+    const pane = paneOf('claude-code', 'claude', fixture('claude-code-idle-ansi.txt'), fixture('claude-code-unsent-ansi.txt'), {
+      foreground: (drawn) => (drawn ? ['zsh'] : ['claude']),
+    });
+    expect(await typeExit(pane.io, 'claude-code', exitText('claude-code'))).toBe('no-agent');
+    expect(pane.sent).toEqual([]);
+    expect(pane.types).toEqual(['/exit']);
+  });
+
+  // C10b: the seat turned `working` under the wait — the watch's nudge landing in that window,
+  // the race `typeLine`'s comment names — and the stale check sent the exit text into a turn that
+  // had started.
+  test('the seat turned working during the draw wait: nothing is sent', async () => {
+    const pane = paneOf('claude-code', 'claude', fixture('claude-code-idle-ansi.txt'), fixture('claude-code-unsent-ansi.txt'), {
+      status: (drawn) => (drawn ? 'working' : 'idle'),
+    });
+    expect(await typeExit(pane.io, 'claude-code', exitText('claude-code'))).toBe(false);
+    expect(pane.sent).toEqual([]);
+  });
+
+  // C11: the box held the exit text, the clearing key was sent, and the CLI was suspended while
+  // the cleared box was waited for. The stale check typed the exit text with the shell in front;
+  // only the check after the typing caught it.
+  test('the CLI suspended during the clearing wait: the exit text is not typed after it', async () => {
+    const pane = leftoverPane('claude-code', 'claude', fixture('claude-code-unsent-ansi.txt'), fixture('claude-code-idle-ansi.txt'), {
+      foreground: (drawn) => (drawn ? ['zsh'] : ['claude']),
+    });
+    expect(await typeExit(pane.io, 'claude-code', exitText('claude-code'))).toBe('no-agent');
+    expect(pane.sent).toEqual([{ key: 'ctrl+c', kind: 'unsent', holds: true }]);
+    expect(pane.types).toEqual([]);
   });
 });
