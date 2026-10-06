@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-06
+
+A release about repairs, found on the first day of 0.3.1: `down` and `remove` stop a seat and
+clear what the stop leaves, a CLI's own exit question is answered where its profile declares
+the key, a delegate can start a team whose session is down, one run at a time takes a session,
+a CLI profile may name the file the CLI itself leaves in the lobby, `up` resumes its own
+interrupted launch, `status` shows no model it did not verify, and a stop clears only the exit
+text it typed.
+
+### Fixed
+
+- `down` and `remove` stop a seat: the exit text is typed into a box read empty and idle, read
+  back, and only a box that reads back as exactly the typed text gets the Enter (0.3.0 and
+  0.3.1 read the screen once, an instant after the typing, too early for the pane to have drawn
+  the text, and never pressed it).
+- A CLI's own exit question — Claude Code's "Exit and stop tasks", preselected after the exit
+  text — is answered where the profile declares a key for it; a profile that declares none
+  leaves the seat running, and the line says so.
+- `--abandon` closes a seat this run asked whose exit could not be typed or confirmed, and the
+  line names that close.
+- `down` clears the session it stopped itself: it waits until herdr lists the session stopped,
+  then deletes it. `up` clears a stopped session this team's state records, then starts it.
+- A delegate can start a team whose session is down: a session that is not running has no seats
+  to collide with, so the gate no longer reads "nothing listed" as "herdr does not answer".
+- One `up`, `add`, `down` or `remove` runs at a time per session: the run takes the `.run` lock
+  before its first effect, a second run is refused naming the pid that holds it (`up.run-lock`,
+  `add.run-lock`, `down.run-lock`, `remove.run-lock`), and a lock left by a dead run is taken
+  over by the next.
+- A CLI profile may declare the exact files that CLI may leave in the lobby — Claude Code's
+  scheduler lock `.claude/scheduled_tasks.lock` — so `up` and `add` are no longer refused over
+  a file the CLI itself left there.
+- `up` resumes its own interrupted launch: a seat whose pane was made but never renamed — a run
+  interrupted in between — is read as this team's half-finished seat and resumed, not refused
+  as a stranger.
+- `status` shows no model it did not verify: a row whose name does not match shows the model
+  its screen names, or `(unread)`, never the model from the file.
+- `down` and `remove` clear only the exit text they typed: a box holding other text is not
+  typed onto, and a box already holding exactly this exit text is cleared with the profile's
+  one key first, never sent.
+
+### Known limits
+
+Unchanged by this release:
+
+- `add` on a stopped session still asks for a manual clear: `herdr session delete <name>`.
+- A delegate still cannot pass `--abandon`.
+- The watch's nudge can still be typed and not sent: the read-back that decides its Enter runs
+  the instant after the typing, before the pane has drawn the text. Fixed in the next release.
+- `team approve` still asks its question.
+- The lobby recheck cannot see a rewrite in place inside one filesystem timestamp tick that
+  changes no size — every number it reads would be the same.
+
 ## [0.3.1] - 2026-10-06
 
 A release about delegation: a team's owner approves, once, which panes outside the team's own
