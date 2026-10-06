@@ -114,6 +114,14 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `down.abandon` | `down` | 1 | only the owner abandons a team | `team down --abandon` |
 | `down.another-pane` | `down` | 1 | the state records another pane for the caller's seat | `team down` |
 | `down.caller` | `down` | 1 | the caller may not change the team | `team down` |
+| `down.delegate` | `down` | 1 | the caller is not the approved delegate of any entry | `team down, from a pane no delegate entry names` |
+| `down.delegate-approval` | `down` | 1 | delegation needs a verified approval | `team down, with no approval in force` |
+| `down.delegate-approved-copy` | `down` | 1 | delegation needs a readable approved copy | `team down, when the approved copy can't be read` |
+| `down.delegate-command` | `down` | 1 | the approved delegate may not run `down` | `team down, from the approved delegate whose commands leave it out` |
+| `down.delegate-drift` | `down` | 1 | the file is not the approved one | `team down, after the file changed since approval` |
+| `down.delegate-evidence` | `down` | 1 | delegation cannot verify its placement or seats | `team down, when herdr or the state can't be read for the gate` |
+| `down.delegate-flag` | `down` | 1 | a prohibited flag is the owner's | `team down --abandon, from the approved delegate` |
+| `down.delegate-placement` | `down` | 1 | the approved delegate must be an external non-seat pane | `team down, with a delegate entry naming a seat's pane` |
 | `down.file-owner` | `down` | 1 | --file is the owner's | `team down --file .agents/team.yaml` |
 | `down.held` | `down` | 1 | a step was held | `team down` |
 | `down.no-launch` | `down` | 1 | this call has no way to reach herdr | `team down` |

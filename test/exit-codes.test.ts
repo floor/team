@@ -886,6 +886,54 @@ scene('down.abandon', async (place) => {
   write(place, TEAM);
   return show(await down(place, ['--abandon'], leadSeat, downSources({ sessionRunning: () => true, agents: () => [] })), 'only the owner abandons');
 });
+
+// The delegate branch's own refusals. The file carries a `delegates` section, the caller is a
+// pane the ordinary rule refuses — `other`, whose name is no coordinator's — and the gate's
+// verdict is injected: what these scenes pin is the command's side of the contract, the text
+// and the exit code of each id. The gate's own decisions are its own test file's.
+const DELEGATED = `${TEAM}delegates:\n  - pane: hook/w2:p9\n    commands: [up, down]\n`;
+const refusedBy = (id: string, text: string) => (): { kind: 'refused'; id: string; text: string } => ({ kind: 'refused', id, text });
+const delegated = (id: string, text: string) => downSources({ sessionRunning: () => true, agents: () => [], gate: refusedBy(id, text) });
+
+scene('down.delegate', async (place) => {
+  write(place, DELEGATED);
+  const text = 'only the owner, the coordinator, the operator or the approved delegate stops the team; this call is other';
+  const ran = await down(place, [], other, delegated('down.delegate', text));
+  expect(ran.err).toBe(`team down: ${text}\n`);
+  return ran;
+});
+scene('down.delegate-approval', async (place) => {
+  write(place, DELEGATED);
+  return show(await down(place, [], other, delegated('down.delegate-approval', 'delegation needs a verified approval: no approval is in force')), 'delegation needs a verified approval');
+});
+scene('down.delegate-approved-copy', async (place) => {
+  write(place, DELEGATED);
+  return show(await down(place, [], other, delegated('down.delegate-approved-copy', 'delegation needs a readable approved copy: run `team approve`')), 'readable approved copy');
+});
+scene('down.delegate-command', async (place) => {
+  write(place, DELEGATED);
+  return show(await down(place, [], other, delegated('down.delegate-command', 'the approved delegate hook/w2:p9 may not run `down`; its approved commands are up')), 'its approved commands are up');
+});
+scene('down.delegate-drift', async (place) => {
+  write(place, DELEGATED);
+  return show(await down(place, [], other, delegated('down.delegate-drift', 'delegation needs the approved file: the file is not the approved one (seats: a seat was added): run `team approve`')), 'is not the approved one');
+});
+scene('down.delegate-evidence', async (place) => {
+  write(place, DELEGATED);
+  return show(await down(place, [], other, delegated('down.delegate-evidence', "delegation cannot verify its placement or seats: herdr doesn't answer")), 'cannot verify its placement or seats');
+});
+scene('down.delegate-flag', async (place) => {
+  write(place, DELEGATED);
+  const text = "--abandon is the owner's; the approved delegate cannot use it";
+  const ran = await down(place, ['--abandon'], other, delegated('down.delegate-flag', text));
+  // The gate's flag refusal is the run's only refusal: today's abandon line stays out of it.
+  expect(ran.err).toBe(`team down: ${text}\n`);
+  return ran;
+});
+scene('down.delegate-placement', async (place) => {
+  write(place, DELEGATED);
+  return show(await down(place, [], other, delegated('down.delegate-placement', 'the approved delegate must be an external non-seat pane')), 'external non-seat pane');
+});
 scene('down.no-launch', async (place) => {
   write(place, TEAM);
   return show(await down(place, [], owner, downSources({ sessionRunning: () => true, agents: () => [] })), 'no way to reach herdr');
