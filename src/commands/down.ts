@@ -288,7 +288,17 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // so the caller check is taken again here, before the Enter this reading leads to.
   if (!live()) return 'no-agent';
   if (!resting()) return false;
-  if (kind !== 'unsent' && kind !== 'idle') return false;
+  if (kind !== 'unsent' && kind !== 'idle') {
+    // A dialog the CLI drew over the composer hides the box without emptying it: the text typed
+    // a moment ago is still in it, so "its exit was not typed" would be the wrong report — the
+    // line says what the screen was reading instead. Every other reading (a turn that started, a
+    // screen the reader cannot name) proves nothing about where the typed text went, and keeps
+    // that report.
+    const dialog =
+      kind === 'permission' || kind === 'trust' || kind === 'question' || kind === 'exit question';
+    if (!dialog) return false;
+    return { left: `its exit was not confirmed; the screen was reading ${kind} before the Enter; left running` };
+  }
   if (boxHoldsText(cli, text, io.screen())) return sendExit();
   if (kind === 'idle') {
     return { left: 'its exit was not confirmed; the pane never drew the typed text; its box is empty; left running' };

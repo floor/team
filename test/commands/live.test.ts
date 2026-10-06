@@ -4497,7 +4497,9 @@ describe('team down, live', () => {
     const pinnedRaw = readFileSync(new URL('../fixtures/codex/0.157.0/permission-pinned.txt', import.meta.url), 'utf8');
     const codexIdle = readFileSync(new URL('../fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
     const run = harness({ kind: 'idle' });
-    // The pane is idle before the typing; the dialog is what it shows after it.
+    // The pane is idle before the typing; the dialog is what it shows after it. The dialog hides
+    // the box, not the text typed a moment ago, so the run reports what the screen was reading —
+    // not "its exit was not typed", which the typed text in the box contradicts.
     let raw = codexIdle;
     run.launch.typeText = (_session, _pane, text) => {
       run.typed.push(text);
@@ -4515,7 +4517,7 @@ describe('team down, live', () => {
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
     expect(run.stopped).toEqual([]);
-    expect(io.out).toContain('codex-acme: its exit was not typed; left as it is (team down --abandon closes it)\n');
+    expect(io.out).toContain('codex-acme: its exit was not confirmed; the screen was reading permission before the Enter; left running (team down --abandon closes it)\n');
   });
 
   test('a rule-looking row after the exit text gets no Enter', async () => {

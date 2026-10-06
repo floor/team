@@ -178,6 +178,31 @@ describe('never a key on anything but the exact read-back', () => {
     });
     expect(pane.sent).toEqual([]);
   });
+
+  // C16: a dialog drawn during the post-typing settle. The text was typed and is in the box, so
+  // "its exit was not typed" was the wrong report; the line says what the screen was reading.
+  test('a dialog that covers the typed text is reported as typed, not as never typed', async () => {
+    const permission = readFileSync(new URL('./fixtures/claude-code/2.1.289/permission-create-ansi.txt', import.meta.url), 'utf8');
+    expect(readScreen('claude-code', permission).kind).toBe('permission');
+    const pane = paneOf('claude-code', 'claude', fixture('claude-code-idle-ansi.txt'), permission);
+    expect(await typeExit(pane.io, 'claude-code', exitText('claude-code'))).toEqual({
+      left: 'its exit was not confirmed; the screen was reading permission before the Enter; left running',
+    });
+    expect(pane.sent).toEqual([]);
+    expect(pane.types).toEqual(['/exit']);
+  });
+
+  // The other side of that line: only a dialog the CLI drew over the composer gets it. A screen
+  // the reader cannot name proves nothing about where the typed text went — there, the old
+  // "not typed" report stands, as the live suite's fail-closed shapes pin.
+  test('a screen the reader cannot name keeps the "not typed" report', async () => {
+    const gibberish = 'a screen neither profile draws';
+    expect(readScreen('claude-code', gibberish).kind).toBe('unknown');
+    const pane = paneOf('claude-code', 'claude', fixture('claude-code-idle-ansi.txt'), gibberish);
+    expect(await typeExit(pane.io, 'claude-code', exitText('claude-code'))).toBe(false);
+    expect(pane.sent).toEqual([]);
+    expect(pane.types).toEqual(['/exit']);
+  });
 });
 
 describe("the CLI's own exit question", () => {
@@ -298,7 +323,9 @@ describe("the CLI's own exit question", () => {
 
   test('a pane that draws that question after the typing gets no Enter', async () => {
     const pane = paneOf('claude-code', 'claude', fixture('claude-code-idle-ansi.txt'), fixture('claude-code-shell-question-ansi.txt'));
-    expect(await typeExit(pane.io, 'claude-code', exitText('claude-code'))).toBe(false);
+    expect(await typeExit(pane.io, 'claude-code', exitText('claude-code'))).toEqual({
+      left: 'its exit was not confirmed; the screen was reading exit question before the Enter; left running',
+    });
     expect(pane.sent).toEqual([]);
   });
 });
