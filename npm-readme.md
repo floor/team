@@ -4,9 +4,9 @@ Set up and run a team of AI agents for your project. Agents propose, you decide.
 
 `team` is a command-line tool: a project declares its team in `.agents/team.yaml` — the seats, the
 model each one runs, the rules it works under, the folders it may touch — and the commands check
-that file against the machine and start and watch the team. It runs the team in
-[herdr](https://herdr.dev), needs nothing else at runtime (no dependencies), and Node 22 or later
-runs it.
+that file against the machine and start and watch the team. Nothing runs until you approve the
+file on your machine. It runs the team in [herdr](https://herdr.dev), needs nothing else at
+runtime (no dependencies), and Node 22 or later runs it.
 
 ## Install
 
