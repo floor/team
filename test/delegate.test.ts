@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { notInForce } from '../src/approve/approval.ts';
+import { approvalOf, notInForce } from '../src/approve/approval.ts';
 import { fingerprints } from '../src/approve/fingerprint.ts';
 import type { CallerSources, Process } from '../src/caller.ts';
 import { ADD_DELEGATE_EDIT, DELEGATE_EXIT_IDS, delegateGate, logDelegated, type DelegateVerdict } from '../src/delegate.ts';
@@ -11,7 +11,7 @@ import type { TeamFile } from '../src/file/types.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import type { State } from '../src/state.ts';
-import { LEGACY_LINE, type Standing } from '../src/store/store.ts';
+import { approvalStanding, approvedCopy, LEGACY_LINE, storePath, writeApproval, type Standing } from '../src/store/store.ts';
 
 const made: string[] = [];
 afterEach(() => {
@@ -269,6 +269,24 @@ describe('placement', () => {
     expect(gate({ state: recorded })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
   });
 
+  test('a live agent named like a configured seat is not a placement refusal, because a name is not a seat', () => {
+    expect(gate({ agents: () => [agent('lead', 'w1:p1')], state: empty })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+  });
+
+  test('a session entry with no seats is treated as having none', () => {
+    const handed = { format: 1, sessions: { other: { worktrees: {} } } } as unknown as State;
+    expect(gate({ state: handed })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+  });
+
+  test('a seat recorded in the delegate session collides, and a different pane there does not', () => {
+    const recorded: State = { format: 1, sessions: { other: { seats: { worker: { stage: 'ready', pane: 'w1:p1' } }, worktrees: {} } } };
+    for (const command of DELEGATE_COMMANDS) {
+      expect(refused({ command, state: recorded }).id).toBe(`${command}.delegate-placement`);
+    }
+    const otherPane: State = { format: 1, sessions: { other: { seats: { worker: { stage: 'ready', pane: 'w8:p8' } }, worktrees: {} } } };
+    expect(gate({ state: otherPane })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+  });
+
   test('one colliding entry refuses the whole list', () => {
     const text = `${yaml}  - pane: alpha/w9:p9\n    commands: [up]\n`;
     expect(validateTeamFile(text).ok).toBe(false);
@@ -351,6 +369,41 @@ describe('the match is the whole pane string', () => {
     ));
     const approved = parsed(`${yaml}  - pane: other/w2:p1\n    commands: [add]\n`);
     expect(refused({ team: swapped, file: yaml, standing: verified(approved, `${yaml}  - pane: other/w2:p1\n    commands: [add]\n`) }).id).toBe('up.delegate-drift');
+  });
+});
+
+describe('the approval home', () => {
+  test('a temporary home is the one that is read', () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'team-delegate-home-')));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'team-delegate-root-')));
+    made.push(home, root);
+    writeApproval(storePath(base.project, root, home), { approval: approvalOf(base, root), file: yaml }, [], home);
+    expect(approvalStanding(root).kind).toBe('none');
+    expect(approvedCopy(root)).toBeNull();
+    const ancestors = under;
+    const roots: Record<string, number | null> = { 'w1:p1': 100 };
+    const agents = (session: string) => (session === 'other' ? [agent('worker', 'w1:p1')] : []);
+    const verdict = delegateGate({
+      command: 'up',
+      team: base,
+      root,
+      dir: join(root, '.agents'),
+      flags: [],
+      home,
+      io: { env: {}, stdinIsTTY: true },
+      sources: {
+        state: () => empty,
+        agents,
+        callerSources: (session) => ({
+          ancestors: () => ancestors,
+          agents: () => (session === undefined ? [] : agents(session)),
+          paneRootPid: (pane) => (Object.hasOwn(roots, pane) ? roots[pane] ?? null : null),
+          env: {},
+          stdinIsTTY: true,
+        }),
+      },
+    });
+    expect(verdict).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
   });
 });
 

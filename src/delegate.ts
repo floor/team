@@ -8,7 +8,7 @@ import { agentList, paneRootPid, type HerdrAgent } from './herdr.ts';
 import type { Io } from './io.ts';
 import { logLine } from './log.ts';
 import { readState, type State } from './state.ts';
-import { approvalStanding, type Standing } from './store/store.ts';
+import { approvalStanding, approvedCopy, type Standing } from './store/store.ts';
 
 /**
  * A delegated run, decided and not yet done. `passed` names the approved pane the caller
@@ -21,7 +21,8 @@ export type DelegateVerdict =
 
 /**
  * The reads a test replaces. Each one left out is the real read: the approval standing and
- * its stored copy for `root`, the state in `dir`, the agent list herdr gives for a session.
+ * its stored copy for `root` under `home`, the state in `dir`, the agent list herdr gives
+ * for a session.
  * Placement is not here. It is `io`, asked about a session, the same way every other command
  * places its caller.
  */
@@ -97,18 +98,20 @@ export function delegateGate(input: {
   dir: string;
   flags: readonly string[];
   io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>;
+  /** Approval store home. Absent: the owner's home, the same default the store uses. */
+  home?: string;
   sources?: DelegateSources;
 }): DelegateVerdict {
-  const { command, team, root, dir, flags } = input;
+  const { command, team, root, dir, flags, home } = input;
   const sources = input.sources ?? {};
   const refuse = (suffix: string, text: string): DelegateVerdict => ({ kind: 'refused', id: `${command}.${suffix}`, text });
 
-  const standing = (sources.standing ?? approvalStanding)(root);
+  const standing = sources.standing ? sources.standing(root) : approvalStanding(root, home);
   if (standing.kind !== 'verified') {
     return refuse('delegate-approval', `delegation needs a verified approval: ${notInForce(standing)}`);
   }
 
-  const copy = sources.approvedCopy ? sources.approvedCopy(root) : standing.record.file;
+  const copy = sources.approvedCopy ? sources.approvedCopy(root) : approvedCopy(root, home);
   if (copy === null || validated(copy) === null) {
     return refuse('delegate-approved-copy', 'delegation needs a readable approved copy: run `team approve`');
   }
@@ -125,7 +128,7 @@ export function delegateGate(input: {
   const io = sources.callerSources ? { ...input.io, callerSources: sources.callerSources } : input.io;
   const evidence = evidenceOf(team, dir, io, sources, entries);
   if (!evidence.ok) return refuse('delegate-evidence', `delegation cannot verify its placement or seats: ${evidence.reason}`);
-  if (entries.some((entry) => collides(team, entry, evidence.state, evidence.agents))) {
+  if (entries.some((entry) => collides(team, entry, evidence.state))) {
     return refuse('delegate-placement', 'the approved delegate must be an external non-seat pane');
   }
 
@@ -173,14 +176,14 @@ function reasonOf(error: unknown): string {
 }
 
 type Evidence =
-  | { ok: true; state: State; agents: HerdrAgent[] }
+  | { ok: true; state: State }
   | { ok: false; reason: string };
 
 /**
  * The first unreadable read, in the order a refusal names it: the caller's ancestors, herdr
  * for a delegate's session and for the team's session, then the state. A null from herdr is
- * its own refusal, distinct from a caller who is simply somewhere else. The state and the
- * team's agent list come back with the answer, so the collision check reads them once.
+ * its own refusal, distinct from a caller who is simply somewhere else. The herdr read stays
+ * for that refusal; the live list is not a seat.
  */
 function evidenceOf(
   team: TeamFile,
@@ -208,7 +211,7 @@ function evidenceOf(
   try {
     const state = (sources.state ?? readState)(dir);
     if (state === null) return { ok: false, reason: 'the state can\'t be read' };
-    return { ok: true, state, agents: listed };
+    return { ok: true, state };
   } catch (error) {
     return { ok: false, reason: reasonOf(error) };
   }
@@ -273,20 +276,21 @@ function placementReason(sources: CallerSources, pane: string | undefined): stri
   return null;
 }
 
-function collides(team: TeamFile, entry: Delegate, state: State, agents: readonly HerdrAgent[]): boolean {
+/**
+ * A seat collision is exactly two things: the entry's session is the team's configured
+ * session, or a seat the state records — under the session it was recorded in — is this pane.
+ * A live agent's name is not one. Any process can rename a pane, and the delegate's own pane
+ * may bear a name the team also uses.
+ */
+function collides(team: TeamFile, entry: Delegate, state: State): boolean {
   const split = splitPane(entry.pane);
   if (split === null || split.session === team.session) return true;
-  const names = new Set<string>([team.coordinator, team.operator, ...team.seats.map((seat) => seat.name)]);
-  const panes: string[] = [];
-  for (const agent of agents) {
-    if (agent.name !== null && names.has(agent.name)) panes.push(agent.pane);
-  }
-  for (const session of Object.values(state.sessions)) {
-    for (const seat of Object.values(session.seats ?? {})) {
-      if (seat.pane) panes.push(seat.pane);
+  for (const [session, recorded] of Object.entries(state.sessions)) {
+    for (const seat of Object.values(recorded.seats ?? {})) {
+      if (seat.pane && `${session}/${seat.pane}` === entry.pane) return true;
     }
   }
-  return panes.some((pane) => `${team.session}/${pane}` === entry.pane);
+  return false;
 }
 
 type Found =

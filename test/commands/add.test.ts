@@ -423,7 +423,7 @@ describe('team add', () => {
       sleep: async () => {},
       launch: {
         typeText: () => true,
-sendKey: () => true,
+        sendKey: () => true,
         pressEnter: () => true,
         agentPanes: () => [],
         closeWorkspace: () => true,
