@@ -62,19 +62,21 @@ test('the schema is tracked at HEAD, so a tag of this commit ships the URL init 
   expect(lines[0]?.endsWith('schema/team.schema.json')).toBe(true);
 });
 
-test('the release packs npm-readme.md as the README: the release step, on a copy of the tree', () => {
-  // The release workflow's verify job gains a step before the pack that runs
+test("a later release's step, rehearsed on a copy of the tree: npm-readme.md packed as the README", () => {
+  // The release workflow does NOT have this step today: 0.3.0's release packs the tree as
+  // it is, so npm's page shows README.md and npm-readme.md is not in the tarball (the test
+  // below). This test rehearses a later release's step, which will run before its pack:
   //   npm pkg delete scripts devDependencies
   //   cp npm-readme.md README.md
-  // (the pull request carries the exact step). This test runs those same commands on a
-  // temporary copy — never in this worktree — and asserts the tarball it produces: the
-  // packed package/README.md is npm-readme.md byte for byte, and the long README.md and a
-  // second copy under its own name are not in it.
+  // It runs those commands on a temporary copy — never in this worktree — and asserts the
+  // tarball they produce: the packed package/README.md is npm-readme.md byte for byte, and
+  // the long README.md and a second copy under its own name are not in it. Keeping the
+  // future step's commands honest is what this test is for.
   //
   // Why one readme: npm always packs README.md, and `files` names it too, so the file the
   // step writes is what ships. npm-readme.md is deliberately not in `files` — it is the
-  // source the release copies, and shipping it beside README.md would put a second readme
-  // in the tarball, which nothing reads.
+  // source the copy step will use, and shipping it beside README.md would put a second
+  // readme in the tarball, which nothing reads.
   const home = mkdtempSync(join(tmpdir(), 'team-pack-home-'));
   const dir = mkdtempSync(join(tmpdir(), 'team-pack-'));
   const tree = join(dir, 'tree');
@@ -108,4 +110,16 @@ test('the release packs npm-readme.md as the README: the release step, on a copy
     rmSync(dir, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test('what ships today: a pack of the tree as it is lists README.md and not npm-readme.md', () => {
+  // The today-half of the rehearsal above: 0.3.0's release workflow packs the tree as it
+  // is, npm always packs README.md, and npm-readme.md is not in `files` — so this
+  // release's npm page shows the long README, and the short one only once a later release
+  // adds the copy step.
+  const result = spawnSync('npm', ['pack', '--dry-run', '--json'], { cwd: repo, encoding: 'utf8' });
+  expect(result.status).toBe(0);
+  const paths: string[] = (JSON.parse(result.stdout)[0]?.files ?? []).map((file: { path: string }) => file.path);
+  expect(paths).toContain('README.md');
+  expect(paths).not.toContain('npm-readme.md');
 });
