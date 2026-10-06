@@ -2036,11 +2036,12 @@ scene('answer.ready', async (place) => {
 // that reports false now leaves the recovery state (`answer.recovery`), so the only action
 // refusal left is a record whose byte the build does not send, and the shipped profiles record
 // 0d, 31 and 61 — all keys the build sends. The check defends against a profile that does not.
-// `up.delegate-placement` joins them: the gate's collision backstop, whose three ways to fire —
-// a malformed pane, a pane in the team's own session, a pane the state or the agent list
-// records as a seat's — are each refused by the file's own load (`sections/delegate.ts` reads
-// the shape, the session and the duplicates before `up` ever calls the gate), so no file this
-// version loads can reach it. The gate's own tests hold the verdict itself.
+// `up.delegate-placement` joins them: the gate's collision backstop. It fires for a malformed
+// pane, a pane in the team's own session, or a pane a seat the state records under the session
+// it was recorded in. The live agent list does not decide it. The malformed pane and the team's
+// own session are refused by the file's own load (`sections/delegate.ts` reads the shape, the
+// session and the duplicates before `up` ever calls the gate). The gate's own tests hold the
+// recorded-seat verdict, so no scene here reaches it.
 const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed', 'answer.action', 'up.delegate-placement']);
 
 const contract = loadContract();
