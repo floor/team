@@ -1,0 +1,22 @@
+[0m[2m╭─────────────────────────────────────────────────╮[0m
+[0m[2m│ [0m[1m[38;2;99;168;248m✨ Update available![0m [0m[1m0.160.0 -> 0.160.1[0m[2m         │[0m
+[0m[2m│ [0mRun [0m[38;2;99;168;248mbrew upgrade --cask codex[0m to update.[0m[2m        │[0m
+[0m[2m│                                                 │[0m
+[0m[2m│ [0mSee full release notes:[0m[2m                         │[0m
+[0m[2m│ [0m[4m[38;2;99;168;248mhttps://github.com/openai/codex/releases/latest[0m[2m │[0m
+[0m[2m╰─────────────────────────────────────────────────╯[0m
+
+
+  [0m[38;2;99;168;248m>_ [0m[1mOpenAI Codex[0m[2m (v0.160.0)[0m
+     [0m[2m/private/tmp/exit-fixtures-proj[0m
+
+  [0m[38;2;99;168;248mWelcome. There’s no dress code, just code.[0m
+
+
+
+
+[0m[1m[7m› /exit  [0m[7mexit Codex[0m[1m[7m                                   [0m
+
+[0m[1m› [0m/exit
+
+  [0m[38;2;246;226;183mGPT-5.6-Terra medium[0m · [0m[38;2;143;179;239mmain[0m · [0m[38;2;242;181;144mContext 100% left [0m· [0m[38;2;233;144;169mw…[0m

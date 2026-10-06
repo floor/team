@@ -44,7 +44,7 @@ import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { runPause, type PauseHost, type PauseInput } from '../launch/pause.ts';
 import { plainLine, plainText } from '../launch/plain.ts';
-import { recordWhat, progressWriter } from '../launch/progress.ts';
+import { recordWhat, progressWriter, classificationOf } from '../launch/progress.ts';
 import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
 import { acquireSeatLock } from '../launch/seat-lock.ts';
 import { processSignals, terminalReader, type Terminal } from '../launch/terminal.ts';
@@ -595,6 +595,12 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   let verifiedLobby: string | null = null;
   let lobbySeen: LobbySeen | null = null;
   let createLobby = false;
+  // What the lobby may hold beside the seats: the files the profiles of the CLIs that run
+  // there declare, every lobby seat's CLI taken — a resumed seat's CLI is as much in the
+  // lobby as one this run launches (`profiles/*.yaml`, the capture behind each entry).
+  const declaredLobbyFiles = [...new Set(
+    seats.filter((seat) => seat.lobby).flatMap((seat) => profileFor(seat.cli)?.lobbyFiles ?? []),
+  )].sort();
   if (isMigratedTrust(team.trust)) {
     const launching = seats.some((seat) => {
       if (seat.stopped || seat.launchProblem) return false;
@@ -609,11 +615,11 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     // the run's first filesystem effect outside the lock, and two fresh runs can both see the
     // lobby absent: the loser's mkdir meets the winner's component and `verifyLobby` turns the
     // EEXIST into a refusal the losing run never earned (`lobby/gate.ts`, the create branch).
-    const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid, fs: sources.fs });
+    const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid, fs: sources.fs, files: declaredLobbyFiles });
     if (!gate.ok) refusals.push(gate.text);
     else if ('path' in gate) {
       verifiedLobby = gate.path;
-      lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
+      lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino, files: gate.files };
       for (const seat of seats) if (seat.lobby) seat.cwd = gate.path;
     } else createLobby = !dry && launching;
   }
@@ -712,7 +718,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       // The run's first write, under the lock: the lobby the read-only pass above found absent.
       // Serialised here, no competing mkdir can turn into this run's refusal, and this run's own
       // make cannot land on another run's — which is what the read-only pass exists for.
-      const gate = verifyLobby(sources.home, { create: true, getuid: sources.getuid, fs: sources.fs });
+      const gate = verifyLobby(sources.home, { create: true, getuid: sources.getuid, fs: sources.fs, files: declaredLobbyFiles });
       if (!gate.ok) {
         out.stderr(`team up: ${plainText(gate.text)}\n`);
         // exit: up.lobby
@@ -720,7 +726,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       }
       if ('path' in gate) {
         verifiedLobby = gate.path;
-        lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
+        lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino, files: gate.files };
         for (const seat of seats) if (seat.lobby) seat.cwd = gate.path;
       }
     }
@@ -748,9 +754,11 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       sessionUp: launch.sessionUp,
       createWorkspace: launch.createWorkspace,
       // The lobby is read again directly before each workspace this run makes in it, with nothing
-      // in between (`execute.ts`). Null when it is still the folder the gate read.
+      // in between (`execute.ts`). Null when it is still the folder the gate read and every file
+      // it allowed still the file it read. The declared files travel with it, so the recheck
+      // walks the same closed tree the gate did.
       confirmLobby() {
-        return lobbySeen ? recheckLobby(sources.home, lobbySeen, { getuid: sources.getuid, fs: sources.fs }) : null;
+        return lobbySeen ? recheckLobby(sources.home, lobbySeen, { getuid: sources.getuid, fs: sources.fs, files: declaredLobbyFiles }) : null;
       },
       paneRun: launch.paneRun,
       typeLine: () => false,
@@ -906,7 +914,10 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
         });
       },
       drop: () => host.drop(input.seat),
-      screen: () => readScreen(seatCli(input.seat), launch.paneText(session, input.pane) ?? undefined).kind,
+      screen: () => {
+        const kind = readScreen(seatCli(input.seat), launch.paneText(session, input.pane) ?? undefined).kind;
+        return kind === 'idle' || kind === 'working' ? kind : classificationOf(kind);
+      },
       process: () => launch.processInfo?.(session, input.pane) ?? null,
       agents: () => launch.agents(session),
       workspaces: () => sources.workspaces?.(session) ?? null,

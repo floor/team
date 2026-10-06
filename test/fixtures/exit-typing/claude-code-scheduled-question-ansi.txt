@@ -1,0 +1,23 @@
+
+
+[0m[38;2;78;186;101m⏺ [0m[1mCronCreate[0m(24 21 6 10 *: Remind the user: time to
+            stretch your legs — get up and wal…) 
+[0m[38;2;153;153;153m  ⎿  [0mScheduled [0m[1m41efe6a8[0m [0m[38;2;153;153;153m(24 21 6 10 *)[0m
+
+[0m[38;2;255;255;255m⏺ [0mDone — reminder set for 21:24 (20 minutes from now).
+  It's session-only, so it fires as long as this
+  Claude session is still running.
+  
+[0m[38;2;153;153;153m✻ Sautéed for 5s · done 9:04 PM[0m
+[0m[38;2;177;185;249m▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔[0m
+   [0m[1m[38;2;177;185;249mBackground work is running[0m
+   [0m[38;2;153;153;153mThe following will stop when you exit:[0m
+
+   [0m[1mscheduled [0m [0m[38;2;153;153;153m · Runs once in 19m · Remind the [0m
+   [0m[1mtask[0m       [0m[38;2;153;153;153muser: time to stretch your legs — get[0m
+              [0m[38;2;153;153;153m…[0m
+
+   [0m[38;2;177;185;249m❯[0m [0m[38;2;153;153;153m1. [0m[38;2;177;185;249mExit and stop tasks[0m
+     [0m[38;2;153;153;153m2. [0mStay
+
+   [0m[3m[38;2;153;153;153mEnter to confirm · Esc to cancel[0m

@@ -46,6 +46,16 @@
       "enum": ["ctrl+c", "ctrl+u", "escape", "backspace"],
       "description": "optional: the one key that empties the CLI's input box, sent only to clear an exit text that did not read back as typed; absent, the text is left for the owner"
     },
+    "exit_confirm": {
+      "type": "string",
+      "enum": ["enter"],
+      "description": "optional: the one key that confirms the CLI's own exit question, sent by a stop on a screen the profile reads as an exit question; absent, a seat that asks the question cannot be stopped by asking"
+    },
+    "lobby_files": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "optional: the exact relative paths of regular files a capture showed this CLI writing in its working folder, which a shared lobby may therefore hold beside the seats; absent, no path is tolerated for this CLI"
+    },
     "timeouts": {
       "type": "object",
       "additionalProperties": false,
@@ -139,6 +149,7 @@
         "unknown": { "$ref": "#/$defs/stage" },
         "trust": { "$ref": "#/$defs/stage" },
         "permission": { "$ref": "#/$defs/stage" },
+        "exit_question": { "$ref": "#/$defs/stage" },
         "question": { "$ref": "#/$defs/stage" },
         "vendor_notice": { "$ref": "#/$defs/vendorNotice" },
         "working": { "$ref": "#/$defs/stage" },
@@ -193,7 +204,8 @@
         { "required": ["all"] },
         { "required": ["footer"] },
         { "required": ["below_last_rule"] },
-        { "required": ["none_after"] }
+        { "required": ["none_after"] },
+        { "required": ["only_after"] }
       ],
       "properties": {
         "any": { "$ref": "#/$defs/patterns" },
@@ -203,6 +215,15 @@
         "below_last_rule": { "type": "string", "maxLength": 200 },
         "without_rule": { "type": "boolean" },
         "none_after": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["anchor", "patterns"],
+          "properties": {
+            "anchor": { "$ref": "#/$defs/pattern" },
+            "patterns": { "$ref": "#/$defs/patterns" }
+          }
+        },
+        "only_after": {
           "type": "object",
           "additionalProperties": false,
           "required": ["anchor", "patterns"],

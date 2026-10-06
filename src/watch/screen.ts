@@ -17,6 +17,10 @@ export type Screen =
   | { kind: 'permission' }           // a permission dialog: its owner's to answer
   | { kind: 'trust' }                // a workspace trust question: left unanswered
   | { kind: 'question' }             // a question the agent asked: the operator's to act on
+  | { kind: 'exit question' }        // the CLI's own question after the exit text was sent — its
+                                     // "stop tasks and exit" one: a stop answers it with the
+                                     // profile's `exit_confirm`, when the profile names that key
+                                     // and this screen; an operator's to act on otherwise
   | { kind: 'vendor notice' }        // the CLI's own notice, an update screen for one: carried
                                      // only by a captured, versioned record, and never answered
   | { kind: 'unknown' };
