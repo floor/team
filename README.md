@@ -8,6 +8,10 @@ works under, the folders it may touch. Commands then check that file against a m
 and a history, and build and watch the team itself. It runs teams in
 [herdr](https://herdr.dev).
 
+The project's name is TeamCLI; the package and the command are `team`. The site is
+[teamcli.io](https://teamcli.io), and the founding text is
+[RFC 000](https://github.com/floor/team/discussions/147).
+
 **Status: early, herdr only.** This build parses and
 validates the file, checks who is calling, and holds `add`, `answer`, `approve`, `check`, `doctor`,
 `down`, `init`, `release`, `remove`, `status`, `up`, `watch` and `worktree`.
