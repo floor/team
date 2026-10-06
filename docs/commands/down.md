@@ -154,8 +154,9 @@ stop at all.
   nothing to stop; or `--dry-run` printed its plan. A seat left running because it was busy is not a
   failure.
 - `1` — refused, or a step failed: a seat's exit was not typed, or was typed and not confirmed —
-  the pane never drew it, its box held other text, or the clearing key did not take — its
-  workspace did not close, it timed out leaving its pane, or the watch or the session did not stop.
+  the pane never drew it, a dialog covered its box before the Enter, its box held other text, or
+  the clearing key did not take — its workspace did not close, it timed out leaving its pane, or
+  the watch or the session did not stop.
 - `2` — the invocation, the team file or herdr can't be read.
 
 ## Examples
