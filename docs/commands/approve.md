@@ -1,13 +1,15 @@
 # team approve
 
-The owner approves the team file: reads it, shows what changed since the last approval, asks for the
-number of seats, and writes the record this machine holds it to. Every command that starts, moves or
-changes a team checks that record first, so an edit to the file needs a new approval before it can
-run. `--show` prints the same comparison and stops, writing nothing.
+The owner approves the team file: reads it, shows what changed since the last approval, and writes
+the record this machine holds it to. By default it asks nothing — the summary is the last thing
+printed and the write follows it; `--confirm` brings back the question for the number of seats.
+Every command that starts, moves or changes a team checks that record first, so an edit to the file
+needs a new approval before it can run. `--show` prints the same comparison and stops, writing
+nothing. It writes only from a real terminal.
 
 ## Synopsis
 
-    team approve [--show] [--file <path>]
+    team approve [--show] [--confirm] [--file <path>]
 
 ## What it reads and writes
 
@@ -30,6 +32,7 @@ and no delegate: approval is the owner's alone, and a `delegates` entry whose co
 | Flag | Meaning |
 | --- | --- |
 | `--show` | print the comparison, ceilings and seats, and stop; change nothing |
+| `--confirm` | ask for the number of seats before writing, as approve used to |
 | `--file <path>` | the team file, instead of `.agents/team.yaml` |
 | `--help`, `-h` | the usage, and exit 0 |
 
@@ -51,10 +54,11 @@ Nothing at all changed is said plainly:
 
 Then the ceilings the approval would fix — `3 seats at most, 2 temporary` — and the
 seat names — and, when the file has a `delegates` section, one `Delegate: pane <pane> may run
-<commands>.` line per entry, in file order — and then the question. After the seat names and
-those lines comes the signing's number for this
+<commands>.` line per entry, in file order — and the signing's number for this
 project on this machine, with the date of the last one and the key's fingerprint: `approval #4
-for this project; the last one was on 2026-10-04; key fe21ef6293de.` The seat ceiling defaults
+for this project; the last one was on 2026-10-04; key fe21ef6293de.` With `--confirm` the
+question comes next, before the write; without it the summary is the last thing printed and the
+write follows directly. The seat ceiling defaults
 to the seats the file declares plus the
 temporary ones, so adding a seat widens it, and that shows up as `limits` changed too. What needs a
 new approval is a change to an owner section
@@ -78,18 +82,18 @@ refuse a drifted file before the gate.
 | `team approve: line <n>: <message>` / `team approve: <message>` | 2 |
 | `team approve: the approval store <store> is inside <folder>, where seats work` | 1 |
 | `team approve: only the owner approves a team file, from a terminal outside herdr; this call is <caller>` | 1 |
-| `team approve: not approved; nothing was written` | 1 |
+| `team approve: not approved; nothing was written` (`--confirm`) | 1 |
 
 A file that loads with warnings prints them on stderr as
-`team approve: warning, line <n>: <message>` and goes on. The last refusal is what an answer that is
-not the number of seats gets: a blank answer, a wrong one, and a closed terminal are all the same
-answer.
+`team approve: warning, line <n>: <message>` and goes on. The last refusal is what `--confirm`'s
+answer gets when it is not the number of seats: a blank answer, a wrong one, and a closed terminal
+are all the same answer.
 
 ## Exit codes
 
-- `0` — approved, or `--show` printed the comparison and stopped before the question.
-- `1` — refused: a seat ran it, the store sits where seats work, or the answer was not the number of
-  seats. Nothing is written.
+- `0` — approved, or `--show` printed the comparison and stopped before anything was written.
+- `1` — refused: a seat ran it, the store sits where seats work, or (`--confirm`) the answer was
+  not the number of seats. Nothing is written.
 - `2` — the invocation, the team file or the file's validation is bad.
 
 ## The signed record
@@ -208,7 +212,7 @@ approval #1 for this project; key fe21ef6293de.
 exit 0
 ```
 
-The owner approves it, typing the number of seats:
+The owner approves it — no question by default:
 
 ```console
 $ team approve
@@ -239,8 +243,6 @@ $ team approve
 Ceilings this approval fixes: 3 seats at most, 2 temporary.
 Seats: 1 (claude-keeper).
 approval #1 for this project; key fe21ef6293de.
-
-Type the number of seats (1) to approve this file, and its commands and rules, to run: 1
 Approved. The record is in ~/.config/team/beacon-<hash>; signed with key fe21ef6293de; check the rest with `team doctor`.
 ```
 
@@ -259,7 +261,7 @@ team approve: only the owner approves a team file, from a terminal outside herdr
 exit 1
 ```
 
-An owner section is the owner's to change, and the comparison says so before the question:
+An owner section is the owner's to change, and the comparison says so before the write:
 
 ```yaml file=.agents/team.yaml
 format: 1
@@ -336,8 +338,10 @@ seats:
     launch: claude --model claude-opus-5-5
 ```
 
+`--confirm` asks, and a wrong answer writes nothing:
+
 ```console answer="1"
-$ team approve ; echo "exit $?"
+$ team approve --confirm ; echo "exit $?"
 ./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 
   + 9:   - ~/Code/worktrees/beacon
@@ -361,10 +365,10 @@ team approve: not approved; nothing was written
 exit 1
 ```
 
-The answer is the number of seats, and nothing else — here, two:
+With `--confirm`, the answer is the number of seats, and nothing else — here, two:
 
 ```console answer="2"
-$ team approve
+$ team approve --confirm
 ./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 
   + 9:   - ~/Code/worktrees/beacon

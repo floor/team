@@ -35,7 +35,7 @@ A `console` fence may carry:
 | Attribute | Meaning |
 | --- | --- |
 | `caller=<owner\|a seat's name\|agent>` | who runs the block's commands; a `fixture` fence sets it for the whole page |
-| `answer="<text>"` | what the owner types at `team approve`'s question, for this block |
+| `answer="<text>"` | what the owner types at `team approve --confirm`'s question, for this block |
 | `screens="<seat>=<screen>[,…]"` | what those seats' panes show for this block: `idle`, `working`, `permission`, `trust`, `question`, `unsent`, `unknown` |
 | `machine=<calm\|tight>` | the machine's load, free memory, free disk and swap, for this block |
 | `tools="<cli>=<state>[,…]"` | one CLI's install and login state for this block: `fine`, `missing`, `old`, `logged-out`, `unread` |

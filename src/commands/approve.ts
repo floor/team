@@ -40,7 +40,7 @@ export const realSources: ApproveSources = {
   home: homedir(),
 };
 
-export const USAGE = 'Usage: team approve [--show] [--file <path>]\n';
+export const USAGE = 'Usage: team approve [--show] [--confirm] [--file <path>]\n';
 
 export const approve: Command = (argv, io) => runApprove(argv, io, realSources);
 export default approve;
@@ -77,7 +77,7 @@ function ceilingsLine(ceilings: Ceilings): string {
 }
 
 export async function runApprove(argv: string[], io: Io, sources: ApproveSources): Promise<number> {
-  const args = readArgs(argv, ['file'], ['show']);
+  const args = readArgs(argv, ['file'], ['show', 'confirm']);
   if (args.error || args.rest.length) {
     io.stderr(`team approve: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
     // exit: approve.invocation
@@ -207,7 +207,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   // exit: approve.show
   if (args.flags.has('show')) return 0;
 
-  // A key that cannot be read fails closed here, before the owner answers anything:
+  // A key that cannot be read fails closed here, before anything is asked or written:
   // a new key would orphan every record already signed, so the owner restores it.
   try {
     keyOf(sources.home);
@@ -226,13 +226,18 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     return 1;
   }
 
-  const answer = await sources.ask(
-    `\nType the number of seats (${seats}) to approve this file, and its commands and rules, to run: `,
-  );
-  if (answer === null || answer.trim() !== String(seats)) {
-    io.stderr('team approve: not approved; nothing was written\n');
-    // exit: approve.answer
-    return 1;
+  // The default path asks nothing: the summary above is the last thing printed, and the
+  // record is written. The owner check above still holds — the input is a terminal — and
+  // `--confirm` brings the question back for anyone who wants the seat count typed out.
+  if (args.flags.has('confirm')) {
+    const answer = await sources.ask(
+      `\nType the number of seats (${seats}) to approve this file, and its commands and rules, to run: `,
+    );
+    if (answer === null || answer.trim() !== String(seats)) {
+      io.stderr('team approve: not approved; nothing was written\n');
+      // exit: approve.answer
+      return 1;
+    }
   }
 
   const now = sources.now();

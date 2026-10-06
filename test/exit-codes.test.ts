@@ -753,7 +753,7 @@ scene('approve.not-owner', async (place) => {
 });
 scene('approve.answer', async (place) => {
   write(place, TEAM);
-  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '0')), 'not approved');
+  return show(await approved(place, ['--confirm', '--file', place.file], owner, approveSources(place, '0')), 'not approved');
 });
 scene('approve.approved', async (place) => {
   write(place, TEAM);

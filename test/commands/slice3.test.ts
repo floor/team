@@ -98,15 +98,33 @@ describe('team approve', () => {
     expect(existsSync(store())).toBe(false);
   });
 
-  test.each([['4'], ['yes'], [''], [null]])('writes nothing when the owner types %p', async (answer) => {
-    const run = await approve([], OWNER, answer);
+  test('approves with no question by default: nothing is asked, the summary prints, and the record is written', async () => {
+    const run = await approve([], OWNER);
+    expect(run.code).toBe(0);
+    expect(run.asked).toEqual([]);
+    expect(run.out).toContain('Seats: 5 (claude-coordinator-acme, codex-acme, deepseek-acme, deepseek-acme-2, grok-acme).\n');
+    expect(run.out).toContain('Ceilings this approval fixes: 6 seats at most, 2 temporary, openai 1, deepseek 3.\n');
+    expect(run.out).toContain('Approved. The record is in ');
+    expect(readApproval(store())?.file).toBe(EXAMPLE);
+  });
+
+  test.each([['4'], ['yes'], [''], [null]])('--confirm writes nothing when the owner types %p', async (answer) => {
+    const run = await approve(['--confirm'], OWNER, answer);
     expect(run.code).toBe(1);
     expect(run.err).toBe('team approve: not approved; nothing was written\n');
     expect(existsSync(store())).toBe(false);
   });
 
+  test('--confirm asks the seat-count question, and the right answer approves', async () => {
+    const run = await approve(['--confirm'], OWNER, ' 5\n');
+    expect(run.code).toBe(0);
+    expect(run.asked).toHaveLength(1);
+    expect(run.asked[0]).toContain('Type the number of seats (5)');
+    expect(readApproval(store())?.file).toBe(EXAMPLE);
+  });
+
   test('records the file, its ceilings and its seats once the owner types the number of seats', async () => {
-    const run = await approve([], OWNER, ' 5\n');
+    const run = await approve(['--confirm'], OWNER, ' 5\n');
     expect(run.code).toBe(0);
     expect(run.asked).toHaveLength(1);
     expect(run.asked[0]).toContain('Type the number of seats (5)');
@@ -370,7 +388,8 @@ describe('team doctor', () => {
     version: "1.3"
     launch: cursor-agent`,
     ));
-    await approve([], OWNER);
+    // No approval call: this file stays unapproved, so the one thing `doctor` counts as missing
+    // is the approval itself and every warning below is about a model.
     const run = await doctor({
       version: (binary) => binary === 'claude'
         ? '2.1.288 (Claude Code)'
