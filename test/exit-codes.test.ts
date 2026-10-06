@@ -1535,7 +1535,9 @@ scene('up.delegate-drift', async (place) => {
 });
 scene('up.delegate-evidence', async (place) => {
   approve(place, `${TEAM}${DELEGATES}`);
-  return show(await up(place, ['--file', place.file], other, upSources(place, gateAt(place, { agents: () => null }))), 'cannot verify its placement or seats');
+  // A herdr that does not answer answers nothing: no agent list, and no session answer either —
+  // a session herdr reports as not running has no seats, and would pass the gate.
+  return show(await up(place, ['--file', place.file], other, upSources(place, gateAt(place, { agents: () => null, sessionRunning: () => null }))), 'cannot verify its placement or seats');
 });
 scene('up.delegate', async (place) => {
   approve(place, `${TEAM}${DELEGATES}`);
