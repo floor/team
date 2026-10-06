@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 A release about setting a team up and upgrading it: one lobby per machine, signed approvals, a
 caller gate bound to the pane the team recorded, a launch that reports one line per seat and waits
-for its owner at a dialog, and a second package, `@teamcli/cli`, that installs the same tool as the
-command `teamcli`. **Three changes are breaking; read UPGRADE-0.3.md before upgrading a running
+for its owner at a dialog, and, in the repository, the launcher package `@teamcli/cli`, published
+in a later release. **Three changes are breaking; read UPGRADE-0.3.md before upgrading a running
 team.**
 
 ### Changed
@@ -52,9 +52,8 @@ team.**
   allows it.
 - `team release check`, its `linear` and `activity` checks, and `--file` for it.
 - Exit codes, documented and tested.
-- The package `@teamcli/cli`: the same tool, installed with `npm install -g @teamcli/cli` and typed
-  `teamcli` (or `team`); it installs `team` at the exact same version and runs it. The name is
-  scoped because npm refuses the bare name `teamcli` as too similar to another package's.
+- `packages/teamcli`: the launcher package `@teamcli/cli` (the same tool, typed `teamcli`), in the
+  repository and tested; it is not published with 0.3.0.
 
 ### Fixed
 
