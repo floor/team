@@ -870,10 +870,10 @@ describe('the lobby gate with files declared', () => {
 
     expect(recheckLobby(home, seen, { files: declared })).toBeNull();
 
-    rmSync(lock());
-    // A fresh file under the same name, made by a rename: unlink and write can hand the old
-    // inode straight back — Linux did, in CI — and a file with the gate's own device and
-    // inode reads as the same file, rightly.
+    // A fresh file renamed over the name, made while the old one still exists: the two
+    // coexist, so their inodes are distinct on any filesystem. Unlinking first frees the old
+    // inode for the replacement to reclaim — Linux did, in CI, twice — and a file with the
+    // gate's own device and inode reads as the same file, rightly.
     const fresh = `${lock()}.replacement`;
     writeFileSync(fresh, '{}\n');
     renameSync(fresh, lock());
