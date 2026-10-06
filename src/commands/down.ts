@@ -1,7 +1,11 @@
 import { homedir } from 'node:os';
+import { dirname } from 'node:path';
 import { readArgs } from '../args.ts';
 import { anotherPaneRefusal, callerOf, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller } from '../caller.ts';
-import { currentTeam } from '../file/current.ts';
+import { delegateGate, logDelegated, type DelegateSources } from '../delegate.ts';
+import { currentTeam, type Current } from '../file/current.ts';
+import { loadTeamFile } from '../file/load.ts';
+import type { TeamFile } from '../file/types.ts';
 import {
   agentList,
   agentStatus,
@@ -47,6 +51,12 @@ export type DownSources = {
   home?: string;
   // Present on the shipped command. A dry run never calls it.
   launch?: DownLaunch;
+  /** The delegate gate. Tests hand in a verdict; the shipped command asks the real one. */
+  gate?: typeof delegateGate;
+  /** The gate's own fakes: the approval standing, the approved copy, state, herdr, placement. */
+  delegate?: DelegateSources;
+  /** The audit line a delegated run leaves. Tests record it; the shipped command writes it. */
+  audit?: typeof logDelegated;
 };
 
 export type DownLaunch = {
@@ -148,12 +158,50 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     return 2;
   }
   const dry = args.flags.has('dry-run');
+  const refusals: string[] = [];
+
+  // The delegate branch, taken before anything is read for the ordinary run. A delegate is a pane
+  // the ordinary rules refuse, and the owner is never one: the owner's `down` asks nothing here.
+  // The live file is read directly — never `currentTeam`, never `last_valid` — because that is
+  // the copy the gate judges, and the copy the delegated run below acts on. A file that does not
+  // load carries no delegate: the ordinary path keeps its own fallback and its own words.
+  const gate = sources.gate ?? delegateGate;
+  const flags = [...args.flags, ...Object.keys(args.values)];
+  const live = isOwner(walkCaller(io)) ? undefined : liveTeam(io, sources.home);
+  const gateVerdict = live && live.team.delegates !== null
+    ? gate({
+        command: 'down',
+        team: live.team,
+        root: live.root,
+        dir: live.dir,
+        flags,
+        io: { env: io.env, stdinIsTTY: io.stdinIsTTY, caller: io.caller, callerSources: io.callerSources },
+        ...(sources.delegate ? { sources: sources.delegate } : {}),
+      })
+    : undefined;
+  // `passed` is the approved delegate. A refusal the gate can only give *after* it placed the
+  // caller — an unlisted command, a prohibited flag — means this caller is that pane too: its
+  // run plans as a delegate's though the refusal stops it. A prohibited flag is the owner's:
+  // the run goes on without it — the flagged file or session is never read — and the refusal
+  // below stops a real run (a dry run prints it, then the plan).
+  let approved: string | undefined;
+  let postPlacement = false;
+  if (gateVerdict?.kind === 'passed') approved = gateVerdict.pane;
+  else if (gateVerdict?.kind === 'refused' && (gateVerdict.id === 'down.delegate-command' || gateVerdict.id === 'down.delegate-flag')) {
+    postPlacement = true;
+    refusals.push(gateVerdict.text);
+  }
+  const delegated = approved !== undefined || postPlacement;
+
   // The `--file` check is the walk's too, and it runs before `currentTeam` reads that file or
   // writes beside it: a non-owner aiming `--file` must not make this command read and validate
   // another project's team file, nor leave its `last_valid` in that project's state. The one
   // place every command whose `--file` is the owner's decides it is `fileOwnerRefusal` (caller.ts).
+  // A delegate the gate has placed and refused a flag on keeps none of its flags: the gate's
+  // words are already the run's refusal, and the flagged path is never read. Every other caller,
+  // delegate refused before that point included, is refused here, byte for byte as today.
   const fileRefusal = fileOwnerRefusal(io, args.values.file);
-  if (fileRefusal !== undefined) {
+  if (fileRefusal !== undefined && !postPlacement) {
     io.stderr(`team down: ${fileRefusal}\n`);
     // exit: down.file-owner
     return 1;
@@ -163,8 +211,8 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   // session is read — no agent list, no pane root, no `last_valid`, no log line. The dry run
   // refuses the same way: the plan it would print is that session's, which is not its to aim.
   // (A seat cannot be named in this refusal: placing it would read a session, and that is what
-  // must not happen yet.)
-  if (args.values.session !== undefined) {
+  // must not happen yet.) A delegate's `--session` is the same case as its `--file`.
+  if (args.values.session !== undefined && !postPlacement) {
     const walked = walkCaller(io);
     if (!isOwner(walked)) {
       io.stderr(`team down: ${sessionOwnerRefusal(walked)}\n`);
@@ -172,7 +220,16 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       return 1;
     }
   }
-  const current = currentTeam(io.cwd, args.values.file, sources.now(), sources.home);
+  // Both flags are dropped for a delegate the gate placed: the gate has refused them, and the run
+  // judges the file's own session below, as a delegated `down` always does.
+  const file = postPlacement ? undefined : args.values.file;
+  const sessionFlag = postPlacement ? undefined : args.values.session;
+
+  // The delegated run reads the live file directly: never `currentTeam`'s remembered copy, never
+  // `last_valid`, and nothing is remembered beside it on its way to the plan.
+  const current: Current = delegated && live
+    ? { ok: true, team: live.team, root: live.root, dir: live.dir, warnings: [] }
+    : currentTeam(io.cwd, file, sources.now(), sources.home);
   if (!current.ok) {
     for (const problem of current.errors) {
       io.stderr(`team down: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
@@ -187,10 +244,14 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   // With no `--session` the session this run judges and stops is the caller's own placement: the
   // file's session first, then a session the state records this caller's pane in (`team up
   // --session <other>`) — never one a non-owner chose, and the plan then names that session. The
-  // flag keeps aiming the run, for the owner alone.
-  const judged = args.values.session !== undefined
-    ? { caller: callerOf(io, args.values.session === 'default' ? undefined : args.values.session), session: args.values.session }
-    : judgeCallerIn(io, dir, team);
+  // flag keeps aiming the run, for the owner alone. A delegated run stops the whole team, in the
+  // session the file names: its caller is a pane outside that team, and no placement of it may
+  // move the run onto another session — its own included.
+  const judged = delegated
+    ? { caller: callerOf(io), session: team.session }
+    : sessionFlag !== undefined
+      ? { caller: callerOf(io, sessionFlag === 'default' ? undefined : sessionFlag), session: sessionFlag }
+      : judgeCallerIn(io, dir, team);
   const { caller } = judged;
   const session = judged.session;
 
@@ -212,18 +273,26 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     return 2;
   }
 
-  const refusals: string[] = [];
   const verdict = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
-  if (verdict.kind === 'no-pane') {
-    refusals.push(noPaneRefusal(verdict.name));
-  } else if (verdict.kind === 'another-pane') {
-    refusals.push(anotherPaneRefusal(verdict.name, verdict.recordedPane));
-  } else if (verdict.kind === 'refused') {
-    refusals.push(
-      `only the owner, the coordinator or the operator stops the team; this call is ${describeCaller(caller)}`,
-    );
+  if (!delegated) {
+    if (verdict.kind !== 'ok' && gateVerdict?.kind === 'refused') {
+      // The gate's refusal takes the place of the ordinary one. It is here, in the same place,
+      // for the same exit statuses: a real run stops on it, a dry run says what it would refuse
+      // and prints the plan.
+      refusals.push(gateVerdict.text);
+    } else if (verdict.kind === 'no-pane') {
+      refusals.push(noPaneRefusal(verdict.name));
+    } else if (verdict.kind === 'another-pane') {
+      refusals.push(anotherPaneRefusal(verdict.name, verdict.recordedPane));
+    } else if (verdict.kind === 'refused') {
+      refusals.push(
+        `only the owner, the coordinator or the operator stops the team; this call is ${describeCaller(caller)}`,
+      );
+    }
   }
-  const abandon = args.flags.has('abandon');
+  // A delegated run never abandons: `--abandon` is the gate's refusal, and the plan holds every
+  // seat, coordinator and operator included, exactly as the owner's own `down` does.
+  const abandon = args.flags.has('abandon') && !delegated;
   if (abandon && !callerOwns(caller)) {
     refusals.push('only the owner abandons a team, from a terminal outside herdr');
   }
@@ -282,7 +351,9 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     seats,
     extra,
     watchPid: watch && sources.alive(watch.pid) ? watch.pid : null,
-    keep: caller.kind === 'seat' ? [team.coordinator, team.operator] : [],
+    // A delegated run stops the whole team: no seat is kept back, the coordinator and the
+    // operator included. The delegate sits outside the session, so it never stops itself.
+    keep: !delegated && caller.kind === 'seat' ? [team.coordinator, team.operator] : [],
     abandon: abandon && callerOwns(caller),
   });
 
@@ -298,6 +369,14 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     // exit: down.abandon
     // exit: down.no-pane
     // exit: down.another-pane
+    // exit: down.delegate
+    // exit: down.delegate-approval
+    // exit: down.delegate-approved-copy
+    // exit: down.delegate-drift
+    // exit: down.delegate-evidence
+    // exit: down.delegate-placement
+    // exit: down.delegate-command
+    // exit: down.delegate-flag
     return 1;
   }
   const launch = sources.launch;
@@ -306,6 +385,11 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     // exit: down.no-launch
     return 1;
   }
+  // The audit line goes in exactly when the delegate's run passes its gate and proceeds to
+  // effects — never on a dry run (returned above), never on an already-idle `down` (which
+  // returns at its own check, before any caller rule), never when a refusal held the run, and
+  // never when herdr is out of reach.
+  if (approved !== undefined) (sources.audit ?? logDelegated)(dir, approved, 'down', sources.now());
 
   const now = () => sources.now();
   const host: Host = {
@@ -383,6 +467,17 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   // exit: down.stopped
   // exit: down.held
   return report.held ? 1 : 0;
+}
+
+/**
+ * The live team file, read directly: the copy the delegate gate judges and the copy a delegated
+ * run acts on. Never `currentTeam`'s remembered copy, never `last_valid` — a file that does not
+ * load carries no delegate, and the ordinary path below keeps its own fallback and its own words.
+ */
+function liveTeam(io: Io, home?: string): { team: TeamFile; root: string; dir: string } | undefined {
+  const loaded = loadTeamFile(io.cwd, home ? { home } : {});
+  if (!loaded.ok) return undefined;
+  return { team: loaded.team, root: loaded.root, dir: dirname(loaded.path) };
 }
 
 function callerOwns(caller: Caller): boolean {
