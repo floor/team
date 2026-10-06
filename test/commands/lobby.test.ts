@@ -1042,6 +1042,198 @@ describe('the lobby gate with files declared', () => {
   });
 });
 
+describe('the lobby set every caller reads', () => {
+  // The lobby is one folder per machine, shared by every team on it, so what it may hold is
+  // the union of every shipped profile's `lobby_files` — never a set built from the seats a
+  // run starts, nor from the team's own file. The capture's one declared path stands for all.
+  const lock = () => join(lobby, '.claude', 'scheduled_tasks.lock');
+
+  function makeLobby(): void {
+    mkdirSync(lobby, { recursive: true });
+    chmodSync(lobby, 0o700);
+  }
+
+  function withLock(): void {
+    mkdirSync(join(lobby, '.claude'), { recursive: true });
+    writeFileSync(lock(), '{}\n');
+  }
+
+  // A team of one Codex seat: no seat of the file runs the CLI that declares the lock, so a
+  // set built from the file's seats would refuse the very file another team's CLI left.
+  function codexTeamYaml(): string {
+    return `format: 1
+project: acme
+coordinator: lead
+operator: lead
+trust:
+  - ~/.config/team/lobby
+  - ${root}
+  - ${join(base, 'worktrees')}
+workspace:
+  mode: worktree
+  path: ../worktrees/{repo}/{task}
+  branch: "{kind}/{task}"
+  base: main
+  protected: [.]
+seats:
+  - role: coordinator
+    name: lead
+    label: lead
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    launch: codex
+    mode: shared
+    cwd: .
+  - role: implementer
+    name: worker
+    label: worker
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    launch: codex
+    stopped: true
+`;
+  }
+
+  function codexCapture(name: string): string {
+    return readFileSync(new URL(`../fixtures/codex/0.157.0/${name}.txt`, import.meta.url), 'utf8')
+      .replaceAll('GPT-5.6-Terra', 'GPT-6-Sol');
+  }
+
+  // The fake host of a Codex launch: the rules go to a file, the one line that points at it
+  // is typed at an empty idle prompt, read back row by row, then Enter turns the screen
+  // working. One box per pane, so a second command on its own world starts clean.
+  function codexWorld(): ReturnType<typeof world> {
+    const made = world();
+    made.launch.foreground = () => ['codex'];
+    const idle = codexCapture('idle');
+    const working = codexCapture('working');
+    const boxes = new Map<string, { typed: string; entered: boolean }>();
+    const text = (pane: string): string => {
+      const box = boxes.get(pane);
+      if (!box) return idle;
+      if (box.entered) return working;
+      const [first = '', ...rest] = box.typed.split('\n');
+      return idle.replace('› Ask Codex to do anything', [`› ${first}`, ...rest.map((line) => `  ${line}`)].join('\n'));
+    };
+    made.launch.paneText = (_session, pane) => text(pane);
+    made.launch.typeText = (_session, pane, typed) => { boxes.set(pane, { typed, entered: false }); return true; };
+    made.launch.pressEnter = (_session, pane) => {
+      const box = boxes.get(pane) ?? { typed: '', entered: false };
+      boxes.set(pane, { ...box, entered: true });
+      return true;
+    };
+    made.launch.agentStatus = () => ([...boxes.values()].some((box) => box.entered) ? 'working' : 'idle');
+    made.launch.processInfo = () => ({ shell: 900, foreground: [901] });
+    return made;
+  }
+
+  test('a team with no claude-code seat: up, add and doctor all accept the lock another team\'s CLI left', async () => {
+    approveYaml(codexTeamYaml());
+    makeLobby();
+    withLock();
+
+    // The same lobby fixtures go to all three callers, and all three accept: doctor verifies
+    // the folder, up starts the team in it, add starts one more seat in it.
+    const doc = await runDoctorCmd();
+    expect(doc.code).toBe(0);
+    expect(doc.out).toContain(`the lobby ${lobby}: verified\n`);
+
+    const upWorld = codexWorld();
+    const run = await runUpCmd([], upWorld);
+    expect(run.code).toBe(0);
+    expect(upWorld.workspaces).toContainEqual({ label: 'lead', cwd: lobby });
+    expect(existsSync(lock())).toBe(true);
+
+    const addWorld = codexWorld();
+    addWorld.session = 'running';
+    const addRun = await runAddCmd(['worker'], addWorld);
+    expect(addRun.code).toBe(0);
+    expect(addWorld.workspaces).toContainEqual({ label: 'worker', cwd: lobby });
+    expect(readState(dir).sessions['acme']?.seats.worker?.stage).toBe('ready');
+  });
+
+  test('doctor names, for each declared file present in the lobby, the profile it belongs to', async () => {
+    approveYaml(codexTeamYaml());
+    makeLobby();
+    withLock();
+
+    // The file in the shared folder is not this team's CLI's: the line says whose it is, so
+    // an owner reading the report knows who left it there and may remove it at the exit.
+    const doc = await runDoctorCmd();
+    expect(doc.code).toBe(0);
+    expect(doc.out).toContain(`ok    the lobby ${lobby}: .claude/scheduled_tasks.lock is claude-code's\n`);
+  });
+
+  test('an undeclared sibling beside the lock: up, add and doctor all refuse it', async () => {
+    approveYaml(codexTeamYaml());
+    makeLobby();
+    withLock();
+    writeFileSync(join(lobby, '.claude', 'settings.json'), '{}\n');
+
+    const doc = await runDoctorCmd();
+    expect(doc.code).toBe(1);
+    expect(doc.out).toContain(`the lobby ${lobby}: is not empty\n`);
+
+    const upWorld = codexWorld();
+    const run = await runUpCmd([], upWorld);
+    expect(run.code).toBe(1);
+    expect(run.err).toContain(`team up: the lobby ${lobby}: is not empty\n`);
+    expect(upWorld.workspaces).toEqual([]);
+
+    const addWorld = codexWorld();
+    addWorld.session = 'running';
+    const addRun = await runAddCmd(['worker'], addWorld);
+    expect(addRun.code).toBe(1);
+    expect(addRun.err).toContain(`team add: the lobby ${lobby}: is not empty\n`);
+  });
+
+  test('the run\'s case: the claude-code seat already ready, the lock present, a second up starts the rest', async () => {
+    // The real run's shape: the Claude Code seat — the only seat whose CLI declares the lock —
+    // is already at ready, so a set built from the seats this up starts held no declaration
+    // while the very CLI that wrote the lock was the one running. The lock stays; the run goes
+    // on to start the Codex seat left out.
+    const withScribe = migratedTeamYaml().replace(
+      '    count: 1\n',
+      '    count: 1\n  - role: implementer\n    name: scribe\n    label: scribe\n    cli: codex\n    vendor: openai\n    model: GPT Sol\n    version: "6"\n    launch: codex\n',
+    );
+    approveYaml(withScribe);
+    makeLobby();
+    withLock();
+    const landing = canonicalLanding(lobby).landing;
+    updateState(dir, (st) => {
+      st.sessions['acme'] = {
+        seats: {
+          lead: { stage: 'ready', pane: 'w0:p1', workspace: 'w0', start_cwd: landing },
+          worker: { stage: 'ready', pane: 'w1:p1', workspace: 'w1', start_cwd: landing },
+        },
+        worktrees: {},
+      };
+    });
+
+    const made = codexWorld();
+    made.session = 'running';
+    // The ready seats sit at their recorded panes, live as herdr would list them: a ready seat
+    // whose pane holds it is left as it is, and only the Codex seat is started.
+    const live = {
+      agents: () => [
+        { name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null },
+        { name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null },
+      ],
+    };
+    const run = await runUpCmd([], made, live);
+    expect(run.code).toBe(0);
+    expect(made.workspaces).toContainEqual({ label: 'scribe', cwd: lobby });
+    expect(existsSync(lock())).toBe(true);
+    const seats = readState(dir).sessions['acme']?.seats;
+    expect(seats?.scribe?.stage).toBe('ready');
+    expect(seats?.lead?.stage).toBe('ready');
+  });
+});
+
 describe('trust: validation', () => {
   test('non-empty sequence of absolute paths accepted, ~ expanded as first segment', () => {
     const yaml = migratedTeamYaml();

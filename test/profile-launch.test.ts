@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { profileFor } from '../src/profiles/index.ts';
+import { profileFor, shippedLobbyFiles } from '../src/profiles/index.ts';
 import { exitClearKey, launchCommand, lobbyFilesList } from '../src/profiles/profile.ts';
 import { runningModel } from '../src/status/statusline.ts';
 
@@ -233,6 +233,14 @@ describe('the lobby_files a profile may name', () => {
     }
   });
 
+  test('a pattern character is refused: a declaration is one exact name at one exact place', () => {
+    for (const bad of ['lobby_files:\n  - "*.lock"', 'lobby_files:\n  - .claude/*.lock', 'lobby_files:\n  - settings.[j]son', 'lobby_files:\n  - a/b?.lock']) {
+      expect(() => lobbyFilesList(`exit: /exit\n${bad}`)).toThrow(
+        /"lobby_files" holds ".*": a path is one exact name, not a pattern/,
+      );
+    }
+  });
+
   test('one path running through another declares a file and a folder at once, and is refused', () => {
     expect(() => lobbyFilesList('exit: /exit\nlobby_files:\n  - a/b\n  - a/b/c.lock')).toThrow(
       '"lobby_files" holds "a/b" beside "a/b/c.lock": a file and a folder cannot share a path',
@@ -244,5 +252,36 @@ describe('the lobby_files a profile may name', () => {
     expect(profileFor('codex')?.lobbyFiles).toEqual([]);
     expect(profileFor('cursor')?.lobbyFiles).toEqual([]);
     expect(profileFor('antigravity')?.lobbyFiles).toEqual([]);
+  });
+
+  test('the union of every shipped profile is what a lobby may hold, whatever the team runs', () => {
+    // The set a lobby gate reads cannot depend on a team's seats: it is every shipped
+    // declaration together, sorted and deduped, so a CLI another team runs is covered too.
+    const perCli = ['claude-code', 'codex', 'cursor', 'antigravity']
+      .flatMap((cli) => profileFor(cli)?.lobbyFiles ?? []);
+    expect(shippedLobbyFiles()).toEqual([...new Set(perCli)].sort());
+    expect(shippedLobbyFiles()).toContain('.claude/scheduled_tasks.lock');
+  });
+
+  test('no declared lobby file is one a shipped profile names as a configuration or instruction file', () => {
+    // Where such files are named: every file-like path a profile's YAML spells outside its own
+    // `lobby_files` stanza (today the capture names alone — no shipped profile names a settings
+    // or instruction file its CLI reads at start: claude-code's rules travel as the
+    // `--append-system-prompt` launch option, the others' as a first message), and the rules
+    // files the tool itself writes for a seat to read, `<state>/rules/<seat>.md`
+    // (`launch/rules-file.ts`). A declaration matching either fails here: the lobby is shared,
+    // so no file a CLI might obey at start may sit in it.
+    const shipped = ['claude-code', 'codex', 'cursor', 'antigravity'];
+    const named = new Set<string>();
+    for (const name of shipped) {
+      const yaml = readFileSync(new URL(`../src/profiles/${name}.yaml`, import.meta.url), 'utf8');
+      const outsideDeclaration = yaml.replace(/^lobby_files:\n(?:  .*\n)+/m, '');
+      for (const path of outsideDeclaration.match(/[\w.@+-]+(?:\/[\w.@+-]+)*\.(?:md|json|toml|yaml|lock|txt)/gu) ?? []) named.add(path);
+    }
+    const rulesShape = /^rules\/[\w.@+-]+\.md$/;
+    for (const path of shippedLobbyFiles()) {
+      expect(named.has(path)).toBe(false);
+      expect(rulesShape.test(path)).toBe(false);
+    }
   });
 });
