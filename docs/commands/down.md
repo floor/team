@@ -2,9 +2,10 @@
 
 Stops the team: asks every running seat to exit, closes its workspace, stops the watch, and stops
 the herdr session. A seat is only asked when it is free — idle, with an empty input box — so a
-working, blocked or half-typed seat is left running and named. A box that holds exactly this CLI's
-exit text — an earlier run typed it and never confirmed it — is not half-typed text: when the
-profile carries the one key that empties a box, the text is cleared with it and the exit typed
+working, blocked or half-typed seat is left running and named. A seat already showing its own
+framed exit question is blocked the same way: this run sends no key to it. A box that holds
+exactly this CLI's exit text — an earlier run typed it and never confirmed it — is not half-typed
+text: when the profile carries the one key that empties a box, the text is cleared with it and the exit typed
 fresh, and when it does not, the seat is left running with the text named. `--dry-run` prints the
 plan and runs nothing.
 
@@ -102,7 +103,10 @@ it running, and the next `up` starts from the beginning. A clear that does not h
 succeeded. A later `up` clears a stopped session this team's state records and goes on. A seat
 this run asked whose exit could not be typed or confirmed, or whose exit was sent and which
 did not leave within the wait, prints that, and that `team down --abandon` closes it; with
-`--abandon` the same run closes its workspace and the line says so. A seat it does not stop prints one
+`--abandon` the same run closes its workspace and the line says so. A seat already sitting at
+its own exit question is not that case: it is left, and the line says so and that `--abandon`
+closes it; with the owner's `--abandon` it is closed as every seat that cannot be asked is
+closed, and nothing is typed. A seat it does not stop prints one
 `  skip` line and is named in the last line instead of the session being stopped. A seat whose box
 already holds its exit text, on a CLI with a clearing key, is stopped as a free seat is — the
 clearing key runs first — and a dry run says so in a note under its typing step:
@@ -115,6 +119,7 @@ clearing key runs first — and a dry run says so in a note under its typing ste
 | --- | --- |
 | `<seat>: is working (\`--wait\` waits for it); left running` | a turn is running |
 | `<seat>: is blocked at a prompt, which \`team never answers\`; left running` | a permission dialog, a trust question or a question: only its owner answers it |
+| `<seat>: sits at its own exit question; left running (team down --abandon closes it)` | the pane already shows this CLI's framed exit question, left by an earlier stop: this run sends no key |
 | `<seat>: holds unsent text in its input box; left running` | half-typed text would be lost |
 | `<seat>: holds this CLI's exit text (<exit>) unsent in its input box; left running (the owner sends it or clears it in its pane)` | the box holds an earlier run's unconfirmed exit text, and the CLI has no key that empties a box |
 | `<seat>: shows a screen the profile does not recognise; left running` | nothing is typed into a screen it can't read |

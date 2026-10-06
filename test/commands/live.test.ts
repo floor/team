@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runApprove } from '../../src/commands/approve.ts';
-import { realSources as downReal, runDown, type DownLaunch, type DownSources } from '../../src/commands/down.ts';
+import { realSources as downReal, runDown, stateOf, type DownLaunch, type DownSources } from '../../src/commands/down.ts';
 import { realSources as upReal, runUp, type Launch, type UpSources } from '../../src/commands/up.ts';
 import { delegateGate } from '../../src/delegate.ts';
 import type { DoctorSources } from '../../src/commands/doctor.ts';
@@ -4440,6 +4440,42 @@ describe('team down, live', () => {
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
     expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is (team down --abandon closes it)\n');
+  });
+
+  test('a seat already at the framed exit question is not asked', async () => {
+    const raw = readFileSync(new URL('../fixtures/exit-typing/claude-code-shell-question-ansi.txt', import.meta.url), 'utf8');
+    const screen = readScreen('claude-code', raw);
+    expect(screen.kind).toBe('exit question');
+    expect(stateOf('idle', screen)).toBe('blocked');
+    const run = harness(screen, 'idle');
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ screenText: () => raw, status: () => 'idle' }));
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.keys).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(io.out).toContain('  skip deepseek-acme: sits at its own exit question; left running (team down --abandon closes it)\n');
+    expect(io.out).not.toContain('its exit was not typed');
+  });
+
+  test('abandon closes a pre-existing exit question only as a seat that cannot be asked', async () => {
+    const raw = readFileSync(new URL('../fixtures/exit-typing/claude-code-shell-question-ansi.txt', import.meta.url), 'utf8');
+    const screen = readScreen('claude-code', raw);
+    expect(screen.kind).toBe('exit question');
+    const run = harness(screen, 'idle');
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(['--abandon', ...FILE], io, run.sourcesOf({ screenText: () => raw, status: () => 'idle' }));
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.keys).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual(['w3']);
+    expect(run.stopped).toEqual(['acme-web']);
+    expect(io.out).toContain('deepseek-acme: stopped\n');
+    expect(io.out).not.toContain('its exit was not typed');
+    expect(io.out).not.toContain('its workspace was closed');
   });
 
   test('abandon closes a seat whose exit could not be typed, and the session still stops', async () => {

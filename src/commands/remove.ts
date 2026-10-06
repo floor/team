@@ -241,15 +241,18 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     if (where !== 'free' && !abandon && !clearable) {
       // The unknown screen is the one a seat can sit on for good: no state ever frees it, and
       // only the owner may abandon it, so the refusal names that way out. The owner gets the
-      // command itself; anyone else is told whose it is.
+      // command itself; anyone else is told whose it is. A framed exit question already on
+      // screen is the same kind of leave: this run did not ask it, and the line names the close.
       const way = where === 'unknown'
         ? caller.kind === 'owner'
           ? ` (team remove ${name} --abandon closes its workspace without typing)`
           : ` (the owner can close it: team remove ${name} --abandon)`
         : '';
-      const held = where === 'unsent' && holdsExit
-        ? `holds this CLI's exit text (${profile?.exit}) unsent in its input box; left as it is (the owner sends it or clears it in its pane)`
-        : LEFT[where];
+      const held = screen.kind === 'exit question'
+        ? `sits at its own exit question; left as it is (team remove ${name} --abandon closes it)`
+        : where === 'unsent' && holdsExit
+          ? `holds this CLI's exit text (${profile?.exit}) unsent in its input box; left as it is (the owner sends it or clears it in its pane)`
+          : LEFT[where];
       io.stderr(`team remove: ${name} ${held}${way}\n`);
       // exit: remove.busy
       return 1;
@@ -312,6 +315,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
           name, cli, pane: agent.pane, workspace: agent.workspace,
           state: where === 'free' ? 'free' : where,
           ...(exitInBox ? { exitInBox: true } : {}),
+          ...(screen.kind === 'exit question' ? { atExitQuestion: true } : {}),
         },
         abandon: abandon && where !== 'free',
         closeUnasked: abandon,

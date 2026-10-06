@@ -424,6 +424,8 @@ export interface DownSeat {
   /** The seat's box holds exactly the profile's exit text — left by an earlier run that never
    *  confirmed it — and the profile carries the key that empties the box. */
   exitInBox?: boolean;
+  /** The pane already shows this CLI's framed exit question. This run did not ask it. */
+  atExitQuestion?: boolean;
 }
 
 export interface DownInput {
@@ -506,12 +508,15 @@ export function downPlan(input: DownInput): Step[] {
       }
       if (!(seat.state === 'unsent' && seat.exitInBox && profile.exitClear !== null)) {
         // An unsent box holding exactly the exit text, on a CLI with no key for it, is named:
-        // the owner sends it or clears it. Every other not-free seat keeps its own line.
+        // the owner sends it or clears it. A framed exit question already on screen is named
+        // for what it is: this run never asked it. Every other not-free seat keeps its own line.
         steps.push({
           kind: 'skip',
-          text: seat.state === 'unsent' && seat.exitInBox
-            ? `${seat.name}: holds this CLI's exit text (${profile.exit}) unsent in its input box; left running (the owner sends it or clears it in its pane)`
-            : `${seat.name}: ${LEFT[seat.state]}; left running`,
+          text: seat.atExitQuestion
+            ? `${seat.name}: sits at its own exit question; left running (team down --abandon closes it)`
+            : seat.state === 'unsent' && seat.exitInBox
+              ? `${seat.name}: holds this CLI's exit text (${profile.exit}) unsent in its input box; left running (the owner sends it or clears it in its pane)`
+              : `${seat.name}: ${LEFT[seat.state]}; left running`,
         });
         left++;
         continue;

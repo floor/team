@@ -146,7 +146,10 @@ export function paneStillRunning(foreground: readonly string[] | null, processNa
 
 export function stateOf(status: string, screen: Screen): DownSeat['state'] {
   if (screen.kind === 'unsent') return 'unsent';
-  if (screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question' || screen.kind === 'vendor notice') return 'blocked';
+  // A framed exit question already on screen was left by an earlier stop. This run did not ask
+  // it, so it is blocked: no key is sent, and `--abandon` closes it only as it closes every
+  // other seat that cannot be asked.
+  if (screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question' || screen.kind === 'exit question' || screen.kind === 'vendor notice') return 'blocked';
   // A screen showing a running turn is working even when herdr's status has not caught up:
   // `--wait` waits for it, and it is never typed into.
   if (screen.kind === 'working') return 'working';
@@ -548,7 +551,8 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     }
     const cli = cliFor(agent.name);
     const profile = profileFor(cli);
-    const state = stateOf(agent.status, sources.screen(session, agent.pane, cli));
+    const shown = sources.screen(session, agent.pane, cli);
+    const state = stateOf(agent.status, shown);
     // An unsent box that holds exactly the profile's exit text — an earlier run typed it and
     // never confirmed it — is named as such either way: the profile's one clearing key decides
     // whether this run empties it and asks again (the plan's run step) or the owner does (its
@@ -562,6 +566,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       workspace: agent.workspace,
       state,
       ...(exitInBox ? { exitInBox: true } : {}),
+      ...(shown.kind === 'exit question' ? { atExitQuestion: true } : {}),
     });
   }
 

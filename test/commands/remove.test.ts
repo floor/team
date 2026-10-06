@@ -156,6 +156,43 @@ describe('team remove', () => {
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
+  test('a seat already at the framed exit question is not asked, and only ordinary abandon closes it', async () => {
+    const raw = readFileSync(new URL('../fixtures/exit-typing/claude-code-shell-question-ansi.txt', import.meta.url), 'utf8');
+    const screen = readScreen('claude-code', raw);
+    expect(screen.kind).toBe('exit question');
+    const made = world(screen, 'idle');
+    made.sources.screenText = () => raw;
+    const entered: string[] = [];
+    const launch = made.sources.launch;
+    if (!launch) throw new Error('fixture');
+    const press = launch.pressEnter.bind(launch);
+    launch.pressEnter = (session, pane) => {
+      entered.push('enter');
+      return press(session, pane);
+    };
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    expect(made.typed).toEqual([]);
+    expect(made.keys).toEqual([]);
+    expect(entered).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(io.err).toBe('team remove: worker sits at its own exit question; left as it is (team remove worker --abandon closes it)\n');
+    expect(io.out).not.toContain('its exit was not typed');
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+
+    const again = testIo(dir, owner);
+    expect(await runRemove(['worker', '--abandon', '--file', file], again, made.sources)).toBe(0);
+    expect(made.typed).toEqual([]);
+    expect(made.keys).toEqual([]);
+    expect(entered).toEqual([]);
+    expect(made.closed).toEqual(['w1']);
+    expect(again.out).toContain('worker: stopped\n');
+    expect(again.out).not.toContain('its exit was not typed');
+    expect(again.out).not.toContain('its workspace was closed');
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+  });
+
   test('abandon closes a free seat whose exit could not be typed, and the seat is taken out', async () => {
     const made = world();
     made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });

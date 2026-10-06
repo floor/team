@@ -3,8 +3,9 @@
 Takes one seat out of the team: asks it to exit, waits for its pane to come back to its shell,
 closes its workspace, and edits the file so the seat is not started again. `--keep` leaves the seat
 in the file as `stopped: true` instead of taking it out. A seat that is busy — working, blocked at a
-prompt, showing a screen the profile does not recognise, or holding unsent text — is left as it is,
-unless its owner abandons it. Every other seat, and the session, are left alone.
+prompt, already showing its own exit question, showing a screen the profile does not recognise,
+or holding unsent text — is left as it is, unless its owner abandons it. Every other seat, and
+the session, are left alone.
 
 ## Synopsis
 
@@ -120,6 +121,7 @@ with the text named, in the refusal below.
 | `team remove: session <session> runs, and its agents can't be read; nothing was changed` | 1 |
 | `team remove: <seat> is working; left as it is` | 1 |
 | `team remove: <seat> is blocked at a prompt, which team never answers` | 1 |
+| `team remove: <seat> sits at its own exit question; left as it is (team remove <seat> --abandon closes it)` | 1 |
 | `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` (the owner) or `… left as it is (the owner can close it: team remove <seat> --abandon)` (a coordinator or the operator) | 1 |
 | `team remove: <seat> holds unsent text in its input box; left as it is` | 1 |
 | `team remove: <seat> holds this CLI's exit text (<exit>) unsent in its input box; left as it is (the owner sends it or clears it in its pane)` | 1 |
