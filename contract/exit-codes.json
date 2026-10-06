@@ -760,6 +760,62 @@
     {
       "code": 1,
       "command": "down",
+      "id": "down.delegate",
+      "meaning": "the caller is not the approved delegate of any entry",
+      "trigger": "team down, from a pane no delegate entry names"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-approval",
+      "meaning": "delegation needs a verified approval",
+      "trigger": "team down, with no approval in force"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-approved-copy",
+      "meaning": "delegation needs a readable approved copy",
+      "trigger": "team down, when the approved copy can't be read"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-command",
+      "meaning": "the approved delegate may not run `down`",
+      "trigger": "team down, from the approved delegate whose commands leave it out"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-drift",
+      "meaning": "the file is not the approved one",
+      "trigger": "team down, after the file changed since approval"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-evidence",
+      "meaning": "delegation cannot verify its placement or seats",
+      "trigger": "team down, when herdr or the state can't be read for the gate"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-flag",
+      "meaning": "a prohibited flag is the owner's",
+      "trigger": "team down --abandon, from the approved delegate"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.delegate-placement",
+      "meaning": "the approved delegate must be an external non-seat pane",
+      "trigger": "team down, with a delegate entry naming a seat's pane"
+    },
+    {
+      "code": 1,
+      "command": "down",
       "id": "down.file-owner",
       "meaning": "--file is the owner's",
       "trigger": "team down --file .agents/team.yaml"
