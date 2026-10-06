@@ -451,22 +451,6 @@ describe('team status', () => {
     ]);
   });
 
-  test('an approval a delegate signed names the pane that made it', async () => {
-    if (standing.kind !== 'verified') throw new Error('the fixture did not verify');
-    standing.record.approval.approved_by = 'delegate main/w1:p1';
-    const { code, out } = await status();
-    expect(code).toBe(0);
-    expect(out).toContain('note: approval #1 (2026-10-03), by delegate main/w1:p1');
-    const doc = JSON.parse((await status('--json')).out);
-    expect(doc.notes[0]).toBe('approval #1 (2026-10-03), by delegate main/w1:p1');
-  });
-
-  test('an owner\'s approval note is unchanged', async () => {
-    const { out } = await status();
-    expect(out).toContain('note: approval #1 (2026-10-03)');
-    expect(out).not.toContain(', by delegate');
-  });
-
   test('--json: reports differences with exit 1 and the same structure', async () => {
     live = { ...built(), agents: built().agents.filter((one) => one.name !== 'deepseek-acme-2') };
     const { code, out } = await status('--json');

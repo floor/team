@@ -159,11 +159,7 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
   if (standing.kind === 'verified') {
     const key = sources.home ? keyState(sources.home) : { kind: 'missing' as const };
     const ofKey = key.kind === 'key' ? `, key ${keyFingerprint(key.key)}` : '';
-    // A delegated approval says so: `, by delegate <session>/<pane id>`, right after the date.
-    const by = standing.record.approval.approved_by;
-    comparison.notes.unshift(
-      `approval #${standing.generation} (${standing.signedAt.slice(0, 10)})${by ? `, by ${by}` : ''}${ofKey}`,
-    );
+    comparison.notes.unshift(`approval #${standing.generation} (${standing.signedAt.slice(0, 10)})${ofKey}`);
   }
   if (!live.running) comparison.notes.unshift(`the herdr session "${session}" is not running`);
   comparison.differences = orderAndAnnotateDifferences([
