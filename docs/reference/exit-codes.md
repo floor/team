@@ -20,6 +20,15 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `add.ceilings` | `add` | 1 | the approved ceilings can't be read | `team add worker` |
 | `add.changed` | `add` | 1 | the file changed while add was checking | `team add worker` |
 | `add.default-session` | `add` | 1 | the session can't be "default" | `team add worker --session default` |
+| `add.delegate` | `add` | 1 | the caller is not the approved delegate | `team add worker` |
+| `add.delegate-approval` | `add` | 1 | delegation needs a verified approval | `team add worker` |
+| `add.delegate-approved-copy` | `add` | 1 | delegation needs a readable approved copy | `team add worker` |
+| `add.delegate-command` | `add` | 1 | the approved delegate may not run add | `team add worker` |
+| `add.delegate-drift` | `add` | 1 | delegation needs the approved file | `team add worker` |
+| `add.delegate-edit` | `add` | 1 | the delegate's add would edit the file or the approval | `team add worker` |
+| `add.delegate-evidence` | `add` | 1 | the delegate's placement or seats can't be verified | `team add worker` |
+| `add.delegate-flag` | `add` | 1 | the delegate may not use this flag | `team add worker --temporary` |
+| `add.delegate-placement` | `add` | 1 | the approved delegate must be an external non-seat pane | `team add worker` |
 | `add.differs` | `add` | 1 | the file differs from its approval | `team add worker` |
 | `add.doctor` | `add` | 1 | doctor refuses the launch | `team add worker` |
 | `add.file-owner` | `add` | 1 | --file is the owner's | `team add worker --file .agents/team.yaml` |
@@ -152,6 +161,14 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `remove.caller` | `remove` | 1 | the caller may not change the team | `team remove worker` |
 | `remove.coordinator` | `remove` | 1 | only the owner removes the coordinator's or the operator's seat | `team remove lead` |
 | `remove.default-session` | `remove` | 1 | the session can't be "default" | `team remove worker --session default` |
+| `remove.delegate` | `remove` | 1 | the caller is not the approved delegate | `team remove worker` |
+| `remove.delegate-approval` | `remove` | 1 | delegation needs a verified approval | `team remove worker` |
+| `remove.delegate-approved-copy` | `remove` | 1 | delegation needs a readable approved copy | `team remove worker` |
+| `remove.delegate-command` | `remove` | 1 | the approved delegate may not run remove | `team remove worker` |
+| `remove.delegate-drift` | `remove` | 1 | delegation needs the approved file | `team remove worker` |
+| `remove.delegate-evidence` | `remove` | 1 | the delegate's placement or seats can't be verified | `team remove worker` |
+| `remove.delegate-flag` | `remove` | 1 | the delegate may not use this flag | `team remove worker --keep` |
+| `remove.delegate-placement` | `remove` | 1 | the approved delegate must be an external non-seat pane | `team remove worker` |
 | `remove.file-owner` | `remove` | 1 | --file is the owner's | `team remove worker --file .agents/team.yaml` |
 | `remove.herdr` | `remove` | 1 | herdr doesn't answer | `team remove worker` |
 | `remove.keep-temporary` | `remove` | 1 | a temporary seat is not kept in the file | `team remove worker --keep` |
