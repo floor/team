@@ -46,6 +46,11 @@
       "enum": ["ctrl+c", "ctrl+u", "escape", "backspace"],
       "description": "optional: the one key that empties the CLI's input box, sent only to clear an exit text that did not read back as typed; absent, the text is left for the owner"
     },
+    "lobby_files": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "optional: the exact relative paths of regular files a capture showed this CLI writing in its working folder, which a shared lobby may therefore hold beside the seats; absent, no path is tolerated for this CLI"
+    },
     "timeouts": {
       "type": "object",
       "additionalProperties": false,

@@ -30,6 +30,10 @@ export interface Profile {
   /** The one key that empties the CLI's input box, sent to clear an exit text that did not
    *  read back as typed. Null when no key is established for this CLI: the text is left. */
   exitClear: string | null;
+  /** The exact relative paths of regular files this CLI may leave in its working folder, which
+   *  a shared lobby may therefore hold beside the seats. Empty when no capture has established
+   *  a path for this CLI: the lobby then holds nothing but the seats, as it always has. */
+  lobbyFiles: readonly string[];
   /** Seconds to wait for the idle prompt after a launch. */
   idleTimeout: number;
   /** Seconds to wait for the pane's shell after the exit command. */
@@ -112,7 +116,7 @@ const NAMES = ['claude-code', 'codex', 'cursor', 'antigravity'] as const;
 // without the first belongs to a CLI whose screen doesn't show its model; the second says the
 // CLI starts on its last-used model when a launch names none, and no shipped profile sets it.
 const LAUNCH_KEYS = ['binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'timeouts', 'models'] as const;
-const OPTIONAL_LAUNCH_KEYS = ['status_model', 'last_used_model', 'exit_clear'] as const;
+const OPTIONAL_LAUNCH_KEYS = ['status_model', 'last_used_model', 'exit_clear', 'lobby_files'] as const;
 // The keys `pane send-keys` takes that can empty an input box, one of which a profile may name
 // to clear an exit text that did not read back as typed. `enter` is not among them on purpose:
 // it sends what the box holds. Established by run on herdr 0.7.1 with each CLI's own box.
@@ -127,8 +131,43 @@ function clearKeyOf(entry: YamlEntry): string {
   return value;
 }
 
+/**
+ * The value of `lobby_files`: the exact relative paths of regular files this CLI may leave in
+ * its working folder. A path is plain components — none `.`, `..` or empty, no absolute path,
+ * no trailing `/`, which would declare a folder — and no path may run through another, which
+ * would declare one path both a file and a folder. The refusal is the profile's own, before
+ * any check of the disk: a declaration is a value, not a folder.
+ */
+function lobbyFilesOf(entry: YamlEntry): readonly string[] {
+  if (entry.value.kind !== 'seq' || entry.value.items.length === 0) {
+    fail(entry.line, '"lobby_files" must be a non-empty list');
+  }
+  const paths = entry.value.items.map((item) => {
+    const value = stringOf(item);
+    if (!value) fail(item.line, '"lobby_files" entries must be non-empty strings');
+    const parts = value.split('/');
+    if (value.startsWith('/') || value.endsWith('/') || parts.some((part) => part === '' || part === '.' || part === '..')) {
+      fail(item.line, `"lobby_files" holds "${value}": not a relative path of a file inside the lobby`);
+    }
+    return value;
+  });
+  for (const one of paths) {
+    for (const other of paths) {
+      if (other !== one && other.startsWith(`${one}/`)) {
+        fail(entry.line, `"lobby_files" holds "${one}" beside "${other}": a file and a folder cannot share a path`);
+      }
+    }
+  }
+  return paths;
+}
 
-
+/** The `lobby_files` a profile snippet names, by the loader's own rule: for tests. A path the
+ *  grammar refuses throws; an absent key reads as the empty list, as an absent optional key
+ *  reads as its default. */
+export function lobbyFilesList(text: string): readonly string[] {
+  const entry = optional(mapping(parseYaml(text), 'a profile'), 'lobby_files');
+  return entry === undefined ? [] : lobbyFilesOf(entry);
+}
 const SHIPPED: Record<string, Shipped> = loadShipped();
 
 /** The profiles this version launches. A `cli` without one is reported and left out. */
@@ -201,6 +240,7 @@ function launchOf(root: YamlNode): Shipped {
   const statusEntry = optional(entries, 'status_model');
   const lastUsedEntry = optional(entries, 'last_used_model');
   const exitClearEntry = optional(entries, 'exit_clear');
+  const lobbyFilesEntry = optional(entries, 'lobby_files');
   for (const key of LAUNCH_KEYS) required(entries, key, root.line);
   const login = loginOf(required(entries, 'login', root.line).value);
   const timeouts = required(entries, 'timeouts', root.line).value;
@@ -217,6 +257,7 @@ function launchOf(root: YamlNode): Shipped {
       loginHint: login.hint,
       exit: text(required(entries, 'exit', root.line), 'exit'),
       exitClear: exitClearEntry ? clearKeyOf(exitClearEntry) : null,
+      lobbyFiles: lobbyFilesEntry ? lobbyFilesOf(lobbyFilesEntry) : [],
       idleTimeout: seconds(timeouts, 'idle'),
       exitTimeout: seconds(timeouts, 'exit'),
       lastUsedModel: lastUsedEntry ? boolOf(lastUsedEntry.value, 'last_used_model') : false,

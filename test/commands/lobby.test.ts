@@ -18,7 +18,7 @@ import { validateTeamFile } from '../../src/file/validate.ts';
 import { absoluteTrustProblem, canonicalLanding, insideTrust } from '../../src/file/paths.ts';
 import { rulesFilePath } from '../../src/launch/rules-file.ts';
 import { rulesText, seatRules, type RulesInput } from '../../src/launch/rules.ts';
-import { defaultFs, findRepoRoot, lobbyDir, verifyLobby, type FsReader } from '../../src/lobby/gate.ts';
+import { defaultFs, findRepoRoot, lobbyDir, recheckLobby, verifyLobby, type FsReader } from '../../src/lobby/gate.ts';
 import { seatStart } from '../../src/worktree/place.ts';
 import { readState, updateState } from '../../src/state.ts';
 import { approvalStanding, LEGACY_LINE, storePath, writeApproval } from '../../src/store/store.ts';
@@ -693,6 +693,352 @@ describe('the lobby gate', () => {
     expect(made.workspaces).toContainEqual({ label: 'lead', cwd: lobby });
     expect(made.workspaces).toContainEqual({ label: 'worker', cwd: lobby });
     expect(readdirSync(oldLobby)).toEqual([]);
+  });
+});
+
+describe('the lobby gate with files declared', () => {
+  // The capture's one path, standing for every declaration: a folder the CLI makes in its
+  // working folder, and the one regular file inside it.
+  const declared = ['.claude/scheduled_tasks.lock'];
+  // `lobby` is made per test, so the lock's path is read at use, not at collection.
+  const lock = () => join(lobby, '.claude', 'scheduled_tasks.lock');
+
+  function makeLobby(): void {
+    mkdirSync(lobby, { recursive: true });
+    chmodSync(lobby, 0o700);
+  }
+
+  test('an empty lobby with a declaration passes, recording no file', () => {
+    makeLobby();
+    const gate = verifyLobby(home, { files: declared });
+    expect(gate).toEqual({ ok: true, path: lobby, dev: expect.any(Number), ino: expect.any(Number), files: [] });
+  });
+
+  test('the declared file present passes and is recorded by its full identity', () => {
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+    const gate = verifyLobby(home, { files: declared });
+    expect(gate.ok).toBe(true);
+    if (!gate.ok || !('files' in gate)) throw new Error('gate must succeed with a path');
+    expect(gate.files).toHaveLength(1);
+    const read = lstatSync(lock(), { bigint: true });
+    // Printed once a run: what this platform's lstat reports at full resolution — the local run
+    // and the CI log together are the per-platform evidence the time fields stand on.
+    console.log(`[lobby file identity] size=${read.size} ctimeNs=${read.ctimeNs} birthtimeNs=${read.birthtimeNs}`);
+    expect(gate.files[0]).toEqual({
+      path: '.claude/scheduled_tasks.lock',
+      dev: Number(read.dev),
+      ino: Number(read.ino),
+      size: read.size,
+      ctimeNs: read.ctimeNs,
+      birthtimeNs: read.birthtimeNs,
+    });
+  });
+
+  test('no declaration at all refuses a declared file with today\'s bytes, option or not', () => {
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+    for (const gate of [verifyLobby(home), verifyLobby(home, { files: [] })]) {
+      expect(gate.ok).toBe(false);
+      if (!gate.ok) {
+        expect(gate.problem).toBe('not-empty');
+        expect(gate.text).toBe(`the lobby ${lobby}: is not empty`);
+        expect(gate.words).toBe('the lobby: it is not empty');
+      }
+    }
+  });
+
+  test('an undeclared entry is today\'s not-empty lobby, at the root or inside a declared folder', () => {
+    makeLobby();
+    writeFileSync(join(lobby, 'settings.json'), '{}\n');
+    const rootGate = verifyLobby(home, { files: declared });
+    expect(rootGate.ok).toBe(false);
+    if (!rootGate.ok) {
+      expect(rootGate.text).toBe(`the lobby ${lobby}: is not empty`);
+      expect(rootGate.words).toBe('the lobby: it is not empty');
+    }
+
+    rmSync(join(lobby, 'settings.json'));
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(join(lobby, '.claude', 'settings.json'), '{}\n');
+    const insideGate = verifyLobby(home, { files: declared });
+    expect(insideGate.ok).toBe(false);
+    if (!insideGate.ok) {
+      expect(insideGate.text).toBe(`the lobby ${lobby}: is not empty`);
+      expect(insideGate.words).toBe('the lobby: it is not empty');
+    }
+  });
+
+  test('a symbolic link anywhere on a declared path is refused', () => {
+    makeLobby();
+    const outside = join(base, 'outside-claude');
+    mkdirSync(outside);
+    symlinkSync(outside, join(lobby, '.claude'), 'dir');
+    const gate = verifyLobby(home, { files: declared });
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) {
+      expect(gate.problem).toBe('symlink');
+      expect(gate.text).toBe(`the lobby ${lobby}: ${join(lobby, '.claude')} is a symbolic link`);
+    }
+
+    rmSync(join(lobby, '.claude'));
+    mkdirSync(join(lobby, '.claude'));
+    const elsewhere = join(base, 'elsewhere.lock');
+    writeFileSync(elsewhere, '{}\n');
+    symlinkSync(elsewhere, lock(), 'file');
+    const fileGate = verifyLobby(home, { files: declared });
+    expect(fileGate.ok).toBe(false);
+    if (!fileGate.ok) {
+      expect(fileGate.problem).toBe('symlink');
+      expect(fileGate.text).toBe(`the lobby ${lobby}: ${lock()} is a symbolic link`);
+    }
+  });
+
+  test('a declared path that is not a regular file is refused: a fifo, a folder', () => {
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    // This runtime's node:fs has no mkfifoSync; the binary is the same maker of a fifo.
+    execFileSync('mkfifo', [lock()]);
+    const fifoGate = verifyLobby(home, { files: declared });
+    expect(fifoGate.ok).toBe(false);
+    if (!fifoGate.ok) {
+      expect(fifoGate.problem).toBe('not-file');
+      expect(fifoGate.text).toBe(`the lobby ${lobby}: .claude/scheduled_tasks.lock is neither a file nor a folder`);
+      expect(fifoGate.words).toBe('the lobby: .claude/scheduled_tasks.lock is neither a file nor a folder');
+    }
+
+    const other = join(base, 'home-folder-case');
+    mkdirSync(join(other, '.config', 'team', 'lobby'), { recursive: true });
+    const otherLobby = lobbyDir(other);
+    chmodSync(otherLobby, 0o700);
+    mkdirSync(join(otherLobby, 'notes.txt'));
+    const folderGate = verifyLobby(other, { files: ['notes.txt'] });
+    expect(folderGate.ok).toBe(false);
+    if (!folderGate.ok) {
+      expect(folderGate.problem).toBe('not-file');
+      expect(folderGate.text).toBe(`the lobby ${otherLobby}: notes.txt is a folder, not a file`);
+    }
+  });
+
+  test('a folder on a declared path that is a regular file is refused', () => {
+    const other = join(base, 'home-midcase');
+    mkdirSync(join(other, '.config', 'team', 'lobby'), { recursive: true });
+    const otherLobby = lobbyDir(other);
+    chmodSync(otherLobby, 0o700);
+    writeFileSync(join(otherLobby, 'a'), 'not a folder\n');
+    const gate = verifyLobby(other, { files: ['a/b.lock'] });
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) {
+      expect(gate.problem).toBe('not-directory');
+      expect(gate.text).toBe(`the lobby ${otherLobby}: ${join(otherLobby, 'a')} is not a directory`);
+    }
+  });
+
+  test('a declared file owned by another user is refused', () => {
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+    const myUid = process.getuid ? process.getuid() : 1000;
+    const foreignFs: FsReader = {
+      ...defaultFs,
+      lstat(p) {
+        const realStat = defaultFs.lstat(p);
+        if (p === lock()) {
+          const m = Object.create(realStat);
+          m.uid = myUid + 1;
+          return m;
+        }
+        return realStat;
+      },
+    };
+    const gate = verifyLobby(home, { files: declared, fs: foreignFs, getuid: () => myUid });
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) {
+      expect(gate.problem).toBe('owner');
+      expect(gate.text).toBe(`the lobby ${lobby}: ${lock()} is not owned by you`);
+      expect(gate.words).toBe('the lobby: .claude/scheduled_tasks.lock is not owned by you');
+    }
+  });
+
+  test('creation with declarations makes the clean lobby and records nothing', () => {
+    const gate = verifyLobby(home, { create: true, files: declared });
+    expect(gate.ok).toBe(true);
+    if (!gate.ok || !('files' in gate)) throw new Error('gate must succeed with a path');
+    expect(gate.files).toEqual([]);
+    expect(existsSync(lobby)).toBe(true);
+  });
+
+  test('the recheck: nothing moved is null, a new file under the same name refuses, a file gone allows', () => {
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+    const gate = verifyLobby(home, { files: declared });
+    if (!gate.ok || !('files' in gate)) throw new Error('gate must succeed with a path');
+    const seen = { path: gate.path, dev: gate.dev, ino: gate.ino, files: gate.files };
+
+    expect(recheckLobby(home, seen, { files: declared })).toBeNull();
+
+    // Unlink first, then a fresh file on the same name: the case the Linux runner handed this
+    // suite twice, because the freed inode went straight to the new file, so device and inode
+    // alone called it the file the gate read. The change time and birth time do not follow the
+    // inode number — the recheck refuses whatever the filesystem did with the inode.
+    rmSync(lock());
+    writeFileSync(lock(), '{}\n');
+    const recreated = recheckLobby(home, seen, { files: declared });
+    expect(recreated?.reason).toBe('the lobby: .claude/scheduled_tasks.lock is not the file the gate read');
+
+    // A fresh file renamed over the name, made while the old one still exists: the two
+    // coexist, so their inodes are distinct on any filesystem — refused the same way.
+    const fresh = `${lock()}.replacement`;
+    writeFileSync(fresh, '{}\n');
+    renameSync(fresh, lock());
+    const swap = recheckLobby(home, seen, { files: declared });
+    expect(swap).toEqual({
+      reason: 'the lobby: .claude/scheduled_tasks.lock is not the file the gate read',
+      detail: `the lobby ${seen.path}: .claude/scheduled_tasks.lock is not the file the gate read`,
+    });
+
+    rmSync(lock());
+    expect(recheckLobby(home, seen, { files: declared })).toBeNull();
+  });
+
+  test("a replaced file reported with the gate's own device and inode is still refused", () => {
+    // The review's case: Linux can hand a deleted file's inode straight to a new file under
+    // the same name, so device and inode are not identity. The replacement here is real — only
+    // the numbers it is reported with are the gate's own, through the same injected reader the
+    // review proved the old gate with. What refuses it is everything the inode number cannot
+    // carry: the size, the change time and the birth time of the file that is there now.
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+    const gate = verifyLobby(home, { files: declared });
+    if (!gate.ok || !('files' in gate)) throw new Error('gate must succeed with a path');
+    const seen = { path: gate.path, dev: gate.dev, ino: gate.ino, files: gate.files };
+    const original = gate.files[0]!;
+
+    const fresh = `${lock()}.replacement`;
+    writeFileSync(fresh, '{}\n');
+    renameSync(fresh, lock());
+    const reusedNumbers: FsReader = {
+      ...defaultFs,
+      lstat(p) {
+        const read = defaultFs.lstat(p);
+        if (p !== lock()) return read;
+        const m = Object.create(read);
+        m.dev = original.dev;
+        m.ino = original.ino;
+        return m;
+      },
+    };
+    const refusal = recheckLobby(home, seen, { files: declared, fs: reusedNumbers });
+    expect(refusal?.reason).toBe('the lobby: .claude/scheduled_tasks.lock is not the file the gate read');
+  });
+
+  test('the recheck: an undeclared entry that appeared is today\'s not-empty lobby', () => {
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+    const gate = verifyLobby(home, { files: declared });
+    if (!gate.ok || !('files' in gate)) throw new Error('gate must succeed with a path');
+    const seen = { path: gate.path, dev: gate.dev, ino: gate.ino, files: gate.files };
+
+    writeFileSync(join(lobby, '.claude', 'settings.json'), '{}\n');
+    const refusal = recheckLobby(home, seen, { files: declared });
+    expect(refusal).toEqual({
+      reason: 'the lobby: it is not empty',
+      detail: `the lobby ${lobby}: is not empty`,
+    });
+  });
+
+  test('doctor says of the lobby what the launch\'s gate would: the declared file verifies, a sibling misses', async () => {
+    approveYaml(migratedTeamYaml());
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+
+    const doc = await runDoctorCmd();
+    expect(doc.code).toBe(0);
+    expect(doc.out).toContain(`the lobby ${lobby}: verified\n`);
+
+    writeFileSync(join(lobby, '.claude', 'settings.json'), '{}\n');
+    const miss = await runDoctorCmd();
+    expect(miss.code).toBe(1);
+    expect(miss.out).toContain(`the lobby ${lobby}: is not empty\n`);
+  });
+
+  test('up and a temporary add pass a lobby holding the declared file of their seats’ CLI', async () => {
+    approveYaml(migratedTeamYaml());
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+
+    const made = world();
+    const run = await runUpCmd([], made);
+    expect(run.code).toBe(0);
+    expect(made.workspaces).toContainEqual({ label: 'lead', cwd: lobby });
+    expect(made.workspaces).toContainEqual({ label: 'worker', cwd: lobby });
+
+    const addRun = await runAddCmd(['--temporary', '--like', 'worker', '--until', 'merged:main'], made);
+    expect(addRun.code).toBe(0);
+    expect(made.workspaces).toContainEqual({ label: 'worker-tmp-1', cwd: lobby });
+  });
+
+  test('up refuses an undeclared sibling beside the declared file with today’s bytes', async () => {
+    approveYaml(migratedTeamYaml());
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+    writeFileSync(join(lobby, '.claude', 'settings.json'), '{}\n');
+
+    const made = world();
+    const run = await runUpCmd([], made);
+    expect(run.code).toBe(1);
+    expect(run.err).toContain(`team up: the lobby ${lobby}: is not empty\n`);
+    expect(made.workspaces).toEqual([]);
+  });
+
+  /** Replaces the declared file — a fresh inode under the same name — on the `n`th read of its
+   *  parent, after the gate's read, against the check that comes next: the confirm directly
+   *  before a workspace is made. A rename hands the lock a new inode for certain, where unlink
+   *  and write could hand the old one back. */
+  function swapLockAt(n: number): FsReader {
+    let seen = 0;
+    return {
+      ...defaultFs,
+      readdir(p) {
+        if (p === join(lobby, '.claude') && ++seen === n) {
+          const fresh = `${lock()}.replacement`;
+          writeFileSync(fresh, '{}\n');
+          renameSync(fresh, lock());
+        }
+        return defaultFs.readdir(p);
+      },
+    };
+  }
+
+  test('the declared file swapped after the gate creates no workspace: the record and the log hold the reason in words', async () => {
+    approveYaml(migratedTeamYaml());
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+
+    const made = world();
+    // The gate reads the lock first, the lead seat's confirmation second — the swap lands there.
+    const run = await runUpCmd([], made, { fs: swapLockAt(2) });
+    expect(run.code).toBe(1);
+    expect(made.workspaces).toEqual([]);
+    expect(made.paneIds()).toEqual([]);
+    expect(made.runs).toEqual([]);
+    expect(made.typed).toEqual([]);
+    expect(run.out).toContain('lead: left out: the lobby: .claude/scheduled_tasks.lock is not the file the gate read\n');
+    expect(run.out).not.toContain(lobby);
+    expect(run.err).toContain(`  the lobby ${lobby}: .claude/scheduled_tasks.lock is not the file the gate read\n`);
+    const log = readFileSync(join(dir, 'team.log'), 'utf8');
+    expect(log).toContain('lead: left out: the lobby: .claude/scheduled_tasks.lock is not the file the gate read');
+    expect(log).not.toContain(lobby);
+    expect(Object.keys(readState(dir).sessions['acme']?.seats ?? {})).toEqual([]);
   });
 });
 

@@ -369,14 +369,20 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   let startProblem: string | null = null;
   let verifiedLobby: string | null = null;
   let lobbySeen: LobbySeen | null = null;
+  // What the lobby may hold beside the seats: the files the profiles of the CLIs that run
+  // there declare — every seat of the edited file, this run's added seat included, for a
+  // migrated file seats every one of them in the lobby (`place.ts`).
+  const declaredLobbyFiles = [...new Set(
+    prepared.team.seats.flatMap((seat) => profileFor(seat.cli)?.lobbyFiles ?? []),
+  )].sort();
   if (!prepared.team.trust || prepared.team.trust.length === 0 || isLegacyTrust(prepared.team.trust)) {
     startProblem = `the file is legacy: migrate trust to absolute paths including the lobby ${lobby}:\n${migrationText(prepared.team, root, sources.home)}`;
   } else {
-    const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid, fs: sources.fs });
+    const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid, fs: sources.fs, files: declaredLobbyFiles });
     if (!gate.ok) startProblem = gate.text;
     else if ('path' in gate) {
       verifiedLobby = gate.path;
-      lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
+      lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino, files: gate.files };
     }
   }
   // Where the seat waits: the lobby the gate verified, or a refusal — before the file is edited.
@@ -535,7 +541,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   }
   try {
     if (isMigratedTrust(prepared.team.trust) && wouldLaunch) {
-      const gate = verifyLobby(sources.home, { create: true, getuid: sources.getuid, fs: sources.fs });
+      const gate = verifyLobby(sources.home, { create: true, getuid: sources.getuid, fs: sources.fs, files: declaredLobbyFiles });
       if (!gate.ok) {
         out.stderr(`team add: ${plainText(gate.text)}\n`);
         // exit: add.lobby
@@ -543,7 +549,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       }
       if ('path' in gate) {
         verifiedLobby = gate.path;
-        lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
+        lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino, files: gate.files };
       }
     }
     if (decision.kind === 'unknown') out.stderr(`${plainLine(built.name)}: ${plainText(decision.text)}\n`);
@@ -581,9 +587,11 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       verifiedLobby, records,
       doctor: sources.doctor,
       // The lobby is read again directly before the workspace this run makes in it, with nothing
-      // in between (`execute.ts`). Null when it is still the folder the gate read.
+      // in between (`execute.ts`). Null when it is still the folder the gate read and every file
+      // it allowed still the file it read. The declared files travel with it, so the recheck
+      // walks the same closed tree the gate did.
       confirmLobby() {
-        return lobbySeen ? recheckLobby(sources.home, lobbySeen, { getuid: sources.getuid, fs: sources.fs }) : null;
+        return lobbySeen ? recheckLobby(sources.home, lobbySeen, { getuid: sources.getuid, fs: sources.fs, files: declaredLobbyFiles }) : null;
       },
     });
     const report = await executePlan(plan, session, host);
