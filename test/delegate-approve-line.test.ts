@@ -28,7 +28,7 @@ seats:
 
 const two = `delegates:
   - pane: main/w1:p1
-    commands: [up, down, add, remove, approve]
+    commands: [up, down, add, remove]
   - pane: main/w2:p1
     commands: [add, remove]
 `;
@@ -67,10 +67,10 @@ describe('team approve and the delegates section', () => {
   test('prints one Delegate line per entry, in file order, before the seat-count question', async () => {
     const { code, out, atQuestion } = await approve(`${two}${minimal}`);
     expect(code).toBe(0);
-    expect(out).toContain('Delegate: pane main/w1:p1 may run up, down, add, remove, approve.\n');
+    expect(out).toContain('Delegate: pane main/w1:p1 may run up, down, add, remove.\n');
     expect(out).toContain('Delegate: pane main/w2:p1 may run add, remove.\n');
     expect(out.indexOf('Delegate: pane main/w1:p1')).toBeLessThan(out.indexOf('Delegate: pane main/w2:p1'));
-    expect(atQuestion).toContain('Delegate: pane main/w1:p1 may run up, down, add, remove, approve.\n');
+    expect(atQuestion).toContain('Delegate: pane main/w1:p1 may run up, down, add, remove.\n');
     expect(atQuestion).toContain('Delegate: pane main/w2:p1 may run add, remove.\n');
   });
 
@@ -84,7 +84,7 @@ describe('team approve and the delegates section', () => {
   test('--show prints the lines too, and writes nothing', async () => {
     const { code, out } = await approve(`${two}${minimal}`, ['--show']);
     expect(code).toBe(0);
-    expect(out).toContain('Delegate: pane main/w1:p1 may run up, down, add, remove, approve.\n');
+    expect(out).toContain('Delegate: pane main/w1:p1 may run up, down, add, remove.\n');
     expect(approvalStanding(root, home).kind).toBe('none');
   });
 });
