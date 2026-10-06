@@ -582,6 +582,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         // The watch orders these (pane, text, session); the fake's own action takes (session, pane, text).
         typeText: (pane, text, session) => action.typeText(session, pane, text),
         pressEnter: action.pressEnter,
+        sleep: async () => {},
         notify: (text) => did.notified.push(text),
         now,
         // One pass, then the loop ends: a page shows a pass, not a watch that runs forever.

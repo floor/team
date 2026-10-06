@@ -314,6 +314,7 @@ function watchSources(over: Partial<WatchSources> = {}): WatchSources {
     status: () => null,
     foreground: () => null,
     typeText: () => false,
+    sleep: async () => {},
     pressEnter: () => false,
     notify: () => {},
     now: () => NOW,

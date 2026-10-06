@@ -787,6 +787,7 @@ describe('team watch', () => {
       foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = claudeBox(text); return true; },
       pressEnter: (pane) => { typed.push(`${pane} <enter>`); return true; },
+      sleep: async (ms) => { clock += ms; },
       notify: (text) => { notified.push(text); },
       now: () => new Date(clock),
       wait: async (seconds) => { clock += seconds * 1000; return --left > 0; },
@@ -867,6 +868,36 @@ describe('team watch', () => {
     let calls = 0;
     await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(2, { screen: () => (calls++ === 0 ? permission : screenNow) }));
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+  });
+
+  test('a nudge the pane has not drawn yet is waited for, read back, and then sent', async () => {
+    // The pair of real Claude Code captures: the instant after the nudge line was typed the
+    // pane still reads idle with its placeholder, and about two seconds later the box holds
+    // exactly the line, wrapped onto its continuation row. The reading that decides the Enter
+    // waits for the draw — the fault was reading back once, at once, and telling 'typed and
+    // not sent' about a pane that had simply not drawn yet.
+    const justTyped = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-idle-ansi.txt', import.meta.url), 'utf8');
+    const drawn = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-unsent-ansi.txt', import.meta.url), 'utf8');
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = justTyped; return true; },
+      sleep: async (ms) => { clock += ms; screenNow = drawn; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+    expect(io.out).toContain('nudged the operator');
+    expect(io.out).not.toContain('a nudge was typed and not sent');
+  });
+
+  test('a pane that never draws the nudge is left, with the line that says so', async () => {
+    // The wait is bounded, as the exit typing's is: a screen still idle at the deadline is the
+    // text never drawn, and nothing but the typing was sent.
+    const justTyped = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-idle-ansi.txt', import.meta.url), 'utf8');
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = justTyped; return true; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was typed and not sent');
   });
 
   test('a pane with no live agent is not typed into', async () => {

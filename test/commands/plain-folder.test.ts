@@ -197,6 +197,7 @@ function watchSources(home: string): WatchSources {
     processes: () => null,
     typeText: () => false,
     pressEnter: () => false,
+    sleep: async () => {},
     notify: () => {},
     now: () => NOW,
     wait: async () => false,

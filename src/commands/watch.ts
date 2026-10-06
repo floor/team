@@ -19,7 +19,7 @@ import { readScreen } from '../watch/screen.ts';
 import { judgeTemporary, judgeWorktree } from '../watch/close.ts';
 import { readEnd, type EndView } from '../watch/end.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
-import { boxHoldsText } from '../launch/deliver.ts';
+import { boxHoldsText, settleScreen } from '../launch/deliver.ts';
 import type { DownSeat } from '../launch/plan.ts';
 import { stopRunning, realSources as removeSources } from './remove.ts';
 import { removeWorktree } from './worktree.ts';
@@ -51,6 +51,10 @@ export type WatchSources = {
   processes?(pane: string, session: string): PaneProcesses | null;
   typeText(pane: string, text: string, session: string): boolean;
   pressEnter(pane: string, session: string): boolean;
+  // Sleeps between the typing of the nudge and the read-back that decides the Enter — the
+  // bounded draw wait the exit typing and delivery make (settleScreen). Required: a watch whose
+  // delivery reads back the instant it typed, with nothing to wait on, is the fault itself.
+  sleep(ms: number): Promise<void>;
   notify(text: string): void;
   now(): Date;
   // Waits between passes; false ends the watch.
@@ -97,6 +101,7 @@ export const realWatchSources: WatchSources = {
   processes: (pane, session) => paneProcesses(pane, session),
   typeText,
   pressEnter,
+  sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
   notify,
   now: () => new Date(),
   wait: waitOrStop,
@@ -302,7 +307,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         for (const report of result.reports) tell(report.text, report.to === 'owner' || !args.flags.has('no-notify'));
         if (result.nudge) {
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);
-          else deliver(result.nudge, team, session, sources, memory, say, tell, told);
+          else await deliver(result.nudge, team, session, sources, memory, say, tell, told);
         }
         if (result.fallback) tell(result.fallback, true);
         await closeEnded({ team, root, dir, session, live, sources, say, io, told });
@@ -338,13 +343,14 @@ function spendOf(outcomes: readonly CheckOutcome[]): SpendReading[] {
 
 // Types the nudge, after reading the operator's screen once more: the pass saw it free, and a
 // prompt may have appeared since. Anything but an empty idle prompt keeps the nudge pending.
-function deliver(
+async function deliver(
   nudge: { pane: string; text: string; pending: string[] }, team: TeamFile, session: string, sources: WatchSources,
   memory: ReturnType<typeof newMemory>, say: (text: string, desktop: boolean) => void,
   tell: (text: string, notify: boolean) => void, told: Set<string>,
-): void {
+): Promise<void> {
   const cli = team.seats.find((seat) => seat.name === team.operator)?.cli ?? '';
   const look = () => readScreen(cli, sources.screen(nudge.pane, session) ?? undefined).kind;
+  const holds = () => boxHoldsText(cli, nudge.text, sources.screen(nudge.pane, session) ?? undefined);
   const status = sources.status(nudge.pane, session);
   const keep = () => {
     // The nudge's text carries no report, so the reports it was raised for go back to pending:
@@ -372,9 +378,22 @@ function deliver(
     keep();
     return;
   }
-  // The box is read back before the Enter: it must hold exactly the nudge's own text. An idle
-  // or changed screen here is the text not rendered, and unsent text alone is not this nudge.
-  if (!boxHoldsText(cli, nudge.text, sources.screen(nudge.pane, session) ?? undefined)) {
+  // The box is read back before the Enter: it must hold exactly the nudge's own text. The pane
+  // draws late — the reading right after the typing is still the idle prompt, and the box
+  // appears a moment later (the nudge-typing captures) — so the reading that decides the Enter
+  // waits for it, the same bounded wait the exit typing makes, and a screen still idle at the
+  // deadline is the text never drawn. Unsent text alone is not this nudge.
+  let drawn = holds();
+  if (!drawn) {
+    await settleScreen('idle', look, { now: () => sources.now().getTime(), sleep: (ms) => sources.sleep(ms) });
+    if (!live()) {
+      tellOnce(told, noAgent, 'a nudge was not typed: no live agent in the operator\'s pane', tell);
+      keep();
+      return;
+    }
+    drawn = holds();
+  }
+  if (!drawn) {
     tell('a nudge was typed and not sent: the operator\'s box does not hold it', true);
     keep();
     return;
