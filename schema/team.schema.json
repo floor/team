@@ -588,14 +588,13 @@
                 "up",
                 "down",
                 "add",
-                "remove",
-                "approve"
+                "remove"
               ]
             }
           }
         }
       },
-      "$comment": "the panes that may run these of up, down, add, remove and approve. Omitted means no delegate"
+      "$comment": "the panes that may run these of up, down, add and remove. Omitted means no delegate"
     }
   }
 }

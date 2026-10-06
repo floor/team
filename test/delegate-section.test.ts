@@ -32,17 +32,17 @@ function problems(extra: string): string[] {
 /** One `delegates` entry, indented under the key. */
 const entry = (pane: string, commands: string) => `  - pane: ${pane}\n    commands: [${commands}]\n`;
 
-const one = `delegates:\n${entry('main/w1:p1', 'up, down, add, remove, approve')}`;
+const one = `delegates:\n${entry('main/w1:p1', 'up, down, add, remove')}`;
 
 describe('the delegates section', () => {
   test('absent reads as null, present as the panes and their ordered commands', () => {
     expect(team().delegates).toBeNull();
     expect(team(one).delegates).toEqual([
-      { pane: 'main/w1:p1', commands: ['up', 'down', 'add', 'remove', 'approve'] },
+      { pane: 'main/w1:p1', commands: ['up', 'down', 'add', 'remove'] },
     ]);
-    expect(team(`delegates:\n${entry('main/w2:p1', 'add, remove')}${entry('Main/W1:P1', 'approve')}`).delegates).toEqual([
+    expect(team(`delegates:\n${entry('main/w2:p1', 'add, remove')}${entry('Main/W1:P1', 'remove')}`).delegates).toEqual([
       { pane: 'main/w2:p1', commands: ['add', 'remove'] },
-      { pane: 'Main/W1:P1', commands: ['approve'] },
+      { pane: 'Main/W1:P1', commands: ['remove'] },
     ]);
   });
 
@@ -69,8 +69,8 @@ describe('the delegates section', () => {
     );
   });
 
-  test('pane is one session, one slash, one pane id: case kept, whitespace and a second slash refused', () => {
-    for (const pane of ['main', 'main/w1/p1', '/w1:p1', 'main/']) {
+  test('pane is one session, one slash, one pane id: case kept, the id alone, whitespace and a second slash refused', () => {
+    for (const pane of ['main', 'w1:p1', 'main/w1/p1', '/w1:p1', 'main/']) {
       const messages = problems(`delegates:\n${entry(`"${pane}"`, 'up')}`).join('\n');
       expect(messages).toContain('a delegate: pane must be <herdr session>/<pane id>');
     }
@@ -92,18 +92,28 @@ describe('the delegates section', () => {
     ]);
   });
 
-  test('commands are a non-empty ordered list of distinct lower-case ones of the five', () => {
+  test('the key is `delegates` only: the singular `delegate` is an unknown field of the file', () => {
+    expect(problems(`delegate:\n${entry('main/w1:p1', 'up')}`).join('\n')).toContain(
+      'unknown field "delegate" in the file',
+    );
+  });
+
+  test('commands are a non-empty ordered list of distinct lower-case ones of the four', () => {
     expect(team(`delegates:\n${entry('main/w1:p1', 'down, up')}`).delegates).toEqual([
       { pane: 'main/w1:p1', commands: ['down', 'up'] },
     ]);
-    expect(team(`delegates:\n${entry('main/w1:p1', 'approve')}`).delegates).toEqual([
-      { pane: 'main/w1:p1', commands: ['approve'] },
-    ]);
-    for (const bad of ['[]', '[up, up]', '[Up]', '[trust]', '[answer]', '[Approve]', '[restart]', '[1]', '[up, ""]']) {
+    // `approve` is refused by name: approval stays the owner's.
+    expect(problems(`delegates:\n${entry('main/w1:p1', 'approve')}`).join('\n')).toContain(
+      "a delegate: approve is the owner's; a delegate may not be given it",
+    );
+    expect(problems(`delegates:\n${entry('main/w1:p1', 'up, approve')}`).join('\n')).toContain(
+      "a delegate: approve is the owner's",
+    );
+    for (const bad of ['[]', '[up, up]', '[Up]', '[approve]', '[trust]', '[answer]', '[Approve]', '[restart]', '[1]', '[up, ""]']) {
       expect(problems(`delegates:\n${entry('main/w1:p1', bad)}`).length).toBeGreaterThan(0);
     }
     expect(problems(`delegates:\n  - pane: main/w1:p1\n    commands: up\n`).join('\n')).toContain(
-      'a delegate: commands must be a list of up, down, add, remove, approve',
+      'a delegate: commands must be a list of up, down, add, remove',
     );
     expect(problems(`delegates:\n${entry('main/w1:p1', '[]')}`).join('\n')).toContain(
       'a delegate: commands must name at least one',
@@ -121,6 +131,10 @@ describe('the delegates section', () => {
       'anchors ("&") are not supported',
     );
     expect(problems(`delegates: *d\n`).join('\n')).toContain('aliases ("*") are not supported');
+    // A merge key cannot pull another map's fields into an entry: the parser refuses `<<` itself.
+    expect(problems(`delegates:\n  - pane: main/w1:p1\n    <<: {commands: [down]}\n    commands: [up]\n`).join('\n')).toContain(
+      'merge keys ("<<") are not supported',
+    );
     // A duplicate key anywhere — the section, or a field inside an entry — is refused.
     expect(problems(`${one}delegates:\n${entry('main/w2:p1', 'up')}`).join('\n')).toContain(
       'duplicate key "delegates"',
@@ -151,10 +165,10 @@ describe('the delegates section', () => {
     const absent = fingerprints(team());
     const present = fingerprints(team(one));
     expect(present.sections.delegates).not.toBe(absent.sections.delegates);
-    expect(fingerprints(team(`delegates:\n${entry('main/w2:p1', 'up, down, add, remove, approve')}`)).sections.delegates).not.toBe(
+    expect(fingerprints(team(`delegates:\n${entry('main/w2:p1', 'up, down, add, remove')}`)).sections.delegates).not.toBe(
       present.sections.delegates,
     );
-    expect(fingerprints(team(`delegates:\n${entry('main/w1:p1', 'down, up, add, remove, approve')}`)).sections.delegates).not.toBe(
+    expect(fingerprints(team(`delegates:\n${entry('main/w1:p1', 'down, up, add, remove')}`)).sections.delegates).not.toBe(
       present.sections.delegates,
     );
     expect(fingerprints(team(`delegates:\n${entry('main/w1:p1', 'up')}`)).sections.delegates).not.toBe(
