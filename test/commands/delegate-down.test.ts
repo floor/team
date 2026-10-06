@@ -296,6 +296,52 @@ describe('a delegate\'s refused flags', () => {
   });
 });
 
+// The order these three pin, read off runs of the branch: on an already-idle session the
+// command's own `--file` refusal still comes first — the gate asked or not — and a placed
+// delegate's gate refusal does not: it is held, and the idle return wins with its words unprinted.
+describe('a flag aimed at an already-idle session', () => {
+  const FILE_OWNER = "--file is the owner's, from a terminal outside herdr; this call is unplaced (it runs under herdr)";
+
+  test('the command\'s own --file refusal comes first, and the gate is never asked', async () => {
+    writeFileSync(file, teamFile(null));
+    const elsewhere = join(base, 'elsewhere', 'team.yaml');
+    const r = rig({ gate: neverAsked, sessionRunning: () => false });
+    expect(await r.run(['--file', elsewhere])).toBe(1);
+    expect(r.io.err).toBe(`team down: ${FILE_OWNER}\n`);
+    expect(r.io.out).toBe('');
+    expect(r.gateCalls).toEqual([]);
+    expect(existsSync(join(base, 'elsewhere'))).toBe(false);
+  });
+
+  test('with a delegate section the gate is asked, and the same refusal still comes first', async () => {
+    const elsewhere = join(base, 'elsewhere', 'team.yaml');
+    const reads: string[] = [];
+    // A gate that refuses without placing the caller: the delegates section's ordinary answer
+    // for this caller. Its words never surface — the refusal printed is the command's own.
+    const r = rig({
+      gate: refusing('down.delegate', GATE_DOWN),
+      sessionRunning: (session) => { reads.push(session); return false; },
+      agents: (session) => { reads.push(session); return []; },
+    });
+    expect(await r.run(['--file', elsewhere])).toBe(1);
+    expect(r.io.err).toBe(`team down: ${FILE_OWNER}\n`);
+    expect(r.io.err).not.toContain(GATE_DOWN);
+    expect(r.gateCalls.length).toBe(1);
+    expect(reads).toEqual([]);
+    expect(existsSync(join(base, 'elsewhere'))).toBe(false);
+  });
+
+  test('a placed delegate\'s --file: the gate is asked, its refusal is held, and idle wins', async () => {
+    const elsewhere = join(base, 'elsewhere', 'team.yaml');
+    const r = rig({ gate: refusing('down.delegate-flag', flagText('file')), sessionRunning: () => false });
+    expect(await r.run(['--file', elsewhere])).toBe(0);
+    expect(r.io.out).toBe('session acme-web is not running: nothing to stop\n');
+    expect(r.io.err).toBe('');
+    expect(r.gateCalls.length).toBe(1);
+    expect(existsSync(join(base, 'elsewhere'))).toBe(false);
+  });
+});
+
 describe('a refused gate', () => {
   test('its words take the ordinary refusal\'s place, and its dry run prints the plan', async () => {
     const real = rig({ gate: refusing('down.delegate', GATE_DOWN) });

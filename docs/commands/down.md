@@ -64,8 +64,15 @@ it read.
 A run that passes its gate and proceeds to its effects appends one line to `.agents/team.log`
 naming the delegate's pane. A dry run leaves no such line, and neither does a session that was
 already idle: both return before any effect. An already-idle `down` says `session <session> is
-not running: nothing to stop` and exits 0 before any caller-role or gate refusal, for every
-caller — a delegate that passed a prohibited flag included: idle `down` is unchanged.
+not running: nothing to stop` and exits 0 before the caller-role and gate refusals a running
+session would stop it on, for every caller — a placed delegate that passed `--file` or
+`--session` included: the gate is asked, its refusal is held, and the idle return comes first,
+so its words are not printed at all and idle `down` is unchanged by any of this. One refusal
+does come first: a caller that is not the owner and passes `--file` or `--session` is refused
+unplaced — `--file is the owner's, from a terminal outside herdr`, or the same for `--session`,
+exit 1 — with the session never read. That refusal is the command's own, not the gate's: a file
+with no delegate section has it with the gate never asked, and a file with one has it with the
+gate asked and answered, the refusal standing unless the gate placed the caller.
 
 ## Flags
 
