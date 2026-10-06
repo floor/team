@@ -92,3 +92,23 @@ export function testIo(cwd: string, caller?: Caller): TestIo {
   };
   return io;
 }
+
+/** The environment for a git command run in a fixture repository: the identity a session
+ *  exports is dropped, because git reads GIT_AUTHOR_* and GIT_COMMITTER_* before `-c user.*`
+ *  and before the repository's own config — a session that exports them silently overrides
+ *  every fixture's identity, and a commit the fixture meant to be signed or exempt is not. */
+export function gitEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const name of [
+    'GIT_AUTHOR_NAME',
+    'GIT_AUTHOR_EMAIL',
+    'GIT_AUTHOR_DATE',
+    'GIT_COMMITTER_NAME',
+    'GIT_COMMITTER_EMAIL',
+    'GIT_COMMITTER_DATE',
+    'EMAIL',
+  ]) {
+    delete env[name];
+  }
+  return env;
+}

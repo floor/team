@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkReadmes, openingLine } from '../scripts/check-readmes.ts';
+import { checkReadmes, helpOpeningLine, openingLine } from '../scripts/check-readmes.ts';
 
 const SENTENCE = "Set up and run a team of AI agents for your project. Agents propose, you decide.";
 const PLACEHOLDER = "OPENING SENTENCE PENDING: THE OWNER'S CHOICE";
@@ -29,9 +29,9 @@ function fixture(files: Tree): string {
   return root;
 }
 
-function run(root: string): { file: string; message: string }[] {
+function run(root: string, help: string = SENTENCE): { file: string; message: string }[] {
   try {
-    return checkReadmes(root);
+    return checkReadmes(root, help);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -65,6 +65,16 @@ describe('the opening sentence', () => {
 
   test('a launcher carrying the same sentence is read and passes', () => {
     expect(run(fixture({ launcher: SENTENCE }))).toEqual([]);
+  });
+
+  test("the help's opening line is a place: one that differs fails under its own name", () => {
+    expect(run(fixture({}), SENTENCE)).toEqual([]);
+    expect(run(fixture({}), 'Another sentence.').map((failure) => failure.file)).toEqual(['team --help']);
+  });
+
+  test("this build's --help opens with this tree's sentence", () => {
+    const root = join(import.meta.dir, '..');
+    expect(checkReadmes(root, helpOpeningLine())).toEqual([]);
   });
 
   test('the opening line is the first line under the title, comments and blanks skipped', () => {

@@ -2,7 +2,7 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Command, Io } from './io.ts';
-import { version } from './version.ts';
+import { description, version } from './version.ts';
 
 // Each command is loaded only when it is called. A slice adds its line here. The table is exported
 // so a test can walk it: every command, `--help`, `-h` and a usage line.
@@ -22,9 +22,11 @@ export const commands: Record<string, () => Promise<{ default: Command; USAGE: s
   release: () => import('./commands/release.ts'),
 };
 
-const USAGE = `team: set up, change and watch a project's team of AI agents
-
-Usage: team <command> [options]
+// The usage below the opening sentence: `team --help`'s first line is package.json's
+// description, read at print time by helpText, so it is the same sentence the READMEs carry.
+// This const stays a plain string, with no interpolation: scripts/contract.ts reads it from
+// the source for contract/cli.json and docs/reference/cli.md.
+const USAGE = `Usage: team <command> [options]
 
 Commands:
 {commands}
@@ -38,6 +40,14 @@ The team is declared in <project>/.agents/team.yaml.
 
 export { version };
 
+/** `team --help`'s text, exactly as printed: the owner's opening sentence (package.json's
+ *  description), a blank line, then the usage. */
+export function helpText(): string {
+  const names = Object.keys(commands);
+  const usage = USAGE.replace('{commands}', names.length ? names.map((n) => `  ${n}`).join('\n') : '  (none in this build)');
+  return `${description()}\n\n${usage}`;
+}
+
 /** What the process entry point does when a command throws: one line on stderr, exit code 1. */
 export function reportFailure(error: unknown, stderr: (text: string) => void): number {
   stderr(`team: ${error instanceof Error ? error.message : String(error)}\n`);
@@ -46,10 +56,8 @@ export function reportFailure(error: unknown, stderr: (text: string) => void): n
 
 export async function main(argv: string[], io: Io): Promise<number> {
   const [name, ...rest] = argv;
-  const names = Object.keys(commands);
-  const usage = USAGE.replace('{commands}', names.length ? names.map((n) => `  ${n}`).join('\n') : '  (none in this build)');
   if (!name || name === '--help' || name === '-h' || name === 'help') {
-    io.stdout(usage);
+    io.stdout(helpText());
     // exit: team.help
     // exit: team.no-command
     return name ? 0 : 2;
@@ -65,7 +73,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
   }
   const load = commands[name];
   if (!load) {
-    io.stderr(`team: unknown command "${name}"\n\n${usage}`);
+    io.stderr(`team: unknown command "${name}"\n\n${helpText()}`);
     return 2; // exit: team.unknown
   }
   const command = await load();

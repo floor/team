@@ -22,7 +22,7 @@ import { defaultFs, findRepoRoot, lobbyDir, verifyLobby, type FsReader } from '.
 import { seatStart } from '../../src/worktree/place.ts';
 import { readState, updateState } from '../../src/state.ts';
 import { approvalStanding, LEGACY_LINE, storePath, writeApproval } from '../../src/store/store.ts';
-import { claudeBox, testIo } from '../helpers.ts';
+import { claudeBox, gitEnv, testIo } from '../helpers.ts';
 
 const NOW = new Date('2026-10-04T09:00:00Z');
 const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
@@ -37,7 +37,7 @@ let lobby: string;
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
-    cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv(),
   });
 }
 

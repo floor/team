@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { judgeMerge, readMerge } from '../src/end/condition.ts';
+import { gitEnv } from './helpers.ts';
 
 describe('merged, from the branch\'s own commits', () => {
   test('a fresh branch, one only brought up to date, and a real merge', () => {
@@ -25,7 +26,7 @@ describe('read from a repository', () => {
 
   function git(cwd: string, ...args: string[]): string {
     return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
-      cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+      cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv(),
     });
   }
 

@@ -4,6 +4,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { findRoot, loadTeamFile, NOT_A_REPO } from '../src/file/load.ts';
+import { gitEnv } from './helpers.ts';
 
 const example = new URL('./fixtures/example.yaml', import.meta.url).pathname;
 let base: string;
@@ -11,7 +12,7 @@ let project: string;
 let worktree: string;
 
 function git(cwd: string, ...args: string[]): void {
-  execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd, stdio: 'ignore' });
+  execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd, stdio: 'ignore', env: gitEnv() });
 }
 
 beforeAll(() => {

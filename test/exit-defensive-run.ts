@@ -52,7 +52,7 @@ const { approvalOf } = await import('../src/approve/approval.ts');
 const { runAdd } = await import('../src/commands/add.ts');
 const { runApprove } = await import('../src/commands/approve.ts');
 const { storePath, writeApproval } = await import('../src/store/store.ts');
-const { testIo } = await import('./helpers.ts');
+const { gitEnv, testIo } = await import('./helpers.ts');
 
 const NOW = new Date('2026-10-04T09:00:00Z');
 const TWO = `format: 1
@@ -87,7 +87,7 @@ const home = join(base, 'home');
 mkdirSync(join(root, '.agents'), { recursive: true });
 mkdirSync(home);
 const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
-  cwd: root, stdio: ['ignore', 'pipe', 'pipe'],
+  cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv(),
 });
 git('init', '-q', '-b', 'main');
 writeFileSync(join(root, 'README.md'), 'acme\n');

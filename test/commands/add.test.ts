@@ -13,7 +13,7 @@ import { readLedger, storePath, writeApproval } from '../../src/store/store.ts';
 import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
 import { rulesFilePath } from '../../src/launch/rules-file.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
-import { testIo } from '../helpers.ts';
+import { gitEnv, testIo } from '../helpers.ts';
 import type { Machine } from '../../src/watch/machine.ts';
 
 const NOW = new Date('2026-10-03T14:02:00Z');
@@ -99,7 +99,7 @@ function file(path: string, text = 'x\n'): void {
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
-    cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv(),
   });
 }
 

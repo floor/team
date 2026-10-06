@@ -10,7 +10,7 @@ import { loadTeamFile } from '../../src/file/load.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
 import { readState, updateState, emptySession } from '../../src/state.ts';
 import { approvalStanding, storePath, writeApproval } from '../../src/store/store.ts';
-import { testIo, type TestIo } from '../helpers.ts';
+import { gitEnv, testIo, type TestIo } from '../helpers.ts';
 
 let base: string;
 let project: string;
@@ -22,7 +22,7 @@ const lead = { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'acme' } as c
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
-    cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv(),
   });
 }
 
