@@ -45,7 +45,7 @@ import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { runPause, type PauseHost, type PauseInput } from '../launch/pause.ts';
 import { plainLine, plainText } from '../launch/plain.ts';
 import { recordWhat, progressWriter } from '../launch/progress.ts';
-import { acquireSeatLock } from '../launch/seat-lock.ts';
+import { acquireSeatLock, seatLockPath } from '../launch/seat-lock.ts';
 import { processSignals, terminalReader, type Terminal } from '../launch/terminal.ts';
 import { trustPolicy } from '../file/dialogs.ts';
 import { rulesOf } from '../launch/rules.ts';
@@ -335,6 +335,20 @@ function restartNote(
   return {};
 }
 
+/** The run lock's name under `<dir>/seat-locks/<session>/`: a leading dot, so it can never
+ *  be a seat name (`file/sections/seats.ts`). */
+const RUN_LOCK = '.run';
+
+/** What a second `up` is told. `held` is the live pid that owns the lock, or -1 when the
+ *  lock cannot be read and its holder is unknown — the one case the owner has to clear by
+ *  hand. */
+function busyText(held: number, session: string, dir: string): string {
+  if (held > 0) {
+    return `another \`team up\` is running for session ${session} (pid ${held}); try again when it is done`;
+  }
+  return `another \`team up\` may be running for session ${session}, and its lock cannot be read; if no \`team up\` is running, delete ${seatLockPath(dir, session, RUN_LOCK)}`;
+}
+
 export async function runUp(argv: string[], io: Io, sources: UpSources): Promise<number> {
   // Every line this run writes goes through the cleaned writers from here; the raw pair stays
   // reachable for the progress writer alone, which draws its own `\r\x1b[K` on a TTY.
@@ -578,6 +592,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   }
   let verifiedLobby: string | null = null;
   let lobbySeen: LobbySeen | null = null;
+  let createLobby = false;
   if (isMigratedTrust(team.trust)) {
     const launching = seats.some((seat) => {
       if (seat.stopped || seat.launchProblem) return false;
@@ -586,17 +601,19 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       if (!fresh) return false;
       return seat.budget?.kind !== 'refuse';
     });
-    const gate = verifyLobby(sources.home, {
-      create: !dry && refusals.length === 0 && launching,
-      getuid: sources.getuid,
-      fs: sources.fs,
-    });
+    // Read-only: a refusal stops the run before anything is made, and the run lock below is
+    // held before the first write. A lobby that is simply absent is not a refusal here — the
+    // creating pass runs under the lock (`createLobby`). Making it here, as this once did, is
+    // the run's first filesystem effect outside the lock, and two fresh runs can both see the
+    // lobby absent: the loser's mkdir meets the winner's component and `verifyLobby` turns the
+    // EEXIST into a refusal the losing run never earned (`lobby/gate.ts`, the create branch).
+    const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid, fs: sources.fs });
     if (!gate.ok) refusals.push(gate.text);
     else if ('path' in gate) {
       verifiedLobby = gate.path;
       lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
       for (const seat of seats) if (seat.lobby) seat.cwd = gate.path;
-    }
+    } else createLobby = !dry && launching;
   }
   const watch = recorded?.watch;
   const watchAlive = Boolean(watch && sources.alive?.(watch.pid));
@@ -605,7 +622,9 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   // another one under this session's name.
   const startWatch = watchWouldRead(root, loaded.path, sources.home);
   const watchMissed = !watchAlive && !startWatch;
-  const plan = upPlan({
+  // Built where it is needed: on a dry run, just below, before anything is made; on a real run,
+  // after the lock, so the lobby made there under it is already every lobby seat's `cwd`.
+  const buildPlan = () => upPlan({
     root,
     session,
     // A stopped session is not started. The refusal above names the delete command.
@@ -634,7 +653,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     // The same cause can reach the list twice — the gate and `doctor` both read the
     // approval — so a refusal is said once.
     for (const refusal of [...new Set(refusals)]) out.stdout(`! up would refuse: ${plainText(refusal)}\n`);
-    out.stdout(plainText(formatPlan(plan)));
+    out.stdout(plainText(formatPlan(buildPlan())));
     sayWatchMissed();
     // exit: up.dry-run
     return 0;
@@ -668,224 +687,260 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     return 1;
   }
 
-  // The audit line of a delegated run: the gate passed it and this run is about to have effects,
-  // so the delegation is on the record before the first workspace is made. A dry run returned
-  // above and writes nothing; a run that refused never got here.
-  if (delegated !== null) (sources.logDelegated ?? logDelegated)(dir, delegated, 'up', sources.now?.());
-
-  // The ceilings the launch holds are the verified record's own, fixed at approval.
-  const ceilings: Ceilings | null = standing.kind === 'verified' ? standing.record.approval.ceilings : null;
-  const running: Running[] = [];
-  if (agents) {
-    const byName = new Map(team.seats.map((seat) => [seat.name, seat]));
-    for (const agent of agents) {
-      if (!agent.name) continue;
-      const seat = byName.get(agent.name);
-      const known = recorded?.seats[agent.name];
-      if (!seat && !known) continue;
-      const like = known?.temporary?.like;
-      const vendor = seat?.vendor ?? (like ? byName.get(like)?.vendor : undefined) ?? 'unknown';
-      running.push({ name: agent.name, vendor, temporary: Boolean(known?.temporary) });
-    }
+  // One `up` per session at a time: from here the run has effects — the delegated audit line
+  // below is a write — and two runs started in two terminals read the same state before either
+  // records a pane, so they launch over each other (one sitting at a dialog while the other
+  // reports). The lock is the per-seat one under a name no seat can have: a leading dot
+  // (`file/sections/seats.ts`), so no seat's lock collides with it. A dry run and a refused
+  // run returned above and never take it, and a lock left by a killed run is taken over by the
+  // next one (`launch/seat-lock.ts`).
+  const runLock = acquireSeatLock(dir, session, RUN_LOCK);
+  if ('held' in runLock) {
+    out.stderr(`team up: ${plainText(busyText(runLock.held, session, dir))}\n`);
+    // exit: up.busy
+    return 1;
   }
-  const now = () => sources.now?.() ?? launch.now();
-  const host: Host = {
-    startServer: launch.startServer,
-    sessionUp: launch.sessionUp,
-    createWorkspace: launch.createWorkspace,
-    // The lobby is read again directly before each workspace this run makes in it, with nothing
-    // in between (`execute.ts`). Null when it is still the folder the gate read.
-    confirmLobby() {
-      return lobbySeen ? recheckLobby(sources.home, lobbySeen, { getuid: sources.getuid, fs: sources.fs }) : null;
-    },
-    paneRun: launch.paneRun,
-    typeLine: () => false,
-    deliverRules: async (session, pane, cli, file, seconds) => {
-      // The rules go to the file first; nothing is typed until it holds them. The writer
-      // builds the path itself, from the approval in force and the seat's name.
-      const written = writeRulesFile(standing, file.seat, root, sources.home, file.text, rulesFileHash(file.text));
-      if (!written.ok) return fileRefusalOf(written);
-      // The plan already refused a path that can't be typed; this is the same check again, so a
-      // path that reached this far by a caller's mistake is refused before anything is typed.
-      if (!typeablePath(file.path)) {
-        return { stop: 'path', typed: false, sent: false, kind: 'unknown' as const, row: null };
-      }
-      // The delivery reports why it stopped through this box; the caller turns the stopped
-      // reading into the report, and a plain refusal stays `false`.
-      const stopped: { why: Refusal | null } = { why: null };
-      const delivered = await deliverRules(cli, file.line, seconds, {
-        screen: () => launch.paneText(session, pane) ?? undefined,
-        status: () => launch.agentStatus?.(session, pane) ?? null,
-        type: (value) => launch.typeText?.(session, pane, value) ?? false,
-        enter: () => launch.pressEnter?.(session, pane) ?? false,
-        // The last look before Enter: the file, read without following a link, must still hold
-        // the text whose hash the line names.
-        file: () => rulesFileHolds(file.path, rulesFileHash(file.text)),
-        foreground: () => launch.foreground(session, pane),
-        report: (why) => { stopped.why = why; },
-        now: () => now().getTime(),
-        sleep: sources.sleep ?? launch.sleep,
-      });
-      return delivered === false && stopped.why !== null ? stopped.why : delivered;
-    },
-    renameAgent: launch.renameAgent,
-    closeWorkspace: launch.closeWorkspace,
-    stopSession: (session) => launch.stopSession?.(session) ?? false,
-    kill: () => false,
-    agentPanes: launch.agentPanes,
-    agentList: launch.agents,
-    // The session's workspaces with their labels now; the pause compares the label of the pane's
-    // live workspace with the one this seat's launch gives (`pause.ts`, `waitingProblem`).
-    workspaces: () => sources.workspaces?.(session) ?? null,
-    seatStates: () => readState(dir).sessions[session]?.seats ?? null,
-    workspacePanes: launch.workspacePanes ? (session, workspace) => launch.workspacePanes!(session, workspace) : undefined,
-    classify: (name, pane, cli) => readScreen(cli, launch.paneText(name, pane) ?? undefined).kind,
-    paneText: (session, pane) => launch.paneText(session, pane),
-    shellBack: (session, pane) => launch.shellBack?.(session, pane) ?? null,
-    processInfo: (session, pane) => launch.processInfo?.(session, pane) ?? null,
-    sleep: sources.sleep ?? launch.sleep,
-    now: () => now().getTime(),
-    allow(name) {
-      if (sources.machine) {
-        const problem = crossed(sources.machine(root));
-        if (problem) return problem;
-      }
-      const seat = team.seats.find((item) => item.name === name);
-      if (!seat || !ceilings) return null;
-      return overCeiling(ceilings, running, seat);
-    },
-    record(name, patch) {
-      updateState(dir, (file) => {
-        const current = (file.sessions[session] ??= emptySession());
-        const prior = current.seats[name] ?? { stage: patch.stage };
-        // The CLI the seat was launched with: `down` needs it when the file no longer names the seat.
-        const cli = team.seats.find((seat) => seat.name === name)?.cli;
-        let start_cwd = prior.start_cwd;
-        if (!start_cwd && patch.createdWorkspace && verifiedLobby) start_cwd = verifiedLobby;
-        // `waiting: null` removes the field alone; anything else written replaces it.
-        const { waiting: written, ...rest } = patch;
-        const seat: SeatState = { ...prior, ...rest, ...(cli ? { cli } : {}), ...(start_cwd ? { start_cwd } : {}) };
-        if (written === null) delete seat.waiting;
-        else if (written) seat.waiting = written;
-        current.seats[name] = seat;
-      });
-    },
-    running(name) {
-      if (running.some((item) => item.name === name)) return;
-      const seat = team.seats.find((item) => item.name === name);
-      if (seat) running.push({ name, vendor: seat.vendor, temporary: false });
-    },
-    drop(name) {
-      updateState(dir, (file) => {
-        const seats = file.sessions[session]?.seats;
-        if (seats) delete seats[name];
-      });
-    },
-    // What is not a record — a skip line, a session failure, the watch's sentence — is cleaned
-    // here with the same function the records use: no escape sequence or bidi override reaches
-    // the terminal from a file's word, a screen's word or a folder's name.
-    say: (line) => out.stderr(plainText(line)),
-    progress: (seat, state) => records.progress(seat, state),
-    final: (seat, record) => records.final(seat, record),
-    detail: (line) => records.detail(line),
-    cliVersion(cli) {
-      const profile = profileFor(cli);
-      if (!profile || !sources.doctor) return null;
-      return sources.doctor.version(profile.binary);
-    },
-    log: (who, what) => logLine(dir, 'up', callerLabel(caller), `${who}: ${what}`, now()),
-    /**
-     * §3/§4: what happens to a seat this run finds at a dialog. The owner at a terminal is
-     * asked, in `pause.ts`, with `o`/`s`/`q`; an owner whose stdin is not a terminal never
-     * reads it — the workspace is closed without input and the record says so (§2). A delegated
-     * run takes that no-terminal path whatever its stdin: it never prompts, never focuses a pane,
-     * never sends a key or a text, and its idle wait's timeout is a dialog like any other stop —
-     * closed without input, not left at launched.
-     */
-    dialog:
-      delegated !== null
-        ? { mode: 'close-no-terminal', timeoutIsDialog: true }
-        : caller.kind === 'owner'
-          ? { mode: 'prompt', run: (input: PauseInput) => runPause(input, pauseHostFor(input)) }
-          : { mode: 'close-no-terminal' },
-    clearWaiting(name) {
-      updateState(dir, (file) => {
-        const seatState = file.sessions[session]?.seats[name];
-        if (seatState) delete seatState.waiting;
-      });
-    },
-    seatLock: (name) => acquireSeatLock(dir, session, name),
-  };
+  try {
+    // The audit line of a delegated run: the gate passed it and this run is about to have effects,
+    // so the delegation is on the record before the first workspace is made. A dry run returned
+    // above and writes nothing; a run that refused never got here.
+    if (delegated !== null) (sources.logDelegated ?? logDelegated)(dir, delegated, 'up', sources.now?.());
 
-  // §2: the owner's terminal. Only a run that may prompt builds a reader, and a read only
-  // happens from the pause's own key(): a caller whose stdin is not a terminal never gets here
-  // (`dialog` is `close-no-terminal` for it), and a dry run returns before the host is built.
-  const terminal = sources.terminal ? sources.terminal() : terminalReader(process.stdin, processSignals);
-  const seatCli = (name: string) => team.seats.find((item) => item.name === name)?.cli ?? '';
-  /** The pause's host for one seat: this run's state, seat lock, screen reads and writer. Every
-   *  line it says goes through the writer, and nothing here sends a key or a text into a pane. */
-  const pauseHostFor = (input: PauseInput): PauseHost => ({
-    lock: () => acquireSeatLock(dir, session, input.seat),
-    state: () => readState(dir).sessions[session]?.seats[input.seat],
-    write(change) {
-      updateState(dir, (file) => {
-        const current = (file.sessions[session] ??= emptySession());
-        const prior = current.seats[input.seat] ?? { stage: 'launched' as const };
-        const record = change(prior.waiting);
-        // The process identity is read here, at the moment the record is written, in the same
-        // write: `[o]`, `[s]`, a resumed `up` and `team answer` all refuse a pane whose
-        // process is gone or replaced.
-        const identity = launchedIdentity(launch.processInfo?.(session, input.pane) ?? null);
-        current.seats[input.seat] = {
-          ...prior,
-          waiting: record,
-          pane: input.pane,
-          ...(input.workspace ? { workspace: input.workspace } : {}),
-          ...(identity ? { launched: identity } : {}),
-        };
-      });
-    },
-    clear() {
-      updateState(dir, (file) => {
-        const seatState = file.sessions[session]?.seats[input.seat];
-        if (seatState) delete seatState.waiting;
-      });
-    },
-    drop: () => host.drop(input.seat),
-    screen: () => readScreen(seatCli(input.seat), launch.paneText(session, input.pane) ?? undefined).kind,
-    process: () => launch.processInfo?.(session, input.pane) ?? null,
-    agents: () => launch.agents(session),
-    workspaces: () => sources.workspaces?.(session) ?? null,
-    workspacePanes: (workspace) => launch.workspacePanes?.(session, workspace) ?? null,
-    seats: () => readState(dir).sessions[session]?.seats ?? null,
-    focus: () => launch.focus?.(session, input.pane) ?? false,
-    close: (workspace) => launch.closeWorkspace(session, workspace),
-    record: (label) => records.waiting(input.seat, label),
-    prompt: (line) => records.prompt(line),
-    drain: () => terminal.drain(),
-    // A line beside the record: the writer owns the line's termination, and the cleaning of
-    // every string it writes once the records slice's round lands.
-    say: (line) => records.prompt(line.endsWith('\n') ? line.slice(0, -1) : line),
-    entering: (classification) => host.log(input.seat, recordWhat({ kind: 'waiting for owner', classification })),
-    key: (ms) => terminal.key(ms),
-    sleep: (ms) => (sources.sleep ?? launch.sleep)(ms),
-    now: () => now().getTime(),
-    idleTimeout: profileFor(seatCli(input.seat))?.idleTimeout ?? 90,
-    polled: trustPolicy(team) === 'coordinator' && input.classification === 'trust',
-  });
+    if (createLobby) {
+      // The run's first write, under the lock: the lobby the read-only pass above found absent.
+      // Serialised here, no competing mkdir can turn into this run's refusal, and this run's own
+      // make cannot land on another run's — which is what the read-only pass exists for.
+      const gate = verifyLobby(sources.home, { create: true, getuid: sources.getuid, fs: sources.fs });
+      if (!gate.ok) {
+        out.stderr(`team up: ${plainText(gate.text)}\n`);
+        // exit: up.lobby
+        return 1;
+      }
+      if ('path' in gate) {
+        verifiedLobby = gate.path;
+        lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
+        for (const seat of seats) if (seat.lobby) seat.cwd = gate.path;
+      }
+    }
+    // Built after the make above: the lobby it may have made is every lobby seat's `cwd`.
+    const plan = buildPlan();
 
-  const report = await executePlan(plan, session, host);
-  sayWatchMissed();
-  const afterwards = readState(dir).sessions[session]?.seats ?? {};
-  const pending = team.seats.filter((seat) => {
-    if (seat.stopped || !profileFor(seat.cli)) return false;
-    return afterwards[seat.name]?.stage !== 'ready';
-  });
-  // A seat the plan left behind (a repair it would not close, a dialog it timed out at) is a
-  // seat left short of ready even when its state still says ready: `held` makes that exit 1.
-  // exit: up.ready
-  // exit: up.pending
-  // exit: up.server
-  // exit: up.watch
-  return pending.length || report.serverFailed || report.watchFailed || report.held || watchMissed ? 1 : 0;
+    // The ceilings the launch holds are the verified record's own, fixed at approval.
+    const ceilings: Ceilings | null = standing.kind === 'verified' ? standing.record.approval.ceilings : null;
+    const running: Running[] = [];
+    if (agents) {
+      const byName = new Map(team.seats.map((seat) => [seat.name, seat]));
+      for (const agent of agents) {
+        if (!agent.name) continue;
+        const seat = byName.get(agent.name);
+        const known = recorded?.seats[agent.name];
+        if (!seat && !known) continue;
+        const like = known?.temporary?.like;
+        const vendor = seat?.vendor ?? (like ? byName.get(like)?.vendor : undefined) ?? 'unknown';
+        running.push({ name: agent.name, vendor, temporary: Boolean(known?.temporary) });
+      }
+    }
+    const now = () => sources.now?.() ?? launch.now();
+    const host: Host = {
+      startServer: launch.startServer,
+      sessionUp: launch.sessionUp,
+      createWorkspace: launch.createWorkspace,
+      // The lobby is read again directly before each workspace this run makes in it, with nothing
+      // in between (`execute.ts`). Null when it is still the folder the gate read.
+      confirmLobby() {
+        return lobbySeen ? recheckLobby(sources.home, lobbySeen, { getuid: sources.getuid, fs: sources.fs }) : null;
+      },
+      paneRun: launch.paneRun,
+      typeLine: () => false,
+      deliverRules: async (session, pane, cli, file, seconds) => {
+        // The rules go to the file first; nothing is typed until it holds them. The writer
+        // builds the path itself, from the approval in force and the seat's name.
+        const written = writeRulesFile(standing, file.seat, root, sources.home, file.text, rulesFileHash(file.text));
+        if (!written.ok) return fileRefusalOf(written);
+        // The plan already refused a path that can't be typed; this is the same check again, so a
+        // path that reached this far by a caller's mistake is refused before anything is typed.
+        if (!typeablePath(file.path)) {
+          return { stop: 'path', typed: false, sent: false, kind: 'unknown' as const, row: null };
+        }
+        // The delivery reports why it stopped through this box; the caller turns the stopped
+        // reading into the report, and a plain refusal stays `false`.
+        const stopped: { why: Refusal | null } = { why: null };
+        const delivered = await deliverRules(cli, file.line, seconds, {
+          screen: () => launch.paneText(session, pane) ?? undefined,
+          status: () => launch.agentStatus?.(session, pane) ?? null,
+          type: (value) => launch.typeText?.(session, pane, value) ?? false,
+          enter: () => launch.pressEnter?.(session, pane) ?? false,
+          // The last look before Enter: the file, read without following a link, must still hold
+          // the text whose hash the line names.
+          file: () => rulesFileHolds(file.path, rulesFileHash(file.text)),
+          foreground: () => launch.foreground(session, pane),
+          report: (why) => { stopped.why = why; },
+          now: () => now().getTime(),
+          sleep: sources.sleep ?? launch.sleep,
+        });
+        return delivered === false && stopped.why !== null ? stopped.why : delivered;
+      },
+      renameAgent: launch.renameAgent,
+      closeWorkspace: launch.closeWorkspace,
+      stopSession: (session) => launch.stopSession?.(session) ?? false,
+      kill: () => false,
+      agentPanes: launch.agentPanes,
+      agentList: launch.agents,
+      // The session's workspaces with their labels now; the pause compares the label of the pane's
+      // live workspace with the one this seat's launch gives (`pause.ts`, `waitingProblem`).
+      workspaces: () => sources.workspaces?.(session) ?? null,
+      seatStates: () => readState(dir).sessions[session]?.seats ?? null,
+      workspacePanes: launch.workspacePanes ? (session, workspace) => launch.workspacePanes!(session, workspace) : undefined,
+      classify: (name, pane, cli) => readScreen(cli, launch.paneText(name, pane) ?? undefined).kind,
+      paneText: (session, pane) => launch.paneText(session, pane),
+      shellBack: (session, pane) => launch.shellBack?.(session, pane) ?? null,
+      processInfo: (session, pane) => launch.processInfo?.(session, pane) ?? null,
+      sleep: sources.sleep ?? launch.sleep,
+      now: () => now().getTime(),
+      allow(name) {
+        if (sources.machine) {
+          const problem = crossed(sources.machine(root));
+          if (problem) return problem;
+        }
+        const seat = team.seats.find((item) => item.name === name);
+        if (!seat || !ceilings) return null;
+        return overCeiling(ceilings, running, seat);
+      },
+      record(name, patch) {
+        updateState(dir, (file) => {
+          const current = (file.sessions[session] ??= emptySession());
+          const prior = current.seats[name] ?? { stage: patch.stage };
+          // The CLI the seat was launched with: `down` needs it when the file no longer names the seat.
+          const cli = team.seats.find((seat) => seat.name === name)?.cli;
+          let start_cwd = prior.start_cwd;
+          if (!start_cwd && patch.createdWorkspace && verifiedLobby) start_cwd = verifiedLobby;
+          // `waiting: null` removes the field alone; anything else written replaces it.
+          const { waiting: written, ...rest } = patch;
+          const seat: SeatState = { ...prior, ...rest, ...(cli ? { cli } : {}), ...(start_cwd ? { start_cwd } : {}) };
+          if (written === null) delete seat.waiting;
+          else if (written) seat.waiting = written;
+          current.seats[name] = seat;
+        });
+      },
+      running(name) {
+        if (running.some((item) => item.name === name)) return;
+        const seat = team.seats.find((item) => item.name === name);
+        if (seat) running.push({ name, vendor: seat.vendor, temporary: false });
+      },
+      drop(name) {
+        updateState(dir, (file) => {
+          const seats = file.sessions[session]?.seats;
+          if (seats) delete seats[name];
+        });
+      },
+      // What is not a record — a skip line, a session failure, the watch's sentence — is cleaned
+      // here with the same function the records use: no escape sequence or bidi override reaches
+      // the terminal from a file's word, a screen's word or a folder's name.
+      say: (line) => out.stderr(plainText(line)),
+      progress: (seat, state) => records.progress(seat, state),
+      final: (seat, record) => records.final(seat, record),
+      detail: (line) => records.detail(line),
+      cliVersion(cli) {
+        const profile = profileFor(cli);
+        if (!profile || !sources.doctor) return null;
+        return sources.doctor.version(profile.binary);
+      },
+      log: (who, what) => logLine(dir, 'up', callerLabel(caller), `${who}: ${what}`, now()),
+      /**
+       * §3/§4: what happens to a seat this run finds at a dialog. The owner at a terminal is
+       * asked, in `pause.ts`, with `o`/`s`/`q`; an owner whose stdin is not a terminal never
+       * reads it — the workspace is closed without input and the record says so (§2). A delegated
+       * run takes that no-terminal path whatever its stdin: it never prompts, never focuses a pane,
+       * never sends a key or a text, and its idle wait's timeout is a dialog like any other stop —
+       * closed without input, not left at launched.
+       */
+      dialog:
+        delegated !== null
+          ? { mode: 'close-no-terminal', timeoutIsDialog: true }
+          : caller.kind === 'owner'
+            ? { mode: 'prompt', run: (input: PauseInput) => runPause(input, pauseHostFor(input)) }
+            : { mode: 'close-no-terminal' },
+      clearWaiting(name) {
+        updateState(dir, (file) => {
+          const seatState = file.sessions[session]?.seats[name];
+          if (seatState) delete seatState.waiting;
+        });
+      },
+      seatLock: (name) => acquireSeatLock(dir, session, name),
+    };
+
+    // §2: the owner's terminal. Only a run that may prompt builds a reader, and a read only
+    // happens from the pause's own key(): a caller whose stdin is not a terminal never gets here
+    // (`dialog` is `close-no-terminal` for it), and a dry run returns before the host is built.
+    const terminal = sources.terminal ? sources.terminal() : terminalReader(process.stdin, processSignals);
+    const seatCli = (name: string) => team.seats.find((item) => item.name === name)?.cli ?? '';
+    /** The pause's host for one seat: this run's state, seat lock, screen reads and writer. Every
+     *  line it says goes through the writer, and nothing here sends a key or a text into a pane. */
+    const pauseHostFor = (input: PauseInput): PauseHost => ({
+      lock: () => acquireSeatLock(dir, session, input.seat),
+      state: () => readState(dir).sessions[session]?.seats[input.seat],
+      write(change) {
+        updateState(dir, (file) => {
+          const current = (file.sessions[session] ??= emptySession());
+          const prior = current.seats[input.seat] ?? { stage: 'launched' as const };
+          const record = change(prior.waiting);
+          // The process identity is read here, at the moment the record is written, in the same
+          // write: `[o]`, `[s]`, a resumed `up` and `team answer` all refuse a pane whose
+          // process is gone or replaced.
+          const identity = launchedIdentity(launch.processInfo?.(session, input.pane) ?? null);
+          current.seats[input.seat] = {
+            ...prior,
+            waiting: record,
+            pane: input.pane,
+            ...(input.workspace ? { workspace: input.workspace } : {}),
+            ...(identity ? { launched: identity } : {}),
+          };
+        });
+      },
+      clear() {
+        updateState(dir, (file) => {
+          const seatState = file.sessions[session]?.seats[input.seat];
+          if (seatState) delete seatState.waiting;
+        });
+      },
+      drop: () => host.drop(input.seat),
+      screen: () => readScreen(seatCli(input.seat), launch.paneText(session, input.pane) ?? undefined).kind,
+      process: () => launch.processInfo?.(session, input.pane) ?? null,
+      agents: () => launch.agents(session),
+      workspaces: () => sources.workspaces?.(session) ?? null,
+      workspacePanes: (workspace) => launch.workspacePanes?.(session, workspace) ?? null,
+      seats: () => readState(dir).sessions[session]?.seats ?? null,
+      focus: () => launch.focus?.(session, input.pane) ?? false,
+      close: (workspace) => launch.closeWorkspace(session, workspace),
+      record: (label) => records.waiting(input.seat, label),
+      prompt: (line) => records.prompt(line),
+      drain: () => terminal.drain(),
+      // A line beside the record: the writer owns the line's termination, and the cleaning of
+      // every string it writes once the records slice's round lands.
+      say: (line) => records.prompt(line.endsWith('\n') ? line.slice(0, -1) : line),
+      entering: (classification) => host.log(input.seat, recordWhat({ kind: 'waiting for owner', classification })),
+      key: (ms) => terminal.key(ms),
+      sleep: (ms) => (sources.sleep ?? launch.sleep)(ms),
+      now: () => now().getTime(),
+      idleTimeout: profileFor(seatCli(input.seat))?.idleTimeout ?? 90,
+      polled: trustPolicy(team) === 'coordinator' && input.classification === 'trust',
+    });
+
+    const report = await executePlan(plan, session, host);
+    sayWatchMissed();
+    const afterwards = readState(dir).sessions[session]?.seats ?? {};
+    const pending = team.seats.filter((seat) => {
+      if (seat.stopped || !profileFor(seat.cli)) return false;
+      return afterwards[seat.name]?.stage !== 'ready';
+    });
+    // A seat the plan left behind (a repair it would not close, a dialog it timed out at) is a
+    // seat left short of ready even when its state still says ready: `held` makes that exit 1.
+    // exit: up.ready
+    // exit: up.pending
+    // exit: up.server
+    // exit: up.watch
+    return pending.length || report.serverFailed || report.watchFailed || report.held || watchMissed ? 1 : 0;
+  } finally {
+    runLock.release();
+  }
 }

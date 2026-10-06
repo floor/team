@@ -209,6 +209,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `up.dry-run` | `up` | 0 | a dry run printed the plan | `team up --dry-run` |
 | `up.ready` | `up` | 0 | the launch finished | `team up` |
 | `up.agents` | `up` | 1 | the agents can't be read | `team up` |
+| `up.busy` | `up` | 1 | another team up is running for the session | `team up` |
 | `up.delegate` | `up` | 1 | only the owner or the approved delegate runs up | `team up` |
 | `up.delegate-approval` | `up` | 1 | the delegate gate needs a verified approval | `team up` |
 | `up.delegate-approved-copy` | `up` | 1 | the delegate gate needs a readable approved copy | `team up` |
@@ -220,6 +221,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `up.differs` | `up` | 1 | the file differs from its approval | `team up` |
 | `up.doctor` | `up` | 1 | doctor refuses the launch | `team up` |
 | `up.herdr` | `up` | 1 | herdr doesn't answer | `team up` |
+| `up.lobby` | `up` | 1 | the lobby could not be created for the launch | `team up` |
 | `up.machine` | `up` | 1 | the machine is over a launch limit | `team up` |
 | `up.never-approved` | `up` | 1 | the file was never approved | `team up` |
 | `up.no-launch` | `up` | 1 | this call has no way to reach herdr | `team up` |
