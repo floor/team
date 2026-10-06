@@ -182,6 +182,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
         dir: dirname(named.path),
         flags: [...args.flags, ...Object.keys(args.values)],
         io,
+        home: sources.home,
       });
       if (flagged.kind === 'refused') return delegateRefused(out, flagged);
     }
@@ -229,6 +230,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       dir,
       flags: [...args.flags, ...Object.keys(args.values)],
       io,
+      home: sources.home,
     });
     if (verdict.kind === 'refused') return delegateRefused(out, verdict);
     delegatePane = verdict.pane;

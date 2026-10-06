@@ -8,7 +8,7 @@ import { agentList, paneRootPid, type HerdrAgent } from './herdr.ts';
 import type { Io } from './io.ts';
 import { logLine } from './log.ts';
 import { readState, type State } from './state.ts';
-import { approvalStanding, type Standing } from './store/store.ts';
+import { approvalStanding, approvedCopy, type Standing } from './store/store.ts';
 
 /**
  * A delegated run, decided and not yet done. `passed` names the approved pane the caller
@@ -21,7 +21,8 @@ export type DelegateVerdict =
 
 /**
  * The reads a test replaces. Each one left out is the real read: the approval standing and
- * its stored copy for `root`, the state in `dir`, the agent list herdr gives for a session.
+ * its stored copy for `root` under `home`, the state in `dir`, the agent list herdr gives
+ * for a session.
  * Placement is not here. It is `io`, asked about a session, the same way every other command
  * places its caller.
  */
@@ -97,18 +98,20 @@ export function delegateGate(input: {
   dir: string;
   flags: readonly string[];
   io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>;
+  /** Approval store home. Absent: the owner's home, the same default the store uses. */
+  home?: string;
   sources?: DelegateSources;
 }): DelegateVerdict {
-  const { command, team, root, dir, flags } = input;
+  const { command, team, root, dir, flags, home } = input;
   const sources = input.sources ?? {};
   const refuse = (suffix: string, text: string): DelegateVerdict => ({ kind: 'refused', id: `${command}.${suffix}`, text });
 
-  const standing = (sources.standing ?? approvalStanding)(root);
+  const standing = sources.standing ? sources.standing(root) : approvalStanding(root, home);
   if (standing.kind !== 'verified') {
     return refuse('delegate-approval', `delegation needs a verified approval: ${notInForce(standing)}`);
   }
 
-  const copy = sources.approvedCopy ? sources.approvedCopy(root) : standing.record.file;
+  const copy = sources.approvedCopy ? sources.approvedCopy(root) : approvedCopy(root, home);
   if (copy === null || validated(copy) === null) {
     return refuse('delegate-approved-copy', 'delegation needs a readable approved copy: run `team approve`');
   }

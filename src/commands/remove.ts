@@ -115,6 +115,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
         dir: dirname(named.path),
         flags: [...args.flags, ...Object.keys(args.values)],
         io,
+        home: sources.home,
       });
       if (flagged.kind === 'refused') return delegateRefused(io, flagged);
     }
@@ -162,6 +163,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
       dir,
       flags: [...args.flags, ...Object.keys(args.values)],
       io,
+      home: sources.home,
     });
     if (decided.kind === 'refused') return delegateRefused(io, decided);
     delegatePane = decided.pane;

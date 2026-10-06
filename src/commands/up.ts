@@ -365,6 +365,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
         dir: dirname(delegateTeam.path),
         flags: [...args.flags, ...Object.keys(args.values)],
         io,
+        home: sources.home,
       })
     : null;
   // The approved `<session>/<pane id>` when this run is a delegated one: the ordinary caller rule
