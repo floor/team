@@ -61,7 +61,7 @@
     },
     "claude-code": {
       "idle": {
-        "real": 4,
+        "real": 2,
         "constructed": 2,
         "undocumented": 0
       },
@@ -71,7 +71,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 5,
+        "real": 3,
         "constructed": 2,
         "undocumented": 0
       },
@@ -81,7 +81,7 @@
         "undocumented": 0
       },
       "question": {
-        "real": 5,
+        "real": 4,
         "constructed": 0,
         "undocumented": 0
       },
@@ -96,14 +96,14 @@
         "undocumented": 0
       },
       "unknown": {
-        "real": 2,
+        "real": 1,
         "constructed": 11,
         "undocumented": 0
       }
     },
     "codex": {
       "idle": {
-        "real": 4,
+        "real": 3,
         "constructed": 1,
         "undocumented": 0
       },
@@ -113,7 +113,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 14,
+        "real": 13,
         "constructed": 0,
         "undocumented": 0
       },
@@ -145,7 +145,7 @@
     },
     "cursor": {
       "idle": {
-        "real": 9,
+        "real": 8,
         "constructed": 0,
         "undocumented": 0
       },
@@ -155,7 +155,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 23,
+        "real": 22,
         "constructed": 0,
         "undocumented": 0
       },
@@ -452,42 +452,6 @@
       "provenance": "capture"
     },
     {
-      "file": "claude-code/2.1.291/exit-after-enter.txt",
-      "cli": "claude-code",
-      "kind": "unknown",
-      "provenance": "capture"
-    },
-    {
-      "file": "claude-code/2.1.291/exit-idle.txt",
-      "cli": "claude-code",
-      "kind": "idle",
-      "provenance": "capture"
-    },
-    {
-      "file": "claude-code/2.1.291/exit-menu.txt",
-      "cli": "claude-code",
-      "kind": "unsent",
-      "provenance": "capture"
-    },
-    {
-      "file": "claude-code/2.1.291/exit-question.txt",
-      "cli": "claude-code",
-      "kind": "question",
-      "provenance": "capture"
-    },
-    {
-      "file": "claude-code/2.1.291/exit-shell-idle.txt",
-      "cli": "claude-code",
-      "kind": "idle",
-      "provenance": "capture"
-    },
-    {
-      "file": "claude-code/2.1.291/exit-shell-menu.txt",
-      "cli": "claude-code",
-      "kind": "unsent",
-      "provenance": "capture"
-    },
-    {
       "file": "claude-code/leftover-box.txt",
       "cli": "claude-code",
       "kind": "unknown",
@@ -692,18 +656,6 @@
       "provenance": "capture"
     },
     {
-      "file": "codex/0.160.0/exit-idle.txt",
-      "cli": "codex",
-      "kind": "idle",
-      "provenance": "capture"
-    },
-    {
-      "file": "codex/0.160.0/exit-menu.txt",
-      "cli": "codex",
-      "kind": "unsent",
-      "provenance": "capture"
-    },
-    {
       "file": "codex/0.160.0/idle.txt",
       "cli": "codex",
       "kind": "idle",
@@ -831,18 +783,6 @@
     },
     {
       "file": "cursor/2026.10.01/composer-unsent.txt",
-      "cli": "cursor",
-      "kind": "unsent",
-      "provenance": "capture"
-    },
-    {
-      "file": "cursor/2026.10.01/exit-idle.txt",
-      "cli": "cursor",
-      "kind": "idle",
-      "provenance": "capture"
-    },
-    {
-      "file": "cursor/2026.10.01/exit-menu.txt",
       "cli": "cursor",
       "kind": "unsent",
       "provenance": "capture"

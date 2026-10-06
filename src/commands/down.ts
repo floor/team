@@ -1,6 +1,5 @@
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
-import { stripSgr } from '../ansi.ts';
 import { readArgs } from '../args.ts';
 import { anotherPaneRefusal, callerOf, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller } from '../caller.ts';
 import { delegateGate, logDelegated, type DelegateSources, type DelegateVerdict } from '../delegate.ts';
@@ -163,23 +162,6 @@ export function stateOf(status: string, screen: Screen): DownSeat['state'] {
  *  ending the moment the screen is decisive either way. */
 export const CLEAR_WAIT_MS = 5000;
 
-/**
- * Claude Code's own exit question, from a 2.1.291 pane whose status line read `1 shell`:
- * Enter on `/exit` draws "Background work is running", with `❯ 1. Exit and stop tasks`
- * selected. One more Enter confirms that choice and the CLI exits. A selection on any other
- * row is not confirmed here.
- */
-export function exitQuestionSelected(screen: string | undefined): boolean {
-  if (screen === undefined) return false;
-  return stripSgr(screen).split('\n').some((row) => /^\s*❯\s*1\.\s+Exit and stop tasks\s*$/.test(row));
-}
-
-/** The same dialog with a different row selected: nothing is sent into it. */
-function exitQuestionOther(screen: string | undefined): boolean {
-  if (screen === undefined || exitQuestionSelected(screen)) return false;
-  return stripSgr(screen).includes('Exit and stop tasks');
-}
-
 /** What `typeExit` may do to one pane, so `down` and `remove` share the whole sequence and the
  *  tests can stand in for every part of it. */
 export type ExitIo = {
@@ -236,41 +218,6 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
     if (other === null) return '';
     return ` (first row that differs: ${other === '' ? 'a blank row' : other})`;
   };
-  // Enter is only half the exit. A pane with a background shell answers it with its own
-  // question, the selected row "Exit and stop tasks"; one more Enter confirms that row and
-  // the CLI leaves. Any other screen is left for the wait that follows a successful Enter.
-  // A question that stays, or one whose selected row is not the exit, is not confirmed.
-  const sendEnter = async (): Promise<ExitTyping> => {
-    if (!io.pressEnter()) return false;
-    let answered = false;
-    const deadline = io.now() + CLEAR_WAIT_MS;
-    for (;;) {
-      if (!live()) return true;
-      if (!answered && exitQuestionSelected(io.screen())) {
-        if (!live()) return 'no-agent';
-        if (!io.pressEnter()) {
-          return { left: 'its exit was not confirmed; the exit question was not answered; left running' };
-        }
-        answered = true;
-        continue;
-      }
-      if (!answered && exitQuestionOther(io.screen())) {
-        return { left: 'its exit was not confirmed; the exit question had another choice selected; left running' };
-      }
-      // The confirming Enter has been sent and the question is gone. The process may still be
-      // the foreground while it leaves; the wait after this typing is what confirms that.
-      if (answered && !exitQuestionSelected(io.screen()) && !exitQuestionOther(io.screen())) return true;
-      if (io.now() >= deadline) break;
-      const before = io.now();
-      await io.sleep(100);
-      if (io.now() <= before) break;
-    }
-    if (!live()) return true;
-    if (answered && (exitQuestionSelected(io.screen()) || exitQuestionOther(io.screen()))) {
-      return { left: 'its exit was not confirmed; the exit question stayed open; left running' };
-    }
-    return true;
-  };
 
   if (!live()) return 'no-agent';
   if (!resting()) return false;
@@ -294,10 +241,10 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // An idle screen right after the typing is the text not rendered yet, not an empty box; the
   // wait settles that before the comparison. Only a box that reads back as exactly the typed
   // text gets the Enter.
-  if (boxHoldsText(cli, text, io.screen())) return sendEnter();
+  if (boxHoldsText(cli, text, io.screen())) return io.pressEnter();
   const kind = await settle('idle');
   if (kind !== 'unsent' && kind !== 'idle') return false;
-  if (boxHoldsText(cli, text, io.screen())) return sendEnter();
+  if (boxHoldsText(cli, text, io.screen())) return io.pressEnter();
   if (kind === 'idle') {
     return { left: 'its exit was not confirmed; the pane never drew the typed text; its box is empty; left running' };
   }

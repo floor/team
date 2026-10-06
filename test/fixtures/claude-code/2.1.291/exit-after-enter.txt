@@ -1,7 +1,0 @@
-❯ claude
-
-Resume this session with:
-claude --resume 00000000-0000-4000-8000-000000000000
-❯ claude
-/tmp/stop-for-real-proj-8hSw main        8s 20:28:09
-❯
