@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { callerLabel, callerOf, describeCaller, mayLaunchSeats } from '../caller.ts';
+import { delegateGate, logDelegated } from '../delegate.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { migrationText } from '../file/migrate.ts';
 import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
@@ -90,6 +91,10 @@ export type UpSources = {
   // The budget gate, overridable so a test can count its calls. Absent: the real gate.
   // A standing that is not verified refuses below before this is consulted at all.
   seatBudget?: typeof seatBudget;
+  // The delegate gate, overridable so a test can fake its verdict without the real preflight.
+  // Absent: the real gate. The audit line of a delegated run, overridable the same way.
+  delegateGate?: typeof delegateGate;
+  logDelegated?: typeof logDelegated;
   // Present on the shipped command. A dry run never calls it.
   launch?: Launch;
 };
@@ -359,8 +364,30 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   // What would make `up` refuse. A dry run prints the plan anyway; a real run stops first.
   const refusals: string[] = [];
   const caller = callerOf(io);
+  // The approved `<session>/<pane id>` when this run is a delegated one: the ordinary caller rule
+  // refused, the file's `delegates` section named a pane, and the gate passed it. A `refused`
+  // verdict takes the ordinary caller refusal's place — same list, same exit rules — and without a
+  // `delegates` section nothing here changes: the same refusal, the same ids, as before.
+  let delegated: string | null = null;
   if (!mayLaunchSeats(caller)) {
-    refusals.push(`only the owner runs \`up\`, from a terminal outside herdr; this call is ${describeCaller(caller)}`);
+    const verdict = team.delegates
+      ? (sources.delegateGate ?? delegateGate)({
+          command: 'up',
+          team,
+          root,
+          dir,
+          flags: [...args.flags, ...Object.keys(args.values)],
+          io,
+        })
+      : null;
+    if (verdict?.kind === 'passed') delegated = verdict.pane;
+    else {
+      refusals.push(
+        verdict?.kind === 'refused'
+          ? verdict.text
+          : `only the owner runs \`up\`, from a terminal outside herdr; this call is ${describeCaller(caller)}`,
+      );
+    }
   }
   // One verified snapshot carries the whole command: the refusal when there is
   // one, and the ceilings the launch holds. A legacy or refused record is not
@@ -596,6 +623,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   if (refusals.length) {
     for (const refusal of [...new Set(refusals)]) out.stderr(`team up: ${plainText(refusal)}\n`);
     // exit: up.not-owner
+    // exit: up.delegate
+    // exit: up.delegate-approval
+    // exit: up.delegate-approved-copy
+    // exit: up.delegate-drift
+    // exit: up.delegate-evidence
+    // exit: up.delegate-placement
+    // exit: up.delegate-command
+    // exit: up.delegate-flag
     // exit: up.never-approved
     // exit: up.differs
     // exit: up.doctor
@@ -613,6 +648,11 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     // exit: up.no-launch
     return 1;
   }
+
+  // The audit line of a delegated run: the gate passed it and this run is about to have effects,
+  // so the delegation is on the record before the first workspace is made. A dry run returned
+  // above and writes nothing; a run that refused never got here.
+  if (delegated !== null) (sources.logDelegated ?? logDelegated)(dir, delegated, 'up', sources.now?.());
 
   // The ceilings the launch holds are the verified record's own, fixed at approval.
   const ceilings: Ceilings | null = standing.kind === 'verified' ? standing.record.approval.ceilings : null;
@@ -738,12 +778,17 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     /**
      * §3/§4: what happens to a seat this run finds at a dialog. The owner at a terminal is
      * asked, in `pause.ts`, with `o`/`s`/`q`; an owner whose stdin is not a terminal never
-     * reads it — the workspace is closed without input and the record says so (§2).
+     * reads it — the workspace is closed without input and the record says so (§2). A delegated
+     * run takes that no-terminal path whatever its stdin: it never prompts, never focuses a pane,
+     * never sends a key or a text, and its idle wait's timeout is a dialog like any other stop —
+     * closed without input, not left at launched.
      */
     dialog:
-      caller.kind === 'owner'
-        ? { mode: 'prompt', run: (input: PauseInput) => runPause(input, pauseHostFor(input)) }
-        : { mode: 'close-no-terminal' },
+      delegated !== null
+        ? { mode: 'close-no-terminal', timeoutIsDialog: true }
+        : caller.kind === 'owner'
+          ? { mode: 'prompt', run: (input: PauseInput) => runPause(input, pauseHostFor(input)) }
+          : { mode: 'close-no-terminal' },
     clearWaiting(name) {
       updateState(dir, (file) => {
         const seatState = file.sessions[session]?.seats[name];
