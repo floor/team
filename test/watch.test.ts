@@ -976,6 +976,23 @@ describe('team watch', () => {
     expect(io.out).toContain('a nudge was not typed: no live agent in the operator\'s pane');
   });
 
+  test('an operator that turns working during the draw wait is not sent the Enter', async () => {
+    // The reviewer's focused case: the pass saw the operator free, the typing goes in, and while
+    // the pane draws the box the operator starts a turn. The status read before the wait must not
+    // clear the key: the Enter's checks are the live agent, the status as it reads at the key and
+    // the box, all taken with no await between them, so a turn that began under the wait leaves
+    // the nudge typed and unsent. Read before the fix, this sent `w0:p1 <enter>` anyway.
+    const justTyped = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-idle-ansi.txt', import.meta.url), 'utf8');
+    const drawn = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-unsent-ansi.txt', import.meta.url), 'utf8');
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = justTyped; return true; },
+      sleep: async (ms) => { clock += ms; screenNow = drawn; statusNow = 'working'; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was typed and not sent');
+  });
+
   test('an operator that started working since the pass is not typed into', async () => {
     statusNow = 'working';
     await runWatch(['--file', file], testIo(dir, { kind: 'owner' }), sources(1));

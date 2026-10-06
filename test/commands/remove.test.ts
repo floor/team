@@ -255,7 +255,9 @@ describe('team remove', () => {
     expect(made.typed).toEqual(['/exit']);
     expect(entered).toEqual([]);
     expect(made.closed).toEqual([]);
-    expect(io.out).toContain('worker: its exit was not typed; left as it is (team remove worker --abandon closes it)');
+    // The dialog hides the box, not the text typed a moment ago: the run reports what the screen
+    // was reading — not "its exit was not typed", which the typed text in the box contradicts.
+    expect(io.out).toContain('worker: its exit was not confirmed; the screen was reading permission before the Enter; left running (team remove worker --abandon closes it)');
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 

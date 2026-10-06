@@ -131,8 +131,10 @@ with the text named, in the refusal below.
 | ``team remove: another session-mutating run is holding session <session> (pid <pid>); try again when it is done`` — another run holds the session's mutator lock, the one lock `up`, `add`, `down` and `remove` share; the line names no command, because the lock is shared. The lock is taken before this run's first effect and released at its end; every refusal above is decided first and never shows it | 1 |
 | ``team remove: another session-mutating run may be holding session <session>, and its lock cannot be read; if no run is using it, delete <state dir>/seat-locks/<session>/.run`` — the lock file does not read as a token, so its holder is unknown and only the owner clears it; the line names the file | 1 |
 
-`--abandon` answers the last five: the seat is not asked anything, its workspace is closed as it is,
-and its pane's text is lost.
+`--abandon` answers the seat-state refusals above — a seat that is working, blocked at a prompt,
+sitting at its own exit question, on a screen the profile does not recognise, holding unsent
+text, or holding this CLI's exit text unsent: the seat is not asked anything, its workspace is
+closed as it is, and its pane's text is lost.
 
 ## Exit codes
 

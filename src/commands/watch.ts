@@ -403,15 +403,26 @@ async function deliver(
   let drawn = mine || holds();
   if (!drawn) {
     await settleScreen('idle', look, { now: () => sources.now().getTime(), sleep: (ms) => sources.sleep(ms) });
-    if (!live()) {
-      tellOnce(told, noAgent, 'a nudge was not typed: no live agent in the operator\'s pane', tell);
-      keep();
-      return;
-    }
     drawn = holds();
+  }
+  // The wait is a window the pane's state can change in: the agent can go, and the operator can
+  // start a turn. Every check the Enter needs — the live agent, the status as it reads now, the
+  // box — is taken here, with no await between them, so nothing that changed while the box drew
+  // can have a key sent into it. The status read at the top of this function is not reused: it
+  // predates the wait, and a turn that began under it must fail closed.
+  if (!live()) {
+    tellOnce(told, noAgent, 'a nudge was not typed: no live agent in the operator\'s pane', tell);
+    keep();
+    return;
   }
   if (!drawn) {
     tell('a nudge was typed and not sent: the operator\'s box does not hold it', true);
+    keep();
+    return;
+  }
+  const free = sources.status(nudge.pane, session);
+  if (free !== 'idle' && free !== 'done') {
+    tell('a nudge was typed and not sent: the operator was not free when the box was read back', true);
     keep();
     return;
   }
