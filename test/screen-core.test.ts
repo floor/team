@@ -1139,3 +1139,77 @@ describe('a shell prompt against the other composers', () => {
     }
   });
 });
+
+describe('a rule read as one block of rows', () => {
+  // The block vocabulary, from the profile that carries it (claude-code's exit_question): a row
+  // the dialog draws — '' is one blank row of its spacing, the only way to write one — the
+  // `list` run it fills with its own text, and `one_of` for the alternatives a form's tail can
+  // take, an empty one for a form that draws no row there. The loader is what refuses a file,
+  // so the vocabulary's bounds are pinned here, in the loader's own words.
+  const profile = (rule: string): string => `
+format: 1
+cli: sample
+screen:
+  exit_question:
+${rule}
+  composer:
+    mode: box-to-rule
+    prompt: '^>'
+    rule: '^-{8}'
+    placeholders:
+      - equals: ''
+`;
+  const block = (steps: string): string => `    - block:
+${steps}`;
+
+  test('a block compiles to the rows, the run and the alternatives it names', () => {
+    const data = loadScreen(
+      profile(block(`        - 'Background work is running'
+        - ''
+        - list: true
+        - one_of:
+            - ['2. Stay']
+            - ['2. Move to background and exit', '3. Stay']
+            - []`)),
+    );
+    expect(data.exit_question?.rules[0]?.block).toEqual([
+      { row: 'Background work is running' },
+      { blank: true },
+      { list: true },
+      { oneOf: [[{ row: '2. Stay' }], [{ row: '2. Move to background and exit' }, { row: '3. Stay' }], []] },
+    ]);
+  });
+
+  test('the vocabulary is bounded, and the loader names what it refuses', () => {
+    const refuses = (rule: string, message: string): void => {
+      expect(() => loadScreen(profile(rule))).toThrow(message);
+    };
+    // A block spells every row it draws, the footer among them, so it stands alone: a second
+    // primitive would be read on the screen the block has already rejected.
+    refuses(`    - block:
+        - 'a'
+      all: ['b']`, '"block" is the rule\'s only key');
+    refuses('    - block: true', '"block" must be a non-empty list of rows');
+    refuses('    - block: []', '"block" must be a non-empty list of rows');
+    // The block starts at the row it first draws — it is found from the bottom by that row.
+    refuses(block(`        - ''
+        - 'a'`), 'a block starts with the row it first draws');
+    refuses(block(`        - list: true
+        - 'a'`), 'a block starts with the row it first draws');
+    // A step is a row, a blank, a list or a set of alternatives; nothing else is a step.
+    refuses(block('        - 3'), 'a block row must be a string');
+    refuses(block('        - [a, b]'), 'a block step must be a map');
+    refuses(block('        - wat: true'), 'unknown key "wat"');
+    // The run stands alone, is true, and the tail names at least one alternative — an empty
+    // set of them is a block no screen can ever be.
+    refuses(block(`        - list: false
+        - 'a'`), '"list" must be true');
+    refuses(block(`        - list: true
+          one_of: []
+        - 'a'`), '"list" stands alone');
+    refuses(block('        - one_of: []'), '"one_of" must name at least one alternative');
+    refuses(block(`        - one_of: '2. Stay'`), '"one_of" must name at least one alternative');
+    refuses(block(`        - one_of:
+            - '2. Stay'`), 'an alternative is a list of the rows it draws');
+  });
+});

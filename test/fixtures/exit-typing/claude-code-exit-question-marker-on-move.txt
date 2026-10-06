@@ -1,0 +1,23 @@
+❯ Start a background shell that runs sleep 600. Do
+  not wait for it to finish. Tell me when that shell
+  is running in the background.
+
+  Ran 1 shell command
+
+⏺ Shell is running in the background (ID: b9seqnrop).
+  You'll get a notification when it completes after
+  10 minutes.
+
+✻ Cogitated for 3s · done 11:36 PM · 1 shell still
+  running
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Background work is running
+   The following will stop when you exit:
+
+   shell · sleep 600
+
+     1. Exit and stop tasks
+   ❯ 2. Move to background and exit
+     3. Stay
+
+   Enter to confirm · Esc to cancel

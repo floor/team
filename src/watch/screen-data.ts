@@ -4,6 +4,16 @@ import type { Screen } from './screen.ts';
 
 export type LinePattern = { match: RegExp; except: RegExp[] };
 
+/** One step of a `block` rule: a row the dialog draws (its whole text, after the frame's own
+ *  indentation), one blank row of its spacing, the run of rows it fills with its own text, or
+ *  the alternatives a form's tail can take — each a list of steps, an empty one for a form
+ *  that draws no row there. */
+export type BlockStep =
+  | { row: string }
+  | { blank: true }
+  | { list: true }
+  | { oneOf: BlockStep[][] };
+
 export type Rule = {
   any?: LinePattern[];
   all?: LinePattern[];
@@ -17,6 +27,10 @@ export type Rule = {
   /** Every non-blank row after the block's last anchor must match one of these: the block's
    *  own tail, with nothing of another dialog's after it. */
   onlyAfter?: { anchor: LinePattern; patterns: LinePattern[] };
+  /** The dialog read as one contiguous block of rows, from the last row that matches its first
+   *  step to the screen's last non-blank line: every row the block draws, the blanks it draws
+   *  and the run of rows it fills with its own text. The rule's only key. */
+  block?: BlockStep[];
 };
 
 /** The versions a captured record was taken on, as the profile's `tested:` range reads. */

@@ -974,6 +974,90 @@
       "provenance": "constructed"
     },
     {
+      "file": "exit-typing/claude-code-exit-question-marker-on-move.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-move-above-marked.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-move-footer-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-move-marked-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-move-second-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-move-third-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-move-without-stay.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-other-second-row.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-stay-footer-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-stay-marked-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-stay-second-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-swapped-tail.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
       "file": "exit-typing/claude-code-idle-ansi.txt",
       "cli": "claude-code",
       "classify": "idle",
@@ -1016,7 +1100,28 @@
       "provenance": "capture"
     },
     {
+      "file": "exit-typing/claude-code-shell-move-question.txt",
+      "cli": "claude-code",
+      "classify": "exit question",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
       "file": "exit-typing/claude-code-shell-question-ansi.txt",
+      "cli": "claude-code",
+      "classify": "exit question",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-shell-scheduled-move-question-ansi.txt",
+      "cli": "claude-code",
+      "classify": "exit question",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-shell-scheduled-move-question-clipped-ansi.txt",
       "cli": "claude-code",
       "classify": "exit question",
       "composer": "unknown",
