@@ -104,19 +104,35 @@ describe('workspacePanes', () => {
 });
 
 describe('sessionCleared', () => {
-  test('the captured plain delete line is a clear', () => {
-    expect(sessionCleared('deleted session scratch-clear-032\n')).toBe(true);
+  const name = 'scratch-clear-032';
+
+  test('the captured plain delete line for the asked name is a clear', () => {
+    expect(sessionCleared('deleted session scratch-clear-032\n', name)).toBe(true);
   });
 
-  test('a stop line is not a clear', () => {
-    expect(sessionCleared('stopped session scratch-clear-032\n')).toBe(false);
+  test('an empty object is not a clear', () => {
+    expect(sessionCleared('{}', name)).toBe(false);
+    expect(sessionCleared('{}\n', name)).toBe(false);
+  });
+
+  test('a result object is not a clear', () => {
+    expect(sessionCleared('{"result":{}}', name)).toBe(false);
+    expect(sessionCleared('{"result":{}}\n', name)).toBe(false);
   });
 
   test('an empty answer is not a clear', () => {
-    expect(sessionCleared('')).toBe(false);
+    expect(sessionCleared('', name)).toBe(false);
   });
 
-  test('a JSON error is not a clear', () => {
-    expect(sessionCleared('{"type":"error"}\n')).toBe(false);
+  test('a stop line is not a clear', () => {
+    expect(sessionCleared(`stopped session ${name}\n`, name)).toBe(false);
+  });
+
+  test('a delete of another name is not a clear', () => {
+    expect(sessionCleared('deleted session other.dot\n', name)).toBe(false);
+  });
+
+  test('the right line plus a second line is not a clear', () => {
+    expect(sessionCleared(`deleted session ${name}\nstill here\n`, name)).toBe(false);
   });
 });
