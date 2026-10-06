@@ -29,6 +29,13 @@ exit_clear: ctrl+c
 # "❯ 1. Exit and stop tasks", and stays; one more Enter exits it. Declared with the
 # `exit_question` stage below: a stop answers that screen only when the profile names both.
 exit_confirm: enter
+# The files a run of 2.1.291 showed this CLI writing in its working folder: the folder
+# stayed empty through the start, the trust dialog, an answered prompt and five idle
+# minutes; one scheduler call (CronCreate) made the folder ".claude" and, inside it, the
+# regular file below — the scheduler's one lock — and at /exit the CLI deleted the lock
+# and left the empty folder. The lobby may hold exactly these paths for this CLI.
+lobby_files:
+  - .claude/scheduled_tasks.lock
 timeouts:
   idle: 90s
   exit: 30s

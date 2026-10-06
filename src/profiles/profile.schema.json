@@ -51,6 +51,11 @@
       "enum": ["enter"],
       "description": "optional: the one key that confirms the CLI's own exit question, sent by a stop on a screen the profile reads as an exit question; absent, a seat that asks the question cannot be stopped by asking"
     },
+    "lobby_files": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "optional: the exact relative paths of regular files a capture showed this CLI writing in its working folder, which a shared lobby may therefore hold beside the seats; absent, no path is tolerated for this CLI"
+    },
     "timeouts": {
       "type": "object",
       "additionalProperties": false,
