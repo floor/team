@@ -1,0 +1,17 @@
+
+✻ Churned for 3s · done 3:54 PM
+
+❯ Ask me, with your question tool, which of two
+  names to use for a file, before doing anything.
+
+  Thought for 2s
+Background work is running
+❯ 1. Exit and stop tasks
+Enter to confirm · Esc to cancel
+
+Which branch should this start from?
+
+❯ 1. main
+  2. next
+
+Enter to confirm · Esc to cancel

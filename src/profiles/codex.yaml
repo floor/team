@@ -26,6 +26,10 @@ exit: /exit
 # composer to its empty placeholder. Used only to clear an exit text that did not read
 # back as typed, and only when the box holds exactly that text.
 exit_clear: ctrl+u
+# No `exit_confirm`: a 0.160.0 run on 2026-10-06 left a backgrounded shell running, sent
+# `/exit`, and one Enter put the pane back at its shell with no question asked — its exit
+# printed only advice ("Stop the current turn: run codex agents, select this task, and press
+# x."). There is no exit question to confirm, so none is declared.
 timeouts:
   idle: 90s
   exit: 30s

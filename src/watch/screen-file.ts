@@ -13,7 +13,7 @@ import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts'
 
 const require = createRequire(import.meta.url);
 
-const STAGES = ['unknown', 'trust', 'permission', 'question', 'vendor_notice', 'working'] as const;
+const STAGES = ['unknown', 'trust', 'permission', 'exit_question', 'question', 'vendor_notice', 'working'] as const;
 const KINDS = ['idle', 'working', 'unsent', 'permission', 'trust', 'question', 'vendor notice', 'unknown'] as const;
 // The lines a dialog draws for its choices, built from their parts: the mark on the choice
 // the cursor is on (claude-code ❯, codex ›, antigravity >) or the indent of the others, the
@@ -51,7 +51,7 @@ export function loadScreen(text: string, baseDir?: string, profileFile?: string)
   const root = parseYaml(text);
   const entries = mapping(root, 'a profile');
   // Launch keys are read by profile.ts. A screen-only snippet, as in the tests, omits them.
-  only(entries, ['format', 'cli', 'screen', 'screen_module', 'quota', 'trust_answer', 'binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'exit_clear', 'lobby_files', 'timeouts', 'models', 'status_model']);
+  only(entries, ['format', 'cli', 'screen', 'screen_module', 'quota', 'trust_answer', 'binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'exit_clear', 'exit_confirm', 'lobby_files', 'timeouts', 'models', 'status_model']);
   const format = required(entries, 'format', root.line);
   if (format.value.kind !== 'scalar' || format.value.value !== 1) fail(format.line, '"format" must be 1');
   const cli = required(entries, 'cli', root.line);
@@ -325,7 +325,7 @@ function testedOf(entry: YamlEntry): VersionRange {
 
 function ruleOf(node: YamlNode, ignoreCase: boolean, allowCase = true): Rule {
   const entries = mapping(node, 'a rule');
-  only(entries, ['any', 'all', 'footer', 'on_footer', 'below_last_rule', 'without_rule', 'none_after']);
+  only(entries, ['any', 'all', 'footer', 'on_footer', 'below_last_rule', 'without_rule', 'none_after', 'only_after']);
   if (entries.length === 0) fail(node.line, 'a rule has no primitive');
   const rule: Rule = {};
   const any = optional(entries, 'any');
@@ -335,18 +335,23 @@ function ruleOf(node: YamlNode, ignoreCase: boolean, allowCase = true): Rule {
   const below = optional(entries, 'below_last_rule');
   const withoutRule = optional(entries, 'without_rule');
   const noneAfter = optional(entries, 'none_after');
+  const onlyAfter = optional(entries, 'only_after');
   if (any) rule.any = patternsOf(any.value, 'any', ignoreCase, allowCase);
   if (all) rule.all = patternsOf(all.value, 'all', ignoreCase, allowCase);
   if (footer) rule.footer = stringOf(footer.value) ?? fail(footer.line, '"footer" must be a string');
   if (onFooter) rule.onFooter = boolOf(onFooter.value, 'on_footer');
   if (below) rule.belowLastRule = patternOf(stringOf(below.value) ?? fail(below.line, '"below_last_rule" must be a string'), ignoreCase, below.line);
   if (withoutRule) rule.withoutRule = boolOf(withoutRule.value, 'without_rule');
-  if (noneAfter) rule.noneAfter = noneAfterOf(noneAfter.value, ignoreCase, allowCase);
+  if (noneAfter) rule.noneAfter = afterOf(noneAfter.value, 'none_after', ignoreCase, allowCase);
+  if (onlyAfter) rule.onlyAfter = afterOf(onlyAfter.value, 'only_after', ignoreCase, allowCase);
   return rule;
 }
 
-function noneAfterOf(node: YamlNode, ignoreCase: boolean, allowCase = true): NonNullable<Rule['noneAfter']> {
-  const entries = mapping(node, 'none_after');
+// `none_after` and `only_after` read the same shape: an anchor whose last row the window
+// goes by, and the rows after it. They differ in what the rows after must be — none of
+// the patterns, or only the patterns — so one parser reads both.
+function afterOf(node: YamlNode, key: string, ignoreCase: boolean, allowCase = true): NonNullable<Rule['noneAfter']> {
+  const entries = mapping(node, key);
   only(entries, ['anchor', 'patterns']);
   const anchor = required(entries, 'anchor', node.line);
   const patterns = required(entries, 'patterns', node.line);
@@ -531,7 +536,12 @@ function fallbackOf(node: YamlNode): FallbackRule[] {
     only(entries, ['all', 'kind']);
     const kind = required(entries, 'kind', item.line);
     const name = stringOf(kind.value);
-    if (!name || !KINDS.includes(name as Screen['kind'])) fail(kind.line, '"kind" is not a screen kind');
+    if (!name || !(KINDS as readonly string[]).includes(name)) {
+      // The CLI's own exit question is a screen kind but never a fallback reading: it comes from
+      // its stage's patterns, and only a stop answers it. A composer shape that matched it would
+      // hand a reading a stop acts on to a profile's loosest rule.
+      fail(kind.line, name === 'exit question' ? '"kind" cannot be the exit question: it is read from its stage and answered by a stop alone' : '"kind" is not a screen kind');
+    }
     return { all: patternsOf(required(entries, 'all', item.line).value, 'all', false), kind: name as Screen['kind'] };
   });
 }

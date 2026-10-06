@@ -23,6 +23,10 @@ exit: /exit
 # "Press Ctrl+C again to exit" row, so it is not named. Used only to clear an exit
 # text that did not read back as typed, and only when the box holds exactly that text.
 exit_clear: ctrl+u
+# No `exit_confirm`: not observed. A 2026-10-06 run asked cursor-agent 2026.10.01-14929f9 to
+# background a shell and never got past its own permission dialogs for the command, so no
+# exit question with background work was ever on its pane; the CLI's /exit pair is captured
+# (test/fixtures/exit-typing/) and shows no question. Nothing is declared, from no run.
 timeouts:
   idle: 90s
   exit: 30s
