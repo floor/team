@@ -57,7 +57,7 @@ function publishedTeam(dest: string, home: string): string {
   mkdirSync(join(dir, 'dist'), { recursive: true });
   writeFileSync(join(dir, 'package.json'), `${JSON.stringify({
     name: 'team',
-    version: '0.2.1',
+    version: '0.3.0',
     type: 'module',
     bin: { team: 'dist/cli.js' },
     exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } },
@@ -178,7 +178,7 @@ function instrumentedTeam(dest: string, home: string): string {
   mkdirSync(join(dir, 'dist'), { recursive: true });
   writeFileSync(join(dir, 'package.json'), `${JSON.stringify({
     name: 'team',
-    version: '0.2.1',
+    version: '0.3.0',
     type: 'module',
     bin: { team: 'dist/cli.js' },
     exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } },
