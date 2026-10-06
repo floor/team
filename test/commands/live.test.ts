@@ -4122,7 +4122,7 @@ describe('team up, delegated', () => {
       name: 'stopped',
       live: () => 'stopped' as const,
       running: false,
-      real: ['session acme-web is stopped; clear it with `herdr session delete acme-web`'],
+      real: ['session acme-web is stopped'],
       starts: 0,
     },
     { name: 'absent', live: () => 'absent' as const, running: false, real: [], starts: 1 },
