@@ -1446,6 +1446,13 @@
     {
       "code": 1,
       "command": "up",
+      "id": "up.clear",
+      "meaning": "a stopped session this team records did not clear",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
       "id": "up.delegate",
       "meaning": "only the owner or the approved delegate runs up",
       "trigger": "team up"

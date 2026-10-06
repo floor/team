@@ -1445,6 +1445,19 @@ scene('up.stopped', async (place) => {
   approve(place, TEAM);
   return show(await up(place, ['--file', place.file], owner, upSources(place, { sessionState: () => 'stopped' })), 'is stopped');
 });
+scene('up.clear', async (place) => {
+  approve(place, TEAM);
+  writeFileSync(
+    join(place.root, '.agents/team.state.json'),
+    JSON.stringify({ format: 1, sessions: { acme: { seats: {}, worktrees: {} } } }),
+  );
+  const launch = launching(IDLE);
+  launch.deleteSession = () => false;
+  return show(await up(place, ['--file', place.file], owner, upSources(place, {
+    sessionState: () => 'stopped',
+    launch,
+  })), 'did not clear');
+});
 scene('up.agents', async (place) => {
   approve(place, TEAM);
   return show(await up(place, ['--file', place.file], owner, upSources(place, { sessionState: () => 'running', agents: () => null })), "can't be read");

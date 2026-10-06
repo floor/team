@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runApprove } from '../../src/commands/approve.ts';
-import { realSources as downReal, runDown, type DownLaunch, type DownSources } from '../../src/commands/down.ts';
+import { realSources as downReal, runDown, stateOf, type DownLaunch, type DownSources } from '../../src/commands/down.ts';
 import { realSources as upReal, runUp, type Launch, type UpSources } from '../../src/commands/up.ts';
 import { delegateGate } from '../../src/delegate.ts';
 import type { DoctorSources } from '../../src/commands/doctor.ts';
@@ -90,6 +90,8 @@ type World = {
   runs: { pane: string; command: string }[];
   renames: string[];
   closes: string[];
+  /** Sessions `up` cleared because the state recorded them and herdr listed them stopped. */
+  deletes: string[];
   /** The workspaces this run created, as herdr's list would return them: id and label. */
   workspaceList(): HerdrWorkspace[];
   /** The injected owner's terminal: the pause's keys are queued here, never read from stdin. */
@@ -106,6 +108,7 @@ function world(text: string | ((pane: string, label: string) => string) = IDLE):
     runs: [],
     renames: [],
     closes: [],
+    deletes: [],
     workspaceList: () => [...spaces].map(([id, label]) => ({ id, label })),
     terminal: {
       keys: [],
@@ -181,6 +184,11 @@ function world(text: string | ((pane: string, label: string) => string) = IDLE):
     foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
     // The pause's focus: it changes nothing in the pane, and the fake records that it ran.
     focus: () => true,
+    deleteSession(session) {
+      state.deletes.push(session);
+      state.session = 'absent';
+      return true;
+    },
     sleep: async (ms) => {
       clock += ms;
     },
@@ -1615,13 +1623,13 @@ describe('team up, live', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({ sessionState: () => 'stopped' }, made));
     expect(code).toBe(1);
-    expect(io.err).toContain('herdr session delete acme-web');
+    expect(io.err).toBe('team up: session acme-web is stopped\n');
     expect(made.starts).toBe(0);
     expect(made.creates).toEqual([]);
   });
 
-  // The refusal names the session's own name, whatever `--session` says: the owner copies the line.
-  test("a stopped session's refusal prints the exact herdr command with its name", async () => {
+  // A stopped session the state does not record is refused, and the line names that session.
+  test('a stopped session the state does not record is refused by its name', async () => {
     await approve();
     const made = world();
     const io = testIo(root, { kind: 'owner' });
@@ -1630,17 +1638,18 @@ describe('team up, live', () => {
       made,
     ));
     expect(code).toBe(1);
-    expect(io.err).toBe('team up: session beta-team is stopped; clear it with `herdr session delete beta-team`\n');
+    expect(io.err).toBe('team up: session beta-team is stopped\n');
     expect(made.starts).toBe(0);
   });
 
-  // Whatever sits in a `stopped` field — a shape `down` once wrote, or anything else — changes
-  // nothing: `up` never reads it and never deletes a session.
+  // Whatever sits in a `stopped` field — a shape `down` once wrote, or anything else — is not
+  // what decides the clear. The session key in this team's state does: `up` deletes that
+  // stopped session and starts it.
   test.each([
     ['the shape a stop once wrote', { at: NOW.toISOString(), by: 'owner' }],
     ['a boolean', true],
     ['a string', 'stopped'],
-  ] as [string, unknown][])('a state file whose stopped field is %s refuses the same', async (_what, stopped) => {
+  ] as [string, unknown][])('a state file whose stopped field is %s is cleared and started', async (_what, stopped) => {
     await approve();
     writeFileSync(
       join(root, '.agents/team.state.json'),
@@ -1649,13 +1658,10 @@ describe('team up, live', () => {
     const made = world();
     const io = testIo(root, { kind: 'owner' });
     const code = await runUp(FILE, io, sources({ sessionState: () => 'stopped' }, made));
-    expect(code).toBe(1);
-    expect(io.err).toBe('team up: session acme-web is stopped; clear it with `herdr session delete acme-web`\n');
-    // The field is left exactly as it was, on disk.
-    const filed = JSON.parse(readFileSync(join(root, '.agents/team.state.json'), 'utf8')) as {
-      sessions: Record<string, { stopped?: unknown }>;
-    };
-    expect(filed.sessions['acme-web']?.stopped).toEqual(stopped);
+    expect(code).toBe(0);
+    expect(made.deletes).toEqual(['acme-web']);
+    expect(made.starts).toBe(1);
+    expect(io.err).not.toContain('herdr session delete');
   });
 
   test("the approval's ceilings are enforced, not the file's limits", async () => {
@@ -4116,7 +4122,7 @@ describe('team up, delegated', () => {
       name: 'stopped',
       live: () => 'stopped' as const,
       running: false,
-      real: ['session acme-web is stopped; clear it with `herdr session delete acme-web`'],
+      real: ['session acme-web is stopped'],
       starts: 0,
     },
     { name: 'absent', live: () => 'absent' as const, running: false, real: [], starts: 1 },
@@ -4322,7 +4328,7 @@ describe('team down, live', () => {
     expect(code).toBe(1);
     expect(run.typed).toEqual(['/exit']);
     expect(run.entered).toEqual([]);
-    expect(io.out).toContain('deepseek-acme: no live agent in its pane; its exit was not typed\n');
+    expect(io.out).toContain('deepseek-acme: no live agent in its pane; its exit was not typed (team down --abandon closes it)\n');
   });
 
   test('a pane with no live agent is not typed into', async () => {
@@ -4333,7 +4339,7 @@ describe('team down, live', () => {
     expect(run.typed).toEqual([]);
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
-    expect(io.out).toContain('deepseek-acme: no live agent in its pane; its exit was not typed\n');
+    expect(io.out).toContain('deepseek-acme: no live agent in its pane; its exit was not typed (team down --abandon closes it)\n');
   });
 
   test('types the exit only when the screen is idle, then closes the workspace', async () => {
@@ -4381,17 +4387,19 @@ describe('team down, live', () => {
     expect(code).toBe(0);
     expect(run.stopped).toEqual(['acme-web']);
     expect(run.deleted).toEqual([]);
-    expect(io.out).toContain('session acme-web: stopped; it did not clear, run `herdr session delete acme-web`\n');
+    expect(io.out).toContain('session acme-web: stopped; it did not clear\n');
   });
 
-  test('a clear that fails names the herdr command and still exits 0', async () => {
+  test('a clear that keeps failing is retried, reported, and still exits 0', async () => {
     const run = harness({ kind: 'idle' });
     run.failClear();
     const io = testIo(root, { kind: 'owner' });
     const code = await runDown(FILE, io, run.sourcesOf());
     expect(code).toBe(0);
-    expect(run.deleted).toEqual(['acme-web']);
-    expect(io.out).toContain('session acme-web: stopped; it did not clear, run `herdr session delete acme-web`\n');
+    expect(run.deleted.length).toBeGreaterThan(1);
+    expect(run.deleted.every((name) => name === 'acme-web')).toBe(true);
+    expect(io.out).toContain('session acme-web: stopped; it did not clear\n');
+    expect(io.out).not.toContain('herdr session delete');
   });
 
   test('a seat left running clears nothing', async () => {
@@ -4431,7 +4439,58 @@ describe('team down, live', () => {
     expect(run.typed).toEqual(['/exit']);
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
-    expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is\n');
+    expect(io.out).toContain('deepseek-acme: its exit was not typed; left as it is (team down --abandon closes it)\n');
+  });
+
+  test('a seat already at the framed exit question is not asked', async () => {
+    const raw = readFileSync(new URL('../fixtures/exit-typing/claude-code-shell-question-ansi.txt', import.meta.url), 'utf8');
+    const screen = readScreen('claude-code', raw);
+    expect(screen.kind).toBe('exit question');
+    expect(stateOf('idle', screen)).toBe('blocked');
+    const run = harness(screen, 'idle');
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ screenText: () => raw, status: () => 'idle' }));
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.keys).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(io.out).toContain('  skip deepseek-acme: sits at its own exit question; left running (team down --abandon closes it)\n');
+    expect(io.out).not.toContain('its exit was not typed');
+  });
+
+  test('abandon closes a pre-existing exit question only as a seat that cannot be asked', async () => {
+    const raw = readFileSync(new URL('../fixtures/exit-typing/claude-code-shell-question-ansi.txt', import.meta.url), 'utf8');
+    const screen = readScreen('claude-code', raw);
+    expect(screen.kind).toBe('exit question');
+    const run = harness(screen, 'idle');
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(['--abandon', ...FILE], io, run.sourcesOf({ screenText: () => raw, status: () => 'idle' }));
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.keys).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual(['w3']);
+    expect(run.stopped).toEqual(['acme-web']);
+    expect(io.out).toContain('deepseek-acme: stopped\n');
+    expect(io.out).not.toContain('its exit was not typed');
+    expect(io.out).not.toContain('its workspace was closed');
+  });
+
+  test('abandon closes a seat whose exit could not be typed, and the session still stops', async () => {
+    const run = harness({ kind: 'idle' });
+    run.launch.typeText = () => false;
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(['--abandon', ...FILE], io, run.sourcesOf());
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual(['w3']);
+    expect(run.stopped).toEqual(['acme-web']);
+    expect(io.out).toContain('deepseek-acme: its exit was not typed; its workspace was closed\n');
+    expect(io.out).toContain('session acme-web: stopped and cleared\n');
+    expect(io.out).not.toContain('herdr session delete');
   });
 
   test('a pinned Codex permission after the exit text gets no Enter', async () => {
@@ -4456,7 +4515,7 @@ describe('team down, live', () => {
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
     expect(run.stopped).toEqual([]);
-    expect(io.out).toContain('codex-acme: its exit was not typed; left as it is\n');
+    expect(io.out).toContain('codex-acme: its exit was not typed; left as it is (team down --abandon closes it)\n');
   });
 
   test('a rule-looking row after the exit text gets no Enter', async () => {
@@ -4479,7 +4538,7 @@ describe('team down, live', () => {
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
     expect(run.keys).toEqual([]);
-    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; its box holds text that is not only the exit text (first row that differs: ────────────────────────────────────────); nothing more was sent; left running\n');
+    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; its box holds text that is not only the exit text (first row that differs: ────────────────────────────────────────); nothing more was sent; left running (team down --abandon closes it)\n');
   });
 
   test('a prompt-glyph continuation row after the exit text gets no Enter', async () => {
@@ -4502,7 +4561,7 @@ describe('team down, live', () => {
     expect(run.entered).toEqual([]);
     expect(run.keys).toEqual([]);
     expect(run.closed).toEqual([]);
-    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; its box holds text that is not only the exit text (first row that differs: person text); nothing more was sent; left running\n');
+    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; its box holds text that is not only the exit text (first row that differs: person text); nothing more was sent; left running (team down --abandon closes it)\n');
   });
 
   test('a second glyph row at the prompt column after the exit text gets no Enter', async () => {
@@ -4529,7 +4588,7 @@ describe('team down, live', () => {
     expect(run.typed).toEqual(['/exit']);
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
-    expect(io.out).toContain('codex-acme: its exit was not typed; left as it is\n');
+    expect(io.out).toContain('codex-acme: its exit was not typed; left as it is (team down --abandon closes it)\n');
   });
 
   // The leftover exit text: an earlier `down` typed `/exit`, read it back, and never pressed
@@ -4579,7 +4638,7 @@ describe('team down, live', () => {
     expect(run.typed).toEqual([]);
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
-    expect(io.out).toContain('deepseek-acme: its box already held this exit text; the clearing key (ctrl+c) left the screen reading unsent; left running\n');
+    expect(io.out).toContain('deepseek-acme: its box already held this exit text; the clearing key (ctrl+c) left the screen reading unsent; left running (team down --abandon closes it)\n');
   });
 
   test('a half-drawn exit text that completes before the clearing key is cleared, and the seat left running', async () => {
@@ -4607,7 +4666,7 @@ describe('team down, live', () => {
     expect(run.keys).toEqual(['ctrl+c']);
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
-    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; the text was cleared; left running\n');
+    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; the text was cleared; left running (team down --abandon closes it)\n');
   });
 
   test('a text the pane never drew is left empty, and the seat left running', async () => {
@@ -4623,7 +4682,7 @@ describe('team down, live', () => {
     expect(run.keys).toEqual([]);
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
-    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; the pane never drew the typed text; its box is empty; left running\n');
+    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; the pane never drew the typed text; its box is empty; left running (team down --abandon closes it)\n');
   });
 
   test('an undelivered clearing key leaves the text in the box for its owner', async () => {
@@ -4651,7 +4710,7 @@ describe('team down, live', () => {
     expect(run.keys).toEqual(['ctrl+c']);
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
-    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; the clearing key (ctrl+c) was not delivered; the text was left; left running\n');
+    expect(io.out).toContain('deepseek-acme: its exit was not confirmed; the clearing key (ctrl+c) was not delivered; the text was left; left running (team down --abandon closes it)\n');
   });
 
   test("a CLI with no clearing key names its leftover exit text and leaves it", async () => {
@@ -4766,7 +4825,7 @@ describe('team down, live', () => {
       expect(run.typed).toEqual(['/exit']);
       expect(run.entered).toEqual([]);
       expect(run.closed).toEqual([]);
-      expect(io.out).toContain('gemini-acme: its exit was not typed; left as it is\n');
+      expect(io.out).toContain('gemini-acme: its exit was not typed; left as it is (team down --abandon closes it)\n');
     });
 
   test('does not type into a permission prompt', async () => {
@@ -4804,8 +4863,21 @@ describe('team down, live', () => {
     expect(run.closed).toEqual([]);
     expect(run.stopped).toEqual([]);
     expect(run.deleted).toEqual([]);
-    expect(io.out).toContain('deepseek-acme: timed out leaving its pane; left as it is');
+    expect(io.out).toContain('deepseek-acme: timed out leaving its pane; left as it is (team down --abandon closes it)');
     expect(io.out).toContain('session acme-web: not stopped, something was left in it');
+  });
+
+  test('abandon closes a seat that does not leave', async () => {
+    const run = harness({ kind: 'idle' });
+    run.launch.agentPanes = () => ['w3:p1'];
+    run.launch.pressEnter = () => true;
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(['--abandon', ...FILE], io, run.sourcesOf());
+    expect(code).toBe(0);
+    expect(run.closed).toEqual(['w3']);
+    expect(run.stopped).toEqual(['acme-web']);
+    expect(io.out).toContain('deepseek-acme: timed out leaving its pane; its workspace was closed\n');
+    expect(io.out).toContain('session acme-web: stopped and cleared\n');
   });
 
   test('the owner can abandon a blocked seat without typing', async () => {
@@ -4868,7 +4940,7 @@ describe('team down, live', () => {
     expect(run.typed).toEqual([]);
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
-    expect(io.out).toContain('deepseek-acme: no live agent in its pane; its exit was not typed\n');
+    expect(io.out).toContain('deepseek-acme: no live agent in its pane; its exit was not typed (team down --abandon closes it)\n');
   });
 
   test('a renamed seat at a permission prompt is not typed into', async () => {

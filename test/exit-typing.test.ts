@@ -170,6 +170,76 @@ describe("the CLI's own exit question", () => {
     }
   });
 
+  test('ordinary text that quotes the choice row gets the one Enter on the exit text and no second key', async () => {
+    const quote = fixture('claude-code-exit-lines-quoted-question.txt');
+    expect(readScreen('claude-code', quote).kind).toBe('question');
+    expect(quote).toContain('❯ 1. Exit and stop tasks');
+    const idle = fixture('claude-code-idle-ansi.txt');
+    const unsent = fixture('claude-code-unsent-ansi.txt');
+    let phase = 0;
+    let clock = 1_000_000;
+    const sent: string[] = [];
+    const io: ExitIo = {
+      typeText: () => {
+        phase = 1;
+        return true;
+      },
+      sendKey: (key) => {
+        sent.push(key);
+        return true;
+      },
+      pressEnter: () => {
+        sent.push('enter');
+        phase = 2;
+        return true;
+      },
+      screen: () => (phase === 0 ? idle : phase === 1 ? unsent : quote),
+      status: () => 'idle',
+      foreground: () => ['claude'],
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      now: () => clock,
+    };
+    expect(await typeExit(io, 'claude-code', '/exit')).toBe(true);
+    expect(sent).toEqual(['enter']);
+  });
+
+  test('the profile key is sent once when the screen reads as the exit question, and a question that stays is reported', async () => {
+    const question = fixture('claude-code-shell-question-ansi.txt');
+    expect(readScreen('claude-code', question).kind).toBe('exit question');
+    const idle = fixture('claude-code-idle-ansi.txt');
+    const unsent = fixture('claude-code-unsent-ansi.txt');
+    let phase = 0;
+    let clock = 1_000_000;
+    const sent: string[] = [];
+    const io: ExitIo = {
+      typeText: () => {
+        phase = 1;
+        return true;
+      },
+      sendKey: (key) => {
+        sent.push(key);
+        return true;
+      },
+      pressEnter: () => {
+        sent.push('enter');
+        phase = 2;
+        return true;
+      },
+      screen: () => (phase === 0 ? idle : phase === 1 ? unsent : question),
+      status: () => 'idle',
+      foreground: () => ['claude'],
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      now: () => clock,
+    };
+    const result = await typeExit(io, 'claude-code', '/exit');
+    expect(sent).toEqual(['enter', 'enter']);
+    expect(result).toEqual({ left: 'its exit was not confirmed; the exit question stayed open; left running' });
+  });
+
   test('a pane that draws that question after the typing gets no Enter', async () => {
     const pane = paneOf('claude-code', 'claude', fixture('claude-code-idle-ansi.txt'), fixture('claude-code-shell-question-ansi.txt'));
     expect(await typeExit(pane.io, 'claude-code', exitText('claude-code'))).toBe(false);

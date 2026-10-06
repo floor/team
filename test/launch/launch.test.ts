@@ -241,6 +241,38 @@ describe('down --dry-run', () => {
     );
   });
 
+  test('a seat already at its exit question is left, and abandon closes it without asking', () => {
+    const sitting = { ...seat('w1', 'blocked'), atExitQuestion: true };
+    const left = downPlan({
+      session: 's',
+      seats: [sitting],
+      extra: 0,
+      watchPid: null,
+      keep: [],
+      closeUnasked: true,
+      unasked: 'team down --abandon closes it',
+    });
+    expect(left).toEqual([
+      { kind: 'skip', text: 'w1: sits at its own exit question; left running (team down --abandon closes it)' },
+      { kind: 'skip', text: 'session s: not stopped, 1 agent left in it' },
+    ]);
+    const abandoned = downPlan({
+      session: 's',
+      seats: [sitting],
+      extra: 0,
+      watchPid: null,
+      keep: [],
+      abandon: true,
+      closeUnasked: true,
+      unasked: 'team down --abandon closes it',
+    });
+    expect(abandoned.map((step) => step.do && 'do' in step.do ? step.do.do : step.kind)).toEqual(['close', 'stop']);
+    expect(abandoned[0]).toMatchObject({
+      note: 'abandoned: nothing was typed',
+      do: { do: 'close', seat: 'w1', workspace: 'w1' },
+    });
+  });
+
   test.each([
     ['working', 'w1: is working (`--wait` waits for it); left running'],
     ['blocked', 'w1: is blocked at a prompt, which `team` never answers; left running'],
