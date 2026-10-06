@@ -650,6 +650,55 @@ scene('add.server', async (place) => {
   return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { launch: launching(IDLE, () => true, false) })), 'its server did not start');
 });
 
+// The delegated runs. The file names a delegate — a pane outside the team's session — and the
+// caller stands on it as a seat of that other session, a caller the ordinary rule refuses before
+// the gate is asked. The scenes below hand the command the contract's verdicts through the test's
+// own injection (`sources.delegateGate`), each with the sentence the real gate gives; what they
+// prove is the command's own behaviour — the verdict printed behind its prefix, exit 1, nothing
+// started. The two registered without an injection are the real gate's own: `delegate-approval`
+// (no record under the home it answers for, so its first read refuses the run before herdr is
+// ever asked) and `delegate-edit` (a passed gate, an add that would edit the file). The verdicts'
+// reasons are the gate's tests'.
+const DELEGATED = TWO + `delegates:
+  - pane: main/w1:p1
+    commands: [add, remove]
+`;
+const delegateCaller = { kind: 'seat', name: 'pilot', pane: 'w1:p1', session: 'main' } as const;
+const refused = (id: string, text: string) => ({ kind: 'refused' as const, id, text });
+
+const ADD_GATE_REFUSALS: [suffix: string, sentence: string, needle: string][] = [
+  ['delegate-approved-copy', 'delegation needs a readable approved copy: run `team approve`', 'readable approved copy'],
+  ['delegate-drift', 'delegation needs the approved file: the file is not the approved one (seat worker changed): run `team approve`', 'not the approved one'],
+  ['delegate-evidence', "delegation cannot verify its placement or seats: herdr doesn't answer", 'placement or seats'],
+  ['delegate-placement', 'the approved delegate must be an external non-seat pane', 'non-seat pane'],
+  ['delegate', 'only the owner, the coordinator, the operator or the approved delegate runs it; this call is pilot', 'or the approved delegate runs it'],
+  ['delegate-command', 'the approved delegate main/w1:p1 may not run `add`; its approved commands are remove', 'may not run'],
+];
+for (const [suffix, sentence, needle] of ADD_GATE_REFUSALS) {
+  scene(`add.${suffix}`, async (place) => {
+    write(place, DELEGATED);
+    return show(await added(place, ['worker'], delegateCaller, addSources(place, {
+      delegateGate: () => refused(`add.${suffix}`, sentence),
+    })), needle);
+  });
+}
+scene('add.delegate-flag', async (place) => {
+  write(place, DELEGATED);
+  return show(await added(place, ['--temporary', '--like', 'lead', '--until', 'result:out.md'], delegateCaller, addSources(place, {
+    delegateGate: () => refused('add.delegate-flag', "--temporary is the owner's; the approved delegate cannot use it"),
+  })), 'cannot use it');
+});
+scene('add.delegate-approval', async (place) => {
+  write(place, DELEGATED);
+  return show(await added(place, ['worker'], delegateCaller, addSources(place)), 'delegation needs a verified approval');
+});
+scene('add.delegate-edit', async (place) => {
+  approve(place, DELEGATED);
+  return show(await added(place, ['worker'], delegateCaller, addSources(place, {
+    delegateGate: () => ({ kind: 'passed' as const, pane: 'main/w1:p1' }),
+  })), 'cannot change the file or the approval');
+});
+
 scene('approve.invocation', async (place) => show(await approved(place, ['extra'], owner, approveSources(place, null)), 'unexpected'));
 scene('approve.not-a-repo', async (place) => show(await approved(place, [], owner, approveSources(place, null)), 'not inside a git repository'), false);
 scene('approve.file', async (place) => show(await approved(place, ['--file', 'missing.yaml'], owner, approveSources(place, null)), 'no team file'));
@@ -1142,6 +1191,39 @@ scene('remove.temporary', async (place) => {
     session.seats.worker = { stage: 'ready', temporary: { like: 'lead', until: 'result:out.md' } };
   });
   return show(await removed(place, ['worker'], owner, downSources({ home: place.home })), 'removed temporary worker');
+});
+
+// The delegated `remove`: the same shape as add's scenes above, with the verdicts the gate gives
+// this command. `delegate-approval` runs the real gate, which refuses on its first read before
+// herdr is asked; the rest hand the verdict in, and the scene proves the command prints it and
+// exits 1 with nothing stopped.
+const REMOVE_GATE_REFUSALS: [suffix: string, sentence: string, needle: string][] = [
+  ['delegate-approved-copy', 'delegation needs a readable approved copy: run `team approve`', 'readable approved copy'],
+  ['delegate-drift', 'delegation needs the approved file: the file is not the approved one (seat worker changed): run `team approve`', 'not the approved one'],
+  ['delegate-evidence', "delegation cannot verify its placement or seats: herdr doesn't answer", 'placement or seats'],
+  ['delegate-placement', 'the approved delegate must be an external non-seat pane', 'non-seat pane'],
+  ['delegate', 'only the owner, the coordinator, the operator or the approved delegate runs it; this call is pilot', 'or the approved delegate runs it'],
+  ['delegate-command', 'the approved delegate main/w1:p1 may not run `remove`; its approved commands are add', 'may not run'],
+];
+for (const [suffix, sentence, needle] of REMOVE_GATE_REFUSALS) {
+  scene(`remove.${suffix}`, async (place) => {
+    write(place, DELEGATED);
+    return show(await removed(place, ['worker'], delegateCaller, downSources({
+      home: place.home,
+      delegateGate: () => refused(`remove.${suffix}`, sentence),
+    })), needle);
+  });
+}
+scene('remove.delegate-flag', async (place) => {
+  write(place, DELEGATED);
+  return show(await removed(place, ['worker', '--keep'], delegateCaller, downSources({
+    home: place.home,
+    delegateGate: () => refused('remove.delegate-flag', "--keep is the owner's; the approved delegate cannot use it"),
+  })), 'cannot use it');
+});
+scene('remove.delegate-approval', async (place) => {
+  write(place, DELEGATED);
+  return show(await removed(place, ['worker'], delegateCaller, downSources({ home: place.home })), 'delegation needs a verified approval');
 });
 
 const RELEASE_TEAM = `format: 1
