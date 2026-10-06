@@ -22,6 +22,7 @@ import { runUp, type Launch, type UpSources } from '../src/commands/up.ts';
 import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import { runWorktree, type WorktreeSources } from '../src/commands/worktree.ts';
 import { main, reportFailure, version } from '../src/cli.ts';
+import { delegateGate, type DelegateSources } from '../src/delegate.ts';
 import { listFolder } from '../src/file/landing.ts';
 import { loadTeamFile } from '../src/file/load.ts';
 import { defaultFs, lobbyDir } from '../src/lobby/gate.ts';
@@ -1315,6 +1316,46 @@ scene('up.watch', async (place) => {
   })), 'watch: it did not start');
 });
 
+// §RFC0007: one run per delegate refusal of `up`. The gate is the real one in every scene — the
+// command calls it with no stand-ins of its own — and only the reads it cannot make here are
+// stood in: the approval store this harness owns (the gate reads the user's own), and herdr,
+// which no scene here has. `DELEGATES` names an external pane whose commands list `up`; the
+// approved copy holds the same text, so no scene drifts.
+const DELEGATES = `\ndelegates:\n  - pane: main/w1:p1\n    commands: [up]\n`;
+const delegateCaller = { kind: 'seat', name: 'other', pane: 'w1:p1', session: 'main' } as const;
+const gateAt = (place: Place, over: DelegateSources = {}): Partial<UpSources> => ({
+  delegateGate: (input) => delegateGate({ ...input, sources: { standing: () => approvalStanding(input.root, place.home), ...over } }),
+});
+scene('up.delegate-approval', async (place) => {
+  write(place, `${TEAM}${DELEGATES}`);
+  return show(await up(place, ['--file', place.file], other, upSources(place, gateAt(place))), 'delegation needs a verified approval');
+});
+scene('up.delegate-approved-copy', async (place) => {
+  approve(place, `${TEAM}${DELEGATES}`);
+  return show(await up(place, ['--file', place.file], other, upSources(place, gateAt(place, { approvedCopy: () => null }))), 'delegation needs a readable approved copy');
+});
+scene('up.delegate-drift', async (place) => {
+  approve(place, `${TEAM}${DELEGATES}`);
+  write(place, `${TEAM.replace('label: lead', 'label: renamed')}${DELEGATES}`);
+  return show(await up(place, ['--file', place.file], other, upSources(place, gateAt(place))), 'delegation needs the approved file');
+});
+scene('up.delegate-evidence', async (place) => {
+  approve(place, `${TEAM}${DELEGATES}`);
+  return show(await up(place, ['--file', place.file], other, upSources(place, gateAt(place, { agents: () => null }))), 'cannot verify its placement or seats');
+});
+scene('up.delegate', async (place) => {
+  approve(place, `${TEAM}${DELEGATES}`);
+  return show(await up(place, ['--file', place.file], other, upSources(place, gateAt(place, { agents: () => [] }))), 'only the owner or the approved delegate');
+});
+scene('up.delegate-command', async (place) => {
+  approve(place, `${TEAM}${DELEGATES.replace('commands: [up]', 'commands: [down]')}`);
+  return show(await up(place, ['--file', place.file], delegateCaller, upSources(place, gateAt(place, { agents: () => [] }))), 'may not run `up`');
+});
+scene('up.delegate-flag', async (place) => {
+  approve(place, `${TEAM}${DELEGATES}`);
+  return show(await up(place, ['--session', 'elsewhere'], delegateCaller, upSources(place, gateAt(place, { agents: () => [] }))), "--session is the owner's");
+});
+
 async function watched(place: Place, argv: string[], caller: Caller, sources: WatchSources = watchSources()): Promise<Ran> {
   const io = testIo(place.root, caller);
   return { code: await runWatch(argv, io, sources), out: io.out, err: io.err };
@@ -1860,7 +1901,12 @@ scene('answer.ready', async (place) => {
 // that reports false now leaves the recovery state (`answer.recovery`), so the only action
 // refusal left is a record whose byte the build does not send, and the shipped profiles record
 // 0d, 31 and 61 — all keys the build sends. The check defends against a profile that does not.
-const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed', 'answer.action']);
+// `up.delegate-placement` joins them: the gate's collision backstop, whose three ways to fire —
+// a malformed pane, a pane in the team's own session, a pane the state or the agent list
+// records as a seat's — are each refused by the file's own load (`sections/delegate.ts` reads
+// the shape, the session and the duplicates before `up` ever calls the gate), so no file this
+// version loads can reach it. The gate's own tests hold the verdict itself.
+const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed', 'answer.action', 'up.delegate-placement']);
 
 const contract = loadContract();
 for (const row of contract.rows) {
