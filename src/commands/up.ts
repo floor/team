@@ -45,7 +45,7 @@ import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { runPause, type PauseHost, type PauseInput } from '../launch/pause.ts';
 import { plainLine, plainText } from '../launch/plain.ts';
-import { recordWhat, progressWriter } from '../launch/progress.ts';
+import { recordWhat, progressWriter, classificationOf } from '../launch/progress.ts';
 import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
 import { acquireSeatLock } from '../launch/seat-lock.ts';
 import { processSignals, terminalReader, type Terminal } from '../launch/terminal.ts';
@@ -931,7 +931,10 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
         });
       },
       drop: () => host.drop(input.seat),
-      screen: () => readScreen(seatCli(input.seat), launch.paneText(session, input.pane) ?? undefined).kind,
+      screen: () => {
+        const kind = readScreen(seatCli(input.seat), launch.paneText(session, input.pane) ?? undefined).kind;
+        return kind === 'idle' || kind === 'working' ? kind : classificationOf(kind);
+      },
       process: () => launch.processInfo?.(session, input.pane) ?? null,
       agents: () => launch.agents(session),
       workspaces: () => sources.workspaces?.(session) ?? null,

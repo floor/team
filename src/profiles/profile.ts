@@ -30,6 +30,11 @@ export interface Profile {
   /** The one key that empties the CLI's input box, sent to clear an exit text that did not
    *  read back as typed. Null when no key is established for this CLI: the text is left. */
   exitClear: string | null;
+  /** The one key that confirms the CLI's own question after the exit text — its "stop tasks and
+   *  exit" one, read as `exit question`. Sent by a stop, and only on that screen; null when no
+   *  key is established for this CLI: a seat that asks the question is one that could not be
+   *  stopped by asking. */
+  exitConfirm: string | null;
   /** Seconds to wait for the idle prompt after a launch. */
   idleTimeout: number;
   /** Seconds to wait for the pane's shell after the exit command. */
@@ -112,17 +117,33 @@ const NAMES = ['claude-code', 'codex', 'cursor', 'antigravity'] as const;
 // without the first belongs to a CLI whose screen doesn't show its model; the second says the
 // CLI starts on its last-used model when a launch names none, and no shipped profile sets it.
 const LAUNCH_KEYS = ['binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'timeouts', 'models'] as const;
-const OPTIONAL_LAUNCH_KEYS = ['status_model', 'last_used_model', 'exit_clear'] as const;
+const OPTIONAL_LAUNCH_KEYS = ['status_model', 'last_used_model', 'exit_clear', 'exit_confirm'] as const;
 // The keys `pane send-keys` takes that can empty an input box, one of which a profile may name
 // to clear an exit text that did not read back as typed. `enter` is not among them on purpose:
 // it sends what the box holds. Established by run on herdr 0.7.1 with each CLI's own box.
 const CLEAR_KEYS = ['ctrl+c', 'ctrl+u', 'escape', 'backspace'] as const;
+// The keys that can confirm the CLI's own exit question, one of which a profile may name as
+// `exit_confirm`. Closed like CLEAR_KEYS, and only a key a run established is in it: `enter`
+// confirms Claude Code 2.1.291's preselected "Exit and stop tasks" (the capture in
+// test/fixtures/exit-typing/), and no other key has been observed to. `enter` is a key here and
+// not above on purpose: the rule above keeps a stop from sending what an ordinary box holds;
+// this one answers a question the CLI asked on its way out, on a screen read as `exit question`.
+const CONFIRM_KEYS = ['enter'] as const;
 
 /** The value of `exit_clear`: one of the keys above, spelled as herdr spells it. */
 function clearKeyOf(entry: YamlEntry): string {
   const value = text(entry, 'exit_clear');
   if (!(CLEAR_KEYS as readonly string[]).includes(value)) {
     fail(entry.line, `"exit_clear" must be one of: ${CLEAR_KEYS.join(', ')}`);
+  }
+  return value;
+}
+
+/** The value of `exit_confirm`: one of the keys above, spelled as herdr spells it. */
+function confirmKeyOf(entry: YamlEntry): string {
+  const value = text(entry, 'exit_confirm');
+  if (!(CONFIRM_KEYS as readonly string[]).includes(value)) {
+    fail(entry.line, `"exit_confirm" must be one of: ${CONFIRM_KEYS.join(', ')}`);
   }
   return value;
 }
@@ -151,6 +172,13 @@ export function quotaPatterns(text: string): QuotaPattern[] {
 export function exitClearKey(text: string): string | null {
   const entry = optional(mapping(parseYaml(text), 'a profile'), 'exit_clear');
   return entry === undefined ? null : clearKeyOf(entry);
+}
+
+/** The `exit_confirm` a profile snippet names, by the loader's own rule: for tests. A key outside
+ *  the closed set throws; an absent key reads as null, as an absent optional key does. */
+export function exitConfirmKey(text: string): string | null {
+  const entry = optional(mapping(parseYaml(text), 'a profile'), 'exit_confirm');
+  return entry === undefined ? null : confirmKeyOf(entry);
 }
 
 /** Quota patterns from a list already parsed. A bad pattern throws. */
@@ -201,6 +229,7 @@ function launchOf(root: YamlNode): Shipped {
   const statusEntry = optional(entries, 'status_model');
   const lastUsedEntry = optional(entries, 'last_used_model');
   const exitClearEntry = optional(entries, 'exit_clear');
+  const exitConfirmEntry = optional(entries, 'exit_confirm');
   for (const key of LAUNCH_KEYS) required(entries, key, root.line);
   const login = loginOf(required(entries, 'login', root.line).value);
   const timeouts = required(entries, 'timeouts', root.line).value;
@@ -217,6 +246,7 @@ function launchOf(root: YamlNode): Shipped {
       loginHint: login.hint,
       exit: text(required(entries, 'exit', root.line), 'exit'),
       exitClear: exitClearEntry ? clearKeyOf(exitClearEntry) : null,
+      exitConfirm: exitConfirmEntry ? confirmKeyOf(exitConfirmEntry) : null,
       idleTimeout: seconds(timeouts, 'idle'),
       exitTimeout: seconds(timeouts, 'exit'),
       lastUsedModel: lastUsedEntry ? boolOf(lastUsedEntry.value, 'last_used_model') : false,

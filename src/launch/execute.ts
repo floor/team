@@ -14,12 +14,12 @@ import {
   type WaitingReads,
 } from './pause.ts';
 import { plainPaneText } from './plain.ts';
-import { recordWhat, cleanRecord, type Classification, type FinalRecord, type ProgressState } from './progress.ts';
+import { recordWhat, cleanRecord, classificationOf, type Classification, type FinalRecord, type ProgressState } from './progress.ts';
 import type { LobbyRefusal } from '../lobby/gate.ts';
 import type { SeatState, WaitingRecord } from '../state.ts';
 import { vendorNoticeRange } from '../watch/screen.ts';
 
-export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'vendor notice' | 'unsent' | 'unknown';
+export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'exit question' | 'vendor notice' | 'unsent' | 'unknown';
 
 /** What a live `up` or `down` can do, apart from deciding it. Tests stand in for all of it. */
 /** What one live exit typing ended in. `true`: the box read back as the typed text and the
@@ -458,7 +458,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         host.clearWaiting?.(op.seat);
         return 'idle';
       }
-      classification = kind === 'working' ? op.record.classification : kind;
+      classification = kind === 'working' ? op.record.classification : classificationOf(kind);
       if (dialog.mode === 'keep') {
         host.recordWaiting?.(op.seat, { state: 'waiting-owner', classification }, op.pane, op.workspace);
         dropped.add(op.seat);

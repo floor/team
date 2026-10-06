@@ -203,6 +203,7 @@ const SCREEN_KINDS: ReadonlySet<string> = new Set<Screen['kind']>([
   'permission',
   'trust',
   'question',
+  'exit question',
   'vendor notice',
   'unknown',
 ]);
@@ -271,12 +272,13 @@ function callComposer(composer: unknown, lines: string[]): Hit {
   }
 }
 
-type StageName = 'unknown' | 'trust' | 'permission' | 'question' | 'vendor_notice' | 'working';
+type StageName = 'unknown' | 'trust' | 'permission' | 'exit_question' | 'question' | 'vendor_notice' | 'working';
 
 /** The kind a stage reads as. A stage is named for the profile (vendor_notice); a screen kind is
  *  what the run prints (vendor notice). */
 function kindOfStage(name: StageName): Screen['kind'] {
-  return name === 'vendor_notice' ? 'vendor notice' : name;
+  if (name === 'vendor_notice') return 'vendor notice';
+  return name === 'exit_question' ? 'exit question' : name;
 }
 
 /** `lines` is already the window: the last 20 lines, each trimmed at the end. */
@@ -289,13 +291,18 @@ export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClo
     const plain = plainLines(lines);
 
     // Rule (a): Every hatch predicate is monotone toward caution: hatch OR data, for working,
-    // every dialog (trust, permission, question, a vendor notice) and unknown. The data stage of a
+    // every dialog (trust, permission, the CLI's own exit question, question, a vendor notice)
+    // and unknown. The data stage of a
     // profile always runs; a hatch predicate can only add a match. A hatch can only add caution,
     // never remove it.
+    // The exit question reads before the ordinary question on purpose: its footer is one an
+    // ordinary question carries, so the stage a stop may answer must win over the kind it must
+    // never answer. The order is the core's; a profile cannot move it.
     const cautionStages: [StageName, ScreenData['trust']][] = [
       ['unknown', data.unknown],
       ['trust', data.trust],
       ['permission', data.permission],
+      ['exit_question', data.exit_question],
       ['question', data.question],
       ['vendor_notice', data.vendor_notice],
       ['working', data.working],
@@ -359,6 +366,7 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
         ['unknown', data.unknown],
         ['trust', data.trust],
         ['permission', data.permission],
+        ['exit_question', data.exit_question],
         ['question', data.question],
         ['vendor_notice', data.vendor_notice],
         ['working', data.working],
@@ -387,7 +395,7 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
 
     // Profile has a DATA composer.
     // Check hatch dialog predicates:
-    const dialogKinds: StageName[] = ['unknown', 'trust', 'permission', 'question', 'vendor_notice'];
+    const dialogKinds: StageName[] = ['unknown', 'trust', 'permission', 'exit_question', 'question', 'vendor_notice'];
     for (const kind of dialogKinds) {
       if (tick()) return { kind: 'unknown' };
       const fn = getProfileFn(data.profile, kind);
@@ -489,12 +497,8 @@ function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => 
     if (at < 0 || at <= ruleAt) return false;
   }
   if (rule.noneAfter) {
-    let anchor = -1;
-    for (let i = 0; i < lines.length; i++) {
-      const hit = matches(data, lines, i, rule.noneAfter.anchor, tick, true);
-      if (hit === 'stop') return 'stop';
-      if (hit) anchor = i;
-    }
+    const anchor = lastAnchor(data, lines, rule.noneAfter.anchor, tick);
+    if (anchor === 'stop') return 'stop';
     if (anchor < 0) return false;
     for (let i = anchor + 1; i < lines.length; i++) {
       for (const pattern of rule.noneAfter.patterns) {
@@ -504,7 +508,39 @@ function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => 
       }
     }
   }
+  if (rule.onlyAfter) {
+    const anchor = lastAnchor(data, lines, rule.onlyAfter.anchor, tick);
+    if (anchor === 'stop') return 'stop';
+    if (anchor < 0) return false;
+    // The block's own tail, and nothing else: the first non-blank row that is not one of
+    // the patterns means the screen carries another dialog's rows below this block, so the
+    // block is not the live one. Blank rows are the spacing a dialog draws.
+    for (let i = anchor + 1; i < lines.length; i++) {
+      if (!(lines[i] ?? '').trim()) continue;
+      let allowed = false;
+      for (const pattern of rule.onlyAfter.patterns) {
+        const row = matches(data, lines, i, pattern, tick, true);
+        if (row === 'stop') return 'stop';
+        if (row) {
+          allowed = true;
+          break;
+        }
+      }
+      if (!allowed) return false;
+    }
+  }
   return true;
+}
+
+/** The last row an anchor pattern matches: a block's bottom edge, read from below. */
+function lastAnchor(data: ScreenData, lines: string[], anchor: LinePattern, tick: () => boolean): number | 'stop' {
+  let at = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const hit = matches(data, lines, i, anchor, tick, true);
+    if (hit === 'stop') return 'stop';
+    if (hit) at = i;
+  }
+  return at;
 }
 
 function anyLine(data: ScreenData, lines: string[], patterns: LinePattern[], tick: () => boolean, inWindow = true): boolean | 'stop' {
