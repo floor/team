@@ -63,7 +63,9 @@ it read.
 
 A run that passes its gate and proceeds to its effects appends one line to `.agents/team.log`
 naming the delegate's pane. A dry run leaves no such line, and neither does a session that was
-already idle: both return before any effect.
+already idle: both return before any effect. An already-idle `down` says `session <session> is
+not running: nothing to stop` and exits 0 before any caller-role or gate refusal, for every
+caller — a delegate that passed a prohibited flag included: idle `down` is unchanged.
 
 ## Flags
 
