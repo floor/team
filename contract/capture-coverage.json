@@ -88,11 +88,11 @@
       },
       "question": {
         "real": 4,
-        "constructed": 2,
+        "constructed": 5,
         "undocumented": 0
       },
       "exit question": {
-        "real": 2,
+        "real": 5,
         "constructed": 1,
         "undocumented": 0
       },
@@ -1049,6 +1049,24 @@
       "provenance": "constructed"
     },
     {
+      "file": "exit-typing/claude-code-exit-question-marker-on-move.txt",
+      "cli": "claude-code",
+      "kind": "question",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-move-without-stay.txt",
+      "cli": "claude-code",
+      "kind": "question",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-other-second-row.txt",
+      "cli": "claude-code",
+      "kind": "question",
+      "provenance": "constructed"
+    },
+    {
       "file": "exit-typing/claude-code-idle-ansi.txt",
       "cli": "claude-code",
       "kind": "idle",
@@ -1085,7 +1103,25 @@
       "provenance": "capture"
     },
     {
+      "file": "exit-typing/claude-code-shell-move-question.txt",
+      "cli": "claude-code",
+      "kind": "exit question",
+      "provenance": "capture"
+    },
+    {
       "file": "exit-typing/claude-code-shell-question-ansi.txt",
+      "cli": "claude-code",
+      "kind": "exit question",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-shell-scheduled-move-question-ansi.txt",
+      "cli": "claude-code",
+      "kind": "exit question",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-shell-scheduled-move-question-clipped-ansi.txt",
       "cli": "claude-code",
       "kind": "exit question",
       "provenance": "capture"

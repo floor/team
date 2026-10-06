@@ -161,13 +161,59 @@ describe('never a key on anything but the exact read-back', () => {
 });
 
 describe("the CLI's own exit question", () => {
-  test('both captured exit questions read as their own kind, and hold no exit text', () => {
-    for (const name of ['claude-code-shell-question-ansi.txt', 'claude-code-scheduled-question-ansi.txt']) {
+  test('every captured exit question reads as its own kind, and holds no exit text', () => {
+    // Two forms, five captures: the two-choice dialog ("2. Stay") of a scheduled task and of a
+    // shell; the three-choice dialog ("2. Move to background and exit" / "3. Stay") of the
+    // release run's pane and of this profile's own scratch pane holding a shell and a scheduled
+    // task at once; and the same dialog drawn clipped by a pane too short for the list.
+    for (const name of [
+      'claude-code-shell-question-ansi.txt',
+      'claude-code-scheduled-question-ansi.txt',
+      'claude-code-shell-move-question.txt',
+      'claude-code-shell-scheduled-move-question-ansi.txt',
+      'claude-code-shell-scheduled-move-question-clipped-ansi.txt',
+    ]) {
       const screen = fixture(name);
       expect(readScreen('claude-code', screen).kind).toBe('exit question');
       expect(boxHoldsText('claude-code', '/exit', screen)).toBe(false);
       expect(boxHoldsOther('claude-code', '/exit', screen)).toBe(null);
     }
+  });
+
+  test('the three-choice form the release run captured reads as its own kind', () => {
+    // The release blocker, from the proof run (briefs/032-proof-main-2.md, section e; copied
+    // byte for byte): a seat with a background shell that the CLI can move to the background
+    // draws "2. Move to background and exit" between the marked choice and "3. Stay", and the
+    // frame rule read it as an ordinary question — no key was sent and the seat was left.
+    const screen = fixture('claude-code-shell-move-question.txt');
+    expect(screen).toContain('❯ 1. Exit and stop tasks');
+    expect(screen).toContain('     2. Move to background and exit');
+    expect(screen).toContain('     3. Stay');
+    expect(readScreen('claude-code', screen).kind).toBe('exit question');
+  });
+
+  test('a seat holding a shell and a scheduled task at once draws the same three-choice question', () => {
+    // This profile's own scratch capture (2.1.292): the dialog lists one row per background
+    // item — the shell's, and the scheduled task's wrapped over two rows — over the same three
+    // choices. Both kinds at once change the task rows, never the frame.
+    const screen = fixture('claude-code-shell-scheduled-move-question-ansi.txt');
+    // The capture's own bytes: the shell's row carries SGR between "shell" and its dot, so the
+    // plain row is asserted by its argument text, which the sequence does not split.
+    expect(screen).toContain('sleep 600');
+    expect(screen).toContain('Move to background and exit');
+    expect(readScreen('claude-code', screen).kind).toBe('exit question');
+  });
+
+  test('a pane too short for the list draws the same dialog clipped, and it still reads as its own kind', () => {
+    // The same scratch pane under a row budget: the CLI clips the item list to one row and its
+    // own `… +1 item` row and draws only the selected choice. The marked row is still the
+    // preselected "Exit and stop tasks" — the row the one Enter confirms — so this is the first
+    // form, not another dialog.
+    const screen = fixture('claude-code-shell-scheduled-move-question-clipped-ansi.txt');
+    expect(screen).toContain('… +1 item');
+    expect(screen).not.toContain('2. Stay');
+    expect(screen).not.toContain('Move to background');
+    expect(readScreen('claude-code', screen).kind).toBe('exit question');
   });
 
   test('ordinary text that quotes the choice row gets the one Enter on the exit text and no second key', async () => {
@@ -205,40 +251,47 @@ describe("the CLI's own exit question", () => {
     expect(sent).toEqual(['enter']);
   });
 
-  test('the profile key is sent once when the screen reads as the exit question, and a question that stays is reported', async () => {
-    const question = fixture('claude-code-shell-question-ansi.txt');
-    expect(readScreen('claude-code', question).kind).toBe('exit question');
-    const idle = fixture('claude-code-idle-ansi.txt');
-    const unsent = fixture('claude-code-unsent-ansi.txt');
-    let phase = 0;
-    let clock = 1_000_000;
-    const sent: string[] = [];
-    const io: ExitIo = {
-      typeText: () => {
-        phase = 1;
-        return true;
-      },
-      sendKey: (key) => {
-        sent.push(key);
-        return true;
-      },
-      pressEnter: () => {
-        sent.push('enter');
-        phase = 2;
-        return true;
-      },
-      screen: () => (phase === 0 ? idle : phase === 1 ? unsent : question),
-      status: () => 'idle',
-      foreground: () => ['claude'],
-      sleep: async (ms) => {
-        clock += ms;
-      },
-      now: () => clock,
-    };
-    const result = await typeExit(io, 'claude-code', '/exit');
-    expect(sent).toEqual(['enter', 'enter']);
-    expect(result).toEqual({ left: 'its exit was not confirmed; the exit question stayed open; left running' });
-  });
+  // Both forms answer the one Enter the same way: the key is the profile's `exit_confirm`, it
+  // lands on the marked first choice, and nothing navigates toward a second row. The exact sent
+  // list is the pin — over the three-choice form a 'down' or any other key before the Enter
+  // would show here, and the second choice would be confirmed instead of "Exit and stop tasks".
+  for (const name of ['claude-code-shell-question-ansi.txt', 'claude-code-shell-move-question.txt']) {
+    test(`${name}: the profile key is sent once when the screen reads as the exit question, and a question that stays is reported`, async () => {
+      const question = fixture(name);
+      expect(readScreen('claude-code', question).kind).toBe('exit question');
+      const idle = fixture('claude-code-idle-ansi.txt');
+      const unsent = fixture('claude-code-unsent-ansi.txt');
+      let phase = 0;
+      let clock = 1_000_000;
+      const sent: string[] = [];
+      const io: ExitIo = {
+        typeText: () => {
+          phase = 1;
+          return true;
+        },
+        sendKey: (key) => {
+          sent.push(key);
+          return true;
+        },
+        pressEnter: () => {
+          sent.push('enter');
+          phase = 2;
+          return true;
+        },
+        screen: () => (phase === 0 ? idle : phase === 1 ? unsent : question),
+        status: () => 'idle',
+        foreground: () => ['claude'],
+        sleep: async (ms) => {
+          clock += ms;
+        },
+        now: () => clock,
+      };
+      expect(profileFor('claude-code')?.exitConfirm).toBe('enter');
+      const result = await typeExit(io, 'claude-code', '/exit');
+      expect(sent).toEqual(['enter', 'enter']);
+      expect(result).toEqual({ left: 'its exit was not confirmed; the exit question stayed open; left running' });
+    });
+  }
 
   test('a pane that draws that question after the typing gets no Enter', async () => {
     const pane = paneOf('claude-code', 'claude', fixture('claude-code-idle-ansi.txt'), fixture('claude-code-shell-question-ansi.txt'));
@@ -274,6 +327,30 @@ describe('the kind is kept apart from the ordinary question', () => {
     // The capture's own dialog, its last 17 lines kept, under a three-line transcript quoting
     // the same two lines: the rule binds the bottom dialog, not the quote.
     expect(readScreen('claude-code', fixture('claude-code-exit-question-below-quote.txt')).kind).toBe('exit question');
+  });
+
+  test('a three-row tail whose second row is any other value is an ordinary question', () => {
+    // Built from the release run's capture with the middle row renamed to a value no run has
+    // drawn. The rule names the two real second rows and nothing else, so a tail it cannot
+    // name is not this dialog: it stays the ordinary question it looks like, and a stop's
+    // Enter has nowhere to go.
+    expect(readScreen('claude-code', fixture('claude-code-exit-question-other-second-row.txt')).kind).toBe('question');
+  });
+
+  test('"Move to background and exit" without its "3. Stay" is an ordinary question', () => {
+    // The second form is exact on both of its rows. The move row alone, with no last "Stay"
+    // under it, is a tail neither form draws — and the one Enter of a stop lands on the marked
+    // first choice, never on a "Move to background" row.
+    expect(readScreen('claude-code', fixture('claude-code-exit-question-move-without-stay.txt')).kind).toBe('question');
+  });
+
+  test('a marked second choice is an ordinary question: the one Enter acts on the marked row alone', () => {
+    // The reader takes the marker as the row the confirming key acts on. A dialog whose
+    // selection sits on "Move to background and exit" — the value a stop must never confirm —
+    // is not the screen this rule reads. It stays an ordinary question, so no key goes out.
+    const screen = fixture('claude-code-exit-question-marker-on-move.txt');
+    expect(screen).toContain('❯ 2. Move to background and exit');
+    expect(readScreen('claude-code', screen).kind).toBe('question');
   });
 
   test('the stage is the profile\'s, and beside it the one key that confirms that screen', () => {

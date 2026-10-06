@@ -83,7 +83,9 @@ never `idle`, never `unsent` — so nothing that reads the screen would type int
 kind is kept apart from the ordinary `question`, which no stop may ever answer. The profile
 names both halves of the answer for this CLI: the stage this screen is read from
 (`screen.exit_question`) and the one key that confirms it (`exit_confirm: enter`, beside the
-screens' evidence in src/profiles/claude-code.yaml). Nothing but a stop presses that key.
+screens' evidence in src/profiles/claude-code.yaml). The stage admits each of the two forms
+below exactly, and a tail it cannot name reads as the ordinary question it looks like — the
+comment beside the rules says why. Nothing but a stop presses that key.
 
 What the other two CLIs do with background work, from their own runs of 2026-10-06 in the same
 scratch session: Codex 0.160.0 asks nothing. With a backgrounded shell running, one Enter on
@@ -101,12 +103,54 @@ run that found none.
 - `claude-code-shell-question-ansi.txt`: the seat whose background work is the background shell,
   the same question listing `shell · sleep 600`.
 
+### The three-choice form
+
+The CLI draws this question in two forms. When the session is one the CLI can move into the
+background, the list gains a choice between the marked one and `Stay`:
+
+    Background work is running
+    The following will stop when you exit:
+
+    shell · sleep 600
+
+    ❯ 1. Exit and stop tasks
+      2. Move to background and exit
+      3. Stay
+
+    Enter to confirm · Esc to cancel
+
+The preselected marker is still on `1. Exit and stop tasks`, the row the one Enter confirms. The
+added value, `Move to background and exit`, is never what a stop confirms, and the profile
+carries no key that could land on it.
+
+- `claude-code-shell-move-question.txt`: the release run's own capture of this form, taken
+  2026-10-06T21:37:29Z from its Claude pane after a `team down` of a seat holding a background
+  shell, with `pane read <pane> --format text --lines 80` — the stdout of
+  `briefs/032-proof-main-2.md` section e, copied byte for byte. Before the rule admitted this
+  tail it read `question`, so the stop sent nothing and left the seat on this dialog. Reads
+  `exit question`.
+- `claude-code-shell-scheduled-move-question-ansi.txt`: my own scratch capture of the same form,
+  taken the same way as the pair above (herdr 0.7.1 `pane read`, `--format ansi`), from a seat
+  holding both kinds of background work at once — a background shell (`sleep 600`) and a
+  scheduled task (`Every day at 3:00 AM`). The item rows follow the work: `shell · sleep 600`,
+  and the scheduled task's label wrapped onto its own `task` continuation row. The pane ran
+  Claude Code 2.1.292 and was created with the child-session marker the CLI's own warning names
+  cleared (`--env CLAUDE_CODE_CHILD_SESSION=`): the panes that inherited that marker drew only
+  the two-choice form above, which is why this capture needed a fresh full-height pane. Reads
+  `exit question`.
+- `claude-code-shell-scheduled-move-question-clipped-ansi.txt`: the same pane's dialog under a
+  smaller layout. A pane too short for the item list draws the same dialog clipped by the CLI's
+  own row budget — one item row, its `… +1 item` row, the marked choice and the footer, no other
+  choice at all. The marked row is still the preselected `1. Exit and stop tasks`, so this is the
+  first form clipped, not another dialog. Reads `exit question`.
+
 ## Constructed boundary screens
 
 The exit question's stage reads three phrases, and prose quoting them above a live box must not
 be read as the CLI's dialog: a rule matching them anywhere read an ordinary question as an exit
-question, and a later stop would have sent its Enter into it. The three screens below pin that
-boundary. None is a capture; each names the file it was built from.
+question, and a later stop would have sent its Enter into it. The screens below pin that
+boundary: the first three quote the dialog's lines above a live question, and the last three
+carry a tail no run has drawn. None is a capture; each names the file it was built from.
 
 - `claude-code-exit-lines-quoted-question.txt`: constructed from
   `claude-code/2.1.289/question-plain.txt`. The exit question's two lines
@@ -130,3 +174,15 @@ boundary. None is a capture; each names the file it was built from.
   the footer) are kept byte for byte, with a three-line transcript quoting the same two lines
   placed above them. The real dialog sits below a quoting transcript and still reads
   `exit question`: the rule reads the bottom dialog's own choice row and footer, not the quote.
+- `claude-code-exit-question-other-second-row.txt`: constructed from the release run's capture
+  (`claude-code-shell-move-question.txt`) with its middle row renamed to `2. Delete everything
+  and exit` — a second row no run has drawn. Each form names the second row it draws (`2. Stay`,
+  or `2. Move to background and exit` with its `3. Stay`), and a tail whose second row is
+  anything else is not this dialog. Reads `question`.
+- `claude-code-exit-question-move-without-stay.txt`: the same capture with its `3. Stay` row
+  removed. The move row with no last `Stay` under it is a tail neither form draws — and the
+  choice a stop must never confirm. Reads `question`.
+- `claude-code-exit-question-marker-on-move.txt`: the same capture with the marker moved to
+  `2. Move to background and exit`, row 1 left unmarked. The reader takes the marker as the row
+  the confirming key acts on; a stop means stop, so a screen whose selection sits on the move
+  row is not the screen whose key this program may send. Reads `question`.

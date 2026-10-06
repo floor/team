@@ -1,0 +1,23 @@
+
+
+  [0m[38;2;153;153;153mThought for [0m[1m[38;2;153;153;153m1s[0m[38;2;153;153;153m [0m
+  
+[0m[38;2;255;255;255m⏺ [0mBackground [0m[38;2;177;185;249msleep 600 [0mis running (ID bnsjbnlzq) and
+  the daily 3:00 AM reminder is scheduled (job
+  6ef7e847 — session-only, auto-expires in 7 days).
+
+[0m[38;2;153;153;153m✻ Crunched for 5s · done 11:48 PM · 1 shell still [0m
+  [0m[38;2;153;153;153mrunning[0m
+[0m[38;2;177;185;249m▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔[0m
+   [0m[1m[38;2;177;185;249mBackground work is running[0m
+   [0m[38;2;153;153;153mThe following will stop when you exit:[0m
+
+   [0m[1mshell[0m[38;2;153;153;153m · sleep 600[0m
+   [0m[1mscheduled [0m [0m[38;2;153;153;153m · Every day at 3:00 AM · Remind the [0m
+   [0m[1mtask[0m       [0m[38;2;153;153;153muser: time to stretch your legs[0m
+                         
+   [0m[38;2;177;185;249m❯[0m [0m[38;2;153;153;153m1. [0m[38;2;177;185;249mExit and stop tasks[0m
+     [0m[38;2;153;153;153m2. [0mMove to background and exit
+     [0m[38;2;153;153;153m3. [0mStay
+
+   [0m[3m[38;2;153;153;153mEnter to confirm · Esc to cancel[0m
