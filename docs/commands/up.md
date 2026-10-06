@@ -5,9 +5,10 @@ declares and this machine can run, and the watchdog pane that runs `team watch`.
 are left as they are; a seat stopped in the file is left out until `team add` starts it. `--dry-run`
 prints the plan and runs nothing.
 
-A session stopped in herdr is refused until its owner clears it — `up` never deletes a session. A
-session `team down` stopped needs no such step: `down` clears the one it stopped in the same run, so
-the next `up` starts from the beginning.
+A session stopped in herdr that this team's state records is cleared under the run lock, then
+started from the beginning. A stopped session the state does not record is refused
+(`session <name> is stopped`); that line names no herdr command. A recorded session that does
+not clear is refused too (`session <name> is stopped and did not clear`).
 
 Every seat, shared and worktree-mode alike, starts in `~/.config/team/lobby`. It is shared
 by all projects on the machine. Before creating anything, `team` verifies the lobby gate:
@@ -480,6 +481,7 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | `the load is 1.2 per core, above 1` / `free memory is 8%, below 25%` / `free disk is 3.0 GB, below 10.0 GB` / `free swap is 1.0 GB, below 2.0 GB` |
 | `herdr doesn't answer` |
 | `session beacon is stopped` — herdr lists it stopped and this team's state does not record it, so `up` does not clear it |
+| `session <session> is stopped and did not clear` — herdr lists it stopped, this team's state records it, and the clear did not happen |
 | ``session beacon has 2 agents this file's state doesn't record: `up` never touches a running team`` — an agent on a pane no record names, or on a pane this state records for a seat at another stage: a seat at `named` or `ready` whose pane now holds a foreign agent is refused here, with the whole team. An agent on the pane this state records for a seat left at `launched` — the run stopped after its pane was made and before its rename — is not refused: it is the run's own half-finished seat, and this run finishes it, the idle wait and the rename like any launched seat |
 | ``the file is legacy: migrate trust to absolute paths including the lobby ~/.config/team/lobby: ...`` — followed by the whole `trust:` block to paste: every entry the next `up` requires, one line saying which key of the file each entry comes from, and, for an entry a rule of `trust` refuses, one line naming the key that forces it |
 | ``the lobby ~/.config/team/lobby: <check>`` — gate check failed (symbolic link, permissions, mode, not empty, inside git repo) |
