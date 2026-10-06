@@ -1,16 +1,20 @@
 # team
 
-Set up, change and watch a project's team of AI agents from one file.
+Set up and run a team of AI agents for your project. Agents propose, you decide.
 
 `team` is a small command-line tool with no runtime dependencies. A project declares its team in
 `.agents/team.yaml`: the seats, the model each one runs, how each agent signs its work, the rules it
 works under, the folders it may touch. Commands then check that file against a machine, a session
-and a history, and build and watch the team itself. Version 0.1 runs teams in
+and a history, and build and watch the team itself. It runs teams in
 [herdr](https://herdr.dev).
 
-**Status: 0.1, early: herdr only.** This build parses and
-validates the file, checks who is calling, and holds `add`, `approve`, `check`, `doctor`, `down`,
-`init`, `remove`, `status`, `up`, `watch` and `worktree`.
+The project's name is TeamCLI; the package and the command are `team`. The site is
+[teamcli.io](https://teamcli.io), and the founding text is
+[RFC 000](https://github.com/floor/team/discussions/147).
+
+**Status: early, herdr only.** This build parses and
+validates the file, checks who is calling, and holds `add`, `answer`, `approve`, `check`, `doctor`,
+`down`, `init`, `release`, `remove`, `status`, `up`, `watch` and `worktree`.
 
 ## Install
 
@@ -77,10 +81,10 @@ seats:
     name: implementer
     cli: codex
     vendor: openai
-    account: openai-hello     # the seat's account, when one vendor has two; absent, its vendor
+    account: openai-hello     # the seat's account, when one lab has two; absent, its lab
     model: GPT Sol
     version: "6"
-    display: GPT-6 Sol        # the vendor's spelling, for the signature
+    display: GPT-6 Sol        # the lab's spelling, for the signature
     launch: codex -m gpt-6-sol -c model_reasoning_effort=high
     parked: true              # running, and not reported while idle
 
@@ -120,12 +124,12 @@ budgets:                      # the owner's: reserve or floor per account, marks
 - `identity.signature` is the rule `check` enforces: a template, where it must stand, and which
   commits are exempt. Commit signatures read `Agent: {display} · {role}`, pull request bodies
   `**Agent:** {display} · {role}`. Without `display`, the signature reads "model version"; with it,
-  the vendor's own spelling. `identity.since` skips an older history, `identity.humans` lists commit
+  the lab's own spelling. `identity.since` skips an older history, `identity.humans` lists commit
   authors who don't sign, and `identity.forbidden` adds to the defaults — `^Claude-Session:` lines
   and session links are always refused.
 - `seats[*].cli` picks the launch profile; `claude-code`, `codex`, `cursor` and `antigravity` are available, and `team
   doctor` says what the others still need. `vendor`, `model` and `version` spell one seat's model.
-  `account` names the budget account the seat spends when one vendor has two; without it, the seat
+  `account` names the budget account the seat spends when one lab has two; without it, the seat
   spends its `vendor`, and changing either is an edit the owner re-approves.
 - `launch` is the plain command, without approval flags: the profile adds them. It runs in the
   folder the seat starts in — `~/.config/team/lobby` — and `team` never
@@ -159,14 +163,14 @@ It adds `-a never -s danger-full-access`
 for unattended execution, plus `--no-daemon --no-alt-screen` for the captured pane mode,
 and checks login with `codex login status`. Rules go as a first message
 only at an empty idle prompt; delivery is recorded after Codex starts working with the input
-empty again. Nothing writes a vendor config or an `AGENTS.md`. `/exit` is sent only to a free
+empty again. Nothing writes a lab's config or an `AGENTS.md`. `/exit` is sent only to a free
 seat. Update and workspace-trust screens are reported and closed without input; the owner
 handles them before relaunching. Other unrecognised layouts stay unknown.
 
 The Antigravity profile is tested with CLI 1.2.16 (`agy`). It adds `--dangerously-skip-permissions`
 for unattended execution, and checks authentication with `agy models`. Rules go as a first message
 only at an empty idle prompt; delivery is recorded after the CLI starts working with the composer
-empty again. Nothing writes a vendor config or an `AGENTS.md`. `/exit` is sent only to a free
+empty again. Nothing writes a lab's config or an `AGENTS.md`. `/exit` is sent only to a free
 seat. Workspace-trust screens are reported and closed without input; the owner trusts the folder
 before relaunching. Other unrecognised layouts stay unknown.
 
@@ -187,7 +191,7 @@ read.
 `budgets` is the owner's: marks (percent used), how long a figure stays fresh, and each
 account's reserve or floor. An account's `shared` key is informational; `team` does not act
 on it. A seat spends its own `account:` when the file names one, its `vendor`
-when it doesn't, so one vendor's two accounts are two buckets; a pattern names the account it
+when it doesn't, so one lab's two accounts are two buckets; a pattern names the account it
 measures, not the seat's. A `check` command is resolved to a file and hashed when the
 owner approves. A change to that file leaves that account's check unapproved: it is
 not run, and the account reads unknown, until the owner approves again. The rest of
@@ -237,9 +241,9 @@ length, a figure over 100%, or no such rollout prints nothing, so the account
 reads unknown. `team approve` records the command you named. Bun has to be on
 `PATH` when the check runs.
 
-More fields exist — `tools`, `trust`, `machine`, `limits`, `watch`, `visibility` — and the comments
-`team init` writes name them; validation refuses what it cannot check, and this build acts on what
-the commands below read.
+More fields exist — `dialogs`, `tools`, `trust`, `machine`, `limits`, `watch`, `visibility` and
+`releases` — and the comments `team init` writes name them; validation refuses what it cannot
+check, and this build acts on what the commands below read.
 
 ## Commands
 
@@ -253,6 +257,8 @@ the commands below read.
 | `team up` / `team down` | starts / stops the session and its seats | `up`: the owner; `down`: the owner, the coordinator or the operator seat |
 | `team watch` | watches the session, reports idle seats and nudges the operator; `--no-nudge` and `--no-notify` are the owner's and do not silence a report addressed to the owner | anyone, one per session; it types only its fixed nudge, into an empty idle prompt |
 | `team add <name>` | starts one declared seat, or puts one back from the approved copy; `--temporary --like <seat> --until <end>` starts a seat the file does not hold | the owner, the coordinator or the operator |
+| `team answer <seat> trust` | presses the one recorded key of a seat's folder-trust dialog, when the file's `dialogs` policy allows it; every check passes on two fresh reads of the pane, and anything else sends nothing | the owner, or the coordinator from its own seat |
+| `team release check <package@version>` | checks one release's public npm and GitHub records: the version and its checksums, the tag, the release, the changelog entry | anyone; read only |
 | `team remove <name>` | stops one seat, then takes it out of the file; `--keep` leaves it stopped; `--abandon` is the owner's, and types nothing | the owner, the coordinator or the operator; only the owner removes the coordinator or the operator |
 | `team worktree new <task>` / `team worktree remove <task>` | creates a task worktree from an up-to-date base, or removes its folder; a failed setup is kept and recorded; the branch is never deleted; ignored files in the worktree are deleted with it | the owner, the coordinator or the operator |
 
@@ -275,7 +281,7 @@ existing login check command (`cursor-agent status`, `agy models`, `codex login 
 It never answers prompts and performs no sign-in action.
 
 `team up`, `team down`, `team add`, `team remove`, `team worktree new` and `team worktree remove`
-run live. `up` and `down` take `--dry-run` to print every command they would run, and every
+run live. `up`, `down` and `add` take `--dry-run` to print every command they would run, and every
 refusal, and change nothing.
 
 ## Approvals are signed
@@ -339,7 +345,8 @@ bun install
 bun run typecheck
 bun test
 bun run build        # dist/, which runs on Node 22 or later
-bun run ci           # what CI runs: typecheck, tests, build, then the built command's --version
+bun run ci           # what CI runs: typecheck, tests, build, then the built command, the
+                     # conformance run, and the schema, contract, coverage and exit-code checks
 ```
 
 Sources import each other with `.ts` extensions and use erasable syntax only, so Node can run them
@@ -389,8 +396,7 @@ owner creates version tags, is recommended.
 
 Trusted publishing must be bound once, by the package owner, on npmjs.com: the package `team` →
 Publishing → trusted publishers → GitHub Actions, naming `floor/team` and the workflow file
-`release.yml`; until then the workflow cannot publish. The 0.1.0 release itself is a manual
-`npm publish` from a clean `main`; the workflow covers the releases after it.
+`release.yml`; until then the workflow cannot publish.
 
 ## License
 
