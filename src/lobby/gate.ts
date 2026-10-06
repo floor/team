@@ -62,20 +62,141 @@ export function findRepoRoot(startPath: string, fs: FsReader = defaultFs): strin
 }
 
 export type LobbyGateResult =
-  | { ok: true; path: string; dev: number; ino: number }
+  | { ok: true; path: string; dev: number; ino: number; files: readonly LobbyFileSeen[] }
   | { ok: true; missing: true }
   /** A refusal: `text` is the whole finding — the folders this machine resolved — for the
    *  terminal; `words` is the same cause with no folder in it, what a record and the log may
    *  hold. Every refusal arm authors both, so no later caller has to guess. */
-  | { ok: false; problem: 'symlink' | 'owner' | 'mode' | 'not-empty' | 'repo' | 'not-directory' | string; text: string; words: string; component?: string };
+  | { ok: false; problem: 'symlink' | 'owner' | 'mode' | 'not-empty' | 'repo' | 'not-directory' | 'not-file' | 'read-error' | string; text: string; words: string; component?: string };
+
+/** One declared file the gate allowed: its path relative to the lobby, and the device and
+ *  inode it carried when the gate read it — the identity a recheck compares. */
+export interface LobbyFileSeen {
+  path: string;
+  dev: number;
+  ino: number;
+}
 
 export interface VerifyLobbyOptions {
   create?: boolean;
   getuid?: () => number;
   fs?: FsReader;
+  /** The exact relative paths of regular files the lobby may hold, from the profiles of the
+   *  CLIs being started. Absent, no path is tolerated: the lobby holds nothing but the seats,
+   *  as it always has. */
+  files?: readonly string[];
 }
 
 type CompCheck = { ok: true; stat: FsStats } | { ok: false; problem: string; text: string; words: string; component?: string };
+
+type TreeCheck = { ok: true; files: LobbyFileSeen[] } | { ok: false; problem: string; text: string; words: string };
+
+/** The lobby's tree, closed around the declared files. Every folder the declarations run
+ *  through is walked: it may hold nothing but its own declared children. An entry nothing
+ *  declared is the not-empty lobby of today, in today's words; a declared path may be absent
+ *  — a clean lobby passes — but what is there must be the running user's, no link anywhere,
+ *  a real folder on the way and a real regular file at the end. The gate only ever lists and
+ *  stats: it opens none of these files, and never follows a name that might be a link. */
+function checkClosedTree(lobby: string, declared: readonly string[], fs: FsReader, myUid: number): TreeCheck {
+  // The name each declared parent may hold, keyed by the parent's own relative path: the
+  // lobby itself is "", and its set exists even when nothing is declared — the lobby is
+  // always listed, so an undeclared entry is refused with or without declarations. A name
+  // with children is a folder on the way; a name with none is a file. The profile loader
+  // has already refused one path running through another, so no name is both.
+  const allowedAt = new Map<string, Set<string>>([['', new Set<string>()]]);
+  for (const one of declared) {
+    const parts = one.split('/');
+    for (let i = 0; i < parts.length; i++) {
+      const parent = parts.slice(0, i).join('/');
+      const child = parts[i] as string;
+      const set = allowedAt.get(parent) ?? new Set<string>();
+      set.add(child);
+      allowedAt.set(parent, set);
+    }
+  }
+
+  const files: LobbyFileSeen[] = [];
+
+  const walk = (rel: string): TreeCheck | null => {
+    const allowed = allowedAt.get(rel);
+    if (!allowed) return null;
+    let entries: string[];
+    try {
+      entries = fs.readdir(rel === '' ? lobby : join(lobby, rel));
+    } catch (err) {
+      return {
+        ok: false, problem: 'not-empty',
+        text: `the lobby ${lobby}: cannot read directory: ${codeOf(err)}`,
+        words: 'the lobby: it cannot be listed',
+      };
+    }
+    for (const name of entries) {
+      if (!allowed.has(name)) {
+        return { ok: false, problem: 'not-empty', text: `the lobby ${lobby}: is not empty`, words: 'the lobby: it is not empty' };
+      }
+    }
+    for (const name of allowed) {
+      const childRel = rel === '' ? name : `${rel}/${name}`;
+      const full = join(lobby, childRel);
+      let stat: FsStats;
+      try {
+        stat = fs.lstat(full);
+      } catch (err) {
+        if (codeOf(err) === 'ENOENT') continue; // declared and not there yet: a clean lobby passes
+        return {
+          ok: false, problem: 'read-error',
+          text: `the lobby ${lobby}: cannot read ${full}: ${codeOf(err)}`,
+          words: `the lobby: ${childRel} cannot be read`,
+        };
+      }
+      if (stat.isSymbolicLink()) {
+        return {
+          ok: false, problem: 'symlink',
+          text: `the lobby ${lobby}: ${full} is a symbolic link`,
+          words: `the lobby: ${childRel} is a symbolic link`,
+        };
+      }
+      if (stat.uid !== myUid) {
+        return {
+          ok: false, problem: 'owner',
+          text: `the lobby ${lobby}: ${full} is not owned by you`,
+          words: `the lobby: ${childRel} is not owned by you`,
+        };
+      }
+      const children = allowedAt.get(childRel);
+      if (children) {
+        if (!stat.isDirectory()) {
+          return {
+            ok: false, problem: 'not-directory',
+            text: `the lobby ${lobby}: ${full} is not a directory`,
+            words: `the lobby: ${childRel} is not a directory`,
+          };
+        }
+        const down = walk(childRel);
+        if (down !== null) return down;
+      } else if (stat.isFile()) {
+        files.push({ path: childRel, dev: stat.dev, ino: stat.ino });
+      } else if (stat.isDirectory()) {
+        return {
+          ok: false, problem: 'not-file',
+          text: `the lobby ${lobby}: ${childRel} is a folder, not a file`,
+          words: `the lobby: ${childRel} is a folder, not a file`,
+        };
+      } else {
+        return {
+          ok: false, problem: 'not-file',
+          text: `the lobby ${lobby}: ${childRel} is neither a file nor a folder`,
+          words: `the lobby: ${childRel} is neither a file nor a folder`,
+        };
+      }
+    }
+    return null;
+  };
+
+  const refused = walk('');
+  if (refused !== null) return refused;
+  return { ok: true, files };
+}
 
 /**
  * Verifies the lobby folder and every component from `home` down to it.
@@ -87,6 +208,12 @@ type CompCheck = { ok: true; stat: FsStats } | { ok: false; problem: string; tex
  * the canonical path rebuilt from the components just `lstat`ed: the same string `realpath` of
  * the lobby returned. A read-only check of a lobby that is simply absent — including when
  * `~/.config` or `team` is not there yet — is `{ missing: true }`, not a failure.
+ *
+ * With `files`, the exact relative paths the profiles of the CLIs being started declare, the
+ * lobby's tree is closed around them: nothing undeclared may remain, and each declared file
+ * that is there must be the running user's regular file, no link anywhere on its path. The
+ * successful result records each one's device and inode, for the recheck. Without `files`
+ * the lobby holds nothing but the seats, as it always has.
  */
 export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGateResult {
   const lobby = lobbyDir(home);
@@ -287,19 +414,8 @@ export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGa
     };
   }
 
-  let entries: string[];
-  try {
-    entries = fs.readdir(lobby);
-  } catch (err) {
-    return {
-      ok: false, problem: 'not-empty',
-      text: `the lobby ${lobby}: cannot read directory: ${codeOf(err)}`,
-      words: 'the lobby: it cannot be listed',
-    };
-  }
-  if (entries.length > 0) {
-    return { ok: false, problem: 'not-empty', text: `the lobby ${lobby}: is not empty`, words: 'the lobby: it is not empty' };
-  }
+  const tree = checkClosedTree(lobby, options?.files ?? [], fs, myUid);
+  if (!tree.ok) return tree;
 
   const logicalRepo = searchRepo(lobby, fs);
   if (logicalRepo.error) {
@@ -332,14 +448,17 @@ export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGa
     };
   }
 
-  return { ok: true, path: real, dev: lobbyStat.dev, ino: lobbyStat.ino };
+  return { ok: true, path: real, dev: lobbyStat.dev, ino: lobbyStat.ino, files: tree.files };
 }
 
-/** The lobby the gate verified, so a later check can say it is still the same folder. */
+/** The lobby the gate verified, so a later check can say it is still the same folder — and
+ *  the declared files it allowed then, so the same check can say each is still the file the
+ *  gate read. Absent when the caller recorded none, as before this field existed. */
 export interface LobbySeen {
   path: string;
   dev: number;
   ino: number;
+  files?: readonly LobbyFileSeen[];
 }
 
 /**
@@ -361,9 +480,9 @@ export type LobbyRefusal = { reason: string; detail: string };
 export function recheckLobby(
   home: string,
   seen: LobbySeen,
-  options?: { getuid?: () => number; fs?: FsReader },
+  options?: { getuid?: () => number; fs?: FsReader; files?: readonly string[] },
 ): LobbyRefusal | null {
-  const again = verifyLobby(home, { create: false, getuid: options?.getuid, fs: options?.fs });
+  const again = verifyLobby(home, { create: false, getuid: options?.getuid, fs: options?.fs, files: options?.files });
   if (!again.ok) return { reason: again.words, detail: again.text };
   if (!('path' in again)) {
     return { reason: 'the lobby: it is not there any more', detail: `the lobby ${seen.path}: it is not there any more` };
@@ -373,6 +492,20 @@ export function recheckLobby(
       reason: 'the lobby: it is not the folder the gate read',
       detail: `the lobby ${seen.path}: it is not the folder the gate read`,
     };
+  }
+  // The whole tree is re-checked above; what remains is that each file the gate allowed is
+  // still the file it read — the same device and inode, not a fresh one under the same name.
+  // A file gone missing is allowed: the CLI that made it may have removed it, and a later
+  // check will see the lobby clean again.
+  const now = new Map(again.files.map((one) => [one.path, one]));
+  for (const one of seen.files ?? []) {
+    const read = now.get(one.path);
+    if (read && (read.dev !== one.dev || read.ino !== one.ino)) {
+      return {
+        reason: `the lobby: ${one.path} is not the file the gate read`,
+        detail: `the lobby ${seen.path}: ${one.path} is not the file the gate read`,
+      };
+    }
   }
   return null;
 }
