@@ -714,7 +714,7 @@ describe('the lobby gate with files declared', () => {
     expect(gate).toEqual({ ok: true, path: lobby, dev: expect.any(Number), ino: expect.any(Number), files: [] });
   });
 
-  test('the declared file present passes and is recorded by its device and inode', () => {
+  test('the declared file present passes and is recorded by its full identity', () => {
     makeLobby();
     mkdirSync(join(lobby, '.claude'));
     writeFileSync(lock(), '{}\n');
@@ -722,8 +722,18 @@ describe('the lobby gate with files declared', () => {
     expect(gate.ok).toBe(true);
     if (!gate.ok || !('files' in gate)) throw new Error('gate must succeed with a path');
     expect(gate.files).toHaveLength(1);
-    const read = lstatSync(lock());
-    expect(gate.files[0]).toEqual({ path: '.claude/scheduled_tasks.lock', dev: read.dev, ino: read.ino });
+    const read = lstatSync(lock(), { bigint: true });
+    // Printed once a run: what this platform's lstat reports at full resolution — the local run
+    // and the CI log together are the per-platform evidence the time fields stand on.
+    console.log(`[lobby file identity] size=${read.size} ctimeNs=${read.ctimeNs} birthtimeNs=${read.birthtimeNs}`);
+    expect(gate.files[0]).toEqual({
+      path: '.claude/scheduled_tasks.lock',
+      dev: Number(read.dev),
+      ino: Number(read.ino),
+      size: read.size,
+      ctimeNs: read.ctimeNs,
+      birthtimeNs: read.birthtimeNs,
+    });
   });
 
   test('no declaration at all refuses a declared file with today\'s bytes, option or not', () => {
@@ -870,10 +880,17 @@ describe('the lobby gate with files declared', () => {
 
     expect(recheckLobby(home, seen, { files: declared })).toBeNull();
 
+    // Unlink first, then a fresh file on the same name: the case the Linux runner handed this
+    // suite twice, because the freed inode went straight to the new file, so device and inode
+    // alone called it the file the gate read. The change time and birth time do not follow the
+    // inode number — the recheck refuses whatever the filesystem did with the inode.
+    rmSync(lock());
+    writeFileSync(lock(), '{}\n');
+    const recreated = recheckLobby(home, seen, { files: declared });
+    expect(recreated?.reason).toBe('the lobby: .claude/scheduled_tasks.lock is not the file the gate read');
+
     // A fresh file renamed over the name, made while the old one still exists: the two
-    // coexist, so their inodes are distinct on any filesystem. Unlinking first frees the old
-    // inode for the replacement to reclaim — Linux did, in CI, twice — and a file with the
-    // gate's own device and inode reads as the same file, rightly.
+    // coexist, so their inodes are distinct on any filesystem — refused the same way.
     const fresh = `${lock()}.replacement`;
     writeFileSync(fresh, '{}\n');
     renameSync(fresh, lock());
@@ -885,6 +902,38 @@ describe('the lobby gate with files declared', () => {
 
     rmSync(lock());
     expect(recheckLobby(home, seen, { files: declared })).toBeNull();
+  });
+
+  test("a replaced file reported with the gate's own device and inode is still refused", () => {
+    // The review's case: Linux can hand a deleted file's inode straight to a new file under
+    // the same name, so device and inode are not identity. The replacement here is real — only
+    // the numbers it is reported with are the gate's own, through the same injected reader the
+    // review proved the old gate with. What refuses it is everything the inode number cannot
+    // carry: the size, the change time and the birth time of the file that is there now.
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+    const gate = verifyLobby(home, { files: declared });
+    if (!gate.ok || !('files' in gate)) throw new Error('gate must succeed with a path');
+    const seen = { path: gate.path, dev: gate.dev, ino: gate.ino, files: gate.files };
+    const original = gate.files[0]!;
+
+    const fresh = `${lock()}.replacement`;
+    writeFileSync(fresh, '{}\n');
+    renameSync(fresh, lock());
+    const reusedNumbers: FsReader = {
+      ...defaultFs,
+      lstat(p) {
+        const read = defaultFs.lstat(p);
+        if (p !== lock()) return read;
+        const m = Object.create(read);
+        m.dev = original.dev;
+        m.ino = original.ino;
+        return m;
+      },
+    };
+    const refusal = recheckLobby(home, seen, { files: declared, fs: reusedNumbers });
+    expect(refusal?.reason).toBe('the lobby: .claude/scheduled_tasks.lock is not the file the gate read');
   });
 
   test('the recheck: an undeclared entry that appeared is today\'s not-empty lobby', () => {

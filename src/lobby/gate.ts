@@ -17,8 +17,23 @@ export interface FsStats {
   ino: number;
 }
 
+/** What one `lstat` with `bigint: true` says of a declared file: the numbers, at full
+ *  nanosecond resolution, a file created again under the same name cannot all keep. Where the
+ *  platform reports no birth time, `birthtimeNs` is what that platform reports instead — zero,
+ *  or the change time — and is never compared. */
+export interface FileIdentity {
+  dev: bigint;
+  ino: bigint;
+  size: bigint;
+  ctimeNs: bigint;
+  birthtimeNs: bigint;
+}
+
 export interface FsReader {
   lstat(path: string): FsStats;
+  /** A declared file's identity fields, at full resolution. Still only an `lstat`: the gate
+   *  never opens a declared file. */
+  lstatIdentity(path: string): FileIdentity;
   mkdir(path: string, options?: { mode?: number }): void;
   readdir(path: string): string[];
   realpath(path: string): string;
@@ -26,6 +41,7 @@ export interface FsReader {
 
 export const defaultFs: FsReader = {
   lstat: (p) => lstatSync(p),
+  lstatIdentity: (p) => lstatSync(p, { bigint: true }),
   mkdir: (p, opts) => mkdirSync(p, { recursive: false, mode: opts?.mode }),
   readdir: (p) => readdirSync(p),
   realpath: (p) => realpathSync(p),
@@ -69,12 +85,18 @@ export type LobbyGateResult =
    *  hold. Every refusal arm authors both, so no later caller has to guess. */
   | { ok: false; problem: 'symlink' | 'owner' | 'mode' | 'not-empty' | 'repo' | 'not-directory' | 'not-file' | 'read-error' | string; text: string; words: string; component?: string };
 
-/** One declared file the gate allowed: its path relative to the lobby, and the device and
- *  inode it carried when the gate read it — the identity a recheck compares. */
+/** One declared file the gate allowed: its path relative to the lobby, and the identity it
+ *  carried when the gate read it — its device and inode, and what a file created again under
+ *  the same name cannot keep even where the filesystem hands it the same inode number: its
+ *  size, its inode change time and, where the platform reports one, its birth time, both at
+ *  full nanosecond resolution. */
 export interface LobbyFileSeen {
   path: string;
   dev: number;
   ino: number;
+  size: bigint;
+  ctimeNs: bigint;
+  birthtimeNs: bigint;
 }
 
 export interface VerifyLobbyOptions {
@@ -175,7 +197,24 @@ function checkClosedTree(lobby: string, declared: readonly string[], fs: FsReade
         const down = walk(childRel);
         if (down !== null) return down;
       } else if (stat.isFile()) {
-        files.push({ path: childRel, dev: stat.dev, ino: stat.ino });
+        let identity: FileIdentity;
+        try {
+          identity = fs.lstatIdentity(full);
+        } catch (err) {
+          return {
+            ok: false, problem: 'read-error',
+            text: `the lobby ${lobby}: cannot read ${full}: ${codeOf(err)}`,
+            words: `the lobby: ${childRel} cannot be read`,
+          };
+        }
+        files.push({
+          path: childRel,
+          dev: stat.dev,
+          ino: stat.ino,
+          size: identity.size,
+          ctimeNs: identity.ctimeNs,
+          birthtimeNs: identity.birthtimeNs,
+        });
       } else if (stat.isDirectory()) {
         return {
           ok: false, problem: 'not-file',
@@ -212,8 +251,9 @@ function checkClosedTree(lobby: string, declared: readonly string[], fs: FsReade
  * With `files`, the exact relative paths the profiles of the CLIs being started declare, the
  * lobby's tree is closed around them: nothing undeclared may remain, and each declared file
  * that is there must be the running user's regular file, no link anywhere on its path. The
- * successful result records each one's device and inode, for the recheck. Without `files`
- * the lobby holds nothing but the seats, as it always has.
+ * successful result records each one's full identity — device and inode, size, inode change
+ * time and birth time — for the recheck, through `lstat` alone: the gate never opens a
+ * declared file. Without `files` the lobby holds nothing but the seats, as it always has.
  */
 export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGateResult {
   const lobby = lobbyDir(home);
@@ -453,12 +493,25 @@ export function verifyLobby(home: string, options?: VerifyLobbyOptions): LobbyGa
 
 /** The lobby the gate verified, so a later check can say it is still the same folder — and
  *  the declared files it allowed then, so the same check can say each is still the file the
- *  gate read. Absent when the caller recorded none, as before this field existed. */
+ *  gate read: same device and inode, size and times. Absent when the caller recorded none, as
+ *  before this field existed. */
 export interface LobbySeen {
   path: string;
   dev: number;
   ino: number;
   files?: readonly LobbyFileSeen[];
+}
+
+/** Whether a declared file is still the one the gate read: the same device and inode, and —
+ *  because a deleted file's inode can be handed straight to a new file under the same name —
+ *  the same size and the same inode change time, and the same birth time where the platform
+ *  reports one at both reads. What remains possible, and is said in the docs: a file rewritten
+ *  in place inside one filesystem timestamp tick, without a size change. */
+function isSameFile(seen: LobbyFileSeen, read: LobbyFileSeen): boolean {
+  if (seen.dev !== read.dev || seen.ino !== read.ino) return false;
+  if (seen.size !== read.size || seen.ctimeNs !== read.ctimeNs) return false;
+  if (seen.birthtimeNs !== 0n && read.birthtimeNs !== 0n && seen.birthtimeNs !== read.birthtimeNs) return false;
+  return true;
 }
 
 /**
@@ -494,13 +547,15 @@ export function recheckLobby(
     };
   }
   // The whole tree is re-checked above; what remains is that each file the gate allowed is
-  // still the file it read — the same device and inode, not a fresh one under the same name.
-  // A file gone missing is allowed: the CLI that made it may have removed it, and a later
-  // check will see the lobby clean again.
+  // still the file it read — the same device and inode, and the size and times a file created
+  // again under the same name cannot keep, because a deleted file's inode can be handed
+  // straight to a new file on that name (Linux did, in CI, twice). A file gone missing is
+  // allowed: the CLI that made it may have removed it, and a later check will see the lobby
+  // clean again.
   const now = new Map(again.files.map((one) => [one.path, one]));
   for (const one of seen.files ?? []) {
     const read = now.get(one.path);
-    if (read && (read.dev !== one.dev || read.ino !== one.ino)) {
+    if (read && !isSameFile(one, read)) {
       return {
         reason: `the lobby: ${one.path} is not the file the gate read`,
         detail: `the lobby ${seen.path}: ${one.path} is not the file the gate read`,
