@@ -88,12 +88,12 @@
       },
       "question": {
         "real": 4,
-        "constructed": 0,
+        "constructed": 1,
         "undocumented": 0
       },
       "exit question": {
         "real": 2,
-        "constructed": 0,
+        "constructed": 1,
         "undocumented": 0
       },
       "trust": {
@@ -1029,6 +1029,18 @@
       "cli": "cursor",
       "kind": "working",
       "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-lines-quoted-question.txt",
+      "cli": "claude-code",
+      "kind": "question",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-below-quote.txt",
+      "cli": "claude-code",
+      "kind": "exit question",
+      "provenance": "constructed"
     },
     {
       "file": "exit-typing/claude-code-idle-ansi.txt",

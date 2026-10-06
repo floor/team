@@ -1,9 +1,10 @@
 // `typeExit` over real screens: it types the exit text once into an idle box and presses the
 // Enter on the second reading only — the box that reads back as exactly the typed text — never
 // on the reading taken the instant after the send, which is still the idle screen because the
-// pane has not drawn the text yet. Every screen below is a capture from a live pane (plain
-// claude, codex and cursor-agent under herdr 0.7.1); test/fixtures/exit-typing/README.md says
-// how each was taken and what the box holds.
+// pane has not drawn the text yet. The screens below are captures from a live pane (plain
+// claude, codex and cursor-agent under herdr 0.7.1), except two constructed boundary screens
+// named as constructed in test/fixtures/exit-typing/README.md, which says how each file was
+// taken, built and what the box holds.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { type ExitIo, typeExit } from '../src/commands/down.ts';
@@ -179,6 +180,19 @@ describe("the CLI's own exit question", () => {
 describe('the kind is kept apart from the ordinary question', () => {
   test('a question the agent asked still reads as the ordinary question', () => {
     expect(readScreen('claude-code', ordinaryQuestion).kind).toBe('question');
+  });
+
+  test('the exit question\'s lines quoted above an ordinary one are prose: it stays ordinary', () => {
+    // Built from question-plain.txt with the two lines quoted in the transcript above the box,
+    // which carries the common confirmation footer. The three phrases match transcript-wide;
+    // only the dialog's own frame may read them, or a stop's Enter would go to this question.
+    expect(readScreen('claude-code', fixture('claude-code-exit-lines-quoted-question.txt')).kind).toBe('question');
+  });
+
+  test('the real exit question below a transcript that quotes it still reads as its own kind', () => {
+    // The capture's own dialog, its last 17 lines kept, under a three-line transcript quoting
+    // the same two lines: the rule binds the bottom dialog, not the quote.
+    expect(readScreen('claude-code', fixture('claude-code-exit-question-below-quote.txt')).kind).toBe('exit question');
   });
 
   test('the stage is the profile\'s, and beside it the one key that confirms that screen', () => {

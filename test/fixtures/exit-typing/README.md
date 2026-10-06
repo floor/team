@@ -100,3 +100,23 @@ run that found none.
   above, the question listing it (`scheduled task · Runs once in 19m`).
 - `claude-code-shell-question-ansi.txt`: the seat whose background work is the background shell,
   the same question listing `shell · sleep 600`.
+
+## Constructed boundary screens
+
+The exit question's stage reads three phrases, and prose quoting them above a live box must not
+be read as the CLI's dialog: a rule matching them anywhere read an ordinary question as an exit
+question, and a later stop would have sent its Enter into it. The two screens below pin that
+boundary. Neither is a capture; each names the file it was built from.
+
+- `claude-code-exit-lines-quoted-question.txt`: constructed from
+  `claude-code/2.1.289/question-plain.txt`. The exit question's two lines
+  (`Background work is running`, `❯ 1. Exit and stop tasks`) are quoted in the transcript
+  directly above the box's first rule — the box's own title, choices and rule lines are the
+  capture's — and the footer is the common `Enter to confirm · Esc to cancel`. Reads `question`;
+  before the rule's `none_after` bound the three phrases matched anywhere and this read
+  `exit question`.
+- `claude-code-exit-question-below-quote.txt`: constructed from
+  `exit-typing/claude-code-shell-question-ansi.txt`, whose last 17 lines (the `▔` bar down to
+  the footer) are kept byte for byte, with a three-line transcript quoting the same two lines
+  placed above them. The real dialog sits below a quoting transcript and still reads
+  `exit question`: the rule reads the bottom dialog's own choice row and footer, not the quote.

@@ -82,11 +82,24 @@ screen:
   # is `exit_confirm` above. Its footer is an ordinary question's own, so this stage must read
   # before `question` — the core's order runs it first, and a profile cannot move it. Nothing
   # but a stop reads this screen to press a key; every other reader only reports it.
+  #
+  # The two lines are read as one dialog at the bottom, never as three transcript-wide hits:
+  # an ordinary question whose prose merely quotes them above its own box (a pasted transcript
+  # or capture) is not this screen, and no Enter may go to it. What the real dialog has after
+  # its preselected row is its own tail only — the second choice, a blank, its footer — and the
+  # captures draw no rule line, no second title and no bare prompt glyph there. A quote above a
+  # live box has the box after it; whichever of the three it carries, the rule refuses it.
   exit_question:
     - all:
         - 'Background work is running'
         - '^\s*[❯›>]?\s*1\.\s+Exit and stop tasks\b'
       footer: 'Enter to confirm · Esc to cancel'
+      none_after:
+        anchor: '^\s*[❯›>]?\s*1\.\s+Exit and stop tasks\b'
+        patterns:
+          - '^\s*[─━]{8,}\s*$'
+          - 'Background work is running'
+          - '^\s*[❯›>]\s*$'
   question:
     # The phrase is the dialog's last line, as a permission footer is. Prose
     # above the box is not a question.
