@@ -149,8 +149,8 @@ carries no key that could land on it.
 The exit question's stage reads three phrases, and prose quoting them above a live box must not
 be read as the CLI's dialog: a rule matching them anywhere read an ordinary question as an exit
 question, and a later stop would have sent its Enter into it. The screens below pin that
-boundary: the first three quote the dialog's lines above a live question, and the last three
-carry a tail no run has drawn. None is a capture; each names the file it was built from.
+boundary: the first three quote the dialog's lines above a live question, and the rest carry
+rows no run has drawn. None is a capture; each names the file it was built from.
 
 - `claude-code-exit-lines-quoted-question.txt`: constructed from
   `claude-code/2.1.289/question-plain.txt`. The exit question's two lines
@@ -186,3 +186,31 @@ carry a tail no run has drawn. None is a capture; each names the file it was bui
   `2. Move to background and exit`, row 1 left unmarked. The reader takes the marker as the row
   the confirming key acts on; a stop means stop, so a screen whose selection sits on the move
   row is not the screen whose key this program may send. Reads `question`.
+
+### Whole rows, in the form's order (the reviewer's MUST-FIX on 81ae276)
+
+The choice rows were anchored at their start only (`\b`), so a row that began like a form's row
+and continued with anything at all still read as this dialog: the reviewer drove `typeExit`
+against `3. Stay — but leave tasks running` and got the confirming Enter (`['enter', 'enter']`).
+Every row of a form — the marked first row, the second row of each form, the third row and the
+footer — is now anchored at both ends: the row, after its frame indentation, equals the captured
+text and nothing follows on it. The eight screens below are the captured dialog with one row
+given a suffix (seven) or with two rows swapped (one), built from the release run's capture
+(byte for byte, as the negatives above) and its two-choice tail; each reads `question`, and on
+the unfixed profile and engine six of them read `exit question` (the two footers, whose
+comparison was already whole-row, are the exception).
+
+- `claude-code-exit-question-stay-marked-suffix.txt`: `❯ 1. Exit and stop tasks and keep
+  everything`.
+- `claude-code-exit-question-stay-second-suffix.txt`: `2. Stay and delete work`.
+- `claude-code-exit-question-stay-footer-suffix.txt`: `Enter to confirm · Esc to cancel now`.
+- `claude-code-exit-question-move-marked-suffix.txt`: the marked row of the three-choice form
+  with the same suffix.
+- `claude-code-exit-question-move-second-suffix.txt`: `2. Move to background and exit and keep
+  tasks`.
+- `claude-code-exit-question-move-third-suffix.txt`: `3. Stay — but leave tasks running`.
+- `claude-code-exit-question-move-footer-suffix.txt`: the footer with the same suffix.
+- `claude-code-exit-question-swapped-tail.txt`: the three-choice tail with its last two rows
+  swapped — the dialog's own rows in an order no form draws. `only_after` reads the tail's rows
+  in the order the patterns name, so this reads `question`; with the rows read in any order it
+  read `exit question`.

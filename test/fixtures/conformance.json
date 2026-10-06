@@ -981,6 +981,34 @@
       "provenance": "constructed"
     },
     {
+      "file": "exit-typing/claude-code-exit-question-move-footer-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-move-marked-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-move-second-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-move-third-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
       "file": "exit-typing/claude-code-exit-question-move-without-stay.txt",
       "cli": "claude-code",
       "classify": "question",
@@ -989,6 +1017,34 @@
     },
     {
       "file": "exit-typing/claude-code-exit-question-other-second-row.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-stay-footer-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-stay-marked-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-stay-second-suffix.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "exit-typing/claude-code-exit-question-swapped-tail.txt",
       "cli": "claude-code",
       "classify": "question",
       "composer": "unknown",

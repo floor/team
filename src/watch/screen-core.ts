@@ -514,19 +514,25 @@ function ruleMatches(data: ScreenData, lines: string[], rule: Rule, tick: () => 
     if (anchor < 0) return false;
     // The block's own tail, and nothing else: the first non-blank row that is not one of
     // the patterns means the screen carries another dialog's rows below this block, so the
-    // block is not the live one. Blank rows are the spacing a dialog draws.
+    // block is not the live one. Blank rows are the spacing a dialog draws. The patterns are
+    // read in their own order — the order the block draws them — so a tail whose named rows
+    // are shuffled is not that block's tail either. A block that draws fewer rows than the
+    // patterns name (a dialog a short pane clipped) skips one and is still in order.
+    let seen = -1;
     for (let i = anchor + 1; i < lines.length; i++) {
       if (!(lines[i] ?? '').trim()) continue;
-      let allowed = false;
-      for (const pattern of rule.onlyAfter.patterns) {
+      let at = -1;
+      for (const [p, pattern] of rule.onlyAfter.patterns.entries()) {
         const row = matches(data, lines, i, pattern, tick, true);
         if (row === 'stop') return 'stop';
         if (row) {
-          allowed = true;
+          at = p;
           break;
         }
       }
-      if (!allowed) return false;
+      if (at < 0) return false;
+      if (at < seen) return false;
+      seen = at;
     }
   }
   return true;

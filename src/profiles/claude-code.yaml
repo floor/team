@@ -107,6 +107,12 @@ screen:
   # marked row below it, and a stop means stop. A tail the rule cannot name — another second
   # row, "2. Move to background and exit" without its "3. Stay", any row a form does not carry —
   # is not this dialog: it reads as the ordinary question it looks like, and a stop fails closed.
+  # Every row of a form is the whole row: the marked row, each choice row and the footer are
+  # anchored at both ends, so the row — after its frame indentation — equals the captured text
+  # and nothing follows on it. A row a form does not carry is never a prefix of the form's row:
+  # "3. Stay — but leave tasks running", "2. Move to background and exit and keep tasks" and
+  # "2. Stay and delete work" are rows no run has drawn, and each reads as the ordinary question
+  # it looks like (test/fixtures/exit-typing/claude-code-exit-question-*-suffix.txt).
   #
   # The dialog is read by its own frame, never by phrases found anywhere in the window: a
   # transcript that quotes the lines above an ordinary question still reads as that question,
@@ -127,25 +133,25 @@ screen:
   exit_question:
     - all:
         - 'Background work is running'
-        - '^\s*[❯›>]\s*1\.\s+Exit and stop tasks\b'
+        - '^\s*[❯›>] 1\. Exit and stop tasks$'
       footer: 'Enter to confirm · Esc to cancel'
       only_after:
-        anchor: '^\s*[❯›>]\s*1\.\s+Exit and stop tasks\b'
+        anchor: '^\s*[❯›>] 1\. Exit and stop tasks$'
         patterns:
-          - '^\s*2\.\s+Stay\b'
-          - '^\s*Enter to confirm · Esc to cancel\s*$'
+          - '^\s*2\. Stay$'
+          - '^\s*Enter to confirm · Esc to cancel$'
     - all:
         - 'Background work is running'
-        - '^\s*[❯›>]\s*1\.\s+Exit and stop tasks\b'
-        - '^\s*2\.\s+Move to background and exit\b'
-        - '^\s*3\.\s+Stay\b'
+        - '^\s*[❯›>] 1\. Exit and stop tasks$'
+        - '^\s*2\. Move to background and exit$'
+        - '^\s*3\. Stay$'
       footer: 'Enter to confirm · Esc to cancel'
       only_after:
-        anchor: '^\s*[❯›>]\s*1\.\s+Exit and stop tasks\b'
+        anchor: '^\s*[❯›>] 1\. Exit and stop tasks$'
         patterns:
-          - '^\s*2\.\s+Move to background and exit\b'
-          - '^\s*3\.\s+Stay\b'
-          - '^\s*Enter to confirm · Esc to cancel\s*$'
+          - '^\s*2\. Move to background and exit$'
+          - '^\s*3\. Stay$'
+          - '^\s*Enter to confirm · Esc to cancel$'
   question:
     # The phrase is the dialog's last line, as a permission footer is. Prose
     # above the box is not a question.

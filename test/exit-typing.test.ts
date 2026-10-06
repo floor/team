@@ -339,6 +339,45 @@ describe("the CLI's own exit question", () => {
     });
   }
 
+  // The reviewer's reproduction of the fix's fault, as a test: driving `typeExit` against the
+  // altered frame sent `['enter', 'enter']` — the second key the confirming Enter, into a frame
+  // that is not this dialog. The frame now reads as the ordinary question it is, so the one
+  // Enter goes out (it sends the exit text) and no confirming key follows it.
+  test('a suffixed tail the rule used to admit gets no confirming key', async () => {
+    const frame = fixture('claude-code-exit-question-move-third-suffix.txt');
+    expect(frame).toContain('3. Stay — but leave tasks running');
+    expect(readScreen('claude-code', frame).kind).toBe('question');
+    const idle = fixture('claude-code-idle-ansi.txt');
+    const unsent = fixture('claude-code-unsent-ansi.txt');
+    let phase = 0;
+    let clock = 1_000_000;
+    const sent: string[] = [];
+    const io: ExitIo = {
+      typeText: () => {
+        phase = 1;
+        return true;
+      },
+      sendKey: (key) => {
+        sent.push(key);
+        return true;
+      },
+      pressEnter: () => {
+        sent.push('enter');
+        phase = 2;
+        return true;
+      },
+      screen: () => (phase === 0 ? idle : phase === 1 ? unsent : frame),
+      status: () => 'idle',
+      foreground: () => ['claude'],
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      now: () => clock,
+    };
+    expect(await typeExit(io, 'claude-code', '/exit')).toBe(true);
+    expect(sent).toEqual(['enter']);
+  });
+
   // The confirm key is the same caller check as every other key: the CLI as the pane's foreground
   // process and the question on screen are both read in the same unbroken stretch, right before
   // the key goes out — so a CLI that stopped being it at the question gets no key.
@@ -434,6 +473,39 @@ describe('the kind is kept apart from the ordinary question', () => {
     // is not the screen this rule reads. It stays an ordinary question, so no key goes out.
     const screen = fixture('claude-code-exit-question-marker-on-move.txt');
     expect(screen).toContain('❯ 2. Move to background and exit');
+    expect(readScreen('claude-code', screen).kind).toBe('question');
+  });
+
+  // The reviewer's MUST-FIX on 81ae276: every choice row was anchored at its start only, so a
+  // row with a suffix still read as this dialog and a stop's confirming Enter went into a frame
+  // the rule was meant to reject. Every row of a form is now the whole row — the marked first
+  // row, the second row of each form, the third row and the footer — and a suffixed row is the
+  // ordinary question it looks like. On the unfixed profile, five of these seven read `exit
+  // question` (the two footers, whose comparison was already whole-row, are the exception).
+  const SUFFIXED = [
+    ['claude-code-exit-question-stay-marked-suffix.txt', '❯ 1. Exit and stop tasks and keep everything'],
+    ['claude-code-exit-question-stay-second-suffix.txt', '     2. Stay and delete work'],
+    ['claude-code-exit-question-stay-footer-suffix.txt', 'Enter to confirm · Esc to cancel now'],
+    ['claude-code-exit-question-move-marked-suffix.txt', '❯ 1. Exit and stop tasks and keep everything'],
+    ['claude-code-exit-question-move-second-suffix.txt', '     2. Move to background and exit and keep tasks'],
+    ['claude-code-exit-question-move-third-suffix.txt', '     3. Stay — but leave tasks running'],
+    ['claude-code-exit-question-move-footer-suffix.txt', 'Enter to confirm · Esc to cancel now'],
+  ] as const;
+  for (const [name, row] of SUFFIXED) {
+    test(`${name}: a row with a suffix is an ordinary question`, () => {
+      const screen = fixture(name);
+      expect(screen).toContain(row);
+      expect(readScreen('claude-code', screen).kind).toBe('question');
+    });
+  }
+
+  test('the same rows in another order are an ordinary question: no form draws them shuffled', () => {
+    // `only_after` reads the tail's rows in the order the form draws them, so the three-choice
+    // tail with its last two rows swapped — the rows are the dialog's own, the order is not —
+    // is not this dialog either. Before that order read, this frame read `exit question` and a
+    // stop would have sent its confirming Enter into it.
+    const screen = fixture('claude-code-exit-question-swapped-tail.txt');
+    expect(screen.indexOf('     3. Stay')).toBeLessThan(screen.indexOf('     2. Move to background and exit'));
     expect(readScreen('claude-code', screen).kind).toBe('question');
   });
 
