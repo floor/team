@@ -27,7 +27,8 @@ file that no longer validates is replaced by the last copy that did, with a noti
 
 ## Who may run it
 
-The owner, the coordinator's seat, and the operator's seat. The seat is that name's, in a session
+The owner, the coordinator's seat, the operator's seat, and the approved delegate (below). The
+seat is that name's, in a session
 this project's state records — the file's session, or one the state records the caller's pane in —
 on the pane the state records for that name in that session: a seat of another session, or a pane
 merely renamed to the coordinator's or the operator's name, is refused — and so is a seat the state
@@ -41,6 +42,26 @@ A seat's
 own call is refused by the `--abandon` flag, which only the owner may use. A seat that may stop the
 team never stops the coordinator's or the operator's seat — only the owner does.
 
+## The approved delegate
+
+A pane the team file's `delegates` section lists for `down` — a pane outside the team's session —
+may stop the team too. It is judged as a delegate's call only when the file has that section and
+the caller is not the owner: the delegate gate reads the live team file directly, never the
+remembered copy and never the last copy that validated, so a file that does not load carries no
+delegate and the rules above stand. A gate refusal takes the place of the rule above, in the
+gate's own words, wherever that rule would have refused: a real run exits 1, and a dry run prints
+`! down would refuse: <the gate's text>` and then the plan, exit 0.
+
+A delegated run stops the whole team — the coordinator's and the operator's seats included — and
+never abandons. `--abandon`, `--session` and `--file` are the owner's: a delegate that passes one
+is refused with the gate's text, and the flagged path or session is never read. The run judges the
+file's own session, never one the caller's placement records, and it remembers nothing of the file
+it read.
+
+A run that passes its gate and proceeds to its effects appends one line to `.agents/team.log`
+naming the delegate's pane. A dry run leaves no such line, and neither does a session that was
+already idle: both return before any effect.
+
 ## Flags
 
 | Flag | Meaning |
@@ -48,8 +69,8 @@ team never stops the coordinator's or the operator's seat — only the owner doe
 | `--dry-run` | print the plan, and the refusals the real run would stop on, and exit 0 — except a non-owner's `--session`, refused at once with no plan |
 | `--wait` | give a working seat up to 120 seconds to come free, then stop it |
 | `--abandon` | the owner's: close the workspace of a seat that can't be asked, typing nothing into it |
-| `--session <name>` | the herdr session to stop, instead of `team.session`; the owner's alone |
-| `--file <path>` | the team file, instead of `.agents/team.yaml` |
+| `--session <name>` | the herdr session to stop, instead of `team.session`; the owner's alone — a delegate is refused it by the gate |
+| `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone — a delegate is refused it by the gate |
 | `--help`, `-h` | the usage, and exit 0 |
 
 ## What it prints
@@ -97,6 +118,7 @@ stop at all.
 | `team down: --session is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | ``team down: no pane is recorded for seat <name> in this session: the owner stops that seat and runs `team up` `` | 1 |
 | ``team down: the state records pane <pane> for seat <name> in this session, not the pane this call is on: the owner stops the team and starts it again (`team down`, then `team up`) `` | 1 |
+| `team down: <the delegate gate's text>` — the file has a `delegates` section and a delegate's call was refused: one of `down.delegate`, `down.delegate-approval`, `down.delegate-approved-copy`, `down.delegate-drift`, `down.delegate-evidence`, `down.delegate-placement`, `down.delegate-command`, `down.delegate-flag` | 1 |
 
 ## Exit codes
 
