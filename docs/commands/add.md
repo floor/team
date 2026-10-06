@@ -44,6 +44,18 @@ refuses on — a file that is not the approved one, a `MISS`
 finding from [team doctor](doctor.md), the machine past its limits, the approval's ceilings — refuses
 here too, for the one seat being started.
 
+A file with a `delegates` section also admits one more caller: the approved delegate, a pane the
+owner named in that section as `<session>/<pane id>`, outside the team. When the ordinary rule
+above refuses and the file names a delegate, the delegate gate decides — it re-reads the live file
+and the approval in force, never a remembered copy — and a caller it passes runs this command as
+that delegate. The delegated `add` is the ordinary one for a declared seat: `--temporary`, `--like`,
+`--until`, `--worktree`, `--session` and `--file` stay the owner's, and so does any add that would
+edit the file or the approval — restoring a seat the file no longer holds, or clearing
+`stopped: true`, both of which write the file and re-sign the approval. With no `delegates`
+section nothing changes: the same refusals, the same words, the same exit codes. A delegated run
+that proceeds is attributed in the log before its effects, as
+`<time> delegate [delegate] <session>/<pane id> add`.
+
 ## Flags
 
 | Flag | Meaning |
@@ -109,6 +121,13 @@ run` — makes nothing and exits 0.
 | `team add: --like, --until and --worktree are for --temporary` | 2 |
 | `team add: line <n>: <message>` / `team add: <message>` | 2 |
 | `team add: only the owner, the coordinator or the operator runs it; this call is <caller>` | 1 |
+| `team add: only the owner, the coordinator, the operator or the approved delegate runs it; this call is <caller>` — the file names a delegate, and this call is not it | 1 |
+| ``team add: delegation needs a verified approval: <reason>`` / ``team add: delegation needs a readable approved copy: run `team approve` `` / ``team add: delegation needs the approved file: the file is not the approved one (<differences>): run `team approve` `` — the delegate gate, reading the same approval every other check reads | 1 |
+| ``team add: delegation cannot verify its placement or seats: <reason>`` | 1 |
+| `team add: the approved delegate must be an external non-seat pane` | 1 |
+| ``team add: the approved delegate <session>/<pane id> may not run `add`; its approved commands are <list>`` | 1 |
+| `team add: --<flag> is the owner's; the approved delegate cannot use it` — `--temporary`, `--like`, `--until`, `--worktree`, `--session` or `--file` | 1 |
+| `team add: the approved delegate cannot change the file or the approval; the owner adds a missing or stopped seat` — an add that would restore a missing seat or clear `stopped`, also on `--dry-run` | 1 |
 | `team add: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | `team add: --session is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | ``team add: no pane is recorded for seat <name> in this session: the owner stops that seat and runs `team up` `` | 1 |
