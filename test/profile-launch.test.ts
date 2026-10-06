@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { profileFor } from '../src/profiles/index.ts';
-import { exitClearKey, launchCommand } from '../src/profiles/profile.ts';
+import { exitClearKey, launchCommand, lobbyFilesList } from '../src/profiles/profile.ts';
 import { runningModel } from '../src/status/statusline.ts';
 
 // Main's launch readers, copied here. The production files no longer have this code.
@@ -203,5 +203,46 @@ describe('the exit_clear a profile may name', () => {
     expect(() => exitClearKey('exit: /exit\nexit_clear: C-c')).toThrow(
       '"exit_clear" must be one of: ctrl+c, ctrl+u, escape, backspace',
     );
+  });
+});
+
+describe('the lobby_files a profile may name', () => {
+  // The exact relative paths of regular files a capture showed the CLI writing in its
+  // working folder. The grammar is the profile's own, before any check of the disk: a
+  // declaration is a value, not a folder.
+  test('plain relative paths load, and an absent key is the empty list', () => {
+    expect(lobbyFilesList('exit: /exit')).toEqual([]);
+    expect(lobbyFilesList('exit: /exit\nlobby_files:\n  - .claude/scheduled_tasks.lock')).toEqual(['.claude/scheduled_tasks.lock']);
+    expect(lobbyFilesList('exit: /exit\nlobby_files:\n  - a.lock\n  - b/c.lock')).toEqual(['a.lock', 'b/c.lock']);
+  });
+
+  test('a shape that is not a relative path of a file inside the lobby is refused', () => {
+    for (const bad of [
+      'lobby_files:\n  - /abs.lock',
+      'lobby_files:\n  - .claude/',
+      'lobby_files:\n  - .',
+      'lobby_files:\n  - ..',
+      'lobby_files:\n  - a/../b.lock',
+      'lobby_files:\n  - a//b.lock',
+      'lobby_files:\n  - ""',
+      'lobby_files: not-a-list',
+    ]) {
+      expect(() => lobbyFilesList(`exit: /exit\n${bad}`)).toThrow(
+        /"lobby_files" (must be a non-empty list|entries must be non-empty strings|holds ".*": not a relative path of a file inside the lobby)/,
+      );
+    }
+  });
+
+  test('one path running through another declares a file and a folder at once, and is refused', () => {
+    expect(() => lobbyFilesList('exit: /exit\nlobby_files:\n  - a/b\n  - a/b/c.lock')).toThrow(
+      '"lobby_files" holds "a/b" beside "a/b/c.lock": a file and a folder cannot share a path',
+    );
+  });
+
+  test('the shipped profiles declare only what a capture showed, each path exactly once', () => {
+    expect(profileFor('claude-code')?.lobbyFiles).toEqual(['.claude/scheduled_tasks.lock']);
+    expect(profileFor('codex')?.lobbyFiles).toEqual([]);
+    expect(profileFor('cursor')?.lobbyFiles).toEqual([]);
+    expect(profileFor('antigravity')?.lobbyFiles).toEqual([]);
   });
 });

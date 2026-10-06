@@ -12,15 +12,22 @@ the next `up` starts from the beginning.
 Every seat, shared and worktree-mode alike, starts in `~/.config/team/lobby`. It is shared
 by all projects on the machine. Before creating anything, `team` verifies the lobby gate:
 ownership by the invoking user, no symbolic links anywhere in the chain, directory mode exactly
-`0700`, empty, and not inside a git repository or worktree. The launch uses that verified
-path. The lobby is checked again — the gate's checks, plus that it is still the folder the gate
-read: the same canonical path, device and inode — directly before every workspace this run creates
-in it, with nothing between that confirmation and herdr's create call. A failed confirmation
+`0700`, nothing but the files the started CLIs' profiles declare (a claude-code seat declares
+`.claude/scheduled_tasks.lock`), and not inside a git repository or worktree. The launch uses
+that verified path. The lobby is checked again — the gate's checks, plus that it is still the
+folder the gate read: the same canonical path, device and inode — directly before every
+workspace this run creates in it, with nothing between that confirmation and herdr's create
+call. Every declared file is confirmed with it, by `lstat` alone — `team` never opens one —
+against everything a file created again under the same name cannot keep: the same device and
+inode, size, inode change time and birth time, at nanosecond resolution, so a replaced file is
+refused even where the filesystem hands the new file the old inode number. What can still slip
+through a file's check: a rewrite in place inside one filesystem timestamp tick that changes
+no size — every number the gate reads would be the same. A failed confirmation
 creates nothing: the seat is left out with the gate's cause in words — the gate's own line, the
 folders it resolved, is written under the record on stderr — and the rest of the
 launch stops, so no further workspace is made, not even the watchdog's. A seat created earlier
 in the same run is left running: its workspace was created while the path was the verified
-lobby, and `up` never closes a workspace it may already have started a CLI in. One window
+lobby, and `up` never closes a workspace it may already have started a CLI in. Another window
 remains, inside herdr itself: the create call takes a path, not an open folder handle, so herdr
 resolves that path in its own process after the confirmation.
 
