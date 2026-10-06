@@ -71,6 +71,8 @@ Unchanged by this release:
 
 - `add` on a stopped session still asks for a manual clear: `herdr session delete <name>`.
 - A delegate still cannot pass `--abandon`.
+- A seat whose CLI has already exited (its pane holds a bare shell) is left by `team down` — the
+  screen is not one the profile recognises — and closed by `team down --abandon`.
 - `team approve` still asks its question.
 - A delegated `up` never answers a trust dialog or a vendor notice: the seat is left out —
   reported, its workspace closed without input, nothing typed into the dialog — and the dialog
@@ -573,7 +575,9 @@ The first release: set up, change and watch a project's team of AI agents from o
   footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
   stays idle.
 
-[Unreleased]: https://github.com/floor/team/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/floor/team/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/floor/team/releases/tag/v0.3.2
+[0.3.1]: https://github.com/floor/team/releases/tag/v0.3.1
 [0.3.0]: https://github.com/floor/team/releases/tag/v0.3.0
 [0.2.1]: https://github.com/floor/team/releases/tag/v0.2.1
 [0.2.0]: https://github.com/floor/team/releases/tag/v0.2.0
