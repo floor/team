@@ -48,7 +48,7 @@ export const ADD_DELEGATE_EDIT: { id: 'add.delegate-edit'; text: string } = {
 
 const PREFLIGHT = ['delegate-approval', 'delegate-approved-copy', 'delegate-drift', 'delegate-evidence', 'delegate-placement'] as const;
 
-/** Every exit id the gate and `ADD_DELEGATE_EDIT` define, for the exit-codes page. */
+/** Every exit id the gate and `ADD_DELEGATE_EDIT` define. The command files record them. */
 export const DELEGATE_EXIT_IDS: readonly string[] = [
   ...DELEGATE_COMMANDS.flatMap((command) => [
     ...PREFLIGHT.map((suffix) => `${command}.${suffix}`),
