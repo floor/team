@@ -169,6 +169,33 @@ export function boxHoldsOther(cli: string, text: string, screen: string | undefi
   return holdsBox(text, box) ? null : (readsBack(text, box).row ?? '');
 }
 
+/** How long a reading waits for the pane to draw what a send left. `send-text` returns before
+ *  the pane renders — a capture taken the instant after a typing still read the idle screen,
+ *  and read the text a moment later — so the reading that decides the next key waits, ending
+ *  the moment the screen is decisive either way. One length and one wait for the exit typing,
+ *  the watch's nudge and delivery alike. */
+export const DRAW_WAIT_MS = 5000;
+
+/** The reading that decides a key, waiting out the pane's late drawing: `undrawn` is what the
+ *  screen still reads while the send it has not drawn sits behind it — idle after a typing,
+ *  unsent after a clearing key. The wait ends the moment the screen is decisive either way,
+ *  and at the deadline the screen reads as it reads. A clock that does not advance ends the
+ *  wait too: a stuck time must not spin forever on a pane that will never draw. */
+export async function settleScreen(
+  undrawn: Screen['kind'],
+  kindOf: () => Screen['kind'],
+  clock: { now(): number; sleep(ms: number): Promise<void> },
+): Promise<Screen['kind']> {
+  const deadline = clock.now() + DRAW_WAIT_MS;
+  for (;;) {
+    const kind = kindOf();
+    if (kind !== undrawn || clock.now() >= deadline) return kind;
+    const before = clock.now();
+    await clock.sleep(100);
+    if (clock.now() <= before) return kindOf();
+  }
+}
+
 /** The refusal for a stop at the reading the pane shows now: nothing typed, nothing sent. */
 function stopAs(cli: string, stop: Stop, screen: string | undefined): Refusal {
   return { stop, typed: false, sent: false, kind: readScreen(cli, screen).kind, row: null, clearKey: profileFor(cli)?.exitClear ?? null };
