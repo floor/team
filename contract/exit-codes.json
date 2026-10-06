@@ -1250,6 +1250,62 @@
     {
       "code": 1,
       "command": "up",
+      "id": "up.delegate",
+      "meaning": "only the owner or the approved delegate runs up",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-approval",
+      "meaning": "the delegate gate needs a verified approval",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-approved-copy",
+      "meaning": "the delegate gate needs a readable approved copy",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-command",
+      "meaning": "the approved delegate may not run up",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-drift",
+      "meaning": "the delegate gate needs the approved file",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-evidence",
+      "meaning": "the delegate gate can't verify its placement or seats",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-flag",
+      "meaning": "--session or --file is the owner's on a delegated run",
+      "trigger": "team up --session other"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.delegate-placement",
+      "meaning": "the approved delegate must be an external non-seat pane",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
       "id": "up.differs",
       "meaning": "the file differs from its approval",
       "trigger": "team up"
