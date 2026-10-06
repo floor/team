@@ -13,6 +13,7 @@ import { readState } from '../../src/state.ts';
 import { parseMemoryPressure, parseSwapUsage, type Machine } from '../../src/watch/machine.ts';
 import type { Key } from '../../src/launch/terminal.ts';
 import { seatLockPath } from '../../src/launch/seat-lock.ts';
+import { defaultFs } from '../../src/lobby/gate.ts';
 import { readScreen, type Screen } from '../../src/watch/screen.ts';
 import { agyMismatchedFrame, claudeBox, testIo } from '../helpers.ts';
 
@@ -1783,6 +1784,67 @@ describe('team up, one run at a time', () => {
     expect(held).not.toContain(false);
     // Taken over for the run, and gone the moment the run is: the next run takes it again.
     expect(existsSync(lockFile())).toBe(false);
+  });
+
+  test('a second run with the lobby absent is refused by the lock before it makes anything', async () => {
+    await approve();
+    const made = world();
+    hold(`${process.pid} 0a1b2c3d\n`);
+    // The winner lands between this run's read-only look at the lobby and any make of this
+    // run's own: the lobby appears, 0700 as the gate makes it, the moment it is read absent.
+    // While the make sat before the lock, this losing run made the component itself and met
+    // the winner's lobby — `failed to create …: EEXIST`, a refusal it never earned, with no
+    // lock and no other run named. Now the lock is the only thing this run can meet first.
+    const lobby = join(home, '.config', 'team', 'lobby');
+    let read = false;
+    let makes = 0;
+    const fs = {
+      ...defaultFs,
+      lstat: (path: string) => {
+        if (!read && path === lobby) {
+          read = true;
+          mkdirSync(lobby, { mode: 0o700 });
+          throw Object.assign(new Error('not found'), { code: 'ENOENT' });
+        }
+        return defaultFs.lstat(path);
+      },
+      mkdir: (path: string, opts?: { mode?: number }) => {
+        makes += 1;
+        defaultFs.mkdir(path, opts);
+      },
+    };
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runUp(FILE, io, sources({ fs }, made))).toBe(1);
+    expect(io.err).toBe(
+      `team up: another \`team up\` is running for session acme-web (pid ${process.pid}); try again when it is done\n`,
+    );
+    expect(io.err).not.toContain('failed to create');
+    // The refused run made nothing: the lock's refusal came before the run's first write.
+    expect(makes).toBe(0);
+    expect(made.starts).toBe(0);
+    expect(made.creates).toEqual([]);
+  });
+
+  test('a run that has to make the lobby makes it under the lock', async () => {
+    await approve();
+    const made = world();
+    // `.config` and `team` are the approval store's own folders; the lobby is the one component
+    // a fresh run must make. Each make of this run's records whether its own run lock is on the
+    // file at that moment.
+    const lobby = join(home, '.config', 'team', 'lobby');
+    const held: boolean[] = [];
+    const fs = {
+      ...defaultFs,
+      mkdir: (path: string, opts?: { mode?: number }) => {
+        held.push(existsSync(lockFile()));
+        defaultFs.mkdir(path, opts);
+      },
+    };
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runUp(FILE, io, sources({ fs }, made))).toBe(0);
+    expect(held.length).toBeGreaterThan(0);
+    expect(held).not.toContain(false);
+    expect(existsSync(lobby)).toBe(true);
   });
 });
 

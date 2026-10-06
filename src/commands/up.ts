@@ -592,6 +592,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   }
   let verifiedLobby: string | null = null;
   let lobbySeen: LobbySeen | null = null;
+  let createLobby = false;
   if (isMigratedTrust(team.trust)) {
     const launching = seats.some((seat) => {
       if (seat.stopped || seat.launchProblem) return false;
@@ -600,17 +601,19 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       if (!fresh) return false;
       return seat.budget?.kind !== 'refuse';
     });
-    const gate = verifyLobby(sources.home, {
-      create: !dry && refusals.length === 0 && launching,
-      getuid: sources.getuid,
-      fs: sources.fs,
-    });
+    // Read-only: a refusal stops the run before anything is made, and the run lock below is
+    // held before the first write. A lobby that is simply absent is not a refusal here — the
+    // creating pass runs under the lock (`createLobby`). Making it here, as this once did, is
+    // the run's first filesystem effect outside the lock, and two fresh runs can both see the
+    // lobby absent: the loser's mkdir meets the winner's component and `verifyLobby` turns the
+    // EEXIST into a refusal the losing run never earned (`lobby/gate.ts`, the create branch).
+    const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid, fs: sources.fs });
     if (!gate.ok) refusals.push(gate.text);
     else if ('path' in gate) {
       verifiedLobby = gate.path;
       lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
       for (const seat of seats) if (seat.lobby) seat.cwd = gate.path;
-    }
+    } else createLobby = !dry && launching;
   }
   const watch = recorded?.watch;
   const watchAlive = Boolean(watch && sources.alive?.(watch.pid));
@@ -619,7 +622,9 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   // another one under this session's name.
   const startWatch = watchWouldRead(root, loaded.path, sources.home);
   const watchMissed = !watchAlive && !startWatch;
-  const plan = upPlan({
+  // Built where it is needed: on a dry run, just below, before anything is made; on a real run,
+  // after the lock, so the lobby made there under it is already every lobby seat's `cwd`.
+  const buildPlan = () => upPlan({
     root,
     session,
     // A stopped session is not started. The refusal above names the delete command.
@@ -648,7 +653,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     // The same cause can reach the list twice — the gate and `doctor` both read the
     // approval — so a refusal is said once.
     for (const refusal of [...new Set(refusals)]) out.stdout(`! up would refuse: ${plainText(refusal)}\n`);
-    out.stdout(plainText(formatPlan(plan)));
+    out.stdout(plainText(formatPlan(buildPlan())));
     sayWatchMissed();
     // exit: up.dry-run
     return 0;
@@ -700,6 +705,25 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     // so the delegation is on the record before the first workspace is made. A dry run returned
     // above and writes nothing; a run that refused never got here.
     if (delegated !== null) (sources.logDelegated ?? logDelegated)(dir, delegated, 'up', sources.now?.());
+
+    if (createLobby) {
+      // The run's first write, under the lock: the lobby the read-only pass above found absent.
+      // Serialised here, no competing mkdir can turn into this run's refusal, and this run's own
+      // make cannot land on another run's — which is what the read-only pass exists for.
+      const gate = verifyLobby(sources.home, { create: true, getuid: sources.getuid, fs: sources.fs });
+      if (!gate.ok) {
+        out.stderr(`team up: ${plainText(gate.text)}\n`);
+        // exit: up.lobby
+        return 1;
+      }
+      if ('path' in gate) {
+        verifiedLobby = gate.path;
+        lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
+        for (const seat of seats) if (seat.lobby) seat.cwd = gate.path;
+      }
+    }
+    // Built after the make above: the lobby it may have made is every lobby seat's `cwd`.
+    const plan = buildPlan();
 
     // The ceilings the launch holds are the verified record's own, fixed at approval.
     const ceilings: Ceilings | null = standing.kind === 'verified' ? standing.record.approval.ceilings : null;

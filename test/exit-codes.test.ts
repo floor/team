@@ -1427,6 +1427,18 @@ scene('up.busy', async (place) => {
   writeFileSync(seatLockPath(dir, 'acme', '.run'), `${process.pid} 0a1b2c3d\n`);
   return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching(IDLE) })), 'another `team up` is running');
 });
+scene('up.lobby', async (place) => {
+  approve(place, TEAM);
+  // A fresh home holds no lobby: the read-only pass leaves it to the make under the run lock,
+  // and that make is the one made to fail. `mkdir` is the only call stood in.
+  const fs = {
+    ...defaultFs,
+    mkdir() {
+      throw Object.assign(new Error('denied'), { code: 'EACCES' });
+    },
+  };
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching(IDLE), fs })), 'failed to create');
+});
 scene('up.unknown', async (place) => {
   approve(place, TEAM);
   return show(await up(place, ['--file', place.file], owner, upSources(place, {

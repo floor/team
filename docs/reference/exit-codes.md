@@ -221,6 +221,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `up.differs` | `up` | 1 | the file differs from its approval | `team up` |
 | `up.doctor` | `up` | 1 | doctor refuses the launch | `team up` |
 | `up.herdr` | `up` | 1 | herdr doesn't answer | `team up` |
+| `up.lobby` | `up` | 1 | the lobby could not be created for the launch | `team up` |
 | `up.machine` | `up` | 1 | the machine is over a launch limit | `team up` |
 | `up.never-approved` | `up` | 1 | the file was never approved | `team up` |
 | `up.no-launch` | `up` | 1 | this call has no way to reach herdr | `team up` |

@@ -1509,6 +1509,13 @@
     {
       "code": 1,
       "command": "up",
+      "id": "up.lobby",
+      "meaning": "the lobby could not be created for the launch",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
       "id": "up.machine",
       "meaning": "the machine is over a launch limit",
       "trigger": "team up"
