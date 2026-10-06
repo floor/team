@@ -198,6 +198,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       dir: file.dir,
       flags,
       io: { env: io.env, stdinIsTTY: io.stdinIsTTY, caller: io.caller, callerSources: io.callerSources },
+      home: sources.home,
       ...(sources.delegate ? { sources: sources.delegate } : {}),
     });
     if (verdict.kind === 'passed') granted = verdict.pane;
