@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runAdd, type AddSources } from '../../src/commands/add.ts';
+import { delegateGate } from '../../src/delegate.ts';
 import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
 import type { DoctorSources } from '../../src/commands/doctor.ts';
 import type { Launch } from '../../src/commands/up.ts';
@@ -1122,6 +1123,50 @@ describe('team add delegated', () => {
     expect(readFileSync(join(store, 'approval.json'), 'utf8')).toBe(before);
     expect(made.creates).toEqual([]);
     expect(existsSync(join(project, '.agents', 'team.log'))).toBe(false);
+  });
+
+  // The three states a target session can be in, with the REAL gate: only its two herdr reads
+  // about the team's session are faked, with the answers herdr 0.7.1 gives — a stopped or absent
+  // session fails `agent list` while `session list` still reports it, running false, and an
+  // unreachable herdr answers neither. The approval the gate verifies is the real one `approve()`
+  // wrote into `home`.
+  type GateInput = Parameters<NonNullable<AddSources['delegateGate']>>[0];
+  const gateReading = (running: boolean | null) => (input: GateInput) =>
+    delegateGate({ ...input, sources: { agents: () => null, sessionRunning: () => running } });
+
+  test('a delegated add on a stopped session: the gate passes, and the session is the refusal', async () => {
+    approve(DELEGATE_FILE);
+    const made = world();
+    const io = testIo(project, pilot);
+    const code = await runAdd(['lead'], io, sources(made, {
+      sessionState: () => 'stopped',
+      delegateGate: gateReading(false),
+    }));
+    expect(code).toBe(1);
+    expect(io.err).toBe('team add: session acme is stopped; clear it with `herdr session delete acme`\n');
+    expect(made.creates).toEqual([]);
+  });
+
+  test('a delegated add on an absent session passes the gate and starts the seat', async () => {
+    approve(DELEGATE_FILE);
+    const made = world();
+    const io = testIo(project, pilot);
+    const code = await runAdd(['lead'], io, sources(made, { delegateGate: gateReading(false) }));
+    expect(code).toBe(0);
+    expect(made.creates).toEqual(['lead']);
+  });
+
+  test('a delegated add with herdr not answering is the gate\'s refusal, and nothing is started', async () => {
+    approve(DELEGATE_FILE);
+    const made = world();
+    const io = testIo(project, pilot);
+    const code = await runAdd(['lead'], io, sources(made, {
+      sessionState: () => null,
+      delegateGate: gateReading(null),
+    }));
+    expect(code).toBe(1);
+    expect(io.err).toBe(`team add: delegation cannot verify its placement or seats: herdr doesn't answer\n`);
+    expect(made.creates).toEqual([]);
   });
 });
 

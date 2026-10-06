@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalDifferences, approvalOf, verifiedOf } from '../../src/approve/approval.ts';
 import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
+import { delegateGate } from '../../src/delegate.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
 import { storePath, writeApproval } from '../../src/store/store.ts';
@@ -926,6 +927,56 @@ describe('team remove delegated', () => {
     const after = validateTeamFile(readFileSync(file, 'utf8'));
     if (!after.ok) throw new Error('written file');
     expect(approvalDifferences(after.team, rootOf(dir), home)).toEqual(['seat worker changed']);
+  });
+
+  // The three states a target session can be in, with the REAL gate. Only its two herdr reads
+  // about the team's session are faked, with the answers herdr 0.7.1 gives — a stopped or absent
+  // session fails `agent list` while `session list` still reports it, running false, and an
+  // unreachable herdr answers neither. `remove` asks the gate without a home, so the test hands
+  // it the one its own approval was written into; every other read is the gate's own.
+  type GateInput = Parameters<NonNullable<RemoveSources['delegateGate']>>[0];
+  const gateReading = (running: boolean | null) => (input: GateInput) =>
+    delegateGate({ ...input, home, sources: { agents: () => null, sessionRunning: () => running } });
+
+  test('a delegated remove on a stopped or absent session passes the gate and takes the seat out', async () => {
+    for (const state of ['stopped', 'absent']) {
+      const store = approveFile(FILE + DELEGATES);
+      const made = world();
+      const io = testIo(dir, pilot);
+      const code = await runRemove(['worker'], io, {
+        ...made.sources,
+        sessionRunning: () => false,
+        delegateGate: gateReading(false),
+      });
+      expect(code).toBe(0);
+      expect(io.err).toBe('');
+      expect(io.out).toBe('removed worker\n');
+      // Nothing was stopped: with no session there is no seat to exit.
+      expect(made.typed).toEqual([]);
+      expect(made.keys).toEqual([]);
+      // A delegated run, attributed at its effects.
+      expect(readFileSync(join(dir, '.agents', 'team.log'), 'utf8')).toContain(`delegate [delegate] main/w1:p1 remove\n`);
+      // The file edit landed and no approval was re-signed.
+      expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+      expect(existsSync(store)).toBe(true);
+    }
+  });
+
+  test('a delegated remove with herdr not answering is the gate\'s refusal, and nothing is changed', async () => {
+    approveFile(FILE + DELEGATES);
+    const made = world();
+    const io = testIo(dir, pilot);
+    const before = readFileSync(file, 'utf8');
+    const code = await runRemove(['worker'], io, {
+      ...made.sources,
+      sessionRunning: () => null,
+      delegateGate: gateReading(null),
+    });
+    expect(code).toBe(1);
+    expect(io.err).toBe(`team remove: delegation cannot verify its placement or seats: herdr doesn't answer\n`);
+    expect(io.out).toBe('');
+    expect(readFileSync(file, 'utf8')).toBe(before);
+    expect(existsSync(join(dir, '.agents', 'team.log'))).toBe(false);
   });
 });
 
