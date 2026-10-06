@@ -9,3 +9,7 @@ To avoid runner queue delays on pull requests, the hosted macOS job does not run
 At least one reviewer—rather than every reviewer—runs the suite because one test in the suite reads the machine's process table, which a sandboxed reviewer cannot do; a reviewer working in a sandbox quotes what failed there and why, while the unsandboxed run carries the evidence.
 
 The hosted macOS job is read after each merge, running on every push to `main`, on a nightly schedule, and on demand (`workflow_dispatch`); a red macOS run on `main` is fixed before anything else.
+
+## Reporting a weakness
+
+A weakness in `team` is reported in private, never in a public issue or pull request: see [SECURITY.md](SECURITY.md).

@@ -186,6 +186,7 @@ describe('an override is the owner\'s, by approval', () => {
       notify: () => {},
       now: () => NOW,
       wait: async () => false,
+      sleep: async () => {},
       alive: () => false,
       pid: 1,
       home,

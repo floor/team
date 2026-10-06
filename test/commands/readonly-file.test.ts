@@ -231,6 +231,7 @@ function watchSources(over: Partial<WatchSources> = {}): WatchSources {
     processes: () => null,
     typeText: () => false,
     pressEnter: () => false,
+    sleep: async () => {},
     notify: () => {},
     now: () => new Date(0),
     wait: async () => false,

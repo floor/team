@@ -170,6 +170,7 @@ describe('the watch reads them', () => {
       foreground: () => ['claude', 'codex'],
       typeText: () => true,
       pressEnter: () => true,
+      sleep: async () => {},
       notify: () => {},
       now: () => new Date(clock),
       wait: async (seconds) => {

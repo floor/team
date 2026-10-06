@@ -1063,6 +1063,20 @@
       "classify": "unsent",
       "composer": "unsent",
       "provenance": "capture"
+    },
+    {
+      "file": "nudge-typing/claude-code-nudge-idle-ansi.txt",
+      "cli": "claude-code",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "nudge-typing/claude-code-nudge-unsent-ansi.txt",
+      "cli": "claude-code",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
     }
   ],
   "yaml": [
