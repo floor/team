@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { paneRead, setHerdrRun, setPaneExec, workspacePanes } from '../src/herdr.ts';
+import { paneRead, sessionCleared, setHerdrRun, setPaneExec, workspacePanes } from '../src/herdr.ts';
 
 // paneRead's process call is injectable, so these tests ask what it requests, what it falls
 // back to and when it gives up — without a live herdr. The timeout error it must recognise
@@ -100,5 +100,39 @@ describe('workspacePanes', () => {
       ],
     }));
     expect(workspacePanes('w1')).toBeNull();
+  });
+});
+
+describe('sessionCleared', () => {
+  const name = 'scratch-clear-032';
+
+  test('the captured plain delete line for the asked name is a clear', () => {
+    expect(sessionCleared('deleted session scratch-clear-032\n', name)).toBe(true);
+  });
+
+  test('an empty object is not a clear', () => {
+    expect(sessionCleared('{}', name)).toBe(false);
+    expect(sessionCleared('{}\n', name)).toBe(false);
+  });
+
+  test('a result object is not a clear', () => {
+    expect(sessionCleared('{"result":{}}', name)).toBe(false);
+    expect(sessionCleared('{"result":{}}\n', name)).toBe(false);
+  });
+
+  test('an empty answer is not a clear', () => {
+    expect(sessionCleared('', name)).toBe(false);
+  });
+
+  test('a stop line is not a clear', () => {
+    expect(sessionCleared(`stopped session ${name}\n`, name)).toBe(false);
+  });
+
+  test('a delete of another name is not a clear', () => {
+    expect(sessionCleared('deleted session other.dot\n', name)).toBe(false);
+  });
+
+  test('the right line plus a second line is not a clear', () => {
+    expect(sessionCleared(`deleted session ${name}\nstill here\n`, name)).toBe(false);
   });
 });
