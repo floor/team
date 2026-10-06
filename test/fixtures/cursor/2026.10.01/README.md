@@ -262,3 +262,18 @@ was typed. The session was stopped and deleted. The standing-rules texts are wha
 The workspace line is replaced by `<workspace>` (in `rules-pasted-narrow.txt` it had
 wrapped over two rows at 27 columns and is folded back to one); the line is not part of a
 box.
+
+## The exit read-back
+
+Captured on 2026-10-06 with herdr 0.7.1, `pane read --source visible`, from the
+same installed `cursor-agent` `2026.10.01-14929f9`, one pane in a scratch session
+that was stopped and deleted afterwards. `/exit` was typed with `pane send-text`
+and not sent. Run Everything was off: the tip says to use `/run-everything`, and
+the status row is `Grok 4.7 256K High` with no `Run Everything` suffix. The trust
+dialog sits in the scrollback above the composer; it was not the box.
+
+- `exit-idle.txt`: the placeholder `Plan, search, build anything` the instant
+  `/exit` had been typed. The box does not hold the text yet. Read `idle`.
+- `exit-menu.txt`: the same pane a moment later. The slash menu is open and the
+  box holds exactly `/exit`. The menu replaces the status row. Read `unsent`.
+

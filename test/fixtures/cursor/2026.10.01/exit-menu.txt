@@ -1,0 +1,22 @@
+  │                                                │
+  │                                                │
+  │    [a] Trust this workspace                    │
+  │    [q] Quit                                    │
+  │                                                │
+  │  ⏳ Trusting workspace...                      │
+  │                                                │
+  ╰────────────────────────────────────────────────╯
+
+
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Use /run-everything to skip all approvals.
+
+
+
+
+  → /exit
+
+
+   → /exit                     Exit
+     /quit                     Exit

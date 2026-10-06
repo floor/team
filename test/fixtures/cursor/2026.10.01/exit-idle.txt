@@ -1,0 +1,22 @@
+  │                                                │
+  │                                                │
+  │    [a] Trust this workspace                    │
+  │    [q] Quit                                    │
+  │                                                │
+  │  ⏳ Trusting workspace...                      │
+  │                                                │
+  ╰────────────────────────────────────────────────╯
+
+
+  Cursor Agent
+  v2026.10.01-14929f9
+  Tip: Use /run-everything to skip all approvals.
+
+
+
+
+  → Plan, search, build anything
+
+
+  Grok 4.7 256K High
+  /private/tmp/unsent-exit-proj-iH8R · main

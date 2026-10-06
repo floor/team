@@ -64,3 +64,16 @@ reading below was taken from the returned text, as delivery reads it.
   pane holds: the pane's own top row is the box's prompt row, everything before it
   scrolled out of the pane, and the screen reads `unknown` with no box to read back.
   The narrower width changes nothing about the shape: still no marker, still a scroll.
+
+## The exit read-back
+
+Captured on 2026-10-06 with herdr 0.7.1, `pane read --source visible`, from the
+same installed Codex 0.160.0, one pane in a scratch session that was stopped and
+deleted afterwards. `/exit` was typed with `pane send-text` and not sent. The
+update banner was on screen; Codex was not upgraded.
+
+- `exit-idle.txt`: the placeholder `Ask Codex to do anything` the instant `/exit`
+  had been typed. The box does not hold the text yet. Read `idle`.
+- `exit-menu.txt`: the same pane a moment later. The slash menu is open and the
+  box holds exactly `/exit`. Read `unsent`.
+

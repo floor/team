@@ -151,8 +151,21 @@ describe('team remove', () => {
     expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
     expect(made.typed).toEqual([]);
     expect(made.closed).toEqual([]);
-    expect(io.out).toContain('no live agent in its pane; its exit was not typed');
+    expect(io.out).toContain('no live agent in its pane; its exit was not typed (team remove worker --abandon closes it)');
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
+  test('abandon closes a free seat whose exit could not be typed, and the seat is taken out', async () => {
+    const made = world();
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const launch = made.sources.launch;
+    if (!launch) throw new Error('fixture');
+    launch.typeText = () => false;
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--abandon', '--file', file], io, made.sources)).toBe(0);
+    expect(made.closed).toEqual(['w1']);
+    expect(io.out).toContain('worker: its exit was not typed; its workspace was closed\n');
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
   });
 
   test('a pinned Codex permission after the exit text gets no Enter', async () => {
@@ -204,7 +217,7 @@ describe('team remove', () => {
     expect(made.typed).toEqual(['/exit']);
     expect(entered).toEqual([]);
     expect(made.closed).toEqual([]);
-    expect(io.out).toContain('worker: its exit was not typed; left as it is');
+    expect(io.out).toContain('worker: its exit was not typed; left as it is (team remove worker --abandon closes it)');
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
@@ -225,7 +238,7 @@ describe('team remove', () => {
     expect(made.typed).toEqual(['/exit']);
     expect(made.closed).toEqual([]);
     expect(made.keys).toEqual([]);
-    expect(io.out).toContain('worker: its exit was not confirmed; its box holds text that is not only the exit text (first row that differs: half a sentence, not this exit); nothing more was sent; left running');
+    expect(io.out).toContain('worker: its exit was not confirmed; its box holds text that is not only the exit text (first row that differs: half a sentence, not this exit); nothing more was sent; left running (team remove worker --abandon closes it)');
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
@@ -309,7 +322,7 @@ describe('team remove', () => {
     expect(made.typed).toEqual(['/exit']);
     expect(made.keys).toEqual([]);
     expect(made.closed).toEqual([]);
-    expect(io.out).toContain('worker: its exit was not confirmed; its box holds text that is not only the exit text (first row that differs: person text); nothing more was sent; left running');
+    expect(io.out).toContain('worker: its exit was not confirmed; its box holds text that is not only the exit text (first row that differs: person text); nothing more was sent; left running (team remove worker --abandon closes it)');
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
@@ -361,7 +374,7 @@ describe('team remove', () => {
     expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
     expect(made.typed).toEqual(['/exit']);
     expect(made.closed).toEqual([]);
-    expect(io.out).toContain('worker: its exit was not typed; left as it is');
+    expect(io.out).toContain('worker: its exit was not typed; left as it is (team remove worker --abandon closes it)');
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 

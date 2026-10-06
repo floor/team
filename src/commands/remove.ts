@@ -314,6 +314,8 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
           ...(exitInBox ? { exitInBox: true } : {}),
         },
         abandon: abandon && where !== 'free',
+        closeUnasked: abandon,
+        unasked: `team remove ${name} --abandon closes it`,
       });
       // exit: remove.no-launch
       // exit: remove.stop-failed
@@ -378,6 +380,10 @@ export async function stopRunning(input: {
   session: string;
   seat: DownSeat;
   abandon: boolean;
+  /** The owner's `--abandon`: a seat this call asked, whose exit could not be typed or confirmed, is closed. */
+  closeUnasked?: boolean;
+  /** Named on the line when that seat is left running. */
+  unasked?: string;
   sources: RemoveSources;
   logCommand: string;
   caller: string;
@@ -396,6 +402,8 @@ export async function stopRunning(input: {
     watchPid: null,
     keep: [],
     abandon: input.abandon,
+    closeUnasked: input.closeUnasked,
+    unasked: input.unasked,
   }).filter((step) => step.kind !== 'skip');
   const host: Host = {
     startServer: () => false,

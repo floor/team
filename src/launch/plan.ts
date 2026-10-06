@@ -51,8 +51,26 @@ export type Op =
   | { do: 'ready'; seat: string; rules: 'option' | 'message'; notice?: string }
   | { do: 'repair'; seat: string; cli: string; pane: string; workspace: string; launched: LaunchedIdentity }
   | { do: 'watch'; label: string; command: string }
-  | { do: 'type'; seat: string; pane: string; text: string }
-  | { do: 'gone'; seat: string; pane: string; seconds: number }
+  | {
+      do: 'type';
+      seat: string;
+      pane: string;
+      text: string;
+      /** Close the workspace when this ask fails. The owner's `--abandon`. */
+      closeUnasked?: boolean;
+      workspace?: string;
+      /** What the failure line names when the seat is left: `team down --abandon closes it`. */
+      unasked?: string;
+    }
+  | {
+      do: 'gone';
+      seat: string;
+      pane: string;
+      seconds: number;
+      closeUnasked?: boolean;
+      workspace?: string;
+      unasked?: string;
+    }
   | { do: 'close'; seat: string; workspace: string }
   | { do: 'kill'; pid: number }
   | { do: 'stop'; session: string };
@@ -420,6 +438,10 @@ export interface DownInput {
   keep: readonly string[];
   /** The owner is closing workspaces that are not free, without typing into them. */
   abandon?: boolean;
+  /** A seat this run asks, whose exit cannot be typed or confirmed, is closed the same way. */
+  closeUnasked?: boolean;
+  /** The clause a failed ask names when the seat is left running. */
+  unasked?: string;
 }
 
 const LEFT: Record<Exclude<DownSeat['state'], 'free'>, string> = {
@@ -501,18 +523,22 @@ export function downPlan(input: DownInput): Step[] {
     // The printed command is `pane run`. The live step types with `typeText` and `pressEnter`:
     // `/exit` has to go into the idle prompt, and the screen is read again before the Enter.
     // A seat that arrives holding its exit text gets the clearing key before the typing.
+    const asked = {
+      ...(input.closeUnasked ? { closeUnasked: true, workspace: seat.workspace } : {}),
+      ...(input.unasked ? { unasked: input.unasked } : {}),
+    };
     steps.push({
       kind: 'run',
       argv: herdr(session, 'pane', 'run', seat.pane, profile.exit),
       ...(seat.exitInBox && profile.exitClear !== null
         ? { note: `its box already holds this exit text; it is cleared first (${profile.exitClear})` }
         : {}),
-      do: { do: 'type', seat: seat.name, pane: seat.pane, text: profile.exit },
+      do: { do: 'type', seat: seat.name, pane: seat.pane, text: profile.exit, ...asked },
     });
     steps.push({
       kind: 'wait',
       text: `until ${seat.name}'s pane is back at its shell (${profile.exitTimeout} s at most); on a time-out it is left as it is`,
-      do: { do: 'gone', seat: seat.name, pane: seat.pane, seconds: profile.exitTimeout },
+      do: { do: 'gone', seat: seat.name, pane: seat.pane, seconds: profile.exitTimeout, ...asked },
     });
     steps.push({
       kind: 'run',

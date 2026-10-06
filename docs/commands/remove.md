@@ -81,10 +81,13 @@ done with the file:
 | `removed temporary <name>` | a temporary seat: it was never in the file |
 
 A seat that doesn't leave cleanly is printed once with what stopped it, and `remove` exits 1:
-`<seat>: its exit was not typed; left as it is`, `<seat>: its exit was not confirmed; <what
-happened>; left running` — the pane never drew the typed text, its box held other text, or the
-clearing key did not take — `<seat>: timed out leaving its pane; left as it is`,
+`<seat>: its exit was not typed; left as it is (team remove <seat> --abandon closes it)`,
+`<seat>: its exit was not confirmed; <what happened>; left running (team remove <seat> --abandon closes it)`
+— the pane never drew the typed text, its box held other text, or the clearing key did not take —
+`<seat>: timed out leaving its pane; left as it is (team remove <seat> --abandon closes it)`,
 `<seat>: its workspace did not close`. The file is then not edited: the seat is still in the team.
+With `--abandon`, that same seat's workspace is closed in the run and the line says so, and the
+removal goes on.
 
 A box that holds exactly this CLI's exit text — an earlier run typed it and never confirmed it — is
 not the owner's text: when the profile carries the one key that empties a box, the text is cleared

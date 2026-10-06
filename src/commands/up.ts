@@ -21,6 +21,7 @@ import {
   paneRead,
   paneRun,
   paneShellBack,
+  sessionDelete,
   sessionStop,
   typeText,
   pressEnter,
@@ -127,6 +128,8 @@ export type Launch = {
   focus?(session: string, pane: string): boolean;
   /** Stops the session (`q` in the pause, only for a session this invocation started). */
   stopSession?(session: string): boolean;
+  /** Clears a stopped session this team's state records, so the run can start it. */
+  deleteSession?(session: string): boolean | Promise<boolean>;
   sleep(ms: number): Promise<void>;
   now(): Date;
 };
@@ -189,6 +192,7 @@ const realLaunch: Launch = {
   processInfo: (session, pane) => paneProcesses(pane, aim(session)),
   focus: (session, pane) => focusAgent(pane, aim(session)),
   stopSession: (session) => sessionStop(session),
+  deleteSession: sessionDelete,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now: () => new Date(),
 };
@@ -396,7 +400,11 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   // file's own session, and a refused one never adopts the session its caller tried to name.
   const session = verdict === null ? (args.values.session ?? team.session) : team.session;
   const dir = dirname(loaded.path);
-  const state = resolveState(sources, session);
+  let state = resolveState(sources, session);
+  // A stopped session this team's state records is cleared under the run lock, then started.
+  // The plan below is built as for an absent session. One the state does not record is refused,
+  // and nothing here tells the caller to run a herdr command.
+  let clearStopped = false;
 
   // What would make `up` refuse. A dry run prints the plan anyway; a real run stops first.
   const refusals: string[] = [];
@@ -439,7 +447,12 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
 
   if (state === null) refusals.push("herdr doesn't answer");
   if (state === 'stopped') {
-    refusals.push(`session ${session} is stopped; clear it with \`herdr session delete ${session}\``);
+    if (Object.hasOwn(readState(dir).sessions, session)) {
+      clearStopped = true;
+      state = 'absent';
+    } else {
+      refusals.push(`session ${session} is stopped`);
+    }
   }
   const agents = state === 'running' ? sources.agents(session) : [];
   if (state === 'running') {
@@ -629,7 +642,8 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const buildPlan = () => upPlan({
     root,
     session,
-    // A stopped session is not started. The refusal above names the delete command.
+    // A stopped session this team records was marked absent above, and this plan starts it.
+    // One that is still `stopped` here is not this team's: the refusal already stopped the run.
     sessionRunning: state === 'running' || state === 'stopped',
     seats,
     watchAlive,
@@ -722,6 +736,17 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
         verifiedLobby = gate.path;
         lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
         for (const seat of seats) if (seat.lobby) seat.cwd = gate.path;
+      }
+    }
+    // A stopped session this team's state records is cleared here, under the run lock, before
+    // the plan starts it. Herdr lists a stopped session until `session delete`; that delete
+    // works once the session is stopped and refuses while it is running.
+    if (clearStopped) {
+      const cleared = await launch.deleteSession?.(session);
+      if (!cleared) {
+        out.stderr(`team up: ${plainText(`session ${session} is stopped and did not clear`)}\n`);
+        // exit: up.clear
+        return 1;
       }
     }
     // Built after the make above: the lobby it may have made is every lobby seat's `cwd`.

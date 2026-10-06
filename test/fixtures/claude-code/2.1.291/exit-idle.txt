@@ -1,0 +1,23 @@
+
+ ▐▛███▛█   Claude Code v2.1.291
+▝▜██████▀  Opus 5.5 · Claude Max
+ ▝▝   ▝▝   /private/tmp/unsent-exit-proj-iH8R
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                 ◐ medium · /effort
+─────────────────────────────────────────────────────
+❯ Try "fix lint errors"
+─────────────────────────────────────────────────────
+  main · …/tmp/unsent-exit-proj-iH8R · Opus 5.5 · …
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · …

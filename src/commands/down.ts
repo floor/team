@@ -1,5 +1,6 @@
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
+import { stripSgr } from '../ansi.ts';
 import { readArgs } from '../args.ts';
 import { anotherPaneRefusal, callerOf, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller } from '../caller.ts';
 import { delegateGate, logDelegated, type DelegateSources, type DelegateVerdict } from '../delegate.ts';
@@ -162,6 +163,23 @@ export function stateOf(status: string, screen: Screen): DownSeat['state'] {
  *  ending the moment the screen is decisive either way. */
 export const CLEAR_WAIT_MS = 5000;
 
+/**
+ * Claude Code's own exit question, from a 2.1.291 pane whose status line read `1 shell`:
+ * Enter on `/exit` draws "Background work is running", with `❯ 1. Exit and stop tasks`
+ * selected. One more Enter confirms that choice and the CLI exits. A selection on any other
+ * row is not confirmed here.
+ */
+export function exitQuestionSelected(screen: string | undefined): boolean {
+  if (screen === undefined) return false;
+  return stripSgr(screen).split('\n').some((row) => /^\s*❯\s*1\.\s+Exit and stop tasks\s*$/.test(row));
+}
+
+/** The same dialog with a different row selected: nothing is sent into it. */
+function exitQuestionOther(screen: string | undefined): boolean {
+  if (screen === undefined || exitQuestionSelected(screen)) return false;
+  return stripSgr(screen).includes('Exit and stop tasks');
+}
+
 /** What `typeExit` may do to one pane, so `down` and `remove` share the whole sequence and the
  *  tests can stand in for every part of it. */
 export type ExitIo = {
@@ -218,6 +236,41 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
     if (other === null) return '';
     return ` (first row that differs: ${other === '' ? 'a blank row' : other})`;
   };
+  // Enter is only half the exit. A pane with a background shell answers it with its own
+  // question, the selected row "Exit and stop tasks"; one more Enter confirms that row and
+  // the CLI leaves. Any other screen is left for the wait that follows a successful Enter.
+  // A question that stays, or one whose selected row is not the exit, is not confirmed.
+  const sendEnter = async (): Promise<ExitTyping> => {
+    if (!io.pressEnter()) return false;
+    let answered = false;
+    const deadline = io.now() + CLEAR_WAIT_MS;
+    for (;;) {
+      if (!live()) return true;
+      if (!answered && exitQuestionSelected(io.screen())) {
+        if (!live()) return 'no-agent';
+        if (!io.pressEnter()) {
+          return { left: 'its exit was not confirmed; the exit question was not answered; left running' };
+        }
+        answered = true;
+        continue;
+      }
+      if (!answered && exitQuestionOther(io.screen())) {
+        return { left: 'its exit was not confirmed; the exit question had another choice selected; left running' };
+      }
+      // The confirming Enter has been sent and the question is gone. The process may still be
+      // the foreground while it leaves; the wait after this typing is what confirms that.
+      if (answered && !exitQuestionSelected(io.screen()) && !exitQuestionOther(io.screen())) return true;
+      if (io.now() >= deadline) break;
+      const before = io.now();
+      await io.sleep(100);
+      if (io.now() <= before) break;
+    }
+    if (!live()) return true;
+    if (answered && (exitQuestionSelected(io.screen()) || exitQuestionOther(io.screen()))) {
+      return { left: 'its exit was not confirmed; the exit question stayed open; left running' };
+    }
+    return true;
+  };
 
   if (!live()) return 'no-agent';
   if (!resting()) return false;
@@ -241,10 +294,10 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // An idle screen right after the typing is the text not rendered yet, not an empty box; the
   // wait settles that before the comparison. Only a box that reads back as exactly the typed
   // text gets the Enter.
-  if (boxHoldsText(cli, text, io.screen())) return io.pressEnter();
+  if (boxHoldsText(cli, text, io.screen())) return sendEnter();
   const kind = await settle('idle');
   if (kind !== 'unsent' && kind !== 'idle') return false;
-  if (boxHoldsText(cli, text, io.screen())) return io.pressEnter();
+  if (boxHoldsText(cli, text, io.screen())) return sendEnter();
   if (kind === 'idle') {
     return { left: 'its exit was not confirmed; the pane never drew the typed text; its box is empty; left running' };
   }
@@ -540,6 +593,10 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     // operator included. The delegate sits outside the session, so it never stops itself.
     keep: !branchRun && caller.kind === 'seat' ? [team.coordinator, team.operator] : [],
     abandon: abandon && callerOwns(caller),
+    // A free seat is still asked. When that ask cannot be typed or confirmed, the owner's
+    // `--abandon` closes it in this same run; every other run names that close and leaves it.
+    closeUnasked: abandon && callerOwns(caller),
+    unasked: 'team down --abandon closes it',
   });
 
   if (dry) {
@@ -615,11 +672,28 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       renameAgent: () => false,
       closeWorkspace: launch.closeWorkspace,
       stopSession: launch.stopSession,
-      // Only the session this run has itself just stopped, and only once herdr agrees it is no
-      // longer running: anything else — still running, or herdr silent — is left to its owner, with
-      // the command the line in `executePlan` names. `up` never deletes a session at all.
-      deleteSession(name) {
-        return sources.sessionRunning(name) === false && launch.deleteSession(name);
+      // Only the session this run has itself just stopped. Herdr keeps a stopped session listed
+      // (`running: false`) until `session delete`; a delete while it still reports running is
+      // refused. Wait out that report, then delete, and retry the delete until it takes.
+      async deleteSession(name) {
+        const sleep = sources.sleep ?? launch.sleep;
+        const deadline = sources.now().getTime() + CLEAR_WAIT_MS;
+        const wait = async (): Promise<boolean> => {
+          if (sources.now().getTime() >= deadline) return false;
+          const before = sources.now().getTime();
+          await sleep(100);
+          return sources.now().getTime() > before;
+        };
+        for (;;) {
+          const running = sources.sessionRunning(name);
+          if (running === null) return false;
+          if (!running) break;
+          if (!(await wait())) return false;
+        }
+        for (;;) {
+          if (launch.deleteSession(name)) return true;
+          if (!(await wait())) return false;
+        }
       },
       kill: launch.kill,
       agentPanes(sessionName) {

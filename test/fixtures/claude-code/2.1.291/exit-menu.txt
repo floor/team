@@ -1,0 +1,23 @@
+
+ ▐▛███▛█   Claude Code v2.1.291
+▝▜██████▀  Opus 5.5 · Claude Max
+ ▝▝   ▝▝   /private/tmp/unsent-exit-proj-iH8R
+
+
+
+
+
+
+
+
+
+  ❯ /exit                Exit the CLI
+    /context             Visualize current context
+                         usage as a colored grid
+    …xtjs-add-prisma-db  Setup Prisma ORM with
+                         PostgreSQL in a Next.js p…
+─────────────────────────────────────────────────────
+❯ /exit
+─────────────────────────────────────────────────────
+  main · …/tmp/unsent-exit-proj-iH8R · Opus 5.5 · …
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

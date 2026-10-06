@@ -472,7 +472,7 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | a `MISS` finding from [team doctor](doctor.md) — herdr or a CLI not installed, or a CLI not logged in. A launch that names another model than the file, or that names none, is a warning, so `up` still starts the seat; a seat's own launch line is not this — it leaves that seat out alone, in the lines above. After the idle wait, a screen that shows a different model leaves that seat at launched, not named |
 | `the load is 1.2 per core, above 1` / `free memory is 8%, below 25%` / `free disk is 3.0 GB, below 10.0 GB` / `free swap is 1.0 GB, below 2.0 GB` |
 | `herdr doesn't answer` |
-| ``session beacon is stopped; clear it with `herdr session delete beacon` `` |
+| `session beacon is stopped` — herdr lists it stopped and this team's state does not record it, so `up` does not clear it |
 | ``session beacon has 2 agents this file's state doesn't record: `up` never touches a running team`` — an agent on a pane no record names, or on a pane this state records for a seat at another stage: a seat at `named` or `ready` whose pane now holds a foreign agent is refused here, with the whole team. An agent on the pane this state records for a seat left at `launched` — the run stopped after its pane was made and before its rename — is not refused: it is the run's own half-finished seat, and this run finishes it, the idle wait and the rename like any launched seat |
 | ``the file is legacy: migrate trust to absolute paths including the lobby ~/.config/team/lobby: ...`` — followed by the whole `trust:` block to paste: every entry the next `up` requires, one line saying which key of the file each entry comes from, and, for an entry a rule of `trust` refuses, one line naming the key that forces it |
 | ``the lobby ~/.config/team/lobby: <check>`` — gate check failed (symbolic link, permissions, mode, not empty, inside git repo) |
@@ -584,14 +584,17 @@ team up: only the owner runs `up`, from a terminal outside herdr; this call is c
 exit 1
 ```
 
-A session stopped in herdr is never started over — `up` deletes nothing, and its refusal says the
-command to run by hand. A session `team down` stopped never gets here: `down` clears the one it
-stopped in the same run, so the next `up` finds no session and starts it from the beginning:
+A session stopped in herdr that this team's state records is cleared under the run lock, then
+started. This page's earlier examples have already recorded the session, so a stopped herdr
+session is cleared and the seats come up. A stopped session the state does not record is
+refused, and that line names no herdr command (`session beacon is stopped`).
 
 ```console herdr=stopped
 $ team up ; echo "exit $?"
-team up: session beacon is stopped; clear it with `herdr session delete beacon`
-exit 1
+claude-keeper: ready
+claude-beacon: ready
+  skip claude-qa: stopped in the file; start it with `team add claude-qa`
+exit 0
 ```
 
 An owner section changed in the file needs a new approval, and the plan says so before the run:

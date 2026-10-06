@@ -61,7 +61,7 @@ export type Host = {
   closeWorkspace(session: string, workspace: string): boolean;
   stopSession(session: string): boolean;
   /** Clears the session this run has just stopped. Present on `down` only: `up` never deletes. */
-  deleteSession?(session: string): boolean;
+  deleteSession?(session: string): boolean | Promise<boolean>;
   kill(pid: number): boolean;
   /** Pane ids herdr lists an agent in, or null when the list can't be read. */
   agentPanes(session: string): string[] | null;
@@ -908,29 +908,42 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'type': {
+        // A seat this run asked, whose exit could not be typed or confirmed, cannot be asked.
+        // `--abandon` closes its workspace in this same run, the close a not-free seat gets at
+        // planning. Without it the seat stays, and the line names that close.
+        const unasked = (heldLine: string, closedLine: string) => {
+          if (op.closeUnasked && op.workspace) {
+            if (!host.closeWorkspace(session, op.workspace)) {
+              held = true;
+              finish(op.seat, `${closedLine}; its workspace did not close`);
+            } else {
+              host.drop(op.seat);
+              finish(op.seat, closedLine);
+            }
+          } else {
+            held = true;
+            finish(op.seat, op.unasked ? `${heldLine} (${op.unasked})` : heldLine);
+          }
+          dropped.add(op.seat);
+        };
         const typed = await host.typeLine(session, op.pane, op.text);
         if (typed === 'no-agent') {
-          held = true;
-          dropped.add(op.seat);
-          finish(op.seat, 'no live agent in its pane; its exit was not typed');
+          unasked('no live agent in its pane; its exit was not typed', 'no live agent in its pane; its workspace was closed');
           break;
         }
         if (typed === 'cleared') {
-          held = true;
-          dropped.add(op.seat);
-          finish(op.seat, 'its exit was not confirmed; the text was cleared; left running');
+          unasked(
+            'its exit was not confirmed; the text was cleared; left running',
+            'its exit was not confirmed; its workspace was closed',
+          );
           break;
         }
         if (typeof typed === 'object') {
-          held = true;
-          dropped.add(op.seat);
-          finish(op.seat, typed.left);
+          unasked(typed.left, 'its exit was not confirmed; its workspace was closed');
           break;
         }
         if (!typed) {
-          held = true;
-          dropped.add(op.seat);
-          finish(op.seat, 'its exit was not typed; left as it is');
+          unasked('its exit was not typed; left as it is', 'its exit was not typed; its workspace was closed');
         }
         break;
       }
@@ -942,9 +955,19 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           () => host.agentPanes(session)?.includes(op.pane) === false,
         );
         if (!gone) {
-          held = true;
+          if (op.closeUnasked && op.workspace) {
+            if (!host.closeWorkspace(session, op.workspace)) {
+              held = true;
+              finish(op.seat, 'timed out leaving its pane; its workspace did not close');
+            } else {
+              host.drop(op.seat);
+              finish(op.seat, 'timed out leaving its pane; its workspace was closed');
+            }
+          } else {
+            held = true;
+            finish(op.seat, op.unasked ? `timed out leaving its pane; left as it is (${op.unasked})` : 'timed out leaving its pane; left as it is');
+          }
           dropped.add(op.seat);
-          finish(op.seat, 'timed out leaving its pane; left as it is');
         }
         break;
       }
@@ -1051,12 +1074,12 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           break;
         }
         // Without a `deleteSession` the stop is the whole step. `down` goes one further and clears
-        // the session it has itself just stopped; a clear that does not happen names the command.
+        // the session it has itself just stopped, retrying while herdr still lists it running.
+        // A clear that does not happen is reported here; the next `up` of this team's own
+        // session clears a stopped one itself.
         if (host.deleteSession === undefined) host.say(`session ${op.session}: stopped\n`);
-        else if (host.deleteSession(op.session)) host.say(`session ${op.session}: stopped and cleared\n`);
-        else {
-          host.say(`session ${op.session}: stopped; it did not clear, run \`herdr session delete ${op.session}\`\n`);
-        }
+        else if (await host.deleteSession(op.session)) host.say(`session ${op.session}: stopped and cleared\n`);
+        else host.say(`session ${op.session}: stopped; it did not clear\n`);
         break;
       }
       default:

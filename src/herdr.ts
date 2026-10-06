@@ -309,9 +309,9 @@ export function sessionStop(name: string): boolean {
   return body === null || body.type !== 'error';
 }
 
-// Clears a stopped session — the one case `team` deletes: `down`, on the session it has itself
-// just stopped in the same run, so the next `up` starts from the beginning. `up` never deletes:
-// its refusal names this command and leaves it to the owner.
+// Clears a stopped session. `down` deletes the session it has itself just stopped, once herdr
+// lists it stopped. `up` deletes a stopped session this team's state records, then starts it.
+// A delete while the session is still running is refused by herdr and returns false.
 export function sessionDelete(name: string): boolean {
   const out = capture(['session', 'delete', name]);
   if (out === null) return false;

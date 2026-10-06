@@ -302,6 +302,48 @@
       "provenance": "capture"
     },
     {
+      "file": "claude-code/2.1.291/exit-after-enter.txt",
+      "cli": "claude-code",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.291/exit-idle.txt",
+      "cli": "claude-code",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.291/exit-menu.txt",
+      "cli": "claude-code",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.291/exit-question.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.291/exit-shell-idle.txt",
+      "cli": "claude-code",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "claude-code/2.1.291/exit-shell-menu.txt",
+      "cli": "claude-code",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "claude-code/leftover-box.txt",
       "cli": "claude-code",
       "classify": "unknown",
@@ -540,6 +582,20 @@
       "provenance": "capture"
     },
     {
+      "file": "codex/0.160.0/exit-idle.txt",
+      "cli": "codex",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.160.0/exit-menu.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
       "file": "codex/0.160.0/idle.txt",
       "cli": "codex",
       "classify": "idle",
@@ -688,6 +744,20 @@
     },
     {
       "file": "cursor/2026.10.01/composer-unsent.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/exit-idle.txt",
+      "cli": "cursor",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "cursor/2026.10.01/exit-menu.txt",
       "cli": "cursor",
       "classify": "unsent",
       "composer": "unsent",

@@ -1745,8 +1745,13 @@ describe('the border inserted around every other capture (Cursor)', () => {
       const after = classify('cursor', inserted).kind;
       if (after !== before) differed.push(`${name}: ${before} -> ${after}`);
     }
-    expect(differed).toEqual([]);
-    expect(NAMES.length).toBe(39);
+    // exit-idle is the exit read-back captured with Run Everything off: its status row is
+    // `  Grok 4.7 256K High` and does not end in `Run Everything`. A border is the frame
+    // only against that closed row, so the inserted border fails closed to unknown.
+    // Every other fixture of the set keeps its reading. exit-menu draws no status row
+    // (the slash menu is open), so its border is inert, as exit-typed's is.
+    expect(differed).toEqual(['exit-idle: idle -> unknown']);
+    expect(NAMES.length).toBe(41);
     expect(NAMES).toContain('idle');
     expect(NAMES).toContain('working');
     expect(NAMES).toContain('trust');
@@ -1764,7 +1769,7 @@ describe('the border inserted around every other capture (Cursor)', () => {
     // and the screen fails closed to `unknown`; where the reading comes from elsewhere —
     // the working rule, a dialog's own rule, a capture that draws no status row — the
     // wrong-width border is inert and the capture's own reading stands. The expectation
-    // per capture was established from a run over all 39 and is pinned by the tally.
+    // per capture was established from a run over all 41 and is pinned by the tally.
     const pinned = (name: string) => {
       const lines = fixture(name).replace(/\n+$/, '').split('\n');
       const input = lines.findLastIndex((line) => /^ {2}→/.test(line));
@@ -1783,14 +1788,16 @@ describe('the border inserted around every other capture (Cursor)', () => {
       }
     }
     expect(off).toEqual([]);
-    // The 6 idle and the 19 status-pinned typed captures fail closed both ways; exit-typed
-    // draws no status row, so its border is inert and `unsent` stands; the 7 working and
-    // the 4 dialog captures read their own reading through a wrong-width border; the 2
-    // `unknown` originals stay `unknown`.
+    // The 7 idle captures (the 6 whose status row ends in Run Everything, and exit-idle,
+    // whose short Grok row fails closed the same way) and the 19 status-pinned typed
+    // captures fail closed both ways; exit-typed and exit-menu draw no status row, so
+    // their border is inert and `unsent` stands; the 7 working and the 4 dialog captures
+    // read their own reading through a wrong-width border; the 2 `unknown` originals
+    // stay `unknown`.
     expect(tally).toEqual({
-      'idle -> unknown': 12,
+      'idle -> unknown': 14,
       'unsent -> unknown': 38,
-      'unsent -> unsent': 2,
+      'unsent -> unsent': 4,
       'working -> working': 14,
       'permission -> permission': 2,
       'question -> question': 2,
