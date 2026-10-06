@@ -26,7 +26,7 @@ import { executePlan } from '../launch/execute.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
 import { downPlan, formatPlan, type DownSeat } from '../launch/plan.ts';
 import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
-import { boxHoldsOther, boxHoldsText, settleScreen } from '../launch/deliver.ts';
+import { boxHoldsOther, boxHoldsText, DRAW_WAIT_MS, settleScreen } from '../launch/deliver.ts';
 import { removeRulesFile } from '../launch/rules-file.ts';
 import { approvalStanding } from '../store/store.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -146,7 +146,10 @@ export function paneStillRunning(foreground: readonly string[] | null, processNa
 
 export function stateOf(status: string, screen: Screen): DownSeat['state'] {
   if (screen.kind === 'unsent') return 'unsent';
-  if (screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question' || screen.kind === 'vendor notice') return 'blocked';
+  // A framed exit question already on screen was left by an earlier stop. This run did not ask
+  // it, so it is blocked: no key is sent, and `--abandon` closes it only as it closes every
+  // other seat that cannot be asked.
+  if (screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question' || screen.kind === 'exit question' || screen.kind === 'vendor notice') return 'blocked';
   // A screen showing a running turn is working even when herdr's status has not caught up:
   // `--wait` waits for it, and it is never typed into.
   if (screen.kind === 'working') return 'working';
@@ -201,6 +204,41 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
     if (other === null) return '';
     return ` (first row that differs: ${other === '' ? 'a blank row' : other})`;
   };
+  // The Enter above sends the exit text. A second key is only the profile's `exit_confirm`,
+  // and only once the screen reads as that CLI's own exit question. A quote of the choice
+  // row is an ordinary question and gets nothing. A question the profile cannot confirm, or
+  // one that stays after the key, is reported at once: the seat could not be stopped by asking.
+  const sendExit = async (): Promise<ExitTyping> => {
+    if (!io.pressEnter()) return false;
+    const confirm = profileFor(cli)?.exitConfirm ?? null;
+    const deadline = io.now() + DRAW_WAIT_MS;
+    let confirmed = false;
+    for (;;) {
+      if (!live()) return true;
+      if (kindOf() === 'exit question') {
+        if (confirm === null) {
+          return { left: 'its exit was not confirmed; its profile names no key for the exit question; left running' };
+        }
+        if (!confirmed) {
+          if (!live()) return 'no-agent';
+          if (!io.sendKey(confirm)) {
+            return { left: 'its exit was not confirmed; the exit question was not answered; left running' };
+          }
+          confirmed = true;
+          continue;
+        }
+      }
+      if (io.now() >= deadline) break;
+      const before = io.now();
+      await io.sleep(100);
+      if (io.now() <= before) break;
+    }
+    if (!live()) return true;
+    if (kindOf() === 'exit question') {
+      return { left: 'its exit was not confirmed; the exit question stayed open; left running' };
+    }
+    return true;
+  };
 
   if (!live()) return 'no-agent';
   if (!resting()) return false;
@@ -224,10 +262,10 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // An idle screen right after the typing is the text not rendered yet, not an empty box; the
   // wait settles that before the comparison. Only a box that reads back as exactly the typed
   // text gets the Enter.
-  if (boxHoldsText(cli, text, io.screen())) return io.pressEnter();
+  if (boxHoldsText(cli, text, io.screen())) return sendExit();
   const kind = await settle('idle');
   if (kind !== 'unsent' && kind !== 'idle') return false;
-  if (boxHoldsText(cli, text, io.screen())) return io.pressEnter();
+  if (boxHoldsText(cli, text, io.screen())) return sendExit();
   if (kind === 'idle') {
     return { left: 'its exit was not confirmed; the pane never drew the typed text; its box is empty; left running' };
   }
@@ -496,7 +534,8 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     }
     const cli = cliFor(agent.name);
     const profile = profileFor(cli);
-    const state = stateOf(agent.status, sources.screen(session, agent.pane, cli));
+    const shown = sources.screen(session, agent.pane, cli);
+    const state = stateOf(agent.status, shown);
     // An unsent box that holds exactly the profile's exit text — an earlier run typed it and
     // never confirmed it — is named as such either way: the profile's one clearing key decides
     // whether this run empties it and asks again (the plan's run step) or the owner does (its
@@ -510,6 +549,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       workspace: agent.workspace,
       state,
       ...(exitInBox ? { exitInBox: true } : {}),
+      ...(shown.kind === 'exit question' ? { atExitQuestion: true } : {}),
     });
   }
 
@@ -523,6 +563,10 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     // operator included. The delegate sits outside the session, so it never stops itself.
     keep: !branchRun && caller.kind === 'seat' ? [team.coordinator, team.operator] : [],
     abandon: abandon && callerOwns(caller),
+    // A free seat is still asked. When that ask cannot be typed or confirmed, the owner's
+    // `--abandon` closes it in this same run; every other run names that close and leaves it.
+    closeUnasked: abandon && callerOwns(caller),
+    unasked: 'team down --abandon closes it',
   });
 
   if (dry) {
@@ -598,11 +642,28 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       renameAgent: () => false,
       closeWorkspace: launch.closeWorkspace,
       stopSession: launch.stopSession,
-      // Only the session this run has itself just stopped, and only once herdr agrees it is no
-      // longer running: anything else — still running, or herdr silent — is left to its owner, with
-      // the command the line in `executePlan` names. `up` never deletes a session at all.
-      deleteSession(name) {
-        return sources.sessionRunning(name) === false && launch.deleteSession(name);
+      // Only the session this run has itself just stopped. Herdr keeps a stopped session listed
+      // (`running: false`) until `session delete`; a delete while it still reports running is
+      // refused. Wait out that report, then delete, and retry the delete until it takes.
+      async deleteSession(name) {
+        const sleep = sources.sleep ?? launch.sleep;
+        const deadline = sources.now().getTime() + DRAW_WAIT_MS;
+        const wait = async (): Promise<boolean> => {
+          if (sources.now().getTime() >= deadline) return false;
+          const before = sources.now().getTime();
+          await sleep(100);
+          return sources.now().getTime() > before;
+        };
+        for (;;) {
+          const running = sources.sessionRunning(name);
+          if (running === null) return false;
+          if (!running) break;
+          if (!(await wait())) return false;
+        }
+        for (;;) {
+          if (launch.deleteSession(name)) return true;
+          if (!(await wait())) return false;
+        }
       },
       kill: launch.kill,
       agentPanes(sessionName) {

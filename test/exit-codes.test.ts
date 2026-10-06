@@ -28,6 +28,7 @@ import { loadTeamFile } from '../src/file/load.ts';
 import { defaultFs, lobbyDir } from '../src/lobby/gate.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import { seatLockPath } from '../src/launch/seat-lock.ts';
+import type { Key, Terminal } from '../src/launch/terminal.ts';
 import { overridesPath } from '../src/profiles/overrides.ts';
 import { emptySession, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
@@ -300,8 +301,28 @@ function downSources(over: Partial<RemoveSources> = {}): RemoveSources {
   };
 }
 
+/** The owner's terminal for `up` scenes: the pause reads its keys here, and `reads` is the proof
+ *  it asked. A scene must never fall through to the test process's own stdin, whose state is its
+ *  invoker's — under `bun test` stdin is inherited by the whole run, and a pipe left open never
+ *  delivers the end a scene would need. No test may reach the pause without queueing what the
+ *  terminal does next: a silent fallback would hide an unexpected prompt. */
+function ownerTerminal(keys: Key[] = []): Terminal & { reads: number } {
+  const terminal = {
+    reads: 0,
+    async key(): Promise<Key> {
+      terminal.reads += 1;
+      const next = keys.shift();
+      if (next === undefined) throw new Error('the pause read the terminal, and no key was queued');
+      return next;
+    },
+    // Nothing is buffered behind this terminal: the pause's drains have nothing to discard.
+    drain(): void {},
+  };
+  return terminal;
+}
+
 function upSources(place: Place, over: Partial<UpSources> = {}): UpSources {
-  return { sessionRunning: () => false, agents: () => [], home: place.home, now: () => NOW, ...over };
+  return { sessionRunning: () => false, agents: () => [], home: place.home, now: () => NOW, terminal: () => ownerTerminal(), ...over };
 }
 
 function watchSources(over: Partial<WatchSources> = {}): WatchSources {
@@ -1446,6 +1467,19 @@ scene('up.stopped', async (place) => {
   approve(place, TEAM);
   return show(await up(place, ['--file', place.file], owner, upSources(place, { sessionState: () => 'stopped' })), 'is stopped');
 });
+scene('up.clear', async (place) => {
+  approve(place, TEAM);
+  writeFileSync(
+    join(place.root, '.agents/team.state.json'),
+    JSON.stringify({ format: 1, sessions: { acme: { seats: {}, worktrees: {} } } }),
+  );
+  const launch = launching(IDLE);
+  launch.deleteSession = () => false;
+  return show(await up(place, ['--file', place.file], owner, upSources(place, {
+    sessionState: () => 'stopped',
+    launch,
+  })), 'did not clear');
+});
 scene('up.agents', async (place) => {
   approve(place, TEAM);
   return show(await up(place, ['--file', place.file], owner, upSources(place, { sessionState: () => 'running', agents: () => null })), "can't be read");
@@ -1494,7 +1528,13 @@ scene('up.pending', async (place) => {
   approve(place, TEAM);
   // §3: a seat that never idles now stops at the pause's `timeout` classification, asked of its
   // owner, instead of a bare timed-out record. The code and the row's meaning are unchanged.
-  return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching('') })), 'waiting at timeout');
+  // The ask goes to this scene's own terminal — never the test process's stdin — and nobody is
+  // there to press a key: its input ends, the one answer a run with nobody at the terminal gets.
+  // The read is asserted, so a pause that quietly reached for stdin would fail this scene.
+  const terminal = ownerTerminal(['eof']);
+  const ran = await up(place, ['--file', place.file], owner, upSources(place, { launch: launching(''), terminal: () => terminal }));
+  expect(terminal.reads).toBe(1);
+  return show(ran, 'waiting at timeout');
 });
 scene('up.server', async (place) => {
   approve(place, TEAM);

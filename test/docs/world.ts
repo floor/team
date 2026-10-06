@@ -419,6 +419,11 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
       const cli = agentOf(pane)?.cli ?? 'claude-code';
       return [profileFor(cli)?.processNames[0] ?? 'claude'];
     },
+    deleteSession(session: string) {
+      did.deleted.push(session);
+      herdr = 'absent';
+      return true;
+    },
     sleep,
     now,
   };
