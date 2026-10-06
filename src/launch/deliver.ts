@@ -31,6 +31,12 @@ export type Refusal = {
   sent: boolean;
   kind: Screen['kind'];
   row: string | null;
+  /** The profile's one clearing key, spelled as herdr spells it, when this CLI has one: the
+   *  advice names it. Absent or null: the advice says the owner clears the box, naming no key. */
+  clearKey?: string | null;
+  /** The exit text this CLI's profile types, set when the box already holds exactly it — an
+   *  earlier stop's leftover — so the report names the text and the one key, and nothing is sent. */
+  exitText?: string;
   detail?: 'not-written' | 'changed' | { at: 'folder' | 'place'; what: string };
 };
 
@@ -54,12 +60,21 @@ export interface Delivery {
   report?(why: Refusal): void;
 }
 
+/** The key as its pane's own screen spells it, for the advice a report gives the owner. The
+ *  spelling each CLI draws was read off the captures; the herdr name stays in `clearKey`. */
+export function keyName(key: string): string {
+  if (key === 'ctrl+c') return 'Ctrl-C';
+  if (key === 'ctrl+u') return 'Ctrl+U';
+  if (key === 'escape') return 'Esc';
+  return 'Backspace';
+}
+
 /** The refusal for a rules file that could not be written: nothing was typed, nothing sent, and
  *  the detail carries what the writer found — a folder of the ladder, the final name's place, a
  *  read-back mismatch, or any other fault — for the report. */
 export function fileRefusalOf(written: Exclude<RulesFileWrite, { ok: true }>): Refusal {
   const detail = 'what' in written ? { at: written.why, what: written.what } : written.why;
-  return { stop: 'file', typed: false, sent: false, kind: 'unknown', row: null, detail };
+  return { stop: 'file', typed: false, sent: false, kind: 'unknown', row: null, clearKey: null, detail };
 }
 
 /** Where the text's next row starts after `pos`, or null when `row` is not the text's row there.
@@ -144,9 +159,19 @@ export function boxHoldsText(cli: string, text: string, screen: string | undefin
   return box !== null && holdsBox(text, box);
 }
 
+/** The first row of the box that is not `text`'s own — what the box holds that the text does
+ *  not — or null when the box holds exactly `text` or is not readable as a box at all. For the
+ *  line that says what is in the box now, with the same row-by-row read the exact check makes. */
+export function boxHoldsOther(cli: string, text: string, screen: string | undefined): string | null {
+  if (readScreen(cli, screen).kind !== 'unsent') return null;
+  const box = readBox(cli, screen);
+  if (box === null) return null;
+  return holdsBox(text, box) ? null : (readsBack(text, box).row ?? '');
+}
+
 /** The refusal for a stop at the reading the pane shows now: nothing typed, nothing sent. */
 function stopAs(cli: string, stop: Stop, screen: string | undefined): Refusal {
-  return { stop, typed: false, sent: false, kind: readScreen(cli, screen).kind, row: null };
+  return { stop, typed: false, sent: false, kind: readScreen(cli, screen).kind, row: null, clearKey: profileFor(cli)?.exitClear ?? null };
 }
 
 /** The refusal for a wait that ended with the line typed into the box, whatever the wait: the
@@ -167,11 +192,17 @@ function reading(why: Refusal, rows: number): string {
   return `the screen read ${why.kind}${drew}`;
 }
 
+/** How the advice says the box is cleared: the profile's one key, pressed as its pane spells
+ *  it, or — a CLI with no key established — the owner's own hand, naming no key. */
+function clearAdvice(why: Refusal, box = 'its box'): string {
+  return why.clearKey ? `clear ${box} (${keyName(why.clearKey)})` : `clear ${box}`;
+}
+
 /** What the owner does next, per reading. */
 function nextStep(why: Refusal): string {
   switch (why.stop) {
     case 'leftover':
-      return `press Enter in its pane to send what is there, or clear its box (Ctrl-C), then run up again`;
+      return `press Enter in its pane to send what is there, or ${clearAdvice(why)}, then run up again`;
     case 'typing':
       return `run up again`;
     default:
@@ -222,12 +253,22 @@ export function refusalReport(why: Refusal): string {
     case 'screen':
       return `rules not typed: ${reading(why, 0)}; ${nextStep(why)}`;
     case 'leftover':
+      if (why.exitText !== undefined) {
+        // The box holds exactly the exit text an earlier stop typed and never confirmed. `up`
+        // sends nothing to it: Enter would send the exit, and a clearing key here is the owner's
+        // press, not this run's — the line names the text and the one key.
+        return why.clearKey
+          ? `rules not typed: its box already holds this CLI's exit text (${why.exitText}), unsent from an earlier stop; `
+            + `press ${keyName(why.clearKey)} in its pane to clear it, then run up again`
+          : `rules not typed: its box already holds this CLI's exit text (${why.exitText}), unsent from an earlier stop; `
+            + `clear its box in its pane, then run up again`;
+      }
       return `rules not typed: its box already holds text that is not the rules line; ${nextStep(why)}`;
     case 'typing':
       return `rules not typed: the pane took no text (${reading(why, 0)}); ${nextStep(why)}`;
     case 'read-back':
       return `rules typed, not sent: the read-back didn't match; the line sits in its box, unsent: `
-        + `press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again`;
+        + `press Enter in its pane to send it, or ${clearAdvice(why, 'the box')}, then run up again`;
     case 'file-changed':
       return `rules typed, not sent: the rules file changed after it was written`;
     case 'ack':
@@ -235,7 +276,7 @@ export function refusalReport(why: Refusal): string {
       // report says so rather than claiming a send.
       return why.typed && why.kind === 'unsent'
         ? `rules typed, not sent: its box still holds the line after Enter; `
-          + `press Enter in its pane to send it, or clear the box (Ctrl-C), then run up again`
+          + `press Enter in its pane to send it, or ${clearAdvice(why, 'the box')}, then run up again`
         : `the seat did not come back to its idle prompt (${why.kind}); ${nextStep(why)}`;
   }
 }
@@ -287,7 +328,15 @@ export async function deliverRules(cli: string, line: string, seconds: number, i
   // it could not verify.
   const resumed = start === 'unsent' && boxState(cli, line, io.screen()) === 'ready';
   if (!resumed) {
-    if (start !== 'idle') return report(stopAs(cli, 'leftover', io.screen()));
+    if (start !== 'idle') {
+      // A box holding exactly this CLI's exit text is an earlier stop's leftover, not the
+      // owner's half-written line: the report names the text and the one key, and nothing is sent.
+      const exitText = profileFor(cli)?.exit;
+      if (exitText !== undefined && boxHoldsText(cli, exitText, io.screen())) {
+        return report({ ...stopAs(cli, 'leftover', io.screen()), exitText });
+      }
+      return report(stopAs(cli, 'leftover', io.screen()));
+    }
     // The caller's own last check, immediately before the text: a refusal types nothing.
     if (io.beforeInput && !io.beforeInput('type')) return false;
     if (!io.type(line)) return report(stopAs(cli, 'typing', io.screen()));

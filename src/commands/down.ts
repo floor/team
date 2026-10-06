@@ -11,6 +11,7 @@ import {
   agentStatus,
   paneForeground,
   paneRead,
+  sendKey,
   sessionDelete,
   sessionRunning,
   pressEnter,
@@ -20,11 +21,11 @@ import {
   type HerdrAgent,
 } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
-import type { Host } from '../launch/execute.ts';
+import type { ExitTyping, Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
 import { downPlan, formatPlan, type DownSeat } from '../launch/plan.ts';
-import { boxHoldsText } from '../launch/deliver.ts';
+import { boxHoldsOther, boxHoldsText } from '../launch/deliver.ts';
 import { removeRulesFile } from '../launch/rules-file.ts';
 import { approvalStanding } from '../store/store.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -61,6 +62,9 @@ export type DownSources = {
 
 export type DownLaunch = {
   typeText(session: string, pane: string, text: string): boolean;
+  /** One key by the name `herdr pane send-keys` takes, sent to clear a box that holds exactly
+   *  the exit text this run typed and could not confirm. */
+  sendKey(session: string, pane: string, key: string): boolean;
   pressEnter(session: string, pane: string): boolean;
   agentPanes(session: string): string[] | null;
   closeWorkspace(session: string, workspace: string): boolean;
@@ -78,6 +82,7 @@ function aim(session: string): string | undefined {
 
 const realLaunch: DownLaunch = {
   typeText: (session, pane, text) => typeText(pane, text, aim(session)),
+  sendKey: (session, pane, key) => sendKey(pane, key, aim(session)),
   pressEnter: (session, pane) => pressEnter(pane, aim(session)),
   agentPanes(session) {
     const agents = agentList(aim(session));
@@ -150,6 +155,119 @@ export function stateOf(status: string, screen: Screen): DownSeat['state'] {
   return 'unknown';
 }
 
+/** How long a reading waits for the pane to draw what a send left. `send-text` returns before
+ *  the pane renders — a capture taken the instant after typing `/exit` still read the idle
+ *  screen, and read the text a moment later — so the reading that decides the next key waits,
+ *  ending the moment the screen is decisive either way. */
+export const CLEAR_WAIT_MS = 5000;
+
+/** What `typeExit` may do to one pane, so `down` and `remove` share the whole sequence and the
+ *  tests can stand in for every part of it. */
+export type ExitIo = {
+  typeText(text: string): boolean;
+  sendKey(key: string): boolean;
+  pressEnter(): boolean;
+  screen(): string | undefined;
+  status(): string | null;
+  foreground(): string[] | null;
+  sleep(ms: number): Promise<void>;
+  now(): number;
+};
+
+/**
+ * The whole live exit typing for one pane: what `team` sends, and when. The exit text is typed
+ * once, into a box that reads empty and idle; a box that already holds exactly this exit text —
+ * an earlier run typed it and never confirmed it — is emptied with the profile's one clearing
+ * key first, never sent and never typed onto. After the typing, the Enter goes only to a box
+ * that reads back as exactly the typed text, the same comparison delivery makes. When the
+ * read-back does not confirm the text, nothing is sent on a screen that is not the CLI's own
+ * composer; a box that holds exactly the typed text is cleared with the profile's one key, and
+ * a profile without one leaves the text for the owner, saying so. The caller check that
+ * precedes every key precedes each of these too.
+ */
+export async function typeExit(io: ExitIo, cli: string, text: string): Promise<ExitTyping> {
+  const names = profileFor(cli)?.processNames ?? [];
+  // The caller check that precedes every key: the CLI itself must be the pane's foreground
+  // process at the key, not when the seat was read.
+  const live = () => reportedLiveAgent(io.foreground(), names);
+  const resting = () => {
+    const status = io.status();
+    return status === 'idle' || status === 'done';
+  };
+  // One reading of the pane, as text: the kind and the box both come from it, so they cannot
+  // disagree. A screen that is not the CLI's composer — a dialog over it, a shell after it —
+  // never reaches a key.
+  const kindOf = () => readScreen(cli, io.screen()).kind;
+  // The reading that decides a key, waiting out the pane's late drawing: `undrawn` is what the
+  // screen still reads while the send it has not drawn sits behind it — idle after a typing,
+  // unsent after a clearing key. The wait ends the moment the screen is decisive either way,
+  // and at the deadline the screen reads as it reads.
+  const settle = async (undrawn: Screen['kind']): Promise<Screen['kind']> => {
+    const deadline = io.now() + CLEAR_WAIT_MS;
+    for (;;) {
+      const kind = kindOf();
+      if (kind !== undrawn || io.now() >= deadline) return kind;
+      const before = io.now();
+      await io.sleep(100);
+      if (io.now() <= before) return kindOf();
+    }
+  };
+  const otherRow = (): string => {
+    const other = boxHoldsOther(cli, text, io.screen());
+    if (other === null) return '';
+    return ` (first row that differs: ${other === '' ? 'a blank row' : other})`;
+  };
+
+  if (!live()) return 'no-agent';
+  if (!resting()) return false;
+  // The leftover exit text: cleared with the profile's one key, then typed fresh, so the Enter
+  // provably sends only what this run read back. A profile without a key leaves it; the plan
+  // or the refusal that sent the seat here says so in its own line.
+  const start = kindOf();
+  if (start !== 'idle') {
+    if (start !== 'unsent' || !boxHoldsText(cli, text, io.screen())) return false;
+    const key = profileFor(cli)?.exitClear ?? null;
+    if (key === null || !live()) return false;
+    if (!io.sendKey(key)) return false;
+    const after = await settle('unsent');
+    if (after !== 'idle' || !resting()) {
+      return { left: `its box already held this exit text; the clearing key (${key}) left the screen reading ${after}; left running` };
+    }
+  }
+  if (!io.typeText(text)) return false;
+  if (!live()) return 'no-agent';
+  if (!resting()) return false;
+  // An idle screen right after the typing is the text not rendered yet, not an empty box; the
+  // wait settles that before the comparison. Only a box that reads back as exactly the typed
+  // text gets the Enter.
+  if (boxHoldsText(cli, text, io.screen())) return io.pressEnter();
+  const kind = await settle('idle');
+  if (kind !== 'unsent' && kind !== 'idle') return false;
+  if (boxHoldsText(cli, text, io.screen())) return io.pressEnter();
+  if (kind === 'idle') {
+    return { left: 'its exit was not confirmed; the pane never drew the typed text; its box is empty; left running' };
+  }
+  // The box holds something. The caller check precedes the clearing key, exactly as it precedes
+  // every other key.
+  if (!live()) return 'no-agent';
+  if (!resting()) return false;
+  const key = profileFor(cli)?.exitClear ?? null;
+  if (key === null) {
+    return boxHoldsText(cli, text, io.screen())
+      ? { left: 'its exit was not confirmed; the text was left in its box; the owner clears it in its pane' }
+      : { left: `its exit was not confirmed; its box was left holding other text${otherRow()}; the owner clears it in its pane` };
+  }
+  if (!boxHoldsText(cli, text, io.screen())) {
+    return { left: `its exit was not confirmed; its box holds text that is not only the exit text${otherRow()}; nothing more was sent; left running` };
+  }
+  if (!io.sendKey(key)) {
+    return { left: `its exit was not confirmed; the clearing key (${key}) was not delivered; the text was left; left running` };
+  }
+  const after = await settle('unsent');
+  if (after === 'idle' && resting()) return 'cleared';
+  return { left: `its exit was not confirmed; the clearing key (${key}) left the screen reading ${after}; left running` };
+}
+
 export async function runDown(argv: string[], io: Io, sources: DownSources): Promise<number> {
   const args = readArgs(argv, ['session', 'file'], ['dry-run', 'wait', 'abandon']);
   if (args.error || args.rest.length) {
@@ -198,7 +316,6 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       dir: file.dir,
       flags,
       io: { env: io.env, stdinIsTTY: io.stdinIsTTY, caller: io.caller, callerSources: io.callerSources },
-      home: sources.home,
       ...(sources.delegate ? { sources: sources.delegate } : {}),
     });
     if (verdict.kind === 'passed') granted = verdict.pane;
@@ -394,12 +511,21 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       continue;
     }
     const cli = cliFor(agent.name);
+    const profile = profileFor(cli);
+    const state = stateOf(agent.status, sources.screen(session, agent.pane, cli));
+    // An unsent box that holds exactly the profile's exit text — an earlier run typed it and
+    // never confirmed it — is named as such either way: the profile's one clearing key decides
+    // whether this run empties it and asks again (the plan's run step) or the owner does (its
+    // skip line). Anything else unsent keeps the ordinary unsent line.
+    const exitInBox = state === 'unsent' && profile !== null
+      && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));
     seats.push({
       name: agent.name,
       cli,
       pane: agent.pane,
       workspace: agent.workspace,
-      state: stateOf(agent.status, sources.screen(session, agent.pane, cli)),
+      state,
+      ...(exitInBox ? { exitInBox: true } : {}),
     });
   }
 
@@ -455,27 +581,23 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     sessionUp: () => true,
     createWorkspace: () => null,
     paneRun: () => false,
-    typeLine(sessionName, pane, text) {
+    async typeLine(sessionName, pane, text) {
       // Free was decided when the plan was built. Look again, and once more between the text and
       // the Enter: a prompt that appeared would take the key, as the watch's nudge does. Herdr's
       // status is asked both times; the Enter waits until it is idle or done and the box reads
-      // back as exactly the typed text.
+      // back as exactly the typed text. The whole sequence, the clearing key included, is
+      // `typeExit`'s, shared with `remove`.
       const cli = seats.find((seat) => seat.pane === pane)?.cli ?? '';
-      const names = profileFor(cli)?.processNames ?? [];
-      const live = () => reportedLiveAgent(sources.foreground(sessionName, pane), names);
-      if (!live()) return 'no-agent';
-      const look = () => sources.screen(sessionName, pane, cli).kind;
-      const resting = () => {
-        const status = sources.status(sessionName, pane);
-        return status === 'idle' || status === 'done';
-      };
-      if (!resting() || look() !== 'idle') return false;
-      if (!launch.typeText(sessionName, pane, text)) return false;
-      if (!live()) return 'no-agent';
-      // An idle screen after the typing is the text not rendered, and unsent text alone is not
-      // this exit's: only a box that reads back as the typed text gets the Enter.
-      if (!resting() || !boxHoldsText(cli, text, sources.screenText(sessionName, pane, cli))) return false;
-      return launch.pressEnter(sessionName, pane);
+      return typeExit({
+        typeText: (line) => launch.typeText(sessionName, pane, line),
+        sendKey: (key) => launch.sendKey(sessionName, pane, key),
+        pressEnter: () => launch.pressEnter(sessionName, pane),
+        screen: () => sources.screenText(sessionName, pane, cli),
+        status: () => sources.status(sessionName, pane),
+        foreground: () => sources.foreground(sessionName, pane),
+        sleep: sources.sleep ?? launch.sleep,
+        now: () => sources.now().getTime(),
+      }, cli, text);
     },
     renameAgent: () => false,
     closeWorkspace: launch.closeWorkspace,

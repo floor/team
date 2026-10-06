@@ -426,6 +426,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
   const shelled = new Set<string>();
   const downLaunch: DownLaunch = {
     typeText: action.typeText,
+    sendKey: () => true,
     pressEnter(session, pane) {
       shelled.add(pane);
       return action.pressEnter();

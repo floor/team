@@ -203,7 +203,8 @@ describe('down and remove with one label on two seats', () => {
     writeFileSync(file, SHARED);
     const typed: string[] = [];
     const panes: string[] = [];
-    let box: string | undefined;
+    // Each pane has its own box: one seat's typed text never sits in another seat's pane.
+    const boxes = new Map<string, string>([['w1:p1', claudeBox('')], ['w2:p1', claudeBox('')]]);
     const agents: HerdrAgent[] = [
       { name: 'coordinator', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null },
       { name: 'implementer', agent: 'claude', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null },
@@ -214,11 +215,12 @@ describe('down and remove with one label on two seats', () => {
       alive: () => false,
       now: () => new Date(0),
       screen: () => ({ kind: 'idle' }),
-      screenText: () => box,
+      screenText: (_session, pane) => boxes.get(pane),
       status: () => 'idle',
       foreground: () => ['claude'],
       launch: {
-        typeText: (_session, pane, text) => { typed.push(text); panes.push(pane); box = claudeBox(text); return true; },
+        typeText: (_session, pane, text) => { typed.push(text); panes.push(pane); boxes.set(pane, claudeBox(text)); return true; },
+        sendKey: () => true,
         pressEnter: () => true,
         agentPanes: () => [],
         closeWorkspace: () => true,
@@ -254,7 +256,7 @@ describe('down and remove with one label on two seats', () => {
       home,
     );
     const panes: string[] = [];
-    let box: string | undefined;
+    let box: string | undefined = claudeBox('');
     const sources: RemoveSources = {
       home,
       sessionRunning: () => true,
@@ -271,6 +273,7 @@ describe('down and remove with one label on two seats', () => {
       foreground: () => ['claude'],
       launch: {
         typeText: (_session, pane, text) => { panes.push(`${pane}:${text}`); box = claudeBox(text); return true; },
+        sendKey: () => true,
         pressEnter: () => true,
         agentPanes: () => [],
         closeWorkspace: () => true,

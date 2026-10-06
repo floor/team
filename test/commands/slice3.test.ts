@@ -750,7 +750,8 @@ describe('team down', () => {
     writeRulesFile(standing, 'deepseek-acme-tmp-1', root, home, 'Rules.\n', rulesFileHash('Rules.\n'));
     // The exit is typed at an idle prompt, read back, and sent; the pane leaves the agent list.
     let sent = false;
-    let box: string | undefined;
+    // The pane's box, physically: the empty idle box before the typing, the typed text after.
+    let box: string | undefined = claudeBox('');
     const run = await down([], OWNER, {
       agents: () => [agent('deepseek-acme-tmp-1')],
       screenText: () => box,
@@ -758,6 +759,7 @@ describe('team down', () => {
       home,
       launch: {
         typeText: (_session, _pane, text) => { box = claudeBox(text); return true; },
+        sendKey: () => { box = claudeBox(''); return true; },
         pressEnter: () => { sent = true; return true; },
         agentPanes: () => ['deepseek-acme-tmp-1:p1'],
         closeWorkspace: () => true,

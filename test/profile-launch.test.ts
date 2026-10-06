@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { profileFor } from '../src/profiles/index.ts';
-import { launchCommand } from '../src/profiles/profile.ts';
+import { exitClearKey, launchCommand } from '../src/profiles/profile.ts';
 import { runningModel } from '../src/status/statusline.ts';
 
 // Main's launch readers, copied here. The production files no longer have this code.
@@ -182,5 +182,26 @@ describe('launch data through the profile files', () => {
       same(`${launch} on main`, read(launch), before);
       same(`${launch} now`, profile?.modelOf(launch) ?? null, after);
     }
+  });
+});
+
+describe('the exit_clear a profile may name', () => {
+  // One of the keys `pane send-keys` takes that empty an input box, or nothing. `enter` is
+  // not among them on purpose: it sends what the box holds.
+  test('one of the closed set, or absent for null', () => {
+    expect(exitClearKey('exit: /exit')).toBe(null);
+    expect(exitClearKey('exit: /exit\nexit_clear: ctrl+c')).toBe('ctrl+c');
+    expect(exitClearKey('exit: /exit\nexit_clear: ctrl+u')).toBe('ctrl+u');
+    expect(exitClearKey('exit: /exit\nexit_clear: escape')).toBe('escape');
+    expect(exitClearKey('exit: /exit\nexit_clear: backspace')).toBe('backspace');
+  });
+
+  test('any other value is refused in words — enter included', () => {
+    expect(() => exitClearKey('exit: /exit\nexit_clear: enter')).toThrow(
+      '"exit_clear" must be one of: ctrl+c, ctrl+u, escape, backspace',
+    );
+    expect(() => exitClearKey('exit: /exit\nexit_clear: C-c')).toThrow(
+      '"exit_clear" must be one of: ctrl+c, ctrl+u, escape, backspace',
+    );
   });
 });

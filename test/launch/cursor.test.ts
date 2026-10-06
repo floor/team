@@ -1633,7 +1633,7 @@ describe('a border anywhere else stays unknown (Cursor)', () => {
       sleep: async (ms) => { clock += ms; },
     };
     expect(await deliverRules('cursor', 'Rules.', 1, shellIo)).toBe(false);
-    expect(refusals).toEqual([{ stop: 'launch', typed: false, sent: false, kind: 'idle', row: null }]);
+    expect(refusals).toEqual([{ stop: 'launch', typed: false, sent: false, kind: 'idle', row: null, clearKey: 'ctrl+u' }]);
     expect(typed).toEqual([]);
     expect(clock).toBe(1000);
   });
@@ -2062,7 +2062,7 @@ describe('the bordered box read back (Cursor)', () => {
       return true;
     };
     expect(await deliverRules('cursor', TEXT, 1, d.io)).toBe(false);
-    expect(d.refusals).toEqual([{ stop: 'read-back', typed: true, sent: false, kind: 'unsent', row: 'beta bordered line two' }]);
+    expect(d.refusals).toEqual([{ stop: 'read-back', typed: true, sent: false, kind: 'unsent', row: 'beta bordered line two', clearKey: 'ctrl+u' }]);
     expect(d.calls).toEqual([TEXT]);
   });
 });

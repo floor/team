@@ -106,6 +106,7 @@ describe('checkLogin with fake command results', () => {
       loginCheck: null,
       loginHint: 'custom login',
       exit: '/exit',
+      exitClear: null,
       idleTimeout: 30,
       exitTimeout: 10,
       lastUsedModel: false,

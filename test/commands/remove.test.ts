@@ -53,20 +53,24 @@ let clock: number;
 function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
   sources: RemoveSources;
   typed: string[];
+  keys: string[];
   closed: string[];
   agents: HerdrAgent[];
   running: boolean[];
 } {
   const typed: string[] = [];
+  const keys: string[] = [];
   const closed: string[] = [];
   let sent = false;
-  // What the pane shows after a typing: the box with the typed text, as the CLI renders it.
-  let box: string | undefined;
+  // What the pane shows: the empty idle box before any typing, the box with the typed text
+  // after one, as the CLI renders it.
+  let box: string | undefined = claudeBox('');
   const agents: HerdrAgent[] = [];
   const running: boolean[] = [];
   clock = 0;
   const launch: DownLaunch = {
     typeText: (_session, _pane, text) => { typed.push(text); box = claudeBox(text); return true; },
+    sendKey: (_session, _pane, key) => { keys.push(key); box = claudeBox(''); return true; },
     pressEnter: () => { sent = true; return true; },
     agentPanes: () => agents.map((agent) => agent.pane),
     closeWorkspace: (_session, workspace) => { closed.push(workspace); return true; },
@@ -89,7 +93,7 @@ function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
     launch,
     foreground: () => (running[0] === true ? ['claude'] : sent || running[0] === false ? [] : ['claude']),
   };
-  return { sources, typed, closed, agents, running };
+  return { sources, typed, keys, closed, agents, running };
 }
 
 // The state `team up` writes for the coordinator's seat: the caller check judges a seat on the
@@ -153,17 +157,40 @@ describe('team remove', () => {
   test('a pinned Codex permission after the exit text gets no Enter', async () => {
     const pinnedRaw = readFileSync(new URL('../fixtures/codex/0.157.0/permission-pinned.txt', import.meta.url), 'utf8');
     const pinned = readScreen('codex', pinnedRaw);
+    // The seat is Codex's, so its pane reads through Codex's own screen data.
+    writeFileSync(file, FILE.replace(
+      `  - role: implementer
+    name: worker
+    label: worker
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5`,
+      `  - role: implementer
+    name: worker
+    label: worker
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    display: GPT-6 Sol
+    launch: codex -m gpt-6-sol -c model_reasoning_effort=high`,
+    ));
     const made = world();
     let screen: Screen = { kind: 'idle' };
     made.sources.screen = () => screen;
-    // The pane really shows the dialog after the typing: the box read-back refuses it.
-    made.sources.screenText = () => pinnedRaw;
+    made.sources.foreground = () => ['codex'];
+    // The pane is idle before the typing; the dialog is what it shows after it.
+    let raw = readFileSync(new URL('../fixtures/codex/0.157.0/idle.txt', import.meta.url), 'utf8');
+    made.sources.screenText = () => raw;
     const entered: string[] = [];
     const launch = made.sources.launch;
     if (!launch) throw new Error('fixture');
     launch.typeText = (_session, _pane, text) => {
       made.typed.push(text);
       screen = pinned;
+      raw = pinnedRaw;
       return true;
     };
     launch.pressEnter = () => {
@@ -182,13 +209,80 @@ describe('team remove', () => {
 
   test('a box that holds someone else\'s text gets no Enter', async () => {
     const made = world();
-    made.sources.screenText = () => claudeBox('half a sentence, not this exit');
+    let raw = claudeBox('');
+    made.sources.screenText = () => raw;
+    const launch = made.sources.launch;
+    if (!launch) throw new Error('fixture');
+    launch.typeText = (_session, _pane, text) => {
+      made.typed.push(text);
+      raw = claudeBox('half a sentence, not this exit');
+      return true;
+    };
     made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
     const io = testIo(dir, owner);
     expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
     expect(made.typed).toEqual(['/exit']);
     expect(made.closed).toEqual([]);
-    expect(io.out).toContain('worker: its exit was not typed; left as it is');
+    expect(made.keys).toEqual([]);
+    expect(io.out).toContain('worker: its exit was not confirmed; its box holds text that is not only the exit text (first row that differs: half a sentence, not this exit); nothing more was sent; left running');
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
+  test('a leftover exit text is cleared inside the stop, and the removal proceeds', async () => {
+    // An earlier stop typed `/exit` and never confirmed it: the box is emptied with the
+    // profile's one key, the exit is typed fresh, and the seat is removed as on an empty box.
+    const made = world({ kind: 'unsent' });
+    let raw = claudeBox('/exit');
+    made.sources.screenText = () => raw;
+    const launch = made.sources.launch;
+    if (!launch) throw new Error('fixture');
+    launch.typeText = (_session, _pane, text) => {
+      made.typed.push(text);
+      raw = claudeBox(text);
+      return true;
+    };
+    launch.sendKey = (_session, _pane, key) => {
+      made.keys.push(key);
+      raw = claudeBox('');
+      return true;
+    };
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(0);
+    expect(made.keys).toEqual(['ctrl+c']);
+    expect(made.typed).toEqual(['/exit']);
+    expect(made.closed).toEqual(['w1']);
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+  });
+
+  test('a CLI with no clearing key keeps its leftover exit text, named for the owner', async () => {
+    // Antigravity has no key that empties the box, so the seat is not asked again: the refusal
+    // names the exit text the box holds instead of the generic unsent line, and nothing is
+    // typed, keyed or closed.
+    writeFileSync(file, FILE.replace(
+      `    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+  # stays above lead`,
+      `    cli: antigravity
+    vendor: google
+    model: Gemini Flash
+    version: "3.8"
+    launch: agy
+  # stays above lead`,
+    ));
+    const raw = readFileSync(new URL('../fixtures/antigravity/1.2.16/exit-typed.txt', import.meta.url), 'utf8');
+    const made = world(readScreen('antigravity', raw));
+    made.sources.screenText = () => raw;
+    made.agents.push({ name: 'worker', agent: 'agy', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+    expect(made.typed).toEqual([]);
+    expect(made.keys).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(io.err).toBe('team remove: worker holds this CLI\'s exit text (/exit) unsent in its input box; left as it is (the owner sends it or clears it in its pane)\n');
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
@@ -199,7 +293,7 @@ describe('team remove', () => {
     // does not read back as the exit text — read by glyph it did, and the exit and the
     // person's text were submitted together. The exit is typed, and not sent.
     const made = world();
-    let box: string | undefined;
+    let box = claudeBox('');
     const launch = made.sources.launch;
     if (!launch) throw new Error('fixture');
     launch.typeText = (_session, _pane, text) => {
@@ -212,8 +306,9 @@ describe('team remove', () => {
     const io = testIo(dir, owner);
     expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
     expect(made.typed).toEqual(['/exit']);
+    expect(made.keys).toEqual([]);
     expect(made.closed).toEqual([]);
-    expect(io.out).toContain('worker: its exit was not typed; left as it is');
+    expect(io.out).toContain('worker: its exit was not confirmed; its box holds text that is not only the exit text (first row that differs: person text); nothing more was sent; left running');
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
@@ -245,7 +340,7 @@ describe('team remove', () => {
     launch: codex -m gpt-6-sol -c model_reasoning_effort=high`,
     ));
     const made = world();
-    let shown: string | undefined;
+    let shown = codexIdle;
     let gone = false;
     const launch = made.sources.launch;
     if (!launch) throw new Error('fixture');

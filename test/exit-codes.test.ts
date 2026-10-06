@@ -271,6 +271,7 @@ function addSources(place: Place, over: Partial<AddSources> = {}): AddSources {
 function downLaunch(over: Partial<DownLaunch> = {}): DownLaunch {
   return {
     typeText: () => true,
+    sendKey: () => true,
     pressEnter: () => true,
     agentPanes: () => [],
     closeWorkspace: () => true,
@@ -1196,6 +1197,8 @@ scene('remove.stop-failed', async (place) => {
 });
 scene('remove.locked', async (place) => {
   approve(place, TWO);
+  // The pane's box, physically: empty before the typing, holding the exit text after it.
+  let letBox: string | undefined = claudeBox('');
   const swapped = `format: 1
 project: acme
 coordinator: worker
@@ -1216,12 +1219,14 @@ seats:
     sessionRunning: () => true,
     agents: () => [agent('worker')],
     home: place.home,
-    screenText: () => claudeBox('/exit'),
+    screenText: () => letBox,
     launch: downLaunch({
       typeText() {
         writeFileSync(place.file, swapped);
+        letBox = claudeBox('/exit');
         return true;
       },
+      sendKey: () => { letBox = claudeBox(''); return true; },
     }),
   })), 'coordinator "worker"');
 });

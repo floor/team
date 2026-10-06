@@ -2,8 +2,11 @@
 
 Stops the team: asks every running seat to exit, closes its workspace, stops the watch, and stops
 the herdr session. A seat is only asked when it is free — idle, with an empty input box — so a
-working, blocked or half-typed seat is left running and named. `--dry-run` prints the plan and runs
-nothing.
+working, blocked or half-typed seat is left running and named. A box that holds exactly this CLI's
+exit text — an earlier run typed it and never confirmed it — is not half-typed text: when the
+profile carries the one key that empties a box, the text is cleared with it and the exit typed
+fresh, and when it does not, the seat is left running with the text named. `--dry-run` prints the
+plan and runs nothing.
 
 A seat the file renamed after `up` launched it is stopped all the same, under the name it was
 launched with and the CLI the state records for it: what runs, not what the file now calls it.
@@ -63,9 +66,7 @@ it read.
 
 A run that passes its gate and proceeds to its effects appends one line to `.agents/team.log`
 naming the delegate's pane. A dry run leaves no such line, and neither does a session that was
-already idle: both return before any effect. An already-idle `down` says `session <session> is
-not running: nothing to stop` and exits 0 before any caller-role or gate refusal, for every
-caller — a delegate that passed a prohibited flag included: idle `down` is unchanged.
+already idle: both return before any effect.
 
 ## Flags
 
@@ -91,7 +92,10 @@ the one it has itself just stopped, in the same run, and the next `up` starts fr
 A clear that does not happen — herdr still reports the session running, or the delete fails —
 prints `session <session>: stopped; it did not clear, run \`herdr session delete <session>\``
 instead, and `down` still exits 0: the stop itself succeeded. A seat it does not stop prints one
-`  skip` line and is named in the last line instead of the session being stopped:
+`  skip` line and is named in the last line instead of the session being stopped. A seat whose box
+already holds its exit text, on a CLI with a clearing key, is stopped as a free seat is — the
+clearing key runs first — and a dry run says so in a note under its typing step:
+`its box already holds this exit text; it is cleared first (<key>)`.
 
     claude-beacon: is working (`--wait` waits for it); left running
     session beacon: not stopped, 1 agent left in it
@@ -101,6 +105,7 @@ instead, and `down` still exits 0: the stop itself succeeded. A seat it does not
 | `<seat>: is working (\`--wait\` waits for it); left running` | a turn is running |
 | `<seat>: is blocked at a prompt, which \`team never answers\`; left running` | a permission dialog, a trust question or a question: only its owner answers it |
 | `<seat>: holds unsent text in its input box; left running` | half-typed text would be lost |
+| `<seat>: holds this CLI's exit text (<exit>) unsent in its input box; left running (the owner sends it or clears it in its pane)` | the box holds an earlier run's unconfirmed exit text, and the CLI has no key that empties a box |
 | `<seat>: shows a screen the profile does not recognise; left running` | nothing is typed into a screen it can't read |
 | `<seat>: the state doesn't say which CLI it runs, so it can't be asked to exit; left running (`team down --abandon` closes it without typing)` | the state predates the CLI record and the file no longer names the seat: nothing links its pane to a profile, so its owner closes it |
 | `<seat>: left running; only the owner stops the coordinator's or the operator's seat` | a seat's own call, and this is the coordinator or the operator |
@@ -130,8 +135,9 @@ stop at all.
 - `0` — the seats it could stop were stopped, the watch and the session with them; or there was
   nothing to stop; or `--dry-run` printed its plan. A seat left running because it was busy is not a
   failure.
-- `1` — refused, or a step failed: a seat's exit was not typed, its workspace did not close, it
-  timed out leaving its pane, or the watch or the session did not stop.
+- `1` — refused, or a step failed: a seat's exit was not typed, or was typed and not confirmed —
+  the pane never drew it, its box held other text, or the clearing key did not take — its
+  workspace did not close, it timed out leaving its pane, or the watch or the session did not stop.
 - `2` — the invocation, the team file or herdr can't be read.
 
 ## Examples

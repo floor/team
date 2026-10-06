@@ -20,7 +20,7 @@ import { downPlan, type DownSeat } from '../launch/plan.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock } from '../state.ts';
-import { paneStillRunning, realSources as downSources, stateOf, type DownSources } from './down.ts';
+import { paneStillRunning, realSources as downSources, stateOf, typeExit, type DownSources } from './down.ts';
 import { boxHoldsText } from '../launch/deliver.ts';
 import { removeRulesFile } from '../launch/rules-file.ts';
 
@@ -115,7 +115,6 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
         dir: dirname(named.path),
         flags: [...args.flags, ...Object.keys(args.values)],
         io,
-        home: sources.home,
       });
       if (flagged.kind === 'refused') return delegateRefused(io, flagged);
     }
@@ -163,7 +162,6 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
       dir,
       flags: [...args.flags, ...Object.keys(args.values)],
       io,
-      home: sources.home,
     });
     if (decided.kind === 'refused') return delegateRefused(io, decided);
     delegatePane = decided.pane;
@@ -231,7 +229,15 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   if (agent) {
     const screen = sources.screen(session, agent.pane, cli);
     const where = stateOf(agent.status, screen);
-    if (where !== 'free' && !abandon) {
+    // A box that holds exactly the profile's exit text — an earlier run typed it and never
+    // confirmed it — is cleared with the profile's one key inside the stop, and the removal
+    // then proceeds as on an empty box. The same box on a CLI with no key is named for the
+    // owner instead of refused with the generic unsent line.
+    const profile = profileFor(cli);
+    const holdsExit = where === 'unsent' && profile !== null
+      && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));
+    const clearable = holdsExit && profile?.exitClear !== null;
+    if (where !== 'free' && !abandon && !clearable) {
       // The unknown screen is the one a seat can sit on for good: no state ever frees it, and
       // only the owner may abandon it, so the refusal names that way out. The owner gets the
       // command itself; anyone else is told whose it is.
@@ -240,11 +246,14 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
           ? ` (team remove ${name} --abandon closes its workspace without typing)`
           : ` (the owner can close it: team remove ${name} --abandon)`
         : '';
-      io.stderr(`team remove: ${name} ${LEFT[where]}${way}\n`);
+      const held = where === 'unsent' && holdsExit
+        ? `holds this CLI's exit text (${profile?.exit}) unsent in its input box; left as it is (the owner sends it or clears it in its pane)`
+        : LEFT[where];
+      io.stderr(`team remove: ${name} ${held}${way}\n`);
       // exit: remove.busy
       return 1;
     }
-    if (!profileFor(cli) && !abandon) {
+    if (!profile && !abandon) {
       io.stderr(`team remove: no launch profile for \`${cli}\`; left as it is\n`);
       // exit: remove.no-profile
       return 1;
@@ -282,9 +291,16 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   if (agent) {
     const screen = sources.screen(session, agent.pane, cli);
     const where = stateOf(agent.status, screen);
+    const profile = profileFor(cli);
+    const exitInBox = where === 'unsent' && profile !== null && profile.exitClear !== null
+      && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));
     const stopped = await stopRunning({
       io, dir, session, sources, logCommand: 'remove', caller: describeCaller(caller),
-      seat: { name, cli, pane: agent.pane, workspace: agent.workspace, state: where === 'free' ? 'free' : where },
+      seat: {
+        name, cli, pane: agent.pane, workspace: agent.workspace,
+        state: where === 'free' ? 'free' : where,
+        ...(exitInBox ? { exitInBox: true } : {}),
+      },
       abandon: abandon && where !== 'free',
     });
     // exit: remove.no-launch
@@ -371,21 +387,19 @@ export async function stopRunning(input: {
     sessionUp: () => true,
     createWorkspace: () => null,
     paneRun: () => false,
-    typeLine(sessionName, pane, text) {
-      const names = profileFor(seat.cli)?.processNames ?? [];
-      const live = () => reportedLiveAgent(sources.foreground(sessionName, pane), names);
-      if (!live()) return 'no-agent';
-      const look = () => sources.screen(sessionName, pane, seat.cli).kind;
-      const resting = () => {
-        const status = sources.status(sessionName, pane);
-        return status === 'idle' || status === 'done';
-      };
-      if (!resting() || look() !== 'idle') return false;
-      if (!launch.typeText(sessionName, pane, text)) return false;
-      if (!live()) return 'no-agent';
-      // As in `down`: only a box that reads back as exactly the typed text gets the Enter.
-      if (!resting() || !boxHoldsText(seat.cli, text, sources.screenText(sessionName, pane, seat.cli))) return false;
-      return launch.pressEnter(sessionName, pane);
+    async typeLine(sessionName, pane, text) {
+      // As in `down`: the whole sequence — the pre-existing box, the typing, the read-back, the
+      // Enter, and the clearing key an unconfirmed read-back can send — is `typeExit`'s.
+      return typeExit({
+        typeText: (line) => launch.typeText(sessionName, pane, line),
+        sendKey: (key) => launch.sendKey(sessionName, pane, key),
+        pressEnter: () => launch.pressEnter(sessionName, pane),
+        screen: () => sources.screenText(sessionName, pane, seat.cli),
+        status: () => sources.status(sessionName, pane),
+        foreground: () => sources.foreground(sessionName, pane),
+        sleep: sources.sleep ?? launch.sleep,
+        now: () => sources.now().getTime(),
+      }, seat.cli, text);
     },
     renameAgent: () => false,
     closeWorkspace: launch.closeWorkspace,

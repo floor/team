@@ -20,9 +20,7 @@ line in `.agents/team.log`. The record is signed, and signing moves this project
 
 ## Who may run it
 
-The owner, from a terminal outside herdr: no seat approves a file, not even the coordinator's,
-and no delegate: approval is the owner's alone, and a `delegates` entry whose commands name
-`approve` is refused when the file loads.
+The owner, from a terminal outside herdr: no seat approves a file, not even the coordinator's.
 `--show` may be run by anyone, in any terminal.
 
 ## Flags
@@ -50,9 +48,7 @@ Nothing at all changed is said plainly:
     Nothing in it needs a new approval.
 
 Then the ceilings the approval would fix — `3 seats at most, 2 temporary` — and the
-seat names — and, when the file has a `delegates` section, one `Delegate: pane <pane> may run
-<commands>.` line per entry, in file order — and then the question. After the seat names and
-those lines comes the signing's number for this
+seat names, and then the question. After the seat names comes the signing's number for this
 project on this machine, with the date of the last one and the key's fingerprint: `approval #4
 for this project; the last one was on 2026-10-04; key fe21ef6293de.` The seat ceiling defaults
 to the seats the file declares plus the
@@ -60,8 +56,7 @@ temporary ones, so adding a seat widens it, and that shows up as `limits` change
 new approval is a change to an owner section
 (`trust`, `limits`, `machine`, `rules`, `identity`, `workspace`, `coordinator`, `operator`,
 `session`, `visibility`, `tools`, `budgets`, `watch` — its timings included, down to `watch.checks`,
-whose turn-offs are their own line — and `delegates`, its entries, their panes and their command
-lists included) or to a seat's own fields. A seat taken out does not.
+whose turn-offs are their own line) or to a seat's own fields. A seat taken out does not.
 Parking or stopping one does, except that `remove --keep` and `add` record the new digest
 themselves, so those commands do not send the owner back to `approve`. Until an edit is
 approved its section changes nothing: the watch, the budget reports, the check cadence, `up`'s and

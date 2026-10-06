@@ -19,6 +19,10 @@ login:
     - status
   hint: claude auth login
 exit: /exit
+# The one key that empties the box, from the 2.1.291 capture: ctrl+c returns the
+# pane byte-for-byte to its idle screen. Used only to clear an exit text that did not
+# read back as typed, and only when the box holds exactly that text.
+exit_clear: ctrl+c
 timeouts:
   idle: 90s
   exit: 30s

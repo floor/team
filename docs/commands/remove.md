@@ -81,8 +81,15 @@ done with the file:
 | `removed temporary <name>` | a temporary seat: it was never in the file |
 
 A seat that doesn't leave cleanly is printed once with what stopped it, and `remove` exits 1:
-`<seat>: its exit was not typed; left as it is`, `<seat>: timed out leaving its pane; left as it is`,
+`<seat>: its exit was not typed; left as it is`, `<seat>: its exit was not confirmed; <what
+happened>; left running` — the pane never drew the typed text, its box held other text, or the
+clearing key did not take — `<seat>: timed out leaving its pane; left as it is`,
 `<seat>: its workspace did not close`. The file is then not edited: the seat is still in the team.
+
+A box that holds exactly this CLI's exit text — an earlier run typed it and never confirmed it — is
+not the owner's text: when the profile carries the one key that empties a box, the text is cleared
+with it inside the stop and the exit typed fresh, and when it does not, the seat is left as it is
+with the text named, in the refusal below.
 
 ## Refusals
 
@@ -112,6 +119,7 @@ A seat that doesn't leave cleanly is printed once with what stopped it, and `rem
 | `team remove: <seat> is blocked at a prompt, which team never answers` | 1 |
 | `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` (the owner) or `… left as it is (the owner can close it: team remove <seat> --abandon)` (a coordinator or the operator) | 1 |
 | `team remove: <seat> holds unsent text in its input box; left as it is` | 1 |
+| `team remove: <seat> holds this CLI's exit text (<exit>) unsent in its input box; left as it is (the owner sends it or clears it in its pane)` | 1 |
 | ``team remove: no launch profile for `<cli>`; left as it is`` | 1 |
 | ``team remove: the file was never approved on this machine: run `team approve` `` | 1 |
 | ``team remove: approved before records were signed: run `team approve` once`` — the record was written by an earlier `team`; the same line, with the case, for a record that does not verify | 1 |

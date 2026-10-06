@@ -41,6 +41,11 @@
       }
     },
     "exit": { "type": "string", "minLength": 1 },
+    "exit_clear": {
+      "type": "string",
+      "enum": ["ctrl+c", "ctrl+u", "escape", "backspace"],
+      "description": "optional: the one key that empties the CLI's input box, sent only to clear an exit text that did not read back as typed; absent, the text is left for the owner"
+    },
     "timeouts": {
       "type": "object",
       "additionalProperties": false,

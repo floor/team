@@ -76,6 +76,8 @@ function rig(overrides: Partial<DownSources> = {}, caller: Caller = CALLER) {
   const gateCalls: GateInput[] = [];
   const audits: { dir: string; pane: string; command: string; now: Date }[] = [];
   const typed: string[] = [];
+  const keys: string[] = [];
+  let box = claudeBox('');
   // Every session the command reads, at the two questions that name one.
   const read: string[] = [];
   const sources: DownSources = {
@@ -83,14 +85,18 @@ function rig(overrides: Partial<DownSources> = {}, caller: Caller = CALLER) {
     agents: (session) => { read.push(session); return RUNNING.map((name) => agent(name)); },
     alive: () => false,
     screen: () => ({ kind: 'idle' }),
-    screenText: () => claudeBox('/exit'),
+    // The pane is physical, as the live harness models it: the empty idle box before any
+    // typing, the box holding the typed text after one, empty again after the clearing key —
+    // the read-back the exit typing confirms against is what the pane would really show.
+    screenText: () => box,
     status: () => 'idle',
     foreground: () => ['claude'],
     now: () => NOW,
     sleep: async () => {},
     home,
     launch: {
-      typeText: (_session, _pane, text) => { typed.push(text); return true; },
+      typeText: (_session, _pane, text) => { typed.push(text); box = claudeBox(text); return true; },
+      sendKey: (_session, _pane, key) => { keys.push(key); box = claudeBox(''); return true; },
       pressEnter: () => true,
       agentPanes: () => [],
       closeWorkspace: () => true,
@@ -105,7 +111,7 @@ function rig(overrides: Partial<DownSources> = {}, caller: Caller = CALLER) {
     audit: (dir, pane, command, now = NOW) => { audits.push({ dir, pane, command, now }); },
     ...rest,
   };
-  return { io, sources, gateCalls, audits, typed, read, run: (argv: string[] = []) => runDown(argv, io, sources) };
+  return { io, sources, gateCalls, audits, typed, keys, read, run: (argv: string[] = []) => runDown(argv, io, sources) };
 }
 
 /** A gate that refuses the given id, and fails the test if it is asked at all. */

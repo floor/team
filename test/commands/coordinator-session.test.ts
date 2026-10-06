@@ -1268,8 +1268,9 @@ function repairWorld(kase: RepairCase): { down: DownSources; up: UpSources; stop
     agents: () => rows(),
     alive: () => false,
     screen: () => ({ kind: 'idle' }),
-    // What the pane shows after a typing: the box with the typed text, as the CLI renders it.
-    screenText: (_session, pane) => (panes.get(pane)?.sent ? claudeBox('/exit') : ''),
+    // The pane's box, physically: the empty box at the prompt, the typed text after a typing,
+    // empty again after the one clearing key.
+    screenText: (_session, pane) => claudeBox(panes.get(pane)?.sent ? '/exit' : ''),
     status: () => 'idle',
     // A stopped pane falls back to its shell, so the stop's wait sees the seat leave.
     foreground: (_session, pane) => (panes.get(pane)?.live ? [panes.get(pane)?.cli ?? 'claude'] : []),
@@ -1279,6 +1280,11 @@ function repairWorld(kase: RepairCase): { down: DownSources; up: UpSources; stop
         const one = panes.get(pane);
         if (!one?.live) return false;
         one.sent = text === '/exit';
+        return true;
+      },
+      sendKey: (_session, pane) => {
+        const one = panes.get(pane);
+        if (one) one.sent = false;
         return true;
       },
       pressEnter: (_session, pane) => {
