@@ -706,21 +706,18 @@ describe('team remove delegated', () => {
   });
 
   test('the coordinator\'s ordinary --keep runs as today, and the gate is never asked for it', async () => {
-    // Amendment 3: a caller the ordinary rule accepts never enters the delegate branch. The
-    // coordinator's `--keep` is the role path that re-signs the approval — it must keep working
-    // with a `delegates` section in the file, unreachable from the delegate branch.
+    // Amendment 3, with the reviewer's finding on it: a caller the ordinary rule accepts never
+    // enters the delegate branch — the injected gate throws the moment it is asked, so the run
+    // below passes only because it never reached it. The coordinator's `--keep` is the role path
+    // that re-signs the approval — it must keep working with a `delegates` section in the file,
+    // unreachable from the delegate branch.
     const store = approveFile(FILE + DELEGATES);
     const before = readFileSync(join(store, 'approval.json'), 'utf8');
     recordLead();
     const made = world();
-    let asked = 0;
     const io = testIo(dir, lead);
-    const code = await runRemove(['worker', '--keep'], io, {
-      ...made.sources,
-      delegateGate: () => { asked += 1; return passed; },
-    });
+    const code = await runRemove(['worker', '--keep'], io, { ...made.sources, delegateGate: THROWING_GATE });
     expect(code).toBe(0);
-    expect(asked).toBe(0);
     expect(io.out).toContain('stopped worker\n');
     expect(readFileSync(file, 'utf8')).toContain('stopped: true');
     // The role path re-signed the seat digest, exactly as today: the record moved, and the file
@@ -729,6 +726,20 @@ describe('team remove delegated', () => {
     const after = validateTeamFile(readFileSync(file, 'utf8'));
     if (!after.ok) throw new Error('written file');
     expect(approvalDifferences(after.team, rootOf(dir), home)).toEqual([]);
+  });
+
+  test('the owner\'s ordinary --keep runs as today too: the gate is not for it', async () => {
+    // The finding's own words: the ordinary owner, coordinator or operator rule runs first. The
+    // owner's `--keep` is the widest of those paths, and it too must run with a `delegates`
+    // section in the file as though the section were not there.
+    const store = approveFile(FILE + DELEGATES);
+    const before = readFileSync(join(store, 'approval.json'), 'utf8');
+    const made = world();
+    const io = testIo(dir, owner);
+    const code = await runRemove(['worker', '--keep'], io, { ...made.sources, delegateGate: THROWING_GATE });
+    expect(code).toBe(0);
+    expect(io.out).toContain('stopped worker\n');
+    expect(readFileSync(join(store, 'approval.json'), 'utf8')).not.toBe(before);
   });
 
   test('a delegate\'s --file and --session are the gate\'s to refuse, before either is read', async () => {

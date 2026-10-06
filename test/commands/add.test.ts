@@ -1011,10 +1011,11 @@ describe('team add delegated', () => {
   });
 
   test('the coordinator\'s ordinary restoring add re-signs as today, and the gate is never asked', async () => {
-    // Amendment 3: a caller the ordinary rule accepts never enters the delegate branch. The
-    // coordinator's restoring `add` is the role path that edits the file and re-signs the
-    // approval — it must keep working with a `delegates` section in the file, unreachable from
-    // the delegate branch.
+    // Amendment 3, with the reviewer's finding on it: a caller the ordinary rule accepts never
+    // enters the delegate branch — the injected gate throws the moment it is asked, so the run
+    // below passes only because it never reached it. The coordinator's restoring `add` is the
+    // role path that edits the file and re-signs the approval — it must keep working with a
+    // `delegates` section in the file, unreachable from the delegate branch.
     approve(DELEGATE_FILE);
     updateState(join(project, '.agents'), (state) => {
       const session = state.sessions.acme ?? emptySession();
@@ -1024,17 +1025,28 @@ describe('team add delegated', () => {
     const made = world();
     const store = storePath('acme', project, home);
     const before = readFileSync(join(store, 'approval.json'), 'utf8');
-    let asked = 0;
     const io = testIo(project, { kind: 'seat', name: 'lead', pane: 'w0:p1', session: 'acme' });
-    const code = await runAdd(['worker'], io, sources(made, {
-      delegateGate: () => { asked += 1; return passed; },
-    }));
+    const code = await runAdd(['worker'], io, sources(made, { delegateGate: THROWING_GATE }));
     expect(code).toBe(0);
-    expect(asked).toBe(0);
     expect(made.creates).toEqual(['worker']);
     expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).not.toMatch(/# the seat stays in this order\n    stopped: true/);
     // The role path re-signed the seat digest, exactly as today, and no audit line was written:
     // the log holds the run's own records and no delegate attribution.
+    expect(readFileSync(join(store, 'approval.json'), 'utf8')).not.toBe(before);
+    expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8')).not.toContain('delegate [delegate]');
+  });
+
+  test('the owner\'s ordinary restoring add runs as today too: the gate is not for it', async () => {
+    // The finding's own words: the ordinary owner, coordinator or operator rule runs first. The
+    // owner's restoring `add` is the widest of those paths, and it too must run with a `delegates`
+    // section in the file as though the section were not there.
+    approve(DELEGATE_FILE);
+    const made = world();
+    const store = storePath('acme', project, home);
+    const before = readFileSync(join(store, 'approval.json'), 'utf8');
+    const code = await runAdd(['worker'], testIo(project, owner), sources(made, { delegateGate: THROWING_GATE }));
+    expect(code).toBe(0);
+    expect(made.creates).toEqual(['worker']);
     expect(readFileSync(join(store, 'approval.json'), 'utf8')).not.toBe(before);
     expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8')).not.toContain('delegate [delegate]');
   });
