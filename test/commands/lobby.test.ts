@@ -898,6 +898,22 @@ describe('the lobby gate with files declared', () => {
     });
   });
 
+  test('doctor says of the lobby what the launch\'s gate would: the declared file verifies, a sibling misses', async () => {
+    approveYaml(migratedTeamYaml());
+    makeLobby();
+    mkdirSync(join(lobby, '.claude'));
+    writeFileSync(lock(), '{}\n');
+
+    const doc = await runDoctorCmd();
+    expect(doc.code).toBe(0);
+    expect(doc.out).toContain(`the lobby ${lobby}: verified\n`);
+
+    writeFileSync(join(lobby, '.claude', 'settings.json'), '{}\n');
+    const miss = await runDoctorCmd();
+    expect(miss.code).toBe(1);
+    expect(miss.out).toContain(`the lobby ${lobby}: is not empty\n`);
+  });
+
   test('up and a temporary add pass a lobby holding the declared file of their seats’ CLI', async () => {
     approveYaml(migratedTeamYaml());
     makeLobby();

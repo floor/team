@@ -561,7 +561,13 @@ export function doctorFindings(
   findings.push(...trustFindings(team, dir, session, sources));
 
   const lobby = lobbyDir(sources.home);
-  const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid });
+  // The same closed tree the launch's gate walks: the files the profiles of this file's seats'
+  // CLIs declare, so this finding says of the lobby exactly what `up`'s gate would — a `miss`
+  // here blocks the launch, and the two must not disagree about a declared file.
+  const declaredLobbyFiles = [...new Set(
+    team.seats.flatMap((seat) => profileFor(seat.cli)?.lobbyFiles ?? []),
+  )].sort();
+  const gate = verifyLobby(sources.home, { create: false, getuid: sources.getuid, files: declaredLobbyFiles });
   if (!gate.ok) {
     findings.push({ level: 'miss', text: gate.text });
   } else if ('missing' in gate) {
