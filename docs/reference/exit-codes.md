@@ -192,6 +192,14 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `up.dry-run` | `up` | 0 | a dry run printed the plan | `team up --dry-run` |
 | `up.ready` | `up` | 0 | the launch finished | `team up` |
 | `up.agents` | `up` | 1 | the agents can't be read | `team up` |
+| `up.delegate` | `up` | 1 | only the owner or the approved delegate runs up | `team up` |
+| `up.delegate-approval` | `up` | 1 | the delegate gate needs a verified approval | `team up` |
+| `up.delegate-approved-copy` | `up` | 1 | the delegate gate needs a readable approved copy | `team up` |
+| `up.delegate-command` | `up` | 1 | the approved delegate may not run up | `team up` |
+| `up.delegate-drift` | `up` | 1 | the delegate gate needs the approved file | `team up` |
+| `up.delegate-evidence` | `up` | 1 | the delegate gate can't verify its placement or seats | `team up` |
+| `up.delegate-flag` | `up` | 1 | --session or --file is the owner's on a delegated run | `team up --session other` |
+| `up.delegate-placement` | `up` | 1 | the approved delegate must be an external non-seat pane | `team up` |
 | `up.differs` | `up` | 1 | the file differs from its approval | `team up` |
 | `up.doctor` | `up` | 1 | doctor refuses the launch | `team up` |
 | `up.herdr` | `up` | 1 | herdr doesn't answer | `team up` |
