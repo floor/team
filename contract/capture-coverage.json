@@ -12,6 +12,7 @@
     "unsent",
     "permission",
     "question",
+    "exit question",
     "trust",
     "vendor notice",
     "unknown"
@@ -40,6 +41,11 @@
       },
       "question": {
         "real": 2,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "exit question": {
+        "real": 0,
         "constructed": 0,
         "undocumented": 0
       },
@@ -81,7 +87,12 @@
         "undocumented": 0
       },
       "question": {
-        "real": 6,
+        "real": 4,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "exit question": {
+        "real": 2,
         "constructed": 0,
         "undocumented": 0
       },
@@ -127,6 +138,11 @@
         "constructed": 0,
         "undocumented": 0
       },
+      "exit question": {
+        "real": 0,
+        "constructed": 0,
+        "undocumented": 0
+      },
       "trust": {
         "real": 3,
         "constructed": 0,
@@ -166,6 +182,11 @@
       },
       "question": {
         "real": 1,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "exit question": {
+        "real": 0,
         "constructed": 0,
         "undocumented": 0
       },
@@ -1030,7 +1051,7 @@
     {
       "file": "exit-typing/claude-code-scheduled-question-ansi.txt",
       "cli": "claude-code",
-      "kind": "question",
+      "kind": "exit question",
       "provenance": "capture"
     },
     {
@@ -1048,7 +1069,7 @@
     {
       "file": "exit-typing/claude-code-shell-question-ansi.txt",
       "cli": "claude-code",
-      "kind": "question",
+      "kind": "exit question",
       "provenance": "capture"
     },
     {

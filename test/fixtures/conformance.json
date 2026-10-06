@@ -976,7 +976,7 @@
     {
       "file": "exit-typing/claude-code-scheduled-question-ansi.txt",
       "cli": "claude-code",
-      "classify": "question",
+      "classify": "exit question",
       "composer": "unknown",
       "provenance": "capture"
     },
@@ -997,7 +997,7 @@
     {
       "file": "exit-typing/claude-code-shell-question-ansi.txt",
       "cli": "claude-code",
-      "classify": "question",
+      "classify": "exit question",
       "composer": "unknown",
       "provenance": "capture"
     },

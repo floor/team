@@ -8,11 +8,16 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { type ExitIo, typeExit } from '../src/commands/down.ts';
 import { boxHoldsOther, boxHoldsText } from '../src/launch/deliver.ts';
-import { profileFor } from '../src/profiles/index.ts';
-import { readScreen } from '../src/watch/screen.ts';
+import { exitConfirmKey, profileFor } from '../src/profiles/profile.ts';
+import { loadScreen } from '../src/watch/screen-file.ts';
+import { readScreen, screenData } from '../src/watch/screen.ts';
 
 const fixture = (name: string): string => readFileSync(new URL(`./fixtures/exit-typing/${name}`, import.meta.url), 'utf8');
 const exitText = (cli: string): string => profileFor(cli)?.exit ?? '';
+
+/** An ordinary question of the same CLI — the agent's own, out of the fixtures the reader
+ *  already reads — so the exit question's kind can be shown not to swallow it. */
+const ordinaryQuestion = readFileSync(new URL('./fixtures/claude-code/2.1.289/question-ansi.txt', import.meta.url), 'utf8');
 
 /** The three CLIs' captured pairs: the reading the instant after `/exit` is sent, and the
  *  reading about two seconds later with the box holding exactly the text. */
@@ -154,11 +159,11 @@ describe('never a key on anything but the exact read-back', () => {
   });
 });
 
-describe("the CLI's own question is not a composer", () => {
-  test('both captured exit questions read as a question, and hold no exit text', () => {
+describe("the CLI's own exit question", () => {
+  test('both captured exit questions read as their own kind, and hold no exit text', () => {
     for (const name of ['claude-code-shell-question-ansi.txt', 'claude-code-scheduled-question-ansi.txt']) {
       const screen = fixture(name);
-      expect(readScreen('claude-code', screen).kind).toBe('question');
+      expect(readScreen('claude-code', screen).kind).toBe('exit question');
       expect(boxHoldsText('claude-code', '/exit', screen)).toBe(false);
       expect(boxHoldsOther('claude-code', '/exit', screen)).toBe(null);
     }
@@ -168,6 +173,46 @@ describe("the CLI's own question is not a composer", () => {
     const pane = paneOf('claude-code', 'claude', fixture('claude-code-idle-ansi.txt'), fixture('claude-code-shell-question-ansi.txt'));
     expect(await typeExit(pane.io, 'claude-code', exitText('claude-code'))).toBe(false);
     expect(pane.sent).toEqual([]);
+  });
+});
+
+describe('the kind is kept apart from the ordinary question', () => {
+  test('a question the agent asked still reads as the ordinary question', () => {
+    expect(readScreen('claude-code', ordinaryQuestion).kind).toBe('question');
+  });
+
+  test('the stage is the profile\'s, and beside it the one key that confirms that screen', () => {
+    expect(screenData('claude-code')?.exit_question).toBeDefined();
+    expect(profileFor('claude-code')?.exitConfirm).toBe('enter');
+    // No run established a question for the other three, so none declares a key: a seat that
+    // asked one would be one this program cannot stop by asking.
+    for (const cli of ['codex', 'cursor', 'antigravity']) expect(profileFor(cli)?.exitConfirm).toBe(null);
+  });
+
+  test('the loader takes `enter` and nothing else as `exit_confirm`', () => {
+    expect(exitConfirmKey('exit: /exit\nexit_confirm: enter')).toBe('enter');
+    expect(exitConfirmKey('exit: /exit')).toBe(null);
+    for (const key of ['escape', 'ctrl+c', 'y']) {
+      expect(() => exitConfirmKey(`exit: /exit\nexit_confirm: ${key}`)).toThrow('"exit_confirm" must be one of: enter');
+    }
+  });
+
+  test('a composer fallback cannot claim the kind', () => {
+    const snippet = `
+format: 1
+cli: sample
+screen:
+  composer:
+    mode: status-then-one
+    status_line: '^STATUS$'
+    prompt: '^>'
+    placeholders:
+      - equals: ''
+    fallback:
+      - all: ['^done$']
+        kind: exit question
+`;
+    expect(() => loadScreen(snippet)).toThrow('"kind" cannot be the exit question: it is read from its stage and answered by a stop alone');
   });
 });
 

@@ -21,6 +21,7 @@
 // hand the same words to the log and the writer both.
 
 import { plainLine } from './plain.ts';
+import type { Screen } from '../watch/screen.ts';
 
 /** The classifications a record can name, in the one closed list every reader validates against.
  *  `login` is reserved: no profile produces it today. */
@@ -43,6 +44,14 @@ export function cleanClassification(value: unknown): Classification {
   return typeof value === 'string' && (CLASSIFICATIONS as readonly string[]).includes(value)
     ? (value as Classification)
     : 'unknown';
+}
+
+/** A screen kind as the classification a record keeps, for the kinds a classification can hold.
+ *  The record's closed list has no exit question — the stop's own line and the seat's report
+ *  carry that reading — so a screen read as one is recorded as the question it is, the word it
+ *  would have had before the kind existed. */
+export function classificationOf(kind: Exclude<Screen['kind'], 'idle' | 'working'>): Classification {
+  return kind === 'exit question' ? 'question' : kind;
 }
 
 /** The provisional states a line is drawn in, in the order a seat can pass them. The words a

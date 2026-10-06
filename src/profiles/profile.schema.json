@@ -46,6 +46,11 @@
       "enum": ["ctrl+c", "ctrl+u", "escape", "backspace"],
       "description": "optional: the one key that empties the CLI's input box, sent only to clear an exit text that did not read back as typed; absent, the text is left for the owner"
     },
+    "exit_confirm": {
+      "type": "string",
+      "enum": ["enter"],
+      "description": "optional: the one key that confirms the CLI's own exit question, sent by a stop on a screen the profile reads as an exit question; absent, a seat that asks the question cannot be stopped by asking"
+    },
     "timeouts": {
       "type": "object",
       "additionalProperties": false,
@@ -139,6 +144,7 @@
         "unknown": { "$ref": "#/$defs/stage" },
         "trust": { "$ref": "#/$defs/stage" },
         "permission": { "$ref": "#/$defs/stage" },
+        "exit_question": { "$ref": "#/$defs/stage" },
         "question": { "$ref": "#/$defs/stage" },
         "vendor_notice": { "$ref": "#/$defs/vendorNotice" },
         "working": { "$ref": "#/$defs/stage" },

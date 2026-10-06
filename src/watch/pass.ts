@@ -90,7 +90,7 @@ export const TEAM_CHECKS: TeamCheck[] = [extra, teamIdle, approval, load, memory
 // permission prompt as idle, so the screen decides first.
 function attentionOf(screen: Screen, status: string, quiet: boolean): Attention {
   if (screen.kind === 'permission' || screen.kind === 'trust') return 'permission';
-  if (screen.kind === 'question') return 'question';
+  if (screen.kind === 'question' || screen.kind === 'exit question') return 'question';
   if (screen.kind === 'vendor notice') return 'vendor notice';
   if (status === 'blocked') return 'blocked';
   if (!quiet && status !== 'working') return 'unknown';
@@ -251,7 +251,7 @@ export function pass({
     // Working is herdr's word or the screen's: a seat mid-turn is never idle, whatever its
     // status says.
     const working = agent.status === 'working' || screen.kind === 'working';
-    const prompt = screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question' || screen.kind === 'vendor notice';
+    const prompt = screen.kind === 'permission' || screen.kind === 'trust' || screen.kind === 'question' || screen.kind === 'exit question' || screen.kind === 'vendor notice';
     if (!lead && !parked) workers.push({ idle: quiet && !working && !prompt });
 
     // The history the idle clock counts from. A seat seen working starts it again; a seat quiet

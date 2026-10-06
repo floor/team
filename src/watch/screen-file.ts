@@ -13,7 +13,7 @@ import { YamlError, parseYaml, type YamlEntry, type YamlNode } from '../yaml.ts'
 
 const require = createRequire(import.meta.url);
 
-const STAGES = ['unknown', 'trust', 'permission', 'question', 'vendor_notice', 'working'] as const;
+const STAGES = ['unknown', 'trust', 'permission', 'exit_question', 'question', 'vendor_notice', 'working'] as const;
 const KINDS = ['idle', 'working', 'unsent', 'permission', 'trust', 'question', 'vendor notice', 'unknown'] as const;
 // The lines a dialog draws for its choices, built from their parts: the mark on the choice
 // the cursor is on (claude-code ❯, codex ›, antigravity >) or the indent of the others, the
@@ -51,7 +51,7 @@ export function loadScreen(text: string, baseDir?: string, profileFile?: string)
   const root = parseYaml(text);
   const entries = mapping(root, 'a profile');
   // Launch keys are read by profile.ts. A screen-only snippet, as in the tests, omits them.
-  only(entries, ['format', 'cli', 'screen', 'screen_module', 'quota', 'trust_answer', 'binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'exit_clear', 'timeouts', 'models', 'status_model']);
+  only(entries, ['format', 'cli', 'screen', 'screen_module', 'quota', 'trust_answer', 'binary', 'process_names', 'tested', 'unattended', 'rules', 'login', 'exit', 'exit_clear', 'exit_confirm', 'timeouts', 'models', 'status_model']);
   const format = required(entries, 'format', root.line);
   if (format.value.kind !== 'scalar' || format.value.value !== 1) fail(format.line, '"format" must be 1');
   const cli = required(entries, 'cli', root.line);
@@ -531,7 +531,12 @@ function fallbackOf(node: YamlNode): FallbackRule[] {
     only(entries, ['all', 'kind']);
     const kind = required(entries, 'kind', item.line);
     const name = stringOf(kind.value);
-    if (!name || !KINDS.includes(name as Screen['kind'])) fail(kind.line, '"kind" is not a screen kind');
+    if (!name || !(KINDS as readonly string[]).includes(name)) {
+      // The CLI's own exit question is a screen kind but never a fallback reading: it comes from
+      // its stage's patterns, and only a stop answers it. A composer shape that matched it would
+      // hand a reading a stop acts on to a profile's loosest rule.
+      fail(kind.line, name === 'exit question' ? '"kind" cannot be the exit question: it is read from its stage and answered by a stop alone' : '"kind" is not a screen kind');
+    }
     return { all: patternsOf(required(entries, 'all', item.line).value, 'all', false), kind: name as Screen['kind'] };
   });
 }

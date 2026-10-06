@@ -105,6 +105,10 @@ export type ScreenData = {
   unknown?: Stage;
   trust?: Stage;
   permission?: Stage;
+  /** The CLI's own question after the exit text was sent — its "stop tasks and exit" one, drawn
+   *  in place of the composer. Read before `question` (its footer is an ordinary question's);
+   *  the one screen a stop may answer, and only with the profile's `exit_confirm` key. */
+  exit_question?: Stage;
   question?: Stage;
   /** A vendor's own notice — an update screen, for one: never answered, and it carries the
    *  version range it was captured on. A stage without `tested` cannot exist: the loader

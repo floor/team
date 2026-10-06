@@ -78,8 +78,23 @@ question of its own:
 the seat was back at its shell and out of herdr's agent list a moment later. The one Enter
 `typeExit` presses does not answer this question, so a seat holding background work stays on this
 screen and the `gone` step that follows can only run out its exit wait: the captures are here so
-that reading is tested against the real screen. Both captured screens read `question` — never
-`idle`, never `unsent` — so nothing that reads the screen would type into them.
+that reading is tested against the real screen. Both captured screens read `exit question` —
+never `idle`, never `unsent` — so nothing that reads the screen would type into them, and the
+kind is kept apart from the ordinary `question`, which no stop may ever answer. The profile
+names both halves of the answer for this CLI: the stage this screen is read from
+(`screen.exit_question`) and the one key that confirms it (`exit_confirm: enter`, beside the
+screens' evidence in src/profiles/claude-code.yaml). Nothing but a stop presses that key.
+
+What the other two CLIs do with background work, from their own runs of 2026-10-06 in the same
+scratch session: Codex 0.160.0 asks nothing. With a backgrounded shell running, one Enter on
+`/exit` put its pane back at its shell, herdr listing no agent for it, and its exit printed only
+advice — "Stop the current turn: run codex agents, select this task, and press x." — so its
+profile declares no `exit_confirm`: there is no question to confirm. cursor-agent
+2026.10.01-14929f9 was not observed: its run never got past the CLI's own permission dialogs for
+the backgrounding command ("Run this command? Not in allowlist: disown, echo, sleep", then for
+`ps`), so no exit question with background work ever reached its pane; its `/exit` pair is the
+one captured above, and its profile declares no `exit_confirm` either — from no run, not from a
+run that found none.
 
 - `claude-code-scheduled-question-ansi.txt`: the seat whose background work is the scheduled task
   above, the question listing it (`scheduled task · Runs once in 19m`).
