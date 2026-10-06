@@ -269,6 +269,15 @@ describe('placement', () => {
     expect(gate({ state: recorded })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
   });
 
+  test('a seat recorded in the delegate session collides, and a different pane there does not', () => {
+    const recorded: State = { format: 1, sessions: { other: { seats: { worker: { stage: 'ready', pane: 'w1:p1' } }, worktrees: {} } } };
+    for (const command of DELEGATE_COMMANDS) {
+      expect(refused({ command, state: recorded }).id).toBe(`${command}.delegate-placement`);
+    }
+    const otherPane: State = { format: 1, sessions: { other: { seats: { worker: { stage: 'ready', pane: 'w8:p8' } }, worktrees: {} } } };
+    expect(gate({ state: otherPane })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+  });
+
   test('one colliding entry refuses the whole list', () => {
     const text = `${yaml}  - pane: alpha/w9:p9\n    commands: [up]\n`;
     expect(validateTeamFile(text).ok).toBe(false);

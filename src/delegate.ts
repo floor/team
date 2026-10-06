@@ -276,17 +276,19 @@ function placementReason(sources: CallerSources, pane: string | undefined): stri
 function collides(team: TeamFile, entry: Delegate, state: State, agents: readonly HerdrAgent[]): boolean {
   const split = splitPane(entry.pane);
   if (split === null || split.session === team.session) return true;
+  // `agents` is the live list read for the team's own session. A configured seat is that
+  // session plus its pane. A recorded seat is the session the state stored it under, which
+  // is another session when the team was brought up with `--session`.
   const names = new Set<string>([team.coordinator, team.operator, ...team.seats.map((seat) => seat.name)]);
-  const panes: string[] = [];
   for (const agent of agents) {
-    if (agent.name !== null && names.has(agent.name)) panes.push(agent.pane);
+    if (agent.name !== null && names.has(agent.name) && `${team.session}/${agent.pane}` === entry.pane) return true;
   }
-  for (const session of Object.values(state.sessions)) {
-    for (const seat of Object.values(session.seats ?? {})) {
-      if (seat.pane) panes.push(seat.pane);
+  for (const [session, recorded] of Object.entries(state.sessions)) {
+    for (const seat of Object.values(recorded.seats)) {
+      if (seat.pane && `${session}/${seat.pane}` === entry.pane) return true;
     }
   }
-  return panes.some((pane) => `${team.session}/${pane}` === entry.pane);
+  return false;
 }
 
 type Found =
