@@ -151,10 +151,10 @@ describe('a file with no delegate', () => {
   // delegates section in the file cannot take the seat's own authority away from it.
   const COORDINATOR: Caller = { kind: 'seat', name: 'claude-coordinator-acme', pane: 'w1:p1', session: 'acme-web' };
 
-  const recordStanding = (pane: string, session = 'acme-web'): void => {
+  const recordStanding = (pane: string, session = 'acme-web', name = COORDINATOR.name): void => {
     updateState(join(root, '.agents'), (state) => {
       const held = (state.sessions[session] ??= emptySession());
-      held.seats[COORDINATOR.name] = { stage: 'ready', pane };
+      held.seats[name] = { stage: 'ready', pane };
     });
   };
 
@@ -166,6 +166,27 @@ describe('a file with no delegate', () => {
     expect(r.io.err).toBe('');
     // Today's plan for a seat: the coordinator and the operator are left running.
     expect(r.io.out).toContain('left running');
+  });
+
+  // The operator is the rule's second leg (`mayChangeTeamVerdict` asks the coordinator's name,
+  // then the operator's), and the fixture names one seat for both: this run gives it its own, so
+  // a valid operator call is proved to ask nothing on its own.
+  test('a standing operator asks nothing, and its plan keeps the team\'s own seats', async () => {
+    // A lead seat must be declared, single and running: the fixture's second seat is parked, so
+    // this file names it as the operator and unpark it.
+    writeFileSync(file, teamFile(delegate(['up', 'down']))
+      .replace(/^operator: .*$/m, 'operator: codex-acme')
+      .replace(/^    parked: true\s*$/m, ''));
+    const OPERATOR: Caller = { kind: 'seat', name: 'codex-acme', pane: 'w2:p1', session: 'acme-web' };
+    recordStanding('w2:p1', 'acme-web', OPERATOR.name);
+    const r = rig({ gate: neverAsked }, OPERATOR);
+    expect(await r.run()).toBe(0);
+    expect(r.gateCalls).toEqual([]);
+    expect(r.io.err).toBe('');
+    expect(r.io.out).toContain('left running');
+    // A seat's own call is not a delegated run: no audit line, and the ordinary plan's exits.
+    expect(r.audits).toEqual([]);
+    expect(r.typed).toEqual(['/exit', '/exit']);
   });
 
   test('a pane named like the coordinator but standing elsewhere is a delegate, and keeps nobody', async () => {
