@@ -249,9 +249,15 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   if (start !== 'idle') {
     if (start !== 'unsent' || !boxHoldsText(cli, text, io.screen())) return false;
     const key = profileFor(cli)?.exitClear ?? null;
-    if (key === null || !live()) return false;
+    // The caller check first: a CLI gone at this key is `no-agent` whether or not the profile
+    // carries a clearing key, and "not typed" is for a key-less profile the CLI is still on.
+    if (!live()) return 'no-agent';
+    if (key === null) return false;
     if (!io.sendKey(key)) return false;
     const after = await settle('unsent');
+    // The wait can swallow the CLI as well: the caller check precedes the typing, exactly as it
+    // precedes every key.
+    if (!live()) return 'no-agent';
     if (after !== 'idle' || !resting()) {
       return { left: `its box already held this exit text; the clearing key (${key}) left the screen reading ${after}; left running` };
     }
@@ -264,7 +270,21 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // text gets the Enter.
   if (boxHoldsText(cli, text, io.screen())) return sendExit();
   const kind = await settle('idle');
-  if (kind !== 'unsent' && kind !== 'idle') return false;
+  // The wait is a window the pane's state can change in — the CLI can go, a turn can start —
+  // so the caller check is taken again here, before the Enter this reading leads to.
+  if (!live()) return 'no-agent';
+  if (!resting()) return false;
+  if (kind !== 'unsent' && kind !== 'idle') {
+    // A dialog the CLI drew over the composer hides the box without emptying it: the text typed
+    // a moment ago is still in it, so "its exit was not typed" would be the wrong report — the
+    // line says what the screen was reading instead. Every other reading (a turn that started, a
+    // screen the reader cannot name) proves nothing about where the typed text went, and keeps
+    // that report.
+    const dialog =
+      kind === 'permission' || kind === 'trust' || kind === 'question' || kind === 'exit question';
+    if (!dialog) return false;
+    return { left: `its exit was not confirmed; the screen was reading ${kind} before the Enter; left running` };
+  }
   if (boxHoldsText(cli, text, io.screen())) return sendExit();
   if (kind === 'idle') {
     return { left: 'its exit was not confirmed; the pane never drew the typed text; its box is empty; left running' };
