@@ -40,7 +40,8 @@ verify, and a stop clears only the exit text it typed.
 - `--abandon` closes a seat this run asked whose exit could not be typed or confirmed, and the
   line names that close.
 - `down` clears the session it stopped itself: it waits until herdr lists the session stopped,
-  then deletes it. `up` clears a stopped session this team's state records, then starts it.
+  deletes it, and the line reads `session <name>: stopped and cleared`. `up` clears a stopped
+  session this team's state records, then starts it.
 - A delegate can start a team whose session is down: a session that is not running has no seats
   to collide with, so the gate no longer reads "nothing listed" as "herdr does not answer".
 - One `up`, `add`, `down` or `remove` runs at a time per session: the run takes the `.run` lock
