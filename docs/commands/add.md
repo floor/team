@@ -24,7 +24,8 @@ the project's stored budget readings), herdr (the session's state, its agents an
 and, like `up`: the doctor's findings and the machine's load, free memory, free disk and free swap.
 
 Writes the team file when the seat has to be put back into it, `.agents/team.state.json` (the seat's
-stage, pane and workspace; a temporary seat's entry), `.agents/team.log`, the store's ledger of
+stage, pane and workspace; a seat stopped at a dialog's `waiting-owner` record, with the process
+identity read at that moment; a temporary seat's entry), `.agents/team.log`, the store's ledger of
 seats the team has had, and, through herdr: the workspace, the launch, and the name.
 
 ## Who may run it
@@ -72,7 +73,13 @@ written to stderr under the record, exactly as `up`'s table reads: `left out: it
 not created; left at launched`, `left out: timeout`,
 `left out: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched`, `left out: permission`,
 `left out: vendor notice`, and the rest of the table on the
-[team up](up.md) page. A wait that ended without a prompt writes the pane's last lines under the
+[team up](up.md) page. A dialog is never answered and never asked about: `add` keeps the seat's
+workspace, records `waiting-owner` with the classification and the process identity read at that
+moment, sends no input, and reports `<name>: left out: <classification>` — `trust` under either
+policy, `permission`, `question` or `vendor notice`. The seat is the owner's to finish then: a later
+`team up` reuses the recorded pane and enters the pause on the [team up](up.md) page. A seat whose
+idle wait runs out keeps the ordinary `timeout` record and the detail under it.
+A wait that ended without a prompt writes the pane's last lines under the
 record, on stderr, as `up` does. The log file gets each record's line alone, once per final record:
 its reason in words, never a folder the run resolved, a pane's text or a file's content — the
 detail under the record is stderr's alone. First-message rules go to the seat's file in the project state folder and arrive as

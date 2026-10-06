@@ -13,6 +13,9 @@ import { CLI_PROCESSES } from './clis.ts';
 
 export type Caller =
   | { kind: 'owner' }
+  // An owner's process with no terminal to prompt on: a script, a pty-less runner. It may run
+  // `up` (which then never prompts), and it is refused everywhere a terminal was required.
+  | { kind: 'owner-no-tty' }
   // `session` is the session the placement was made in: the command passed it to `callerOf` and
   // the caller's pane root was found in that session's agent list. Absent when no session was
   // asked about (the caller's own server answered) and on callers a test hands in.
@@ -84,12 +87,20 @@ function walkOutside(ancestors: Process[], sources: Pick<CallerSources, 'env' | 
   const cli = ancestors.find((process) => CLI_PROCESSES.includes(process.name));
   if (cli) return { kind: 'unplaced', reason: `it is run by an agent (${cli.name}) outside herdr` };
   if (sources.env.AGENT_UNATTENDED) return { kind: 'unplaced', reason: 'AGENT_UNATTENDED is set' };
-  if (!sources.stdinIsTTY) return { kind: 'unplaced', reason: 'it doesn\'t run on a terminal' };
+  if (!sources.stdinIsTTY) return { kind: 'owner-no-tty' };
   return { kind: 'owner' };
 }
 
 export function isOwner(caller: Caller): boolean {
   return caller.kind === 'owner';
+}
+
+/** Who may launch seats: the owner at a terminal, and the otherwise-verified owner without one.
+ *  Only `up` reads this, and only to tell the two apart — the no-terminal one never prompts. Every
+ *  other command keeps its refusals exactly: `isOwner` is still the terminal case alone.
+ */
+export function mayLaunchSeats(caller: Caller): boolean {
+  return caller.kind === 'owner' || caller.kind === 'owner-no-tty';
 }
 
 /**
@@ -294,8 +305,19 @@ function stateSessions(dir: string): string[] {
 
 export function describeCaller(caller: Caller): string {
   if (caller.kind === 'owner') return 'owner';
+  // Byte-identical to main, where a caller without a terminal was refused as `unplaced` with this
+  // reason. Only `up` may run for it, but every other command's refusal must read exactly as it
+  // did before: the same sentence for the same caller, as main's tests pin them.
+  if (caller.kind === 'owner-no-tty') return 'unplaced (it doesn\'t run on a terminal)';
   if (caller.kind === 'seat') return caller.name;
   return `unplaced (${caller.reason})`;
+}
+
+/** The bracket a log line carries. The owner is `owner` with or without a terminal: the log's
+ *  caller column names classes, and `(no terminal for owner)` on the record already says the rest. */
+export function callerLabel(caller: Caller): string {
+  if (caller.kind === 'owner' || caller.kind === 'owner-no-tty') return 'owner';
+  return describeCaller(caller);
 }
 
 // One process's parent and name, or null. By name only: arguments can hold credentials.

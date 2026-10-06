@@ -199,6 +199,25 @@ describe('team status', () => {
     expect(code).toBe(0);
   });
 
+  test('a stored classification outside the closed list reads unknown in the row and the difference', async () => {
+    // A state file as a hand-edited or corrupted one can hold: an escape sequence and a forged
+    // line where the classification belongs. The row, the difference and its repair carry the
+    // validated reading — `unknown` — never the stored bytes.
+    const raw = JSON.parse(readFileSync(join(dir, '.agents', 'team.state.json'), 'utf8'));
+    raw.sessions['acme-web'].seats['deepseek-acme'] = {
+      stage: 'launched',
+      pane: 'w3:p1',
+      workspace: 'w3',
+      waiting: { state: 'waiting-owner', classification: 'trust\x1b[2J\r\ninjected' },
+    };
+    writeFileSync(join(dir, '.agents', 'team.state.json'), JSON.stringify(raw));
+    const { code, out } = await status();
+    expect(out).toContain('deepseek-acme: waiting for owner (unknown)');
+    expect(out).not.toContain('injected');
+    expect(out).not.toContain('\x1b[2J');
+    expect(code).toBe(1);
+  });
+
   test('a stopped seat that runs', async () => {
     live = { ...built(), agents: [...built().agents, agent('grok-acme', 'w5', 'idle', 'grok')] };
     const { out } = await status();

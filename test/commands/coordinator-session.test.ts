@@ -995,7 +995,7 @@ describe('up over the v0.2.1 state', () => {
           runningAgent(OPERATOR, 'w2:p1'),
           runningAgent(SEAT, 'w3:p1'),
         ],
-        workspaces: () => [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }],
+        workspaces: () => [{ id: 'w1', label: 'claude opus 5.5' }, { id: 'w2', label: 'gpt sol 6' }, { id: 'w3', label: 'deepseek flash v4.1' }],
         // The watch the 0.2.1 state records is alive; `up` leaves it alone too.
         alive: (pid) => pid === 4242,
         launch,

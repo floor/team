@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { approvalDifferencesOf, budgetsInForceOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner } from '../caller.ts';
+import { callerLabel, callerOf, describeCaller, mayLaunchSeats } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { migrationText } from '../file/migrate.ts';
 import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
@@ -14,11 +14,13 @@ import {
   agentList,
   agentStatus,
   agentRename,
+  focusAgent,
   paneForeground,
   paneProcesses,
   paneRead,
   paneRun,
   paneShellBack,
+  sessionStop,
   typeText,
   pressEnter,
   sessionRunning,
@@ -29,17 +31,22 @@ import {
   workspaceList,
   workspacePanes,
   type HerdrAgent,
+  type HerdrWorkspace,
   type PaneProcesses,
   type SessionState,
 } from '../herdr.ts';
 import { cleanedIo, type Command, type Io } from '../io.ts';
 import type { Host } from '../launch/execute.ts';
 import { executePlan } from '../launch/execute.ts';
-import { seatProcessVerdict } from '../launch/identity.ts';
+import { launchedIdentity, seatProcessVerdict } from '../launch/identity.ts';
 import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
+import { runPause, type PauseHost, type PauseInput } from '../launch/pause.ts';
 import { plainLine, plainText } from '../launch/plain.ts';
-import { progressWriter } from '../launch/progress.ts';
+import { recordWhat, progressWriter } from '../launch/progress.ts';
+import { acquireSeatLock } from '../launch/seat-lock.ts';
+import { processSignals, terminalReader, type Terminal } from '../launch/terminal.ts';
+import { trustPolicy } from '../file/dialogs.ts';
 import { rulesOf } from '../launch/rules.ts';
 import { rulesFileHash, rulesFileHolds, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
 import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
@@ -61,7 +68,9 @@ export type UpSources = {
   sessionRunning(session: string): boolean | null;
   sessionState?(session: string): SessionState | null;
   agents(session: string): HerdrAgent[] | null;
-  workspaces?(session: string): { id: string }[] | null;
+  /** The session's workspaces with their labels now; null when herdr can't tell. The waiting
+   *  proof compares a pane's workspace label with the seat's launch label. */
+  workspaces?(session: string): HerdrWorkspace[] | null;
   home: string;
   getuid?(): number;
   fs?: FsReader;
@@ -71,6 +80,10 @@ export type UpSources = {
   sleep?(ms: number): Promise<void>;
   alive?(pid: number): boolean;
   watchCommand?(session: string): string;
+  // The owner's terminal, for the pause at a dialog. Absent: Node's own stdin, read in raw
+  // mode for one key at a time (`terminal.ts`). A dry run and a caller without a terminal
+  // never read it.
+  terminal?(): Terminal;
   // The approval store's one read, overridable so a test can count it or swap the record
   // after the gate. Absent: the real read.
   standing?(root: string): Standing;
@@ -104,6 +117,10 @@ export type Launch = {
   shellBack?(session: string, pane: string): boolean | null;
   /** The pane's process identity, compared with the one recorded for the seat. */
   processInfo?(session: string, pane: string): PaneProcesses | null;
+  /** Brings the pane to the owner's attention, without sending a key or a text into it. */
+  focus?(session: string, pane: string): boolean;
+  /** Stops the session (`q` in the pause, only for a session this invocation started). */
+  stopSession?(session: string): boolean;
   sleep(ms: number): Promise<void>;
   now(): Date;
 };
@@ -164,6 +181,8 @@ const realLaunch: Launch = {
   foreground: (session, pane) => paneForeground(pane, aim(session)),
   shellBack: (session, pane) => paneShellBack(pane, aim(session)),
   processInfo: (session, pane) => paneProcesses(pane, aim(session)),
+  focus: (session, pane) => focusAgent(pane, aim(session)),
+  stopSession: (session) => sessionStop(session),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now: () => new Date(),
 };
@@ -223,7 +242,7 @@ function seatPlan(
   seat: Seat,
   recorded: SeatState | undefined,
   agents: readonly HerdrAgent[],
-  workspaces: { id: string }[] | null,
+  workspaces: HerdrWorkspace[] | null,
   resume: boolean,
   root: string,
   home: string,
@@ -237,6 +256,9 @@ function seatPlan(
     label: seat.label,
     model: seat.model,
     version: seat.version,
+    // The team file's own repair for this seat — a lead seat is told only the whole-team
+    // sequence, never a `remove --keep` its file refuses (`lead.ts`).
+    repairLine: relaunchRepair(team, seat.name, 'markdown'),
     stopped: seat.stopped,
     // An option seat's rules keep coming from the live file, as main's launch line does; a
     // message seat's file and line are the approved copy's, whatever the live file says now.
@@ -244,6 +266,20 @@ function seatPlan(
     ...seatDeliveryOf(standing, team, seat, root, home),
   };
   if (!resume || !recorded || seat.stopped) return planned;
+  // §5: a seat recorded waiting takes precedence over everything below. Its recorded pane and
+  // workspace are reused — never launched again — whatever the process verdict says: the pause
+  // reads the pane fresh and verifies it before doing anything, and a pane that is gone is a
+  // fail-closed refusal there, not a reason to create another workspace.
+  if (recorded.waiting) {
+    return {
+      ...planned,
+      ...(recorded.stage ? { stage: recorded.stage } : {}),
+      ...(recorded.pane ? { pane: recorded.pane } : {}),
+      ...(recorded.workspace ? { workspace: recorded.workspace } : {}),
+      waiting: recorded.waiting,
+      ...(recorded.launched ? { waitingLaunched: recorded.launched } : {}),
+    };
+  }
   // The pane is the seat only while the process team launched is still in it: a pane that runs
   // no CLI, or one whose process is not the recorded one, is not the seat. Its workspace is
   // closed without input and the seat is launched fresh — the stage it stopped at is not
@@ -323,7 +359,7 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   // What would make `up` refuse. A dry run prints the plan anyway; a real run stops first.
   const refusals: string[] = [];
   const caller = callerOf(io);
-  if (!isOwner(caller)) {
+  if (!mayLaunchSeats(caller)) {
     refusals.push(`only the owner runs \`up\`, from a terminal outside herdr; this call is ${describeCaller(caller)}`);
   }
   // One verified snapshot carries the whole command: the refusal when there is
@@ -363,7 +399,19 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     const recorded = readState(dir).sessions[session]?.seats ?? {};
     if (agents === null) refusals.push(`session ${session} runs, and its agents can't be read`);
     else {
-      const unknown = agents.filter((agent) => !agent.name || !Object.hasOwn(recorded, agent.name));
+      // §5: a seat recorded waiting was left in its pane for the owner — by `add`, whose seat
+      // was never renamed, so herdr lists its pane with no `name` field at all. That agent is
+      // known by its pane, whatever its name is now: the resume path verifies pane and process
+      // itself, and its prompt is the only way the owner can finish the seat.
+      const waitingPanes = new Set(
+        Object.values(recorded)
+          .filter((seat) => seat.waiting)
+          .map((seat) => seat.pane)
+          .filter((pane) => pane !== undefined),
+      );
+      const unknown = agents.filter(
+        (agent) => !(agent.name && Object.hasOwn(recorded, agent.name)) && !waitingPanes.has(agent.pane),
+      );
       if (unknown.length) {
         refusals.push(
           `session ${session} has ${unknown.length} agent${unknown.length === 1 ? '' : 's'} this file's state doesn't record: \`up\` never touches a running team`,
@@ -623,10 +671,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     },
     renameAgent: launch.renameAgent,
     closeWorkspace: launch.closeWorkspace,
-    stopSession: () => false,
+    stopSession: (session) => launch.stopSession?.(session) ?? false,
     kill: () => false,
     agentPanes: launch.agentPanes,
     agentList: launch.agents,
+    // The session's workspaces with their labels now; the pause compares the label of the pane's
+    // live workspace with the one this seat's launch gives (`pause.ts`, `waitingProblem`).
+    workspaces: () => sources.workspaces?.(session) ?? null,
+    seatStates: () => readState(dir).sessions[session]?.seats ?? null,
     workspacePanes: launch.workspacePanes ? (session, workspace) => launch.workspacePanes!(session, workspace) : undefined,
     classify: (name, pane, cli) => readScreen(cli, launch.paneText(name, pane) ?? undefined).kind,
     paneText: (session, pane) => launch.paneText(session, pane),
@@ -651,7 +703,12 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
         const cli = team.seats.find((seat) => seat.name === name)?.cli;
         let start_cwd = prior.start_cwd;
         if (!start_cwd && patch.createdWorkspace && verifiedLobby) start_cwd = verifiedLobby;
-        current.seats[name] = { ...prior, ...patch, ...(cli ? { cli } : {}), ...(start_cwd ? { start_cwd } : {}) };
+        // `waiting: null` removes the field alone; anything else written replaces it.
+        const { waiting: written, ...rest } = patch;
+        const seat: SeatState = { ...prior, ...rest, ...(cli ? { cli } : {}), ...(start_cwd ? { start_cwd } : {}) };
+        if (written === null) delete seat.waiting;
+        else if (written) seat.waiting = written;
+        current.seats[name] = seat;
       });
     },
     running(name) {
@@ -677,8 +734,81 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       if (!profile || !sources.doctor) return null;
       return sources.doctor.version(profile.binary);
     },
-    log: (who, what) => logLine(dir, 'up', describeCaller(caller), `${who}: ${what}`, now()),
+    log: (who, what) => logLine(dir, 'up', callerLabel(caller), `${who}: ${what}`, now()),
+    /**
+     * §3/§4: what happens to a seat this run finds at a dialog. The owner at a terminal is
+     * asked, in `pause.ts`, with `o`/`s`/`q`; an owner whose stdin is not a terminal never
+     * reads it — the workspace is closed without input and the record says so (§2).
+     */
+    dialog:
+      caller.kind === 'owner'
+        ? { mode: 'prompt', run: (input: PauseInput) => runPause(input, pauseHostFor(input)) }
+        : { mode: 'close-no-terminal' },
+    clearWaiting(name) {
+      updateState(dir, (file) => {
+        const seatState = file.sessions[session]?.seats[name];
+        if (seatState) delete seatState.waiting;
+      });
+    },
+    seatLock: (name) => acquireSeatLock(dir, session, name),
   };
+
+  // §2: the owner's terminal. Only a run that may prompt builds a reader, and a read only
+  // happens from the pause's own key(): a caller whose stdin is not a terminal never gets here
+  // (`dialog` is `close-no-terminal` for it), and a dry run returns before the host is built.
+  const terminal = sources.terminal ? sources.terminal() : terminalReader(process.stdin, processSignals);
+  const seatCli = (name: string) => team.seats.find((item) => item.name === name)?.cli ?? '';
+  /** The pause's host for one seat: this run's state, seat lock, screen reads and writer. Every
+   *  line it says goes through the writer, and nothing here sends a key or a text into a pane. */
+  const pauseHostFor = (input: PauseInput): PauseHost => ({
+    lock: () => acquireSeatLock(dir, session, input.seat),
+    state: () => readState(dir).sessions[session]?.seats[input.seat],
+    write(change) {
+      updateState(dir, (file) => {
+        const current = (file.sessions[session] ??= emptySession());
+        const prior = current.seats[input.seat] ?? { stage: 'launched' as const };
+        const record = change(prior.waiting);
+        // The process identity is read here, at the moment the record is written, in the same
+        // write: `[o]`, `[s]`, a resumed `up` and `team answer` all refuse a pane whose
+        // process is gone or replaced.
+        const identity = launchedIdentity(launch.processInfo?.(session, input.pane) ?? null);
+        current.seats[input.seat] = {
+          ...prior,
+          waiting: record,
+          pane: input.pane,
+          ...(input.workspace ? { workspace: input.workspace } : {}),
+          ...(identity ? { launched: identity } : {}),
+        };
+      });
+    },
+    clear() {
+      updateState(dir, (file) => {
+        const seatState = file.sessions[session]?.seats[input.seat];
+        if (seatState) delete seatState.waiting;
+      });
+    },
+    drop: () => host.drop(input.seat),
+    screen: () => readScreen(seatCli(input.seat), launch.paneText(session, input.pane) ?? undefined).kind,
+    process: () => launch.processInfo?.(session, input.pane) ?? null,
+    agents: () => launch.agents(session),
+    workspaces: () => sources.workspaces?.(session) ?? null,
+    workspacePanes: (workspace) => launch.workspacePanes?.(session, workspace) ?? null,
+    seats: () => readState(dir).sessions[session]?.seats ?? null,
+    focus: () => launch.focus?.(session, input.pane) ?? false,
+    close: (workspace) => launch.closeWorkspace(session, workspace),
+    record: (label) => records.waiting(input.seat, label),
+    prompt: (line) => records.prompt(line),
+    drain: () => terminal.drain(),
+    // A line beside the record: the writer owns the line's termination, and the cleaning of
+    // every string it writes once the records slice's round lands.
+    say: (line) => records.prompt(line.endsWith('\n') ? line.slice(0, -1) : line),
+    entering: (classification) => host.log(input.seat, recordWhat({ kind: 'waiting for owner', classification })),
+    key: (ms) => terminal.key(ms),
+    sleep: (ms) => (sources.sleep ?? launch.sleep)(ms),
+    now: () => now().getTime(),
+    idleTimeout: profileFor(seatCli(input.seat))?.idleTimeout ?? 90,
+    polled: trustPolicy(team) === 'coordinator' && input.classification === 'trust',
+  });
 
   const report = await executePlan(plan, session, host);
   sayWatchMissed();

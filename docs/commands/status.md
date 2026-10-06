@@ -57,9 +57,10 @@ again after a first message. Wherever `status` reads the seat as running, the tw
 team` a pane held by another process. The comparison is pids only, and it accepts the seat while
 **any** recorded CLI pid is still in front: an extra pid beside them, or another order, changes
 nothing. A restored row's model is `-`, never the file's: nothing checks what that process runs. A
-seat with no `launched` record — a seat launched before this record existed, or one of this version
-stopped at a dialog before its idle prompt (the reading is taken after idle), or one whose pane
-herdr can't read — is shown as it always was; `team doctor` says which seats those are.
+seat with no `launched` record — a seat launched before this record existed, or one whose process
+herdr could not read (the reading is taken once, after the seat's idle prompt; a seat stopped at a
+dialog records it in the same write as its waiting record) — is shown as it always was;
+`team doctor` says which seats those are.
 
 The comparison is wrong in the safe direction, but it is wrong: a CLI that replaces its own process
 — an updater that re-executes, a wrapper that hands over — changes the foreground pids, and the
@@ -113,6 +114,14 @@ CODEX_HOME=/path/to/codex exec /path/to/codex-quota
 
 ## Differences
 
+A seat the state records waiting shows `waiting for owner (<classification>)` — or
+`trust sent; recovery required` — as its row, with its pane, and its one difference stands before
+the unnamed and launch-stopped ones. The classification is validated when the state is read,
+against the closed list (`trust`, `permission`, `question`, `vendor notice`, `login`, `unknown`,
+`unsent`, `timeout`): anything else the file holds reads `unknown` in the row, in the difference
+and in the log line the record writes, so a hand-edited or corrupted file can never print its bytes
+here.
+
 | Difference | Repair |
 | --- | --- |
 | `<seat> is in the file and is not running` | `team add <seat>` when something else runs, `the owner runs team up` when nothing does |
@@ -121,6 +130,8 @@ CODEX_HOME=/path/to/codex exec /path/to/codex-quota
 | `<seat>: the agent in <pane> is named "x"` | `herdr --session <s> agent rename <pane> <seat>` |
 | `<seat> runs <model> <version>; the file says <declared>` (`<declared>` is the seat's `display` spelling) | restart it (`team remove <seat> --keep`, then `team add <seat>`), or correct the file and `team approve` |
 | `<seat> is marked stopped in the file and is running` | `team remove <seat> --keep`, or take `stopped: true` off the seat |
+| `<seat>: waiting for owner (<classification>)` | `the owner runs team up` (it offers to open the pane, skip the seat or stop cleanly), or `team answer <seat> trust` when the classification is `trust` and the policy is `dialogs.trust: coordinator` |
+| `<seat>: trust sent; recovery required` | `the owner runs team up` |
 | `<seat>: its launch stopped at "<stage>"` | `the owner runs team up (it resumes the launch)` |
 | `<seat>: its rules were not delivered` | `team remove <seat> --keep`, then `team add <seat>` |
 | `<seat>: its rules file is missing` / `… is a symbolic link` / `… is not a regular file` / `… has mode 0644, not 0600` / `… is not owned by this user` / `… cannot be read` / `… differs from the approved rules` | `the owner runs team up` — the seat's rules travel in a file in the project state folder, and it no longer holds the approved rules text; `status` never rewrites it |

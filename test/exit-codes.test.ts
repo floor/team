@@ -1299,7 +1299,9 @@ scene('up.ready', async (place) => {
 });
 scene('up.pending', async (place) => {
   approve(place, TEAM);
-  return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching('') })), 'timed out');
+  // §3: a seat that never idles now stops at the pause's `timeout` classification, asked of its
+  // owner, instead of a bare timed-out record. The code and the row's meaning are unchanged.
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching('') })), 'waiting at timeout');
 });
 scene('up.server', async (place) => {
   approve(place, TEAM);

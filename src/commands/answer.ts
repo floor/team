@@ -4,6 +4,7 @@ import { basename, dirname } from 'node:path';
 import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
 import { anotherPaneRefusal, callerOf, callerVerdict, fileOwnerRefusal, isOwner, judgeCallerIn, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller, type SeatStanding } from '../caller.ts';
+import { trustPolicy } from '../file/dialogs.ts';
 import { canonicalLanding, folderOf, listFolder } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
@@ -146,7 +147,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
   // but the check must not depend on that to be right about what was approved.
   const approved = validateTeamFile(standing.record.file);
   if (!approved.ok) return refused({ class: 'caller', message: 'the approved copy of the team file cannot be read' });
-  if (team.dialogs.trust !== 'coordinator') return refused({ class: 'policy', message: `${seatName}: use team up and [o]` });
+  if (trustPolicy(team) !== 'coordinator') return refused({ class: 'policy', message: `${seatName}: use team up and [o]` });
 
   const lock = acquireSeatLock(dir, session, seatName);
   if (!('release' in lock)) return refused({ class: 'state', message: `${seatName}: another command holds it` });
@@ -201,7 +202,16 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
       return refused({ class: 'state', message: `${seatName}: its recovery state could not be recorded` });
     }
     const keyProcessProblem = checkProcess(seatName, host, session, pane, recorded?.launched);
-    if (keyProcessProblem) return refused(keyProcessProblem);
+    if (keyProcessProblem) {
+      // Nothing was sent, so this clean refusal puts the record back exactly as it was: the
+      // seat is waiting for its owner again, and a later answer can still answer it. The
+      // write above exists only for the crash case — that window stays write-before-key. A
+      // rollback that does not take leaves the recovery, the direction that only observes.
+      if (!restoreWaiting(dir, session, seatName, waiting, pane, workspace)) {
+        return refused({ class: 'state', message: `${keyProcessProblem.message} (it is still recorded as a recovery)` });
+      }
+      return refused(keyProcessProblem);
+    }
     let sent = false;
     try {
       sent = host.sendKey(session, pane, key);
@@ -220,7 +230,9 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
 
 /** The caller class the caller check returned, as the log's bracket. */
 function logWho(caller: Caller, team: TeamFile): string {
-  if (caller.kind === 'owner') return 'owner';
+  // `owner-no-tty` is refused before anything logs (it is not on a terminal), but the bracket
+  // it would carry is the owner's, as everywhere else.
+  if (caller.kind === 'owner' || caller.kind === 'owner-no-tty') return 'owner';
   if (caller.kind === 'unplaced') return 'unplaced';
   return caller.name === team.coordinator ? 'coordinator' : 'seat';
 }
@@ -332,6 +344,28 @@ function recordRecovery(
     writeWaiting(dir, session, name, waiting, pane, workspace);
     const back = readState(dir).sessions[session]?.seats[name]?.waiting;
     return back?.state === 'trust-sent-recovery' && back.classification === 'trust';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Puts back the waiting record a seat had before a recovery write that never reached its
+ * key: written and read back, exactly as `recordRecovery` does. False when it does not
+ * take, and the seat then keeps the recovery — which only ever observes a retry.
+ */
+function restoreWaiting(
+  dir: string,
+  session: string,
+  name: string,
+  waiting: NonNullable<SeatState['waiting']>,
+  pane: string,
+  workspace: string | undefined,
+): boolean {
+  try {
+    writeWaiting(dir, session, name, waiting, pane, workspace);
+    const back = readState(dir).sessions[session]?.seats[name]?.waiting;
+    return back?.state === 'waiting-owner' && back.classification === waiting.classification;
   } catch {
     return false;
   }

@@ -84,6 +84,39 @@ describe('the state file', () => {
     expect(() => readState(dir)).toThrow(/not valid JSON/);
   });
 
+  test('a stored classification outside the closed list reads as unknown; the eight read as themselves', () => {
+    // The state file is the one door a classification from outside the program enters through.
+    // A probe carrying an escape sequence and a fake line, a wrong case, a trailing space, an
+    // empty string, a number, a null and a missing field all read as `unknown` — the log line,
+    // the status row and the prompt take their words from here, so none can print the raw value.
+    const probes: Record<string, unknown> = {
+      injected: 'trust\x1b[2J\r\ninjected',
+      case: 'Trust',
+      spaced: 'permission ',
+      empty: '',
+      number: 7,
+      nothing: null,
+      missing: undefined,
+    };
+    const closed = ['trust', 'permission', 'question', 'vendor notice', 'login', 'unknown', 'unsent', 'timeout'] as const;
+    const seats: Record<string, unknown> = {};
+    for (const [seat, classification] of Object.entries(probes)) {
+      seats[seat] = { stage: 'launched', waiting: { state: 'waiting-owner', classification } };
+    }
+    for (const classification of closed) {
+      seats[`ok-${classification.replace(' ', '-')}`] = { stage: 'launched', waiting: { state: 'waiting-owner', classification } };
+    }
+    writeFileSync(join(dir, STATE_FILE), JSON.stringify({ format: 1, sessions: { one: { seats, worktrees: {} } } }));
+    const state = readState(dir);
+    for (const seat of Object.keys(probes)) {
+      expect([seat, state.sessions.one?.seats[seat]?.waiting?.classification]).toEqual([seat, 'unknown']);
+    }
+    for (const classification of closed) {
+      const seat = `ok-${classification.replace(' ', '-')}`;
+      expect([seat, state.sessions.one?.seats[seat]?.waiting?.classification]).toEqual([seat, classification]);
+    }
+  });
+
   test('an atomic write leaves no temporary file', () => {
     writeAtomic(join(dir, 'x.json'), 'one');
     writeAtomic(join(dir, 'x.json'), 'two');

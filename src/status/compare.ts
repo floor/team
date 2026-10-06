@@ -1,3 +1,4 @@
+import { trustPolicy } from '../file/dialogs.ts';
 import { declaredModel } from '../file/model.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import type { HerdrAgent, HerdrWorkspace, PaneProcesses } from '../herdr.ts';
@@ -70,7 +71,7 @@ function waitingView(
     };
   }
   const phrase = `waiting for owner (${waiting.classification})`;
-  const answer = team.dialogs.trust === 'coordinator' && waiting.classification === 'trust';
+  const answer = trustPolicy(team) === 'coordinator' && waiting.classification === 'trust';
   return {
     state: phrase,
     stored: 'waiting-owner',

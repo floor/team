@@ -3,10 +3,20 @@ import { refusalReport, type Refusal } from './deliver.ts';
 import { profileFor, versionVerdict } from '../profiles/profile.ts';
 import { modelDiffers, seatModel, type Running } from '../status/statusline.ts';
 import { launchedIdentity, seatProcessVerdict, type LaunchedIdentity } from './identity.ts';
-import type { LobbyRefusal } from '../lobby/gate.ts';
-import type { Step } from './plan.ts';
+import { IDLE_POLL_MS, type Step } from './plan.ts';
+import {
+  closeTarget,
+  waitingProblem,
+  type CloseReads,
+  type PauseInput,
+  type PauseResult,
+  type WaitingProblem,
+  type WaitingReads,
+} from './pause.ts';
 import { plainPaneText } from './plain.ts';
-import { recordWhat, cleanRecord, type FinalRecord, type ProgressState } from './progress.ts';
+import { recordWhat, cleanRecord, type Classification, type FinalRecord, type ProgressState } from './progress.ts';
+import type { LobbyRefusal } from '../lobby/gate.ts';
+import type { SeatState, WaitingRecord } from '../state.ts';
 import { vendorNoticeRange } from '../watch/screen.ts';
 
 export type ScreenKind = 'idle' | 'working' | 'permission' | 'trust' | 'question' | 'vendor notice' | 'unsent' | 'unknown';
@@ -51,6 +61,12 @@ export type Host = {
   /** Pane ids in a workspace as herdr lists them now; null when the list can't be read. The repair
    *  step checks that the workspace holds only the seat's pane before closing it. */
   workspacePanes?(session: string, workspace: string): string[] | null;
+  /** The session's workspaces with their labels as herdr lists them now; null when unreadable.
+   *  The waiting proof compares the pane's workspace label with the seat's launch label. */
+  workspaces?(session: string): { id: string; label: string }[] | null;
+  /** The session's recorded seats, read fresh; null when unreadable. The waiting proof refuses a
+   *  pane or workspace any other seat's record names. */
+  seatStates?(session: string): Record<string, SeatState> | null;
   classify(session: string, pane: string, cli: string): ScreenKind;
   /** The pane's visible text, ANSI styling and all, or null when the pane can't be read. */
   paneText?(session: string, pane: string): string | null;
@@ -71,6 +87,8 @@ export type Host = {
       rules?: 'option' | 'message';
       createdWorkspace?: boolean;
       launched?: LaunchedIdentity;
+      /** A waiting record to write, or null to remove the seat's waiting field. */
+      waiting?: WaitingRecord | null;
     },
   ): void;
   /** The seat is really running, so the next seat's ceiling check counts it. */
@@ -90,6 +108,26 @@ export type Host = {
   /** What the installed `<cli>` reports as its version, for a vendor notice's `untested on`
    *  detail. Null when it can't be read. */
   cliVersion?(cli: string): string | null;
+  /**
+   * How this run treats a seat it finds at a dialog, and one it resumes from a recorded
+   * waiting state. `prompt`: the owner is at a terminal — `pause.ts` asks with `o`/`s`/`q`.
+   * `keep`: `add` — the workspace stays, the waiting record is written, the seat is left out.
+   * `close-no-terminal`: an owner whose stdin is not a terminal — the workspace is closed
+   * without input and the record says so. Absent: the close path that predates the pause.
+   */
+  dialog?:
+    | { mode: 'prompt'; run(input: PauseInput): Promise<PauseResult> }
+    | { mode: 'keep' }
+    | { mode: 'close-no-terminal' };
+  /** Records a seat's waiting state, with the process identity read at that moment in the same
+   *  write. `add`'s keep path; `up`'s prompt path records through `pause.ts`'s own write. */
+  recordWaiting?(seat: string, waiting: WaitingRecord, pane: string, workspace?: string): void;
+  /** Removes a seat's waiting field alone, leaving the rest of its state: the screen is back at
+   *  the seat's prompt and the seat carries on. */
+  clearWaiting?(seat: string): void;
+  /** The seat's exclusive lock, as `pause.ts` takes it: the release, or the pid holding it.
+   *  The stop pass takes it before it closes a seat this run created. Absent: none is taken. */
+  seatLock?(seat: string): { release(): void } | { held: number };
 };
 
 export type Report = {
@@ -150,6 +188,18 @@ export async function executePlan(steps: readonly Step[], session: string, host:
   let watchFailed = false;
   let held = false;
   let abort = false;
+  // `q` (and Ctrl-C, which is the same): the run stops cleanly after the loop — what this
+  // invocation created is closed, and every seat without a final record gets one (§3).
+  let stopped = false;
+  /** The seats that reached ready in this run: the stop pass never closes one. */
+  const ready = new Set<string>();
+  /** seat -> what this run created for it: the workspace the stop pass closes, and the seat's
+   *  own repair line (`relaunchRepair`), for a refusal that leaves its record behind. */
+  const created = new Map<string, { workspace: string; repairLine: string }>();
+  /** Seats whose workspace this run closed: no path closes one twice. */
+  const closed = new Set<string>();
+  /** Whether this run started the session: only then may `q` stop it. */
+  let createdSession = false;
 
   // The reading is what is logged: screen text may follow it on the terminal (`detail`), and
   // never reaches the log file. `down`'s records keep this line exactly.
@@ -179,12 +229,14 @@ export async function executePlan(steps: readonly Step[], session: string, host:
   // each. The record is cleaned once here, before the log and the writer both take it, so the log
   // line and the terminal line are the same cleaned words; the writer cleans again at its own
   // boundary. A host without `final` (no `up` or `add` record path reaches it) says the record's
-  // own words as one line.
+  // own words as one line. The log's line is the record's words, with one exception: §7 writes
+  // the stopped-cleanly record's log line as `<seat>: stopped cleanly`, without the `left out:`
+  // the terminal line and §3's record keep.
   const final = (seat: string, record: FinalRecord, detail = '') => {
     if (logged.has(seat)) return;
     logged.add(seat);
     const clean = cleanRecord(record);
-    const what = recordWhat(clean);
+    const what = clean.kind === 'left out' && clean.reason === 'stopped cleanly' ? 'stopped cleanly' : recordWhat(clean);
     const rest = detail + release(seat);
     if (host.final) {
       host.final(seat, clean);
@@ -193,12 +245,48 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     host.log(seat, what);
   };
 
+  /** A seat this run will not touch again, left exactly as it is, with its record said. */
+  const leftOut = (seat: string, reason: string, detail = ''): 'settled' => {
+    held = true;
+    dropped.add(seat);
+    final(seat, { kind: 'left out', reason }, detail);
+    return 'settled';
+  };
+
+  /** A pause's outcome, become this run's final record or its continuation into the seat's
+   *  ordinary steps. `stopped` carries `q` out to the pass after the loop. */
+  const settle = (seat: string, result: PauseResult): 'idle' | 'settled' => {
+    switch (result.kind) {
+      case 'idle':
+        return 'idle';
+      case 'ready':
+        ready.add(seat);
+        final(seat, { kind: 'ready' }, result.detail);
+        return 'settled';
+      case 'skipped':
+        // The pause closed the workspace itself, without input, and cleared the state.
+        closed.add(seat);
+        dropped.add(seat);
+        final(seat, { kind: 'left out', reason: 'skipped by owner' });
+        return 'settled';
+      case 'stopped':
+        stopped = true;
+        abort = true;
+        return 'settled';
+      default:
+        // A fail-closed refusal, or a close that did not happen: the seat keeps its state,
+        // and nothing may claim a close that did not happen.
+        return leftOut(seat, result.reason, result.detail);
+    }
+  };
+
   // A seat whose pane no longer held the process team launched is closed without input and
   // launched again; it is ready when it reaches its prompt, and the detail says why it was
   // launched. Any other end of that seat keeps its own record, and the close is what the plan
   // and the state already show.
   const relaunched = new Map<string, 'gone' | 'replaced'>();
   const finishReady = (seat: string) => {
+    ready.add(seat);
     const verdict = relaunched.get(seat);
     if (verdict === 'gone') {
       final(seat, { kind: 'ready' }, '  its pane held no CLI; closed without input and launched again\n');
@@ -217,6 +305,193 @@ export async function executePlan(steps: readonly Step[], session: string, host:
     const made = { pane, workspace };
     places.set(key, made);
     return made;
+  };
+
+  /** The reads a waiting record's proof and its closes are made of: herdr's list, the pane's
+   *  process, the workspaces with their labels, the session's recorded seats, the workspace's
+   *  panes. Every one is read at the moment it is called — directly before the act it guards. */
+  const waitingReads = (pane: string): WaitingReads & CloseReads => ({
+    agents: () => host.agentList?.(session) ?? null,
+    process: () => host.processInfo?.(session, pane) ?? null,
+    workspaces: () => host.workspaces?.(session) ?? null,
+    seats: () => host.seatStates?.(session) ?? null,
+    workspacePanes: (workspace) => host.workspacePanes?.(session, workspace) ?? null,
+  });
+
+  /** The identity a dialog is judged by, and the one a refused close writes back: the identity
+   *  this run recorded when it launched the seat — its records' own, where an earlier run left
+   *  one, else the read taken when the dialog was found. Read once, here, and never read again;
+   *  the close's own fresh read of a changed process is never the identity kept. */
+  const dialogIdentity = (seat: string, pane: string): LaunchedIdentity | undefined => {
+    const recorded = identities.get(seat) ?? host.seatStates?.(session)?.[seat]?.launched;
+    return recorded ?? launchedIdentity(host.processInfo?.(session, pane) ?? null) ?? undefined;
+  };
+
+  /** A seat left behind by a close this run refused. Its waiting record — with the reading that
+   *  stopped it — and the identity recorded at launch go back into its state, so the next `up`
+   *  reads it as a waiting seat instead of adopting a pane it finds idle, or refusing the whole
+   *  session over state that records none. The identity the close itself reads is never written:
+   *  it is the changed process the close was refused for, and proves nothing. */
+  const keepWaiting = (seat: string, here: Place, classification: Classification, launched?: LaunchedIdentity): void => {
+    host.record(seat, {
+      stage: 'launched',
+      pane: here.pane,
+      ...(here.workspace ? { workspace: here.workspace } : {}),
+      ...(launched ? { launched } : {}),
+      waiting: { state: 'waiting-owner', classification },
+    });
+  };
+
+  /** A fresh seat found at a dialog. `prompt` asks the owner; `keep` records the wait and
+   *  leaves the seat out; `close-no-terminal` closes without input and says so. The identity is
+   *  read once, here, and the close is judged against it; a close that is refused writes the
+   *  seat's state back the way the next `up` can read it. */
+  const atDialog = async (
+    seat: string,
+    here: Place,
+    label: string,
+    classification: Classification,
+    identity: LaunchedIdentity | undefined,
+    repairLine: string,
+  ): Promise<'idle' | 'settled'> => {
+    const dialog = host.dialog;
+    if (dialog?.mode === 'prompt') {
+      return settle(
+        seat,
+        await dialog.run({
+          seat,
+          classification,
+          pane: here.pane,
+          label,
+          repairLine,
+          ...(here.workspace ? { workspace: here.workspace } : {}),
+        }),
+      );
+    }
+    if (dialog?.mode === 'keep') {
+      host.recordWaiting?.(seat, { state: 'waiting-owner', classification }, here.pane, here.workspace);
+      dropped.add(seat);
+      final(seat, { kind: 'left out', reason: classification }, `  the owner finishes it with \`team up\`\n`);
+      return 'settled';
+    }
+    if (dialog?.mode === 'close-no-terminal') {
+      // An owner whose stdin is not a terminal: the workspace is closed without input, and the
+      // record says why. Nothing is read from stdin, and nothing is sent into the pane. The close
+      // itself makes the stop pass's reads, directly before it: the workspace is the one herdr
+      // returns for the seat's pane, holding that pane and no other seat's, and the pane's
+      // process must still be the one read when the dialog was found — a pane whose process
+      // changed is not closed, and neither is one with no identity to prove it by. A close that
+      // cannot be proven leaves everything as it is — and, so the next `up` can read the seat,
+      // writes its waiting record and the launch identity the close was judged by back.
+      if (here.workspace) {
+        const target = closeTarget(waitingReads(here.pane), { seat, pane: here.pane, workspace: here.workspace, repairLine, ...(identity ? { launched: identity } : {}) });
+        if ('problem' in target) {
+          keepWaiting(seat, here, classification, identity);
+          return leftOut(seat, target.problem.reason, target.problem.detail);
+        }
+        if (!host.closeWorkspace(session, target.workspace)) {
+          keepWaiting(seat, here, classification, identity);
+          return leftOut(seat, `${classification}; its workspace did not close; left as it is`);
+        }
+      }
+      host.drop(seat);
+      dropped.add(seat);
+      if (here.workspace) closed.add(seat);
+      final(seat, { kind: 'left out', reason: `${classification} (no terminal for owner)` }, '  its workspace was closed without input\n');
+      return 'settled';
+    }
+    return 'settled';
+  };
+
+  /** §5: a seat recorded waiting, resumed. Its recorded pane and workspace are reused — nothing
+   *  is created for it — and its screen is read fresh. Only a pause, or an `add` or a
+   *  terminal-less run, ever closes it, and only after its pane is verified to be the seat's. */
+  const resumeWaiting = async (op: {
+    seat: string;
+    cli: string;
+    label: string;
+    pane: string;
+    workspace?: string;
+    record: WaitingRecord;
+    launched?: LaunchedIdentity;
+    repairLine: string;
+  }): Promise<'idle' | 'settled'> => {
+    const dialog = host.dialog;
+    if (!dialog) {
+      // No pause path at all (a host that predates it): nothing here may close or type into a
+      // waiting seat, so it is left exactly as it is, record and all.
+      return leftOut(op.seat, 'its waiting pane cannot be asked about; left as it is');
+    }
+    const lock = host.seatLock?.(op.seat);
+    if (lock && 'held' in lock) return leftOut(op.seat, 'another command holds it; left as it is');
+    let classification: Classification = op.record.classification;
+    try {
+      // The state is a hint of where to look, never an authority: the pane is proven this seat's
+      // from fresh reads before anything acts on the record — nothing else's record names the
+      // pane or the workspace, the multiplexer's agent is unnamed or this seat, the workspace
+      // carries this seat's launch label, and the process is still the recorded one (`pause.ts`).
+      const proof = {
+        seat: op.seat,
+        pane: op.pane,
+        ...(op.workspace ? { workspace: op.workspace } : {}),
+        label: op.label,
+        repairLine: op.repairLine,
+        ...(op.launched ? { launched: op.launched } : {}),
+      };
+      const problem = waitingProblem(waitingReads(op.pane), proof);
+      if (problem) return leftOut(op.seat, problem.reason, problem.detail);
+      const kind = host.classify(session, op.pane, op.cli);
+      if (kind === 'idle') {
+        // The owner answered in the pane between runs: the seat carries on and finishes.
+        host.clearWaiting?.(op.seat);
+        return 'idle';
+      }
+      classification = kind === 'working' ? op.record.classification : kind;
+      if (dialog.mode === 'keep') {
+        host.recordWaiting?.(op.seat, { state: 'waiting-owner', classification }, op.pane, op.workspace);
+        dropped.add(op.seat);
+        final(op.seat, { kind: 'left out', reason: classification }, `  the owner finishes it with \`team up\`\n`);
+        return 'settled';
+      }
+      if (dialog.mode === 'close-no-terminal') {
+        // A pane mid-work is nobody's dialog: it keeps everything it has.
+        if (kind === 'working') return leftOut(op.seat, 'its pane is working; left as it is');
+        if (!op.workspace) return leftOut(op.seat, `${classification}; its workspace did not close; left as it is`);
+        // The same reads the stop pass makes, directly before this close: the workspace herdr
+        // returns for the pane, holding that pane and no other seat's, and the process still the
+        // recorded one. A close that cannot be proven leaves everything as it is.
+        const target = closeTarget(waitingReads(op.pane), { seat: op.seat, pane: op.pane, workspace: op.workspace, repairLine: op.repairLine, launched: op.launched });
+        if ('problem' in target) return leftOut(op.seat, target.problem.reason, target.problem.detail);
+        if (!host.closeWorkspace(session, target.workspace)) {
+          return leftOut(op.seat, `${classification}; its workspace did not close; left as it is`);
+        }
+        host.drop(op.seat);
+        dropped.add(op.seat);
+        closed.add(op.seat);
+        final(op.seat, { kind: 'left out', reason: `${classification} (no terminal for owner)` }, '  its workspace was closed without input\n');
+        return 'settled';
+      }
+    } finally {
+      // §1: the lock is never held while the owner's key is waited for, nor across a poll. The
+      // resume's fresh read was under it; the prompt below takes it again for each of open,
+      // skip and close, through the pause's own `o`/`s`/`q` paths.
+      if (lock && 'release' in lock) lock.release();
+    }
+    if (dialog.mode === 'prompt') {
+      return settle(
+        op.seat,
+        await dialog.run({
+          seat: op.seat,
+          classification,
+          pane: op.pane,
+          label: op.label,
+          repairLine: op.repairLine,
+          ...(op.workspace ? { workspace: op.workspace } : {}),
+          recorded: op.record,
+        }),
+      );
+    }
+    return 'settled';
   };
 
   for (const step of steps) {
@@ -247,7 +522,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           serverFailed = true;
           abort = true;
           host.say(`session ${op.session}: its server did not start\n`);
-        }
+        } else createdSession = true;
         break;
       }
       case 'wait-session': {
@@ -307,7 +582,21 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         }
         places.set(op.seat ?? op.label, made);
         if (op.seat) {
-          host.record(op.seat, { stage: 'launched', pane: made.pane, workspace: made.workspace, createdWorkspace: true });
+          created.set(op.seat, { workspace: made.workspace, repairLine: op.repairLine });
+          // A seat whose earlier workspace was closed and then made again in the same run — a
+          // repair followed by a create — is not "already closed": the stop pass must close
+          // this new workspace too.
+          closed.delete(op.seat);
+          // A fresh workspace is a fresh seat: any waiting record named an older pane, and is
+          // void here. Clearing it in the same write is what makes the whole-team repair
+          // (`team down` then `team up`) clear the record the next `up` would otherwise resume.
+          host.record(op.seat, {
+            stage: 'launched',
+            pane: made.pane,
+            workspace: made.workspace,
+            createdWorkspace: true,
+            waiting: null,
+          });
           host.running(op.seat);
         }
         break;
@@ -339,9 +628,67 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           final(op.seat, { kind: 'left out', reason: 'has no pane to read; left at launched' });
           break;
         }
+        // What an idle screen means for the seat, wherever it was found: the model check, then
+        // the identity record. The seat carries on to its rename or its delivery either way.
+        const idleOnwards = (): void => {
+          // After the idle wait, before the rename and the rules: the same "differs" the watch uses.
+          // Unread is not a difference, and the seat continues. A different model is left unnamed.
+          if (op.model !== undefined && op.version !== undefined) {
+            const screen = host.paneText?.(session, here.pane) ?? null;
+            const running = screen === null ? null : seatModel({ cli: op.cli, model: op.model }, screen);
+            const declared = { model: op.model, version: op.version };
+            // `init` writes version "0" — the placeholder before the owner fills the release
+            // number in — and the release before this one left whole teams carrying it. Exactly
+            // that literal is read as "no version declared": the family is still compared, and
+            // any other value ("0.0", "00", a real number) is compared as today.
+            const differs = running !== null
+              && (op.version === '0' ? running.model !== op.model : modelDiffers(running, declared));
+            if (differs) {
+              dropped.add(op.seat);
+              final(op.seat, { kind: 'left out', reason: modelLeft(running, declared, op.cli) });
+              return;
+            }
+            if (!running) {
+              // The note is not a record: it is held and said as the seat's record's detail —
+              // stderr alone — and the log keeps the one line the record writes, `ready`.
+              hold(op.seat, `${op.seat}: its screen doesn't show a model this version knows; not checked\n`);
+            }
+          }
+          // The seat's own process, read now that its idle prompt is on the screen: the pane's
+          // shell and the pids in front of it that are not the shell. Nothing is recorded when
+          // herdr can't tell: a seat without the record keeps today's behaviour.
+          const identity = launchedIdentity(host.processInfo?.(session, here.pane) ?? null);
+          if (identity) {
+            identities.set(op.seat, identity);
+            host.record(op.seat, {
+              stage: 'launched',
+              pane: here.pane,
+              launched: identity,
+              ...(here.workspace ? { workspace: here.workspace } : {}),
+            });
+          }
+        };
+        if (op.waiting) {
+          // §5: a seat recorded waiting. Its recorded pane and workspace are reused — nothing is
+          // created for it — and its screen is read fresh, before any unnamed or wrong-name
+          // handling. The pause's outcome is this seat's outcome; only an idle screen lets it
+          // carry on into its ordinary steps.
+          const settled = await resumeWaiting({
+            seat: op.seat,
+            cli: op.cli,
+            label: op.label,
+            pane: here.pane,
+            ...(here.workspace ? { workspace: here.workspace } : {}),
+            record: op.waiting.record,
+            ...(op.waiting.launched ? { launched: op.waiting.launched } : {}),
+            repairLine: op.repairLine,
+          });
+          if (settled === 'idle') idleOnwards();
+          break;
+        }
         const startedAt = host.now();
         const deadline = startedAt + op.seconds * 1000;
-        const pollMs = 2000;
+        const pollMs = IDLE_POLL_MS;
         let outcome: 'idle' | 'permission' | 'trust' | 'question' | 'vendor notice' | 'ended' | 'timeout' = 'timeout';
         let last: ScreenKind = 'unknown';
         let endedRead: string | null = null;
@@ -388,49 +735,26 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           if (host.now() <= before) break;
         }
         if (outcome === 'idle') {
-          // After the idle wait, before the rename and the rules: the same "differs" the watch uses.
-          // Unread is not a difference, and the seat continues. A different model is left unnamed.
-          if (op.model !== undefined && op.version !== undefined) {
-            const screen = host.paneText?.(session, here.pane) ?? null;
-            const running = screen === null ? null : seatModel({ cli: op.cli, model: op.model }, screen);
-            const declared = { model: op.model, version: op.version };
-            // `init` writes version "0" — the placeholder before the owner fills the release
-            // number in — and the release before this one left whole teams carrying it. Exactly
-            // that literal is read as "no version declared": the family is still compared, and
-            // any other value ("0.0", "00", a real number) is compared as today.
-            const differs = running !== null
-              && (op.version === '0' ? running.model !== op.model : modelDiffers(running, declared));
-            if (differs) {
-              dropped.add(op.seat);
-              final(op.seat, { kind: 'left out', reason: modelLeft(running, declared, op.cli) });
-              break;
-            }
-            if (!running) {
-              // The note is not a record: it is held and said as the seat's record's detail —
-              // stderr alone — and the log keeps the one line the record writes, `ready`.
-              hold(op.seat, `${op.seat}: its screen doesn't show a model this version knows; not checked\n`);
-            }
-          }
-          // The seat's own process, read now that its idle prompt is on the screen: the pane's
-          // shell and the pids in front of it that are not the shell. Nothing is recorded when
-          // herdr can't tell: a seat without the record keeps today's behaviour.
-          const identity = launchedIdentity(host.processInfo?.(session, here.pane) ?? null);
-          if (identity) {
-            identities.set(op.seat, identity);
-            host.record(op.seat, {
-              stage: 'launched',
-              pane: here.pane,
-              launched: identity,
-              ...(here.workspace ? { workspace: here.workspace } : {}),
-            });
-          }
+          idleOnwards();
           break;
         }
         const workspace = here.workspace ?? places.get(op.seat)?.workspace;
         if (outcome === 'permission' || outcome === 'trust' || outcome === 'question' || outcome === 'vendor notice') {
+          const reading = outcome === 'trust' ? 'trust' : outcome;
+          if (host.dialog) {
+            // The seat's owner decides what happens next, at their own keyboard. The identity is
+            // read once, now that the dialog is found, and the close that may follow (a
+            // no-terminal owner's) is judged against this read: a pane whose process changed
+            // while the owner looked is not closed. This run's own read wins; the state's record
+            // is the fallback for a seat an earlier run launched; a live read is all that is left
+            // for a dialog found before the seat was ever recorded — and it is the identity a
+            // refused close writes back, so the next `up` has one to compare against.
+            const settled = await atDialog(op.seat, here, op.label, reading, dialogIdentity(op.seat, here.pane), op.repairLine);
+            if (settled === 'idle') idleOnwards();
+            break;
+          }
           // A trust question is closed with no key and no text. The same for a permission or a
           // question, and for a vendor notice: it is never answered here, or anywhere.
-          const reading = outcome === 'trust' ? 'trust' : outcome;
           // The installed version is read only after the close: nothing sits between the reading
           // and the act it decides. A version outside the record's range never changes the
           // reading — a reading is never made less cautious by a version — it is what the
@@ -448,6 +772,14 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           dropped.add(op.seat);
           const closed = `  its workspace was closed without ${outcome === 'trust' ? 'an answer' : 'input'} and the seat left out\n`;
           final(op.seat, { kind: 'left out', reason: reading }, untested() + closed);
+          break;
+        }
+        if (outcome === 'timeout' && host.dialog?.mode === 'prompt') {
+          // The idle wait ran out with the owner at a terminal: the owner is asked about the
+          // timeout itself — open the pane, skip the seat, or stop cleanly. (The identity read is
+          // the same one a found dialog makes; a prompt never closes on it.)
+          const settled = await atDialog(op.seat, here, op.label, 'timeout', dialogIdentity(op.seat, here.pane), op.repairLine);
+          if (settled === 'idle') idleOnwards();
           break;
         }
         dropped.add(op.seat);
@@ -699,6 +1031,85 @@ export async function executePlan(steps: readonly Step[], session: string, host:
       }
       default:
         break;
+    }
+  }
+
+  if (stopped) {
+    // §3's `q`, and Ctrl-C, which is the same: every workspace this invocation created that
+    // isn't already ready is closed without input, and its seat's state cleared; then every
+    // seat this run never gave a final record — the current one and the later configured,
+    // non-stopped ones — is recorded `stopped cleanly`, in file order, while earlier final
+    // records stand. The session goes only when this run created it and nothing is left in it:
+    // a session that existed before, a ready seat and a watchdog stay. `q` is only ever read
+    // inside a seat's pause, and the plan appends the watchdog's two steps after every seat's
+    // (`upPlan`), so a session this run created holds no watchdog at this point — its absence
+    // needs no check of its own; a watchdog running in a session is a previous run's, and such
+    // a session is not this run's to stop. The agent list is what still tells of a ready seat:
+    // a watchdog pane would not be on it (captured on herdr 0.7.1: a pane running `node -e …`
+    // answered `herdr agent list` with `"agents":[]`).
+    for (const [seat, made] of created) {
+      if (ready.has(seat) || closed.has(seat)) continue;
+      const lock = host.seatLock?.(seat);
+      if (lock && 'held' in lock) {
+        held = true;
+        dropped.add(seat);
+        final(seat, { kind: 'left out', reason: 'another command holds it; its workspace was left as it is' });
+        continue;
+      }
+      try {
+        // The state is never the authority for this close either: herdr's list, the workspace's
+        // panes and the pane's process are read now, directly before it, with nothing between
+        // the last read and the close — and the process must still be the one this run started
+        // (its own read, then the record; never the pane read at the close, which would prove
+        // nothing). A workspace whose pane's process changed, or cannot be proven, is left as it
+        // is. The close is the workspace herdr returns for the pane, never the stored one when
+        // they differ.
+        const here = places.get(seat);
+        const launched = identities.get(seat) ?? host.seatStates?.(session)?.[seat]?.launched;
+        const target: { workspace: string } | { problem: WaitingProblem } = here
+          ? closeTarget(waitingReads(here.pane), { seat, pane: here.pane, workspace: made.workspace, repairLine: made.repairLine, launched })
+          : { problem: { reason: 'its pane is not known; left as it is', detail: '' } };
+        if ('problem' in target) {
+          held = true;
+          dropped.add(seat);
+          final(seat, { kind: 'left out', reason: target.problem.reason }, target.problem.detail);
+          continue;
+        }
+        if (!host.closeWorkspace(session, target.workspace)) {
+          // The close did not happen: nothing may claim it did, and the seat keeps its state.
+          held = true;
+          dropped.add(seat);
+          final(seat, { kind: 'left out', reason: 'its workspace did not close; left as it is' });
+          continue;
+        }
+        host.drop(seat);
+        closed.add(seat);
+      } finally {
+        if (lock && 'release' in lock) lock.release();
+      }
+    }
+    for (const step of steps) {
+      const op = step.do;
+      const seat = op && 'seat' in op ? op.seat : undefined;
+      if (!seat || logged.has(seat)) continue;
+      if (step.kind === 'skip' && op?.do === 'ready') {
+        if (op.notice) hold(seat, `${seat}: ${op.notice}\n`);
+        host.record(seat, { stage: 'ready', rules: op.rules });
+        finishReady(seat);
+      } else if (step.kind === 'skip' && op?.do === 'record') {
+        final(seat, op.record, op.detail ?? '');
+      } else {
+        dropped.add(seat);
+        final(seat, { kind: 'left out', reason: 'stopped cleanly' });
+      }
+    }
+    if (createdSession) {
+      const left = host.agentList?.(session) ?? null;
+      if (held) host.say(`session ${session}: not stopped, something was left in it\n`);
+      else if (left === null) host.say(`session ${session}: not stopped, its agents could not be read\n`);
+      else if (left.length > 0) host.say(`session ${session}: not stopped, something is left in it\n`);
+      else if (host.stopSession(session)) host.say(`session ${session}: stopped\n`);
+      else host.say(`session ${session}: it did not stop\n`);
     }
   }
 

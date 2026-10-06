@@ -291,6 +291,7 @@ describe('Cursor launch and captured screens', () => {
         cwd: '.',
         label: 'grok',
         stopped: false,
+        repairLine: '`team remove grok --keep` then `team add grok`',
         rules: 'Rules.',
         rulesFile: { path: '/home/owner/.config/team/demo-3f9c2a8e1d7b/rules/grok.md', line },
       }],

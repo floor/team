@@ -496,23 +496,31 @@ describe('team add', () => {
     expect(log).not.toContain('until merged:fix/fresh');
   });
 
-  test('a temporary message seat that is left out takes its rules file with it', async () => {
+  test('a temporary message seat at a dialog waits for its owner', async () => {
     const made = world();
-    // The pane comes up at a trust question: the seat is closed without input and left out.
+    // The pane comes up at a trust question. §6: `add` never prompts and never closes — the
+    // workspace is kept, the seat is recorded as waiting for its owner, nothing is sent into
+    // the pane, and the owner finishes it with `team up`.
     const trust = readFileSync(new URL('../fixtures/codex/0.157.0/trust.txt', import.meta.url), 'utf8');
     const plain = made.launch.paneText;
     made.launch.paneText = (session, pane) => {
       const text = plain(session, pane);
       return text === IDLE ? trust : text;
     };
-    // The rules file is written before the pane is ever read; a seat left out takes it away.
+    const closes: string[] = [];
+    made.launch.closeWorkspace = (_session, workspace) => { closes.push(workspace); return true; };
+    // The rules file is written only when the rules are delivered, and this seat never reached
+    // its prompt: nothing was typed, so no file exists. It is the `team up` finish that types.
     const file = rulesFilePath('acme', project, home, 'scribe-tmp-1') as string;
     const io = testIo(project, owner);
     expect(await runAdd(['--temporary', '--like', 'scribe', '--until', 'merged:fix/fresh'], io, sources(made))).toBe(1);
     expect(io.out).toContain('scribe-tmp-1: left out: trust\n');
-    expect(io.err).toContain('  its workspace was closed without an answer and the seat left out\n');
+    expect(io.err).toContain('  the owner finishes it with `team up`\n');
+    expect(closes).toEqual([]);
     expect(existsSync(file)).toBe(false);
-    expect(readState(join(project, '.agents')).sessions.acme?.seats['scribe-tmp-1']).toBeUndefined();
+    const seat = readState(join(project, '.agents')).sessions.acme?.seats['scribe-tmp-1'];
+    expect(seat?.waiting).toMatchObject({ state: 'waiting-owner', classification: 'trust' });
+    expect(seat?.temporary).toMatchObject({ like: 'scribe', until: 'merged:fix/fresh' });
   });
 
   test('refuses a result that already exists and a merged branch that does not', async () => {
@@ -585,7 +593,7 @@ describe('team add', () => {
     expect(made.renames).toEqual(['lead']);
   });
 
-  test('the close of the new seat\'s workspace is said on the terminal and in the log, and exits 1', async () => {
+  test('a new seat found at a dialog waits for its owner: nothing is closed, and it exits 1', async () => {
     const made = world();
     const closed: string[] = [];
     made.launch.paneText = (_session, pane) => (pane === 'w1:p1' ? PERMISSION : IDLE);
@@ -593,11 +601,71 @@ describe('team add', () => {
     const io = testIo(project, owner);
     const code = await runAdd(['worker'], io, sources(made));
     expect(code).toBe(1);
+    // §6: the workspace is kept for its owner — `team up` finishes the seat — and the record,
+    // its stderr detail and the log all name the reading without claiming any close.
     const line = 'worker: left out: permission';
     expect(io.out).toContain(`${line}\n`);
-    expect(io.err).toContain('  its workspace was closed without input and the seat left out\n');
+    expect(io.err).toContain('  the owner finishes it with `team up`\n');
     expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8')).toContain(line);
-    expect(closed).toEqual(['w1']);
+    expect(closed).toEqual([]);
+    expect(readState(join(project, '.agents')).sessions.acme?.seats.worker)
+      .toMatchObject({ waiting: { state: 'waiting-owner', classification: 'permission' } });
+  });
+
+  test('a new seat found at a question waits for its owner: kept, recorded, nothing typed', async () => {
+    const made = world();
+    // §6 covers each dialog the same way, and a question is one of them. The identity of the
+    // pane's process is read then and goes in the same write, for the owner's later `team up`.
+    const question = readFileSync(new URL('../fixtures/claude-code/2.1.289/question-plain.txt', import.meta.url), 'utf8');
+    const plain = made.launch.paneText;
+    made.launch.paneText = (session, pane) => {
+      const text = plain(session, pane);
+      return text === IDLE ? question : text;
+    };
+    const closed: string[] = [];
+    const sent: string[] = [];
+    made.launch.closeWorkspace = (_session, workspace) => { closed.push(workspace); return true; };
+    made.launch.typeText = (_session, pane, text) => { sent.push(`type ${pane} ${text}`); return true; };
+    made.launch.pressEnter = (_session, pane) => { sent.push(`enter ${pane}`); return true; };
+    made.launch.processInfo = () => ({ shell: 100, foreground: [101] });
+    const io = testIo(project, owner);
+    const code = await runAdd(['worker'], io, sources(made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('worker: left out: question\n');
+    expect(io.err).toContain('  the owner finishes it with `team up`\n');
+    expect(closed).toEqual([]);
+    expect(sent).toEqual([]);
+    expect(readState(join(project, '.agents')).sessions.acme?.seats.worker).toMatchObject({
+      waiting: { state: 'waiting-owner', classification: 'question' },
+      launched: { shell: 100, cli: [101] },
+    });
+  });
+
+  test('a temporary seat found at a vendor notice waits for its owner, and nothing is typed', async () => {
+    const made = world();
+    // The Codex update screen is the vendor's own notice: still a dialog, still the owner's,
+    // and never typed into.
+    const notice = readFileSync(new URL('../fixtures/codex/0.157.0/startup.txt', import.meta.url), 'utf8');
+    const plain = made.launch.paneText;
+    made.launch.paneText = (session, pane) => {
+      const text = plain(session, pane);
+      return text === IDLE ? notice : text;
+    };
+    const closed: string[] = [];
+    const sent: string[] = [];
+    made.launch.closeWorkspace = (_session, workspace) => { closed.push(workspace); return true; };
+    made.launch.typeText = (_session, pane, text) => { sent.push(`type ${pane} ${text}`); return true; };
+    made.launch.pressEnter = (_session, pane) => { sent.push(`enter ${pane}`); return true; };
+    made.launch.processInfo = () => ({ shell: 200, foreground: [201] });
+    const io = testIo(project, owner);
+    expect(await runAdd(['--temporary', '--like', 'scribe', '--until', 'merged:fix/fresh'], io, sources(made))).toBe(1);
+    expect(io.out).toContain('scribe-tmp-1: left out: vendor notice\n');
+    expect(io.err).toContain('  the owner finishes it with `team up`\n');
+    expect(closed).toEqual([]);
+    expect(sent).toEqual([]);
+    const seat = readState(join(project, '.agents')).sessions.acme?.seats['scribe-tmp-1'];
+    expect(seat?.waiting).toMatchObject({ state: 'waiting-owner', classification: 'vendor notice' });
+    expect(seat?.launched).toEqual({ shell: 200, cli: [201] });
   });
 
   test('a replaced seat is closed without input and launched fresh, not refused as running', async () => {

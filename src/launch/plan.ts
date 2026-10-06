@@ -3,6 +3,11 @@ import { profileFor } from '../profiles/index.ts';
 import { launchCommand, shellQuote } from '../profiles/profile.ts';
 import type { LaunchedIdentity } from './identity.ts';
 import type { FinalRecord } from './progress.ts';
+import type { WaitingRecord } from '../state.ts';
+
+/** The pace the idle wait polls a pane at — and the one a pause re-reads an opened pane at, and
+ *  reads a trust prompt's terminal with, when `team answer` may be racing it. */
+export const IDLE_POLL_MS = 2000;
 
 /**
  * What running a step does. The printed command stays in `argv`; this is how the live command
@@ -11,7 +16,9 @@ import type { FinalRecord } from './progress.ts';
 export type Op =
   | { do: 'server'; session: string }
   | { do: 'wait-session'; session: string; seconds: number }
-  | { do: 'create'; seat?: string; label: string; cwd: string; notice?: string; lobby?: true }
+  | { do: 'create'; seat: string; label: string; cwd: string; repairLine: string; notice?: string; lobby?: true }
+  /** The watchdog's workspace: no seat, so no seat repair either. */
+  | { do: 'create'; seat?: undefined; label: string; cwd: string; notice?: string; lobby?: undefined }
   | { do: 'launch'; seat: string; label: string; command: string; pane?: string; notice?: string }
   /** `why` is the reason the record and the log carry; `detail`, when the reason has a fuller
    *  sentence with a folder in it, is the stderr line said under the record. */
@@ -19,7 +26,26 @@ export type Op =
   /** A seat's final record, decided by the plan: no profile, already ready. The step's printed
    *  text stays for the dry run; `detail` is the stderr lines said after the record. */
   | { do: 'record'; seat: string; record: FinalRecord; detail?: string }
-  | { do: 'idle'; seat: string; label: string; cli: string; seconds: number; command: string; pane?: string; workspace?: string; notice?: string; model?: string; version?: string }
+  | {
+      do: 'idle';
+      seat: string;
+      label: string;
+      cli: string;
+      seconds: number;
+      command: string;
+      pane?: string;
+      workspace?: string;
+      notice?: string;
+      model?: string;
+      version?: string;
+      /** The team file's repair for this seat (`relaunchRepair`, markdown text): what every
+       *  refusal of this seat that names a repair prints — for a lead seat, only `team down`
+       *  then `team up`, which its file accepts. */
+      repairLine: string;
+      /** A seat recorded waiting: its idle step re-reads the screen and enters the owner's
+       *  prompt (`pause.ts`) — it is never launched or closed from here (§5). */
+      waiting?: { record: WaitingRecord; launched?: LaunchedIdentity };
+    }
   | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
   | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; path: string; line: string; seconds: number; pane?: string; notice?: string }
   | { do: 'ready'; seat: string; rules: 'option' | 'message'; notice?: string }
@@ -47,6 +73,10 @@ export interface UpSeat {
   /** Relative to the root. */
   cwd: string;
   label: string;
+  /** The team file's repair for this seat (`relaunchRepair`'s markdown text): every line this
+   *  run prints that names a repair prints this one, never a `remove --keep` a lead seat's file
+   *  would refuse. */
+  repairLine: string;
   stopped: boolean;
   /** The seat's rules, as one text: what a launch option embeds and what its file holds. */
   rules: string;
@@ -64,6 +94,14 @@ export interface UpSeat {
   workspace?: string;
   /** Herdr already lists an agent in the recorded pane. */
   agentLive?: boolean;
+  /**
+   * The seat's recorded waiting record: it stopped at a dialog an earlier run could not answer.
+   * Its recorded pane and workspace are reused and nothing is created, launched or repaired;
+   * the idle step reads the screen fresh and enters the owner's prompt (§5). `waitingLaunched`
+   * is the process identity recorded with it, compared with the pane before the prompt.
+   */
+  waiting?: WaitingRecord;
+  waitingLaunched?: LaunchedIdentity;
   /** The seat works in worktrees: it waits in the lobby until a brief names its worktree. */
   lobby?: boolean;
   /**
@@ -185,10 +223,13 @@ export function upPlan(input: UpInput): Step[] {
     }
     const pane = seat.pane ?? paneOf(seat.name);
     const cwd = isAbsolute(seat.cwd) ? seat.cwd : resolve(input.root, seat.cwd);
-    const fresh = seat.stage === undefined || !seat.pane;
+    // A seat recorded waiting is never launched again: its recorded pane is reused, and the
+    // idle step below reads it fresh and asks its owner (§5).
+    const waiting = seat.waiting;
+    const fresh = !waiting && (seat.stage === undefined || !seat.pane);
     // The same condition as the launch step below. A seat already running keeps
     // its idle wait, rename and rules, and hears the reading as a notice.
-    const wouldLaunch = fresh || (seat.stage === 'launched' && !seat.agentLive);
+    const wouldLaunch = !waiting && (fresh || (seat.stage === 'launched' && !seat.agentLive));
     if (seat.launchProblem && wouldLaunch) {
       steps.push({
         // The dry run prints the finding in full, as it always did; the record is left out with
@@ -246,11 +287,13 @@ export function upPlan(input: UpInput): Step[] {
         ...(said ? { note: `${said}; would launch` } : {}),
         // A seat that waits in the lobby is created in it: the host confirms that folder again
         // directly before this create (`execute.ts`), with nothing in between.
-        do: { do: 'create', seat: seat.name, label: seat.label, cwd, ...(seat.lobby ? { lobby: true as const } : {}), ...(said ? { notice: said } : {}) },
+        do: { do: 'create', seat: seat.name, label: seat.label, cwd, repairLine: seat.repairLine, ...(seat.lobby ? { lobby: true as const } : {}), ...(said ? { notice: said } : {}) },
       });
     }
     const command = launchCommand(profile, seat.launch, seat.rules);
-    if (fresh || (seat.stage === 'launched' && !seat.agentLive)) {
+    // The `waiting` guard is not this condition's alone: §5's seat is never launched again,
+    // whatever its live-ness reads, so the wait above is the whole of its plan.
+    if (!waiting && (fresh || (seat.stage === 'launched' && !seat.agentLive))) {
       const said = takeNotice();
       steps.push({
         kind: 'run',
@@ -260,13 +303,16 @@ export function upPlan(input: UpInput): Step[] {
       });
     }
     const rules = profile.rulesOption === null ? 'message' : 'option';
-    if (seat.stage !== 'named') {
+    // A waiting seat is asked even when its stage says named: the prompt is the only way its
+    // owner can finish or skip it, and nothing here launches it again.
+    if (seat.stage !== 'named' || waiting) {
       const said = takeNotice();
       steps.push({
         kind: 'wait',
-        text:
-          `until ${seat.name} shows its idle prompt (${profile.idleTimeout} s at most); ` +
-          'anything else is reported, its workspace closed without input, and the seat left out',
+        text: waiting
+          ? `${seat.name}: waiting for owner (${waiting.classification}); its recorded pane is read fresh and the owner is asked (${profile.idleTimeout} s at most)`
+          : `until ${seat.name} shows its idle prompt (${profile.idleTimeout} s at most); ` +
+            'anything else is reported, its workspace closed without input, and the seat left out',
         ...(said ? { note: said } : {}),
         do: {
           do: 'idle',
@@ -277,10 +323,14 @@ export function upPlan(input: UpInput): Step[] {
           command,
           pane: seat.pane,
           workspace: seat.workspace,
+          repairLine: seat.repairLine,
           ...(seat.model !== undefined && seat.version !== undefined ? { model: seat.model, version: seat.version } : {}),
           ...(said ? { notice: said } : {}),
+          ...(waiting ? { waiting: { record: waiting, ...(seat.waitingLaunched ? { launched: seat.waitingLaunched } : {}) } } : {}),
         },
       });
+    }
+    if (seat.stage !== 'named') {
       steps.push({
         kind: 'run',
         argv: herdr(session, 'agent', 'rename', pane, seat.name),

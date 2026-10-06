@@ -9,8 +9,10 @@
 // escape sequence. Everything else a run says — refusals, notes, the timeout's last reading, what
 // the owner does next — is on stderr, after the record it belongs to.
 //
-// The record is the unit the next slice builds on: a pause at a dialog is a `waiting for owner`
-// record, carried here so the type and the log already know it, printed by nothing yet.
+// The record is the unit the pause builds on: a pause at a dialog is a `waiting for owner`
+// record, and `waiting` draws it provisionally while the prompt is open — replaced in place when
+// the classification changes, and left without a newline, so the seat still ends with exactly one
+// final record.
 //
 // The writer cleans every string it writes — one physical line per field and per detail line
 // (`plainLine`: the one cleaning with the line breaks folded) — and it is the boundary between
@@ -20,23 +22,36 @@
 
 import { plainLine } from './plain.ts';
 
-/** The classifications a record can name. `login` is reserved: no profile produces it today. */
-export type Classification =
-  | 'trust'
-  | 'permission'
-  | 'question'
-  | 'vendor notice'
-  | 'login'
-  | 'unknown'
-  | 'unsent'
-  | 'timeout';
+/** The classifications a record can name, in the one closed list every reader validates against.
+ *  `login` is reserved: no profile produces it today. */
+export const CLASSIFICATIONS = [
+  'trust',
+  'permission',
+  'question',
+  'vendor notice',
+  'login',
+  'unknown',
+  'unsent',
+  'timeout',
+] as const;
+
+export type Classification = (typeof CLASSIFICATIONS)[number];
+
+/** A classification from outside the program — the state file is the one place one enters —
+ *  validated against the closed list: one of the eight, or `unknown` for anything else. */
+export function cleanClassification(value: unknown): Classification {
+  return typeof value === 'string' && (CLASSIFICATIONS as readonly string[]).includes(value)
+    ? (value as Classification)
+    : 'unknown';
+}
 
 /** The provisional states a line is drawn in, in the order a seat can pass them. The words a
  *  person watching the terminal sees. */
 export type ProgressState = 'launching' | 'waiting for its prompt' | 'naming' | 'sending its rules';
 
-/** A seat's final record. `waiting for owner` belongs to the next slice: the record type carries
- *  it and the log accepts it; `up` and `add` print neither today. */
+/** A seat's final record. `waiting for owner` is carried for completeness (the log accepts it);
+ *  a run settles a waiting seat one way or another, so `final` never prints it: the provisional
+ *  `waiting` line is the shape it takes while a prompt is open. */
 export type FinalRecord =
   | { kind: 'ready' }
   | { kind: 'left out'; reason: string }
@@ -67,6 +82,13 @@ export type Progress = {
   /** The seat's line, first drawn before its workspace is created and rewritten as it advances.
    *  On a redirected stdout this writes nothing at all. */
   progress(seat: string, state: ProgressState): void;
+  /** The seat's waiting record while a prompt is open — provisional like `progress`, drawn on
+   *  the seat's own line, and rewritten when the prompt returns with another classification.
+   *  It is not a final record: the seat's one final record still comes from `final`. */
+  waiting(seat: string, classification: string): void;
+  /** One line of the owner's prompt, on the next line of the terminal. It is written to stderr,
+   *  so a redirected stdout carries the final records and nothing else, prompts or not. */
+  prompt(line: string): void;
   /** The seat's one final record — the newline-terminated line. */
   final(seat: string, record: FinalRecord): void;
   /** One detail line: one writer call per line, cleaned line by line, never passed through. */
@@ -106,6 +128,15 @@ export function progressWriter(sink: ProgressSink): Progress {
       // Redirected: the final records only. Nothing provisional ever reaches a pipe.
       if (!sink.isTTY) return;
       sink.stdout(`\r\x1b[K${field(seat)}: ${field(state)}`);
+    },
+    waiting(seat, classification) {
+      if (!sink.isTTY) return;
+      sink.stdout(`\r\x1b[K${field(seat)}: waiting for owner (${field(classification)})`);
+    },
+    prompt(line) {
+      // The seat's waiting record has no newline yet; the prompt starts its own line.
+      const text = plainLine(line);
+      sink.stderr(sink.isTTY ? `\n${text}\n` : `${text}\n`);
     },
     final(seat, record) {
       const text = recordText(field(seat), cleanRecord(record));

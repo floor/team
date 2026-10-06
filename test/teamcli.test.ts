@@ -153,10 +153,8 @@ test('a node parent is still the owner', () => {
     kind: 'unplaced',
     reason: 'it is run by an agent (claude) outside herdr',
   });
-  expect(judge(['node', 'zsh'], false)).toEqual({
-    kind: 'unplaced',
-    reason: 'it doesn\'t run on a terminal',
-  });
+  // An owner with no terminal is this branch's owner-no-tty, not unplaced.
+  expect(judge(['node', 'zsh'], false)).toEqual({ kind: 'owner-no-tty' });
 });
 
 // A team dependency whose cli records every signal it receives, so a test can count
