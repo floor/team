@@ -1,7 +1,6 @@
 import { approvalDifferencesOf, notInForce } from './approve/approval.ts';
-import { canonical } from './approve/fingerprint.ts';
 import { callerOf, describeCaller, readAncestors, type Caller, type CallerSources } from './caller.ts';
-import type { Delegate, DelegateCommand, Delegates } from './delegate-types.ts';
+import type { Delegate, DelegateCommand } from './delegate-types.ts';
 import { DELEGATE_COMMANDS } from './delegate-types.ts';
 import type { TeamFile } from './file/types.ts';
 import { validateTeamFile } from './file/validate.ts';
@@ -48,19 +47,15 @@ export const ADD_DELEGATE_EDIT: { id: 'add.delegate-edit'; text: string } = {
 };
 
 const PREFLIGHT = ['delegate-approval', 'delegate-approved-copy', 'delegate-drift', 'delegate-evidence', 'delegate-placement'] as const;
-const APPROVE_PREFLIGHT = ['delegate-approval', 'delegate-approved-copy', 'delegate-section', 'delegate-evidence', 'delegate-placement'] as const;
 
 /** Every exit id the gate and `ADD_DELEGATE_EDIT` define, for the exit-codes page. */
 export const DELEGATE_EXIT_IDS: readonly string[] = [
-  ...DELEGATE_COMMANDS.flatMap((command) => {
-    const preflight = command === 'approve' ? APPROVE_PREFLIGHT : PREFLIGHT;
-    return [
-      ...preflight.map((suffix) => `${command}.${suffix}`),
-      `${command}.delegate`,
-      `${command}.delegate-command`,
-      `${command}.delegate-flag`,
-    ];
-  }),
+  ...DELEGATE_COMMANDS.flatMap((command) => [
+    ...PREFLIGHT.map((suffix) => `${command}.${suffix}`),
+    `${command}.delegate`,
+    `${command}.delegate-command`,
+    `${command}.delegate-flag`,
+  ]),
   ADD_DELEGATE_EDIT.id,
 ];
 
@@ -71,7 +66,6 @@ const PROHIBITED: Record<DelegateCommand, readonly string[]> = {
   down: ['abandon', 'session', 'file'],
   add: ['temporary', 'like', 'until', 'worktree', 'session', 'file'],
   remove: ['keep', 'abandon', 'session', 'file'],
-  approve: ['file', 'session'],
 };
 
 const ANCESTORS = 'its parent processes can\'t be read to the top';
@@ -93,9 +87,8 @@ export function logDelegated(dir: string, pane: string, command: DelegateCommand
  * file and nothing remembered: no earlier valid copy and no unverified approval is consulted.
  * It decides and stops. It does not print, write, or launch.
  *
- * An earlier refusal wins. `approve` does not refuse on drift elsewhere in the file — drift is
- * what `approve` exists to record — and instead refuses any change to `delegates` itself, so
- * a delegate cannot grant itself or anyone else a new pane or a new command.
+ * An earlier refusal wins. Any approval difference refuses, and that includes a reorder of
+ * the delegates list or of a command list: both are part of the canonical value.
  */
 export function delegateGate(input: {
   command: DelegateCommand;
@@ -116,26 +109,16 @@ export function delegateGate(input: {
   }
 
   const copy = sources.approvedCopy ? sources.approvedCopy(root) : standing.record.file;
-  const approved = copy === null ? null : validated(copy);
-  if (copy === null || approved === null) {
+  if (copy === null || validated(copy) === null) {
     return refuse('delegate-approved-copy', 'delegation needs a readable approved copy: run `team approve`');
   }
 
-  if (command === 'approve') {
-    if (!sameDelegates(team.delegates, approved.delegates)) {
-      return refuse(
-        'delegate-section',
-        'the approved delegate cannot approve a change to the delegate section; the owner approves this one',
-      );
-    }
-  } else {
-    const differences = approvalDifferencesOf(standing, team);
-    if (differences.length > 0) {
-      return refuse(
-        'delegate-drift',
-        `delegation needs the approved file: the file is not the approved one (${differences.join('; ')}): run \`team approve\``,
-      );
-    }
+  const differences = approvalDifferencesOf(standing, team);
+  if (differences.length > 0) {
+    return refuse(
+      'delegate-drift',
+      `delegation needs the approved file: the file is not the approved one (${differences.join('; ')}): run \`team approve\``,
+    );
   }
 
   const entries = team.delegates ?? [];
@@ -158,12 +141,15 @@ export function delegateGate(input: {
   return { kind: 'passed', pane: found.entry.pane };
 }
 
+const NON_DELEGATE: Record<DelegateCommand, (caller: string) => string> = {
+  up: (caller) => `only the owner or the approved delegate runs \`up\`; this call is ${caller}`,
+  down: (caller) => `only the owner, the coordinator, the operator or the approved delegate stops the team; this call is ${caller}`,
+  add: (caller) => `only the owner, the coordinator, the operator or the approved delegate runs it; this call is ${caller}`,
+  remove: (caller) => `only the owner, the coordinator, the operator or the approved delegate runs it; this call is ${caller}`,
+};
+
 function nonDelegate(command: DelegateCommand, caller: string): string {
-  if (command === 'up') return `only the owner or the approved delegate runs \`up\`; this call is ${caller}`;
-  if (command === 'down') return `only the owner, the coordinator, the operator or the approved delegate stops the team; this call is ${caller}`;
-  if (command === 'add') return `only the owner, the coordinator, the operator or the approved delegate runs it; this call is ${caller}`;
-  if (command === 'remove') return `only the owner, the coordinator, the operator or the approved delegate runs it; this call is ${caller}`;
-  return `only the owner or the approved delegate approves a team file; this call is ${caller}`;
+  return NON_DELEGATE[command](caller);
 }
 
 function validated(text: string): TeamFile | null {
@@ -173,11 +159,6 @@ function validated(text: string): TeamFile | null {
   } catch {
     return null;
   }
-}
-
-/** Order and case count. A reordered command list, a changed pane, or another entry is a change. */
-function sameDelegates(live: Delegates, approved: Delegates): boolean {
-  return canonical(live) === canonical(approved);
 }
 
 function splitPane(pane: string): { session: string; id: string } | null {

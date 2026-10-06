@@ -44,7 +44,7 @@ seats:
     launch: claude --model claude-opus-5-5
 delegates:
   - pane: other/w1:p1
-    commands: [up, down, add, remove, approve]
+    commands: [up, down, add, remove]
 `;
 
 function parsed(text: string): TeamFile {
@@ -156,7 +156,6 @@ describe('a matching pane passes, and only that pane', () => {
     expect(gate({ command: 'down', flags: ['wait', 'dry-run'] })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
     expect(gate({ command: 'add', flags: ['dry-run', 'restore'] })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
     expect(gate({ command: 'remove' })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
-    expect(gate({ command: 'approve' })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
   });
 
   test('another pane of the delegate session is refused, and so is a pane carrying the delegate agent\'s name', () => {
@@ -185,7 +184,7 @@ describe('a matching pane passes, and only that pane', () => {
 
   test('the second entry is the one that matches, and its own command list', () => {
     const text = yaml.replace(
-      'commands: [up, down, add, remove, approve]',
+      'commands: [up, down, add, remove]',
       'commands: [add]\n  - pane: other/w2:p1\n    commands: [up, remove]',
     );
     const team = parsed(text);
@@ -222,8 +221,8 @@ describe('refusal priority', () => {
     const outside = { ...base, delegates: [{ pane: 'alpha/w9:p9', commands: ['up'] as DelegateCommand[] }] };
     expect(refused({ team: outside, standing: verified(outside, yaml), ancestors: terminal }).id).toBe('up.delegate-placement');
     expect(refused({ ancestors: terminal, flags: ['session'] }).id).toBe('up.delegate');
-    const listed = parsed(yaml.replace('commands: [up, down, add, remove, approve]', 'commands: [up]'));
-    expect(refused({ command: 'down', team: listed, file: yaml.replace('commands: [up, down, add, remove, approve]', 'commands: [up]'), flags: ['abandon'] }).id).toBe('down.delegate-command');
+    const listed = parsed(yaml.replace('commands: [up, down, add, remove]', 'commands: [up]'));
+    expect(refused({ command: 'down', team: listed, file: yaml.replace('commands: [up, down, add, remove]', 'commands: [up]'), flags: ['abandon'] }).id).toBe('down.delegate-command');
     expect(refused({ flags: ['session'] }).id).toBe('up.delegate-flag');
   });
 
@@ -263,10 +262,6 @@ describe('placement', () => {
       agents: (session) => (session === 'alpha' ? [agent('lead', 'w5:p1')] : [agent('worker', 'w1:p1')]),
       roots: { 'w1:p1': 100, 'w5:p1': 500 },
     }).id).toBe('up.delegate-placement');
-    expect(refused({ team: { ...base, session: 'other' }, command: 'approve' })).toEqual({
-      id: 'approve.delegate-placement',
-      text: 'the approved delegate must be an external non-seat pane',
-    });
   });
 
   test('the same pane id in another session is not a seat of this team', () => {
@@ -317,13 +312,10 @@ describe('commands and flags', () => {
     expect(refused({ command: 'remove', ancestors: terminal }).text).toBe(
       'only the owner, the coordinator, the operator or the approved delegate runs it; this call is owner',
     );
-    expect(refused({ command: 'approve', ancestors: terminal }).text).toBe(
-      'only the owner or the approved delegate approves a team file; this call is owner',
-    );
     for (const command of DELEGATE_COMMANDS) {
-      const only = parsed(yaml.replace('commands: [up, down, add, remove, approve]', 'commands: [add]'));
+      const only = parsed(yaml.replace('commands: [up, down, add, remove]', 'commands: [add]'));
       if (command === 'add') continue;
-      const verdict = refused({ command, team: only, file: yaml.replace('commands: [up, down, add, remove, approve]', 'commands: [add]') });
+      const verdict = refused({ command, team: only, file: yaml.replace('commands: [up, down, add, remove]', 'commands: [add]') });
       expect(verdict.id).toBe(`${command}.delegate-command`);
       expect(verdict.text).toBe(`the approved delegate other/w1:p1 may not run \`${command}\`; its approved commands are add`);
     }
@@ -335,58 +327,44 @@ describe('commands and flags', () => {
     expect(refused({ command: 'add', flags: ['worktree'] }).text).toContain('--worktree');
     expect(refused({ command: 'remove', flags: ['keep'] }).id).toBe('remove.delegate-flag');
     expect(refused({ command: 'remove', flags: ['abandon'] }).text).toContain('--abandon');
-    expect(refused({ command: 'approve', flags: ['file'] }).id).toBe('approve.delegate-flag');
-    expect(refused({ command: 'approve', flags: ['session', 'file'] }).text).toContain('--file');
   });
 });
 
-describe('approve cannot change delegates', () => {
-  function live(commands: string): { team: TeamFile; file: string } {
-    const file = yaml.replace('commands: [up, down, add, remove, approve]', `commands: [${commands}]`);
-    return { team: parsed(file), file };
-  }
+describe('the match is the whole pane string', () => {
+  test('case differs, and so does the same pane id in another session', () => {
+    const cased = refused({
+      agents: () => [agent('worker', 'W1:P1')],
+      roots: { 'W1:P1': 100 },
+    });
+    expect(cased.id).toBe('up.delegate');
+    expect(cased.text).toContain('this call is worker');
+    const recorded: State = { format: 1, sessions: { alpha: { seats: { lead: { stage: 'ready', pane: 'w1:p1' } }, worktrees: {} } } };
+    expect(gate({ state: recorded })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+  });
 
-  test('a change of pane, case, commands, order, or another entry is refused, and drift elsewhere is not', () => {
-    const approved = live('approve, up');
-    // The approved copy stays `approved.file`. Each live file differs in delegates only.
-    for (const next of [live('up, approve'), live('approve'), live('approve, up, down')]) {
-      expect(refused({ command: 'approve', team: next.team, file: approved.file, copy: approved.file, standing: verified(parsed(approved.file), approved.file) }).id).toBe('approve.delegate-section');
-    }
-    const cased = parsed(yaml.replace('other/w1:p1', 'Other/w1:p1').replace('commands: [up, down, add, remove, approve]', 'commands: [approve, up]'));
-    expect(refused({ command: 'approve', team: cased, file: approved.file, copy: approved.file, standing: verified(parsed(approved.file), approved.file) }).text).toBe(
-      'the approved delegate cannot approve a change to the delegate section; the owner approves this one',
-    );
-    const added = parsed(`${approved.file}  - pane: other/w2:p1\n    commands: [add]\n`);
-    expect(refused({ command: 'approve', team: added, file: approved.file, copy: approved.file, standing: verified(parsed(approved.file), approved.file) }).id).toBe('approve.delegate-section');
-    const without = parsed(yaml.replace('commands: [up, down, add, remove, approve]', 'commands: [approve]'));
-    expect(refused({ command: 'approve', team: without, file: approved.file, copy: approved.file, standing: verified(parsed(approved.file), approved.file) }).id).toBe('approve.delegate-section');
-
-    const rules = yaml.replace('session: alpha\n', 'session: alpha\nrules:\n  - a new rule\n');
-    const ruled = parsed(rules);
-    expect(gate({
-      command: 'approve',
-      team: ruled,
-      file: yaml,
-      copy: yaml,
-      standing: verified(base, yaml),
-    })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
-    expect(refused({ team: ruled, standing: verified(base, yaml) }).id).toBe('up.delegate-drift');
+  test('a reordered command list and a reordered entry are drift', () => {
+    const reordered = parsed(yaml.replace('commands: [up, down, add, remove]', 'commands: [remove, add, down, up]'));
+    expect(refused({ team: reordered, standing: verified(base, yaml) }).text).toContain('`delegates` changed');
+    const swapped = parsed(`${yaml}  - pane: other/w2:p1\n    commands: [add]\n`.replace(
+      '  - pane: other/w1:p1\n    commands: [up, down, add, remove]\n  - pane: other/w2:p1\n    commands: [add]\n',
+      '  - pane: other/w2:p1\n    commands: [add]\n  - pane: other/w1:p1\n    commands: [up, down, add, remove]\n',
+    ));
+    const approved = parsed(`${yaml}  - pane: other/w2:p1\n    commands: [add]\n`);
+    expect(refused({ team: swapped, file: yaml, standing: verified(approved, `${yaml}  - pane: other/w2:p1\n    commands: [add]\n`) }).id).toBe('up.delegate-drift');
   });
 });
 
 describe('the exit ids', () => {
-  test('lists every delegate refusal, including the eight approve ids, and not a drift id for approve', () => {
-    expect(DELEGATE_EXIT_IDS).toHaveLength(41);
-    expect(DELEGATE_EXIT_IDS).toContain('approve.delegate-section');
-    expect(DELEGATE_EXIT_IDS).not.toContain('approve.delegate-drift');
-    for (const command of ['up', 'down', 'add', 'remove'] as const) {
-      for (const suffix of ['delegate-approval', 'delegate-approved-copy', 'delegate-drift', 'delegate-evidence', 'delegate-placement', 'delegate', 'delegate-command', 'delegate-flag']) {
-        expect(DELEGATE_EXIT_IDS).toContain(`${command}.${suffix}`);
-      }
+  test('lists every delegate refusal of the four commands, and the contract lists the same rows', () => {
+    expect(DELEGATE_EXIT_IDS).toHaveLength(33);
+    expect(DELEGATE_EXIT_IDS).not.toContain('approve.delegate');
+    const contract = JSON.parse(readFileSync(new URL('../contract/exit-codes.json', import.meta.url), 'utf8')) as { rows: { id: string; code: number; command: string }[] };
+    const page = readFileSync(new URL('../docs/reference/exit-codes.md', import.meta.url), 'utf8');
+    for (const id of DELEGATE_EXIT_IDS) {
+      const row = contract.rows.find((item) => item.id === id);
+      expect(row?.code).toBe(1);
+      expect(row?.command).toBe(id.slice(0, id.indexOf('.')));
+      expect(page).toContain(`\`${id}\``);
     }
-    for (const suffix of ['delegate-approval', 'delegate-approved-copy', 'delegate-section', 'delegate-evidence', 'delegate-placement', 'delegate', 'delegate-command', 'delegate-flag']) {
-      expect(DELEGATE_EXIT_IDS).toContain(`approve.${suffix}`);
-    }
-    expect(DELEGATE_EXIT_IDS).toContain('add.delegate-edit');
   });
 });
