@@ -8,6 +8,7 @@ import { blocksLaunch, doctorFindings, realSources as doctorSources, type Doctor
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
 import type { Launch } from '../commands/up.ts';
+import { ADD_DELEGATE_EDIT, delegateGate, logDelegated } from '../delegate.ts';
 import { deliverRules, fileRefusalOf, type Refusal } from '../launch/deliver.ts';
 import { removeRulesFile, rulesFileHash, rulesFileHolds, seatDeliveryOf, typeablePath, writeRulesFile } from '../launch/rules-file.ts';
 import { rulesOf } from '../launch/rules.ts';
@@ -58,6 +59,9 @@ export type AddSources = {
   // The budget gate, overridable so a test can count its calls. Absent: the real gate.
   // The standing gate refuses before it is ever consulted.
   seatBudget?: typeof seatBudget;
+  // The delegate gate, overridable so a test can hand a delegated run its verdict. Absent: the
+  // real gate (`src/delegate.ts`).
+  delegateGate?: typeof delegateGate;
 };
 
 const realLaunch: Launch = {
@@ -183,17 +187,49 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const { caller, shown } = judged;
   const session = judged.session;
   const mayChange = mayChangeTeamVerdict(caller, team, standingOf(dir, session, caller));
-  if (mayChange.kind === 'no-pane') {
+  // The delegate branch, tried only when the ordinary rule just refused and the file names a
+  // delegate at all: with no `delegates` section every refusal below stays exactly today's, and
+  // the gate is never asked. A refused verdict takes the ordinary refusal's place; a passed one
+  // sends this run on as the approved delegate's — the gate has by then verified the approval,
+  // the approved copy, the drift and the placement, that this caller is the entry's pane, that
+  // `add` is in its list and that no flag of the owner's was passed. The run the rest of this
+  // command performs is then a delegated one: the would-edit refusal below keeps it from
+  // writing the file or the approval, and `logDelegated` attributes it at its effects.
+  let delegatePane: string | null = null;
+  if (mayChange.kind !== 'ok' && team.delegates) {
+    const verdict = (sources.delegateGate ?? delegateGate)({
+      command: 'add',
+      team,
+      root,
+      dir,
+      flags: [...args.flags, ...Object.keys(args.values)],
+      io,
+    });
+    if (verdict.kind === 'refused') {
+      out.stderr(`team add: ${plainText(verdict.text)}\n`);
+      // exit: add.delegate-approval
+      // exit: add.delegate-approved-copy
+      // exit: add.delegate-drift
+      // exit: add.delegate-evidence
+      // exit: add.delegate-placement
+      // exit: add.delegate
+      // exit: add.delegate-command
+      // exit: add.delegate-flag
+      return 1;
+    }
+    delegatePane = verdict.pane;
+  }
+  if (mayChange.kind === 'no-pane' && delegatePane === null) {
     out.stderr(`team add: ${plainText(noPaneRefusal(mayChange.name))}\n`);
     // exit: add.no-pane
     return 1;
   }
-  if (mayChange.kind === 'another-pane') {
+  if (mayChange.kind === 'another-pane' && delegatePane === null) {
     out.stderr(`team add: ${plainText(anotherPaneRefusal(mayChange.name, mayChange.recordedPane))}\n`);
     // exit: add.another-pane
     return 1;
   }
-  if (mayChange.kind === 'refused') {
+  if (mayChange.kind === 'refused' && delegatePane === null) {
     out.stderr(`team add: only the owner, the coordinator or the operator runs it; this call is ${plainLine(describeCaller(shown))}\n`);
     // exit: add.caller
     return 1;
@@ -284,6 +320,15 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   if (!repair && agents.some((agent) => agent.name === built.name)) {
     out.stderr(`team add: ${plainLine(built.name)} is already running\n`);
     // exit: add.already-running
+    return 1;
+  }
+  // A delegated add may start only a declared, not-stopped seat that is not running: one that
+  // would restore a missing seat or clear `stopped` edits the file and re-signs the approval,
+  // and that stays the owner's. Refused after the already-running refusal, before the write,
+  // the digest and any dry-run plan — so a delegated add writes neither file nor approval.
+  if (delegatePane !== null && built.edited !== original) {
+    out.stderr(`team add: ${plainText(ADD_DELEGATE_EDIT.text)}\n`);
+    // exit: add.delegate-edit
     return 1;
   }
   if (!profileFor(built.seat.cli)) {
@@ -474,6 +519,10 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     }
   }
   if (decision.kind === 'unknown') out.stderr(`${plainLine(built.name)}: ${plainText(decision.text)}\n`);
+  // The audit line, exactly at the effects boundary: a delegated run that reaches here is
+  // committed to its effects — the write below when the seat needs one, the launch after it.
+  // A dry run returned above; every refusal came sooner.
+  if (delegatePane !== null) logDelegated(dir, delegatePane, 'add', sources.now());
   if (built.edited !== original) {
     const written = withLock(dir, () => {
       if (readFileSync(path, 'utf8') !== original) return { kind: 'changed' as const };
