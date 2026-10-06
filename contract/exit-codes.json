@@ -1425,6 +1425,13 @@
     {
       "code": 1,
       "command": "up",
+      "id": "up.busy",
+      "meaning": "another team up is running for the session",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
       "id": "up.delegate",
       "meaning": "only the owner or the approved delegate runs up",
       "trigger": "team up"

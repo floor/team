@@ -27,6 +27,7 @@ import { listFolder } from '../src/file/landing.ts';
 import { loadTeamFile } from '../src/file/load.ts';
 import { defaultFs, lobbyDir } from '../src/lobby/gate.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
+import { seatLockPath } from '../src/launch/seat-lock.ts';
 import { overridesPath } from '../src/profiles/overrides.ts';
 import { emptySession, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
@@ -1415,6 +1416,16 @@ scene('up.stopped', async (place) => {
 scene('up.agents', async (place) => {
   approve(place, TEAM);
   return show(await up(place, ['--file', place.file], owner, upSources(place, { sessionState: () => 'running', agents: () => null })), "can't be read");
+});
+scene('up.busy', async (place) => {
+  approve(place, TEAM);
+  // The run lock another `team up` holds: this test process's pid is alive, so the token is
+  // never judged stale. It sits where the run looks for it — the session's lock folder beside
+  // the state, the session defaulting to the project's name — and nothing else is stood in.
+  const dir = join(place.root, '.agents');
+  mkdirSync(join(dir, 'seat-locks', 'acme'), { recursive: true });
+  writeFileSync(seatLockPath(dir, 'acme', '.run'), `${process.pid} 0a1b2c3d\n`);
+  return show(await up(place, ['--file', place.file], owner, upSources(place, { launch: launching(IDLE) })), 'another `team up` is running');
 });
 scene('up.unknown', async (place) => {
   approve(place, TEAM);

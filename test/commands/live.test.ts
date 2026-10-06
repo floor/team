@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1705,6 +1705,84 @@ describe('team up, live', () => {
     });
     expect(heartbeatIo.out).not.toContain('! up would refuse');
     expect(heartbeatIo.out).not.toContain('no watch has run');
+  });
+});
+
+// The run lock: one `up` per session at a time. It is the seat-lock file under the name no
+// seat can have — a leading dot — held for exactly the length of a run that has effects, so a
+// second run in another terminal is told instead of both reading the same state and launching
+// over each other. A dry run and a refused run never take it, a live holder's lock is never
+// touched, and a lock a killed run left is taken over by the next one.
+describe('team up, one run at a time', () => {
+  const lockFile = () => seatLockPath(join(root, '.agents'), 'acme-web', '.run');
+  const hold = (token: string): void => {
+    mkdirSync(join(root, '.agents', 'seat-locks', 'acme-web'), { recursive: true });
+    writeFileSync(lockFile(), token);
+  };
+
+  test("a second run is refused, with the holder's pid, before any effect", async () => {
+    await approve();
+    hold(`${process.pid} 0a1b2c3d\n`);
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runUp(FILE, io, sources({}, made))).toBe(1);
+    expect(io.err).toBe(
+      `team up: another \`team up\` is running for session acme-web (pid ${process.pid}); try again when it is done\n`,
+    );
+    expect(io.out).toBe('');
+    expect(made.starts).toBe(0);
+    expect(made.creates).toEqual([]);
+    // A live holder's lock is left exactly as it was: dropping it is never the refused run's.
+    expect(readFileSync(lockFile(), 'utf8')).toBe(`${process.pid} 0a1b2c3d\n`);
+  });
+
+  test('a dry run plans while another run holds the lock: it takes nothing', async () => {
+    await approve();
+    hold(`${process.pid} 0a1b2c3d\n`);
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runUp(['--dry-run', ...FILE], io, sources({}, made))).toBe(0);
+    expect(io.out).toContain('dry run: nothing was run\n');
+    expect(io.out).not.toContain('would refuse');
+    expect(made.starts).toBe(0);
+    expect(readFileSync(lockFile(), 'utf8')).toBe(`${process.pid} 0a1b2c3d\n`);
+  });
+
+  test('a lock that cannot be read refuses with the file to clear', async () => {
+    await approve();
+    hold('not a token\n');
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runUp(FILE, io, sources({}, made))).toBe(1);
+    // An unreadable lock is held, never stale (`seat-lock.ts`), so the owner is the only way
+    // out and the message names the file.
+    expect(io.err).toBe(
+      'team up: another `team up` may be running for session acme-web, and its lock cannot be read; '
+        + `if no \`team up\` is running, delete ${lockFile()}\n`,
+    );
+    expect(made.starts).toBe(0);
+  });
+
+  test('a lock left by a dead run is taken over, held through the run, and released by it', async () => {
+    await approve();
+    const dead = spawnSync('sh', ['-c', 'exit 0']).pid;
+    expect(typeof dead).toBe('number');
+    hold(`${dead} 0a1b2c3d\n`);
+    const made = world();
+    // What a second run would find at each effect of this one: the lock file, held.
+    const held: boolean[] = [];
+    const create = made.launch.createWorkspace;
+    made.launch.createWorkspace = (session, cwd, label) => {
+      held.push(existsSync(lockFile()));
+      return create(session, cwd, label);
+    };
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runUp(FILE, io, sources({}, made))).toBe(0);
+    expect(made.starts).toBe(1);
+    expect(held.length).toBeGreaterThan(0);
+    expect(held).not.toContain(false);
+    // Taken over for the run, and gone the moment the run is: the next run takes it again.
+    expect(existsSync(lockFile())).toBe(false);
   });
 });
 
@@ -3613,6 +3691,25 @@ describe('team up, delegated', () => {
     expect(audits[0]?.now).toBeInstanceOf(Date);
     // The line is on the record before the run reached herdr at all.
     expect(audits[0]?.starts).toBe(0);
+  });
+
+  test("a delegated run takes the same run lock: refused with the holder's pid, no audit line", async () => {
+    delegateFile();
+    await approve();
+    mkdirSync(join(root, '.agents', 'seat-locks', 'acme-web'), { recursive: true });
+    writeFileSync(seatLockPath(join(root, '.agents'), 'acme-web', '.run'), `${process.pid} 0a1b2c3d\n`);
+    const made = world();
+    const { audits, logDelegated } = auditsOf(made);
+    const io = delegatedIo();
+    const code = await runUp(FILE, io, sources({ ...passed, logDelegated }, made));
+    expect(code).toBe(1);
+    expect(io.err).toBe(
+      `team up: another \`team up\` is running for session acme-web (pid ${process.pid}); try again when it is done\n`,
+    );
+    // The delegation is not on the record either: the run lock comes before the audit line.
+    expect(made.starts).toBe(0);
+    expect(made.creates).toEqual([]);
+    expect(audits).toEqual([]);
   });
 
   test('a passed gate on a dry run plans only: no effects and no audit line', async () => {
