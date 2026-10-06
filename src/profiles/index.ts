@@ -1,1 +1,1 @@
-export { profileFor } from './profile.ts';
+export { lobbyFileOwners, profileFor, shippedLobbyFiles } from './profile.ts';

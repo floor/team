@@ -34,6 +34,11 @@ exit_confirm: enter
 # minutes; one scheduler call (CronCreate) made the folder ".claude" and, inside it, the
 # regular file below — the scheduler's one lock — and at /exit the CLI deleted the lock
 # and left the empty folder. The lobby may hold exactly these paths for this CLI.
+# Why no shipped CLI reads the file as configuration or instructions when started in the
+# lobby: it is the scheduler's lock alone — written by one call, deleted at exit, never
+# read back — and no shipped profile names a file its CLI reads at start in its working
+# folder. This CLI's instructions travel as the `--append-system-prompt` launch option
+# and the others' as a first message, so a seat of any CLI obeys nothing it finds there.
 lobby_files:
   - .claude/scheduled_tasks.lock
 timeouts:

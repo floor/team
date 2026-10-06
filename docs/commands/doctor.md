@@ -274,6 +274,17 @@ team doctor: nothing missing, 1 warning
 exit 0
 ```
 
+The lobby line is the same closed-tree check the launch's gate runs, over the same set of declared
+files (every shipped profile's together, so the report says of the lobby exactly what a launch
+would). When the lobby already exists it reads `verified`, and one line follows for each declared
+file the folder holds, naming the profile it belongs to — the folder is shared by every team on
+the machine, so a file another team's CLI left is named with whose it is:
+
+```console
+ok    the lobby ~/.config/team/lobby: verified
+ok    the lobby ~/.config/team/lobby: .claude/scheduled_tasks.lock is claude-code's
+```
+
 A CLI outside the range this version was tested with keeps its warning and says what that means —
 herdr's own version line says only where it sits, for the same reason:
 
