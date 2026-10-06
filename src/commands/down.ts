@@ -266,7 +266,10 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   if (start !== 'idle') {
     if (start !== 'unsent' || !boxHoldsText(cli, text, io.screen())) return false;
     const key = profileFor(cli)?.exitClear ?? null;
-    if (key === null || !live()) return false;
+    // The caller check first: a CLI gone at this key is `no-agent` whether or not the profile
+    // carries a clearing key, and "not typed" is for a key-less profile the CLI is still on.
+    if (!live()) return 'no-agent';
+    if (key === null) return false;
     if (!io.sendKey(key)) return false;
     const after = await settle('unsent');
     // The wait can swallow the CLI as well: the caller check precedes the typing, exactly as it

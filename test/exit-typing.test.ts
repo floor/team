@@ -86,20 +86,21 @@ function paneOf(
 /** One pane whose box already holds exactly the exit text when the run starts — the leftover of
  *  an earlier attempt: `leftover` until the profile's clearing key has gone out and the pane has
  *  drawn the cleared box, then `idle` until the text is typed and drawn, then `leftover` again.
- *  `opts.foreground` can move the seat while the cleared box is waited for; `types` records every
- *  typing, as in `paneOf`. */
+ *  `opts.foreground` can move the seat while the sequence runs — per call and per draw — and
+ *  `types` records every typing, as in `paneOf`. */
 function leftoverPane(
   cli: string,
   binary: string,
   leftover: string,
   idle: string,
-  opts: { foreground?: (drawn: boolean) => string[] } = {},
+  opts: { foreground?: (drawn: boolean, calls: number) => string[] } = {},
 ): { io: ExitIo; sent: Sent[]; types: string[] } {
   const text = exitText(cli);
   const key = profileFor(cli)?.exitClear ?? '';
   let cleared = false;
   let typed = false;
   let drawn = false;
+  let calls = 0;
   let clock = 1_000_000;
   const sent: Sent[] = [];
   const types: string[] = [];
@@ -122,7 +123,7 @@ function leftoverPane(
     pressEnter: () => send('enter'),
     screen,
     status: () => 'idle',
-    foreground: () => opts.foreground?.(drawn) ?? [binary],
+    foreground: () => opts.foreground?.(drawn, calls++) ?? [binary],
     sleep: async (ms) => {
       drawn = true;
       clock += ms;
@@ -411,6 +412,17 @@ describe('a box that already holds exactly the exit text', () => {
       left: 'its box already held this exit text; the clearing key (ctrl+c) left the screen reading unsent; left running',
     });
     expect(pane.sent).toEqual([{ key: 'ctrl+c', kind: 'unsent', holds: true }]);
+  });
+
+  // The ordering the caller check needs: an agent gone at the clearing key is `no-agent`, not
+  // "its exit was not typed" — the two readings differ, and only the first says what happened.
+  test('a CLI gone at the clearing key is "no-agent", not "not typed"', async () => {
+    const pane = leftoverPane('claude-code', 'claude', fixture('claude-code-unsent-ansi.txt'), fixture('claude-code-idle-ansi.txt'), {
+      foreground: (_drawn, calls) => (calls === 0 ? ['claude'] : ['zsh']),
+    });
+    expect(await typeExit(pane.io, 'claude-code', exitText('claude-code'))).toBe('no-agent');
+    expect(pane.sent).toEqual([]);
+    expect(pane.types).toEqual([]);
   });
 });
 
