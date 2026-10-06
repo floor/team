@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
 import { legacySeatDigests } from '../../src/approve/fingerprint.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
+import { bumpGeneration, keyOf, signPayload } from '../../src/store/keys.ts';
 import {
   approvalStanding,
   approvedCopy,
@@ -127,6 +128,79 @@ describe('an approval', () => {
     // refused — never read as "no approval at all", which reads permissively.
     expect(() => readApproval(store)).toThrow('the record has no "file"');
     expect(approvalStanding(home, home).kind).toBe('refused');
+  });
+});
+
+describe('who approved', () => {
+  // The record an `approve` by a delegate writes: the same shape as the owner's, plus the
+  // field naming the pane. The field rides inside the signed bytes, and a record without it
+  // (every record written before it existed) signs exactly what earlier versions signed.
+  test('a record signed over the payload of the older shape still verifies', () => {
+    const root = join(home, 'acme-web');
+    mkdirSync(root);
+    const store = storePath('acme-web', root, home);
+    mkdirSync(store, { recursive: true });
+    const record = approval(root);
+    const file = 'format: 1\n';
+    const generation = bumpGeneration(root, home, new Date('2026-10-06T00:00:00Z'));
+    // `payloadOf` as the version before `approved_by` computed it, written out here so the
+    // bytes do not move with the implementation: exactly the keys, exactly the nulls.
+    const oldPayload = {
+      approval: {
+        format: record.format,
+        approvedAt: record.approvedAt,
+        root: record.root,
+        fingerprints: { sections: record.fingerprints.sections, seats: record.fingerprints.seats },
+        ceilings: { seats: record.ceilings.seats, temporary: record.ceilings.temporary, vendors: record.ceilings.vendors },
+        checks: record.checks ?? null,
+        overrides: record.overrides ?? null,
+      },
+      file,
+      generation,
+    };
+    writeFileSync(
+      join(store, 'approval.json'),
+      `${JSON.stringify({ ...record, file, generation, signature: signPayload(oldPayload, keyOf(home)) }, null, 2)}\n`,
+    );
+    const standing = approvalStanding(root, home);
+    expect(standing.kind).toBe('verified');
+    if (standing.kind !== 'verified') throw new Error('the older record did not verify');
+    expect(standing.record.approval).not.toHaveProperty('approved_by');
+  });
+
+  test('a delegated record carries the pane, inside the signature', () => {
+    const root = join(home, 'acme-web');
+    mkdirSync(root);
+    const store = storePath('acme-web', root, home);
+    writeApproval(
+      store,
+      { approval: { ...approval(root), approved_by: 'delegate main/w1:p1' }, file: 'format: 1\n' },
+      [opus],
+      home,
+    );
+    const standing = approvalStanding(root, home);
+    expect(standing.kind).toBe('verified');
+    if (standing.kind !== 'verified') throw new Error('the delegated record did not verify');
+    expect(standing.record.approval.approved_by).toBe('delegate main/w1:p1');
+    // Renaming the approving pane after the signing is refused: the field is covered by it.
+    const record = readApproval(store);
+    if (!record) throw new Error('missing approval');
+    writeFileSync(
+      join(store, 'approval.json'),
+      JSON.stringify({ ...record, approval: { ...record.approval, approved_by: 'delegate main/w9:p9' } }),
+    );
+    expect(approvalStanding(root, home).kind).toBe('refused');
+  });
+
+  test('a name that is not a string is a shape problem', () => {
+    const store = storePath('acme-web', home, home);
+    mkdirSync(store, { recursive: true });
+    // The signing fields ride along so the shape check reaches the field under test.
+    writeFileSync(
+      join(store, 'approval.json'),
+      JSON.stringify({ ...approval(home), file: 'a\n', generation: 1, signature: 'aa', approved_by: 7 }),
+    );
+    expect(() => readApproval(store)).toThrow('"approved_by" is not a string');
   });
 });
 

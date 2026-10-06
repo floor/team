@@ -39,6 +39,13 @@ export interface Approval {
    * none. Absent on a record written before the file existed.
    */
   overrides?: string | null;
+  /**
+   * Who approved, when it was not the owner at a terminal: `delegate <session>/<pane id>`,
+   * the pane the file named. Absent on a record the owner wrote, and the signed payload
+   * carries the field only when it is set — a record without it signs exactly the bytes
+   * every earlier version signed, so signatures already on disk still verify.
+   */
+  approved_by?: string;
 }
 
 export interface LedgerEntry {
@@ -131,6 +138,9 @@ export function payloadOf(approval: Approval, file: string, generation: number):
       ceilings: { seats: approval.ceilings.seats, temporary: approval.ceilings.temporary, vendors: approval.ceilings.vendors },
       checks: approval.checks ?? null,
       overrides: approval.overrides ?? null,
+      // Added only when set, never as null: an owner's record then encodes to the same bytes
+      // this function produced before `approved_by` existed, and its signature still verifies.
+      ...(approval.approved_by !== undefined ? { approved_by: approval.approved_by } : {}),
     },
     file,
     generation,
@@ -267,7 +277,7 @@ export function shapeProblem(record: unknown): string | null {
   if (flat.format === 1 && (flat.signature !== undefined || flat.generation !== undefined)) {
     return 'the record says format 1 but carries a signature';
   }
-  const allowed = ['format', 'approvedAt', 'root', 'fingerprints', 'ceilings', 'file', 'checks', 'overrides'];
+  const allowed = ['format', 'approvedAt', 'root', 'fingerprints', 'ceilings', 'file', 'checks', 'overrides', 'approved_by'];
   if (flat.format === 2) allowed.push('generation', 'signature');
   for (const key of Object.keys(flat)) {
     if (!allowed.includes(key)) return `the record carries a field this version does not know ("${key}")`;
@@ -330,6 +340,7 @@ export function shapeProblem(record: unknown): string | null {
     }
   }
   if (flat.overrides !== undefined && flat.overrides !== null && typeof flat.overrides !== 'string') return '"overrides" is not a string or null';
+  if (flat.approved_by !== undefined && typeof flat.approved_by !== 'string') return '"approved_by" is not a string';
   return null;
 }
 
