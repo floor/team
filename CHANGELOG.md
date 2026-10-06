@@ -7,6 +7,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-06
+
+A release about setting a team up and upgrading it: one lobby per machine, signed approvals, a
+caller gate bound to the pane the team recorded, a launch that reports one line per seat and waits
+for its owner at a dialog, and a second package name, `teamcli`. **Three changes are breaking; read
+UPGRADE-0.3.md before upgrading a running team.**
+
+### Changed
+
+- **Breaking:** seats now start in a machine-wide lobby at `~/.config/team/lobby` instead of a
+  `.lobby` folder beside the project's worktrees, and `trust:` entries must be absolute folders that
+  include that lobby. A file from an earlier release still reads (`status`, `doctor`), but `team up`
+  and `team add` refuse it until `trust:` is migrated and approved again; `team doctor` and
+  `team up` print the whole block to paste.
+- **Breaking:** approval records are signed per project and per machine. An approval made before
+  this release is not in force until `team approve` runs once more; running seats aren't disturbed.
+- **Breaking:** a coordinator or operator is the pane its own team's session records. From any other
+  pane, or when the state records no pane for that seat, `add`, `remove`, `worktree`, `down` and
+  `answer` are refused; the owner repairs it with `team down`, then `team up`. `--session` and
+  `--file` on those commands are the owner's alone, from a terminal outside herdr, refused before
+  anything is read.
+- `status` and `doctor` read any team file without writing anything; `watch --file` is the owner's;
+  a plain folder gets its watch.
+- The rules reach a seat as one verified line that points at its rules file.
+- The watch reports an idle seat once per idle period; `watch.idle_repeat` is off unless set.
+- `team worktree` reads the approved copy of every value it uses.
+- `up` refuses a launch line that can't run where its seat starts.
+- `doctor` warns about a model-less launch only when nothing checks it; `status` gives a runnable
+  repair order, the owner's repairs and unsent text.
+- A file whose `version` is `"0"` (the placeholder `init` wrote) reads as unset; a wrong model
+  family is still refused.
+
+### Added
+
+- `team up` reports one final record per seat, a vendor notice as a kind of its own, and cleaned
+  output lines.
+- `team up` no longer closes a seat that stops at a dialog: it keeps the workspace, records that the
+  seat waits for its owner, and asks one key: `o` opens the pane, `s` skips the seat, `q` stops
+  cleanly. `team` answers nothing and types nothing at a dialog. An owner with no terminal is never
+  prompted.
+- `team answer` and the `dialogs` policy: a coordinator may answer a trust dialog when the owner
+  allows it.
+- `team release check`, its `linear` and `activity` checks, and `--file` for it.
+- Exit codes, documented and tested.
+- The package `teamcli`: the same tool under its other name; it installs `team` at the exact same
+  version and runs it.
+
+### Fixed
+
+- A restored pane is its seat only while `team`'s own process is still in it; the repair is named.
+- A trust close says the workspace was closed, a failed close is not announced as one, and a seat
+  seen running and then gone is reported as such.
+- Cursor: the idle box drawn inside a border is read; Cursor seats are read and checked whatever
+  model they run.
+- The pane-text sanitiser: BEL ends an OSC sequence only, in one linear pass.
+
+### Known issues
+
+- A team file at a non-default path: `up --file` starts no watch for it; start it by hand
+  (`team watch --file <path>` from the owner's terminal). The line "watch: started" can be printed
+  for a watch that then exits.
+- **After a restart of the machine** (the multiplexer restores the panes; a CLI can come back as
+  another model, or a pane as a bare shell): a seat launched by 0.3 is recognised as no longer the
+  process `team` started, and `up` closes it without input and launches it again. **A seat still
+  recorded by 0.2.1 (not relaunched since the upgrade) is not:** `up` leaves it ("already ready"),
+  `remove` refuses a bare shell, and `status` names `team up` as a repair that does not work for it.
+  What works: the owner's `team remove <seat> --abandon` (or `team down --abandon`), then `team up`.
+  The upgrade's relaunch (`team down`, then `team up`) removes the case.
+- `team down` that cannot confirm the exit text it typed leaves that text in the seat's input box;
+  the next `down` skips the seat ("holds unsent text"). Clear the box by hand.
+- The coordinator of a team whose file is not at the default path can run no team-changing command:
+  it finds no file, and `--file` is the owner's. The owner runs them.
+- A seat waiting at a permission prompt is reported by a running watch, to the owner; `team status`
+  has no line for it.
+- A seat that `up` leaves out because its screen's model family is not the file's ("left at
+  launched, not named") keeps an unnamed pane; after the file is corrected and approved, the next
+  `team up` refuses the session until that pane is closed by hand, and `team down` does not close
+  it. This happens on a new 0.3 team too, not only after an upgrade.
+- `--until` on the commands that take it is not validated.
+- A seat stopped on its provider's error screen can read as idle or working.
+
 ## [0.2.1] - 2026-10-04
 
 A safety patch: on Codex and Cursor the composer's input row is read only under the box's frame, so a
@@ -377,6 +458,8 @@ The first release: set up, change and watch a project's team of AI agents from o
   footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
   stays idle.
 
+[Unreleased]: https://github.com/floor/team/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/floor/team/releases/tag/v0.3.0
 [0.2.1]: https://github.com/floor/team/releases/tag/v0.2.1
 [0.2.0]: https://github.com/floor/team/releases/tag/v0.2.0
 [0.1.2]: https://github.com/floor/team/releases/tag/v0.1.2
