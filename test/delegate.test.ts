@@ -273,6 +273,11 @@ describe('placement', () => {
     expect(gate({ agents: () => [agent('lead', 'w1:p1')], state: empty })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
   });
 
+  test('a session entry with no seats is treated as having none', () => {
+    const handed = { format: 1, sessions: { other: { worktrees: {} } } } as unknown as State;
+    expect(gate({ state: handed })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+  });
+
   test('a seat recorded in the delegate session collides, and a different pane there does not', () => {
     const recorded: State = { format: 1, sessions: { other: { seats: { worker: { stage: 'ready', pane: 'w1:p1' } }, worktrees: {} } } };
     for (const command of DELEGATE_COMMANDS) {

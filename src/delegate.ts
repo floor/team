@@ -286,7 +286,7 @@ function collides(team: TeamFile, entry: Delegate, state: State): boolean {
   const split = splitPane(entry.pane);
   if (split === null || split.session === team.session) return true;
   for (const [session, recorded] of Object.entries(state.sessions)) {
-    for (const seat of Object.values(recorded.seats)) {
+    for (const seat of Object.values(recorded.seats ?? {})) {
       if (seat.pane && `${session}/${seat.pane}` === entry.pane) return true;
     }
   }
