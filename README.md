@@ -21,6 +21,12 @@ npm install -g team       # or run it without installing: npx team
 team --version            # 0.2.1
 ```
 
+`@teamcli/cli` installs the same commands. Type `teamcli` or `team`.
+
+```sh
+npm install -g @teamcli/cli
+```
+
 ## The file is private to each clone
 
 `team init` keeps `.agents/team.yaml` out of git through `.git/info/exclude`, never by editing
