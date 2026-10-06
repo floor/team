@@ -7,8 +7,7 @@ import { checkDrift, resolveChecks } from '../budgets/checks.ts';
 import { formatDiff } from '../approve/diff.ts';
 import { compare, describe, fingerprints } from '../approve/fingerprint.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner, type Caller } from '../caller.ts';
-import { delegateGate, logDelegated, type DelegateSources } from '../delegate.ts';
+import { callerOf, describeCaller, isOwner } from '../caller.ts';
 import { loadTeamFile, placedProblems } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
@@ -24,10 +23,6 @@ export type ApproveSources = {
   ask(question: string): Promise<string | null>;
   now(): Date;
   home: string;
-  // The delegate gate, for tests; the real one unless a test stands one in. The gate's own
-  // reads are faked through `delegateSources`.
-  gate?: typeof delegateGate;
-  delegateSources?: DelegateSources;
 };
 
 export const realSources: ApproveSources = {
@@ -222,77 +217,13 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     return 1;
   }
 
-  // The one tail both paths end at: the record, its log line, and the closing words. A delegated
-  // approval carries the pane inside the signed record and logs as the delegate; the owner's
-  // record and line are exactly what they were. One site, so the exit contract keeps one row.
-  const writeApproved = (caller: Caller, pane?: string): number => {
-    const now = sources.now();
-    writeApproval(
-      store,
-      {
-        approval: {
-          ...approvalOf(team, root, now, resolved.checks),
-          overrides: live.text,
-          ...(pane !== undefined ? { approved_by: `delegate ${pane}` } : {}),
-        },
-        file: text,
-      },
-      team.seats,
-      sources.home,
-      now,
-    );
-    if (pane === undefined) {
-      logLine(dirname(path), 'approve', describeCaller(caller), `approved ${seats} seats; ceilings: ${ceilingsLine(ceilings)}`, now);
-    } else {
-      logDelegated(dirname(path), pane, 'approve', now);
-    }
-    io.stdout(
-      `Approved. The record is in ${store}; signed with key ${keyFingerprint(keyOf(sources.home))}; check the rest with \`team doctor\`.\n`,
-    );
-    // exit: approve.approved
-    return 0;
-  };
-
   const caller = callerOf(io);
   if (!isOwner(caller)) {
-    // No delegates in the file: today's refusal, byte for byte, and the gate is never asked.
-    if (!team.delegates) {
-      io.stderr(
-        `team approve: only the owner approves a team file, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`,
-      );
-      // exit: approve.not-owner
-      return 1;
-    }
-    // The ordinary rule refused and the file names delegates: the gate decides. Its preflight
-    // proves a verified approval in force, a readable approved copy, a delegate section no
-    // different from the approved one, readable evidence and an external pane; then that this
-    // caller is the approved pane and `approve` is in its list.
-    const gate = sources.gate ?? delegateGate;
-    const verdict = gate({
-      command: 'approve',
-      team,
-      root,
-      dir: dirname(path),
-      flags: [...args.flags, ...(args.values.file !== undefined ? ['file'] : [])],
-      io,
-      ...(sources.delegateSources ? { sources: sources.delegateSources } : {}),
-    });
-    if (verdict.kind === 'refused') {
-      io.stderr(`team approve: ${verdict.text}\n`);
-      // exit: approve.delegate-approval
-      // exit: approve.delegate-approved-copy
-      // exit: approve.delegate-section
-      // exit: approve.delegate-evidence
-      // exit: approve.delegate-placement
-      // exit: approve.delegate
-      // exit: approve.delegate-command
-      // exit: approve.delegate-flag
-      return 1;
-    }
-    // The approved pane approves without a question: there is no owner at a terminal to answer
-    // one. The diff and the summary above are what the owner would have read. The record names
-    // the pane that signed it; the file itself is the one the gate just proved approved.
-    return writeApproved(caller, verdict.pane);
+    io.stderr(
+      `team approve: only the owner approves a team file, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`,
+    );
+    // exit: approve.not-owner
+    return 1;
   }
 
   const answer = await sources.ask(
@@ -304,5 +235,22 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     return 1;
   }
 
-  return writeApproved(caller);
+  const now = sources.now();
+  writeApproval(
+    store,
+    { approval: { ...approvalOf(team, root, now, resolved.checks), overrides: live.text }, file: text },
+    team.seats,
+    sources.home,
+    now,
+  );
+  logLine(
+    dirname(path),
+    'approve',
+    describeCaller(caller),
+    `approved ${seats} seats; ceilings: ${ceilingsLine(ceilings)}`,
+    now,
+  );
+  io.stdout(`Approved. The record is in ${store}; signed with key ${keyFingerprint(keyOf(sources.home))}; check the rest with \`team doctor\`.\n`);
+  // exit: approve.approved
+  return 0;
 }
