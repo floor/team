@@ -291,6 +291,13 @@
     {
       "code": 1,
       "command": "add",
+      "id": "add.run-lock",
+      "meaning": "another session-mutating run is holding the session",
+      "trigger": "team add worker"
+    },
+    {
+      "code": 1,
+      "command": "add",
       "id": "add.server",
       "meaning": "the session's server did not start",
       "trigger": "team add worker"
@@ -907,6 +914,13 @@
     {
       "code": 1,
       "command": "down",
+      "id": "down.run-lock",
+      "meaning": "another session-mutating run is holding the session",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
       "id": "down.session-owner",
       "meaning": "--session is the owner's",
       "trigger": "team down --session other"
@@ -1257,6 +1271,13 @@
     {
       "code": 1,
       "command": "remove",
+      "id": "remove.run-lock",
+      "meaning": "another session-mutating run is holding the session",
+      "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
       "id": "remove.session-owner",
       "meaning": "--session is the owner's",
       "trigger": "team remove worker --session other"
@@ -1425,13 +1446,6 @@
     {
       "code": 1,
       "command": "up",
-      "id": "up.busy",
-      "meaning": "another team up is running for the session",
-      "trigger": "team up"
-    },
-    {
-      "code": 1,
-      "command": "up",
       "id": "up.delegate",
       "meaning": "only the owner or the approved delegate runs up",
       "trigger": "team up"
@@ -1553,6 +1567,13 @@
       "command": "up",
       "id": "up.placement",
       "meaning": "a seat has nowhere to start",
+      "trigger": "team up"
+    },
+    {
+      "code": 1,
+      "command": "up",
+      "id": "up.run-lock",
+      "meaning": "another session-mutating run is holding the session",
       "trigger": "team up"
     },
     {

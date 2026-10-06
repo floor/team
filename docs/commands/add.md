@@ -161,6 +161,8 @@ run` — makes nothing and exits 0.
 | `team add: the file changed while add was checking; nothing was written` | 1 |
 | `team add: the load is <n> per core, above <n>` / `team add: free memory is <n>%, below <n>%` | 1 |
 | a `MISS` finding from [team doctor](doctor.md), the seat's own launch line among them | 1 |
+| ``team add: another session-mutating run is holding session <session> (pid <pid>); try again when it is done`` — another run holds the session's mutator lock, the one lock `up`, `add`, `down` and `remove` share; the line names no command, because the lock is shared. The lock is taken before this run's first effect and released at its end; `--dry-run` takes no lock and never shows it | 1 |
+| ``team add: another session-mutating run may be holding session <session>, and its lock cannot be read; if no run is using it, delete <state dir>/seat-locks/<session>/.run`` — the lock file does not read as a token, so its holder is unknown and only the owner clears it; the line names the file | 1 |
 
 The ceilings are read from the approval's record, never from the file: a seat that would put the
 session past `limits.seats`, past `limits.temporary` for a temporary seat, or past a

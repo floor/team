@@ -45,7 +45,8 @@ import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { runPause, type PauseHost, type PauseInput } from '../launch/pause.ts';
 import { plainLine, plainText } from '../launch/plain.ts';
 import { recordWhat, progressWriter } from '../launch/progress.ts';
-import { acquireSeatLock, seatLockPath } from '../launch/seat-lock.ts';
+import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
+import { acquireSeatLock } from '../launch/seat-lock.ts';
 import { processSignals, terminalReader, type Terminal } from '../launch/terminal.ts';
 import { trustPolicy } from '../file/dialogs.ts';
 import { rulesOf } from '../launch/rules.ts';
@@ -333,20 +334,6 @@ function restartNote(
     return { restartNote: `a relaunch moves it into the lobby: ${fix}` };
   }
   return {};
-}
-
-/** The run lock's name under `<dir>/seat-locks/<session>/`: a leading dot, so it can never
- *  be a seat name (`file/sections/seats.ts`). */
-const RUN_LOCK = '.run';
-
-/** What a second `up` is told. `held` is the live pid that owns the lock, or -1 when the
- *  lock cannot be read and its holder is unknown — the one case the owner has to clear by
- *  hand. */
-function busyText(held: number, session: string, dir: string): string {
-  if (held > 0) {
-    return `another \`team up\` is running for session ${session} (pid ${held}); try again when it is done`;
-  }
-  return `another \`team up\` may be running for session ${session}, and its lock cannot be read; if no \`team up\` is running, delete ${seatLockPath(dir, session, RUN_LOCK)}`;
 }
 
 export async function runUp(argv: string[], io: Io, sources: UpSources): Promise<number> {
@@ -687,17 +674,17 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     return 1;
   }
 
-  // One `up` per session at a time: from here the run has effects — the delegated audit line
+  // One session-mutating run at a time: from here the run has effects — the delegated audit line
   // below is a write — and two runs started in two terminals read the same state before either
   // records a pane, so they launch over each other (one sitting at a dialog while the other
-  // reports). The lock is the per-seat one under a name no seat can have: a leading dot
-  // (`file/sections/seats.ts`), so no seat's lock collides with it. A dry run and a refused
-  // run returned above and never take it, and a lock left by a killed run is taken over by the
-  // next one (`launch/seat-lock.ts`).
-  const runLock = acquireSeatLock(dir, session, RUN_LOCK);
+  // reports). The lock is the session mutator lock shared with `add`, `down` and `remove`, which
+  // take the same `.run` before their own first effect (`launch/run-lock.ts`). A dry run and a
+  // refused run returned above and never take it, and a lock left by a killed run is taken over
+  // by the next one (`launch/seat-lock.ts`).
+  const runLock = acquireRunLock(dir, session);
   if ('held' in runLock) {
-    out.stderr(`team up: ${plainText(busyText(runLock.held, session, dir))}\n`);
-    // exit: up.busy
+    out.stderr(`team up: ${plainText(runLockText(runLock.held, session, dir))}\n`);
+    // exit: up.run-lock
     return 1;
   }
   try {

@@ -34,6 +34,7 @@ import { launchLineFinding } from '../launch/line.ts';
 import { formatPlan, upPlan, type UpSeat } from '../launch/plan.ts';
 import { plainLine, plainText } from '../launch/plain.ts';
 import { progressWriter, type Progress } from '../launch/progress.ts';
+import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock, type SeatState, type SessionState } from '../state.ts';
@@ -522,68 +523,82 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     // exit: add.budget
     return 1;
   }
-  if (isMigratedTrust(prepared.team.trust) && wouldLaunch) {
-    const gate = verifyLobby(sources.home, { create: true, getuid: sources.getuid, fs: sources.fs });
-    if (!gate.ok) {
-      out.stderr(`team add: ${plainText(gate.text)}\n`);
-      // exit: add.lobby
-      return 1;
-    }
-    if ('path' in gate) {
-      verifiedLobby = gate.path;
-      lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
-    }
+  // The session mutator lock: from here this run has effects — the lobby make below when it
+  // is absent, the delegated audit line, the file edit, the launch — and no other session
+  // command may interleave its own. Every refusal above is decided first, a dry run returned
+  // above, and the lock is released on every exit path (`launch/run-lock.ts`).
+  const runLock = acquireRunLock(dir, session);
+  if ('held' in runLock) {
+    out.stderr(`team add: ${plainText(runLockText(runLock.held, session, dir))}\n`);
+    // exit: add.run-lock
+    return 1;
   }
-  if (decision.kind === 'unknown') out.stderr(`${plainLine(built.name)}: ${plainText(decision.text)}\n`);
-  // The audit line, exactly at the effects boundary: a delegated run that reaches here is
-  // committed to its effects — the write below when the seat needs one, the launch after it.
-  // A dry run returned above; every refusal came sooner.
-  if (delegatePane !== null) logDelegated(dir, delegatePane, 'add', sources.now());
-  if (built.edited !== original) {
-    const written = withLock(dir, () => {
-      if (readFileSync(path, 'utf8') !== original) return { kind: 'changed' as const };
-      const wrote = writeTeamFile(path, built.edited);
-      return wrote.ok ? { kind: 'ok' as const } : { kind: 'invalid' as const, errors: wrote.errors };
-    });
-    if (written.kind === 'changed') {
-      out.stderr('team add: the file changed while add was checking; nothing was written\n');
-      // exit: add.changed
-      return 1;
+  try {
+    if (isMigratedTrust(prepared.team.trust) && wouldLaunch) {
+      const gate = verifyLobby(sources.home, { create: true, getuid: sources.getuid, fs: sources.fs });
+      if (!gate.ok) {
+        out.stderr(`team add: ${plainText(gate.text)}\n`);
+        // exit: add.lobby
+        return 1;
+      }
+      if ('path' in gate) {
+        verifiedLobby = gate.path;
+        lobbySeen = { path: gate.path, dev: gate.dev, ino: gate.ino };
+      }
     }
-    if (written.kind === 'invalid') {
-      for (const problem of written.errors) out.stderr(`team add: ${where(problem)}${plainText(problem.message)}\n`);
-      // exit: add.locked
-      return 2;
+    if (decision.kind === 'unknown') out.stderr(`${plainLine(built.name)}: ${plainText(decision.text)}\n`);
+    // The audit line, exactly at the effects boundary: a delegated run that reaches here is
+    // committed to its effects — the write below when the seat needs one, the launch after it.
+    // A dry run returned above; every refusal came sooner.
+    if (delegatePane !== null) logDelegated(dir, delegatePane, 'add', sources.now());
+    if (built.edited !== original) {
+      const written = withLock(dir, () => {
+        if (readFileSync(path, 'utf8') !== original) return { kind: 'changed' as const };
+        const wrote = writeTeamFile(path, built.edited);
+        return wrote.ok ? { kind: 'ok' as const } : { kind: 'invalid' as const, errors: wrote.errors };
+      });
+      if (written.kind === 'changed') {
+        out.stderr('team add: the file changed while add was checking; nothing was written\n');
+        // exit: add.changed
+        return 1;
+      }
+      if (written.kind === 'invalid') {
+        for (const problem of written.errors) out.stderr(`team add: ${where(problem)}${plainText(problem.message)}\n`);
+        // exit: add.locked
+        return 2;
+      }
+      const parsed = validateTeamFile(built.edited, { home: sources.home, fs: sources.fs, root });
+      // The amendment re-signs from the command's own one snapshot, read at its gate.
+      if (parsed.ok) recordSeatDigestOf(standing, parsed.team, root, built.name, sources.home);
     }
-    const parsed = validateTeamFile(built.edited, { home: sources.home, fs: sources.fs, root });
-    // The amendment re-signs from the command's own one snapshot, read at its gate.
-    if (parsed.ok) recordSeatDigestOf(standing, parsed.team, root, built.name, sources.home);
-  }
 
-  const planSeat = verifiedLobby && seatForPlan.lobby ? { ...seatForPlan, cwd: verifiedLobby } : seatForPlan;
-  const plan = upPlan({ root, session, sessionRunning: live === 'running', seats: [planSeat], watchAlive: true });
-  const who = describeCaller(caller);
-  const host = hostOf({
-    dir, session, team: prepared.team, root, home: sources.home, ceilings, running, seat: built.seat, temporary: built.temporary,
-    caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io: out, standing,
-    verifiedLobby, records,
-    doctor: sources.doctor,
-    // The lobby is read again directly before the workspace this run makes in it, with nothing
-    // in between (`execute.ts`). Null when it is still the folder the gate read.
-    confirmLobby() {
-      return lobbySeen ? recheckLobby(sources.home, lobbySeen, { getuid: sources.getuid, fs: sources.fs }) : null;
-    },
-  });
-  const report = await executePlan(plan, session, host);
-  const afterwards = readState(dir).sessions[session]?.seats[built.name];
-  const launched = !report.held && !report.dropped.includes(built.name) && afterwards?.stage === 'ready';
-  if (launched && built.temporary) {
-    recordLedger(storePath(team.project, root, sources.home), [built.seat]);
+    const planSeat = verifiedLobby && seatForPlan.lobby ? { ...seatForPlan, cwd: verifiedLobby } : seatForPlan;
+    const plan = upPlan({ root, session, sessionRunning: live === 'running', seats: [planSeat], watchAlive: true });
+    const who = describeCaller(caller);
+    const host = hostOf({
+      dir, session, team: prepared.team, root, home: sources.home, ceilings, running, seat: built.seat, temporary: built.temporary,
+      caller: who, now: sources.now, launch: sources.launch, readMachine: sources.machine, samples, limits: team.machine, io: out, standing,
+      verifiedLobby, records,
+      doctor: sources.doctor,
+      // The lobby is read again directly before the workspace this run makes in it, with nothing
+      // in between (`execute.ts`). Null when it is still the folder the gate read.
+      confirmLobby() {
+        return lobbySeen ? recheckLobby(sources.home, lobbySeen, { getuid: sources.getuid, fs: sources.fs }) : null;
+      },
+    });
+    const report = await executePlan(plan, session, host);
+    const afterwards = readState(dir).sessions[session]?.seats[built.name];
+    const launched = !report.held && !report.dropped.includes(built.name) && afterwards?.stage === 'ready';
+    if (launched && built.temporary) {
+      recordLedger(storePath(team.project, root, sources.home), [built.seat]);
+    }
+    // exit: add.ready
+    // exit: add.not-ready
+    // exit: add.server
+    return launched && !report.serverFailed ? 0 : 1;
+  } finally {
+    runLock.release();
   }
-  // exit: add.ready
-  // exit: add.not-ready
-  // exit: add.server
-  return launched && !report.serverFailed ? 0 : 1;
 }
 
 function declaredSeat(

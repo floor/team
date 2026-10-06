@@ -1709,10 +1709,11 @@ describe('team up, live', () => {
   });
 });
 
-// The run lock: one `up` per session at a time. It is the seat-lock file under the name no
-// seat can have — a leading dot — held for exactly the length of a run that has effects, so a
-// second run in another terminal is told instead of both reading the same state and launching
-// over each other. A dry run and a refused run never take it, a live holder's lock is never
+// The session mutator lock: one session-mutating run per session at a time. `up` takes it — the
+// seat-lock file under the name no seat can have, a leading dot — held for exactly the length of
+// a run that has effects, so a second run in another terminal is told instead of both reading
+// the same state and launching over each other. `add`, `down` and `remove` take the same lock
+// (their own tests), so a dry run and a refused run never take it, a live holder's lock is never
 // touched, and a lock a killed run left is taken over by the next one.
 describe('team up, one run at a time', () => {
   const lockFile = () => seatLockPath(join(root, '.agents'), 'acme-web', '.run');
@@ -1728,7 +1729,7 @@ describe('team up, one run at a time', () => {
     const io = testIo(root, { kind: 'owner' });
     expect(await runUp(FILE, io, sources({}, made))).toBe(1);
     expect(io.err).toBe(
-      `team up: another \`team up\` is running for session acme-web (pid ${process.pid}); try again when it is done\n`,
+      `team up: another session-mutating run is holding session acme-web (pid ${process.pid}); try again when it is done\n`,
     );
     expect(io.out).toBe('');
     expect(made.starts).toBe(0);
@@ -1758,8 +1759,8 @@ describe('team up, one run at a time', () => {
     // An unreadable lock is held, never stale (`seat-lock.ts`), so the owner is the only way
     // out and the message names the file.
     expect(io.err).toBe(
-      'team up: another `team up` may be running for session acme-web, and its lock cannot be read; '
-        + `if no \`team up\` is running, delete ${lockFile()}\n`,
+      'team up: another session-mutating run may be holding session acme-web, and its lock cannot be read; '
+        + `if no run is using it, delete ${lockFile()}\n`,
     );
     expect(made.starts).toBe(0);
   });
@@ -1816,7 +1817,7 @@ describe('team up, one run at a time', () => {
     const io = testIo(root, { kind: 'owner' });
     expect(await runUp(FILE, io, sources({ fs }, made))).toBe(1);
     expect(io.err).toBe(
-      `team up: another \`team up\` is running for session acme-web (pid ${process.pid}); try again when it is done\n`,
+      `team up: another session-mutating run is holding session acme-web (pid ${process.pid}); try again when it is done\n`,
     );
     expect(io.err).not.toContain('failed to create');
     // The refused run made nothing: the lock's refusal came before the run's first write.
@@ -1845,6 +1846,45 @@ describe('team up, one run at a time', () => {
     expect(held.length).toBeGreaterThan(0);
     expect(held).not.toContain(false);
     expect(existsSync(lobby)).toBe(true);
+  });
+
+  test('a stop started while this run is mid-flight is refused by the very lock it holds', async () => {
+    await approve();
+    const made = world();
+    const during: Promise<number>[] = [];
+    let seen = '';
+    const create = made.launch.createWorkspace;
+    made.launch.createWorkspace = (session, cwd, label) => {
+      // `up` is inside its effects here, its lock on disk under its own pid — so a `down` started
+      // now is refused by the same file this run took, naming this process. `down`'s refusal is
+      // reached before its first await, so it has already happened when it is awaited below. The
+      // stub launch is never called: the refusal comes first.
+      const io2 = testIo(root, { kind: 'owner' });
+      during.push(runDown(FILE, io2, {
+        sessionRunning: () => true,
+        agents: () => [],
+        alive: () => false,
+        screen: () => ({ kind: 'idle' }),
+        screenText: () => '',
+        status: () => 'idle',
+        foreground: () => [],
+        now: () => NOW,
+        launch: {
+          typeText: () => false, sendKey: () => false, pressEnter: () => false,
+          agentPanes: () => null, closeWorkspace: () => false, stopSession: () => false,
+          deleteSession: () => false, kill: () => false, sleep: async () => {}, now: () => NOW,
+        },
+      }));
+      seen = io2.err;
+      return create(session, cwd, label);
+    };
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runUp(FILE, io, sources({}, made))).toBe(0);
+    expect(during.length).toBeGreaterThan(0);
+    expect(await during[0]).toBe(1);
+    expect(seen).toBe(
+      `team down: another session-mutating run is holding session acme-web (pid ${process.pid}); try again when it is done\n`,
+    );
   });
 });
 
@@ -3766,7 +3806,7 @@ describe('team up, delegated', () => {
     const code = await runUp(FILE, io, sources({ ...passed, logDelegated }, made));
     expect(code).toBe(1);
     expect(io.err).toBe(
-      `team up: another \`team up\` is running for session acme-web (pid ${process.pid}); try again when it is done\n`,
+      `team up: another session-mutating run is holding session acme-web (pid ${process.pid}); try again when it is done\n`,
     );
     // The delegation is not on the record either: the run lock comes before the audit line.
     expect(made.starts).toBe(0);
@@ -4709,6 +4749,92 @@ describe('team down, live', () => {
     expect(run.closed).toEqual([]);
     expect(run.stopped).toEqual([]);
     expect(io.out).toContain('session acme-web: not stopped, 1 agent left in it');
+  });
+
+  // The session mutator lock, `down`'s side: the same `.run` under `seat-locks/<session>/` that
+  // `up`, `add` and `remove` take — one file per session, shared by every mutator — held from
+  // this run's first effect to its last. A session that is not running, a dry run and every
+  // refusal never take one; a lock a killed run left is taken over by the next one.
+  const lockFile = (): string => seatLockPath(join(root, '.agents'), 'acme-web', '.run');
+  const hold = (token: string): void => {
+    mkdirSync(join(root, '.agents', 'seat-locks', 'acme-web'), { recursive: true });
+    writeFileSync(lockFile(), token);
+  };
+
+  test("a held lock refuses the stop, with the holder's pid, before any effect", async () => {
+    const run = harness({ kind: 'idle' });
+    hold(`${process.pid} 0a1b2c3d\n`);
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runDown(FILE, io, run.sourcesOf())).toBe(1);
+    expect(io.err).toBe(
+      `team down: another session-mutating run is holding session acme-web (pid ${process.pid}); try again when it is done\n`,
+    );
+    expect(io.out).toBe('');
+    expect(run.typed).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(run.deleted).toEqual([]);
+    // A live holder's lock is left exactly as it was: dropping it is never the refused run's.
+    expect(readFileSync(lockFile(), 'utf8')).toBe(`${process.pid} 0a1b2c3d\n`);
+  });
+
+  test('the lock is held from the first effect to the last, and released at the end', async () => {
+    const run = harness({ kind: 'idle' });
+    const held: boolean[] = [];
+    const stopSession = run.launch.stopSession;
+    run.launch.stopSession = (session) => {
+      held.push(existsSync(lockFile()));
+      return stopSession(session);
+    };
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runDown(FILE, io, run.sourcesOf())).toBe(0);
+    expect(held).toEqual([true]);
+    expect(existsSync(lockFile())).toBe(false);
+  });
+
+  test('a lock left by a dead run is taken over and released by this one', async () => {
+    const run = harness({ kind: 'idle' });
+    const dead = spawnSync('sh', ['-c', 'exit 0']).pid;
+    expect(typeof dead).toBe('number');
+    hold(`${dead} 0a1b2c3d\n`);
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runDown(FILE, io, run.sourcesOf())).toBe(0);
+    expect(run.stopped).toEqual(['acme-web']);
+    expect(existsSync(lockFile())).toBe(false);
+  });
+
+  test('a session that is not running takes no lock while another run holds one', async () => {
+    const run = harness({ kind: 'idle' });
+    hold(`${process.pid} 0a1b2c3d\n`);
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runDown(FILE, io, run.sourcesOf({ sessionRunning: () => false }))).toBe(0);
+    expect(io.out).toBe('session acme-web is not running: nothing to stop\n');
+    expect(readFileSync(lockFile(), 'utf8')).toBe(`${process.pid} 0a1b2c3d\n`);
+  });
+
+  test('a dry run takes no lock while another run holds one', async () => {
+    const run = harness({ kind: 'idle' });
+    hold(`${process.pid} 0a1b2c3d\n`);
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runDown([...FILE, '--dry-run'], io, run.sourcesOf())).toBe(0);
+    expect(io.out).toContain('dry run: nothing was run\n');
+    expect(run.typed).toEqual([]);
+    expect(readFileSync(lockFile(), 'utf8')).toBe(`${process.pid} 0a1b2c3d\n`);
+  });
+
+  test('a lock that cannot be read refuses with the file to clear', async () => {
+    const run = harness({ kind: 'idle' });
+    hold('not a token\n');
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runDown(FILE, io, run.sourcesOf())).toBe(1);
+    // An unreadable lock is held, never stale (`seat-lock.ts`), so the owner is the only way
+    // out and the message names the file.
+    expect(io.err).toBe(
+      'team down: another session-mutating run may be holding session acme-web, and its lock cannot be read; '
+        + `if no run is using it, delete ${lockFile()}\n`,
+    );
+    expect(run.typed).toEqual([]);
   });
 });
 
