@@ -884,6 +884,11 @@ const DELEGATE_FILE = FILE + DELEGATES;
 const pilot = { kind: 'seat' as const, name: 'pilot', pane: 'w1:p1', session: 'main' };
 const passed = { kind: 'passed' as const, pane: 'main/w1:p1' };
 const EDIT_REFUSAL = 'team add: the approved delegate cannot change the file or the approval; the owner adds a missing or stopped seat\n';
+// A gate that fails the test the moment it is asked where the run must not ask it: the ordinary
+// rule's own callers never reach the delegate branch, and neither does a file with no delegates.
+const THROWING_GATE: NonNullable<AddSources['delegateGate']> = () => {
+  throw new Error('the gate is asked only after the ordinary rule refused, and only when the file names a delegate');
+};
 
 describe('team add delegated', () => {
   test('no delegates in the file: the refusal is today\'s and the gate is never asked', async () => {
@@ -1032,6 +1037,53 @@ describe('team add delegated', () => {
     // the log holds the run's own records and no delegate attribution.
     expect(readFileSync(join(store, 'approval.json'), 'utf8')).not.toBe(before);
     expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8')).not.toContain('delegate [delegate]');
+  });
+
+  test('a delegate\'s --file and --session are the gate\'s to refuse, before either is read', async () => {
+    // The reviewer's finding on down and up, checked here: once the file names a delegate, the
+    // owner-only flags are the gate's too, and the refusal still comes before the flagged file
+    // or the flag's session is read — the `--file` below names a path that does not exist, so a
+    // run that opened it would print the loader's refusal, not the gate's. Eligibility is the
+    // default live file's, never the flagged one's.
+    approve(DELEGATE_FILE);
+    const asked: Parameters<NonNullable<AddSources['delegateGate']>>[0][] = [];
+    const gate: NonNullable<AddSources['delegateGate']> = (input) => {
+      asked.push(input);
+      const flag = input.flags.includes('file') ? 'file' : 'session';
+      return { kind: 'refused' as const, id: 'add.delegate-flag', text: `--${flag} is the owner's; the approved delegate cannot use it` };
+    };
+    for (const argv of [['worker', '--file', join(project, 'elsewhere.yaml')], ['worker', '--session', 'other']] as const) {
+      const made = world();
+      const io = testIo(project, pilot);
+      const code = await runAdd([...argv], io, sources(made, { delegateGate: gate }));
+      expect(code).toBe(1);
+      expect(io.err).toBe(`team add: --${argv[2] === 'other' ? 'session' : 'file'} is the owner's; the approved delegate cannot use it\n`);
+      expect(made.creates).toEqual([]);
+    }
+    expect(asked).toHaveLength(2);
+    expect(asked[0]!.team.delegates).toEqual([{ pane: 'main/w1:p1', commands: ['add', 'remove'] }]);
+    expect(asked[0]!.root).toBe(project);
+    expect(asked[0]!.dir).toBe(join(project, '.agents'));
+    expect(asked[0]!.flags).toContain('file');
+    expect(asked[1]!.flags).toContain('session');
+    expect(existsSync(join(project, 'elsewhere.yaml'))).toBe(false);
+  });
+
+  test('with no delegates in the default file, a non-owner\'s --file and --session are today\'s, byte for byte', async () => {
+    // The finding's other half: eligibility is the default live file's alone. The flagged file
+    // below names a delegate and is never read for it; the refusals stay today's sentences, in
+    // today's order, and the gate is never asked.
+    approve();
+    writeFileSync(join(project, 'elsewhere.yaml'), DELEGATE_FILE);
+    for (const [argv, text] of [
+      [['worker', '--file', join(project, 'elsewhere.yaml')], '--file is the owner\'s, from a terminal outside herdr; this call is pilot'],
+      [['worker', '--session', 'other'], '--session is the owner\'s, from a terminal outside herdr; this call is pilot'],
+    ] as const) {
+      const io = testIo(project, pilot);
+      const code = await runAdd([...argv], io, sources(world(), { delegateGate: THROWING_GATE }));
+      expect(code).toBe(1);
+      expect(io.err).toBe(`team add: ${text}\n`);
+    }
   });
 
   test('a delegate named like the coordinator gets no restoring add', async () => {

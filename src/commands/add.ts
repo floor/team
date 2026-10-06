@@ -112,6 +112,22 @@ export const USAGE = `Usage: team add <name> [--dry-run] [--session <name>] [--f
        team add --temporary --like <seat> --until <result:path|merged:branch> [--worktree <task>] [--dry-run] [--session <name>] [--file <path>]
 `;
 
+/** The gate's refusal as this command prints it: the verdict's own sentence behind the prefix.
+ *  Both delegate branches print it — the caller rule's below and the owner-only flags' — so the
+ *  exit ids sit at one site. */
+function delegateRefused(out: { stderr(text: string): void }, verdict: { text: string }): number {
+  out.stderr(`team add: ${plainText(verdict.text)}\n`);
+  // exit: add.delegate-approval
+  // exit: add.delegate-approved-copy
+  // exit: add.delegate-drift
+  // exit: add.delegate-evidence
+  // exit: add.delegate-placement
+  // exit: add.delegate
+  // exit: add.delegate-command
+  // exit: add.delegate-flag
+  return 1;
+}
+
 type Running = { name: string; vendor: string; temporary: boolean };
 type Until = { kind: 'result'; path: string } | { kind: 'merged'; branch: string };
 
@@ -146,24 +162,33 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // `--file` must not make this command read and validate another project's team file, nor leave
   // its `last_valid` in that project's state. The one place every command whose `--file` is the owner's
   // decides it is `fileOwnerRefusal` (caller.ts).
-  const fileRefusal = fileOwnerRefusal(io, args.values.file);
-  if (fileRefusal !== undefined) {
-    out.stderr(`team add: ${plainText(fileRefusal)}\n`);
-    // exit: add.file-owner
-    return 1;
-  }
-
-  // The owner is a terminal outside herdr, and the walk alone decides that: a non-owner aiming
-  // `--session` is refused here, before the flag's session is read — no agent list, no pane root,
-  // no state write, no log line. (A seat cannot be named in this refusal: placing it would read a
-  // session, and that is what must not happen yet.)
-  if (args.values.session !== undefined) {
-    const walked = walkCaller(io);
-    if (!isOwner(walked)) {
-      out.stderr(`team add: ${plainText(sessionOwnerRefusal(walked))}\n`);
-      // exit: add.session-owner
-      return 1;
+  //
+  // A `delegates` section hands these owner-only flags to the gate as well: a non-owner aiming
+  // either is still refused before the flagged file or the flag's session is read — never the
+  // walk's sentence but the gate's verdict, which names the flag for the approved delegate and
+  // the caller for anyone else. The eligibility that asks is the default live file's alone, so
+  // the flagged file is not read at all; with no `delegates` section there, today's refusal
+  // stands, byte for byte.
+  const walked = args.values.session !== undefined ? walkCaller(io) : undefined;
+  const flagRefusal = fileOwnerRefusal(io, args.values.file)
+    ?? (walked !== undefined && !isOwner(walked) ? sessionOwnerRefusal(walked) : undefined);
+  if (flagRefusal !== undefined) {
+    const named = loadTeamFile(io.cwd, { home: sources.home });
+    if (named.ok && named.team.delegates) {
+      const flagged = (sources.delegateGate ?? delegateGate)({
+        command: 'add',
+        team: named.team,
+        root: named.root,
+        dir: dirname(named.path),
+        flags: [...args.flags, ...Object.keys(args.values)],
+        io,
+      });
+      if (flagged.kind === 'refused') return delegateRefused(out, flagged);
     }
+    out.stderr(`team add: ${plainText(flagRefusal)}\n`);
+    // exit: add.file-owner
+    // exit: add.session-owner
+    return 1;
   }
 
   const loaded = loadTeamFile(io.cwd, { ...(args.values.file ? { file: args.values.file } : {}), home: sources.home });
@@ -205,18 +230,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       flags: [...args.flags, ...Object.keys(args.values)],
       io,
     });
-    if (verdict.kind === 'refused') {
-      out.stderr(`team add: ${plainText(verdict.text)}\n`);
-      // exit: add.delegate-approval
-      // exit: add.delegate-approved-copy
-      // exit: add.delegate-drift
-      // exit: add.delegate-evidence
-      // exit: add.delegate-placement
-      // exit: add.delegate
-      // exit: add.delegate-command
-      // exit: add.delegate-flag
-      return 1;
-    }
+    if (verdict.kind === 'refused') return delegateRefused(out, verdict);
     delegatePane = verdict.pane;
   }
   if (mayChange.kind === 'no-pane' && delegatePane === null) {
