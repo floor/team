@@ -48,8 +48,12 @@ export const realSources: ApproveSources = {
   // mode and is not seen; a question could not have consumed it either. A process with no
   // controlling terminal (stdin a tty of another device) cannot be checked this way: the open
   // fails and this is false — and the walk has already refused every caller without a terminal.
-  // Proven on macOS only, quoted in the commit; Linux's /dev/tty + O_NONBLOCK is the same
-  // interface but was not run here, and the guard's logic on top is covered by the tests.
+  // Proven on a real pty on both platforms, through test/commands/pty-run.py: macOS under a
+  // launchd-parented chain, and ubuntu-latest in CI, whose log carries both cases —
+  // `(pass) a line waiting on the pty: the guard refuses, exit 1, nothing written [80.17ms]`
+  // and `(pass) nothing waiting: the guard is silent and the run approves [79.47ms]`, with no
+  // stranger-path line, so the walk placed the caller as the owner and the refusal under test
+  // was this one.
   waiting() {
     try {
       const fd = openSync('/dev/tty', constants.O_RDONLY | constants.O_NONBLOCK);
