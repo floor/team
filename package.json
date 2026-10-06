@@ -1,7 +1,7 @@
 {
   "name": "team",
   "version": "0.2.1",
-  "description": "Set up, change and watch a project's team of AI agents from one file",
+  "description": "Set up and run a team of AI agents for your project. Agents propose, you decide.",
   "keywords": [
     "ai-agents",
     "agents",
@@ -31,7 +31,8 @@
     "contract": "bun scripts/contract.ts",
     "contract:check": "bun scripts/contract.ts --check",
     "exit-codes:check": "bun scripts/exit-codes.ts --check",
-    "ci": "bun run typecheck && bun test && bun run build && node dist/cli.js --version && bun run conformance && bun run schema:check && bun run contract:check && bun run coverage:check && bun run exit-codes:check"
+    "readme:check": "bun scripts/check-readmes.ts",
+    "ci": "bun run typecheck && bun test && bun run build && node dist/cli.js --version && bun run conformance && bun run schema:check && bun run contract:check && bun run coverage:check && bun run exit-codes:check && bun run readme:check"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
