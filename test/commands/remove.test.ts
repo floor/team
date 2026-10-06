@@ -552,3 +552,201 @@ describe('team remove', () => {
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 });
+
+// The delegated runs: the file names a delegate — a pane outside the team's session — and the
+// caller is a named agent standing on that pane, a seat of another session the ordinary rule
+// refuses. The gate itself is faked here (the contract's verdicts, handed in through
+// `sources.delegateGate`); its own tests cover what the real one reads to decide.
+const DELEGATES = `delegates:
+  - pane: main/w1:p1
+    commands: [add, remove]
+`;
+const pilot = { kind: 'seat' as const, name: 'pilot', pane: 'w1:p1', session: 'main' };
+const passed = { kind: 'passed' as const, pane: 'main/w1:p1' };
+
+// The file and the approval in force for it, together: a delegated run needs both, and the
+// `delegates` section they carry is the one the gate reads. Returns the record's own path, so a
+// test reads the store the load itself resolved — never a path rebuilt from `dir`.
+function rootOf(cwd: string): string {
+  const loaded = loadTeamFile(cwd);
+  if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+  return loaded.root;
+}
+
+function approveFile(text: string): string {
+  writeFileSync(file, text);
+  const loaded = loadTeamFile(dir);
+  if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+  const store = storePath(loaded.team.project, loaded.root, home);
+  writeApproval(
+    store,
+    { approval: approvalOf(loaded.team, loaded.root), file: text },
+    loaded.team.seats,
+    home,
+  );
+  return store;
+}
+
+describe('team remove delegated', () => {
+  test('no delegates in the file: the refusal is today\'s and the gate is never asked', async () => {
+    const made = world();
+    const io = testIo(dir, pilot);
+    let asked = 0;
+    const code = await runRemove(['worker'], io, {
+      ...made.sources,
+      delegateGate: () => { asked += 1; return passed; },
+    });
+    expect(code).toBe(1);
+    expect(io.err).toBe('team remove: only the owner, the coordinator or the operator runs it; this call is pilot\n');
+    expect(asked).toBe(0);
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
+  test('a refused verdict takes the ordinary refusal\'s place, and nothing is stopped or written', async () => {
+    const store = approveFile(FILE + DELEGATES);
+    const made = world();
+    const record = readFileSync(join(store, 'approval.json'), 'utf8');
+    const io = testIo(dir, pilot);
+    const code = await runRemove(['worker', '--keep'], io, {
+      ...made.sources,
+      delegateGate: () => ({
+        kind: 'refused' as const,
+        id: 'remove.delegate-flag',
+        text: '--keep is the owner\'s; the approved delegate cannot use it',
+      }),
+    });
+    expect(code).toBe(1);
+    expect(io.err).toBe('team remove: --keep is the owner\'s; the approved delegate cannot use it\n');
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+    expect(readFileSync(join(store, 'approval.json'), 'utf8')).toBe(record);
+  });
+
+  test('the gate is asked once, with the live file, the project and the flags the caller passed', async () => {
+    approveFile(FILE + DELEGATES);
+    const made = world();
+    const io = testIo(dir, pilot);
+    const asked: Parameters<NonNullable<RemoveSources['delegateGate']>>[0][] = [];
+    const code = await runRemove(['worker', '--keep'], io, {
+      ...made.sources,
+      delegateGate: (input) => {
+        asked.push(input);
+        return { kind: 'refused' as const, id: 'remove.delegate-flag', text: '--keep is the owner\'s; the approved delegate cannot use it' };
+      },
+    });
+    expect(code).toBe(1);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.command).toBe('remove');
+    expect(asked[0]!.team.delegates).toEqual([{ pane: 'main/w1:p1', commands: ['add', 'remove'] }]);
+    expect(asked[0]!.root).toBe(rootOf(dir));
+    expect(asked[0]!.dir).toBe(join(rootOf(dir), '.agents'));
+    expect(asked[0]!.flags).toEqual(['keep']);
+    expect(asked[0]!.io).toBe(io);
+  });
+
+  test('a delegated removal stops the seat, edits the file, signs nothing, and is logged', async () => {
+    const store = approveFile(FILE + DELEGATES);
+    const made = world();
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w3:p1', workspace: 'w3', status: 'idle', cwd: null });
+    const record = readFileSync(join(store, 'approval.json'), 'utf8');
+    const io = testIo(dir, pilot);
+    const code = await runRemove(['worker'], io, { ...made.sources, delegateGate: () => passed });
+    expect(code).toBe(0);
+    expect(io.out).toContain('removed worker\n');
+    expect(made.typed).toEqual(['/exit']);
+    expect(made.closed).toEqual(['w3']);
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+    expect(readFileSync(file, 'utf8')).toContain('name: lead');
+    expect(readFileSync(join(store, 'approval.json'), 'utf8')).toBe(record);
+    // The audit line is the log's first line: the run is attributed before its effects.
+    expect(readFileSync(join(dir, '.agents', 'team.log'), 'utf8').startsWith(
+      '1970-01-01T00:00:00.000Z delegate [delegate] main/w1:p1 remove\n',
+    )).toBe(true);
+  });
+
+  test('a delegated remove still refuses the coordinator and the operator, and --abandon', async () => {
+    approveFile(FILE + DELEGATES);
+    const made = world();
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w3:p1', workspace: 'w3', status: 'idle', cwd: null });
+    const io = testIo(dir, pilot);
+    const code = await runRemove(['lead'], io, { ...made.sources, delegateGate: () => passed });
+    expect(code).toBe(1);
+    expect(io.err).toBe('team remove: only the owner removes the coordinator\'s or the operator\'s seat; this call is pilot\n');
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toContain('name: lead');
+    const abandoning = testIo(dir, pilot);
+    const again = await runRemove(['worker', '--abandon'], abandoning, { ...made.sources, delegateGate: () => passed });
+    expect(again).toBe(1);
+    expect(abandoning.err).toBe('team remove: only the owner abandons a seat, from a terminal outside herdr\n');
+    expect(made.closed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
+  test('even a gate that passed --keep finds no signing: the record is not the delegate\'s to write', async () => {
+    // The real gate refuses `--keep` for a delegate; this run pins the invariant at the command
+    // layer — the one signing site a `remove` has is closed to a delegated run, so nothing a
+    // mistaken gate lets through can re-anchor the approval.
+    const store = approveFile(FILE + DELEGATES);
+    const made = world();
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w3:p1', workspace: 'w3', status: 'idle', cwd: null });
+    const record = readFileSync(join(store, 'approval.json'), 'utf8');
+    const io = testIo(dir, pilot);
+    const code = await runRemove(['worker', '--keep'], io, { ...made.sources, delegateGate: () => passed });
+    expect(code).toBe(0);
+    expect(io.out).toContain('stopped worker\n');
+    expect(readFileSync(file, 'utf8')).toContain('stopped: true');
+    expect(readFileSync(join(store, 'approval.json'), 'utf8')).toBe(record);
+  });
+
+  test('the coordinator\'s ordinary --keep runs as today, and the gate is never asked for it', async () => {
+    // Amendment 3: a caller the ordinary rule accepts never enters the delegate branch. The
+    // coordinator's `--keep` is the role path that re-signs the approval — it must keep working
+    // with a `delegates` section in the file, unreachable from the delegate branch.
+    const store = approveFile(FILE + DELEGATES);
+    const before = readFileSync(join(store, 'approval.json'), 'utf8');
+    recordLead();
+    const made = world();
+    let asked = 0;
+    const io = testIo(dir, lead);
+    const code = await runRemove(['worker', '--keep'], io, {
+      ...made.sources,
+      delegateGate: () => { asked += 1; return passed; },
+    });
+    expect(code).toBe(0);
+    expect(asked).toBe(0);
+    expect(io.out).toContain('stopped worker\n');
+    expect(readFileSync(file, 'utf8')).toContain('stopped: true');
+    // The role path re-signed the seat digest, exactly as today: the record moved, and the file
+    // in force is the approved one again.
+    expect(readFileSync(join(store, 'approval.json'), 'utf8')).not.toBe(before);
+    const after = validateTeamFile(readFileSync(file, 'utf8'));
+    if (!after.ok) throw new Error('written file');
+    expect(approvalDifferences(after.team, rootOf(dir), home)).toEqual([]);
+  });
+
+  test('a delegate named like the coordinator gets none of the coordinator\'s --keep', async () => {
+    // Amendment 3: a delegate does not reach the role path by being named like a lead. This
+    // caller carries the coordinator's name but stands on the delegate's pane, in another
+    // session: the ordinary rule refuses it, the gate places it, and the run is a delegated one
+    // — the record is not the delegate's to write, whatever name it brought.
+    const store = approveFile(FILE + DELEGATES);
+    const made = world();
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w3:p1', workspace: 'w3', status: 'idle', cwd: null });
+    const record = readFileSync(join(store, 'approval.json'), 'utf8');
+    const io = testIo(dir, { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'main' });
+    let asked = 0;
+    const code = await runRemove(['worker', '--keep'], io, {
+      ...made.sources,
+      delegateGate: () => { asked += 1; return passed; },
+    });
+    expect(code).toBe(0);
+    expect(asked).toBe(1);
+    expect(io.out).toContain('stopped worker\n');
+    expect(readFileSync(join(store, 'approval.json'), 'utf8')).toBe(record);
+    const after = validateTeamFile(readFileSync(file, 'utf8'));
+    if (!after.ok) throw new Error('written file');
+    expect(approvalDifferences(after.team, rootOf(dir), home)).toEqual(['seat worker changed']);
+  });
+});
