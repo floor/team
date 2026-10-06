@@ -1129,6 +1129,58 @@ describe('team up, live', () => {
     expect(seats['deepseek-acme']?.stage).toBe('ready');
   });
 
+  // §3: the interrupted launch. `up` made the workspace and recorded the pane at `launched`, then
+  // stopped before the rename, so herdr lists an agent with no name on the pane the state records.
+  // That agent is the run's own half-finished seat, not a stranger: the filter knows it by the
+  // recorded pane the way it knows `add`'s waiting pane, and the seat is finished — idle wait,
+  // rename — the way the named one above is, instead of refusing the whole team.
+  test('an unnamed agent on the pane a seat was left at launched with is finished, not refused', async () => {
+    await approve();
+    writeFileSync(
+      join(root, '.agents/team.state.json'),
+      JSON.stringify({
+        format: 1,
+        sessions: {
+          'acme-web': {
+            seats: {
+              'claude-coordinator-acme': { stage: 'ready', pane: 'w8:p1', workspace: 'w8' },
+              'deepseek-acme': { stage: 'launched', pane: 'w7:p1', workspace: 'w7' },
+            },
+            worktrees: {},
+          },
+        },
+      }),
+    );
+    const made = world();
+    made.session = 'running';
+    made.seed('w7:p1', IDLE, true);
+    // Herdr's list as the interruption leaves it: the agent on the recorded pane carries no name,
+    // so the state's record is the only thing that knows the pane is this run's own.
+    const listed = (): HerdrAgent[] => [
+      agent('claude-coordinator-acme', 'w8:p1'),
+      { name: null, agent: 'deepseek', pane: 'w7:p1', workspace: 'w7', status: 'idle', cwd: null },
+    ];
+    const passed = {
+      sessionState: () => 'running' as const,
+      agents: listed,
+      workspaces: () => [{ id: 'w8', label: 'claude opus 5.5' }, { id: 'w7', label: 'deepseek flash v4.1' }],
+    };
+    const plan = testIo(root, { kind: 'owner' });
+    expect(await runUp(['--dry-run', ...FILE], plan, sources(passed, made))).toBe(0);
+    expect(plan.out).not.toContain("doesn't record");
+    // The plan carries the wait and the rename for that seat: it is resumed, not left out.
+    expect(plan.out).toContain('  wait until deepseek-acme shows its idle prompt');
+    expect(plan.out).toContain('+ herdr --session acme-web agent rename w7:p1 deepseek-acme\n');
+    // The run finishes it the same way: the rename happens, and the record ends `ready`.
+    const io = testIo(root, { kind: 'owner' });
+    expect(await runUp(FILE, io, sources(passed, made))).toBe(0);
+    expect(io.out + io.err).not.toContain("doesn't record");
+    expect(made.renames).toContain('deepseek-acme');
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['deepseek-acme']?.stage).toBe('ready');
+    expect(seats['deepseek-acme']?.pane).toBe('w7:p1');
+  });
+
   // The incident's session, ready to resume: the Codex seat at `named` with its pane and workspace
   // recorded and its box showing `screen`, the coordinator ready. The file puts the DeepSeek pair out.
   function incident(screen: string): World {

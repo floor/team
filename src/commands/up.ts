@@ -469,8 +469,23 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
           .map((seat) => seat.pane)
           .filter((pane) => pane !== undefined),
       );
+      // A seat left at `launched` — a run stopped between "the pane exists" and "the seat has
+      // its name" — is the run's own half-finished work, and herdr lists its agent with no name
+      // (or another one) on the pane this state records. That pane is known the way the waiting
+      // one is: the resume path verifies pane, process and rename before recording anything.
+      // Only `launched` qualifies — a seat at `named` or `ready` has its name, so a foreign
+      // agent on its pane is refused exactly as before, and so is any pane no record names.
+      const launchedPanes = new Set(
+        Object.values(recorded)
+          .filter((seat) => seat.stage === 'launched')
+          .map((seat) => seat.pane)
+          .filter((pane) => pane !== undefined),
+      );
       const unknown = agents.filter(
-        (agent) => !(agent.name && Object.hasOwn(recorded, agent.name)) && !waitingPanes.has(agent.pane),
+        (agent) =>
+          !(agent.name && Object.hasOwn(recorded, agent.name)) &&
+          !waitingPanes.has(agent.pane) &&
+          !launchedPanes.has(agent.pane),
       );
       if (unknown.length) {
         refusals.push(
