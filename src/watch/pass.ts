@@ -8,6 +8,7 @@ import type { CheckOutcome } from '../budgets/run.ts';
 import type { TeamFile } from '../file/types.ts';
 import type { PaneProcesses } from '../herdr.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
+import { boxHoldsText } from '../launch/deliver.ts';
 import { seatProcessVerdict } from '../launch/identity.ts';
 import { profileFor, quotaFor as shippedQuota } from '../profiles/profile.ts';
 import { figuresOf, type QuotaFigure, type QuotaPattern } from '../profiles/quota.ts';
@@ -370,7 +371,9 @@ export function pass({
 
   memory.active = current;
 
-  // The nudge: kept until the operator is free, never typed into anything but an empty idle prompt.
+  // The nudge: kept until the operator is free — an empty idle prompt, or a box holding exactly
+  // this watch's own unsent line, which is sent rather than typed again — and typed into nothing
+  // else.
   for (const report of reports) {
     if (report.to === 'operator' && !memory.pending.includes(report.text)) {
       memory.pending.push(report.text);
@@ -382,8 +385,15 @@ export function pass({
     memory.pendingSince ??= now;
     const operator = live.agents.find((agent) => agent.name === team.operator);
     const cli = team.seats.find((seat) => seat.name === team.operator)?.cli ?? '';
+    const screen = operator ? read(cli, live.screens[operator.pane]) : null;
+    // A box holding exactly this watch's own line — one fixed constant — is the watch's own
+    // unsent nudge: left by a pass whose Enter never went out, or by the watch before it was
+    // restarted. The text is the whole identity, so nothing has to be remembered across runs.
+    // That box is free to send into; any other text is never typed over, sent or cleared.
+    const mine = operator !== undefined && screen?.kind === 'unsent'
+      && boxHoldsText(cli, NUDGE_TEXT, live.screens[operator.pane]);
     const free = operator !== undefined && (operator.status === 'idle' || operator.status === 'done')
-      && read(cli, live.screens[operator.pane]).kind === 'idle';
+      && (screen?.kind === 'idle' || mine);
     if (operator && free) {
       nudge = { pane: operator.pane, text: NUDGE_TEXT, pending: memory.pending.slice() };
     } else if (now - memory.pendingSince >= watch.nudgeWait * 1000) {

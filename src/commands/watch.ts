@@ -342,7 +342,8 @@ function spendOf(outcomes: readonly CheckOutcome[]): SpendReading[] {
 }
 
 // Types the nudge, after reading the operator's screen once more: the pass saw it free, and a
-// prompt may have appeared since. Anything but an empty idle prompt keeps the nudge pending.
+// prompt may have appeared since. An empty idle prompt is typed into; a box already holding
+// exactly this watch's own line is sent instead of typed; anything else keeps the nudge pending.
 async function deliver(
   nudge: { pane: string; text: string; pending: string[] }, team: TeamFile, session: string, sources: WatchSources,
   memory: ReturnType<typeof newMemory>, say: (text: string, desktop: boolean) => void,
@@ -367,7 +368,13 @@ async function deliver(
     return;
   }
   told.delete(noAgent);
-  if ((status !== 'idle' && status !== 'done') || look() !== 'idle' || !sources.typeText(nudge.pane, nudge.text, session)) {
+  // The box may already hold this line — the watch's own unsent nudge, left by a pass whose
+  // Enter never went out, or by the watch before it was restarted. The line is one fixed
+  // constant, so reading it back is the whole identity: nothing is remembered, and any other
+  // text in the box is never typed over, sent or cleared. Such a box is sent, not typed into.
+  const kind = look();
+  const mine = kind === 'unsent' && holds();
+  if ((status !== 'idle' && status !== 'done') || (!mine && (kind !== 'idle' || !sources.typeText(nudge.pane, nudge.text, session)))) {
     keep();
     return;
   }
@@ -383,7 +390,7 @@ async function deliver(
   // appears a moment later (the nudge-typing captures) — so the reading that decides the Enter
   // waits for it, the same bounded wait the exit typing makes, and a screen still idle at the
   // deadline is the text never drawn. Unsent text alone is not this nudge.
-  let drawn = holds();
+  let drawn = mine || holds();
   if (!drawn) {
     await settleScreen('idle', look, { now: () => sources.now().getTime(), sleep: (ms) => sources.sleep(ms) });
     if (!live()) {
@@ -398,8 +405,11 @@ async function deliver(
     keep();
     return;
   }
-  if (sources.pressEnter(nudge.pane, session)) say(`nudged the operator: ${nudge.text}`, false);
-  else keep();
+  if (sources.pressEnter(nudge.pane, session)) {
+    say(mine
+      ? `nudged the operator (the line was already in its box): ${nudge.text}`
+      : `nudged the operator: ${nudge.text}`, false);
+  } else keep();
 }
 
 function tellOnce(told: Set<string>, key: string, text: string, tell: (text: string, notify: boolean) => void): void {

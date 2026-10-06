@@ -900,6 +900,26 @@ describe('team watch', () => {
     expect(io.out).toContain('a nudge was typed and not sent');
   });
 
+  test('a box already holding exactly this watch\'s line is sent, not typed again', async () => {
+    // What a pass leaves when its Enter never went out — and what a watch restarted since finds:
+    // the box holds this watch's own line, unsent (the real capture). One fixed constant is the
+    // whole identity, so nothing has to be remembered across runs: the pass reads it back,
+    // types nothing, clears nothing, and sends it.
+    const held = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-unsent-ansi.txt', import.meta.url), 'utf8');
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, { screen: () => held }));
+    expect(typed).toEqual(['w0:p1 <enter>']);
+    expect(io.out).toContain('nudged the operator (the line was already in its box)');
+    expect(io.out).not.toContain('a nudge was typed and not sent');
+  });
+
+  test('a box holding any other text is never sent into, typed over or cleared', async () => {
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, { screen: () => unsent }));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain('nudged the operator');
+  });
+
   test('a pane with no live agent is not typed into', async () => {
     const io = testIo(dir, { kind: 'owner' });
     await runWatch(['--file', file], io, sources(2, { foreground: () => ['zsh'] }));

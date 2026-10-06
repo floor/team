@@ -250,6 +250,46 @@ describe('watch idle reports (once per period by default, repeat on request)', (
     expect(memory.pending).toEqual([]);
   });
 
+  test('a box already holding exactly this watch\'s own line is free: the pass raises the nudge', () => {
+    // The leftover of a pass whose Enter never went out, or of a watch restarted since: the box
+    // reads back as the watch's own one fixed line, so the pass is free to send it. The text is
+    // the whole identity — nothing is remembered, so a restarted watch reads it the same way.
+    // unsent_after is pushed out of the way: what is read here is the nudge's own gate, and a
+    // box an hour old would also raise the unsent report beside it.
+    const file = valid(defaultExample
+      .replace('  idle_first: 10m', '  idle_first: 1m\n  idle_repeat: 2m')
+      .replace('  unsent_after: 1m', '  unsent_after: 1h'));
+    const memory = newMemory();
+    const nudgeBox = `${RULE}\n❯ ${NUDGE_TEXT}\n${RULE}\n${STATUS}\n`;
+    const live = liveScene({
+      'claude-operator-acme': { status: 'idle', screen: nudgeBox },
+      'deepseek-acme': { status: 'idle', screen: idleScreen },
+    });
+    pass({ team: file, watch: file.watch, state: emptySession(), live, machine: fine, now: 0, memory });
+    const p1 = pass({ team: file, watch: file.watch, state: emptySession(), live, machine: fine, now: 1 * MIN, memory });
+    expect(p1.nudge).toEqual({
+      pane: 'w0:p1',
+      text: NUDGE_TEXT,
+      pending: ['deepseek-acme has been idle since the watch started'],
+    });
+  });
+
+  test('a box holding any other text is not free, and the pass raises no nudge', () => {
+    const file = valid(defaultExample
+      .replace('  idle_first: 10m', '  idle_first: 1m\n  idle_repeat: 2m')
+      .replace('  unsent_after: 1m', '  unsent_after: 1h'));
+    const memory = newMemory();
+    const otherBox = `${RULE}\n❯ Brief: take the next task from the queue\n${RULE}\n${STATUS}\n`;
+    const live = liveScene({
+      'claude-operator-acme': { status: 'idle', screen: otherBox },
+      'deepseek-acme': { status: 'idle', screen: idleScreen },
+    });
+    pass({ team: file, watch: file.watch, state: emptySession(), live, machine: fine, now: 0, memory });
+    const p1 = pass({ team: file, watch: file.watch, state: emptySession(), live, machine: fine, now: 1 * MIN, memory });
+    expect(p1.nudge).toBeNull();
+    expect(memory.pending).toEqual(['deepseek-acme has been idle since the watch started']);
+  });
+
   test('idle_repeat: 20m set repeats every 20 minutes (assert against sequence)', () => {
     const file = valid(repeatExample);
     expect(file.watch.idleRepeat).toBe(1200);
