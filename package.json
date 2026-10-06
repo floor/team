@@ -1,6 +1,6 @@
 {
   "name": "team",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Set up, change and watch a project's team of AI agents from one file",
   "keywords": [
     "ai-agents",
