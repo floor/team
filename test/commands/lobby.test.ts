@@ -871,7 +871,12 @@ describe('the lobby gate with files declared', () => {
     expect(recheckLobby(home, seen, { files: declared })).toBeNull();
 
     rmSync(lock());
-    writeFileSync(lock(), '{}\n'); // a fresh file under the same name: a new inode
+    // A fresh file under the same name, made by a rename: unlink and write can hand the old
+    // inode straight back — Linux did, in CI — and a file with the gate's own device and
+    // inode reads as the same file, rightly.
+    const fresh = `${lock()}.replacement`;
+    writeFileSync(fresh, '{}\n');
+    renameSync(fresh, lock());
     const swap = recheckLobby(home, seen, { files: declared });
     expect(swap).toEqual({
       reason: 'the lobby: .claude/scheduled_tasks.lock is not the file the gate read',
