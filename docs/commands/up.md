@@ -46,7 +46,11 @@ Writes `.agents/team.state.json` (each seat's stage, pane, workspace and the CLI
 with; a waiting seat's classification, process identity and `manual` flag; the watch's pid and
 heartbeat), `.agents/team.log`, the machine lobby folder
 (`~/.config/team/lobby`) every seat starts in, and, through herdr: the server, one workspace per seat
-and one for the watchdog, each seat's launch, and the watch.
+and one for the watchdog, each seat's launch, and the watch. A real run holds the run lock
+(`<state dir>/seat-locks/<session>/.run`) from before its first effect to its end — one `up` per
+session at a time, under a name no seat can have (a leading dot; `seat-locks` otherwise holds one
+lock per seat, the launch's and `answer`'s). A second real run, delegated or not, stops on it before
+the first step, with the refusal below; `--dry-run` takes no lock and still plans.
 
 ## Who may run it
 
@@ -470,6 +474,8 @@ A real run stops before the first step, prints one `team up: <reason>` per reaso
 | ``the file is legacy: migrate trust to absolute paths including the lobby ~/.config/team/lobby: ...`` — followed by the whole `trust:` block to paste: every entry the next `up` requires, one line saying which key of the file each entry comes from, and, for an entry a rule of `trust` refuses, one line naming the key that forces it |
 | ``the lobby ~/.config/team/lobby: <check>`` — gate check failed (symbolic link, permissions, mode, not empty, inside git repo) |
 | ``seat beacon-qa would start in live, inside the protected checkout live; a seat that isn't `mode: shared` never starts in one`` — the folder the file gives it, or its lobby, is a protected checkout |
+| ``another `team up` is running for session <session> (pid <pid>); try again when it is done`` — another run holds the session's run lock: this run stopped before its first step, and a delegated run gets the same line. `--dry-run` takes no lock and never shows it |
+| ``another `team up` may be running for session <session>, and its lock cannot be read; if no `team up` is running, delete <state dir>/seat-locks/<session>/.run`` — the lock file does not read as a token (empty, corrupt, unreadable), so its holder is unknown: a run that cannot be proven finished counts as running, the same as a lock left by a run whose pid is still alive, and only the owner clears it — the line names the file |
 
 A watch that has not run, or whose heartbeat is old, is not a reason to refuse: `up` starts the
 watch itself.
