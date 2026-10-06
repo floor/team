@@ -61,7 +61,7 @@
     },
     "claude-code": {
       "idle": {
-        "real": 2,
+        "real": 5,
         "constructed": 2,
         "undocumented": 0
       },
@@ -71,7 +71,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 3,
+        "real": 7,
         "constructed": 2,
         "undocumented": 0
       },
@@ -81,7 +81,7 @@
         "undocumented": 0
       },
       "question": {
-        "real": 4,
+        "real": 6,
         "constructed": 0,
         "undocumented": 0
       },
@@ -103,7 +103,7 @@
     },
     "codex": {
       "idle": {
-        "real": 3,
+        "real": 4,
         "constructed": 1,
         "undocumented": 0
       },
@@ -113,7 +113,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 13,
+        "real": 14,
         "constructed": 0,
         "undocumented": 0
       },
@@ -145,7 +145,7 @@
     },
     "cursor": {
       "idle": {
-        "real": 8,
+        "real": 9,
         "constructed": 0,
         "undocumented": 0
       },
@@ -155,7 +155,7 @@
         "undocumented": 0
       },
       "unsent": {
-        "real": 22,
+        "real": 23,
         "constructed": 0,
         "undocumented": 0
       },
@@ -1007,6 +1007,84 @@
       "file": "cursor/2026.10.01/working.txt",
       "cli": "cursor",
       "kind": "working",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-idle-ansi.txt",
+      "cli": "claude-code",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-other-text-ansi.txt",
+      "cli": "claude-code",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-scheduled-idle-ansi.txt",
+      "cli": "claude-code",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-scheduled-question-ansi.txt",
+      "cli": "claude-code",
+      "kind": "question",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-scheduled-unsent-ansi.txt",
+      "cli": "claude-code",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-shell-idle-ansi.txt",
+      "cli": "claude-code",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-shell-question-ansi.txt",
+      "cli": "claude-code",
+      "kind": "question",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-shell-unsent-ansi.txt",
+      "cli": "claude-code",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-unsent-ansi.txt",
+      "cli": "claude-code",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/codex-idle-ansi.txt",
+      "cli": "codex",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/codex-unsent-ansi.txt",
+      "cli": "codex",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/cursor-idle-ansi.txt",
+      "cli": "cursor",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/cursor-unsent-ansi.txt",
+      "cli": "cursor",
+      "kind": "unsent",
       "provenance": "capture"
     }
   ]

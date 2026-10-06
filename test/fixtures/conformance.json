@@ -951,6 +951,97 @@
       "classify": "working",
       "composer": "idle",
       "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-idle-ansi.txt",
+      "cli": "claude-code",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-other-text-ansi.txt",
+      "cli": "claude-code",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-scheduled-idle-ansi.txt",
+      "cli": "claude-code",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-scheduled-question-ansi.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-scheduled-unsent-ansi.txt",
+      "cli": "claude-code",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-shell-idle-ansi.txt",
+      "cli": "claude-code",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-shell-question-ansi.txt",
+      "cli": "claude-code",
+      "classify": "question",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-shell-unsent-ansi.txt",
+      "cli": "claude-code",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/claude-code-unsent-ansi.txt",
+      "cli": "claude-code",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/codex-idle-ansi.txt",
+      "cli": "codex",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/codex-unsent-ansi.txt",
+      "cli": "codex",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/cursor-idle-ansi.txt",
+      "cli": "cursor",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "exit-typing/cursor-unsent-ansi.txt",
+      "cli": "cursor",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
     }
   ],
   "yaml": [
