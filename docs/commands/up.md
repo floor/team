@@ -72,7 +72,13 @@ The owner, from a terminal outside herdr — or without one: a run whose stdin i
 launches seats like any other, but never reads stdin and never prompts, so every dialog is left for
 the owner (below). `--dry-run` is open to anyone: it reaches nothing and
 changes nothing, prints the refusals it would hit as `! up would refuse: …` above the plan.
-A dry run exits as the real run would, and changes nothing.
+A dry run that reaches a refusal the real run would give before doing anything returns that refusal's status and exit id; a dry run that reaches its plan exits 0 and promises nothing about what happens after (the run lock, a launch, the watch). It returns before these real-run failures, and never takes their status:
+
+- `up.no-launch`, this call has no way to reach herdr (`src/commands/up.ts:712`)
+- `up.run-lock`, another run holds the session (`src/commands/up.ts:726`)
+- `up.lobby`, the lobby could not be created (`src/commands/up.ts:742`)
+- `up.clear`, a stopped session this team records did not clear (`src/commands/up.ts:758`)
+- `up.pending`, a seat left short of ready; `up.server`, the server did not start; `up.watch`, the watch did not start, including a watch that would not read this file (`src/commands/up.ts:981-984`)
 
 A pane of another session the approved file's `delegates` section names may run `up` when that
 entry's `commands` list names it. The ordinary rule above refuses such a caller first, and only
@@ -91,7 +97,7 @@ same words, the same exit.
 
 | Flag | Meaning |
 | --- | --- |
-| `--dry-run` | print the plan, and the refusals the real run would stop on. A dry run exits as the real run would, and changes nothing |
+| `--dry-run` | print the plan, and the refusals the real run would stop on. A dry run that reaches a refusal the real run would give before doing anything returns that refusal's status and exit id; a dry run that reaches its plan exits 0 and promises nothing about what happens after (the run lock, a launch, the watch) |
 | `--session <name>` | the herdr session to start, instead of `team.session`. The owner's alone: the delegate gate refuses it for a delegated run, before the session it names is used |
 | `--file <path>` | the team file, instead of `.agents/team.yaml`. The owner's alone: the delegate gate refuses it for a delegated run, before the file it names is read |
 | `--help`, `-h` | the usage, and exit 0 |
@@ -498,13 +504,13 @@ watch itself.
 
 ## Exit codes
 
-- `0` — every seat is ready and the watch is running; or `--dry-run` printed a plan the real run would have finished. A dry run exits as the real run would, and changes nothing.
+- `0` — every seat is ready and the watch is running; or `--dry-run` reached its plan. A dry run that reaches a refusal the real run would give before doing anything returns that refusal's status and exit id; a dry run that reaches its plan exits 0 and promises nothing about what happens after (the run lock, a launch, the watch).
 - `1` — the run was refused, or a seat was left out, or the server or the watch failed, or the watch was not started because it could not read this file.
 - `2` — the invocation or the team file can't be read.
 
 ## Known issues
 
-A team file that is not `.agents/team.yaml` in the folder the watch starts in is not watched. `up` prints `watch: not started: …` and exits 1. Move the file to that path. A fuller repair is planned.
+A team file that is not `.agents/team.yaml` in the folder the watch starts in is not watched. A real `up` prints `watch: not started: …` and exits 1. A dry run prints that line with its plan and exits 0. Move the file to that path. A fuller repair is planned.
 
 ## Examples
 

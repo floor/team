@@ -355,7 +355,7 @@ describe('a folder with no git repository', () => {
 });
 
 describe('a file the watch would not read', () => {
-  test('custom/team.yaml in a git project starts no watch', async () => {
+  test('a dry run exits 0 with its plan while the real run exits 1 when the watch would not start', async () => {
     const { home } = fresh();
     const root = join(base, 'acme');
     mkdirSync(root);
@@ -382,7 +382,9 @@ describe('a file the watch would not read', () => {
     const dry = testIo(root, { kind: 'owner' });
     const preview = await runUp(['--dry-run', '--file', custom], dry, upSources(home, world()));
     expect(preview).toBe(0);
+    expect(dry.out).toContain('dry run: nothing was run\n');
     expect(dry.out).toContain(WATCH_NOT_STARTED);
+    expect(dry.err).not.toContain(WATCH_NOT_STARTED);
     expect(dry.out).not.toContain('watchdog');
   });
 
