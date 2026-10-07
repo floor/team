@@ -64,7 +64,8 @@ When nothing the file declares is counted, one line follows the rows before the 
 next section has both faces. A watch that is recording is not announced; a project with no watch
 record prints `no watch is recording for <project>`, and a state whose watch record cannot be read
 leaves it `not known whether a watch is recording`. Anything else the state could not be read for
-is a `note:` line with the file and the reason, as in `status`. The exit code is 0 either way.
+is a `note:` line with the file and the reason, as in `status`; a file that does not load is a
+`note:` line too, and who reads which form of it is the last paragraph's rule. The exit code is 0 either way.
 
 ### When nothing the file declares is counted
 
@@ -296,9 +297,12 @@ exit 0
 
 The same command from a seat's pane, or from a folder with no project above it, reads the same
 project or prints the one note line: no figure, row, watch line or why-line changes with who runs
-it, and what a note names changes at the path alone. The owner reads notes with absolute paths, the
-same words `status` prints; a caller who is not the owner reads this project's own paths relative
-to the project root — the file as `.agents/team.yaml`, the state beside it as
-`.agents/team.state.json` — so nothing `usage` itself names is an absolute path for such a caller,
-in the block or in `--json`. The reason after the colon is the loader's or the state's own, quoted
-as it stands for both.
+it. What a note says changes. The owner reads the notes `status` would print — the loader's own
+message with the file's absolute path, the state's own reason. A caller who is not the owner reads
+a file that does not load as one fixed sentence per line — `.agents/team.yaml does not load
+(line 4): run team status for the reason`, where `team status` prints the loader's own message —
+a file that cannot be read as `.agents/team.yaml cannot be read: the owner reads the reason` (no
+pointer to `status` there: it throws on that file instead of printing anything), and the state's
+own reason with this project's own path relative to the project root — `.agents/team.state.json is
+not valid JSON; move it aside and run the command again`. No absolute path at all reaches a caller
+who is not the owner, in the block or in `--json`.

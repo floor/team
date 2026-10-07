@@ -3,11 +3,13 @@
 // brief are tested too: nothing is written, no pane or key or CLI session file is read, any
 // caller may run it from any folder, and every figure carries its source and its age. The
 // restricted view's own rules are here as well: a refused approval's words reach the owner and
-// nobody else, whatever the reason (`NOT_VERIFIED`), and the notes name this project's own paths
-// relative to the project root for every caller who is not the owner.
+// nobody else, whatever the reason (`NOT_VERIFIED`); a file that does not load or cannot be read
+// is one fixed sentence per line for every caller who is not the owner, never the loader's body —
+// whose bodies can name paths outside this project — and every other note names this project's
+// own paths relative to the project root. No absolute path reaches such a caller (`expectNoAbsolute`).
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalOf } from '../src/approve/approval.ts';
@@ -150,6 +152,18 @@ async function usageAt(cwd: string, caller?: Caller, ...argv: string[]) {
   return { code, out: io.out, err: io.err };
 }
 
+/** Nothing a caller who is not the owner reads may name a path outside this project: no string
+ *  starting at the filesystem root or at the home folder, in the block or in `--json`. The
+ *  fixture's own base is under `/tmp`, and its home under the base, so naming either catches a
+ *  body that slipped through; the pattern catches any other leading-slash token at a boundary. */
+function expectNoAbsolute(faces: string[], why?: string): void {
+  for (const face of faces) {
+    expect(face, why).not.toContain(base);
+    expect(face, why).not.toContain(home);
+    expect(face, why).not.toMatch(/(^|[\s"'()[\]=:,])\/[^\s"',;)\]]/);
+  }
+}
+
 /** The rows under a heading: the two-space lines that follow the line `after`. */
 function rowsUnder(text: string, after: string): string[] {
   const lines = text.split('\n');
@@ -243,12 +257,11 @@ describe('team usage', () => {
     // A caller who is not the owner reads the project's own path relative to the project root —
     // and no absolute path at all, the fixture's base included — in the block and in `--json`.
     const mine = await usageAt(root, SEAT);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
     expect(mine.code).toBe(0);
     expect(mine.out).toContain(`note: .agents/team.state.json ${why}`);
     expect(mine.out).toContain('  anthropic  unknown\n');
-    expect(mine.out).not.toContain(base);
-    const raw = (await usageAt(root, SEAT, '--json')).out;
-    expect(raw).not.toContain(base);
+    expectNoAbsolute([mine.out, raw]);
     expect((JSON.parse(raw) as { notes: string[] }).notes).toEqual([`.agents/team.state.json ${why}`]);
   });
 
@@ -369,11 +382,10 @@ describe('team usage', () => {
       const mine = await usageAt(root, seat);
       expect(mine.code, one.at).toBe(0);
       expect(mine.out.split('\n'), one.at).toContain(NOT_VERIFIED);
-      expect(mine.out, one.at).not.toContain(base);
       expect(mine.out, one.at).not.toContain('another project root');
 
       const raw = (await usageAt(root, seat, '--json')).out;
-      expect(raw, one.at).not.toContain(base);
+      expectNoAbsolute([mine.out, raw], one.at);
       expect((JSON.parse(raw) as { notes: string[] }).notes, one.at).toEqual([NOT_VERIFIED]);
 
       // The owner keeps the store's own words, byte for byte — the leak's own path included.
@@ -416,7 +428,7 @@ describe('team usage', () => {
     expect(out).toBe(`note: ${NO_PROJECT}\n`);
   });
 
-  test("a file that exists and does not load is the loader's own message: absolute for the owner, relative for a seat", async () => {
+  test("a file that exists and does not load is the loader's message for the owner, one fixed sentence for anyone else", async () => {
     writeFileSync(file, 'format: 1\nproject: acme\n');
 
     // The owner reads every note with the file's absolute path, the shape S1 shipped.
@@ -425,24 +437,26 @@ describe('team usage', () => {
     expect(owner.out.startsWith(`note: ${file} line 1: seats is required`)).toBe(true);
     expect(owner.out).not.toContain('team acme\n');
 
-    // A caller who is not the owner reads the same problems with the file's path relative to the
-    // project root — `.agents/team.yaml`, never the absolute one — in the block and in `--json`.
+    // A caller who is not the owner reads one fixed sentence per line instead — this project's
+    // own path, the line, and where the reason is — and never a body: the loader's bodies can name
+    // paths outside this project (`trust: must list the lobby <home>/…`). The three problems here
+    // all name line 1, so the one sentence prints once.
     const mine = await usageAt(root, SEAT);
     expect(mine.code).toBe(0);
-    expect(mine.out.startsWith('note: .agents/team.yaml line 1: seats is required')).toBe(true);
-    expect(mine.out).not.toContain(base);
+    expect(mine.out).toBe('note: .agents/team.yaml does not load (line 1): run team status for the reason\n');
     const raw = (await usageAt(root, SEAT, '--json')).out;
-    expect(raw).not.toContain(base);
-    const notes = (JSON.parse(raw) as { notes: string[] }).notes;
-    expect(notes[0]).toBe(".agents/team.yaml line 1: seats is required: at least the coordinator's and the operator's seat");
-    expect(notes.every((note) => note.startsWith('.agents/team.yaml line 1: '))).toBe(true);
+    expect((JSON.parse(raw) as { notes: string[] }).notes).toEqual(['.agents/team.yaml does not load (line 1): run team status for the reason']);
+    expectNoAbsolute([mine.out, raw]);
   });
 
-  test('a file that exists and cannot be read prints the error itself, which names no path for anyone', async () => {
+  test('a file that exists and cannot be read prints the error for the owner, one fixed sentence for anyone else', async () => {
     // A directory where the file would be, in a checkout the loader resolves: the read itself is
     // what fails (`EISDIR`), and its message is the code and the syscall — a recorded run of this
-    // branch showed exactly `EISDIR: illegal operation on a directory, read` — so the note names
-    // no path, for the owner or for a seat, and `errorNote` has nothing to make relative.
+    // branch showed exactly `EISDIR: illegal operation on a directory, read`. An errno error's
+    // body can name the path it failed on (`ENOENT: … open '/<path>'`, a recorded probe), so this
+    // body does not pass through either: a caller who is not the owner reads one fixed sentence,
+    // and its tail is not `run team status`, because a run showed `status` throws on this same
+    // fixture instead of printing anything.
     rmSync(file);
     mkdirSync(file, { recursive: true });
     execFileSync('git', ['init', root], { env: gitEnv(), stdio: 'ignore' });
@@ -452,9 +466,73 @@ describe('team usage', () => {
     expect(owner.out).toBe(`note: ${note}\n`);
     const mine = await usageAt(root, SEAT);
     expect(mine.code).toBe(0);
-    expect(mine.out).toBe(`note: ${note}\n`);
+    expect(mine.out).toBe('note: .agents/team.yaml cannot be read: the owner reads the reason\n');
     const raw = (await usageAt(root, SEAT, '--json')).out;
-    expect((JSON.parse(raw) as { notes: string[] }).notes).toEqual([note]);
+    expect((JSON.parse(raw) as { notes: string[] }).notes).toEqual(['.agents/team.yaml cannot be read: the owner reads the reason']);
+    expectNoAbsolute([mine.out, raw]);
+  });
+
+  test('no path outside this project reaches a caller who is not the owner, whatever breaks', async () => {
+    // Every class the loader, its placement checks, the state and the resolution can hand this
+    // command, provoked one at a time. Each runs through both faces, and `expectNoAbsolute` sweeps
+    // the whole of each: not a figure or a row depends on who asks, and no note may name a path
+    // outside this project. Recorded runs of each case on this branch are quoted in the pull
+    // request's list.
+    const faces = async (cwd: string): Promise<string> => {
+      const text = await usageAt(cwd, SEAT);
+      const raw = (await usageAt(cwd, SEAT, '--json')).out;
+      expect(text.code).toBe(0);
+      expectNoAbsolute([text.out, raw]);
+      return text.out;
+    };
+
+    // Validation: three problems, all on line 1 — one fixed sentence, once.
+    writeFileSync(file, 'format: 1\nproject: acme\n');
+    expect(await faces(root)).toBe('note: .agents/team.yaml does not load (line 1): run team status for the reason\n');
+
+    // Placement, no line: the trust list omits the lobby, whose absolute path the loader's body
+    // names (`trust: must list the lobby <home>/.config/team/lobby`).
+    writeFileSync(file, teamText().replace('  - ~/.config/team/lobby\n', ''));
+    expect(await faces(root)).toBe('note: .agents/team.yaml does not load: run team status for the reason\n');
+
+    // Placement, with a line: a trust entry is a symbolic link; the loader's body names the entry
+    // and the target it resolves to, both absolute.
+    const target = join(base, 'linked-target');
+    const linked = join(base, 'linked-entry');
+    mkdirSync(target);
+    symlinkSync(target, linked);
+    const withLink = teamText().replace(`  - ${root}`, `  - ${linked}\n  - ${root}`);
+    writeFileSync(file, withLink);
+    const entry = withLink.split('\n').findIndex((line) => line.includes(linked)) + 1;
+    expect(await faces(root)).toBe(`note: .agents/team.yaml does not load (line ${entry}): run team status for the reason\n`);
+
+    // YAML that does not parse: the parser's own line.
+    writeFileSync(file, 'project: [unclosed\n');
+    expect(await faces(root)).toBe('note: .agents/team.yaml does not load (line 1): run team status for the reason\n');
+
+    // A file that exists and cannot be read: the read fails with a bare errno error.
+    rmSync(file);
+    mkdirSync(file, { recursive: true });
+    execFileSync('git', ['init', root], { env: gitEnv(), stdio: 'ignore' });
+    expect(await faces(root)).toBe('note: .agents/team.yaml cannot be read: the owner reads the reason\n');
+
+    // A team file that is a symbolic link in a plain folder: not followed, so no project here.
+    const plain = join(base, 'plain');
+    mkdirSync(join(plain, '.agents'), { recursive: true });
+    writeFileSync(join(base, 'target.yaml'), 'format: 1\n');
+    symlinkSync(join(base, 'target.yaml'), join(plain, '.agents', 'team.yaml'));
+    expect(await faces(plain)).toBe(`note: ${NO_PROJECT}\n`);
+
+    // A state that cannot be read: the state's own reason with this project's own path in it.
+    rmSync(file, { recursive: true, force: true });
+    writeFileSync(file, teamText());
+    writeFileSync(join(root, '.agents', 'team.state.json'), 'not json');
+    expect(await faces(root)).toContain('note: .agents/team.state.json is not valid JSON; move it aside and run the command again\n');
+
+    // No project at all: the one note, and nothing for it to name.
+    const nowhere = join(base, 'nowhere');
+    mkdirSync(nowhere);
+    expect(await faces(nowhere)).toBe(`note: ${NO_PROJECT}\n`);
   });
 
   test('any caller may run it, and a subfolder of a checkout reads the same project', async () => {
