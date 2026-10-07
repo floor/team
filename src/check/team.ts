@@ -55,17 +55,19 @@ export const realCheckSources: CheckSources = {
     const agents = agentList(session);
     const workspaces = workspaceList(session);
     if (!agents || !workspaces) return null;
-    // The panes this project's state records for this team's seats: a pane recorded for another
-    // session, another project or nobody at all is not read here.
-    const recorded = new Set<string>();
+    // The panes this project's state records for this team's seats, by the seat each pane is
+    // recorded for: a pane recorded for another session, another project or nobody at all is
+    // not read here, and a recorded pane is read for an agent only when that agent is the seat
+    // its record names — a reused pane id buys no read of a stranger's screen.
+    const recorded = new Map<string, string>();
     for (const seat of team.seats) {
       const pane = state.seats[seat.name]?.pane;
-      if (pane) recorded.add(pane);
+      if (pane) recorded.set(pane, seat.name);
     }
     const screens: Record<string, string> = {};
     const processes: Record<string, PaneProcesses | null> = {};
     for (const agent of agents) {
-      if (!recorded.has(agent.pane)) continue;
+      if (recorded.get(agent.pane) !== agent.name) continue;
       const screen = paneRead(agent.pane, PANE_WINDOW, session);
       if (screen !== null) screens[agent.pane] = screen;
       // The pane's process identity, for the comparison with the one the state recorded: a pane
