@@ -74,6 +74,10 @@ Unchanged by this release:
 - A delegate still cannot pass `--abandon`.
 - A seat whose CLI has already exited (its pane holds a bare shell) is left by `team down` — the
   screen is not one the profile recognises — and closed by `team down --abandon`.
+- A `team up` started within a second or two of a `team down` that left the session up can report a
+  seat the down has just stopped as left at launch — `left out: its pane has been back at its shell
+  for <n> s and shows no CLI prompt; left at launched`, and `run team up again to resume it` —
+  running `team up` again starts it.
 - `team approve` still asks its question.
 - A delegated `up` never answers a trust dialog or a vendor notice: the seat is left out —
   reported, its workspace closed without input, nothing typed into the dialog — and the dialog
