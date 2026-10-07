@@ -21,8 +21,12 @@ Reads the team file at the project's root (`.agents/team.yaml`), the state besid
 (`.agents/team.state.json`) and this machine's approval store — the copy the owner approved, and
 the signing key that verifies it. It writes **nothing at all**: unlike `status`, it keeps no
 `last_valid` copy of the file it read, and unlike `up`, `add` and `watch` it opens no lock, writes
-no state and logs no line. A file that does not load, or one that has drifted from the approved
-copy, is answered from the copy the approval stored; when neither can be read, the block says
+no state and logs no line. A file that has drifted from the approved copy is answered from the
+copy the approval stored: the budgets in force are the approved copy's, and the why-line under the
+rows says the file differs. A file that does not load, or cannot be read, prints no block at all —
+the stored copy does not stand in for it, and a `note:` line carries the reason instead, in the
+two faces the last paragraph rules. A file that is absent is the one note line of the section
+above. When the block has neither a live file that validates nor a copy to fall back on, it says
 `no figures (the file could not be read)`.
 
 ## Who may run it
@@ -131,7 +135,7 @@ nothing, one line, or the other line. `notes` holds the state's own reasons, as 
 `note:` lines — with the block's one line for a file that counts nothing first, so a script reads
 it where the text's reader sees it. `at` is the moment the reading was taken, and `mine` the
 project, or null outside any project — in which case `rows` is empty, `watch` is `not-known` and
-`notes` holds the one sentence the block prints.
+`notes` holds what the block's `note:` lines say.
 
 ## Refusals
 
