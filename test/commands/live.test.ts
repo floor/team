@@ -888,7 +888,7 @@ describe('team up, live', () => {
     expect(log).not.toContain('zsh');
   });
 
-  test('a launch command that ended at once is reported at once', async () => {
+  test('a launch command that ended under the shell is reported once the bound elapses', async () => {
     await approve();
     const made = world();
     made.launch.shellBack = () => true;
@@ -912,11 +912,11 @@ describe('team up, live', () => {
     const code = await runUp(FILE, io, sources({}, made));
     expect(code).toBe(1);
     expect(io.out).toContain(
-      'claude-coordinator-acme: left out: its pane has been back at its shell for 6 s and shows no CLI prompt; left at launched\n',
+      'claude-coordinator-acme: left out: its pane has been back at its shell for 24 s and shows no CLI prompt; left at launched\n',
     );
-    // Three pauses per ended seat — the three full polls the stretch takes — not the 90-second
-    // deadline's worth of them.
-    expect(naps).toBeLessThanOrEqual(9);
+    // Twelve pauses per ended seat, three such seats — the twelve full polls the stretch takes —
+    // not the 90-second deadline's worth of them.
+    expect(naps).toBeLessThanOrEqual(36);
     expect(io.err).toContain('  | ❯ AGENT_UNATTENDED=1 claude --model claude-opus-5-5 ');
     expect(io.err).toContain('  | zsh: command not found\n');
     expect(io.err).toContain('  run `team up` again to resume it\n');
@@ -927,6 +927,45 @@ describe('team up, live', () => {
     const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
     expect(seats['claude-coordinator-acme']?.stage).toBe('launched');
     expect(seats['claude-coordinator-acme']?.pane).toBe('w1:p1');
+  });
+
+  test('the captured stall: a shell holding the typed line is waited out to the CLI', async () => {
+    await approve();
+    // The captured race: a fresh pane's shell leaves the typed launch line unread for seconds
+    // while the tty's echo sits on the screen — measured 8.9 s to 10.3 s across 7 of 24
+    // synthetic trials, one verdict firing 60 ms before the pane's process appeared. The screen
+    // drawn here is the capture's, not an accepted line: the command's echo with no shell-prompt
+    // prefix, the continuation the capture shows, the shell's prompt row, and a bare `❯` — the
+    // rig's reads of exactly these rows classified `unknown` through this repo's readScreen. The
+    // stall is the longest captured one (10 265 ms) rounded down to the 2 s poll grid; the wait
+    // must outlast it and see the CLI's idle screen instead of saying the end at the old bound.
+    const made = world();
+    const commands = new Map<string, string>();
+    const run = made.launch.paneRun.bind(made.launch);
+    made.launch.paneRun = (session, pane, command) => {
+      commands.set(pane, command);
+      return run(session, pane, command);
+    };
+    const polls = new Map<string, number>();
+    made.launch.shellBack = () => true;
+    const read = made.launch.paneText.bind(made.launch);
+    made.launch.paneText = (session, pane) => {
+      const command = commands.get(pane);
+      if (!command) return read(session, pane);
+      const n = (polls.get(pane) ?? 0) + 1;
+      polls.set(pane, n);
+      return n <= 5
+        ? `${command.split('\n')[0]}\n… Protected checkouts, relative to the project root: .\n${home}/.config/team/lobby 16:16:23\n❯\n`
+        : IDLE;
+    };
+    const io = testIo(root, { kind: 'owner-no-tty' });
+    const code = await runUp(FILE, io, sources({}, made));
+    expect(code).toBe(0);
+    expect(io.out).toContain('claude-coordinator-acme: ready\n');
+    expect(io.out).not.toContain('shows no CLI prompt');
+    expect(io.err).not.toContain('shows no CLI prompt');
+    const seats = readState(join(root, '.agents')).sessions['acme-web']?.seats ?? {};
+    expect(seats['claude-coordinator-acme']?.stage).toBe('ready');
   });
 
   test('a shell-back reading with no echo of the launch line is waited out', async () => {
