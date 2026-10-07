@@ -7,7 +7,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { check, loadConfig, USAGE as CHECK_USAGE } from '../../src/commands/check.ts';
+import { loadConfig, USAGE as CHECK_USAGE } from '../../src/commands/check.ts';
+import { commits } from '../../src/commands/commits.ts';
 import { runRelease, USAGE as RELEASE_USAGE } from '../../src/commands/release.ts';
 import { main } from '../../src/cli.ts';
 import { realFetch, BODY_LIMIT } from '../../src/release/http.ts';
@@ -549,7 +550,7 @@ describe('the --file option', () => {
     expect(withJson.io.err).toBe('');
     expect(withJson.requested).toEqual([]);
 
-    // `team check --file` also reads one value per option, last one wins; the parsers are
+    // `team commits check --file` also reads one value per option, last one wins; the parsers are
     // separate and the table test below holds them to the same classification, so the last
     // occurrence is the file. Both orders pin which one is used.
     const last = await run(['check', 'material@3.0.2', '--file', 'missing.yaml', '--file', '.agents/team.yaml'], happy());
@@ -701,7 +702,7 @@ describe('the --file option', () => {
 });
 
 describe('the --file option is classified the same through both commands', () => {
-  // `team check` parses its arguments with its own parser (src/commands/check.ts), release parses
+  // `team commits check` parses its arguments with its own parser (src/commands/commits.ts), release parses
   // with the generic readArgs (src/args.ts) — the parsers are not shared, and this pins the two so
   // they cannot drift apart on `--file`: for every invocation the commands must take the same
   // value, or refuse with the same misuse and the same message shape. What they do share is the
@@ -756,8 +757,8 @@ describe('the --file option is classified the same through both commands', () =>
         released[row.label] = classify(releaseIo.err, 'team release: ');
 
         const checkIo = testIo(project);
-        await check(['HEAD', ...row.tail], checkIo, (cwd, file) => loadConfig(cwd, file, home));
-        throughCheck[row.label] = classify(checkIo.err, 'team check: ');
+        await commits(['check', 'HEAD', ...row.tail], checkIo, (cwd, file) => loadConfig(cwd, file, home));
+        throughCheck[row.label] = classify(checkIo.err, 'team commits check: ');
       }
       const expected = Object.fromEntries(rows.map((row) => [row.label, row.expected]));
       expect(throughCheck).toEqual(expected);

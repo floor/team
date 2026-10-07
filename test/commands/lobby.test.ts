@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { approvalOf } from '../../src/approve/approval.ts';
 import { runAdd, type AddSources } from '../../src/commands/add.ts';
 import { runApprove, type ApproveSources } from '../../src/commands/approve.ts';
-import { check, loadConfig } from '../../src/commands/check.ts';
+import { loadConfig } from '../../src/commands/check.ts';
+import { commits } from '../../src/commands/commits.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
 import { runDown } from '../../src/commands/down.ts';
 import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
@@ -288,7 +289,7 @@ async function runApproveCmd(argv: string[] = []) {
 
 async function runCheckCmd(argv: string[] = []) {
   const io = testIo(root, OWNER);
-  const code = await check(['main', ...argv, ...FILE], io, (cwd, file) => loadConfig(cwd, file, home));
+  const code = await commits(['check', 'main', ...argv, ...FILE], io, (cwd, file) => loadConfig(cwd, file, home));
   return { code, out: io.out, err: io.err };
 }
 

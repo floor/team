@@ -1,4 +1,4 @@
-# The team that works on this repository, for `team check` in CI.
+# The team that works on this repository, for `team commits check` and `team pr check` in CI.
 # A project's own file is private, at .agents/team.yaml; this one is tracked
 # because CI needs the signature rules and the seats that may sign.
 format: 1

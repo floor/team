@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { approvalOf } from '../../src/approve/approval.ts';
 import { runAdd, type AddSources } from '../../src/commands/add.ts';
-import { check, loadConfig } from '../../src/commands/check.ts';
+import { loadConfig } from '../../src/commands/check.ts';
+import { commits } from '../../src/commands/commits.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
 import { runStatus, type StatusSources } from '../../src/commands/status.ts';
 import { runUp, WATCH_NOT_STARTED, watchWouldRead, type Launch, type UpSources } from '../../src/commands/up.ts';
@@ -341,7 +342,7 @@ describe('a folder with no git repository', () => {
     expect(readdirSync(join(root, '.agents')).sort()).toEqual(['team.yaml']);
 
     const checkIo = testIo(root, { kind: 'owner' });
-    const checked = await check(['HEAD'], checkIo, (cwd, file) => loadConfig(cwd, file, home));
+    const checked = await commits(['check', 'HEAD'], checkIo, (cwd, file) => loadConfig(cwd, file, home));
     expect(checked).toBe(2);
     expect(checkIo.err).not.toContain('not inside a git repository: run team from a project, or pass --file');
     expect(readdirSync(join(root, '.agents')).sort()).toEqual(['team.yaml']);

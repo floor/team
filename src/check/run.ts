@@ -54,17 +54,21 @@ export function runCheck(config: CheckConfig, options: CheckOptions): CheckRepor
     return { hash: commit.hash, subject: commit.subject, exempt, findings };
   });
 
-  let pullRequest: Finding[] | undefined;
-  if (options.pullRequestBody !== undefined) {
-    const lines = splitLines(options.pullRequestBody);
-    pullRequest = [
-      ...findForbidden(lines, patterns),
-      ...checkSignature({ lines, rule: config.pullRequests, ledger: config.ledger }),
-    ];
-  }
+  const pullRequest = options.pullRequestBody === undefined ? undefined : checkBody(config, options.pullRequestBody);
 
   const ok = commits.every((commit) => commit.findings.length === 0) && (pullRequest?.length ?? 0) === 0;
   return { commits, skipped: selection.skipped, since: selection.since, pullRequest, ok };
+}
+
+/** One pull request body's findings: the file's forbidden patterns, and the signature rule the
+ *  file writes for bodies (`pullRequests`). Pure over the config and the text, so the commit run
+ *  and the body-only `team pr check` share one definition of what a body must pass. */
+export function checkBody(config: CheckConfig, body: string): Finding[] {
+  const lines = splitLines(body);
+  return [
+    ...findForbidden(lines, forbiddenPatterns(config)),
+    ...checkSignature({ lines, rule: config.pullRequests, ledger: config.ledger }),
+  ];
 }
 
 function plural(count: number, noun: string): string {
@@ -78,7 +82,7 @@ function findingLines(finding: Finding): string[] {
   return lines;
 }
 
-/** The report as `check` prints it: each offending commit and line, then a summary. */
+/** The report as `team commits check` prints it: each offending commit and line, then a summary. */
 export function formatReport(report: CheckReport): string {
   const out: string[] = [];
   for (const commit of report.commits) {
@@ -100,6 +104,18 @@ export function formatReport(report: CheckReport): string {
   const problems: string[] = [];
   if (failed > 0) problems.push(`${plural(failed, 'commit')} refused`);
   if (report.pullRequest && report.pullRequest.length > 0) problems.push('the pull request body refused');
-  out.push(`team check: ${parts.join(', ')}: ${report.ok ? 'ok' : problems.join(', ')}`);
+  out.push(`team commits check: ${parts.join(', ')}: ${report.ok ? 'ok' : problems.join(', ')}`);
+  return `${out.join('\n')}\n`;
+}
+
+/** The report as `team pr check` prints it: the body's section and findings, then the closing
+ *  line — the same parts `formatReport` prints for a body alone (design note §2.2). */
+export function formatBodyReport(findings: readonly Finding[]): string {
+  const out: string[] = [];
+  if (findings.length > 0) {
+    out.push('pull request body');
+    for (const finding of findings) out.push(...findingLines(finding));
+  }
+  out.push(`team pr check: 1 pull request body checked: ${findings.length === 0 ? 'ok' : 'the pull request body refused'}`);
   return `${out.join('\n')}\n`;
 }

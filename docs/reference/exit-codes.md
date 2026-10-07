@@ -97,22 +97,22 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `approve.overrides` | `approve` | 2 | the overrides file can't be parsed | `team approve` |
 | `approve.placed` | `approve` | 2 | a path would trust the project's parent | `team approve` |
 | `approve.revalidate` | `approve` | 2 | the file does not validate | `team approve` |
-| `check.passed` | `check` | 0 | every commit passed | `team check HEAD` |
-| `check.refused` | `check` | 1 | a commit was refused | `team check HEAD` |
-| `check.threw` | `check` | 1 | a forbidden pattern is not a regular expression | `team check HEAD` |
-| `check.empty-range` | `check` | 2 | the range holds no commit | `team check HEAD..HEAD` |
-| `check.file` | `check` | 2 | the team file can't be read | `team check HEAD` |
-| `check.file-invalid` | `check` | 2 | the team file can't be parsed | `team check HEAD --file team.yaml` |
 | `check.invocation` | `check` | 2 | the invocation can't be read | `team check` |
-| `check.ledger` | `check` | 2 | the approval ledger can't be read | `team check HEAD` |
-| `check.no-commit` | `check` | 2 | the ref names nothing | `team check not-a-ref` |
-| `check.not-a-ref` | `check` | 2 | since is not a ref | `team check HEAD --since --bad` |
-| `check.not-a-repo` | `check` | 2 | not inside a git repository | `team check HEAD` |
-| `check.outside` | `check` | 2 | the check is not in a git repository | `team check HEAD --file team.yaml` |
-| `check.pr-body` | `check` | 2 | the pull request body can't be read | `team check HEAD --pr missing.md` |
-| `check.range` | `check` | 2 | the range can't be resolved | `team check missing..also` |
-| `check.since-missing` | `check` | 2 | since doesn't name a commit | `team check HEAD --since missing` |
-| `check.since-unreachable` | `check` | 2 | since is not reachable from the ref | `team check HEAD --since topic` |
+| `commits.passed` | `commits` | 0 | every commit passed | `team commits check HEAD` |
+| `commits.refused` | `commits` | 1 | a commit was refused | `team commits check HEAD` |
+| `commits.threw` | `commits` | 1 | a forbidden pattern is not a regular expression | `team commits check HEAD` |
+| `commits.empty-range` | `commits` | 2 | the range holds no commit | `team commits check HEAD..HEAD` |
+| `commits.file` | `commits` | 2 | the team file can't be read | `team commits check HEAD` |
+| `commits.file-invalid` | `commits` | 2 | the team file can't be parsed | `team commits check HEAD --file team.yaml` |
+| `commits.invocation` | `commits` | 2 | the invocation can't be read | `team commits check` |
+| `commits.ledger` | `commits` | 2 | the approval ledger can't be read | `team commits check HEAD` |
+| `commits.no-commit` | `commits` | 2 | the ref names nothing | `team commits check not-a-ref` |
+| `commits.not-a-ref` | `commits` | 2 | since is not a ref | `team commits check HEAD --since --bad` |
+| `commits.not-a-repo` | `commits` | 2 | not inside a git repository | `team commits check HEAD` |
+| `commits.outside` | `commits` | 2 | the check is not in a git repository | `team commits check HEAD --file team.yaml` |
+| `commits.range` | `commits` | 2 | the range can't be resolved | `team commits check missing..also` |
+| `commits.since-missing` | `commits` | 2 | since doesn't name a commit | `team commits check HEAD --since missing` |
+| `commits.since-unreachable` | `commits` | 2 | since is not reachable from the ref | `team commits check HEAD --since topic` |
 | `conformance-adapter.finished` | `conformance-adapter` | 0 | the protocol finished | `team conformance-adapter` |
 | `doctor.clear` | `doctor` | 0 | nothing is missing | `team doctor` |
 | `doctor.missing` | `doctor` | 1 | something is missing | `team doctor` |
@@ -158,6 +158,14 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `init.tracked` | `init` | 1 | the team file is tracked | `team init` |
 | `init.invocation` | `init` | 2 | the invocation can't be read | `team init extra` |
 | `init.not-a-repo` | `init` | 2 | not inside a git repository | `team init` |
+| `pr.passed` | `pr` | 0 | the pull request body passed | `team pr check body.md` |
+| `pr.refused` | `pr` | 1 | the pull request body was refused | `team pr check body.md` |
+| `pr.body` | `pr` | 2 | the pull request body can't be read | `team pr check missing.md` |
+| `pr.file` | `pr` | 2 | the team file can't be read | `team pr check body.md` |
+| `pr.file-invalid` | `pr` | 2 | the team file can't be parsed | `team pr check body.md --file team.yaml` |
+| `pr.invocation` | `pr` | 2 | the invocation can't be read | `team pr check` |
+| `pr.ledger` | `pr` | 2 | the approval ledger can't be read | `team pr check body.md` |
+| `pr.not-a-repo` | `pr` | 2 | not inside a git repository | `team pr check body.md` |
 | `release.passed` | `release` | 0 | every check passed | `team release check material@3.0.2` |
 | `release.missing` | `release` | 1 | a check is missing | `team release check material@3.0.2` |
 | `release.unknown` | `release` | 2 | a check is unknown | `team release check material@3.0.2` |

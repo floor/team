@@ -126,6 +126,48 @@ Usage:
 | --- | --- | --- |
 | `ref` | no | no |
 
+## `commits`
+
+Hidden: no
+
+Usage:
+
+    team commits check <ref> [--since <ref>] [--file <path>]
+
+### Flags
+
+| Flag | Takes a value | Repeatable | Hidden |
+| --- | --- | --- | --- |
+| `--help` | no | no | no |
+| `-h` | no | no | yes |
+
+### Positionals
+
+None.
+
+### `check`
+
+Hidden: no
+
+Usage:
+
+    team commits check <ref> [--since <ref>] [--file <path>]
+
+#### Flags
+
+| Flag | Takes a value | Repeatable | Hidden |
+| --- | --- | --- | --- |
+| `--file` | yes | no | no |
+| `--help` | no | no | no |
+| `--since` | yes | no | no |
+| `-h` | no | no | yes |
+
+#### Positionals
+
+| Name | Optional | Repeatable |
+| --- | --- | --- |
+| `ref` | no | no |
+
 ## `conformance-adapter`
 
 Hidden: yes
@@ -221,6 +263,47 @@ Usage:
 ### Positionals
 
 None.
+
+## `pr`
+
+Hidden: no
+
+Usage:
+
+    team pr check <file> [--file <path>]
+
+### Flags
+
+| Flag | Takes a value | Repeatable | Hidden |
+| --- | --- | --- | --- |
+| `--help` | no | no | no |
+| `-h` | no | no | yes |
+
+### Positionals
+
+None.
+
+### `check`
+
+Hidden: no
+
+Usage:
+
+    team pr check <file> [--file <path>]
+
+#### Flags
+
+| Flag | Takes a value | Repeatable | Hidden |
+| --- | --- | --- | --- |
+| `--file` | yes | no | no |
+| `--help` | no | no | no |
+| `-h` | no | no | yes |
+
+#### Positionals
+
+| Name | Optional | Repeatable |
+| --- | --- | --- |
+| `file` | no | no |
 
 ## `release`
 

@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCheck } from '../../src/check/run.ts';
-import { check, loadConfig } from '../../src/commands/check.ts';
+import { loadConfig } from '../../src/commands/check.ts';
+import { commits } from '../../src/commands/commits.ts';
 import { createRepository, type Repository } from './repository.ts';
 
 /** This repository's own team file, the one CI checks with. */
@@ -14,7 +15,7 @@ const TEAM_FILE = fileURLToPath(new URL('../../.github/team.yaml', import.meta.u
 const RULE = 'forbidden pattern ^[Cc][Oo]-[Aa][Uu][Tt][Hh][Oo][Rr][Ee][Dd]-[Bb][Yy]:';
 
 /** The notice this repository's own team file carries: it still spells the lead `coordinator:`. */
-const WARNING = 'team check: warning: line 7: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read\n';
+const WARNING = 'team commits check: warning: line 7: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read\n';
 
 /** A signature of the file's coordinator seat, which passes the signature rule. */
 const SIGNATURE = 'Agent: Claude Opus 5.5 · coordinator';
@@ -79,7 +80,7 @@ async function run(argv: string[]) {
     env: {},
     stdinIsTTY: false,
   };
-  const code = await check(argv, io, (cwd, file) => loadConfig(cwd, file, home));
+  const code = await commits(['check', ...argv], io, (cwd, file) => loadConfig(cwd, file, home));
   return { code, stdout, stderr };
 }
 
@@ -96,7 +97,7 @@ describe('a Co-authored-by trailer in this repository', () => {
           `${hash[name].slice(0, 10)} ${subject}`,
           `  line 4: ${RULE}`,
           `    ${coauthor(spelling)}`,
-          'team check: 1 commit checked: 1 commit refused',
+          'team commits check: 1 commit checked: 1 commit refused',
           '',
         ].join('\n'),
         stderr: WARNING,
@@ -117,12 +118,12 @@ describe('a Co-authored-by trailer in this repository', () => {
 
   test('the words mid-sentence, even at the start of a line, are not a trailer', async () => {
     const result = await runOne('mention');
-    expect(result).toEqual({ code: 0, stdout: 'team check: 1 commit checked: ok\n', stderr: WARNING });
+    expect(result).toEqual({ code: 0, stdout: 'team commits check: 1 commit checked: ok\n', stderr: WARNING });
   });
 
   test('a clean commit passes', async () => {
     const result = await runOne('normal');
-    expect(result).toEqual({ code: 0, stdout: 'team check: 1 commit checked: ok\n', stderr: WARNING });
+    expect(result).toEqual({ code: 0, stdout: 'team commits check: 1 commit checked: ok\n', stderr: WARNING });
   });
 
   test('a merge carrying the trailer is refused too, though a merge needs no signature', async () => {
@@ -133,7 +134,7 @@ describe('a Co-authored-by trailer in this repository', () => {
         `${hash.merge.slice(0, 10)} Merge side`,
         `  line 3: ${RULE}`,
         '    Co-authored-by: Someone <someone@example.com>',
-        'team check: 1 commit checked, 1 by a human or a merge: 1 commit refused',
+        'team commits check: 1 commit checked, 1 by a human or a merge: 1 commit refused',
         '',
       ].join('\n'),
       stderr: WARNING,

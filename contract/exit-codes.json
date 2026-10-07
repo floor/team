@@ -639,48 +639,6 @@
       "trigger": "team approve"
     },
     {
-      "code": 0,
-      "command": "check",
-      "id": "check.passed",
-      "meaning": "every commit passed",
-      "trigger": "team check HEAD"
-    },
-    {
-      "code": 1,
-      "command": "check",
-      "id": "check.refused",
-      "meaning": "a commit was refused",
-      "trigger": "team check HEAD"
-    },
-    {
-      "code": 1,
-      "command": "check",
-      "id": "check.threw",
-      "meaning": "a forbidden pattern is not a regular expression",
-      "trigger": "team check HEAD"
-    },
-    {
-      "code": 2,
-      "command": "check",
-      "id": "check.empty-range",
-      "meaning": "the range holds no commit",
-      "trigger": "team check HEAD..HEAD"
-    },
-    {
-      "code": 2,
-      "command": "check",
-      "id": "check.file",
-      "meaning": "the team file can't be read",
-      "trigger": "team check HEAD"
-    },
-    {
-      "code": 2,
-      "command": "check",
-      "id": "check.file-invalid",
-      "meaning": "the team file can't be parsed",
-      "trigger": "team check HEAD --file team.yaml"
-    },
-    {
       "code": 2,
       "command": "check",
       "id": "check.invocation",
@@ -688,67 +646,109 @@
       "trigger": "team check"
     },
     {
+      "code": 0,
+      "command": "commits",
+      "id": "commits.passed",
+      "meaning": "every commit passed",
+      "trigger": "team commits check HEAD"
+    },
+    {
+      "code": 1,
+      "command": "commits",
+      "id": "commits.refused",
+      "meaning": "a commit was refused",
+      "trigger": "team commits check HEAD"
+    },
+    {
+      "code": 1,
+      "command": "commits",
+      "id": "commits.threw",
+      "meaning": "a forbidden pattern is not a regular expression",
+      "trigger": "team commits check HEAD"
+    },
+    {
       "code": 2,
-      "command": "check",
-      "id": "check.ledger",
+      "command": "commits",
+      "id": "commits.empty-range",
+      "meaning": "the range holds no commit",
+      "trigger": "team commits check HEAD..HEAD"
+    },
+    {
+      "code": 2,
+      "command": "commits",
+      "id": "commits.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team commits check HEAD"
+    },
+    {
+      "code": 2,
+      "command": "commits",
+      "id": "commits.file-invalid",
+      "meaning": "the team file can't be parsed",
+      "trigger": "team commits check HEAD --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "commits",
+      "id": "commits.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team commits check"
+    },
+    {
+      "code": 2,
+      "command": "commits",
+      "id": "commits.ledger",
       "meaning": "the approval ledger can't be read",
-      "trigger": "team check HEAD"
+      "trigger": "team commits check HEAD"
     },
     {
       "code": 2,
-      "command": "check",
-      "id": "check.no-commit",
+      "command": "commits",
+      "id": "commits.no-commit",
       "meaning": "the ref names nothing",
-      "trigger": "team check not-a-ref"
+      "trigger": "team commits check not-a-ref"
     },
     {
       "code": 2,
-      "command": "check",
-      "id": "check.not-a-ref",
+      "command": "commits",
+      "id": "commits.not-a-ref",
       "meaning": "since is not a ref",
-      "trigger": "team check HEAD --since --bad"
+      "trigger": "team commits check HEAD --since --bad"
     },
     {
       "code": 2,
-      "command": "check",
-      "id": "check.not-a-repo",
+      "command": "commits",
+      "id": "commits.not-a-repo",
       "meaning": "not inside a git repository",
-      "trigger": "team check HEAD"
+      "trigger": "team commits check HEAD"
     },
     {
       "code": 2,
-      "command": "check",
-      "id": "check.outside",
+      "command": "commits",
+      "id": "commits.outside",
       "meaning": "the check is not in a git repository",
-      "trigger": "team check HEAD --file team.yaml"
+      "trigger": "team commits check HEAD --file team.yaml"
     },
     {
       "code": 2,
-      "command": "check",
-      "id": "check.pr-body",
-      "meaning": "the pull request body can't be read",
-      "trigger": "team check HEAD --pr missing.md"
-    },
-    {
-      "code": 2,
-      "command": "check",
-      "id": "check.range",
+      "command": "commits",
+      "id": "commits.range",
       "meaning": "the range can't be resolved",
-      "trigger": "team check missing..also"
+      "trigger": "team commits check missing..also"
     },
     {
       "code": 2,
-      "command": "check",
-      "id": "check.since-missing",
+      "command": "commits",
+      "id": "commits.since-missing",
       "meaning": "since doesn't name a commit",
-      "trigger": "team check HEAD --since missing"
+      "trigger": "team commits check HEAD --since missing"
     },
     {
       "code": 2,
-      "command": "check",
-      "id": "check.since-unreachable",
+      "command": "commits",
+      "id": "commits.since-unreachable",
       "meaning": "since is not reachable from the ref",
-      "trigger": "team check HEAD --since topic"
+      "trigger": "team commits check HEAD --since topic"
     },
     {
       "code": 0,
@@ -1064,6 +1064,62 @@
       "id": "init.not-a-repo",
       "meaning": "not inside a git repository",
       "trigger": "team init"
+    },
+    {
+      "code": 0,
+      "command": "pr",
+      "id": "pr.passed",
+      "meaning": "the pull request body passed",
+      "trigger": "team pr check body.md"
+    },
+    {
+      "code": 1,
+      "command": "pr",
+      "id": "pr.refused",
+      "meaning": "the pull request body was refused",
+      "trigger": "team pr check body.md"
+    },
+    {
+      "code": 2,
+      "command": "pr",
+      "id": "pr.body",
+      "meaning": "the pull request body can't be read",
+      "trigger": "team pr check missing.md"
+    },
+    {
+      "code": 2,
+      "command": "pr",
+      "id": "pr.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team pr check body.md"
+    },
+    {
+      "code": 2,
+      "command": "pr",
+      "id": "pr.file-invalid",
+      "meaning": "the team file can't be parsed",
+      "trigger": "team pr check body.md --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "pr",
+      "id": "pr.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team pr check"
+    },
+    {
+      "code": 2,
+      "command": "pr",
+      "id": "pr.ledger",
+      "meaning": "the approval ledger can't be read",
+      "trigger": "team pr check body.md"
+    },
+    {
+      "code": 2,
+      "command": "pr",
+      "id": "pr.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team pr check body.md"
     },
     {
       "code": 0,

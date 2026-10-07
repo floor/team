@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GitError, selectCommits } from '../../src/check/git.ts';
 import { formatReport, runCheck } from '../../src/check/run.ts';
-import { check, loadConfig } from '../../src/commands/check.ts';
+import { loadConfig } from '../../src/commands/check.ts';
+import { commits } from '../../src/commands/commits.ts';
+import { pr } from '../../src/commands/pr.ts';
 import { storePath } from '../../src/store/store.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
 import { config, PR_SIGNATURE, SIGNATURE } from './fixtures.ts';
@@ -277,24 +279,39 @@ describe('the pull request body', () => {
 describe('the command', () => {
   const load = () => ({ ok: true as const, config: config(), warnings: [] });
 
-  /** Runs the command with a given configuration, or with the repository's own file when `loader` is 'file'. */
-  async function run(argv: string[], loader: Parameters<typeof check>[2] | 'file' = load) {
+  /** The io a run below collects into. */
+  function ioOf() {
     let stdout = '';
     let stderr = '';
-    const io = {
-      stdout: (text: string) => void (stdout += text),
-      stderr: (text: string) => void (stderr += text),
-      cwd: repo.path,
-      env: {},
-      stdinIsTTY: false,
+    return {
+      io: {
+        stdout: (text: string) => void (stdout += text),
+        stderr: (text: string) => void (stderr += text),
+        cwd: repo.path,
+        env: {},
+        stdinIsTTY: false,
+      },
+      text: () => ({ stdout, stderr }),
     };
-    const code = await (loader === 'file' ? check(argv, io) : check(argv, io, loader));
-    return { code, stdout, stderr };
+  }
+
+  /** Runs `team commits check` with a given configuration, or with the repository's own file when `loader` is 'file'. */
+  async function run(argv: string[], loader: Parameters<typeof commits>[2] | 'file' = load) {
+    const { io, text } = ioOf();
+    const code = await (loader === 'file' ? commits(['check', ...argv], io) : commits(['check', ...argv], io, loader));
+    return { code, ...text() };
+  }
+
+  /** Runs `team pr check` the same way. */
+  async function runPr(argv: string[], loader: Parameters<typeof pr>[2] | 'file' = load) {
+    const { io, text } = ioOf();
+    const code = await (loader === 'file' ? pr(['check', ...argv], io) : pr(['check', ...argv], io, loader));
+    return { code, ...text() };
   }
 
   test('exits 0 and prints the summary', async () => {
     const result = await run([`${hash.spaces}..main`]);
-    expect(result).toEqual({ code: 0, stdout: 'team check: 2 commits checked: ok\n', stderr: '' });
+    expect(result).toEqual({ code: 0, stdout: 'team commits check: 2 commits checked: ok\n', stderr: '' });
   });
 
   test('exits 1 with each offending commit and line', async () => {
@@ -311,7 +328,7 @@ describe('the command', () => {
         `${hash['human-forbidden'].slice(0, 10)} docs: by a human`,
         '  line 3: forbidden pattern ^Claude-Session:',
         '    Claude-Session: 1234',
-        'team check: 3 commits checked, 1 by a human or a merge: 3 commits refused',
+        'team commits check: 3 commits checked, 1 by a human or a merge: 3 commits refused',
         '',
       ].join('\n'),
     );
@@ -324,16 +341,13 @@ describe('the command', () => {
     expect(missing.stdout).toContain('  no signature: expected "Agent: {display} · {role}" in the final trailer block');
   });
 
-  test('reads the pull request body from a file', async () => {
+  test('pr check reads the body from its own file', async () => {
     writeFileSync(join(repo.path, 'body.md'), `text\n\n${PR_SIGNATURE}\n`);
-    const passed = await run(['main', '--pr', 'body.md']);
-    expect(passed).toMatchObject({
-      code: 0,
-      stdout: 'team check: 1 commit checked, 1 pull request body checked: ok\n',
-    });
+    const passed = await runPr(['body.md']);
+    expect(passed).toEqual({ code: 0, stdout: 'team pr check: 1 pull request body checked: ok\n', stderr: '' });
 
     writeFileSync(join(repo.path, 'body.md'), 'text\n');
-    const refused = await run(['main', '--pr=body.md']);
+    const refused = await runPr(['body.md']);
     expect(refused.code).toBe(1);
     expect(refused.stdout).toContain(
       'pull request body\n  no signature: expected "**Agent:** {display} · {role}" in the last line',
@@ -342,20 +356,20 @@ describe('the command', () => {
   });
 
   test('exits 2 when the body, the range or since cannot be read', async () => {
-    expect(await run(['main', '--pr', 'missing.md'])).toMatchObject({ code: 2, stdout: '' });
+    expect(await runPr(['missing.md'])).toMatchObject({ code: 2, stdout: '' });
     expect(await run(['main..main'])).toEqual({
       code: 2,
       stdout: '',
-      stderr: 'team check: the range "main..main" holds no commit\n',
+      stderr: 'team commits check: the range "main..main" holds no commit\n',
     });
     expect((await run([hash.signed, '--since', hash.clean1])).code).toBe(2);
   });
 
   test('exits 2 on a usage error', async () => {
-    expect((await run([])).stderr).toStartWith('team check: a <ref> is required\n\nUsage: team check <ref>');
+    expect((await run([])).stderr).toStartWith('team commits check: a <ref> is required\n\nUsage: team commits check <ref>');
     expect((await run(['a', 'b'])).code).toBe(2);
-    expect((await run(['main', '--force'])).stderr).toStartWith('team check: unknown option --force');
-    expect((await run(['main', '--since'])).stderr).toStartWith('team check: --since needs a value');
+    expect((await run(['main', '--force'])).stderr).toStartWith('team commits check: unknown option --force');
+    expect((await run(['main', '--since'])).stderr).toStartWith('team commits check: --since needs a value');
   });
 
   test('reads the team file of the repository, and its since', async () => {
@@ -385,8 +399,8 @@ describe('the command', () => {
     const passed = await run([`${hash.old}..main`], 'file');
     expect(passed).toEqual({
       code: 0,
-      stdout: `team check: 2 commits checked, 17 skipped (since ${hash.spaces.slice(0, 10)}): ok\n`,
-      stderr: 'team check: warning: line 3: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read\n',
+      stdout: `team commits check: 2 commits checked, 17 skipped (since ${hash.spaces.slice(0, 10)}): ok\n`,
+      stderr: 'team commits check: warning: line 3: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read\n',
     });
     expect((await run([hash.unsigned, '--since', hash.old], 'file')).code).toBe(1);
 
@@ -399,7 +413,7 @@ describe('the command', () => {
     const refused = await run(['main'], 'file');
     expect(refused.code).toBe(2);
     expect(refused.stdout).toBe('');
-    expect(refused.stderr).toMatch(/^team check: .*line 1: /);
+    expect(refused.stderr).toMatch(/^team commits check: .*line 1: /);
   });
 
   test('a corrupt ledger exits 2 and names the file, with no stack', async () => {
@@ -444,7 +458,7 @@ describe('the command', () => {
     expect(result).toEqual({
       code: 2,
       stdout: '',
-      stderr: 'team check: .agents/team.yaml, line 12: unknown field "sesion"\n',
+      stderr: 'team commits check: .agents/team.yaml, line 12: unknown field "sesion"\n',
     });
   });
 });

@@ -13,9 +13,11 @@ import { runAdd, type AddSources } from '../src/commands/add.ts';
 import { runAnswer, type AnswerHost } from '../src/commands/answer.ts';
 import { runApprove, type ApproveSources, type Waiting } from '../src/commands/approve.ts';
 import { check, loadConfig, type LoadConfig } from '../src/commands/check.ts';
+import { commits } from '../src/commands/commits.ts';
 import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
 import { runDown, type DownLaunch, type DownSources } from '../src/commands/down.ts';
 import { runInit } from '../src/commands/init.ts';
+import { pr } from '../src/commands/pr.ts';
 import { runRemove, type RemoveSources } from '../src/commands/remove.ts';
 import { runStatus, type StatusSources } from '../src/commands/status.ts';
 import { runUp, type Launch, type UpSources } from '../src/commands/up.ts';
@@ -124,6 +126,9 @@ workspace:
   mode: shared
 seats:
 ${LEAD}`;
+
+/** The body signature CHECKED's lead seat writes: `**Agent:** {display} · {role}`. */
+const PR_BODY = '**Agent:** Claude Opus 5.5 · coordinator';
 
 const CHECK_ACCOUNT = `${TEAM}budgets:
   accounts:
@@ -829,39 +834,40 @@ scene('approve.approved', async (place) => {
 });
 
 scene('check.invocation', async (place) => {
+  // Bare `team check` is reserved for the team's own check, which this slice does not build:
+  // it refuses exactly as it did before the rename, and takes no notice line.
   const io = testIo(place.root, owner);
-  return show({ code: await check([], io, loader(place)), out: io.out, err: io.err }, 'a <ref> is required');
+  return show({ code: await check([], io, loader(place)), out: io.out, err: io.err }, 'team check: a <ref> is required');
 });
-scene('check.not-a-repo', async (place) => {
+scene('commits.invocation', async (place) => {
   const io = testIo(place.root, owner);
-  return show({ code: await check(['HEAD'], io, loader(place)), out: io.out, err: io.err }, 'not inside a git repository');
+  return show({ code: await commits(['check'], io, loader(place)), out: io.out, err: io.err }, 'a <ref> is required');
+});
+scene('commits.not-a-repo', async (place) => {
+  const io = testIo(place.root, owner);
+  return show({ code: await commits(['check', 'HEAD'], io, loader(place)), out: io.out, err: io.err }, 'not inside a git repository');
 }, false);
-scene('check.file', async (place) => {
+scene('commits.file', async (place) => {
   const io = testIo(place.root, owner);
-  return show({ code: await check(['HEAD'], io, loader(place)), out: io.out, err: io.err }, 'no team file');
+  return show({ code: await commits(['check', 'HEAD'], io, loader(place)), out: io.out, err: io.err }, 'no team file');
 });
-scene('check.file-invalid', async (place) => {
+scene('commits.file-invalid', async (place) => {
   invalid(place);
   const io = testIo(place.root, owner);
-  return show({ code: await check(['HEAD', '--file', 'team.yaml'], io, loader(place)), out: io.out, err: io.err }, 'line');
+  return show({ code: await commits(['check', 'HEAD', '--file', 'team.yaml'], io, loader(place)), out: io.out, err: io.err }, 'line');
 });
-scene('check.ledger', async (place) => {
+scene('commits.ledger', async (place) => {
   approve(place, CHECKED);
   writeFileSync(join(dirname(approvalFile(place)), 'ledger.json'), '{');
   const io = testIo(place.root, owner);
-  return show({ code: await check(['HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'ledger.json');
+  return show({ code: await commits(['check', 'HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'ledger.json');
 });
-scene('check.pr-body', async (place) => {
+scene('commits.passed', async (place) => {
   write(place, CHECKED);
   const io = testIo(place.root, owner);
-  return show({ code: await check(['HEAD', '--pr', 'missing.md', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, "can't read the pull request body");
+  return show({ code: await commits(['check', 'HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'ok');
 });
-scene('check.passed', async (place) => {
-  write(place, CHECKED);
-  const io = testIo(place.root, owner);
-  return show({ code: await check(['HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'ok');
-});
-scene('check.refused', async (place) => {
+scene('commits.refused', async (place) => {
   write(place, CHECKED);
   writeFileSync(join(place.root, 'note.txt'), 'note\n');
   git(place.root, 'add', 'note.txt');
@@ -869,58 +875,104 @@ scene('check.refused', async (place) => {
     cwd: place.root, stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv(),
   });
   const io = testIo(place.root, owner);
-  return show({ code: await check(['HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'refused');
+  return show({ code: await commits(['check', 'HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'refused');
 });
-scene('check.threw', async (place) => {
+scene('commits.threw', async (place) => {
   write(place, CHECKED);
   const loaded = loadConfig(place.root, place.file, place.home);
   if (!loaded.ok) throw new Error('team file');
   const config = { ...loaded.config, forbidden: ['['] };
   const io = testIo(place.root, owner);
   try {
-    const code = await check(['HEAD', '--file', place.file], io, () => ({ ok: true, config, warnings: [] }));
+    const code = await commits(['check', 'HEAD', '--file', place.file], io, () => ({ ok: true, config, warnings: [] }));
     return show({ code, out: io.out, err: io.err }, 'not a regular expression');
   } catch (error) {
     return show({ code: reportFailure(error, (text) => io.stderr(text)), out: io.out, err: io.err }, 'not a regular expression');
   }
 });
-scene('check.outside', async (place) => {
+scene('commits.outside', async (place) => {
   writeFileSync(join(place.base, 'team.yaml'), CHECKED);
   const io = testIo(place.base, owner);
-  return show({ code: await check(['HEAD', '--file', 'team.yaml'], io, loader(place)), out: io.out, err: io.err }, 'team check: not in a git repository\n');
+  return show({ code: await commits(['check', 'HEAD', '--file', 'team.yaml'], io, loader(place)), out: io.out, err: io.err }, 'team commits check: not in a git repository\n');
 });
-scene('check.no-commit', async (place) => {
+scene('commits.no-commit', async (place) => {
   write(place, CHECKED);
   const io = testIo(place.root, owner);
-  return show({ code: await check(['not-a-ref', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, "doesn't name a commit");
+  return show({ code: await commits(['check', 'not-a-ref', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, "doesn't name a commit");
 });
-scene('check.range', async (place) => {
+scene('commits.range', async (place) => {
   write(place, CHECKED);
   const io = testIo(place.root, owner);
-  return show({ code: await check(['missing..also', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, "can't be resolved");
+  return show({ code: await commits(['check', 'missing..also', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, "can't be resolved");
 });
-scene('check.empty-range', async (place) => {
+scene('commits.empty-range', async (place) => {
   write(place, CHECKED);
   const io = testIo(place.root, owner);
-  return show({ code: await check(['HEAD..HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'holds no commit');
+  return show({ code: await commits(['check', 'HEAD..HEAD', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'holds no commit');
 });
-scene('check.since-missing', async (place) => {
+scene('commits.since-missing', async (place) => {
   write(place, CHECKED);
   const io = testIo(place.root, owner);
-  return show({ code: await check(['HEAD', '--since', 'missing', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'since "missing"');
+  return show({ code: await commits(['check', 'HEAD', '--since', 'missing', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'since "missing"');
 });
-scene('check.since-unreachable', async (place) => {
+scene('commits.since-unreachable', async (place) => {
   write(place, CHECKED);
   const tree = git(place.root, 'rev-parse', 'HEAD^{tree}').trim();
   const otherCommit = git(place.root, 'commit-tree', tree, '-m', 'other').trim();
   git(place.root, 'update-ref', 'refs/heads/topic', otherCommit);
   const io = testIo(place.root, owner);
-  return show({ code: await check(['HEAD', '--since', 'topic', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'is not reachable');
+  return show({ code: await commits(['check', 'HEAD', '--since', 'topic', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'is not reachable');
 });
-scene('check.not-a-ref', async (place) => {
+scene('commits.not-a-ref', async (place) => {
   write(place, CHECKED);
   const io = testIo(place.root, owner);
-  return show({ code: await check(['HEAD', '--since', '--bad', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'is not a ref');
+  return show({ code: await commits(['check', 'HEAD', '--since', '--bad', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'is not a ref');
+});
+
+scene('pr.invocation', async (place) => {
+  const io = testIo(place.root, owner);
+  return show({ code: await pr(['check'], io, loader(place)), out: io.out, err: io.err }, 'a <file> is required');
+});
+scene('pr.not-a-repo', async (place) => {
+  // In a folder with no repository the refusal is the loader's, not a git one: `pr check`
+  // runs no git at all. The pass in one is the names test's own case.
+  const io = testIo(place.root, owner);
+  return show({ code: await pr(['check', 'body.md'], io, loader(place)), out: io.out, err: io.err }, 'not inside a git repository');
+}, false);
+scene('pr.file', async (place) => {
+  writeFileSync(join(place.root, 'body.md'), PR_BODY);
+  const io = testIo(place.root, owner);
+  return show({ code: await pr(['check', 'body.md'], io, loader(place)), out: io.out, err: io.err }, 'no team file');
+});
+scene('pr.file-invalid', async (place) => {
+  invalid(place);
+  writeFileSync(join(place.root, 'body.md'), PR_BODY);
+  const io = testIo(place.root, owner);
+  return show({ code: await pr(['check', 'body.md', '--file', 'team.yaml'], io, loader(place)), out: io.out, err: io.err }, 'line');
+});
+scene('pr.ledger', async (place) => {
+  approve(place, CHECKED);
+  writeFileSync(join(dirname(approvalFile(place)), 'ledger.json'), '{');
+  writeFileSync(join(place.root, 'body.md'), PR_BODY);
+  const io = testIo(place.root, owner);
+  return show({ code: await pr(['check', 'body.md', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'ledger.json');
+});
+scene('pr.body', async (place) => {
+  write(place, CHECKED);
+  const io = testIo(place.root, owner);
+  return show({ code: await pr(['check', 'missing.md', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, "can't read the pull request body");
+});
+scene('pr.passed', async (place) => {
+  write(place, CHECKED);
+  writeFileSync(join(place.root, 'body.md'), `${PR_BODY}\n`);
+  const io = testIo(place.root, owner);
+  return show({ code: await pr(['check', 'body.md', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, '1 pull request body checked: ok');
+});
+scene('pr.refused', async (place) => {
+  write(place, CHECKED);
+  writeFileSync(join(place.root, 'body.md'), 'Bump the retry window to thirty seconds.\n');
+  const io = testIo(place.root, owner);
+  return show({ code: await pr(['check', 'body.md', '--file', place.file], io, loader(place)), out: io.out, err: io.err }, 'the pull request body refused');
 });
 
 scene('conformance-adapter.finished', async () => {

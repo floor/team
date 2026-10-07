@@ -245,7 +245,8 @@ check, and this build acts on what the commands below read.
 | --- | --- | --- |
 | `team init` | writes the skeleton `.agents/team.yaml` and adds it and its runtime files to `.git/info/exclude` | the owner |
 | `team approve` | reads the whole file back for a last look, then records it, its ceilings and its seats on this machine; `--show` prints it; `--confirm` asks for the seat count before writing | the owner (`--show`: anyone) |
-| `team check <ref>` | checks one commit, a `a..b` range, or a PR body (`--pr <file>`, `-` reads stdin) against the signature rule; exit 1 when one is refused | anyone; read only |
+| `team commits check <ref>` | checks one commit or a `a..b` range against the signature rule, `--since <ref>` skipping history already checked; exit 1 when one is refused | anyone; read only |
+| `team pr check <file>` | checks a pull request's body against the signature rule (`-` reads stdin), needing no repository; exit 1 when it is refused | anyone; read only |
 | `team doctor` | checks this machine for what the file needs: herdr, each CLI, login, launch line, model, watch heartbeat; `--login` checks only CLI sign-ins | anyone; read only |
 | `team status` | prints the file's seats against the running session, each difference with its repair; `--json` outputs a stable JSON document (`format: 1`) for scripts; exit 1 when they differ | anyone; read only |
 | `team up` / `team down` | starts / stops the session and its seats | `up`: the owner; `down`: the owner, the coordinator or the operator seat |
@@ -357,7 +358,7 @@ bun run ci           # what CI runs: typecheck, tests, build, then the built com
 
 Sources import each other with `.ts` extensions and use erasable syntax only, so Node can run them
 directly; `tsc` writes `dist/` for the published command. CI runs the Linux test job (`test (ubuntu-latest)`)
-and `team check` on every pull request, against the team file the repository keeps at `.github/team.yaml`.
+and `team commits check` and `team pr check` on every pull request, against the team file the repository keeps at `.github/team.yaml`.
 Before a merge, the author quotes their own full `bun run ci` run on the exact head in the pull request,
 and at least one reviewer who is not the author runs `bun run ci` on a macOS machine on the exact head
 under review, quoting its exit status and final line in their review; a review verdict without that quote
