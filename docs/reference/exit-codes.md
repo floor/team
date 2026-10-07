@@ -65,6 +65,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `add.temporary-unexpected` | `add` | 2 | an unexpected argument was passed to --temporary | `team add extra --temporary` |
 | `answer.ready` | `answer` | 0 | the trust dialog was answered and the seat is ready | `team answer lead trust` |
 | `answer.action` | `answer` | 1 | the recorded key was not sent | `team answer lead trust` |
+| `answer.ambiguous` | `answer` | 1 | herdr lists more than one agent of this name | `team answer lead trust` |
 | `answer.another-pane` | `answer` | 1 | the state records another pane for the caller's seat | `team answer lead trust` |
 | `answer.caller` | `answer` | 1 | the caller may not answer a trust dialog | `team answer lead trust` |
 | `answer.file-owner` | `answer` | 1 | --file is the owner's | `team answer lead trust --file .agents/team.yaml` |
@@ -77,6 +78,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `answer.screen` | `answer` | 1 | the pane is not the trust dialog | `team answer lead trust` |
 | `answer.session-owner` | `answer` | 1 | --session is the owner's | `team answer lead trust --session other` |
 | `answer.state` | `answer` | 1 | the seat is not waiting at a trust dialog | `team answer lead trust` |
+| `answer.unverified` | `answer` | 1 | the name is not a seat of the approved copy | `team answer lead trust` |
 | `answer.version` | `answer` | 1 | this version has no trust answer | `team answer lead trust` |
 | `answer.configuration` | `answer` | 2 | the team file cannot be read | `team answer lead trust --file missing.yaml` |
 | `answer.usage` | `answer` | 2 | the invocation is not a seat and trust | `team answer` |

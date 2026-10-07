@@ -1135,6 +1135,81 @@ describe('team answer', () => {
     });
   });
 
+  describe('the approved copy names the seat, and herdr names the pane', () => {
+    test('a recorded pane is not where the key goes', async () => {
+      const { root, home, lobby, dir } = world();
+      writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+      await approve(root, home);
+      updateState(dir, (state) => {
+        state.sessions.acme = {
+          seats: {
+            lead: {
+              stage: 'launched',
+              pane: 'w9:p9',
+              workspace: 'w9',
+              waiting: { state: 'waiting-owner', classification: 'trust' },
+            },
+          },
+          worktrees: {},
+        };
+      });
+      const host = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', lobby), 'cursor');
+      const sent: string[] = [];
+      const orig = host.sendKey.bind(host);
+      host.sendKey = (session, pane, key) => {
+        sent.push(pane);
+        return orig(session, pane, key);
+      };
+      const io = testIo(root, { kind: 'owner' });
+      expect(await runAnswer([...FILE, 'lead', 'trust'], io, host)).toBe(0);
+      expect(sent).toEqual(['w1:p1']);
+      expect(io.out).toBe('lead: trust answered; ready\n');
+      expect(readState(dir).sessions.acme?.seats.lead?.pane).toBe('w1:p1');
+    });
+
+    test('two agents of the approved name send no key', async () => {
+      const { root, home, lobby, dir } = world();
+      writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+      await approve(root, home);
+      wait(dir, 'lead');
+      const host = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', lobby), 'cursor');
+      host.agents = () => [
+        { name: 'lead', pane: 'w1:p1', workspace: 'w1' },
+        { name: 'lead', pane: 'w1:p2', workspace: 'w1' },
+      ];
+      const io = testIo(root, { kind: 'owner' });
+      expect(await runAnswer([...FILE, 'lead', 'trust'], io, host)).toBe(1);
+      expect(io.err).toBe('lead: herdr lists more than one agent of this name; left as it is\n');
+      expect(host.keys).toEqual([]);
+    });
+
+    test('a record the approved copy does not carry sends no key', async () => {
+      const { root, home, lobby, dir } = world();
+      writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));
+      await approve(root, home);
+      updateState(dir, (state) => {
+        state.sessions.acme = {
+          seats: {
+            extra: {
+              stage: 'launched',
+              pane: 'w1:p4',
+              temporary: { like: 'lead', until: 'never' },
+              waiting: { state: 'waiting-owner', classification: 'trust' },
+            },
+          },
+          worktrees: {},
+        };
+      });
+      const host = fake(home, root, withPath(cursorTrust, '<untrusted-directory>', lobby), 'cursor');
+      host.agents = () => [{ name: 'extra', pane: 'w1:p4', workspace: 'w1' }];
+      const io = testIo(root, { kind: 'owner' });
+      expect(await runAnswer([...FILE, 'extra', 'trust'], io, host)).toBe(1);
+      expect(io.err).toBe('extra: its record is not an approved seat; left as it is (the owner cleans it: team remove extra --abandon)\n');
+      expect(host.keys).toEqual([]);
+      expect(host.typed).toEqual([]);
+    });
+  });
+
   test('a lobby path in another case sends nothing', async () => {
     const { root, home, lobby, dir } = world();
     writeFileSync(join(dir, 'team.yaml'), file(lobby, 'coordinator'));

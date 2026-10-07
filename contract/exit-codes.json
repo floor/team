@@ -417,6 +417,13 @@
     {
       "code": 1,
       "command": "answer",
+      "id": "answer.ambiguous",
+      "meaning": "herdr lists more than one agent of this name",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
       "id": "answer.another-pane",
       "meaning": "the state records another pane for the caller's seat",
       "trigger": "team answer lead trust"
@@ -496,6 +503,13 @@
       "command": "answer",
       "id": "answer.state",
       "meaning": "the seat is not waiting at a trust dialog",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.unverified",
+      "meaning": "the name is not a seat of the approved copy",
       "trigger": "team answer lead trust"
     },
     {
