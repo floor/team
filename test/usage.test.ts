@@ -19,7 +19,7 @@ import type { Caller } from '../src/caller.ts';
 import { runStatus } from '../src/commands/status.ts';
 import { NO_PROJECT, runUsage, USAGE } from '../src/commands/usage.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
-import { NOTHING_COUNTED, NOT_VERIFIED, UNBOUND_ACCOUNT, UNBOUND_SHAPE } from '../src/information/usage.ts';
+import { NO_COPY, NOTHING_COUNTED, NOT_VERIFIED, UNBOUND_ACCOUNT, UNBOUND_SHAPE } from '../src/information/usage.ts';
 import { emptySession, updateState } from '../src/state.ts';
 import { approvalStanding, storePath, writeApproval } from '../src/store/store.ts';
 import { gitEnv, testIo } from './helpers.ts';
@@ -760,6 +760,64 @@ describe('team usage', () => {
     expect(owner.code).toBe(0);
     expect(owner.out).toContain('ghost');
     expect(ownerRaw).toContain('ghost');
+  });
+
+  test('an approved copy that cannot be read binds nothing, though the live file matches it', async () => {
+    // The fourth read's case, release-blocking, and the last of this boundary: the record's
+    // fingerprints are a valid approval's — the live file is byte for byte what the owner
+    // approved — but its stored `file:` is invalid, so the copy in force cannot be read. The
+    // fingerprint shortcut in `budgetsInForceOf` then took the LIVE file's budgets whenever they
+    // matched the record's, and `boundReadings` permitted their names: the reviewer approved a
+    // budget naming `/APPROVED-ACCOUNT`, stored a reading under that account, and `usage --json`
+    // as a seat printed it with no note. The ruling: the whole allow-list comes from ONE
+    // validated in-force copy, and a copy that cannot be read binds nothing.
+    const name = '/APPROVED-ACCOUNT';
+    const text = teamText().replace('    openai:', `    ${name}:`);
+    const checked = validateTeamFile(text, { home, root });
+    if (!checked.ok) throw new Error(`the fixture does not validate: ${JSON.stringify(checked.errors)}`);
+    writeFileSync(file, text);
+    // The record `team approve` would write, signed by the store's key, with one edit: the copy
+    // it stores is not a team file. The live file still matches the record's fingerprints — the
+    // shortcut's precondition, pinned here so a change of that precondition shows.
+    const invalid = 'not a team file: [';
+    expect(validateTeamFile(invalid).ok).toBe(false);
+    writeApproval(storePath(checked.team.project, root, home), { approval: approvalOf(checked.team, root, NOW), file: invalid }, [], home);
+    expect(approvalStanding(root, home).kind).toBe('verified');
+    updateState(join(root, '.agents'), (state) => {
+      state.budgets = {
+        'approved/session': { account: name, window: 'session', left: 40, used: 60, changedAt: '2026-10-04T08:58:00Z', resetsAt: null, seat: null, source: 'status_line', confirmed: true },
+        'anthropic/session': { account: 'anthropic', window: 'session', left: 70, used: 30, changedAt: '2026-10-04T08:58:00Z', resetsAt: null, seat: null, source: 'status_line', confirmed: true },
+      } as never;
+      state.sessions['acme-web'] = { ...emptySession() } as never;
+    });
+
+    // A caller who is not the owner reads no name at all: no declared row, no stored reading,
+    // and the one fixed line where they would stand.
+    const mine = await usageAt(root, SEAT);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    const doc = JSON.parse(raw) as { rows: unknown[]; notes: string[] };
+    expect(mine.code).toBe(0);
+    expect(mine.out).toBe([
+      'team acme',
+      'no watch is recording for acme',
+      `note: ${NO_COPY}`,
+    ].join('\n') + '\n');
+    expect(doc.rows).toEqual([]);
+    expect(doc.notes).toEqual([NO_COPY]);
+    for (const face of [mine.out, raw]) {
+      expect(face).not.toContain(name);
+      expect(face).not.toContain('anthropic');
+    }
+
+    // The owner reads the live file's own names as today — exactly what `status` still shows —
+    // and no "not shown" line.
+    const owner = await usageAt(root, { kind: 'owner' });
+    const ownerRaw = (await usageAt(root, { kind: 'owner' }, '--json')).out;
+    expect(owner.code).toBe(0);
+    expect(owner.out).toContain(`  ${name}  `);
+    expect(owner.out).toContain('  anthropic  ');
+    expect(ownerRaw).toContain(name);
+    for (const face of [owner.out, ownerRaw]) expect(face).not.toContain('not shown');
   });
 
   test('hostile state: not one string of a stored reading reaches a caller who is not the owner', async () => {

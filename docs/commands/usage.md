@@ -140,9 +140,10 @@ a non-owner can carry a path or a root that is not this project's own:
 nothing, one line, or the other line. `notes` holds the state's own reasons, as the block's
 `note:` lines — with the block's one line for a file that counts nothing first, so a script reads
 it where the text's reader sees it — and, for a caller who is not the owner, the fixed lines for
-stored readings the file does not bind. `at` is the moment the reading was taken, and `mine` the
-project, or null outside any project — in which case `rows` is empty, `watch` is `not-known` and
-`notes` holds what the block's `note:` lines say.
+stored readings the file does not bind, or, when the copy in force cannot be read, that one line
+in their place. `at` is the moment the reading was taken, and `mine` the project, or null outside
+any project — in which case `rows` is empty, `watch` is `not-known` and `notes` holds what the
+block's `note:` lines say.
 
 ## Refusals
 
@@ -321,11 +322,18 @@ at all, and one fixed line says so, in the block as a `note:` line and in `--jso
 
 The team in force is the approved copy once a verified approval is in force, never the live file: a
 name only the live file writes — a `vendor:` edited after approval, a seat it added — binds no
-stored reading, and the standing's own line already says the file differs. When nothing is
-approved, the file's own names are the only ones there are. A seat's name is not that wide: a
-reading whose seat the seats in force do not name still prints its figures, with no seat — `-` in
-the block, null in `--json`. Every figure a budget in force counts prints for every caller, and
-the owner reads every stored reading the state holds, exactly as `status` shows it.
+stored reading, and the standing's own line already says the file differs. A copy that cannot be
+read binds nothing at all: the allow-list, and the declared rows themselves, come from that one
+copy, so while it cannot be read a caller who is not the owner reads no row and no stored reading
+by name — even when the live file still matches the approved fingerprint — and one `note:` line
+says so:
+
+    note: the approved copy of the team file cannot be read: nothing is shown by name
+
+When nothing is approved, the file's own names are the only ones there are. A seat's name is not
+that wide: a reading whose seat the seats in force do not name still prints its figures, with no
+seat — `-` in the block, null in `--json`. Every figure a budget in force counts prints for every
+caller, and the owner reads every stored reading the state holds, exactly as `status` shows it.
 
 The owner reads the notes `status` would print — the loader's own
 message with the file's absolute path, the state's own reason. A caller who is not the owner reads
