@@ -70,6 +70,7 @@ export async function runUsage(argv: string[], io: Io, sources: UsageSources): P
   } else {
     io.stdout(render(report));
   }
+  // exit: usage.block
   return 0;
 }
 
@@ -107,5 +108,6 @@ function outside(io: Io, json: boolean, now: Date, notes: string[]): number {
   } else {
     for (const note of notes) io.stdout(`note: ${note}\n`);
   }
+  // exit: usage.outside
   return 0;
 }

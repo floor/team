@@ -243,6 +243,9 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `up.file-invalid` | `up` | 2 | the team file can't be parsed | `team up --file team.yaml` |
 | `up.invocation` | `up` | 2 | the invocation can't be read | `team up extra` |
 | `up.not-a-repo` | `up` | 2 | not inside a git repository | `team up` |
+| `usage.block` | `usage` | 0 | the project's block printed | `team usage` |
+| `usage.outside` | `usage` | 0 | no project block to show from this folder; the notes say why | `team usage` |
+| `usage.invocation` | `usage` | 2 | the invocation can't be read | `team usage extra` |
 | `watch.stopped` | `watch` | 0 | the watch ran and stopped | `team watch` |
 | `watch.already` | `watch` | 1 | a watch already runs | `team watch` |
 | `watch.file-owner` | `watch` | 1 | --file is the owner's | `team watch --file .agents/team.yaml` |
