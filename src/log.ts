@@ -20,12 +20,20 @@ const KEPT = 3;
 // the same words the record said.
 //
 // The log rotates at 1 MB and keeps three files.
+//
+// The log is evidence, never a decision: a write that fails — a full disk, a path that is not a
+// file, a permission the owner kept — is caught and dropped here, at the one sink every command
+// logs through, so no command's exit status and no watch pass depends on the log being writable.
 export function logLine(dir: string, command: string, caller: string, what: string, now: Date = new Date()): void {
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, LOG_FILE);
-  if (existsSync(path) && statSync(path).size >= MAX_BYTES) rotate(path);
-  const line = plainLine(`${command} [${caller}] ${what}`).replace(/\s+/g, ' ');
-  appendFileSync(path, `${now.toISOString()} ${line}\n`);
+  try {
+    mkdirSync(dir, { recursive: true });
+    const path = join(dir, LOG_FILE);
+    if (existsSync(path) && statSync(path).size >= MAX_BYTES) rotate(path);
+    const line = plainLine(`${command} [${caller}] ${what}`).replace(/\s+/g, ' ');
+    appendFileSync(path, `${now.toISOString()} ${line}\n`);
+  } catch {
+    // Dropped on purpose: the command's own work, its printed lines and its exit are unaffected.
+  }
 }
 
 function rotate(path: string): void {

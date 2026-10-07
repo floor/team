@@ -552,7 +552,36 @@ describe('team add', () => {
     }
   });
 
-  test('swap that grows before the launch is refused, and the file stays', async () => {
+  test('a machine refusal writes one line with the printed refusal and its readings', async () => {
+    const made = world();
+    const io = testIo(project, owner);
+    const machine: Machine = { loadPerCore: 1, memoryFree: 69, diskFree: 200e9, swapTotal: 8.2e9, swapFree: 1.2e9, swapUsed: 7e9 };
+    expect(await runAdd(['worker'], io, sources(made, { machine: () => machine }))).toBe(1);
+    expect(io.err).toContain('team add: free swap is 1.2 GB, below 2.0 GB');
+    const lines = readFileSync(join(project, '.agents', 'team.log'), 'utf8').split('\n')
+      .filter((line) => line.includes('refused: free swap is '));
+    expect(lines).toEqual([
+      '2026-10-03T14:02:00.000Z add [owner] refused: free swap is 1.2 GB, below 2.0 GB — readings: load 1.0/core, memory 69%, disk 200000000000 B free, swap used 7000000000 B of 8200000000 B (free 1200000000 B)',
+    ]);
+  });
+
+  test('a dry run and a caller refused before the gate write no line', async () => {
+    const refusing = { ...fine, swapFree: 1.2e9 };
+    const log = join(project, '.agents', 'team.log');
+    const logged = () => (existsSync(log) ? readFileSync(log, 'utf8') : null);
+    // A dry run decides nothing and writes nothing, though its refusal reads as the real one's.
+    const dry = testIo(project, owner);
+    expect(await runAdd(['--dry-run', 'worker'], dry, sources(world(), { machine: () => refusing }))).toBe(1);
+    expect(dry.err).toContain('team add: free swap is 1.2 GB, below 2.0 GB');
+    expect(logged()).toBeNull();
+    // A caller the caller gate refuses returns before the machine gate is even read.
+    const seat = testIo(project, { kind: 'seat', name: 'stranger', pane: 'w1:p1' });
+    expect(await runAdd(['worker'], seat, sources(world(), { machine: () => refusing }))).toBe(1);
+    expect(seat.err).toContain('only the owner, the orchestrator or the operator');
+    expect(logged()).toBeNull();
+  });
+
+  test('swap that grows before the launch is refused, the file stays, and the line says so', async () => {
     let reads = 0;
     const made = world();
     const io = testIo(project, owner);
@@ -566,6 +595,12 @@ describe('team add', () => {
     expect(io.err).toContain('swap grew by 2.0 GB in 10 minutes, above 1.0 GB');
     expect(made.creates).toEqual([]);
     expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).toContain('stopped: true');
+    // The second reading is the one refused on, and it is the one written.
+    const lines = readFileSync(join(project, '.agents', 'team.log'), 'utf8').split('\n')
+      .filter((line) => line.includes('refused: swap grew by '));
+    expect(lines).toEqual([
+      '2026-10-03T14:02:00.000Z add [owner] refused: swap grew by 2.0 GB in 10 minutes, above 1.0 GB — readings: load 1.0/core, memory 50%, disk 200000000000 B free, swap used 3000000000 B of 9000000000 B (free 8000000000 B)',
+    ]);
   });
 
   test('readings inside every limit still start the seat', async () => {

@@ -13,7 +13,7 @@ import type { TeamFile } from '../src/file/types.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import { emptySession, readState, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
-import { parseLoadavg, parseMeminfo, parseMemoryPressure, parseSwapUsage, readMachine, swapTotalProblem } from '../src/watch/machine.ts';
+import { parseLoadavg, parseMeminfo, parseMemoryPressure, parseSwapUsage, readMachine, readingsText, swapTotalProblem } from '../src/watch/machine.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, NUDGE_TEXT, pass } from '../src/watch/pass.ts';
 import { readScreen } from '../src/watch/screen.ts';
@@ -208,6 +208,25 @@ describe('the machine\'s figures', () => {
     // both null, and `launchLimit`'s swap rule can't fire there either.
     expect(swapTotalProblem({ ...small, swapTotal: null, swapFree: null }, limits)).toBeNull();
     expect(swapTotalProblem({ ...small, swapFree: null }, limits)).toBeNull();
+  });
+
+  test('the readings as one sentence, in the log\'s fixed order, in the bytes the gate compared', () => {
+    expect(readingsText({ loadPerCore: 1, memoryFree: 69, diskFree: 200e9, swapTotal: 8.2e9, swapFree: 1.2e9, swapUsed: 7e9 }))
+      .toBe('load 1.0/core, memory 69%, disk 200000000000 B free, swap used 7000000000 B of 8200000000 B (free 1200000000 B)');
+    // The watch spelling: the disk figure no moment recorded, the rest from a reading taken.
+    expect(readingsText({ loadPerCore: 0.7, memoryFree: 69, diskFree: null, swapTotal: 8.2e9, swapFree: 1.2e9, swapUsed: 6.9e9 }))
+      .toBe('load 0.7/core, memory 69%, disk unread, swap used 6900000000 B of 8200000000 B (free 1200000000 B)');
+    // Not a rounding of the bytes: a figure the gate compared byte for byte prints byte for byte,
+    // so a later launch parsing the newest line's swap figures reads the figure it compared.
+    expect(readingsText({ loadPerCore: 0.5, memoryFree: 68, diskFree: 199_999_999_999, swapTotal: 8_192_620_000, swapFree: 1_314_750_000, swapUsed: 6_877_870_000 }))
+      .toBe('load 0.5/core, memory 68%, disk 199999999999 B free, swap used 6877870000 B of 8192620000 B (free 1314750000 B)');
+  });
+  test('a figure that wasn\'t read prints unread, never a guessed number', () => {
+    const none: Machine = { loadPerCore: null, memoryFree: null, diskFree: null, swapTotal: null, swapFree: null, swapUsed: null };
+    expect(readingsText(none)).toBe('load unread, memory unread, disk unread, swap unread');
+    // One of the three swap figures missing makes the whole swap reading unread.
+    expect(readingsText({ ...none, swapUsed: 6.9e9 })).toBe('load unread, memory unread, disk unread, swap unread');
+    expect(readingsText({ ...none, swapTotal: 8.2e9, swapFree: 1.2e9, swapUsed: null })).toBe('load unread, memory unread, disk unread, swap unread');
   });
 });
 
@@ -849,6 +868,40 @@ describe('team watch', () => {
     const log = readFileSync(join(dir, '.agents', 'team.log'), 'utf8');
     expect(log).toContain('watch [watch] deepseek-acme-2 asked a question');
     expect(log).toContain('watch [watch] nudged the operator');
+  });
+
+  test('the readings are written once per ten minutes, and not more, whether or not anything is wrong', async () => {
+    const io = testIo(dir, { kind: 'owner' });
+    // Eleven passes at the default 120s: twenty minutes of watch, so one line at once, then at
+    // ten minutes and at twenty — three lines, not eleven.
+    expect(await runWatch(['--file', file], io, sources(11))).toBe(0);
+    const lines = readFileSync(join(dir, '.agents', 'team.log'), 'utf8')
+      .split('\n').filter((line) => line.includes('watch [watch] readings: '));
+    expect(lines).toEqual([
+      '2026-10-03T14:00:00.000Z watch [watch] readings: load 1.0/core, memory 50%, disk 200000000000 B free, swap used 1000000000 B of 9000000000 B (free 8000000000 B)',
+      '2026-10-03T14:10:00.000Z watch [watch] readings: load 1.0/core, memory 50%, disk 200000000000 B free, swap used 1000000000 B of 9000000000 B (free 8000000000 B)',
+      '2026-10-03T14:20:00.000Z watch [watch] readings: load 1.0/core, memory 50%, disk 200000000000 B free, swap used 1000000000 B of 9000000000 B (free 8000000000 B)',
+    ]);
+  });
+
+  test('a figure the machine couldn\'t read is written unread, never guessed', async () => {
+    const io = testIo(dir, { kind: 'owner' });
+    expect(await runWatch(['--file', file], io, sources(1, { machine: () => ({ ...fine, memoryFree: null, swapFree: null }) }))).toBe(0);
+    const log = readFileSync(join(dir, '.agents', 'team.log'), 'utf8');
+    expect(log).toContain('watch [watch] readings: load 1.0/core, memory unread, disk 200000000000 B free, swap unread');
+  });
+
+  test('a log that cannot be written does not kill the pass', async () => {
+    const io = testIo(dir, { kind: 'owner' });
+    // The log path is a directory, so the readings write can only fail — the pass below it still
+    // runs whole: its reports still notify, and its heartbeat is on the state while it runs.
+    mkdirSync(join(dir, '.agents', 'team.log'), { recursive: true });
+    let beat: unknown;
+    expect(await runWatch(['--file', file], io, sources(1, {
+      wait: async () => { beat ??= readState(join(dir, '.agents')).sessions['acme-web']?.watch; return false; },
+    }))).toBe(0);
+    expect(beat).toEqual({ pid: 4242, heartbeat: '2026-10-03T14:00:00.000Z' });
+    expect(notified[0]).toBe('deepseek-acme-2 asked a question: the operator\'s to act on');
   });
 
   test('the values in force are what runs: the pass, the announced line and the wait read them', async () => {

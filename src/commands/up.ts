@@ -62,7 +62,7 @@ import { emptySession, readState, updateState, type SeatState } from '../state.t
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from './doctor.ts';
-import { launchLimit, readMachine, type Machine, type SwapSample } from '../watch/machine.ts';
+import { launchLimit, readMachine, readingsText, type Machine, type SwapSample } from '../watch/machine.ts';
 import { readScreen } from '../watch/screen.ts';
 import { seatStart } from '../worktree/place.ts';
 
@@ -442,7 +442,17 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const machine = sources.machine?.(root);
   if (machine) {
     const problem = crossed(machine);
-    if (problem) refusals.push(problem);
+    if (problem) {
+      // The incident log: the refusal and the readings it was decided on, one line in the
+      // project's own log, through the same sink every command logs through. It changes no
+      // decision. Written only when this call is one that may run `up` — the refusals above
+      // accumulate rather than return, so a caller the caller gate refused must leave every
+      // file as it was — and not on a dry run, which decides nothing.
+      if (!dry && (mayLaunchSeats(caller) || delegated !== null)) {
+        logLine(dir, 'up', callerLabel(caller), `refused: ${problem} — readings: ${readingsText(machine)}`, sources.now?.() ?? new Date());
+      }
+      refusals.push(problem);
+    }
   }
 
   if (state === null) refusals.push("herdr doesn't answer");
@@ -838,8 +848,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       now: () => now().getTime(),
       allow(name) {
         if (sources.machine) {
-          const problem = crossed(sources.machine(root));
-          if (problem) return problem;
+          const machine = sources.machine(root);
+          const problem = crossed(machine);
+          if (problem) {
+            // The incident log, as at the gate above: this reading stops a launch, and it is
+            // taken after the caller gate let the run through, so it is always the call's own.
+            logLine(dir, 'up', callerLabel(caller), `refused: ${problem} — readings: ${readingsText(machine)}`, now());
+            return problem;
+          }
         }
         const seat = team.seats.find((item) => item.name === name);
         if (!seat || !ceilings) return null;

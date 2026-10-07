@@ -111,6 +111,26 @@ export function gb(bytes: number): string {
   return `${(bytes / 1e9).toFixed(1)} GB`;
 }
 
+/**
+ * The gate's readings as one sentence, for the log: the same figures the gate compares, in a
+ * fixed order, `unread` where a figure wasn't taken — a line in the log never guesses a
+ * reading. Disk and swap print the bytes the gate compared, never a rounded-GB spelling of
+ * them: a later launch seeds its growth samples from the newest line's swap figures and must
+ * read the figure that was compared, not prose about it (the rounded sentence is for people;
+ * the log is also read by the tool). Any of the three swap figures missing makes the whole swap
+ * reading unread: a used figure without the total it was taken with is not a reading that was
+ * taken.
+ */
+export function readingsText(machine: Machine): string {
+  const load = machine.loadPerCore === null ? 'unread' : `${machine.loadPerCore.toFixed(1)}/core`;
+  const memory = machine.memoryFree === null ? 'unread' : `${Math.round(machine.memoryFree)}%`;
+  const disk = machine.diskFree === null ? 'unread' : `${machine.diskFree} B free`;
+  const swap = machine.swapTotal === null || machine.swapUsed === null || machine.swapFree === null
+    ? 'unread'
+    : `used ${machine.swapUsed} B of ${machine.swapTotal} B (free ${machine.swapFree} B)`;
+  return `load ${load}, memory ${memory}, disk ${disk}, swap ${swap}`;
+}
+
 export type SwapSample = { at: number; used: number };
 
 /**
