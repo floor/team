@@ -554,6 +554,9 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         ...down,
         home,
         foreground: (session, pane) => down.foreground?.(session, pane) ?? ['zsh'],
+        // A non-owner's removal on an unrecognised screen renames the pane's agent out of the
+        // seat's name; the fake session takes the rename like herdr's.
+        renameAgent: action.renameAgent,
       };
     },
     addSources(): AddSources {
