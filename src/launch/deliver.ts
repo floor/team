@@ -2,7 +2,7 @@ import { reportedLiveAgent } from './agent.ts';
 import { profileFor } from '../profiles/index.ts';
 import type { RulesFileWrite } from './rules-file.ts';
 import {
-  classifyComposer, readBox, readFoldMark, readScreen, type Box, type Screen,
+  classifyComposer, readBox, readFoldMark, readScreen, type Box, type Screen, type ScreenOptions,
 } from '../watch/screen.ts';
 
 /** Why a delivery stopped. Each one is a reading the owner can act on.
@@ -140,10 +140,10 @@ function holdsBox(text: string, box: Box): boolean {
  *  exactly the text typed; a box that folded the paste shows a fold marker, never its rows, so
  *  it waits and is refused at the deadline. Anything else waits, and a wait that outlives the
  *  deadline is a refusal, not an Enter. */
-function boxState(cli: string, text: string, screen: string | undefined): 'ready' | 'wait' | 'no' {
-  const kind = readScreen(cli, screen).kind;
+function boxState(cli: string, text: string, screen: string | undefined, options?: ScreenOptions): 'ready' | 'wait' | 'no' {
+  const kind = readScreen(cli, screen, options).kind;
   if (kind === 'unsent') {
-    const box = readBox(cli, screen);
+    const box = readBox(cli, screen, options);
     return box !== null && holdsBox(text, box) ? 'ready' : 'wait';
   }
   return kind === 'idle' ? 'wait' : 'no';
@@ -152,19 +152,19 @@ function boxState(cli: string, text: string, screen: string | undefined): 'ready
 /** Whether the pane's box holds exactly `text` right now: an unsent composer, no fold marker, and
  *  rows that read back as the text. The one check the watch's nudge and the exit typing share
  *  with delivery — false for anything not observed, never `true` on trust. */
-export function boxHoldsText(cli: string, text: string, screen: string | undefined): boolean {
+export function boxHoldsText(cli: string, text: string, screen: string | undefined, options?: ScreenOptions): boolean {
   if (readFoldMark(cli, screen)) return false;
-  if (readScreen(cli, screen).kind !== 'unsent') return false;
-  const box = readBox(cli, screen);
+  if (readScreen(cli, screen, options).kind !== 'unsent') return false;
+  const box = readBox(cli, screen, options);
   return box !== null && holdsBox(text, box);
 }
 
 /** The first row of the box that is not `text`'s own — what the box holds that the text does
  *  not — or null when the box holds exactly `text` or is not readable as a box at all. For the
  *  line that says what is in the box now, with the same row-by-row read the exact check makes. */
-export function boxHoldsOther(cli: string, text: string, screen: string | undefined): string | null {
-  if (readScreen(cli, screen).kind !== 'unsent') return null;
-  const box = readBox(cli, screen);
+export function boxHoldsOther(cli: string, text: string, screen: string | undefined, options?: ScreenOptions): string | null {
+  if (readScreen(cli, screen, options).kind !== 'unsent') return null;
+  const box = readBox(cli, screen, options);
   if (box === null) return null;
   return holdsBox(text, box) ? null : (readsBack(text, box).row ?? '');
 }

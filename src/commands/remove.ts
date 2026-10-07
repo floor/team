@@ -11,7 +11,7 @@ import type { Problem } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { approvalStanding, type Standing } from '../store/store.ts';
 import { writeTeamFile } from '../file/write.ts';
-import { agentRename, paneForeground } from '../herdr.ts';
+import { agentRename, paneForeground, paneForegroundCwd } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
 import { executePlan } from '../launch/execute.ts';
@@ -50,6 +50,7 @@ export const realSources: RemoveSources = {
   ...downSources,
   foreground: (session, pane) => paneForeground(pane, aim(session)),
   renameAgent: (session, pane, name) => agentRename(pane, name, aim(session)),
+  foregroundCwd: (session, pane) => paneForegroundCwd(pane, aim(session)),
 };
 
 export const USAGE = 'Usage: team remove <name> [--keep] [--abandon] [--session <name>] [--file <path>]\n';
@@ -257,7 +258,8 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   // its clean stop. The owner keeps the refusal, byte for byte, with the way out it names.
   let leave = false;
   if (agent) {
-    const screen = sources.screen(session, agent.pane, cli);
+    const liveCwd = sources.foregroundCwd ? sources.foregroundCwd(session, agent.pane) : null;
+    const screen = sources.screen(session, agent.pane, cli, liveCwd);
     const where = stateOf(agent.status, screen);
     // A box that holds exactly the profile's exit text — an earlier run typed it and never
     // confirmed it — is cleared with the profile's one key inside the stop, and the removal
@@ -265,7 +267,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     // owner instead of refused with the generic unsent line.
     const profile = profileFor(cli);
     const holdsExit = where === 'unsent' && profile !== null
-      && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));
+      && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli), { cwd: liveCwd ?? undefined, home: sources.home });
     const clearable = holdsExit && profile?.exitClear !== null;
     leave = caller.kind !== 'owner' && where !== 'free' && where !== 'working' && !clearable
       && (agent.status === 'idle' || agent.status === 'done');
@@ -336,11 +338,12 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     if (delegatePane !== null) logDelegated(dir, delegatePane, 'remove', sources.now());
 
     if (agent && !leave) {
-      const screen = sources.screen(session, agent.pane, cli);
+      const liveCwd = sources.foregroundCwd ? sources.foregroundCwd(session, agent.pane) : null;
+      const screen = sources.screen(session, agent.pane, cli, liveCwd);
       const where = stateOf(agent.status, screen);
       const profile = profileFor(cli);
       const exitInBox = where === 'unsent' && profile !== null && profile.exitClear !== null
-        && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));
+        && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli), { cwd: liveCwd ?? undefined, home: sources.home });
       const stopped = await stopRunning({
         io, dir, session, sources, logCommand: 'remove', caller: describeCaller(caller),
         seat: {
@@ -474,6 +477,8 @@ export async function stopRunning(input: {
         screen: () => sources.screenText(sessionName, pane, seat.cli),
         status: () => sources.status(sessionName, pane),
         foreground: () => sources.foreground(sessionName, pane),
+        foregroundCwd: () => (sources.foregroundCwd ? sources.foregroundCwd(sessionName, pane) : null),
+        home: sources.home,
         sleep: sources.sleep ?? launch.sleep,
         now: () => sources.now().getTime(),
       }, seat.cli, text);

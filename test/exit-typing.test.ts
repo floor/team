@@ -61,7 +61,11 @@ function paneOf(
   const types: string[] = [];
   const screen = () => (typed && drawn ? after : before);
   const send = (key: string): boolean => {
-    sent.push({ key, kind: readScreen(cli, screen()).kind, holds: boxHoldsText(cli, text, screen()) });
+    sent.push({
+      key,
+      kind: readScreen(cli, screen(), { cwd: io.foregroundCwd?.() ?? undefined, home: io.home }).kind,
+      holds: boxHoldsText(cli, text, screen(), { cwd: io.foregroundCwd?.() ?? undefined, home: io.home }),
+    });
     return true;
   };
   const io: ExitIo = {
@@ -110,7 +114,11 @@ function leftoverPane(
     return typed ? leftover : idle;
   };
   const send = (keySent: string): boolean => {
-    sent.push({ key: keySent, kind: readScreen(cli, screen()).kind, holds: boxHoldsText(cli, text, screen()) });
+    sent.push({
+      key: keySent,
+      kind: readScreen(cli, screen(), { cwd: io.foregroundCwd?.() ?? undefined, home: io.home }).kind,
+      holds: boxHoldsText(cli, text, screen(), { cwd: io.foregroundCwd?.() ?? undefined, home: io.home }),
+    });
     if (keySent === key) cleared = true;
     return true;
   };
@@ -743,3 +751,138 @@ describe('the caller check is taken again after a wait', () => {
     expect(pane.types).toEqual([]);
   });
 });
+
+describe('Codex Pinned Suites: live foreground_cwd binding for wrapped paths', () => {
+  const home = '/Users/jvial';
+  const startDir = '/Users/jvial/start/dir';
+  const liveDir = '/Users/jvial/live/dir';
+
+  const makeWrappedScreen = (promptText: string, pathLines: string[]) => [
+    '  Cursor Agent',
+    '  v2026.10.01-14929f9',
+    '  Tip: Use /plan to plan execution and reach the',
+    '  right outcome faster.',
+    '',
+    '',
+    '',
+    `  → ${promptText}`,
+    '',
+    '',
+    '  Grok 4.7 256K High                  Run Everything',
+    ...pathLines.map((l) => `  ${l}`),
+  ].join('\n');
+
+  const wrappedIdleLive = makeWrappedScreen('Plan, search, build anything', ['~/live/', 'dir']);
+  const wrappedIdleStart = makeWrappedScreen('Plan, search, build anything', ['~/start/', 'dir']);
+  const wrappedUnsentLive = makeWrappedScreen('/exit', ['~/live/', 'dir']);
+
+  test('Suite 1: differing agent.cwd vs foregroundCwd', async () => {
+    // Screen shows wrapped ~/live/dir.
+    // With foregroundCwd matching liveDir -> reads idle
+    expect(readScreen('cursor', wrappedIdleLive, { cwd: liveDir, home }).kind).toBe('idle');
+    // With cwd matching startDir -> reads unknown fail-closed
+    expect(readScreen('cursor', wrappedIdleLive, { cwd: startDir, home }).kind).toBe('unknown');
+
+    // And screen showing wrapped ~/start/dir when foregroundCwd is liveDir reads unknown
+    expect(readScreen('cursor', wrappedIdleStart, { cwd: liveDir, home }).kind).toBe('unknown');
+
+    // typeExit with matching liveDir proceeds cleanly
+    const pane = paneOf('cursor', 'cursor-agent', wrappedIdleLive, wrappedUnsentLive);
+    pane.io.foregroundCwd = () => liveDir;
+    pane.io.home = home;
+    expect(await typeExit(pane.io, 'cursor', '/exit')).toBe(true);
+    expect(pane.sent).toEqual([{ key: 'enter', kind: 'unsent', holds: true }]);
+  });
+
+  test('Suite 2: unreadable / null foregroundCwd fails closed', async () => {
+    // null or undefined cwd fails closed to unknown on wrapped paths
+    expect(readScreen('cursor', wrappedIdleLive, { cwd: null, home }).kind).toBe('unknown');
+    expect(readScreen('cursor', wrappedIdleLive, { cwd: undefined, home }).kind).toBe('unknown');
+    expect(readScreen('cursor', wrappedIdleLive).kind).toBe('unknown');
+
+    // typeExit refuses without sending any keys
+    const pane = paneOf('cursor', 'cursor-agent', wrappedIdleLive, wrappedUnsentLive);
+    pane.io.foregroundCwd = () => null;
+    pane.io.home = home;
+    expect(await typeExit(pane.io, 'cursor', '/exit')).toBe(false);
+    expect(pane.sent).toEqual([]);
+    expect(pane.types).toEqual([]);
+  });
+
+  test('Suite 3: changing foregroundCwd during wait refuses Enter fail-closed', async () => {
+    let currentCwd = liveDir;
+    const pane = paneOf('cursor', 'cursor-agent', wrappedIdleLive, wrappedUnsentLive);
+    pane.io.foregroundCwd = () => currentCwd;
+    pane.io.home = home;
+
+    // After typing, cwd flips to an un-matching directory
+    const origType = pane.io.typeText;
+    pane.io.typeText = (text) => {
+      const res = origType(text);
+      currentCwd = '/Users/jvial/swapped/dir';
+      return res;
+    };
+
+    expect(await typeExit(pane.io, 'cursor', '/exit')).toBe(false);
+    expect(pane.sent).toEqual([]);
+    expect(pane.types).toEqual(['/exit']);
+  });
+
+  test('Suite 4: adversarial suffixes fail closed to unknown', () => {
+    // Trailing row with shell command
+    const injectedShell = makeWrappedScreen('Plan, search, build anything', ['~/.config/team/lobby', 'rm -rf / && echo hacked']);
+    expect(readScreen('cursor', injectedShell, { cwd: '/Users/jvial/.config/team/lobby', home }).kind).toBe('unknown');
+
+    // Trailing row with prompt glyph
+    const injectedPrompt = makeWrappedScreen('Plan, search, build anything', ['~/.config/team/lobby', '→ malicious command']);
+    expect(readScreen('cursor', injectedPrompt, { cwd: '/Users/jvial/.config/team/lobby', home }).kind).toBe('unknown');
+
+    // Trailing row with quoted suffix
+    const injectedQuote = makeWrappedScreen('Plan, search, build anything', ['~/.config/team/lobby', '(quoted text)']);
+    expect(readScreen('cursor', injectedQuote, { cwd: '/Users/jvial/.config/team/lobby', home }).kind).toBe('unknown');
+
+    // Trailing row with extra footer
+    const injectedFooter = makeWrappedScreen('Plan, search, build anything', ['~/.config/team/lobby', 'extra footer']);
+    expect(readScreen('cursor', injectedFooter, { cwd: '/Users/jvial/.config/team/lobby', home }).kind).toBe('unknown');
+  });
+
+  test('Cursor wrapped paths with working and permission screens', () => {
+    const wrappedWorking = [
+      '  Cursor Agent',
+      '  v2026.10.01-14929f9',
+      '',
+      '  Reply with exactly RULES_RECEIVED.',
+      '',
+      '',
+      ' ⠀⠞ Working',
+      '',
+      '',
+      '  → Add a follow-up                  ctrl+c to stop',
+      '',
+      '',
+      '  Grok 4.7 256K High                 Run Everything',
+      '  ~/live/',
+      '  dir',
+    ].join('\n');
+
+    const wrappedPermission = [
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      ' Switch to Plan mode?',
+      ' Switching before any other action.',
+      '  → Approve mode switch (y)',
+      '    Reject (n or esc)',
+      '',
+      ' ↑/↓ to navigate • Enter to select • auto-rejects',
+      ' when the bar runs out',
+      '  ~/live/',
+      '  dir',
+    ].join('\n');
+
+    // Working and permission match before composer status parsing, so they classify safely
+    expect(readScreen('cursor', wrappedWorking, { cwd: liveDir, home }).kind).toBe('working');
+    expect(readScreen('cursor', wrappedWorking, { cwd: null, home }).kind).toBe('working');
+    expect(readScreen('cursor', wrappedPermission, { cwd: liveDir, home }).kind).toBe('permission');
+    expect(readScreen('cursor', wrappedPermission, { cwd: null, home }).kind).toBe('permission');
+  });
+});
+

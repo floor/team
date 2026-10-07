@@ -4,11 +4,11 @@
 // runs on the plain form, and the styling tells a greyed suggestion from typed text.
 import { readFileSync } from 'node:fs';
 import { stripSgr } from '../ansi.ts';
-import { classifyLines, composerBox, composeLines, foldMarked, foldOf, statusRowOf, type Box, type Fold } from './screen-core.ts';
+import { classifyLines, composerBox, composeLines, foldMarked, foldOf, statusRowOf, type Box, type Fold, type ReadClock, type ScreenOptions } from './screen-core.ts';
 import type { ScreenData, VersionRange } from './screen-data.ts';
 import { loadScreen } from './screen-file.ts';
 
-export type { Box, Fold };
+export type { Box, Fold, ReadClock, ScreenOptions };
 
 export type Screen =
   | { kind: 'idle' }                 // the idle prompt, with an empty input box
@@ -55,27 +55,27 @@ function windowOf(lines: string[]): string[] {
 }
 
 /** The same classification `classify` runs, against a screen that may carry added patterns. */
-export function classifyData(data: ScreenData, lines: string[]): Screen {
-  return classifyLines(data, windowOf(lines));
+export function classifyData(data: ScreenData, lines: string[], options?: ScreenOptions | ReadClock): Screen {
+  return classifyLines(data, windowOf(lines), options);
 }
 
 /** Every stage, in the core's order. The first one that matches wins. */
-export function classify(cli: string | ScreenData, lines: string[]): Screen {
+export function classify(cli: string | ScreenData, lines: string[], options?: ScreenOptions | ReadClock): Screen {
   const data = typeof cli === 'string' ? DATA[cli] : cli;
   if (!data) return { kind: 'unknown' };
-  return classifyLines(data, windowOf(lines));
+  return classifyLines(data, windowOf(lines), options);
 }
 
 /** The composer alone. A running turn would otherwise hide an empty input box. */
-export function classifyComposer(cli: string | ScreenData, lines: string[]): Screen {
+export function classifyComposer(cli: string | ScreenData, lines: string[], options?: ScreenOptions | ReadClock): Screen {
   const data = typeof cli === 'string' ? DATA[cli] : cli;
   if (!data) return { kind: 'unknown' };
-  return composeLines(data, windowOf(lines));
+  return composeLines(data, windowOf(lines), options);
 }
 
-export function readScreen(cli: string | ScreenData, screen: string | undefined): Screen {
+export function readScreen(cli: string | ScreenData, screen: string | undefined, options?: ScreenOptions | ReadClock): Screen {
   if (screen === undefined) return { kind: 'unknown' };
-  return classify(cli, screen.split('\n'));
+  return classify(cli, screen.split('\n'), options);
 }
 
 /** The folded form of a paste the pane's composer shows, or null. The shape only; the caller
@@ -98,18 +98,18 @@ export function readFoldMark(cli: string, screen: string | undefined): boolean {
 /** The input box the composer draws for its current text, or null when it does not read `unsent`.
  *  The box's rows are the rows the pane drew for the text; the caller compares them to the text
  *  it typed before any Enter. */
-export function readBox(cli: string, screen: string | undefined): Box | null {
+export function readBox(cli: string, screen: string | undefined, options?: ScreenOptions): Box | null {
   const data = DATA[cli];
   if (data === undefined || screen === undefined) return null;
-  return composerBox(data, windowOf(screen.split('\n')));
+  return composerBox(data, windowOf(screen.split('\n')), options);
 }
 
 /** The one line a quota figure may come from: the composer's own status row, in the pane's last
  * 20 lines, read plain — a figure is never styled. Null for a CLI with no status line, and for
  * a window that shows no status row — a dialog, a question, a trust screen, a shell or an
  * unknown one reads no figures. */
-export function statusRow(cli: string | ScreenData, screen: string | undefined): string | null {
+export function statusRow(cli: string | ScreenData, screen: string | undefined, options?: ScreenOptions): string | null {
   const data = typeof cli === 'string' ? DATA[cli] : cli;
   if (data === undefined || screen === undefined) return null;
-  return statusRowOf(data, windowOf(stripSgr(screen).split('\n')));
+  return statusRowOf(data, windowOf(stripSgr(screen).split('\n')), options);
 }
