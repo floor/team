@@ -289,6 +289,7 @@ describe('a seat the approval lists as changed', () => {
   async function approve(): Promise<number> {
     return runApprove(['--file', '.agents/team.yaml'], testIo(root, { kind: 'owner' }), {
       ask: async () => String(team().seats.length),
+      waiting: () => 'empty',
       now: () => new Date(NOW),
       home,
     });

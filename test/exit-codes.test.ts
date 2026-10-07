@@ -11,7 +11,7 @@ import { saveReadings, type Seen } from '../src/budgets/readings.ts';
 import type { Caller } from '../src/caller.ts';
 import { runAdd, type AddSources } from '../src/commands/add.ts';
 import { runAnswer, type AnswerHost } from '../src/commands/answer.ts';
-import { runApprove, type ApproveSources } from '../src/commands/approve.ts';
+import { runApprove, type ApproveSources, type Waiting } from '../src/commands/approve.ts';
 import { check, loadConfig, type LoadConfig } from '../src/commands/check.ts';
 import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
 import { runDown, type DownLaunch, type DownSources } from '../src/commands/down.ts';
@@ -355,8 +355,8 @@ function statusSources(live: Live | null, standing: Standing = { kind: 'none' })
   };
 }
 
-function approveSources(place: Place, answer: string | null, home = place.home): ApproveSources {
-  return { ask: async () => answer, now: () => NOW, home };
+function approveSources(place: Place, answer: string | null, home = place.home, waiting: Waiting = 'empty'): ApproveSources {
+  return { ask: async () => answer, waiting: () => waiting, now: () => NOW, home };
 }
 
 function worktreeSources(place: Place): WorktreeSources {
@@ -758,12 +758,38 @@ scene('approve.check', async (place) => {
   write(place, CHECK_ACCOUNT);
   return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'cannot be resolved');
 });
+scene('approve.input-waiting', async (place) => {
+  write(place, TEAM);
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1', place.home, 'waiting')), 'was waiting on the terminal');
+});
+scene('approve.input-unreadable', async (place) => {
+  write(place, TEAM);
+  return show(
+    await approved(place, ['--file', place.file], owner, approveSources(place, '1', place.home, 'unreadable')),
+    'could not be read to check',
+  );
+});
 scene('approve.key', async (place) => {
   write(place, TEAM);
   const folder = join(place.home, '.config', 'team-key');
   mkdirSync(folder, { recursive: true });
   writeFileSync(join(folder, 'key.json'), '{');
   return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'signing key is not whole JSON');
+});
+scene('approve.key-changed', async (place) => {
+  write(place, TEAM);
+  // The look before the question finds no key at all; the file turns unreadable while the
+  // owner is answering — another process writing it — and the write still fails closed
+  // rather than replace what is there.
+  return show(await approved(place, ['--confirm', '--file', place.file], owner, {
+    ...approveSources(place, '1'),
+    ask: async () => {
+      const folder = join(place.home, '.config', 'team-key');
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(join(folder, 'key.json'), '{');
+      return '1';
+    },
+  }), 'signing key is not whole JSON');
 });
 scene('approve.show', async (place) => {
   write(place, TEAM);
@@ -775,7 +801,7 @@ scene('approve.not-owner', async (place) => {
 });
 scene('approve.answer', async (place) => {
   write(place, TEAM);
-  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '0')), 'not approved');
+  return show(await approved(place, ['--confirm', '--file', place.file], owner, approveSources(place, '0')), 'not approved');
 });
 scene('approve.approved', async (place) => {
   write(place, TEAM);

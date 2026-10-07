@@ -499,7 +499,7 @@ async function main(): Promise<number> {
   try {
     const approvals = checks.begin('setup: the file is approved (the real `approve`)');
     const io = ownerIo(project);
-    const code = await runApprove(['--file', file], io, { ask: async () => '2', now: () => new Date(), home });
+    const code = await runApprove(['--file', file], io, { ask: async () => '2', waiting: () => 'empty', now: () => new Date(), home });
     show(io, 2);
     approvals.check(code === 0, `approve exits 0 (it exited ${code})`);
     approvals.check(readApproval(storePath(PROJECT, project, home)) !== null, 'the store holds the approval');

@@ -162,7 +162,7 @@ const sources = {
 const io = testIo(root, { kind: 'owner' });
 let code: number;
 if (id.startsWith('approve.')) {
-  code = await runApprove(['--file', file], io, { ask: async () => '1', now: () => NOW, home });
+  code = await runApprove(['--file', file], io, { ask: async () => '1', waiting: () => 'empty', now: () => NOW, home });
 } else {
   code = await runAdd(['worker', '--file', file], io, sources);
 }
