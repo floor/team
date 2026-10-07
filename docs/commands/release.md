@@ -45,8 +45,8 @@ one exception: it reads its key from the macOS Keychain, so it needs macOS, an i
 ```yaml file=.agents/team.yaml
 format: 1
 project: beacon
-coordinator: claude-keeper
-operator: claude-keeper
+coordinator: codex-keeper
+operator: codex-keeper
 
 trust:
   - ~/.config/team/lobby
@@ -68,13 +68,13 @@ releases:
 
 seats:
   - role: coordinator
-    name: claude-keeper
+    name: codex-keeper
     label: coordinator
-    cli: claude-code
-    vendor: anthropic
-    model: Claude Opus
-    version: "5.5"
-    launch: claude --model claude-opus-5-5
+    cli: codex
+    vendor: openai
+    model: GPT Compass
+    version: "2"
+    launch: codex -m gpt-compass-2
 ```
 
 One entry per published package: `package`, its `github` owner/repo, and `trusted_publishing: true`
