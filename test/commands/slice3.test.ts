@@ -796,6 +796,7 @@ describe('team down', () => {
       agents: () => [agent('deepseek-acme', 'idle')],
       screen: () => ({ kind: 'unknown' }),
       shellBack: () => true,
+      shellChildless: () => true,
       sessionRunning: () => running,
       launch: {
         typeText: (_session, _pane, text) => { typed.push(text); return true; },
@@ -818,12 +819,13 @@ describe('team down', () => {
     expect(stopped && deleted).toBe(true);
   });
 
-  test('a pane that cannot be read, or one with another program in front, keeps the unknown line', async () => {
+  test('a pane that cannot be read, one with another program in front, or one with a child of its shell, keeps the unknown line', async () => {
     for (const answer of [null, false] as const) {
       const dry = await down(['--dry-run'], OWNER, {
         agents: () => [agent('deepseek-acme', 'idle')],
         screen: () => ({ kind: 'unknown' }),
         shellBack: () => answer,
+        shellChildless: () => true,
       });
       expect(dry.code).toBe(0);
       expect(dry.out).toContain('deepseek-acme: shows a screen the profile does not recognise; left running\n');
@@ -832,14 +834,28 @@ describe('team down', () => {
     }
   });
 
-  test('the pane is read for the shell only when the screen alone cannot say', async () => {
+  test('the pane is read for the shell only when the screen alone cannot say, and its children only after the shell', async () => {
     let asked = 0;
+    let childrenAsked = 0;
     await down(['--dry-run'], OWNER, {
       agents: () => [agent('deepseek-acme', 'idle')],
       screen: () => ({ kind: 'idle' }),
       shellBack: () => { asked++; return true; },
+      shellChildless: () => { childrenAsked++; return true; },
     });
     expect(asked).toBe(0);
+    expect(childrenAsked).toBe(0);
+  });
+
+  test('the children are asked only after the shell is the one foreground process', async () => {
+    let childrenAsked = 0;
+    await down(['--dry-run'], OWNER, {
+      agents: () => [agent('deepseek-acme', 'idle')],
+      screen: () => ({ kind: 'unknown' }),
+      shellBack: () => false,
+      shellChildless: () => { childrenAsked++; return true; },
+    });
+    expect(childrenAsked).toBe(0);
   });
 
   test('a pane back at its shell is not the seat any more', () => {
@@ -850,18 +866,24 @@ describe('team down', () => {
   });
 
   test('the state reading down and remove share calls a shell-back pane exited, nothing else', () => {
-    // The capture's reading: a screen the profile does not recognise, and the pane's own
-    // shell in front — `exited`. Every other state is the screen's own, unchanged.
-    expect(seatState('idle', { kind: 'unknown' }, () => true)).toBe('exited');
-    expect(seatState('idle', { kind: 'unknown' }, () => null)).toBe('unknown');
-    expect(seatState('idle', { kind: 'unknown' }, () => false)).toBe('unknown');
+    // The capture's reading: a screen the profile does not recognise, the pane's own shell the
+    // one foreground process, and no child of that shell — `exited`. Any gap in the proof
+    // keeps today's word. Every other state is the screen's own, unchanged.
+    expect(seatState('idle', { kind: 'unknown' }, () => true, () => true)).toBe('exited');
+    expect(seatState('idle', { kind: 'unknown' }, () => null, () => true)).toBe('unknown');
+    expect(seatState('idle', { kind: 'unknown' }, () => false, () => true)).toBe('unknown');
+    // A suspended or backgrounded CLI leaves the shell in front and lives on as its child:
+    // the shell alone is never the whole proof.
+    expect(seatState('idle', { kind: 'unknown' }, () => true, () => false)).toBe('unknown');
+    expect(seatState('idle', { kind: 'unknown' }, () => true, () => null)).toBe('unknown');
     // A reading that cannot say, and a foreground that is another program, keep today's word.
-    expect(seatState('idle', { kind: 'idle' }, () => true)).toBe('free');
-    expect(seatState('idle', { kind: 'unsent' }, () => true)).toBe('unsent');
-    expect(seatState('idle', { kind: 'permission' }, () => true)).toBe('blocked');
-    // Herdr's own status is not asked when the screen is one it can name — and a stale
-    // "working" under an unrecognised screen is still the shell reading's to call.
-    expect(seatState('working', { kind: 'idle' }, () => true)).toBe('working');
-    expect(seatState('working', { kind: 'unknown' }, () => true)).toBe('exited');
+    expect(seatState('idle', { kind: 'idle' }, () => true, () => true)).toBe('free');
+    expect(seatState('idle', { kind: 'unsent' }, () => true, () => true)).toBe('unsent');
+    expect(seatState('idle', { kind: 'permission' }, () => true, () => true)).toBe('blocked');
+    // Herdr's own status is not asked when the screen is one it can name — and a seat herdr
+    // still reports working or blocked is never exited, however its screen reads.
+    expect(seatState('working', { kind: 'idle' }, () => true, () => true)).toBe('working');
+    expect(seatState('working', { kind: 'unknown' }, () => true, () => true)).toBe('unknown');
+    expect(seatState('blocked', { kind: 'unknown' }, () => true, () => true)).toBe('unknown');
   });
 });

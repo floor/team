@@ -117,6 +117,43 @@ export function paneShellBack(pane: string, session?: string): boolean | null {
   }
 }
 
+/** pgrep's answer as the exited proof reads it: exit 1 with no output says the pid has no
+ *  child at all (true), exit 0 with one pid per line says it has one (false), and everything
+ *  else — any other exit status, no status at all, or output that is not bare pids — is null,
+ *  so the caller keeps its seat `unknown`. */
+export function childlessAnswer(status: number | null, stdout: string): boolean | null {
+  const lines = stdout.split('\n').filter((line) => line !== '');
+  if (status === 1) return lines.length === 0 ? true : null;
+  if (status === 0 && lines.length > 0) return lines.every((line) => /^[0-9]+$/.test(line)) ? false : null;
+  return null;
+}
+
+// Whether a process has no child process at all, by pid only — never an argument or an
+// environment, which can carry credentials. `pgrep -P <pid>` lists a pid's children and exits
+// 1 when there are none; that exact answer is true, a printed child pid is false, and a
+// missing pgrep, a timeout, a refusal or unexpected output is null, never a guess. The second
+// half of the exited reading: a CLI suspended with ctrl-z or started in the background leaves
+// the pane's shell in the foreground and lives on as its child. Both pgreps answer `-P` this
+// way — macOS's BSD one, captured in a scratch herdr session, and Linux's procps one, which
+// the check job runs for real on its runner (test/childless.test.ts).
+export function childlessOf(pid: number): boolean | null {
+  try {
+    const out = execFileSync('pgrep', ['-P', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 });
+    return childlessAnswer(0, out);
+  } catch (error) {
+    const failure = error as { status?: number; stdout?: string };
+    return childlessAnswer(failure.status ?? null, String(failure.stdout ?? ''));
+  }
+}
+
+// Whether the shell of one of the session's panes has no child process at all: the second
+// half of the exited proof, `paneShellBack` being the first. Null when the pane's shell pid
+// cannot be read or pgrep cannot say.
+export function paneShellChildless(pane: string, session?: string): boolean | null {
+  const shell = paneRootPid(pane, session);
+  return shell === null ? null : childlessOf(shell);
+}
+
 // A pane's process identity as `pane process-info` reports it: the pane's own shell process and
 // the foreground processes herdr lists, as pids. Pids only: never an argv, an argument or an
 // environment, which can hold secrets.

@@ -229,7 +229,12 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   const cli = declared?.cli ?? team.seats.find((seat) => seat.name === temporary?.like)?.cli ?? '';
   if (agent) {
     const screen = sources.screen(session, agent.pane, cli);
-    const where = seatState(agent.status, screen, () => sources.shellBack?.(session, agent.pane) ?? null);
+    const where = seatState(
+      agent.status,
+      screen,
+      () => sources.shellBack?.(session, agent.pane) ?? null,
+      () => sources.shellChildless?.(session, agent.pane) ?? null,
+    );
     // A box that holds exactly the profile's exit text — an earlier run typed it and never
     // confirmed it — is cleared with the profile's one key inside the stop, and the removal
     // then proceeds as on an empty box. The same box on a CLI with no key is named for the
@@ -307,7 +312,12 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
 
     if (agent) {
       const screen = sources.screen(session, agent.pane, cli);
-      const where = seatState(agent.status, screen, () => sources.shellBack?.(session, agent.pane) ?? null);
+      const where = seatState(
+        agent.status,
+        screen,
+        () => sources.shellBack?.(session, agent.pane) ?? null,
+        () => sources.shellChildless?.(session, agent.pane) ?? null,
+      );
       const profile = profileFor(cli);
       const exitInBox = where === 'unsent' && profile !== null && profile.exitClear !== null
         && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));

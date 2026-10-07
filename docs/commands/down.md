@@ -5,7 +5,8 @@ the herdr session. A seat is only asked when it is free — idle, with an empty 
 working, blocked or half-typed seat is left running and named. A seat already showing its own
 framed exit question is blocked the same way: this run sends no key to it. A seat whose CLI has
 already left its pane is not asked either: a screen the profile does not recognise, with the
-pane's own shell as its one foreground process, is a CLI that is gone — its workspace is closed with
+pane's own shell as its one foreground process and no child of that shell left anywhere — and
+herdr not reporting the seat working or blocked — is a CLI that is gone: its workspace is closed with
 nothing typed and no `--abandon` needed, and the line says its CLI had already exited. A box that
 holds exactly this CLI's exit text — an earlier run typed it and never confirmed it — is not
 half-typed text: when the profile carries the one key that empties a box, the text is cleared
@@ -26,8 +27,10 @@ Reads the team file, this machine's approval store, the session's state
 (`.agents/team.state.json`, for the watch's pid and the seats' recorded panes and CLIs), and herdr:
 whether the session is running, its agents, each pane's screen and status, and each pane's
 foreground processes — a pane whose screen the profile does not recognise has its own shell read
-for by pid, and `exited` only when that shell is the one foreground process, which is what calls a
-seat whose CLI has already left. Writes
+for by pid, and `exited` only when that shell is the one foreground process and has no child
+process at all, which is what calls a seat whose CLI has already left; the child reading is by pid
+only, because a CLI suspended with ctrl-z or started in the background leaves the shell in front
+and lives on as its child. Writes
 `.agents/team.state.json` (the seats it stopped are dropped),
 `.agents/team.log`, and, through herdr: the exit in each pane, the workspaces it closes, the watch's
 process, the session it stops and the stopped session it clears — its own, just stopped. A

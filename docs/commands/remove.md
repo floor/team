@@ -6,7 +6,8 @@ in the file as `stopped: true` instead of taking it out. A seat that is busy —
 prompt, already showing its own exit question, showing a screen the profile does not recognise,
 or holding unsent text — is left as it is, unless its owner abandons it. One busy-looking seat is
 not: a seat whose CLI has already left its pane — a screen the profile does not recognise, with
-the pane's own shell as its one foreground process — has nothing to ask, so its workspace is closed,
+the pane's own shell as its one foreground process and no child of that shell left anywhere — has
+nothing to ask, so its workspace is closed,
 nothing is typed, and the removal proceeds with no `--abandon`. Every other seat, and
 the session, are left alone.
 
@@ -20,8 +21,8 @@ Reads the team file, the session's state (`.agents/team.state.json`, for a tempo
 herdr: whether the session runs, its agents, each pane's screen and status, and the pane's
 foreground processes, which is how it knows the CLI has really exited — the one reading `down`
 shares: a screen the profile does not recognise has the pane's own shell read for by pid, and
-`exited` only when that shell is the one foreground process, which is what calls a seat whose CLI
-has already left — and the approval store:
+`exited` only when that shell is the one foreground process and has no child process at all,
+which is what calls a seat whose CLI has already left — and the approval store:
 stopping a seat and editing the file are changes the owner approves first. Without an approval in
 force — never approved, a record from before records were signed, or one the verification refused —
 nothing is stopped and nothing is written, with the one-line repair every command prints.

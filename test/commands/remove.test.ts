@@ -608,11 +608,13 @@ describe('team remove', () => {
   });
 
   test('a seat whose CLI had already exited is removed without --abandon, and nothing is typed', async () => {
-    // The same unknown screen, but the pane's own shell is the foreground process — the
-    // capture zsh-after-exit.json. The refusal the unknown screen earns is gone: the CLI is
-    // not there to be asked, so the workspace closes and the removal proceeds.
+    // The same unknown screen, but the pane's own shell is the one foreground process and has
+    // no child — the capture zsh-after-exit.json. The refusal the unknown screen earns is
+    // gone: the CLI is not there to be asked, so the workspace closes and the removal
+    // proceeds.
     const made = world({ kind: 'unknown' }, 'idle');
     made.sources.shellBack = () => true;
+    made.sources.shellChildless = () => true;
     made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
     const io = testIo(dir, owner);
     expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(0);
@@ -622,14 +624,19 @@ describe('team remove', () => {
     expect(made.keys).toEqual([]);
     expect(made.closed).toEqual(['w1']);
     expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
-    // A pane that cannot be read keeps the refusal: only the pid reading says exited.
-    writeFileSync(file, FILE);
-    const unreadable = world({ kind: 'unknown' }, 'idle');
-    unreadable.sources.shellBack = () => null;
-    unreadable.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
-    const refused = testIo(dir, owner);
-    expect(await runRemove(['worker', '--file', file], refused, unreadable.sources)).toBe(1);
-    expect(refused.err).toContain('shows a screen the profile does not recognise');
+    // A pane that cannot be read, and a shell with a child — a CLI suspended with ctrl-z or a
+    // backgrounded program — keep the refusal: only the whole pid reading says exited.
+    for (const childless of [() => null, () => false] as const) {
+      writeFileSync(file, FILE);
+      const unreadable = world({ kind: 'unknown' }, 'idle');
+      unreadable.sources.shellBack = () => true;
+      unreadable.sources.shellChildless = childless;
+      unreadable.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+      const refused = testIo(dir, owner);
+      expect(await runRemove(['worker', '--file', file], refused, unreadable.sources)).toBe(1);
+      expect(refused.err).toContain('shows a screen the profile does not recognise');
+      expect(unreadable.closed).toEqual([]);
+    }
   });
 
   test('a Cursor queue screen is working: the seat is left and nothing is typed', async () => {

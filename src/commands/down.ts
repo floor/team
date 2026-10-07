@@ -12,6 +12,7 @@ import {
   paneForeground,
   paneRead,
   paneShellBack,
+  paneShellChildless,
   sendKey,
   sessionDelete,
   sessionRunning,
@@ -53,6 +54,10 @@ export type DownSources = {
    *  only for a screen the profile does not recognise, to call a seat whose CLI has already
    *  exited what it is. Absent keeps every such screen unknown, exactly as before. */
   shellBack?(session: string, pane: string): boolean | null;
+  /** Whether that shell has no child process at all, by pid — the other half of the exited
+   *  reading: a CLI suspended with ctrl-z or started in the background leaves the shell in
+   *  the foreground and lives on as its child. Absent keeps every such screen unknown. */
+  shellChildless?(session: string, pane: string): boolean | null;
   now(): Date;
   sleep?(ms: number): Promise<void>;
   /** Approval store home. The real command uses the owner's home. */
@@ -128,6 +133,7 @@ export const realSources: DownSources = {
   status: (session, pane) => agentStatus(pane, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
   shellBack: (session, pane) => paneShellBack(pane, aim(session)),
+  shellChildless: (session, pane) => paneShellChildless(pane, aim(session)),
   now: () => new Date(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   home: homedir(),
@@ -167,13 +173,25 @@ export function stateOf(status: string, screen: Screen): DownSeat['state'] {
 }
 
 /** The state reading `down` and `remove` share, one seat at a time: a screen the profile does
- *  not recognise is "exited", not "unknown", when the pane's foreground process is its own
- *  shell — the CLI has already left, so the seat is closed without being asked. The shell is
- *  said by pid, never by argv0 alone (a script's child shell shares the pane shell's argv0);
- *  a pane that cannot be read, or whose foreground is another program, keeps the unknown. */
-export function seatState(status: string, screen: Screen, shellBack: () => boolean | null): DownSeat['state'] {
+ *  not recognise is "exited", not "unknown", only when the whole proof holds — herdr does not
+ *  report the seat working or blocked, the pane's foreground is exactly its own shell (said
+ *  by pid, never by argv0 alone: a script's child shell shares the pane shell's argv0), and
+ *  that shell has no child process at all, because a CLI suspended with ctrl-z or started in
+ *  the background leaves the shell in the foreground and lives on as its child. Anything
+ *  else — a pane that cannot be read, another program in front, a child, a live status —
+ *  keeps the unknown and its `--abandon` path. */
+export function seatState(
+  status: string,
+  screen: Screen,
+  shellBack: () => boolean | null,
+  shellChildless: () => boolean | null,
+): DownSeat['state'] {
   const state = stateOf(status, screen);
-  return state === 'unknown' && shellBack() === true ? 'exited' : state;
+  if (state !== 'unknown') return state;
+  // Herdr still reports the seat itself live: an unreadable screen is never read past that.
+  if (status === 'working' || status === 'blocked') return 'unknown';
+  if (shellBack() !== true) return 'unknown';
+  return shellChildless() === true ? 'exited' : 'unknown';
 }
 
 /** What `typeExit` may do to one pane, so `down` and `remove` share the whole sequence and the
@@ -574,7 +592,12 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     const shown = sources.screen(session, agent.pane, cli);
     // `exited` needs the pane read only when the screen alone cannot say: the call is the
     // reading's, never the plan's.
-    const state = seatState(agent.status, shown, () => sources.shellBack?.(session, agent.pane) ?? null);
+    const state = seatState(
+      agent.status,
+      shown,
+      () => sources.shellBack?.(session, agent.pane) ?? null,
+      () => sources.shellChildless?.(session, agent.pane) ?? null,
+    );
     // An unsent box that holds exactly the profile's exit text — an earlier run typed it and
     // never confirmed it — is named as such either way: the profile's one clearing key decides
     // whether this run empties it and asks again (the plan's run step) or the owner does (its
