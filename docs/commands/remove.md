@@ -4,10 +4,13 @@ Takes one seat out of the team: asks it to exit, waits for its pane to come back
 closes its workspace, and edits the file so the seat is not started again. `--keep` leaves the seat
 in the file as `stopped: true` instead of taking it out. A seat that is busy — working, blocked at a
 prompt, already showing its own exit question, showing a screen the profile does not recognise,
-or holding unsent text — is left as it is, unless its owner abandons it. A screen the profile does
-not recognise is the one exception, for a caller other than the owner: the seat is taken out and
-its pane is left running, with nothing typed into it (below). Every other seat, and the session,
-are left alone.
+or holding unsent text — is left as it is, unless its owner abandons it. One exception: a caller
+other than the owner, when herdr reports such a seat idle or done, takes the seat out of the team
+and leaves its pane running, with nothing typed into it (below). herdr's status is the gate there,
+not the screen — the states no profile can read are where a stuck seat hides — so a seat herdr
+reports working, or one whose screen shows a running turn, is never taken out; a seat the profile
+reads as free is stopped and taken out as always, and a box holding exactly this CLI's exit text
+is cleared inside that stop. Every other seat, and the session, are left alone.
 
 ## Synopsis
 
@@ -24,8 +27,8 @@ nothing is stopped and nothing is written, with the one-line repair every comman
 
 Writes the team file (the seat's entry taken out, or `stopped: true` added to it),
 `.agents/team.state.json` (the seat's record is dropped), `.agents/team.log`, and, through herdr:
-the exit typed into the pane, the wait for its shell, and the workspace closed — or, on the
-unrecognised screen of a caller other than the owner, no typing and no close at all, and the
+the exit typed into the pane, the wait for its shell, and the workspace closed — or, on the leave
+of a caller other than the owner (below), no typing and no close at all, and the
 pane's agent renamed out of the seat's name, best effort. A temporary seat's
 rules file goes with it, out of the project state folder; a seat left in the file as stopped keeps
 its file for the next `up`. A file edit that
@@ -85,9 +88,9 @@ done with the file:
 | `stopped <name>` | `--keep`: the entry stays, with `stopped: true` |
 | `removed temporary <name>` | a temporary seat: it was never in the file |
 
-A caller other than the owner that meets a screen the profile does not recognise takes the seat
-out without asking it to leave: nothing is typed, the workspace is left open, the seat's state
-record goes, and the pane's agent is renamed — best effort, one call — to `<name>-left`, or
+A caller other than the owner, meeting a seat herdr reports idle or done that is not free, takes
+the seat out without asking it to leave: nothing is typed, the workspace is left open, the seat's
+state record goes, and the pane's agent is renamed — best effort, one call — to `<name>-left`, or
 `-left-2` and so on when that name is held, so it no longer answers the seat's name. The last
 line names the pane:
 
@@ -140,7 +143,7 @@ with the text named, in the refusal below.
 | `team remove: <seat> is working; left as it is` | 1 |
 | `team remove: <seat> is blocked at a prompt, which team never answers` | 1 |
 | `team remove: <seat> sits at its own exit question; left as it is (team remove <seat> --abandon closes it)` | 1 |
-| `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` — the owner's alone; every other caller leaves the pane and takes the seat out, above | 1 |
+| `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` — the owner's; a caller other than the owner meeting a seat herdr reports idle or done takes the seat out instead (above), and meets this line with `(run this again once herdr reports the seat idle or done)` where herdr reports the seat working | 1 |
 | `team remove: <seat> holds unsent text in its input box; left as it is` | 1 |
 | `team remove: <seat> holds this CLI's exit text (<exit>) unsent in its input box; left as it is (the owner sends it or clears it in its pane)` | 1 |
 | ``team remove: no launch profile for `<cli>`; left as it is`` | 1 |
@@ -152,12 +155,15 @@ with the text named, in the refusal below.
 `--abandon` answers the seat-state refusals above — a seat that is working, blocked at a prompt,
 sitting at its own exit question, on a screen the profile does not recognise, holding unsent
 text, or holding this CLI's exit text unsent: the seat is not asked anything, its workspace is
-closed as it is, and its pane's text is lost.
+closed as it is, and its pane's text is lost. A caller other than the owner has its own answer to
+those states, where herdr reports the seat idle or done: the leave above — the seat out of the
+team, the pane left running, nothing typed.
 
 ## Exit codes
 
-- `0` — the seat was stopped or was not running, or the unrecognised-screen leave above took it
-  out with its pane left running; and the file was edited.
+- `0` — the seat was stopped or was not running, or the leave above (a caller other than the
+  owner, a seat herdr reports idle or done) took it out with its pane left running; and the file
+  was edited.
 - `1` — the run was refused, or the seat was left behind with the file untouched.
 - `2` — the invocation, the team file or the state can't be read, or the edit would not validate.
 
@@ -236,8 +242,10 @@ team remove: claude-beacon shows a screen the profile does not recognise; left a
 exit 1
 ```
 
-Anyone else — the orchestrator, the operator, or the approved delegate — takes the seat out and
-leaves the pane as it is instead; the example below shows that removal.
+Anyone else — the orchestrator, the operator, or the approved delegate — meeting a seat herdr
+reports idle or done takes the seat out and leaves the pane as it is instead; the example below
+shows that removal, and a seat herdr reports working is refused to them too, with their own way
+out named.
 
 An implementer's seat may not remove anything — not even itself:
 
@@ -289,10 +297,10 @@ claude-beacon: ready
 exit 0
 ```
 
-A caller other than the owner that meets a screen the profile does not recognise takes the seat
-out and leaves the pane as it is: nothing is typed, the workspace stays open, and the pane's agent
-is renamed so it no longer answers the seat's name (`--keep` leaves the entry stopped, with the
-same parenthesised line):
+A caller other than the owner, meeting a seat herdr reports idle or done that is not free, takes
+the seat out and leaves the pane as it is: nothing is typed, the workspace stays open, and the
+pane's agent is renamed so it no longer answers the seat's name (`--keep` leaves the entry
+stopped, with the same parenthesised line):
 
 ```console caller=claude-keeper screens="claude-reviewer=unknown"
 $ team remove claude-reviewer ; echo "exit $?"
