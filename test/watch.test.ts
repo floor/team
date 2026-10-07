@@ -891,6 +891,19 @@ describe('team watch', () => {
     expect(log).toContain('watch [watch] readings: load 1.0/core, memory unread, disk 200000000000 B free, swap unread');
   });
 
+  test('a log that cannot be written does not kill the pass', async () => {
+    const io = testIo(dir, { kind: 'owner' });
+    // The log path is a directory, so the readings write can only fail — the pass below it still
+    // runs whole: its reports still notify, and its heartbeat is on the state while it runs.
+    mkdirSync(join(dir, '.agents', 'team.log'), { recursive: true });
+    let beat: unknown;
+    expect(await runWatch(['--file', file], io, sources(1, {
+      wait: async () => { beat ??= readState(join(dir, '.agents')).sessions['acme-web']?.watch; return false; },
+    }))).toBe(0);
+    expect(beat).toEqual({ pid: 4242, heartbeat: '2026-10-03T14:00:00.000Z' });
+    expect(notified[0]).toBe('deepseek-acme-2 asked a question: the operator\'s to act on');
+  });
+
   test('the values in force are what runs: the pass, the announced line and the wait read them', async () => {
     const io = testIo(dir, { kind: 'owner' });
     const waits: number[] = [];

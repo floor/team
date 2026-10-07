@@ -1779,6 +1779,21 @@ describe('team up, live', () => {
     }
   });
 
+  test('a log that cannot be written changes nothing: the refusal prints and the exit stands', async () => {
+    await approve();
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    const machine: Machine = { loadPerCore: 1, memoryFree: 69, diskFree: 200e9, swapTotal: 8.2e9, swapFree: 1.2e9, swapUsed: 7e9 };
+    // The approval wrote its own team.log line; replace the file with a directory, so the
+    // readings write can only fail — and the command's own work must be untouched by the log's
+    // trouble: the refusal prints, the exit is the refusal's.
+    rmSync(join(root, '.agents', 'team.log'), { force: true });
+    mkdirSync(join(root, '.agents', 'team.log'), { recursive: true });
+    expect(await runUp(FILE, io, sources({ machine: () => machine }, made))).toBe(1);
+    expect(io.err).toContain('free swap is 1.2 GB, below 2.0 GB');
+    expect(made.starts).toBe(0);
+  });
+
   test('a reading that crosses mid-up stops before the next seat', async () => {
     await approve();
     let reads = 0;
