@@ -5,8 +5,10 @@
 import { join } from 'node:path';
 import { budgetsInForce, watchInForce } from '../../src/approve/approval.ts';
 import { standingSource } from '../../src/commands/status.ts';
-import { emptySession, updateState } from '../../src/state.ts';
+import { emptySession, readState, updateState } from '../../src/state.ts';
+import { approvedCopy } from '../../src/store/store.ts';
 import type { AddSources } from '../../src/commands/add.ts';
+import type { CheckSources } from '../../src/check/team.ts';
 import type { DoctorSources } from '../../src/commands/doctor.ts';
 import type { DownLaunch, DownSources } from '../../src/commands/down.ts';
 import type { RemoveSources } from '../../src/commands/remove.ts';
@@ -225,6 +227,7 @@ export type World = {
   downSources(): DownSources;
   removeSources(): RemoveSources;
   addSources(): AddSources;
+  checkSources(): CheckSources;
   statusSources(): StatusSources;
   watchSources(): WatchSources;
   doctorSources(): DoctorSources;
@@ -573,6 +576,26 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         now,
         home,
         machine,
+      };
+    },
+    checkSources(): CheckSources {
+      return {
+        // The whole world the check reads, behind `src/check/team.ts`'s narrowing: this fake's
+        // panes are the fixture's own, so the live read is already only its seats'.
+        live: () => live(),
+        branch: () => 'main',
+        standing: standingSource(home),
+        now,
+        home,
+        // The caller gate's own reads, so a page's unapproved caller meets the world and not a
+        // real herdr or a real store.
+        gate: {
+          standing: standingSource(home),
+          approvedCopy: (root) => approvedCopy(root, home),
+          state: (dir) => readState(dir),
+          agents: () => (herdr === 'running' ? agents() : []),
+          sessionRunning: () => (herdr === 'none' ? null : herdr === 'running'),
+        },
       };
     },
     watchSources(): WatchSources {
