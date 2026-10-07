@@ -639,10 +639,80 @@
       "trigger": "team approve"
     },
     {
+      "code": 0,
+      "command": "check",
+      "id": "check.ok",
+      "meaning": "nothing needs acting on",
+      "trigger": "team check"
+    },
+    {
+      "code": 1,
+      "command": "check",
+      "id": "check.file-owner",
+      "meaning": "--file is the owner's",
+      "trigger": "team check --file .agents/team.yaml"
+    },
+    {
+      "code": 1,
+      "command": "check",
+      "id": "check.findings",
+      "meaning": "something needs acting on",
+      "trigger": "team check"
+    },
+    {
+      "code": 1,
+      "command": "check",
+      "id": "check.session-owner",
+      "meaning": "--session is the owner's",
+      "trigger": "team check --session team"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team check --file missing.yaml"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.file-invalid",
+      "meaning": "the team file can't be parsed",
+      "trigger": "team check --file team.yaml"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.herdr",
+      "meaning": "herdr doesn't answer",
+      "trigger": "team check"
+    },
+    {
       "code": 2,
       "command": "check",
       "id": "check.invocation",
       "meaning": "the invocation can't be read",
+      "trigger": "team check"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.not-a-repo",
+      "meaning": "not inside a git repository and no team file here",
+      "trigger": "team check"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.not-yours",
+      "meaning": "the caller may not check this team",
+      "trigger": "team check"
+    },
+    {
+      "code": 2,
+      "command": "check",
+      "id": "check.state",
+      "meaning": "the state can't be read",
       "trigger": "team check"
     },
     {
