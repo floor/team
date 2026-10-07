@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { readArgs } from '../args.ts';
 import { budgetLine } from '../budgets/table.ts';
 import { isOwner, walkCaller } from '../caller.ts';
-import { loadTeamFile } from '../file/load.ts';
+import { loadTeamFile, TEAM_FILE } from '../file/load.ts';
 import type { LoadResult, Problem } from '../file/types.ts';
 import { NO_FIGURES, projectUsage, type ProjectUsage } from '../information/usage.ts';
 import type { Command, Io } from '../io.ts';
@@ -32,8 +32,10 @@ export default usage;
  * copy `currentTeam` keeps, and it never answers from that copy when the file breaks. Any caller
  * may run it, from any folder. The caller is placed once, the way `status` places it
  * (`status.ts:133`): the owner at a terminal is the owner, and everyone else — a seat, an agent
- * outside herdr, a run without a terminal — reads the restricted view, whose one difference here
- * is the fixed line for a refused approval (`NOT_VERIFIED`) in place of the store's own words.
+ * outside herdr, a run without a terminal — reads the restricted view, whose differences here are
+ * the fixed line for a refused approval (`NOT_VERIFIED`) in place of the store's own words, and
+ * notes that name this project's own paths relative to the project root (`.agents/team.yaml`,
+ * `.agents/team.state.json`) in place of the absolute paths the owner reads.
  * Placing the caller reads the process table (`caller.ts`), and nothing else. Exit
  * 0 whatever the figures; the one refusal is the invocation.
  */
@@ -52,7 +54,7 @@ export async function runUsage(argv: string[], io: Io, sources: UsageSources): P
     loaded = loadTeamFile(io.cwd, { home: sources.home });
   } catch (error) {
     // A file that exists and cannot be read: the loader's own reason, as a note line, exit 0.
-    return outside(io, json, now, [error instanceof Error ? error.message : String(error)]);
+    return outside(io, json, now, [errorNote(error, restricted)]);
   }
   if (!loaded.ok) {
     // No file at all — no repository, or a repository with no team file: outside a project. A
@@ -60,7 +62,7 @@ export async function runUsage(argv: string[], io: Io, sources: UsageSources): P
     // with the path, as note lines. Exit 0 either way.
     const notes = !loaded.path || !existsSync(loaded.path)
       ? [NO_PROJECT]
-      : loaded.errors.map((problem) => noticeOf(loaded.path as string, problem));
+      : loaded.errors.map((problem) => noticeOf(loaded.path as string, problem, restricted));
     return outside(io, json, now, notes);
   }
   const report = projectUsage(loaded.root, { home: sources.home, now: now.getTime(), restricted });
@@ -97,10 +99,24 @@ function render(report: ProjectUsage): string {
   return `${lines.join('\n')}\n`;
 }
 
-/** The loader's own message with the path: how the block reports a file that exists and does
- *  not load — never the bare `no team file here` text, which is a different case's sentence. */
-function noticeOf(path: string, problem: Problem): string {
-  return `${path}${problem.line ? ` line ${problem.line}` : ''}: ${problem.message}`;
+/** The loader's own message for a file that exists and does not load: its path, the line when it
+ *  has one, and the problem — never the bare `no team file here` text, which is a different
+ *  case's sentence. A caller who is not the owner reads the team file's path relative to the
+ *  project root (`TEAM_FILE`); the owner reads the absolute path. The problem's own wording passes
+ *  through to both, quoted as the loader wrote it. */
+function noticeOf(path: string, problem: Problem, restricted: boolean): string {
+  const shown = restricted ? TEAM_FILE : path;
+  return `${shown}${problem.line ? ` line ${problem.line}` : ''}: ${problem.message}`;
+}
+
+/** The note for a file that exists and cannot be read: the error's own message, with the path the
+ *  error names shown as the team file relative to the project root to a caller who is not the
+ *  owner, so no absolute path reaches the restricted view. An error that names no path prints the
+ *  same to everyone — `EISDIR`'s message is just its code and syscall, as a run showed. */
+function errorNote(error: unknown, restricted: boolean): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const path = (error as { path?: unknown } | null | undefined)?.path;
+  return restricted && typeof path === 'string' && path !== '' ? message.replaceAll(path, TEAM_FILE) : message;
 }
 
 /** The face of a run with no project block: the notes as `note:` lines, or the same reading as

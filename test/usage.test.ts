@@ -2,8 +2,9 @@
 // rows are `status`'s own rows (the same rule and the same table), and the four holds of the
 // brief are tested too: nothing is written, no pane or key or CLI session file is read, any
 // caller may run it from any folder, and every figure carries its source and its age. The
-// restricted view's own rule is here as well: a refused approval's words reach the owner and
-// nobody else, whatever the reason (`NOT_VERIFIED`).
+// restricted view's own rules are here as well: a refused approval's words reach the owner and
+// nobody else, whatever the reason (`NOT_VERIFIED`), and the notes name this project's own paths
+// relative to the project root for every caller who is not the owner.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -20,6 +21,10 @@ import { approvalStanding, storePath, writeApproval } from '../src/store/store.t
 import { gitEnv, testIo } from './helpers.ts';
 
 const NOW = new Date('2026-10-04T09:00:00Z');
+
+/** A seat's caller: the restricted view's ordinary reader, handed in so no test's view depends on
+ *  the process tree it is run from. */
+const SEAT: Caller = { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'acme-web' };
 
 // The state's readings: a fresh check figure, a status-line figure last seen 40 minutes ago out
 // in the open (more than the reserve again, so it is the room last seen, not unknown), and a
@@ -221,15 +226,30 @@ describe('team usage', () => {
     expect(odd.out).toContain('not known whether a watch is recording\n');
   });
 
-  test('an unreadable state is a note line with its path, and the rows still print', async () => {
+  test('an unreadable state is a note line: the path is absolute for the owner, relative for a seat', async () => {
     const state = join(root, '.agents', 'team.state.json');
     writeFileSync(state, 'not json');
-    const { code, out } = await usageAt(root);
-    expect(code).toBe(0);
-    expect(out).toContain(`note: ${state} is not valid JSON; move it aside and run the command again`);
-    expect(out).toContain('  anthropic  unknown\n');
-    expect(out).toContain('  openai  unknown\n');
-    expect(out).toContain('not known whether a watch is recording\n');
+    const why = 'is not valid JSON; move it aside and run the command again';
+
+    // The owner reads the state's message exactly as the state wrote it, its absolute path and
+    // all, and the rows still print under it.
+    const owner = await usageAt(root, { kind: 'owner' });
+    expect(owner.code).toBe(0);
+    expect(owner.out).toContain(`note: ${state} ${why}`);
+    expect(owner.out).toContain('  anthropic  unknown\n');
+    expect(owner.out).toContain('  openai  unknown\n');
+    expect(owner.out).toContain('not known whether a watch is recording\n');
+
+    // A caller who is not the owner reads the project's own path relative to the project root —
+    // and no absolute path at all, the fixture's base included — in the block and in `--json`.
+    const mine = await usageAt(root, SEAT);
+    expect(mine.code).toBe(0);
+    expect(mine.out).toContain(`note: .agents/team.state.json ${why}`);
+    expect(mine.out).toContain('  anthropic  unknown\n');
+    expect(mine.out).not.toContain(base);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    expect(raw).not.toContain(base);
+    expect((JSON.parse(raw) as { notes: string[] }).notes).toEqual([`.agents/team.state.json ${why}`]);
   });
 
   test('a file that names no account prints why nothing is counted, under leftover rows too', async () => {
@@ -396,13 +416,45 @@ describe('team usage', () => {
     expect(out).toBe(`note: ${NO_PROJECT}\n`);
   });
 
-  test("a file that exists and does not load is the loader's own message, with the path", async () => {
+  test("a file that exists and does not load is the loader's own message: absolute for the owner, relative for a seat", async () => {
     writeFileSync(file, 'format: 1\nproject: acme\n');
-    const { code, out } = await usageAt(root);
-    expect(code).toBe(0);
-    expect(out.startsWith(`note: ${file}`)).toBe(true);
-    expect(out).toContain('team.yaml');
-    expect(out).not.toContain('team acme\n');
+
+    // The owner reads every note with the file's absolute path, the shape S1 shipped.
+    const owner = await usageAt(root, { kind: 'owner' });
+    expect(owner.code).toBe(0);
+    expect(owner.out.startsWith(`note: ${file} line 1: seats is required`)).toBe(true);
+    expect(owner.out).not.toContain('team acme\n');
+
+    // A caller who is not the owner reads the same problems with the file's path relative to the
+    // project root — `.agents/team.yaml`, never the absolute one — in the block and in `--json`.
+    const mine = await usageAt(root, SEAT);
+    expect(mine.code).toBe(0);
+    expect(mine.out.startsWith('note: .agents/team.yaml line 1: seats is required')).toBe(true);
+    expect(mine.out).not.toContain(base);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    expect(raw).not.toContain(base);
+    const notes = (JSON.parse(raw) as { notes: string[] }).notes;
+    expect(notes[0]).toBe(".agents/team.yaml line 1: seats is required: at least the coordinator's and the operator's seat");
+    expect(notes.every((note) => note.startsWith('.agents/team.yaml line 1: '))).toBe(true);
+  });
+
+  test('a file that exists and cannot be read prints the error itself, which names no path for anyone', async () => {
+    // A directory where the file would be, in a checkout the loader resolves: the read itself is
+    // what fails (`EISDIR`), and its message is the code and the syscall — a recorded run of this
+    // branch showed exactly `EISDIR: illegal operation on a directory, read` — so the note names
+    // no path, for the owner or for a seat, and `errorNote` has nothing to make relative.
+    rmSync(file);
+    mkdirSync(file, { recursive: true });
+    execFileSync('git', ['init', root], { env: gitEnv(), stdio: 'ignore' });
+    const note = 'EISDIR: illegal operation on a directory, read';
+    const owner = await usageAt(root, { kind: 'owner' });
+    expect(owner.code).toBe(0);
+    expect(owner.out).toBe(`note: ${note}\n`);
+    const mine = await usageAt(root, SEAT);
+    expect(mine.code).toBe(0);
+    expect(mine.out).toBe(`note: ${note}\n`);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    expect((JSON.parse(raw) as { notes: string[] }).notes).toEqual([note]);
   });
 
   test('any caller may run it, and a subfolder of a checkout reads the same project', async () => {

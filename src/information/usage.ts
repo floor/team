@@ -77,8 +77,9 @@ export type ProjectUsageOptions = {
  * CLI's session file or a lab's credential; it reads TeamCLI's own key only to verify the
  * agreement, as `status` does. The key read is `approvalStanding`'s, and it was promised away in
  * the design's first draft; that promise was corrected — the sentence above is the ruled one.
- * `restricted` says the caller is not the owner: it changes no reading, and it keeps the store's
- * own words for a refused approval out of what the block can print (`NOT_VERIFIED`).
+ * `restricted` says the caller is not the owner: it changes no reading, it keeps the store's own
+ * words for a refused approval out of what the block can print (`NOT_VERIFIED`), and it shows the
+ * project's own paths relative to the project root (`shownNote`).
  */
 export function projectUsage(root: string, options: ProjectUsageOptions): ProjectUsage {
   const { home, now, restricted } = options;
@@ -93,8 +94,10 @@ export function projectUsage(root: string, options: ProjectUsageOptions): Projec
     readings = recall(state.budgets);
     spend = recallSpend(state.spend);
   } catch (error) {
-    // The state's own reason, path and all: the block prints it as a note line (§ 2.3).
-    notes.push(error instanceof Error ? error.message : String(error));
+    // The state's own reason, path and all: the block prints it as a note line (§ 2.3). A caller
+    // who is not the owner reads the project's own path relative to the project root — the state
+    // beside the file — and the owner reads the message as the state wrote it.
+    notes.push(shownNote(error instanceof Error ? error.message : String(error), root, restricted));
   }
   if (team === null) return { project: null, rows: [], whyNotCounted: null, spend: [], watch: 'not-known', notes };
   const budgets = budgetsInForceOf(standing, team);
@@ -154,6 +157,15 @@ function readText(path: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** A note for a caller who is not the owner: this project's own absolute paths in it — the state
+ *  file's, here — read relative to the project root (`.agents/team.state.json`), so no path the
+ *  note itself names is absolute. The owner reads the message as it was written, its absolute
+ *  path included (`status`'s own behavior). The wording after the path is the state's, quoted as
+ *  it stands, for both callers. */
+function shownNote(message: string, root: string, restricted: boolean): string {
+  return restricted ? message.replaceAll(join(root, '.agents'), '.agents') : message;
 }
 
 /** The moment behind a row's figure: the same rule that chose the figure, over the same group

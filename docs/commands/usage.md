@@ -295,4 +295,10 @@ exit 0
 ```
 
 The same command from a seat's pane, or from a folder with no project above it, reads the same
-project or prints the one note line; nothing about the reading changes with who runs it.
+project or prints the one note line: no figure, row, watch line or why-line changes with who runs
+it, and what a note names changes at the path alone. The owner reads notes with absolute paths, the
+same words `status` prints; a caller who is not the owner reads this project's own paths relative
+to the project root — the file as `.agents/team.yaml`, the state beside it as
+`.agents/team.state.json` — so nothing `usage` itself names is an absolute path for such a caller,
+in the block or in `--json`. The reason after the colon is the loader's or the state's own, quoted
+as it stands for both.
