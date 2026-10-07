@@ -192,27 +192,58 @@ describe('the sovereign guard', () => {
 });
 
 describe('an ordinary change passes, and only an ordinary one', () => {
-  const second = { ...base.seats[0]!, name: 'worker', label: 'worker' };
-  const ordinary: [name: string, team: TeamFile][] = [
-    ['a rules edit', { ...base, rules: [...base.rules, 'Sign every commit.'] }],
-    ['a launch line', { ...base, seats: base.seats.map((seat) => ({ ...seat, launch: `${seat.launch} --verbose` })) }],
-    ['a roster edit', { ...base, seats: [...base.seats, second] }],
-  ];
+  // Candidates here are real parses, never spreads: the parser derives a ceiling from the seat
+  // count when the file declares no `limits`, so a spread would hide the one cross-section
+  // derivation there is — and the guard's own boundary with it.
+  const withWorker = (text: string) => text.replace('delegates:', `  - role: implementer
+    name: worker
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+delegates:`);
+  const declared = parsed(yaml.replace('rules:', 'limits:\n  seats: 9\nrules:'));
 
-  test('rules, a launch line and the roster: the approved pane passes', () => {
-    for (const [, team] of ordinary) {
-      expect(gate({ team })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+  test('a rules edit, a launch line and a seat field: the approved pane passes', () => {
+    for (const text of [
+      yaml.replace('  - Keep every change on a branch.\n', '  - Keep every change on a branch.\n  - Sign every commit.\n'),
+      yaml.replace('    launch: claude --model claude-opus-5-5\n', '    launch: claude --model claude-opus-5-5 --verbose\n'),
+      yaml.replace('    model: Claude Opus\n', '    model: Claude Sonnet\n'),
+    ]) {
+      expect(gate({ team: parsed(text), file: text })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
     }
-    // All at once, trust untouched: still the delegate's to approve.
-    const together = { ...base, rules: [...base.rules, 'Sign every commit.'], seats: base.seats.map((seat) => ({ ...seat, model: 'Other' })) };
-    expect(gate({ team: together })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+  });
+
+  test('a seat added or taken out under a declared ceiling leaves it where the owner put it: passes', () => {
+    // The owner approved a file with the ceiling declared, so the roster edit moves the seats
+    // and not the ceiling — added and taken out both stay the delegate's.
+    const declaredText = yaml.replace('rules:', 'limits:\n  seats: 9\nrules:');
+    const twoSeatsText = withWorker(declaredText);
+    expect(gate({ team: parsed(twoSeatsText), file: twoSeatsText, standing: verified(declared, declaredText) })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+    expect(gate({ team: declared, file: declaredText, standing: verified(parsed(twoSeatsText), twoSeatsText) })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+  });
+
+  test('a seat added or taken out with no declared ceiling moves the derived one: refused, never signed', () => {
+    // The same edit as above, on a file that declares no `limits`: the default ceiling is the
+    // seats plus the temporary ones, so the roster change moves it — `limits` changed, and the
+    // ceiling is the owner's. A removal is refused too: it shrinks the ceiling, and `remove`
+    // has its own delegated path for it.
+    const added = withWorker(yaml);
+    expect(refused({ team: parsed(added), file: added })).toEqual({
+      kind: 'refused',
+      id: 'approve.delegate-sovereign',
+      text: 'this change needs the owner: `limits` changed',
+    });
+    const twoSeats = withWorker(yaml);
+    expect(refused({ team: base, file: yaml, standing: verified(parsed(twoSeats), twoSeats) }).text).toBe('this change needs the owner: `limits` changed');
   });
 
   test('an ordinary difference is not a licence: every later step still refuses what it always did', () => {
-    const ordinaryTeam = ordinary[0]![1];
-    expect(refused({ team: ordinaryTeam, state: null }).id).toBe('approve.delegate-evidence');
-    expect(refused({ team: ordinaryTeam, flags: ['file'] }).id).toBe('approve.delegate-flag');
-    expect(refused({ team: ordinaryTeam, ancestors: terminal })).toEqual({
+    const rulesEdit = yaml.replace('  - Keep every change on a branch.\n', '  - Keep every change on a branch.\n  - Sign every commit.\n');
+    expect(refused({ team: parsed(rulesEdit), file: rulesEdit, state: null }).id).toBe('approve.delegate-evidence');
+    expect(refused({ team: parsed(rulesEdit), file: rulesEdit, flags: ['file'] }).id).toBe('approve.delegate-flag');
+    expect(refused({ team: parsed(rulesEdit), file: rulesEdit, ancestors: terminal })).toEqual({
       kind: 'refused',
       id: 'approve.delegate',
       text: 'only the owner or the approved delegate approves a team file; this call is owner',
