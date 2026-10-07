@@ -223,12 +223,6 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     // exit: remove.no-seat
     return 1;
   }
-  const temporary = recorded?.temporary;
-  if (args.flags.has('keep') && temporary) {
-    io.stderr('team remove: a temporary seat is not in the file; there is nothing to keep\n');
-    // exit: remove.keep-temporary
-    return 1;
-  }
 
   const live = sources.sessionRunning(session);
   if (live === null) {
@@ -242,8 +236,42 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     // exit: remove.agents
     return 1;
   }
-  const agent = agents.find((item) => item.name === name);
-  const cli = declared?.cli ?? team.seats.find((seat) => seat.name === temporary?.like)?.cli ?? '';
+  // The seat is the approved copy's. A name that copy carries is declared even when the state
+  // still marks it temporary, so an abandon does not take its rules file. A name the copy does
+  // not carry is left, unless the owner abandons it.
+  const home = sources.home ?? homedir();
+  const standing = sources.standing?.(root) ?? approvalStanding(root, home);
+  if (standing.kind !== 'verified') {
+    io.stderr(`team remove: ${notInForce(standing)}\n`);
+    // exit: remove.never-approved
+    return 1;
+  }
+  const approved = validateTeamFile(standing.record.file);
+  if (!approved.ok) {
+    io.stderr('team remove: the approved copy of the team file cannot be read\n');
+    // exit: remove.approved-copy
+    return 1;
+  }
+  const copySeat = approved.team.seats.find((seat) => seat.name === name);
+  const temporary = Boolean(recorded?.temporary) && copySeat === undefined;
+  if (args.flags.has('keep') && temporary) {
+    io.stderr('team remove: a temporary seat is not in the file; there is nothing to keep\n');
+    // exit: remove.keep-temporary
+    return 1;
+  }
+  if (!copySeat && !abandon) {
+    io.stderr(`team remove: ${name}: its record is not an approved seat; left as it is (the owner cleans it: team remove ${name} --abandon)\n`);
+    // exit: remove.unverified
+    return 1;
+  }
+  const listed = agents.filter((item) => item.name === name);
+  if (listed.length > 1) {
+    io.stderr(`team remove: ${name}: herdr lists more than one agent of this name; left as it is\n`);
+    // exit: remove.ambiguous
+    return 1;
+  }
+  const agent = listed[0];
+  const cli = copySeat?.cli ?? '';
   // A caller other than the owner, on a seat herdr reports idle or done that this flow cannot ask
   // to leave: `--abandon`'s kind of power scoped to a caller who may not run it — the seat is
   // taken out of the team, the pane is left as it is (nothing typed, nothing closed, and the agent
@@ -311,16 +339,6 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     }
   }
 
-  // No approval in force: nothing is stopped and nothing is written for a team the owner never
-  // approved. Read after the read-only refusals above, which name a more specific problem, and
-  // before the seat is stopped or the file is edited.
-  const home = sources.home ?? homedir();
-  const standing = sources.standing?.(root) ?? approvalStanding(root, home);
-  if (standing.kind !== 'verified') {
-    io.stderr(`team remove: ${notInForce(standing)}\n`);
-    // exit: remove.never-approved
-    return 1;
-  }
   // The session mutator lock: this run has effects from here — the delegated audit line, the
   // stop of a running seat below, the file edit and the state drops — and no other session
   // command may interleave its own. Every refusal above is decided first; a `--keep` run never
@@ -348,11 +366,11 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
         io, dir, session, sources, logCommand: 'remove', caller: describeCaller(caller),
         seat: {
           name, cli, pane: agent.pane, workspace: agent.workspace,
-          state: where === 'free' ? 'free' : where,
+          state: copySeat ? (where === 'free' ? 'free' : where) : 'blocked',
           ...(exitInBox ? { exitInBox: true } : {}),
           ...(screen.kind === 'exit question' ? { atExitQuestion: true } : {}),
         },
-        abandon: abandon && where !== 'free',
+        abandon: copySeat ? abandon && where !== 'free' : true,
         closeUnasked: abandon,
         unasked: `team remove ${name} --abandon closes it`,
       });

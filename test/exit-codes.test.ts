@@ -1434,7 +1434,7 @@ scene('remove.no-seat', async (place) => {
   return show(await removed(place, ['missing'], owner, downSources({ home: place.home })), 'no seat "missing"');
 });
 scene('remove.keep-temporary', async (place) => {
-  write(place, TEAM);
+  approve(place, TEAM);
   updateState(join(place.root, '.agents'), (state) => {
     const session = (state.sessions.acme ??= emptySession());
     session.seats.worker = { stage: 'ready', temporary: { like: 'lead', until: 'result:out.md' } };
@@ -1450,20 +1450,46 @@ scene('remove.agents', async (place) => {
   return show(await removed(place, ['worker'], owner, downSources({ sessionRunning: () => true, agents: () => null, home: place.home })), "can't be read");
 });
 scene('remove.busy', async (place) => {
-  write(place, TWO);
+  approve(place, TWO);
   return show(await removed(place, ['worker'], owner, downSources({
     sessionRunning: () => true, agents: () => [agent('worker', 'working')], screen: () => ({ kind: 'working' }), home: place.home,
   })), 'is working');
 });
 scene('remove.no-profile', async (place) => {
-  write(place, GROK);
+  approve(place, GROK);
   return show(await removed(place, ['worker'], owner, downSources({
     sessionRunning: () => true, agents: () => [agent('worker')], home: place.home,
   })), 'no launch profile');
 });
 scene('remove.edit', async (place) => {
-  write(place, TWO);
+  approve(place, TWO);
   return show(await removed(place, ['lead'], owner, downSources({ home: place.home })), 'coordinator "lead"');
+});
+scene('remove.unverified', async (place) => {
+  approve(place, TEAM);
+  updateState(join(place.root, '.agents'), (state) => {
+    (state.sessions.acme ??= emptySession()).seats.extra = { stage: 'ready' };
+  });
+  return show(await removed(place, ['extra'], owner, downSources({
+    sessionRunning: () => true, agents: () => [agent('extra')], home: place.home,
+  })), 'not an approved seat');
+});
+scene('remove.ambiguous', async (place) => {
+  approve(place, TWO);
+  return show(await removed(place, ['worker'], owner, downSources({
+    sessionRunning: () => true,
+    agents: () => [agent('worker'), { ...agent('worker'), pane: 'w2:p1' }],
+    home: place.home,
+  })), 'more than one agent of this name');
+});
+scene('remove.approved-copy', async (place) => {
+  approve(place, TWO);
+  const standing = approvalStanding(place.root, place.home);
+  if (standing.kind !== 'verified') throw new Error(standing.kind);
+  const broken = { ...standing, record: { ...standing.record, file: 'nope: [[[' } };
+  return show(await removed(place, ['worker'], owner, downSources({
+    sessionRunning: () => true, agents: () => [agent('worker')], home: place.home, standing: () => broken,
+  })), 'cannot be read');
 });
 scene('remove.never-approved', async (place) => {
   write(place, TWO);
@@ -1543,7 +1569,7 @@ scene('remove.temporary', async (place) => {
     const session = (state.sessions.acme ??= emptySession());
     session.seats.worker = { stage: 'ready', temporary: { like: 'lead', until: 'result:out.md' } };
   });
-  return show(await removed(place, ['worker'], owner, downSources({ home: place.home })), 'removed temporary worker');
+  return show(await removed(place, ['worker', '--abandon'], owner, downSources({ home: place.home })), 'removed temporary worker');
 });
 
 // The delegated `remove`: the same shape as add's scenes above, with the verdicts the gate gives

@@ -1362,9 +1362,23 @@
     {
       "code": 1,
       "command": "remove",
+      "id": "remove.ambiguous",
+      "meaning": "herdr lists more than one agent of this name",
+      "trigger": "team remove lead"
+    },
+    {
+      "code": 1,
+      "command": "remove",
       "id": "remove.another-pane",
       "meaning": "the state records another pane for the caller's seat",
       "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.approved-copy",
+      "meaning": "the approved copy of the team file cannot be read",
+      "trigger": "team remove lead"
     },
     {
       "code": 1,
@@ -1526,6 +1540,13 @@
       "id": "remove.stop-failed",
       "meaning": "the seat could not be stopped",
       "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.unverified",
+      "meaning": "a name the approved copy does not carry is left as it is",
+      "trigger": "team remove extra"
     },
     {
       "code": 2,

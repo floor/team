@@ -200,7 +200,9 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `remove.temporary` | `remove` | 0 | a temporary seat was removed | `team remove worker` |
 | `remove.abandon` | `remove` | 1 | only the owner abandons a seat | `team remove worker --abandon` |
 | `remove.agents` | `remove` | 1 | the agents can't be read | `team remove worker` |
+| `remove.ambiguous` | `remove` | 1 | herdr lists more than one agent of this name | `team remove lead` |
 | `remove.another-pane` | `remove` | 1 | the state records another pane for the caller's seat | `team remove worker` |
+| `remove.approved-copy` | `remove` | 1 | the approved copy of the team file cannot be read | `team remove lead` |
 | `remove.busy` | `remove` | 1 | the seat is not free | `team remove worker` |
 | `remove.caller` | `remove` | 1 | the caller may not change the team | `team remove worker` |
 | `remove.coordinator` | `remove` | 1 | only the owner removes the orchestrator's or the operator's seat | `team remove lead` |
@@ -224,6 +226,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `remove.run-lock` | `remove` | 1 | another session-mutating run is holding the session | `team remove worker` |
 | `remove.session-owner` | `remove` | 1 | --session is the owner's | `team remove worker --session other` |
 | `remove.stop-failed` | `remove` | 1 | the seat could not be stopped | `team remove worker` |
+| `remove.unverified` | `remove` | 1 | a name the approved copy does not carry is left as it is | `team remove extra` |
 | `remove.edit` | `remove` | 2 | the edit would not validate | `team remove lead` |
 | `remove.file` | `remove` | 2 | the team file can't be read | `team remove worker --file missing.yaml` |
 | `remove.file-invalid` | `remove` | 2 | the team file can't be parsed | `team remove worker --file team.yaml` |
