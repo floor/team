@@ -446,19 +446,37 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   // `team` is the file on disk, already the approved one. `doctorTeam` is the
   // seat about to run, so a stopped seat's CLI is still checked. The digest is
   // recorded with the write, after a refusal has left the file alone. The seat's own launch
-  // line is the last finding: on a real run a miss refuses this `add` like any other doctor
-  // finding, and a dry run leaves it out for the plan below, which prints it as
-  // `  skip <name>: would refuse: …`, the line `up` prints for the same seat. A `miss` found at
-  // a resumed seat's recorded folder is only said, never refused — that seat runs nothing now,
-  // and its miss is left out here exactly as `up` leaves one out of the plan for a resumed seat.
+  // line is the last finding: a miss refuses this `add` like any other doctor finding. A dry
+  // run prints that miss as the plan's `  skip <name>: would refuse: …` and leaves through
+  // this same return. A `miss` found at a resumed seat's recorded folder is only said, never
+  // refused — that seat runs nothing now, and its miss is left out here exactly as `up` leaves
+  // one out of the plan for a resumed seat.
   for (const finding of [
     ...doctorFindings(doctorTeam, root, dir, session, sources.doctor, prepared.warnings, standing, team),
-    ...(launchProblem && !dry && !stray
+    ...(launchProblem && !stray
       ? [{ level: 'miss' as const, text: `${built.name}: ${launchProblemDetail ?? launchProblem}` }]
       : []),
   ]) {
     if (blocksLaunch(finding)) {
-      out.stderr(`team add: ${plainLine(finding.text)}\n`);
+      const launchText = launchProblem ? `${built.name}: ${launchProblemDetail ?? launchProblem}` : '';
+      if (dry && launchProblem && !stray && finding.text === launchText) {
+        const starting = seatPlan(standing, prepared.team, built.seat, start, root, sources.home);
+        const planned = repair ? { ...starting, repair } : starting;
+        const preview = upPlan({
+          root,
+          session,
+          sessionRunning: live === 'running',
+          seats: [{
+            ...planned,
+            launchProblem,
+            ...(launchProblemDetail ? { launchProblemDetail } : {}),
+          }],
+          watchAlive: true,
+        });
+        out.stdout(plainText(formatPlan(preview)));
+      } else {
+        out.stderr(`team add: ${plainLine(finding.text)}\n`);
+      }
       // exit: add.doctor
       return 1;
     }
@@ -505,12 +523,16 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
       : {}),
     ...(decision.kind === 'refuse' && !wouldLaunch ? { budget: decision } : {}),
   };
-  if (dry) {
-    if (decision.kind === 'refuse' && wouldLaunch) {
+  if (decision.kind === 'refuse' && wouldLaunch) {
+    if (dry) {
       out.stdout(`${plainLine(built.name)}: would refuse: ${plainText(decision.why)}\ndry run: nothing was run\n`);
-      // exit: add.dry-budget
-      return 0;
+    } else {
+      out.stderr(`team add: refused: ${plainText(decision.why)}\n`);
     }
+    // exit: add.budget
+    return 1;
+  }
+  if (dry) {
     if (decision.kind === 'unknown') out.stdout(`${plainLine(built.name)}: ${plainText(decision.text)}\n`);
     const preview = upPlan({
       root,
@@ -522,11 +544,6 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     out.stdout(plainText(formatPlan(preview)));
     // exit: add.dry-run
     return 0;
-  }
-  if (decision.kind === 'refuse' && wouldLaunch) {
-    out.stderr(`team add: refused: ${plainText(decision.why)}\n`);
-    // exit: add.budget
-    return 1;
   }
   // The session mutator lock: from here this run has effects — the lobby make below when it
   // is absent, the delegated audit line, the file edit, the launch — and no other session

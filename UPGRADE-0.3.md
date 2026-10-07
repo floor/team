@@ -62,6 +62,8 @@ What else changes for you:
   closes it and stops the rest of the run (`left out: stopped cleanly`). With no terminal, `up` does not ask:
   it closes the workspace without input (`left out: trust (no terminal for owner)`).
 
+- **A refused dry run of `up`, `down` or `add` exits as the real run would, and still changes nothing.** This is a change in behaviour.
+
 How to tell it is done: `team doctor` ends `nothing missing` (notes about a placeholder version `"0"` may
 remain), and `team status --json` shows each seat's `start_cwd` under `~/.config/team/lobby`. `team status`
 shows each seat's screen (`idle`), and still counts a difference and exits 1 for a seat whose file says

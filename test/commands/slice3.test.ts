@@ -675,7 +675,7 @@ describe('team up', () => {
   test("--dry-run prints the plan for the approved file, with each seat's rules and signature", async () => {
     await approve([], OWNER);
     const run = await up(['--dry-run'], OWNER);
-    expect(run.code).toBe(0);
+    expect(run.code).toBe(1);
     expect(run.out).toContain(`! up would refuse: the file is legacy: migrate trust to absolute paths including the lobby ${home}/.config/team/lobby:`);
     expect(run.out).not.toContain('the file was never approved');
     const lines = run.out.split('\n');
@@ -708,7 +708,7 @@ describe('team up', () => {
       sessionRunning: () => true,
       agents: () => [agent('stranger'), agent(null)],
     });
-    expect(run.code).toBe(0);
+    expect(run.code).toBe(1);
     expect(run.out).toStartWith(
       [
         '! up would refuse: only the owner runs `up`, from a terminal outside herdr; this call is deepseek-acme',

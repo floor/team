@@ -4,15 +4,8 @@
     {
       "code": 0,
       "command": "add",
-      "id": "add.dry-budget",
-      "meaning": "a dry run would refuse the budget",
-      "trigger": "team add worker --dry-run"
-    },
-    {
-      "code": 0,
-      "command": "add",
       "id": "add.dry-run",
-      "meaning": "a dry run printed the plan",
+      "meaning": "a dry run exits as the real run would, and changes nothing",
       "trigger": "team add worker --dry-run"
     },
     {
@@ -810,7 +803,7 @@
       "code": 0,
       "command": "down",
       "id": "down.dry-run",
-      "meaning": "a dry run printed the plan",
+      "meaning": "a dry run exits as the real run would, and changes nothing",
       "trigger": "team down --dry-run"
     },
     {
@@ -1447,7 +1440,7 @@
       "code": 0,
       "command": "up",
       "id": "up.dry-run",
-      "meaning": "a dry run printed the plan",
+      "meaning": "a dry run exits as the real run would, and changes nothing",
       "trigger": "team up --dry-run"
     },
     {

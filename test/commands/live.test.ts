@@ -3733,7 +3733,7 @@ describe('team up, delegated', () => {
     expect(made.starts).toBe(0);
   });
 
-  test('the same caller on a dry run: the would-refuse line, the default file\'s plan, exit 0', async () => {
+  test('the same caller on a dry run: the would-refuse line, the default file\'s plan, exit 1', async () => {
     delegateFile();
     await approve();
     const made = world();
@@ -3745,7 +3745,7 @@ describe('team up, delegated', () => {
         text: "--file is the owner's; the approved delegate cannot use it",
       }),
     }, made));
-    expect(code).toBe(0);
+    expect(code).toBe(1);
     expect(io.out).toContain("! up would refuse: --file is the owner's; the approved delegate cannot use it\n");
     expect(io.out).toContain('dry run: nothing was run\n');
     expect(io.out + io.err).not.toContain('no team file');
@@ -3814,7 +3814,7 @@ describe('team up, delegated', () => {
     expect(audits).toEqual([]);
   });
 
-  test("the gate's refusal on a dry run: the would-refuse line, then the plan, exit 0", async () => {
+  test("the gate's refusal on a dry run: the would-refuse line, then the plan, exit 1", async () => {
     delegateFile();
     await approve();
     const made = world();
@@ -3828,7 +3828,7 @@ describe('team up, delegated', () => {
       }),
       logDelegated,
     }, made));
-    expect(code).toBe(0);
+    expect(code).toBe(1);
     expect(io.out).toContain('! up would refuse: the delegate pane main/w1:p1 runs only what its commands list names, and up is not in it\n');
     expect(io.out).toContain('dry run: nothing was run\n');
     expect(made.starts).toBe(0);
@@ -4162,7 +4162,7 @@ describe('team up, delegated', () => {
       expect(io.out).not.toContain('would refuse');
     });
 
-    test(`a delegated up --dry-run with the session ${state.name}: the same refusals, the plan, exit 0`, async () => {
+    test(`a delegated up --dry-run with the session ${state.name}: the same refusals, the plan, the real run's status`, async () => {
       delegateFile();
       await approve();
       const made = world();
@@ -4176,7 +4176,7 @@ describe('team up, delegated', () => {
         .split('\n')
         .filter((line) => line.startsWith('! up would refuse: '))
         .map((line) => line.slice('! up would refuse: '.length));
-      expect(code).toBe(0);
+      expect(code).toBe(state.real.length === 0 ? 0 : 1);
       expect(would).toEqual([...state.real]);
       expect(made.starts).toBe(0);
       expect(made.creates).toEqual([]);
@@ -4207,7 +4207,7 @@ describe('team up, delegated', () => {
         .filter((line) => line.startsWith('! up would refuse: '))
         .map((line) => line.slice('! up would refuse: '.length));
       expect(would).toEqual(said);
-      expect(dry).toBe(0);
+      expect(dry).toBe(real);
       expect(real).toBe(state.real.length === 0 ? 0 : 1);
     }
   });

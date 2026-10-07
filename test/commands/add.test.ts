@@ -240,9 +240,9 @@ describe('team add', () => {
     const code = await runAdd(['worker', '--dry-run'], io, sources(made, {
       doctor: { ...doctor(), onPath: (binary) => binary !== 'team-deepseek' },
     }));
-    // The refusal is previewed as the plan's own line, and the run exits 0: nothing was made and
-    // the file was not touched — the seat would be started, and its line can't run.
-    expect(code).toBe(0);
+    // The refusal is previewed as the plan's own line, and the run exits as the real add would:
+    // nothing was made and the file was not touched — the seat would be started, and its line can't run.
+    expect(code).toBe(1);
     expect(io.out).toContain(
       '  skip worker: would refuse: its launch line starts `team-deepseek`, which is not on the PATH\n',
     );
