@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { budgetLine, budgetTable } from '../src/budgets/table.ts';
 import type { Seen } from '../src/budgets/readings.ts';
 import type { TeamFile } from '../src/file/types.ts';
+import { withWas } from './helpers.ts';
 
 const minute = 60 * 1000;
 const now = 1_700_000_000_000;
@@ -110,6 +111,31 @@ describe('the budgets table', () => {
       { source: 'check', fallback: false },
       { source: 'status_line', fallback: true },
     ]);
+  });
+
+  test('a point on the reading moves no row and no line', () => {
+    // § 5: the stored point is a passenger. Every row this file pins — its state, its inside, its
+    // reserve, its fallback and its line — is the same row whether the reading carries a point or
+    // does not; the table never reads the point.
+    const shapes = [
+      reading(),
+      reading({ left: 5, used: 95 }),
+      reading({ left: 100, used: 0 }),
+      reading({ changedAt: now - 30 * minute, left: 5, used: 95 }),
+      reading({ changedAt: now - 30 * minute, resetsAt: null, left: 5, used: 95 }),
+      reading({ changedAt: now - 30 * minute, resetsAt: null, left: 70, used: 30 }),
+    ];
+    for (const seen of shapes) {
+      const plain = budgetTable(team(10).budgets, [seen], now);
+      const pointed = budgetTable(team(10).budgets, [withWas(seen)], now);
+      expect(pointed).toEqual(plain);
+      expect(pointed.map((row) => budgetLine(row))).toEqual(plain.map((row) => budgetLine(row)));
+    }
+    const pair = [reading({ window: 'session', seat: null, source: 'check' }), reading({ window: 'weekly', left: 5, used: 95 })];
+    expect(budgetTable(checkFirst, pair.map(withWas), now)).toEqual(budgetTable(checkFirst, pair, now));
+    // Non-vacuity: the point is on the reading the table just read, and distinct from the figure.
+    expect(withWas(reading()).was).toEqual({ left: 47, at: now - 31 * minute });
+    expect(withWas(reading({ left: 100 })).was).toEqual({ left: 93, at: now - 31 * minute });
   });
 
   test('the mark follows the account\'s own order, not the kind of source', () => {

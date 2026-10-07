@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verifiedOf } from '../src/approve/approval.ts';
-import { loadReadings, loadSpendReadings } from '../src/budgets/readings.ts';
+import { loadReadings, loadSpendReadings, saveReadings, type Seen } from '../src/budgets/readings.ts';
 import { runStatus } from '../src/commands/status.ts';
 import { runWatch } from '../src/commands/watch.ts';
 import type { WatchSources } from '../src/commands/watch.ts';
@@ -17,7 +17,7 @@ import { parseLoadavg, parseMeminfo, parseMemoryPressure, parseSwapUsage, readMa
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, NUDGE_TEXT, pass } from '../src/watch/pass.ts';
 import { readScreen } from '../src/watch/screen.ts';
-import { agyMismatchedFrame, claudeBox, testIo, wordWrap } from './helpers.ts';
+import { agyMismatchedFrame, claudeBox, injectWas, testIo, wordWrap } from './helpers.ts';
 
 const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url), 'utf8')
   .replace('operator: claude-coordinator-acme', 'operator: claude-operator-acme')
@@ -1530,6 +1530,58 @@ describe('team watch', () => {
     expect(loadReadings(join(dir, '.agents')).map(({ account, source }) => `${account}/${source}`).sort())
       .toEqual(['openai/check', 'openai/status_line']);
     expect(loadSpendReadings(join(dir, '.agents')).map(({ account, amount }) => [account, amount])).toEqual([['deepseek', 4.2]]);
+  });
+
+  test('a cache whose readings carry points moves nothing the watch prints, notifies or types', async () => {
+    writeFileSync(file, withAccounts('  accounts:\n    openai: { kind: subscription, reserve: 3%, sources: [status_line] }\n'));
+    const seeded: Seen[] = [{
+      account: 'openai', window: 'weekly', left: 2, used: 98,
+      changedAt: Date.parse('2026-10-03T13:40:00Z'), resetsAt: null,
+      seat: 'codex-acme', source: 'status_line' as const, confirmed: true,
+    }];
+    // The same watch over the same fixture, twice: once over a cache as the pass stores it, once
+    // over a cache whose readings every one carry a valid point (the note's § 5 injector). Every
+    // line, typed key and notification must be equal. The state file itself is allowed to differ,
+    // and does: the pointed run keeps the point through the pass's fold, and the plain one has
+    // none to keep.
+    const run = async (points: boolean) => {
+      rmSync(join(dir, '.agents', 'team.state.json'), { force: true });
+      rmSync(join(dir, '.agents', 'team.log'), { force: true });
+      clock = Date.parse('2026-10-03T14:00:00Z');
+      screenNow = idle;
+      statusNow = 'idle';
+      typed = [];
+      notified = [];
+      scene = live({ 'codex-acme': { screen: `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly 2% left\n` } });
+      saveReadings(join(dir, '.agents'), seeded, clock);
+      if (points) expect(injectWas(join(dir, '.agents'))).toBe(1);
+      const io = testIo(dir, { kind: 'owner' });
+      const code = await runWatch(['--file', file], io, sources(2));
+      const budgets = (JSON.parse(readFileSync(join(dir, '.agents', 'team.state.json'), 'utf8')) as {
+        budgets: Record<string, Record<string, unknown>>;
+      }).budgets;
+      return {
+        code, out: io.out, err: io.err,
+        notified: [...notified], typed: [...typed],
+        log: readFileSync(join(dir, '.agents', 'team.log'), 'utf8'),
+        budgets,
+      };
+    };
+    const { budgets: plainBudgets, ...plainRun } = await run(false);
+    const { budgets: pointedBudgets, ...pointedRun } = await run(true);
+    // The run is not vacuous: the lines that must not move are lines the cache's own figure
+    // drives — the marks it crossed and the reserve it sits inside.
+    expect(plainRun.out).toContain('openai weekly is 98% used, past the 90% mark');
+    expect(plainRun.out).toContain('openai weekly left 2%, inside its 3% reserve');
+    expect(pointedRun).toEqual(plainRun);
+    // The two caches hold the same figures record for record; the point is the only difference,
+    // and it is on every record the injector touched.
+    const bare = (one: Record<string, unknown>) => Object.fromEntries(Object.entries(one).filter(([field]) => field !== 'was'));
+    const strip = (state: Record<string, Record<string, unknown>>) => Object.fromEntries(Object.entries(state).map(([key, one]) => [key, bare(one)]));
+    expect(strip(pointedBudgets)).toEqual(strip(plainBudgets));
+    expect(Object.keys(plainBudgets)).toHaveLength(1);
+    expect(Object.values(plainBudgets).every((one) => !('was' in one))).toBe(true);
+    expect(Object.values(pointedBudgets).every((one) => 'was' in one)).toBe(true);
   });
 
   test('a file that never validated, and a bad option', async () => {

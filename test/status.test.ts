@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { saveReadings, saveSpendReadings } from '../src/budgets/readings.ts';
+import { saveReadings, saveSpendReadings, type Seen } from '../src/budgets/readings.ts';
 import { verifiedOf } from '../src/approve/approval.ts';
 import { runStatus } from '../src/commands/status.ts';
 import type { StatusSources } from '../src/commands/status.ts';
@@ -15,7 +15,7 @@ import type { Standing } from '../src/store/store.ts';
 import { emptySession, readState, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
 import { runningModel } from '../src/status/statusline.ts';
-import { testIo } from './helpers.ts';
+import { testIo, withWas } from './helpers.ts';
 
 const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url), 'utf8');
 const NOW = new Date('2026-10-03T14:10:00Z');
@@ -421,6 +421,45 @@ describe('team status', () => {
     expect(doc.budgets).toEqual([
       { account: 'openai', window: 'weekly', left: 39, used: 61, resetsIn: '44m', seat: 'codex-acme', age: '2m', source: 'status_line', fallback: true, state: 'fresh', inside: false, reserve: 10 },
     ]);
+  });
+
+  test('a point on a stored reading moves no row, no difference and no --json field', async () => {
+    writeFileSync(file, example.replace(
+      '  marks: [50, 75, 90]          # percent used, per account and window\n',
+      `  marks: [50, 75, 90]
+  accounts:
+    openai: { kind: subscription, reserve: 10%, sources: [check, status_line], check: openai-usage }
+`,
+    ));
+    approveOnDisk();
+    const seeded: Seen[] = [
+      {
+        account: 'openai', window: 'session', left: 40, used: 60,
+        changedAt: NOW.getTime() - 2 * 60 * 1000, resetsAt: NOW.getTime() + 44 * 60 * 1000,
+        seat: null, source: 'check' as const, confirmed: true,
+      },
+      {
+        account: 'openai', window: 'weekly', left: 39, used: 61,
+        changedAt: NOW.getTime() - 2 * 60 * 1000, resetsAt: NOW.getTime() + 44 * 60 * 1000,
+        seat: 'codex-acme', source: 'status_line' as const, confirmed: true,
+      },
+    ];
+    // § 5: the point is a passenger on the stored reading. The same `team status`, the same rows
+    // and differences, and the same `budgets` JSON, whether the state's readings carry points or
+    // do not.
+    const run = async (points: boolean) => {
+      saveReadings(join(dir, '.agents'), points ? seeded.map(withWas) : seeded, NOW.getTime());
+      const text = await status();
+      const json = JSON.parse((await status('--json')).out) as { budgets: unknown[] };
+      return { code: text.code, out: text.out, budgets: json.budgets };
+    };
+    const plain = await run(false);
+    const pointed = await run(true);
+    // Non-vacuity: the rows this pins are the stored readings' own, fallback mark and all.
+    expect(plain.out).toContain('openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh');
+    expect(plain.out).toContain('openai  weekly  left 39%  used 61%  resets in 44m  codex-acme  changed 2m ago  status line (fallback)  fresh');
+    expect(plain.budgets).toHaveLength(2);
+    expect(pointed).toEqual(plain);
   });
 
   test('no budgets table when the file names no account and nothing is stored', async () => {

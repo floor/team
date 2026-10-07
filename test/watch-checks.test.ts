@@ -17,7 +17,7 @@ import { readApproval, storePath } from '../src/store/store.ts';
 import { ALWAYS_ON, CHECK_NAMES } from '../src/watch/check.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, pass, SEAT_CHECKS, TEAM_CHECKS } from '../src/watch/pass.ts';
-import { testIo } from './helpers.ts';
+import { testIo, withWas } from './helpers.ts';
 
 const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url), 'utf8')
   .replace('operator: claude-coordinator-acme', 'operator: claude-operator-acme')
@@ -196,6 +196,33 @@ describe('a pass with checks turned off', () => {
     expect(texts(pass({
       team: teamFile(), watch: teamFile().watch, state: emptySession(), live: live(), machine: tight, now: 3 * 60_000, memory, approval: APPROVED,
     }))).toContain('free disk is 5.0 GB, below 10.0 GB');
+  });
+
+  test('a cached reading carrying a point moves no report of the pass', () => {
+    // § 5: this file pins the pass's texts; a cache whose own reading carries a point leaves
+    // every one of them — and the budget line the cached figure itself drives — as it was. The
+    // point rides the reading the pass carries forward, and reaches no report.
+    const marks = '  marks: [50, 75, 90]          # percent used, per account and window';
+    const text = source().replace(marks, `${marks}\n  accounts:\n    openai: { kind: subscription, reserve: 20%, sources: [status_line] }\n`);
+    const parsed = validateTeamFile(text);
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));
+    const cached = {
+      account: 'openai', window: 'weekly' as const, left: 5, used: 95,
+      changedAt: 5 * 60_000, resetsAt: 60 * 60_000,
+      seat: 'codex-acme', source: 'status_line' as const, confirmed: true,
+    };
+    const run = (points: boolean) => texts(pass({
+      team: parsed.team, watch: parsed.team.watch, state: emptySession(), live: live(), machine: tight,
+      now: 10 * 60_000, memory: newMemory(), approval: APPROVED,
+      readings: [points ? withWas(cached) : cached],
+    }));
+    const plain = run(false);
+    // Non-vacuity: the cached reading's own figure drives a line this pass prints, the point
+    // beside it is real and distinct from the figure, and the machine's checks still report.
+    expect(plain).toContain('openai weekly left 5%, inside its 20% reserve');
+    expect(plain).toContain('free disk is 5.0 GB, below 10.0 GB');
+    expect(withWas(cached).was).toEqual({ left: 12, at: -25 * 60_000 });
+    expect(run(true)).toEqual(plain);
   });
 
   test('the four always-on checks run for a file that lists them anyway', () => {

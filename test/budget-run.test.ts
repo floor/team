@@ -230,6 +230,32 @@ describe('the approval gates the run', () => {
     ]);
     expect(checkOutcomes(file.budgets, resolved.checks, () => null, NOW)).toEqual([{ account: 'deepseek', state: 'unreadable' }]);
   });
+
+  test('an outcome and its reading carry exactly the contract\'s fields, so no point can enter them (§ 5)', () => {
+    // § 5's point is written by the fold the watch runs over time, onto readings already in the
+    // project's cache. A check reads its command fresh on every run, and what comes back is
+    // exactly these keys; nothing upstream — store, gate or watch — can read a field that is not
+    // here, so no point reaches anything this file pins. These pins fail the day one appears.
+    const dir = temp('team-check-dir-');
+    const command = join(dir, 'balance');
+    writeFileSync(command, '#!/bin/sh\necho "6.20 USD"\n', { mode: 0o755 });
+    const file = team(command);
+    const resolved = resolveChecks(file, dir, '');
+    if (!resolved.ok) throw new Error('the check did not resolve');
+    const outcomes = checkOutcomes(file.budgets, resolved.checks, () => ({ kind: 'spend', amount: 6.2, currency: 'USD', at: NOW }), NOW);
+    // Non-vacuity: the check really ran and really produced this outcome.
+    expect(outcomes).toEqual([{ account: 'deepseek', state: 'read', reading: { kind: 'spend', amount: 6.2, currency: 'USD', at: NOW } }]);
+    const outcome = outcomes[0];
+    if (outcome?.state !== 'read') throw new Error('the check did not read');
+    expect(Object.keys(outcome)).toEqual(['account', 'state', 'reading']);
+    expect(Object.keys(outcome.reading)).toEqual(['kind', 'amount', 'currency', 'at']);
+    // And the subscription reading's own shape: the windows a check fills are the same five
+    // fields the cache stores, none of them a point.
+    const reading = parseSubscription('weekly 39% used resets 114h4m\n', NOW);
+    if (reading === null || reading.kind !== 'subscription') throw new Error('the subscription did not parse');
+    expect(Object.keys(reading)).toEqual(['kind', 'windows']);
+    expect(Object.keys(reading.windows[0]!)).toEqual(['window', 'left', 'used', 'at', 'resetsAt']);
+  });
 });
 
 describe('runChecks, end to end', () => {

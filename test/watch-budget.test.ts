@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { WATCH_CHECKS_CHANGED } from '../src/approve/fingerprint.ts';
+import type { Seen } from '../src/budgets/readings.ts';
 import type { CheckOutcome } from '../src/budgets/run.ts';
 import type { TeamFile } from '../src/file/types.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
@@ -14,6 +15,7 @@ import type { Live } from '../src/status/compare.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, pass, type PassResult } from '../src/watch/pass.ts';
 import { readScreen } from '../src/watch/screen.ts';
+import { withWas } from './helpers.ts';
 
 const NOW = Date.parse('2026-10-04T09:00:00Z');
 const MIN = 60_000;
@@ -284,7 +286,7 @@ describe('the source fallback is per window', () => {
     account: 'openai', window, left, used: 100 - left, changedAt,
     resetsAt: NOW + 3_600_000, seat: 'codex-acme', source: 'status_line' as const, confirmed: true,
   });
-  const at = (teamSource: string, readings: ReturnType<typeof seen>[]) =>
+  const at = (teamSource: string, readings: Seen[]) =>
     pass({
       team: team(teamSource), watch: team(teamSource).watch, state: emptySession(), live: live(), machine: fine,
       now: NOW, memory: newMemory(), approval: [],
@@ -314,6 +316,30 @@ describe('the source fallback is per window', () => {
     // The screen's `session` figure is stale and inside the reserve; the check below it is fresh,
     // and § 4.3's order lets it count: a stale higher source is exactly when the lower one counts.
     expect(budgetReports(at(SCREEN_FIRST, [seen('session', 15, NOW - 40 * MIN)]))).toEqual([]);
+  });
+
+  test('a point on the cached reading moves no report, and only the point the pass carries forward', () => {
+    // § 5: the pass reads figures, and the point rides the reading it carries forward. Same
+    // reports, same folded readings record for record — the one field allowed to differ is the
+    // point itself, and it is there in the pointed pass and nowhere in the plain one.
+    const run = (points: boolean) => {
+      const cached = seen('weekly', 5, NOW - MIN);
+      return at(BOTH, [points ? withWas(cached) : cached]);
+    };
+    const plain = run(false);
+    const pointed = run(true);
+    // Non-vacuity: the reports this pins are the cached reading's own figures.
+    expect(shown(plain)).toEqual([
+      'openai weekly is 95% used, past the 50% mark (operator)',
+      'openai weekly is 95% used, past the 75% mark (operator)',
+      'openai weekly is 95% used, past the 90% mark (operator)',
+      'openai weekly left 5%, inside its 20% reserve (owner)',
+    ]);
+    const bare = (one: Seen) => Object.fromEntries(Object.entries(one).filter(([field]) => field !== 'was'));
+    expect(pointed.readings.map(bare)).toEqual(plain.readings.map(bare));
+    expect(shown(pointed)).toEqual(shown(plain));
+    expect(plain.readings.every((one) => !('was' in one))).toBe(true);
+    expect(pointed.readings.some((one) => 'was' in one)).toBe(true);
   });
 });
 

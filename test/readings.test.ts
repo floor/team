@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { countedFor, loadReadings, loadSpendReadings, observe, observeCheck, recall, saveReadings, saveSpendReadings, updateReadings, verdict, type Seen, type StoredReading } from '../src/budgets/readings.ts';
+import { countedFor, loadReadings, loadSpendReadings, observe, observeCheck, paceFrom, recall, remember, revive, saveReadings, saveSpendReadings, store, updateReadings, verdict, type Seen, type StoredReading } from '../src/budgets/readings.ts';
 import type { QuotaFigure } from '../src/profiles/quota.ts';
 import { readState, STATE_FILE, updateState } from '../src/state.ts';
 
@@ -195,7 +195,8 @@ describe('a check reading in the same slot', () => {
     const first = observeCheck(screen, 'openai', [{ window: 'weekly', left: 5, used: 95, at, resetsAt: null }]);
     const again = observeCheck(first, 'openai', [{ window: 'weekly', left: 8, used: 92, at: at + minute, resetsAt: null }]);
     expect(again.filter((item) => item.source === 'check')).toEqual([
-      { account: 'openai', window: 'weekly', left: 8, used: 92, changedAt: at + minute, resetsAt: null, seat: null, source: 'check', confirmed: true },
+      // The replaced figure is recorded as the point, at the check's own moment (§ 3-S3).
+      { account: 'openai', window: 'weekly', left: 8, used: 92, changedAt: at + minute, resetsAt: null, seat: null, source: 'check', confirmed: true, was: { left: 5, at } },
     ]);
     expect(again.some((item) => item.source === 'status_line' && item.seat === 'one')).toBe(true);
   });
@@ -448,5 +449,164 @@ describe('the watch\'s fold', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('the stored point', () => {
+  const T0 = 1_700_000_000_000;
+  const T1 = T0 + minute;
+  const T2 = T0 + 2 * minute;
+  const T3 = T0 + 3 * minute;
+
+  function stored(over: Partial<StoredReading> = {}): StoredReading {
+    return {
+      account: 'openai', window: 'weekly', left: 40, used: 60,
+      changedAt: new Date(T0).toISOString(), resetsAt: null, seat: 'one', source: 'status_line', confirmed: true,
+      ...over,
+    };
+  }
+
+  /** A record holding whatever `was` a corrupted or hand-edited state might carry. */
+  function held(was: unknown): StoredReading {
+    return { ...stored(), was: was as StoredReading['was'] };
+  }
+
+  test('an old state without the value revives with no point', () => {
+    const [reading] = recall({ 'openai/weekly/one': stored() });
+    expect(reading).toBeDefined();
+    expect(reading?.was).toBeUndefined();
+    expect(reading?.left).toBe(40);
+  });
+
+  test('left unchanged keeps the standing point as it stands', () => {
+    const reading = seen({ seat: 'one', confirmed: true, changedAt: T1, was: { left: 60, at: T0 } });
+    const again = observe([reading], figure(40), 'one', T2);
+    expect(again[0]?.changedAt).toBe(T1);
+    expect(again[0]?.was).toEqual({ left: 60, at: T0 });
+  });
+
+  test('a changed figure records exactly the prior values', () => {
+    const reading = seen({ seat: 'one', confirmed: true, changedAt: T1, was: { left: 60, at: T0 } });
+    const moved = observe([reading], figure(30), 'one', T2);
+    expect(moved[0]?.changedAt).toBe(T2);
+    expect(moved[0]?.was).toEqual({ left: 40, at: T1 });
+  });
+
+  test('a later change replaces the point with the figure before it', () => {
+    let list = observe([seen({ seat: 'one', confirmed: true, changedAt: T1, was: { left: 60, at: T0 } })], figure(30), 'one', T2);
+    list = observe(list, figure(20), 'one', T3);
+    expect(list[0]?.was).toEqual({ left: 30, at: T2 });
+  });
+
+  test('the rule holds in each slot: the check\'s own moment, and one never touches the other', () => {
+    const screen = seen({ seat: 'one', confirmed: true, changedAt: T1, was: { left: 60, at: T0 } });
+    const check = seen({ seat: null, source: 'check', confirmed: true, changedAt: T1, left: 5, used: 95, was: { left: 7, at: T0 } });
+    const afterCheck = observeCheck([screen, check], 'openai', [{ window: 'weekly', left: 8, used: 92, at: T2, resetsAt: null }]);
+    expect(afterCheck.find((item) => item.source === 'check')?.was).toEqual({ left: 5, at: T1 });
+    expect(afterCheck.find((item) => item.source === 'status_line')?.was).toEqual({ left: 60, at: T0 });
+    const afterScreen = observe(afterCheck, figure(30), 'one', T3);
+    expect(afterScreen.find((item) => item.source === 'check')?.was).toEqual({ left: 5, at: T1 });
+    expect(afterScreen.find((item) => item.source === 'status_line')?.was).toEqual({ left: 40, at: T1 });
+  });
+
+  test('a passed reset takes the record and its point together', () => {
+    const live = seen({ seat: 'one', confirmed: true, changedAt: T1, resetsAt: T3, was: { left: 60, at: T0 } });
+    const spent = seen({ seat: 'two', confirmed: true, changedAt: T1, resetsAt: T2, was: { left: 60, at: T0 } });
+    const kept = remember([live, spent], T2);
+    expect(Object.keys(kept)).toEqual(['openai/weekly/one']);
+    expect(kept['openai/weekly/one']?.was).toEqual({ left: 60, at: new Date(T0).toISOString() });
+  });
+
+  test('a change into another window instance leaves no point, the next change inside it sets one', () => {
+    const before = seen({ seat: 'one', confirmed: true, changedAt: T0, left: 60, used: 40, resetsAt: T0 + 10 * minute, was: { left: 70, at: T0 - minute } });
+    const moved = observe([before], figure(40, '44m'), 'one', T1);
+    expect(moved[0]?.resetsAt).toBe(T1 + 44 * minute);
+    expect(moved[0]?.was).toBeUndefined();
+    // The status line's countdown: a minute later the same reset reads 43m, the same instant.
+    const again = observe(moved, figure(30, '43m'), 'one', T2);
+    expect(again[0]?.resetsAt).toBe(T1 + 44 * minute);
+    expect(again[0]?.was).toEqual({ left: 40, at: T1 });
+  });
+
+  test('an invalid point is discarded whole, every other field intact, never a throw', () => {
+    const ok = new Date(T0).toISOString();
+    const bad: unknown[] = [
+      'nope',
+      null,
+      {},
+      { left: 40, at: { when: ok } },
+      { left: 140, at: ok },
+      { left: -1, at: ok },
+      { left: '40', at: ok },
+      { left: 40, at: 'nope' },
+      { left: 40, at: 1234 },
+    ];
+    for (const was of bad) {
+      const revived = revive(held(was));
+      expect(revived.was).toBeUndefined();
+      expect(revived.left).toBe(40);
+      expect(revived.used).toBe(60);
+      expect(revived.changedAt).toBe(T0);
+      expect(revived.resetsAt).toBeNull();
+      expect(revived.seat).toBe('one');
+      expect(revived.confirmed).toBe(true);
+    }
+    // The same through the state file, the one door a value from outside enters through.
+    const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
+    try {
+      writeFileSync(join(dir, STATE_FILE), `${JSON.stringify({ format: 1, sessions: {}, budgets: { 'openai/weekly/one': { ...stored(), was: 'nope' } } }, null, 2)}\n`);
+      const [reading] = loadReadings(dir);
+      expect(reading?.was).toBeUndefined();
+      expect(reading?.left).toBe(40);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a well-formed but odd pair revives, and there is no pace to read from it', () => {
+    // At after the change: it revives, and `dt` is not positive, so no pace.
+    const odd = revive(held({ left: 50, at: new Date(T1).toISOString() }));
+    expect(odd.was).toEqual({ left: 50, at: T1 });
+    expect(paceFrom(odd, T2, stale)).toBeNull();
+    // Left equal: shaped fine, a pace of zero — `-0` reads 0.
+    const flat = revive(held({ left: 40, at: new Date(T0 - minute).toISOString() }));
+    expect(paceFrom(flat, T1, stale)).toBe(0);
+    const tiny = revive(held({ left: 39.99, at: new Date(T0 - 60 * minute).toISOString() }));
+    expect(paceFrom(tiny, T1, stale)).toBe(0);
+  });
+
+  test('state read and write and the migration retain the field', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'team-readings-'));
+    try {
+      saveReadings(dir, [seen({ seat: 'one', confirmed: true, changedAt: T1, resetsAt: T3, was: { left: 60, at: T0 } })], T1);
+      // An unrelated write rewrites the whole file; a record no fold touched keeps its point.
+      updateState(dir, () => {});
+      expect(readState(dir).budgets?.['openai/weekly/one']?.was).toEqual({ left: 60, at: new Date(T0).toISOString() });
+      expect(loadReadings(dir)[0]?.was).toEqual({ left: 60, at: T0 });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    const other = mkdtempSync(join(tmpdir(), 'team-readings-'));
+    try {
+      // A legacy session-held record with a point merges to the top level, whole: the confirmed
+      // record wins the pick over a newer unconfirmed one, and its point rides it.
+      writeFileSync(join(other, STATE_FILE), `${JSON.stringify({
+        format: 1,
+        sessions: {
+          one: { seats: {}, worktrees: {}, budgets: { 'openai/weekly/one': stored({ was: { left: 60, at: new Date(T0).toISOString() } }) } },
+          two: { seats: {}, worktrees: {}, budgets: { 'openai/weekly/one': stored({ confirmed: false, changedAt: new Date(T2).toISOString(), was: { left: 20, at: new Date(T1).toISOString() } }) } },
+        },
+      }, null, 2)}\n`);
+      const merged = readState(other).budgets?.['openai/weekly/one'];
+      expect(merged?.confirmed).toBe(true);
+      expect(merged?.was).toEqual({ left: 60, at: new Date(T0).toISOString() });
+    } finally {
+      rmSync(other, { recursive: true, force: true });
+    }
+    // store∘revive round-trips the point, both directions.
+    const reading = seen({ seat: 'one', confirmed: true, changedAt: T1, was: { left: 60, at: T0 } });
+    expect(revive(store(reading))).toEqual(reading);
+    const record = stored({ was: { left: 60, at: new Date(T0).toISOString() } });
+    expect(store(revive(record))).toEqual(record);
   });
 });

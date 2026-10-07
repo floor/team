@@ -14,7 +14,7 @@ import type { Seat, TeamFile } from '../src/file/types.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import { storePath, writeApproval } from '../src/store/store.ts';
 import { emptySession, updateState } from '../src/state.ts';
-import { testIo } from './helpers.ts';
+import { testIo, withWas } from './helpers.ts';
 
 const NOW = new Date('2026-10-04T09:00:00Z');
 const now = NOW.getTime();
@@ -255,6 +255,24 @@ describe('a stored reading refuses one seat', () => {
     ]);
     const dry = await up(['--dry-run'], world());
     expect(dry.out).toContain('skip worker: would refuse: openai weekly left 5%, inside its 10% reserve, changed 31m ago; accounts with room: anthropic');
+  });
+
+  test('a point on the stored reading moves no verdict and no refusal line', async () => {
+    // § 5: the gate counts figures and ages, never points. The same store, the same file and the
+    // same `up --dry-run` — the refusal, the room it names and the seat it skips, line for line,
+    // whether the readings carry points or do not.
+    const readings = [reading('anthropic', 80), reading('openai', 5), reading('openai', 62, { window: 'session' })];
+    const run = async (points: boolean) => {
+      store(points ? readings.map(withWas) : readings);
+      return up(['--dry-run'], world());
+    };
+    const plain = await run(false);
+    const pointed = await run(true);
+    // Non-vacuity: the refusal this pins is the stored reading's own — the point rides a reading
+    // the gate actually counted — and the point is distinct from the figure beside it.
+    expect(plain.out).toContain(`  skip worker: would refuse: ${TAIL}\n`);
+    expect(withWas(reading('openai', 5)).was).toEqual({ left: 12, at: now - 31 * 60_000 });
+    expect(pointed).toEqual(plain);
   });
 
   test('a first sight, an unknown figure, a stale reading with no reset, and an account with no entry do not refuse', async () => {

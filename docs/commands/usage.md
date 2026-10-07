@@ -105,6 +105,24 @@ from and how the line closes:
 - A line with nothing counted for it reads `unknown` and carries no figure. A figure inside its
   reserve says `inside reserve 20%`, and a figure that did not come from the first source its
   account names is `status line (fallback)` — the same two marks `status` prints.
+- A line with a figure ends it with the pace the figure is moving at — `pace 5.3%/h`, the used
+  points per hour the window's last two readings measure, one decimal and signed — or with `pace
+  not known` where there is no pair to measure. The rows carry the word too. A spend line, a
+  spend account's row, and a machine line with nothing counted for it carry no word at all. A
+  restricted machine line whose newest figure is another team's carries none either: that pace is
+  that team's, withheld rather than unknown, and nothing stands in its place — the line passes
+  straight from its state to its watch clause.
+
+Pace is read from the pair the state keeps and nothing else: the reading before this one, its
+figure and the moment it moved (the point the watch writes beside a reading whenever one was in
+the state before it). It is
+the difference of the two figures over the hours between their moments, one decimal, signed — a
+window filling back up reads below zero, and a figure that did not move across its pair reads
+`pace 0.0%/h`. It reads `pace not known` where the state holds no usable pair: a reading stored
+before the point was written, a point whose reading is older than the section's `stale_after`, a
+pair whose two moments are the same, and a window whose reset changed since the pair was taken.
+Pace is a passenger — it moves no figure, no state, no mark and no other command's table, and
+`status`, the gate and the watch print the same with it or without it.
 
 Ages are exact in both views — `2m`, `40m`, `1h30m` — the moment a reader can compute the figure's
 age from; no view rounds them.
@@ -178,6 +196,9 @@ it: no name, no root, no path, no message. Specifically, it never carries
   `another team: …`) — nor another team's **root**, which is a path this tool derived from the
   machine;
 - another team's **rows**: only the caller's own team's rows print under a machine line;
+- another team's **pace**: a machine line whose newest reading is another team's carries no pace
+  element at all — `null` in `--json`, absent from the text — so a withheld figure never reads as
+  a failed computation, while the caller's own rows keep their pace;
 - another team's **problems in their own words**: a store's own message becomes the fixed sentence
   `a store on this machine cannot be read: the owner reads the reason`, and a team's problem becomes
   one fixed sentence per kind, counted;
@@ -334,8 +355,8 @@ $ team usage ; echo "exit $?"
 usage on this machine, 1 team, 2 labs, 1 account
 
 anthropic  not known (no team declares an account for it yet)
-openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh
-  beacon    session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh
+openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh  pace not known
+  beacon    session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh  pace not known
 exit 0
 ```
 
@@ -378,6 +399,7 @@ $ team usage --json ; echo "exit $?"
             "state": "fresh",
             "inside": false,
             "reserve": 20,
+            "pace": null,
             "other": false,
             "seat": null
           },
@@ -396,7 +418,8 @@ $ team usage --json ; echo "exit $?"
                 "fallback": false,
                 "state": "fresh",
                 "inside": false,
-                "reserve": 20
+                "reserve": 20,
+                "pace": null
               }
             }
           ]
