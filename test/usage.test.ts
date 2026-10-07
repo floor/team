@@ -1533,6 +1533,62 @@ describe('team usage', () => {
     }
   });
 
+  test('a spend account reads from the state\'s spend readings: money on the line, the reading in the allow-list', async () => {
+    // The spend line is read from the state's own spend readings (§ 5), the newest across teams;
+    // this caller is its own team, so the line says `read`, not `read by another team`. The
+    // allow-list entry is the reading the line renders from — `amount`, `currency`, `at` and the
+    // `age` computed against the report's `at` — never a state's own words. A spend account has
+    // no window, so the line carries no window word either.
+    const text = teamText().replace(
+      '  accounts:\n',
+      '  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: acme-quota }\n',
+    );
+    writeFileSync(file, text);
+    approve(text);
+    updateState(join(root, '.agents'), (state) => {
+      state.spend = { deepseek: { account: 'deepseek', amount: 12.4, currency: 'USD', at: '2026-10-04T08:56:00Z' } } as never;
+    });
+    const mine = await usageAt(root, SEAT);
+    expect(mine.out).toContain('deepseek  spend  12.40 USD left  read 4m ago  check  fresh\n');
+    expect(mine.out).toContain('  acme  spend  12.40 USD left  read 4m ago  check  fresh\n');
+    const doc = JSON.parse((await usageAt(root, SEAT, '--json')).out) as {
+      labs: { lab: string; accounts: Record<string, unknown>[] }[];
+    };
+    expect(doc.labs.find((one) => one.lab === 'deepseek')?.accounts).toEqual([
+      {
+        account: 'deepseek',
+        kind: 'spend',
+        machine: {
+          amount: 12.4,
+          currency: 'USD',
+          at: '2026-10-04T08:56:00.000Z',
+          age: '4m',
+          source: 'check',
+          state: 'fresh',
+          other: false,
+        },
+        teams: [
+          {
+            team: 'acme',
+            reading: {
+              amount: 12.4,
+              currency: 'USD',
+              at: '2026-10-04T08:56:00.000Z',
+              age: '4m',
+              source: 'check',
+              state: 'fresh',
+            },
+          },
+        ],
+      },
+    ]);
+    // The full view adds the team to the line's own fields and the row's; the entry above, with
+    // no `team` on its machine, is the restricted one — the same entry, one field apart.
+    const owner = JSON.parse((await usageAt(root, OWNER, '--json')).out) as typeof doc;
+    const line = owner.labs.find((one) => one.lab === 'deepseek')?.accounts[0] as { machine: { team?: string } };
+    expect(line.machine.team).toBe('acme');
+  });
+
   test('it writes nothing: every file under the state, the store and the key is byte-identical', async () => {
     withState();
     const watched = [join(root, '.agents'), join(home, '.config', 'team'), join(home, '.config', 'team-key')];
