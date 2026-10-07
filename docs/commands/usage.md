@@ -3,8 +3,9 @@
 Shows one project's figures: the accounts and windows its budgets in force name, with what is left
 and used, when each figure was last read and from which source. It resolves the project from the
 current folder, the way every command does, and it only reads: it writes nothing anywhere — no
-`last_valid` copy, no log line, no lock, no state — it runs nothing, it reads no pane, and it opens
-no CLI's own session file or credential. Any caller may run it, from any folder.
+`last_valid` copy, no log line, no lock, no state — it runs no check and launches no CLI, it reads
+no pane, and it opens no CLI's own session file or credential. Any caller may run it, from any
+folder.
 
 This page documents what this build prints: **one project's block** — no machine-wide view, and no
 spend rows. The rows it does print are the ones `status` prints, from the same table over the same
@@ -27,10 +28,14 @@ copy, is answered from the copy the approval stored; when neither can be read, t
 ## Who may run it
 
 Anyone: a seat, an unplaced agent, or the owner. It needs no approval of its own — it reports on
-the one in force, and changes nothing about it. It may be run from anywhere inside the project,
-a subfolder or a linked worktree alike: the root is the one git's common directory names, or, in a
-plain folder with no repository, the folder's own `.agents/team.yaml`. Outside any project it
-prints one note line and exits 0 — a note, not a refusal:
+the one in force, and changes nothing about it. Who is asking is placed before anything prints,
+the way `status` places it (`status.ts:133`): from the caller's parent processes — on macOS one
+`ps` per parent, on Linux the `/proc` table — never from the environment. The owner at a terminal
+reads the owner's view; every other caller, a run without a terminal included, reads the restricted
+one. It may be run from anywhere inside the project, a subfolder or a linked worktree alike: the
+root is the one git's common directory names, or, in a plain folder with no repository, the
+folder's own `.agents/team.yaml`. Outside any project it prints one note line and exits 0 — a
+note, not a refusal:
 
     note: no team file is found from this folder; there is no project block to show
 
@@ -96,6 +101,14 @@ approved copy's:
 
 That line keys on the standing alone, not on the rows, so it too prints under the readings' own
 rows. These are why-lines, not refusals: nothing is broken, and the exit code is still 0.
+
+A refused approval — the store holds a record for this project that does not verify for it — has
+two faces. The owner reads the store's own reason, the words `team status` prints for it, absolute
+paths and all. Every other caller reads one fixed sentence instead, so that no reason text reaching
+a non-owner can carry a path or a root that is not this project's own:
+
+    team beacon
+    the approval on this machine does not verify for this project: the owner runs `team approve`
 
 ## The JSON
 

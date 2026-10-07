@@ -4,7 +4,6 @@
 // state beside it, the store — and writes nothing at all: no `last_valid` copy, no log line, no
 // lock, no state. It runs nothing, reads no pane, no vendor file, no vendor key.
 import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { approvalCase, budgetsInForceOf, notInForce, watchInForceOf } from '../approve/approval.ts';
 import { describe } from '../approve/fingerprint.ts';
@@ -26,6 +25,15 @@ export const NO_FIGURES = 'no figures (the file could not be read)';
  *  borrow — it omits its `budgets:` section and says nothing else (`status.ts:286-290`) — so the
  *  sentence is the coordinator's, ruled after their real run on this command. */
 export const NOTHING_COUNTED = "not known: this team's file declares no account, so nothing is counted";
+
+/** The line a block shows a caller who is not the owner in place of a refused approval's own
+ *  words. Those words are the store's, and they can carry the record's absolute path, the key's
+ *  fate, or the root of another project (`store.ts:154`, `:169`, `:185` — the last is the leak the
+ *  after-review found): they are the owner's, and `status` already prints them to the owner. Every
+ *  other caller gets this one fixed sentence instead, so no reason text reaching a non-owner can
+ *  carry a path or a root. It is the whole of the restricted view's answer for a refusal — one
+ *  `Standing` carries one opaque `why`, so the sentence replaces it as a whole. */
+export const NOT_VERIFIED = 'the approval on this machine does not verify for this project: the owner runs `team approve`';
 
 /** Whether a watch is recording for a project, by the state's own record (design note § 1.4). */
 export type WatchRecording = 'recording' | 'not-recording' | 'not-known';
@@ -49,14 +57,28 @@ export type ProjectUsage = {
   notes: string[];
 };
 
+/** What a caller hands `projectUsage`: no field has a default, so no caller reads a project
+ *  without saying whose view it is. */
+export type ProjectUsageOptions = {
+  /** The home whose approval store is read. */
+  home: string;
+  /** The clock: one moment for the whole block. */
+  now: number;
+  /** Whether the caller is not the owner — the restricted view's one difference. */
+  restricted: boolean;
+};
+
 /**
  * One project's block: the accounts its budgets in force name, and any reading its state still
  * holds, each row exactly as `status` builds it. The team file is read through
  * `validateTeamFile`; a file that cannot be read falls back to the copy its approval stored; when
  * neither can be read, `project` is null and there are no rows (`NO_FIGURES`). The state is read
  * once and never written, and nothing here opens a lock, a pane, a vendor file or a key.
+ * `restricted` says the caller is not the owner: it changes no reading, and it keeps the store's
+ * own words for a refused approval out of what the block can print (`NOT_VERIFIED`).
  */
-export function projectUsage(root: string, home: string = homedir(), now: number = Date.now()): ProjectUsage {
+export function projectUsage(root: string, options: ProjectUsageOptions): ProjectUsage {
+  const { home, now, restricted } = options;
   const standing = approvalStanding(root, home);
   const team = teamOf(root, standing, home);
   const notes: string[] = [];
@@ -77,7 +99,7 @@ export function projectUsage(root: string, home: string = homedir(), now: number
   return {
     project: team.project,
     rows,
-    whyNotCounted: whyNotCountedOf(standing, team, budgets),
+    whyNotCounted: whyNotCountedOf(standing, team, budgets, restricted),
     spend,
     watch: recordedWatch(state, team, watchInForceOf(standing, team), now),
     notes,
@@ -92,12 +114,19 @@ export function projectUsage(root: string, home: string = homedir(), now: number
  *  verified prints `notInForce`'s why-line for that standing (`approval.ts:47-52`), and a
  *  verified standing prints `status`'s own line for a file the owner has not approved
  *  (`status.ts:229`) whenever the budgets in force are the approved copy's — that is exactly
- *  when `compare` reports the `budgets` section, the same digests `budgetsInForceOf` reads. */
-function whyNotCountedOf(standing: Standing, team: TeamFile, budgets: TeamFile['budgets']): string | null {
+ *  when `compare` reports the `budgets` section, the same digests `budgetsInForceOf` reads. A
+ *  refused approval's `why` is the store's own text and is the owner's; a caller who is not the
+ *  owner gets `NOT_VERIFIED` instead, while `none` and `legacy` — the tool's own two lines, with
+ *  no path in them (`approval.ts:47-52`) — print to everyone. */
+function whyNotCountedOf(standing: Standing, team: TeamFile, budgets: TeamFile['budgets'], restricted: boolean): string | null {
   if (Object.keys(team.budgets.accounts).length === 0) {
     return Object.keys(budgets.accounts).length === 0 ? NOTHING_COUNTED : null;
   }
-  if (standing.kind !== 'verified') return notInForce(standing);
+  if (standing.kind !== 'verified') {
+    // The switch is on the structured standing, never on the store's wording: a new refusal
+    // reason cannot leak because nobody thought to match its text.
+    return restricted && standing.kind === 'refused' ? NOT_VERIFIED : notInForce(standing);
+  }
   const changed = describe({ kind: 'section', name: 'budgets' });
   const { differences } = approvalCase(standing, team);
   return differences !== null && differences.includes(changed) ? `the file differs from the approved one: ${changed}` : null;

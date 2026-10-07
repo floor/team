@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { readArgs } from '../args.ts';
 import { budgetLine } from '../budgets/table.ts';
+import { isOwner, walkCaller } from '../caller.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { LoadResult, Problem } from '../file/types.ts';
 import { NO_FIGURES, projectUsage, type ProjectUsage } from '../information/usage.ts';
@@ -29,7 +30,12 @@ export default usage;
  * `team usage [--json]`: this project's block, resolved from the current folder the way
  * `currentTeam` resolves, but read-only — it writes nothing anywhere, not even the `last_valid`
  * copy `currentTeam` keeps, and it never answers from that copy when the file breaks. Any caller
- * may run it, from any folder. Exit 0 whatever the figures; the one refusal is the invocation.
+ * may run it, from any folder. The caller is placed once, the way `status` places it
+ * (`status.ts:133`): the owner at a terminal is the owner, and everyone else — a seat, an agent
+ * outside herdr, a run without a terminal — reads the restricted view, whose one difference here
+ * is the fixed line for a refused approval (`NOT_VERIFIED`) in place of the store's own words.
+ * Placing the caller reads the process table (`caller.ts`), and nothing else. Exit
+ * 0 whatever the figures; the one refusal is the invocation.
  */
 export async function runUsage(argv: string[], io: Io, sources: UsageSources): Promise<number> {
   const args = readArgs(argv, [], ['json']);
@@ -38,6 +44,7 @@ export async function runUsage(argv: string[], io: Io, sources: UsageSources): P
     // exit: usage.invocation
     return 2;
   }
+  const restricted = !isOwner(walkCaller(io));
   const now = sources.now();
   const json = args.flags.has('json');
   let loaded: LoadResult;
@@ -56,7 +63,7 @@ export async function runUsage(argv: string[], io: Io, sources: UsageSources): P
       : loaded.errors.map((problem) => noticeOf(loaded.path as string, problem));
     return outside(io, json, now, notes);
   }
-  const report = projectUsage(loaded.root, sources.home, now.getTime());
+  const report = projectUsage(loaded.root, { home: sources.home, now: now.getTime(), restricted });
   if (json) {
     // The reader's one line for a block whose file counts nothing heads the notes, so a script
     // reads it where the text's reader sees it: under the header, under the rows.

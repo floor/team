@@ -1,7 +1,9 @@
 // `team usage` — S1: one project's block, resolved from the current folder and read-only. Its
 // rows are `status`'s own rows (the same rule and the same table), and the four holds of the
 // brief are tested too: nothing is written, no pane or key or CLI session file is read, any
-// caller may run it from any folder, and every figure carries its source and its age.
+// caller may run it from any folder, and every figure carries its source and its age. The
+// restricted view's own rule is here as well: a refused approval's words reach the owner and
+// nobody else, whatever the reason (`NOT_VERIFIED`).
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -12,7 +14,7 @@ import type { Caller } from '../src/caller.ts';
 import { runStatus } from '../src/commands/status.ts';
 import { NO_PROJECT, runUsage, USAGE } from '../src/commands/usage.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
-import { NOTHING_COUNTED } from '../src/information/usage.ts';
+import { NOTHING_COUNTED, NOT_VERIFIED } from '../src/information/usage.ts';
 import { emptySession, updateState } from '../src/state.ts';
 import { approvalStanding, storePath, writeApproval } from '../src/store/store.ts';
 import { gitEnv, testIo } from './helpers.ts';
@@ -283,6 +285,87 @@ describe('team usage', () => {
     expect(moved.code).toBe(0);
     expect(moved.out).toBe(['team acme', ...LEFTOVER_ROWS, differs, 'no watch is recording for acme'].join('\n') + '\n');
     expect(JSON.parse((await usageAt(root, undefined, '--json')).out).notes).toEqual([differs]);
+  });
+
+  test("a refused approval's own words are the owner's: one fixed sentence for a seat, every reason", async () => {
+    const text = teamText();
+    const store = storePath('acme', root, home);
+    const record = join(store, 'approval.json');
+    const keyFile = join(home, '.config', 'team-key', 'key.json');
+    const generations = join(home, '.config', 'team-key', 'generations');
+    const generationFile = () => join(generations, (readdirSync(generations) as string[])[0] as string);
+    const read = () => JSON.parse(readFileSync(record, 'utf8')) as Record<string, unknown>;
+    const write = (value: unknown) => writeFileSync(record, `${JSON.stringify(value, null, 2)}\n`);
+
+    // The root of the after-review's case: a name this test owns, so its appearing anywhere in a
+    // non-owner's output could only come from the store's own words.
+    const foreign = join(base, 'acme-FOREIGN-ROOT-8ZKQ');
+    mkdirSync(foreign, { recursive: true });
+
+    /** A clean fixture before each reason: the store, the key and the generations start over. */
+    const reset = () => {
+      rmSync(join(home, '.config'), { recursive: true, force: true });
+      mkdirSync(join(home, '.config', 'team', 'lobby'), { recursive: true });
+      approve(text);
+    };
+
+    const seat: Caller = { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'acme-web' };
+    const owner: Caller = { kind: 'owner' };
+
+    // Every refusal reason `approvalStanding` can produce, with its store.ts line. Two of the ten
+    // cannot be reached by a record on disk — `:162`, guarded by the shape check (`store.ts:159-161`),
+    // and `:179`, the belt-and-braces catch around `verifyPayload` (`store.ts:174-178`) — so eight
+    // are fed here; the pull request lists all ten.
+    const refusals: { at: string; refuse: () => void }[] = [
+      { at: ':154 the record cannot be read', refuse: () => write({ format: 3 }) },
+      { at: ':166 the key is missing', refuse: () => rmSync(keyFile, { force: true }) },
+      { at: ':169 the key cannot be read', refuse: () => writeFileSync(keyFile, 'not a key at all') },
+      { at: ':182 the signature does not verify', refuse: () => write({ ...read(), file: `${text}\n# changed after signing\n` }) },
+      { at: ':185 another project root', refuse: () => {
+        const checked = validateTeamFile(text, { home, root });
+        if (!checked.ok) throw new Error('the fixture does not validate');
+        writeApproval(store, { approval: approvalOf(checked.team, foreign, NOW), file: text }, [], home);
+      } },
+      { at: ':189 no generation recorded', refuse: () => rmSync(generationFile(), { force: true }) },
+      { at: ':193 the record is older than the generation', refuse: () => {
+        const earlier = read();
+        approve(text);
+        write(earlier);
+      } },
+      { at: ':194 only an older generation is recorded', refuse: () => {
+        approve(text);
+        writeFileSync(generationFile(), `${JSON.stringify({ format: 1, generation: 1, at: NOW.toISOString() }, null, 2)}\n`);
+      } },
+    ];
+
+    for (const one of refusals) {
+      reset();
+      one.refuse();
+      const standing = approvalStanding(root, home);
+      expect([one.at, standing.kind], one.at).toEqual([one.at, 'refused']);
+      const why = (standing as { why: string }).why;
+
+      // A seat gets the one fixed sentence, in both faces, and nothing that names the fixture.
+      const mine = await usageAt(root, seat);
+      expect(mine.code, one.at).toBe(0);
+      expect(mine.out.split('\n'), one.at).toContain(NOT_VERIFIED);
+      expect(mine.out, one.at).not.toContain(base);
+      expect(mine.out, one.at).not.toContain('another project root');
+
+      const raw = (await usageAt(root, seat, '--json')).out;
+      expect(raw, one.at).not.toContain(base);
+      expect((JSON.parse(raw) as { notes: string[] }).notes, one.at).toEqual([NOT_VERIFIED]);
+
+      // The owner keeps the store's own words, byte for byte — the leak's own path included.
+      const theirs = await usageAt(root, owner);
+      expect(theirs.out, one.at).toContain(why);
+      if (one.at.startsWith(':185')) {
+        expect(why, one.at).toContain(foreign);
+        expect(theirs.out, one.at).toContain(foreign);
+        expect(mine.out, one.at).not.toContain('FOREIGN-ROOT-8ZKQ');
+        expect(raw, one.at).not.toContain('FOREIGN-ROOT-8ZKQ');
+      }
+    }
   });
 
   test('outside any project it is a note and exit 0, in text and in JSON', async () => {
