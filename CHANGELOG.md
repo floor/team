@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-10-07
+
+A release about a seat whose screen nobody can read: a caller other than the owner can now let
+it go on herdr's word alone, and `team status` and `team watch` say so instead of staying quiet.
+
+### Added
+- `team remove <name>` from a caller other than the owner: a seat herdr reports `idle` or `done`
+  is taken out of the team without typing anything into it — the state record is dropped and the
+  pane's agent is renamed best-effort to `<name>-left` (or `-left-2`, and so on), leaving the
+  pane running for the owner to close. `--keep` marks it stopped with the same line instead. A
+  seat herdr reports `working` is never taken out.
+
+### Fixed
+- `team status` marks the row when the profile cannot read the seat's screen: an idle or done
+  seat reads `<state> (screen not recognised)`.
+- `team watch` reports a quiet seat on an unrecognised screen instead of going silent.
+
 ## [0.3.4] - 2026-10-07
 
 A release about reading a machine and reading a file: `team usage` reads every store this
@@ -687,7 +704,8 @@ The first release: set up, change and watch a project's team of AI agents from o
   footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
   stays idle.
 
-[Unreleased]: https://github.com/floor/team/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/floor/team/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/floor/team/releases/tag/v0.3.5
 [0.3.4]: https://github.com/floor/team/releases/tag/v0.3.4
 [0.3.3]: https://github.com/floor/team/releases/tag/v0.3.3
 [0.3.2]: https://github.com/floor/team/releases/tag/v0.3.2
