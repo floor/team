@@ -776,6 +776,21 @@ scene('approve.key', async (place) => {
   writeFileSync(join(folder, 'key.json'), '{');
   return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'signing key is not whole JSON');
 });
+scene('approve.key-changed', async (place) => {
+  write(place, TEAM);
+  // The look before the question finds no key at all; the file turns unreadable while the
+  // owner is answering — another process writing it — and the write still fails closed
+  // rather than replace what is there.
+  return show(await approved(place, ['--confirm', '--file', place.file], owner, {
+    ...approveSources(place, '1'),
+    ask: async () => {
+      const folder = join(place.home, '.config', 'team-key');
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(join(folder, 'key.json'), '{');
+      return '1';
+    },
+  }), 'signing key is not whole JSON');
+});
 scene('approve.show', async (place) => {
   write(place, TEAM);
   return show(await approved(place, ['--show', '--file', place.file], owner, approveSources(place, null)), 'Seats:');

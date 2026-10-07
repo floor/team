@@ -210,6 +210,65 @@ describe('team approve', () => {
     });
   });
 
+  describe('a key that cannot be read', () => {
+    // The key exists — as it does on the machine of an owner whose key file was torn, or written
+    // by something else — and must fail closed before anything is asked: a run that can never
+    // sign must not consume a deliberate answer, and the repair names itself.
+    beforeEach(() => {
+      rmSync(keyFolder(home), { recursive: true, force: true });
+      mkdirSync(keyFolder(home), { recursive: true });
+      writeFileSync(join(keyFolder(home), 'key.json'), '{');
+    });
+
+    const refusal = () =>
+      `team approve: ${join(keyFolder(home), 'key.json')}: the signing key is not whole JSON: restore it from a copy — a new key would orphan every record already signed\n`;
+
+    const expectNothingWritten = () => {
+      expect(readFileSync(join(keyFolder(home), 'key.json'), 'utf8')).toBe('{');
+      expect(recordedGeneration(root, home)).toBeNull();
+      expect(existsSync(store())).toBe(false);
+      expect(existsSync(join(root, '.agents/team.log'))).toBe(false);
+    };
+
+    // The run's seams, counted: the two refusals below must come before the question is asked
+    // and before the terminal is read.
+    const approveWithSpies = async (argv: string[]) => {
+      const io = testIo(root, OWNER);
+      const asked: string[] = [];
+      let probed = 0;
+      const code = await runApprove([...argv, ...FILE], io, {
+        ask: async (question) => {
+          asked.push(question);
+          return '5';
+        },
+        waiting: () => {
+          probed += 1;
+          return 'empty';
+        },
+        now: () => NOW,
+        home,
+      });
+      return { code, out: io.out, err: io.err, asked, probed: () => probed };
+    };
+
+    test('--confirm asks nothing and writes nothing', async () => {
+      const refused = await approveWithSpies(['--confirm']);
+      expect(refused.code).toBe(1);
+      expect(refused.err).toBe(refusal());
+      expect(refused.asked).toEqual([]);
+      expectNothingWritten();
+    });
+
+    test('the default path the same: the terminal is never read for a run that cannot sign', async () => {
+      const refused = await approveWithSpies([]);
+      expect(refused.code).toBe(1);
+      expect(refused.err).toBe(refusal());
+      expect(refused.probed()).toBe(0);
+      expect(refused.asked).toEqual([]);
+      expectNothingWritten();
+    });
+  });
+
   test('records the file, its ceilings and its seats once the owner types the number of seats', async () => {
     const run = await approve(['--confirm'], OWNER, ' 5\n');
     expect(run.code).toBe(0);
