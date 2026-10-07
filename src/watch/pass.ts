@@ -108,6 +108,11 @@ export function attentionOf(screen: Screen, status: string, quiet: boolean): Att
   if (screen.kind === 'question' || screen.kind === 'exit question') return 'question';
   if (screen.kind === 'vendor notice') return 'vendor notice';
   if (status === 'blocked') return 'blocked';
+  // A quiet seat on a screen no profile reads is not "nothing to report": it is the shape a
+  // stalled seat leaves — herdr says idle or done, and nothing may ever free it. The report is
+  // the watch's existing unknown, which quotes herdr's word rather than vouching for it; a
+  // classify-miss must not go silent, and nothing is typed either way.
+  if (quiet && screen.kind === 'unknown') return 'unknown';
   if (!quiet && status !== 'working') return 'unknown';
   return null;
 }

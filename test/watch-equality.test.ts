@@ -1,7 +1,8 @@
 // The modular watch core must report, nudge and remember exactly what the pass it replaced did.
 // `oldPass` below is src/watch/pass.ts as it stood before the checks were split into modules
 // (the merge of #45), copied in unchanged — except the one field read the lead's rename moved,
-// `team.coordinator` to `team.orchestrator`, the same value under the section's canonical name —
+// `team.coordinator` to `team.orchestrator`, the same value under the section's canonical name,
+// and the unrecognised-screen fail-safe's quiet-unknown line, added to both sides below —
 // and used by this file alone. Every scenario runs both
 // implementations over the same fixtures, step for step, and demands equal PassResults and equal
 // pending state — for a team file without `watch.checks`, which is every fixture here.
@@ -115,6 +116,8 @@ function oldPass(
       once(`question:${name}`, `${name} asked a question: the operator's to act on`);
     } else if (agent.status === 'blocked') {
       once(`blocked:${name}`, `${name} is blocked, and its screen is not one the watch recognises`, 'owner');
+    } else if (quiet && screen.kind === 'unknown') {
+      once(`unknown:${name}`, `${name}: herdr reports the status "${agent.status}"`);
     } else if (!quiet && agent.status !== 'working') {
       once(`unknown:${name}`, `${name}: herdr reports the status "${agent.status}"`);
     }
@@ -429,6 +432,9 @@ describe('the modular core against the pass it replaced', () => {
     const stuck = live({ 'deepseek-acme': { status: 'idle', screen: permission } });
     const asked = live({ 'deepseek-acme-2': { status: 'blocked', screen: question } });
     const odd = live({ 'deepseek-acme': { status: 'flustered' } });
+    // The fail-safe's case: herdr says done, and the profile reads no composer — a stalled seat
+    // must be reported, not taken for a free one.
+    const stalled = live({ 'codex-acme': { status: 'done', screen: 'Some unknown output without composer\n' } });
     both('attention', team(), [
       { live: stuck, at: 0 },
       { live: stuck, at: MIN },
@@ -438,6 +444,9 @@ describe('the modular core against the pass it replaced', () => {
       { live: live({ 'codex-acme': { status: 'blocked', screen: '' } }), at: 5 * MIN },
       { live: odd, at: 6 * MIN },
       { live: live(), at: 7 * MIN },
+      { live: stalled, at: 8 * MIN },
+      { live: stalled, at: 9 * MIN },
+      { live: live(), at: 10 * MIN },
     ]);
   });
 
