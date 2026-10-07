@@ -46,6 +46,16 @@ A seat's
 own call is refused by the `--abandon` flag, which only the owner may use. A seat that may stop the
 team never stops the orchestrator's or the operator's seat — only the owner does.
 
+## Restarting the leads
+
+Cycling the orchestrator's or the operator's seat is the owner's. The owner's `team down` stops
+them as it stops any seat — a free lead is asked to exit and its workspace closed; `--wait` gives a
+working one its 120 seconds to come free, and `--abandon` closes one that cannot be asked at all —
+and the owner's [team up](up.md), from a terminal outside herdr, starts the team again. A seat's
+own call leaves those seats running, and the session with them (the skip line below says so).
+Nothing narrower exists for them: `down` has no flag naming one seat to stop, and `up` starts the
+whole team, so their cycle is the whole team's — the owner's `team down` then `team up`.
+
 ## The approved delegate
 
 A pane the team file's `delegates` section lists for `down` — a pane outside the team's session —

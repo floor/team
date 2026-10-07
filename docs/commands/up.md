@@ -128,7 +128,8 @@ machine lobby, is left as it is too — only a relaunch repairs either — and i
 `  already ready; left as it is; a relaunch records its process: team remove <seat> --keep, then
 team add <seat> (or team down, then team up, for the whole team)`, or the same words saying `a
 relaunch moves it into the lobby`. For a seat the file names as orchestrator or operator, the detail
-offers only `team down, then team up (to restart the whole team)`.
+offers only `team down, then team up (to restart the whole team)` — the cycle [team down](down.md)
+states, and the owner's to run.
 
 A command run in a folder that is not a git repository reads `.agents/team.yaml` in that folder,
 and nowhere above it. A link at `.agents` or at `team.yaml` is not followed. When `--file` names a
