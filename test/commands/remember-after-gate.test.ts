@@ -7,8 +7,9 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Caller } from '../../src/caller.ts';
-import { runDown, type DownSources } from '../../src/commands/down.ts';
+import { runDown, type DownLaunch, type DownSources } from '../../src/commands/down.ts';
 import { runWatch, type WatchSources } from '../../src/commands/watch.ts';
+import { seatLockPath } from '../../src/launch/seat-lock.ts';
 import { emptySession, readState, STATE_FILE, updateState } from '../../src/state.ts';
 import { testIo } from '../helpers.ts';
 
@@ -67,6 +68,21 @@ function downSources(now: () => Date, running: boolean): DownSources {
   };
 }
 
+function launch(now: () => Date): DownLaunch {
+  return {
+    typeText: () => true,
+    sendKey: () => true,
+    pressEnter: () => true,
+    agentPanes: () => [],
+    closeWorkspace: () => true,
+    stopSession: () => true,
+    deleteSession: () => true,
+    kill: () => true,
+    sleep: async () => {},
+    now,
+  };
+}
+
 function watchSources(now: () => Date): WatchSources {
   return {
     live: () => null,
@@ -117,6 +133,29 @@ describe('down remembers only after the caller gate', () => {
     expect(remembered?.file).toBe(EXAMPLE);
     expect(remembered?.read_at).toBe(ticks.at(1));
   });
+
+  test('a dry run leaves the state file untouched', async () => {
+    const before = seed({ 'deepseek-acme': 'w3:p1' });
+    const idle = testIo(root, { kind: 'owner' });
+    expect(await runDown(['--dry-run'], idle, downSources(() => new Date(T0), false))).toBe(0);
+    expect(idle.out).toContain('dry run: nothing was run');
+    expect(readFileSync(join(dir, STATE_FILE), 'utf8')).toBe(before);
+    const running = testIo(root, { kind: 'owner' });
+    expect(await runDown(['--dry-run'], running, downSources(() => new Date(T0), true))).toBe(0);
+    expect(readFileSync(join(dir, STATE_FILE), 'utf8')).toBe(before);
+  });
+
+  test('a held run lock leaves the state file untouched', async () => {
+    const before = seed({ 'deepseek-acme': 'w3:p1' });
+    mkdirSync(join(dir, 'seat-locks', SESSION), { recursive: true });
+    writeFileSync(seatLockPath(dir, SESSION, '.run'), `${process.pid} 0a1b2c3d\n`);
+    const now = () => new Date(T0);
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown([], io, { ...downSources(now, true), launch: launch(now) });
+    expect(code).toBe(1);
+    expect(io.err).toContain('another session-mutating run is holding');
+    expect(readFileSync(join(dir, STATE_FILE), 'utf8')).toBe(before);
+  });
 });
 
 describe('watch remembers only after the flag gate', () => {
@@ -146,5 +185,18 @@ describe('watch remembers only after the flag gate', () => {
     const remembered = readState(dir).last_valid;
     expect(remembered?.file).toBe(EXAMPLE);
     expect(remembered?.read_at).toBe(ticks.at(1));
+  });
+
+  test('a watch that is already running leaves the state file untouched', async () => {
+    updateState(dir, (state) => {
+      const session = (state.sessions[SESSION] ??= emptySession());
+      session.watch = { pid: 99, heartbeat: '2026-10-06T09:00:00.000Z' };
+    });
+    const before = readFileSync(join(dir, STATE_FILE), 'utf8');
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runWatch([], io, { ...watchSources(() => new Date(T0)), alive: (pid) => pid === 99 });
+    expect(code).toBe(1);
+    expect(io.err).toContain('a watch already runs');
+    expect(readFileSync(join(dir, STATE_FILE), 'utf8')).toBe(before);
   });
 });

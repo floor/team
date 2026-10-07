@@ -164,17 +164,16 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
     }
   }
 
-  // The load above wrote nothing. An allowed run remembers now, before the already-running
-  // check and the loop, so a watch that then stops still recorded the file, and one the flag
-  // gate refused recorded nothing. The loop's own read remembers again when the file changes.
-  if (first.path !== undefined) rememberCurrent(first.dir, first.path, sources.now());
-
+  // The load above wrote nothing, and a flag refusal returned above. A watch that is already
+  // running leaves the state file as it was. An allowed run remembers once that check has
+  // passed, before the loop. The loop's own read remembers again when the file changes.
   const other = readState(dir).sessions[session]?.watch;
   if (other && other.pid !== sources.pid && sources.alive(other.pid)) {
     io.stderr(`team watch: a watch already runs for the session "${session}" (pid ${other.pid})\n`);
     // exit: watch.already
     return 1;
   }
+  if (first.path !== undefined) rememberCurrent(first.dir, first.path, sources.now());
 
   // The log line is written for every report. `--no-notify` never removes it, and it never
   // removes a desktop notice addressed to the owner. It does silence every other notice.
