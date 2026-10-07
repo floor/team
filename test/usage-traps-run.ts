@@ -96,7 +96,6 @@ for (const trap of TRAPS) {
 const text = `format: 1
 project: acme
 session: acme-web
-coordinator: lead
 operator: lead
 trust:
   - ~/.config/team/lobby
@@ -111,9 +110,10 @@ budgets:
       sources: [check, status_line]
       check: acme-quota
 seats:
-  - role: coordinator
+  - role: orchestrator
     name: lead
     label: lead
+    leads: true
     cli: claude-code
     vendor: anthropic
     model: Claude Opus

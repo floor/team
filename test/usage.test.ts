@@ -62,12 +62,13 @@ let home: string;
 let file: string;
 
 /** The team file: trust lists the lobby and the project, the shape a real approved file has,
- *  so the loader's placed checks are satisfied and the file loads. */
+ *  so the loader's placed checks are satisfied and the file loads. The lead is spelled the
+ *  current way — `leads: true` on the seat, `role: orchestrator` — so the fixture loads with no
+ *  warning at all; a test pins that, so a later move of the tool's own words fails here. */
 function teamText(): string {
   return `format: 1
 project: acme
 session: acme-web
-coordinator: lead
 operator: lead
 trust:
   - ~/.config/team/lobby
@@ -85,9 +86,10 @@ budgets:
       kind: subscription
       reserve: 10%
 seats:
-  - role: coordinator
+  - role: orchestrator
     name: lead
     label: lead
+    leads: true
     cli: claude-code
     vendor: anthropic
     model: Claude Opus
@@ -187,6 +189,15 @@ function snapshot(dir: string): Record<string, string> {
 }
 
 describe('team usage', () => {
+  test('the fixture takes the current file spelling and loads with no warning at all', () => {
+    // The guard for the class a moved word breaks: if the tool's file language moves again —
+    // another key renamed, another field deprecated — this fixture would warn, and this fails
+    // here rather than on the check that runs the whole suite.
+    const checked = validateTeamFile(teamText(), { home, root });
+    expect(checked.ok).toBe(true);
+    expect(checked.ok ? checked.warnings : null).toEqual([]);
+  });
+
   test('the project block is the header, the rows, the watch line — and status rows it', async () => {
     withState();
     const mine = await usageAt(root);
