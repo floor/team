@@ -153,7 +153,11 @@ export function delegateGate(input: {
   // owner section: authority, money, the ceilings, identity, trust, the workspace's setup
   // commands, and any section the parser grows later, since the test is membership in the
   // ordinary list and never exclusion from a list of the known-bad. Seat differences are
-  // admitted here and held to the add/remove envelope by the steps below.
+  // admitted here; the ceiling is what bounds the roster, on both sides of this step: `limits`
+  // itself is refused above by name, the ceiling a launch runs under is fixed by the record
+  // (`up` reads it there, never from the file, and refuses a seat past it before it runs), and
+  // a file that declares no ceiling derives one from its seats — so that add moves the section
+  // and is refused here.
   if (command === 'approve') {
     const kept = compare(approvedFingerprints(standing.record), fingerprints(team)).filter(
       (difference) => difference.kind === 'section' && !ORDINARY_SECTIONS.includes(difference.name),
