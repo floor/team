@@ -20,10 +20,10 @@ With `--session`, the state of that session instead of `team.session`.
 
 Every value the two subcommands read from the file is the **approved copy's** while a verified
 approval is in force, whatever the file says now and whether or not the fingerprints match:
-`workspace` (mode, path, branch, base, setup and limit), `trust`, the caller rules (`coordinator`
+`workspace` (mode, path, branch, base, setup and limit), `trust`, the caller rules (`orchestrator`
 and `operator`), the session, the names a public project forbids, and the seats `--seat` may name.
 An unapproved edit — a path moved, a setup command added, a trust pattern widened or narrowed, the
-coordinator or the operator changed, a seat added, removed, renamed or redefined — is never used.
+orchestrator or the operator changed, a seat added, removed, renamed or redefined — is never used.
 A seat taken out of the file is still one until the owner approves that.
 
 `project` is read from the file as it is now, not from the approved copy. It is not an owner
@@ -68,13 +68,13 @@ the local base, with a note in the log, when it doesn't. Nothing is created when
 
 ## Who may run it
 
-The owner, the coordinator's seat, and the operator's seat. The seat is that name's, in a session
+The owner, the orchestrator's seat, and the operator's seat. The seat is that name's, in a session
 this project's state records — the file's session, or one the state records the caller's pane in —
 on the pane the state records for that name in that session: a seat of another session, or a pane
-merely renamed to the coordinator's or the operator's name, is refused — and so is a seat the state
+merely renamed to the orchestrator's or the operator's name, is refused — and so is a seat the state
 records no pane for, or records on another pane than this call is on; those two refusals name the
 seat and the repair. What that proves is placement, and no more: the state file is in the project,
-and a process of the same user that writes its own pane there under the coordinator's name, and
+and a process of the same user that writes its own pane there under the orchestrator's name, and
 renames its pane, passes. The check guards a mistaken agent, not a hostile process running as the
 same user.
 `--file` and `--session` are the owner's alone, from a terminal outside herdr: a non-owner aiming
@@ -103,7 +103,7 @@ same way.
 | `team worktree: line <n>: <message>` | 2 |
 | `team worktree: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | `team worktree: --session is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
-| `team worktree: only the owner, the coordinator or the operator runs it; this call is <caller>` | 1 |
+| `team worktree: only the owner, the orchestrator or the operator runs it; this call is <caller>` | 1 |
 | ``team worktree: no pane is recorded for seat <name> in this session: the owner stops that seat and runs `team up` `` | 1 |
 | ``team worktree: the state records pane <pane> for seat <name> in this session, not the pane this call is on: the owner stops the team and starts it again (`team down`, then `team up`) `` | 1 |
 | `team worktree: session can't be "default", herdr's own session` | 1 |
@@ -189,11 +189,11 @@ The project has a `main` for the branches to start from:
 Sketch the layout
 ```
 
-A seat that isn't the coordinator or the operator can't create one:
+A seat that isn't the orchestrator or the operator can't create one:
 
 ```console caller=claude-beacon
 $ team worktree new select-width --kind fix ; echo "exit $?"
-team worktree: only the owner, the coordinator or the operator runs it; this call is claude-beacon
+team worktree: only the owner, the orchestrator or the operator runs it; this call is claude-beacon
 exit 1
 ```
 

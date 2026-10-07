@@ -4,7 +4,7 @@ import { insideProject, insideTrust, normalize } from '../paths.ts';
 import { hasVersionToken } from '../signature.ts';
 import type { Check } from '../check.ts';
 import type { Mode, Seat } from '../types.ts';
-import type { Section } from './section.ts';
+import type { LeadMark, Section } from './section.ts';
 import { valueOf } from './section.ts';
 import type { Budgeted } from './budgets.ts';
 import { MODES } from './workspace.ts';
@@ -23,7 +23,10 @@ export const seats: Section = {
   validate(entry, ctx) {
     const trust = valueOf<string[]>(ctx, 'trust');
     const accounts = valueOf<Budgeted>(ctx, 'budgets').declared;
-    return readSeats(entry, ctx.check, trust, ctx.root.line, ctx.broken, accounts);
+    const marks: LeadMark[] = [];
+    const seats = readSeats(entry, ctx.check, trust, ctx.root.line, ctx.broken, accounts, marks);
+    ctx.leads = marks;
+    return seats;
   },
   schema: {
     type: 'array',
@@ -47,6 +50,7 @@ export const seats: Section = {
         mode: { enum: MODES },
         parked: { type: 'boolean' },
         stopped: { type: 'boolean' },
+        leads: { type: 'boolean', $comment: 'the seat that leads: exactly one seat carries it' },
         count: { type: 'integer', minimum: 1 },
       },
       required: ['role', 'name', 'cli', 'vendor', 'model', 'version', 'launch'],
@@ -60,9 +64,10 @@ export const seats: Section = {
 // that names an `account:` must name one of these, or it would silently spend nothing budgeted.
 function readSeats(
   entry: YamlEntry | undefined, check: Check, trust: string[], topLine: number, broken: Set<string>, accounts: ReadonlySet<string>,
+  marks: LeadMark[],
 ): DraftSeat[] {
   if (!entry) {
-    check.fail(topLine, 'seats is required: at least the coordinator\'s and the operator\'s seat');
+    check.fail(topLine, 'seats is required: at least the orchestrator\'s and the operator\'s seat');
     return [];
   }
   if (entry.value.kind !== 'seq' || !entry.value.items.length) {
@@ -73,7 +78,7 @@ function readSeats(
   for (const item of entry.value.items) {
     const fields = check.fields(item, 'a seat', [
       'role', 'name', 'cli', 'vendor', 'account', 'model_from', 'model', 'version', 'display', 'launch', 'cwd', 'label', 'mode',
-      'parked', 'stopped', 'count',
+      'parked', 'stopped', 'count', 'leads',
     ]);
     if (item.kind !== 'map') continue;
     const line = item.line;
@@ -109,6 +114,13 @@ function readSeats(
     const mode = check.oneOf(fields.get('mode'), `${at}: mode`, MODES);
     const parked = check.flag(fields.get('parked'), `${at}: parked`);
     const stopped = check.flag(fields.get('stopped'), `${at}: stopped`);
+    // Beside parked and stopped: an unquoted boolean, and `false` reads as absent. The mark is
+    // handed to the lead's section through the context, never onto a seat: `seatDigest` hashes
+    // every field outside its free set, so a `leads` field on a built seat would make a marked
+    // file differ from the keyed file of the same team.
+    const leadsField = fields.get('leads');
+    const leads = check.flag(leadsField, `${at}: leads`);
+    if (leads && name && leadsField) marks.push({ name, line: leadsField.value.line });
     const count = check.whole(fields.get('count'), `${at}: count`, 1) ?? 1;
     const label = check.text(fields.get('label'), `${at}: label`);
     // Left out, the herdr title is the model and version. A written label wins, so a file that

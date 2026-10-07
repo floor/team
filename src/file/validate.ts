@@ -34,7 +34,11 @@ export function validateTeamFile(text: string, options: { home?: string; fs?: Fs
   if (check.problems.length || !team) {
     return { ok: false, errors: check.problems.sort((a, b) => a.line - b.line) };
   }
-  return { ok: true, team, warnings: check.warnings };
+  // Warnings read in file order, as errors do: secrets are pushed before the sections run and
+  // the sections push in the order they run, so without this a warning late in the file can
+  // print before one written above it. Sorting is stable, so two warnings on one line keep
+  // the order they were pushed in.
+  return { ok: true, team, warnings: check.warnings.sort((a, b) => a.line - b.line) };
 }
 
 function readTeam(root: YamlNode, check: Check, home?: string, fs?: FsReader, rootDir?: string): TeamFile | null {
@@ -43,9 +47,9 @@ function readTeam(root: YamlNode, check: Check, home?: string, fs?: FsReader, ro
     return null;
   }
   // `watch.checks` names a line inside `watch`, not a top-level key, so it is no field of the file.
-  const top = check.fields(root, 'the file', SECTIONS.filter((section) => !section.name.includes('.')).map((section) => section.name));
+  const top = check.fields(root, 'the file', SECTIONS.filter((section) => !section.name.includes('.')).map((section) => section.key ?? section.name));
 
-  const ctx: Ctx = { check, root, top, broken: new Set(), values: new Map(), home, fs, rootDir };
+  const ctx: Ctx = { check, root, top, broken: new Set(), leads: [], values: new Map(), home, fs, rootDir };
 
   // One wave over the list at a time: a section runs once every section it reads (`after`) has
   // run, so the code moved into the modules reports in the order it reported when it lived here.
@@ -55,7 +59,7 @@ function readTeam(root: YamlNode, check: Check, home?: string, fs?: FsReader, ro
     for (const section of SECTIONS) {
       if (!pending.has(section.name)) continue;
       if (section.after.some((name) => pending.has(name))) continue;
-      ctx.values.set(section.name, section.validate(top.get(section.name), ctx));
+      ctx.values.set(section.name, section.validate(top.get(section.key ?? section.name), ctx));
       pending.delete(section.name);
       ran++;
     }
@@ -73,7 +77,7 @@ function readTeam(root: YamlNode, check: Check, home?: string, fs?: FsReader, ro
     project: valueOf<string>(ctx, 'project'),
     visibility: valueOf<TeamFile['visibility']>(ctx, 'visibility'),
     session: valueOf<string>(ctx, 'session'),
-    coordinator: valueOf<string>(ctx, 'coordinator'),
+    orchestrator: valueOf<string>(ctx, 'orchestrator'),
     operator: valueOf<string>(ctx, 'operator'),
     tools: valueOf<TeamFile['tools']>(ctx, 'tools'),
     identity: valueOf<TeamFile['identity']>(ctx, 'identity'),

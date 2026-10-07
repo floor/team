@@ -13,7 +13,7 @@ import type { TeamFile } from '../src/file/types.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import { emptySession, readState, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
-import { parseLoadavg, parseMeminfo, parseMemoryPressure, parseSwapUsage, readMachine } from '../src/watch/machine.ts';
+import { parseLoadavg, parseMeminfo, parseMemoryPressure, parseSwapUsage, readMachine, swapTotalProblem } from '../src/watch/machine.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, NUDGE_TEXT, pass } from '../src/watch/pass.ts';
 import { readScreen } from '../src/watch/screen.ts';
@@ -163,8 +163,8 @@ describe('the machine\'s figures', () => {
   });
   test('Linux meminfo, with and without swap', () => {
     const info = 'MemTotal:       16000000 kB\nMemAvailable:    4000000 kB\nSwapTotal:       2000000 kB\nSwapFree:         500000 kB\n';
-    expect(parseMeminfo(info)).toEqual({ memoryFree: 25, swapFree: 500000 * 1024, swapUsed: 1500000 * 1024 });
-    expect(parseMeminfo('MemTotal: 16000000 kB\nMemAvailable: 8000000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n')).toEqual({ memoryFree: 50, swapFree: null, swapUsed: null });
+    expect(parseMeminfo(info)).toEqual({ memoryFree: 25, swapTotal: 2000000 * 1024, swapFree: 500000 * 1024, swapUsed: 1500000 * 1024 });
+    expect(parseMeminfo('MemTotal: 16000000 kB\nMemAvailable: 8000000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n')).toEqual({ memoryFree: 50, swapTotal: null, swapFree: null, swapUsed: null });
   });
   test('Linux load average, from /proc/loadavg', () => {
     expect(parseLoadavg('0.52 0.58 0.59 1/1234 5678')).toBe(0.52);
@@ -177,6 +177,7 @@ describe('the machine\'s figures', () => {
     // A 16 GB machine halfway through its memory, 2 GB of swap with 1.5 GB of it used, load 0.52.
     const machine = readMachine(process.cwd(), 'linux', new URL('./fixtures/linux/proc', import.meta.url).pathname);
     expect(machine.memoryFree).toBe(50);
+    expect(machine.swapTotal).toBe(2 * 1024 ** 3);
     expect(machine.swapFree).toBe(512 * 1024 ** 2);
     expect(machine.swapUsed).toBe(1536 * 1024 ** 2);
     expect(machine.loadPerCore).toBeCloseTo(0.52 / cpus().length, 10);
@@ -188,9 +189,29 @@ describe('the machine\'s figures', () => {
     expect(machine.diskFree).toBeGreaterThan(0);
     for (const value of Object.values(machine)) expect(value === null || Number.isFinite(value)).toBe(true);
   });
+
+  test('the swap total the check can never meet', () => {
+    const limits: TeamFile['machine'] = {
+      loadStart: 3, loadMax: 6, memoryStart: 25, memoryMin: 15, diskMin: 10e9,
+      swapFreeMin: 2e9, swapGrowthMax: 1e9, swapGrowthWindow: 600,
+    };
+    const small: Machine = { loadPerCore: 0.4, memoryFree: 62, diskFree: 120e9, swapTotal: 1e9, swapFree: 0.5e9, swapUsed: 0.5e9 };
+    expect(swapTotalProblem(small, limits)).toBe(
+      'the machine check asks for 2.0 GB free swap, more than this machine has in total (1.0 GB): `team up` will refuse here; set `machine.swap_free_min` to a figure this machine can keep, then run `team approve`',
+    );
+    // The check can pass in principle — its floor sits under the machine's total — and the free
+    // figure is low right now: `up`'s refusal and the watch's finding, and nothing here.
+    expect(swapTotalProblem({ ...small, swapTotal: 16e9, swapFree: 0.5e9 }, limits)).toBeNull();
+    // Exactly the total the check asks for is meetable.
+    expect(swapTotalProblem({ ...small, swapTotal: 2e9 }, limits)).toBeNull();
+    // A figure that wasn't read is neither fine nor bad: a machine with no swap at all leaves
+    // both null, and `launchLimit`'s swap rule can't fire there either.
+    expect(swapTotalProblem({ ...small, swapTotal: null, swapFree: null }, limits)).toBeNull();
+    expect(swapTotalProblem({ ...small, swapFree: null }, limits)).toBeNull();
+  });
 });
 
-const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
+const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapTotal: 9e9, swapFree: 8e9, swapUsed: 1e9 };
 const MIN = 60_000;
 
 function agent(name: string | null, workspace: string, status: string, kind = 'claude'): HerdrAgent {
@@ -538,7 +559,7 @@ describe('a pass of the watch', () => {
   });
 
   test('the machine: load per core, memory, disk and free swap, each against its threshold', () => {
-    const tight: Machine = { loadPerCore: 6.5, memoryFree: 10, diskFree: 5e9, swapFree: 0.3e9, swapUsed: 23e9 };
+    const tight: Machine = { loadPerCore: 6.5, memoryFree: 10, diskFree: 5e9, swapTotal: 23.3e9, swapFree: 0.3e9, swapUsed: 23e9 };
     const reports = pass({ team: team(), watch: team().watch, state: emptySession(), live: live(), machine: tight, now: 0, memory: newMemory() }).reports;
     expect(reports.map((report) => report.text)).toEqual([
       'the load is 6.5 per core, above 6',
@@ -574,7 +595,7 @@ describe('a pass of the watch', () => {
   });
 
   test('a figure that can\'t be read is never reported', () => {
-    const blind: Machine = { loadPerCore: null, memoryFree: null, diskFree: null, swapFree: null, swapUsed: null };
+    const blind: Machine = { loadPerCore: null, memoryFree: null, diskFree: null, swapTotal: null, swapFree: null, swapUsed: null };
     expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: live(), machine: blind, now: 0, memory: newMemory() }).reports).toEqual([]);
   });
 });

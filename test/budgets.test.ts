@@ -25,6 +25,9 @@ seats:
     launch: claude --model claude-opus-5-5
 `;
 
+// The notice a file spelled with the legacy `coordinator:` key carries, at line 3 of `minimal`.
+const notice = { line: 3, message: '`coordinator:` is now `leads: true` on the lead\'s seat, and is still read' };
+
 function valid(text: string) {
   const result = validateTeamFile(text);
   if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.errors)}`);
@@ -34,19 +37,27 @@ function valid(text: string) {
 describe('budgets', () => {
   test('defaults when the section is absent', () => {
     const { team, warnings } = valid(minimal);
-    expect(warnings).toEqual([]);
+    expect(warnings).toEqual([notice]);
     expect(team.budgets).toEqual({ staleAfter: 1800, checkEvery: 600, marks: [50, 75, 90], accounts: {} });
   });
 
   test('watch.quota_marks is still read, and budgets.marks replaces it', () => {
     const legacy = valid(`${minimal}watch:\n  quota_marks: [40, 80]\n`);
     expect(legacy.warnings.map((warning) => warning.message)).toEqual([
+      notice.message,
       'watch.quota_marks is now budgets.marks, and is still read',
     ]);
     expect(legacy.team.budgets.marks).toEqual([40, 80]);
-    const both = valid(`${minimal}watch:\n  quota_marks: [40, 80]\nbudgets:\n  marks: [50, 90]\n`);
+    // Every warning in file order: the key's notice on line 3, then `budgets.marks` above
+    // `watch.quota_marks` — without the sort the sections' run order (watch runs before budgets,
+    // which reads it) printed the lower one first.
+    const both = valid(`${minimal}budgets:\n  marks: [50, 90]\nwatch:\n  quota_marks: [40, 80]\n`);
     expect(both.team.budgets.marks).toEqual([50, 90]);
-    expect(both.warnings.map((warning) => warning.message)).toContain('budgets.marks replaces watch.quota_marks');
+    expect(both.warnings.map((warning) => warning.message)).toEqual([
+      notice.message,
+      'budgets.marks replaces watch.quota_marks',
+      'watch.quota_marks is now budgets.marks, and is still read',
+    ]);
   });
 
   test('a subscription reserve and a spend floor', () => {

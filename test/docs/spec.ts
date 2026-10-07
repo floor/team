@@ -9,7 +9,7 @@
 //     claude-keeper: working   question | unsent | unknown
 //   caller: owner            owner | a seat's name | agent (run by a CLI outside herdr)
 //   now: 2026-10-04T09:00:00Z
-//   machine: calm            calm | tight
+//   machine: calm            calm | tight | small-swap
 //   watch: alive             alive | none | stale (a heartbeat older than two intervals)
 //   tools:                   per cli: fine | missing | old | logged-out | unread
 //     claude-code: fine
@@ -31,7 +31,7 @@ export type Spec = {
   screens: Record<string, ScreenKind>;
   caller: string;
   now: string;
-  machine: 'calm' | 'tight';
+  machine: 'calm' | 'tight' | 'small-swap';
   watch: 'alive' | 'none' | 'stale';
   tools: Record<string, ToolState>;
   state: Record<string, unknown>;
@@ -129,7 +129,7 @@ export function specOf(block: Block | undefined): Spec {
     screens: mapped(map.screens, SCREENS, 'screens'),
     caller: text(map.caller, DEFAULT_SPEC.caller, 'caller'),
     now: text(map.now, DEFAULT_SPEC.now, 'now'),
-    machine: oneOf(map.machine, ['calm', 'tight'] as const, DEFAULT_SPEC.machine, 'machine'),
+    machine: oneOf(map.machine, ['calm', 'tight', 'small-swap'] as const, DEFAULT_SPEC.machine, 'machine'),
     watch: oneOf(map.watch, ['alive', 'none', 'stale'] as const, DEFAULT_SPEC.watch, 'watch'),
     tools: mapped(map.tools, TOOLS, 'tools'),
     state: object(map.state, 'state'),

@@ -635,7 +635,7 @@ describe('team remove', () => {
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
-  test('only the owner removes the coordinator, and only the owner abandons', async () => {
+  test('only the owner removes the orchestrator, and only the owner abandons', async () => {
     recordLead();
     const made = world();
     made.agents.push({ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null });
@@ -697,7 +697,7 @@ describe('team remove', () => {
   test('a caller who may not change the team changes nothing', async () => {
     const io = testIo(dir, { kind: 'seat', name: 'worker', pane: 'w1:p1' });
     expect(await runRemove(['worker'], io, world().sources)).toBe(1);
-    expect(io.err).toContain('only the owner, the coordinator or the operator');
+    expect(io.err).toContain('only the owner, the orchestrator or the operator');
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 });
@@ -751,7 +751,7 @@ describe('team remove delegated', () => {
       delegateGate: () => { asked += 1; return passed; },
     });
     expect(code).toBe(1);
-    expect(io.err).toBe('team remove: only the owner, the coordinator or the operator runs it; this call is pilot\n');
+    expect(io.err).toBe('team remove: only the owner, the orchestrator or the operator runs it; this call is pilot\n');
     expect(asked).toBe(0);
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
@@ -826,7 +826,7 @@ describe('team remove delegated', () => {
     const io = testIo(dir, pilot);
     const code = await runRemove(['lead'], io, { ...made.sources, delegateGate: () => passed });
     expect(code).toBe(1);
-    expect(io.err).toBe('team remove: only the owner removes the coordinator\'s or the operator\'s seat; this call is pilot\n');
+    expect(io.err).toBe('team remove: only the owner removes the orchestrator\'s or the operator\'s seat; this call is pilot\n');
     expect(made.typed).toEqual([]);
     expect(made.closed).toEqual([]);
     expect(readFileSync(file, 'utf8')).toContain('name: lead');

@@ -15,7 +15,9 @@ test('status reads panes and calls no writing function', async () => {
   const err = await new Response(proc.stderr).text();
   expect(exit, err || out).toBe(0);
   const parsed = JSON.parse(out) as { code: number; err: string; out: string; calls: string[] };
-  expect(parsed.err).toBe('');
+  // The run's team file still spells the lead `coordinator:`, on line 4: the notice is the
+  // only thing on stderr, and nothing about it writes.
+  expect(parsed.err).toBe('team status: warning, line 4: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read\n');
   expect(parsed.code).toBe(1);
   expect(parsed.out).toContain('team acme, session "acme-web"');
   expect(parsed.out).toMatch(/lead\s+idle\s+Claude Opus 5\.5\s+%1/);

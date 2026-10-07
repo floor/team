@@ -892,7 +892,7 @@ seats:
           screens: { 'w0:p1': 'some terminal text' },
           workspaces: [{ id: 'w0', label: 'workspace 0' }],
         },
-        machine: { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 },
+        machine: { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapTotal: 9e9, swapFree: 8e9, swapUsed: 1e9 },
         now: 0,
         memory,
         approval: [],

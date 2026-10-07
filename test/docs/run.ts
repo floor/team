@@ -186,7 +186,8 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
     case 'down':
       return runDown(rest, io, world.downSources());
     case 'init':
-      return runInit(rest, io, fixture.home);
+      // No login is probed in a doc run: the skeleton's seat is claude-code's, deterministically.
+      return runInit(rest, io, fixture.home, undefined, { loggedIn: () => false });
     case 'remove':
       return runRemove(rest, io, world.removeSources());
     case 'release':
@@ -254,7 +255,7 @@ function blockWorld(page: Page, block: Block): void {
   }
   if (block.attrs.machine) {
     const kind = block.attrs.machine;
-    if (kind !== 'calm' && kind !== 'tight') throw new Error(`machine="${kind}": it is calm or tight`);
+    if (kind !== 'calm' && kind !== 'tight' && kind !== 'small-swap') throw new Error(`machine="${kind}": it is calm, tight or small-swap`);
     world.setMachine(kind);
   }
   const tools = block.attrs.tools;

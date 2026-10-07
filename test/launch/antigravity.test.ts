@@ -299,7 +299,7 @@ describe('Antigravity rules delivery', () => {
 // The rules a lane seat was given, as `up` renders them: the fixture below is this text folded
 // in agy's composer at 54 columns (see the fixtures README).
 const RULES_INPUT: RulesInput = {
-  coordinator: 'floor-30',
+  orchestrator: 'floor-30',
   rules: [
     'Work only on the brief in front of you, and skip nothing in it.',
     'Never push: your `ready` file is the hand-off.',
@@ -391,7 +391,7 @@ seats:
         workspaces: [{ id: 'w1', label: 'gemini' }],
         screens: { 'w1:p1': fixture('permission') },
       },
-      machine: { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 },
+      machine: { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapTotal: 9e9, swapFree: 8e9, swapUsed: 1e9 },
       now: 0,
       memory,
     });

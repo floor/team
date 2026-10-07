@@ -124,7 +124,7 @@ function live(screens: Record<string, string>): Live {
 }
 
 const CODEX = (left: number) => `• Working (2m 10s • esc to interrupt)\n\n  GPT-5.6-Terra medium · Context 98% left · weekly ${left}% left\n`;
-const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
+const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapTotal: 9e9, swapFree: 8e9, swapUsed: 1e9 };
 
 describe('an account on a seat (§ 3b)', () => {
   test('the file reads each seat\'s own account, and leaves it unwritten where there is none', () => {

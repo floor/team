@@ -121,9 +121,12 @@ seats:
     const io = testIo(root, { kind: 'owner' });
     const code = await runDoctor(['--file', '.agents/team.yaml'], io, sources);
     expect(code).toBe(0);
+    // The fixture still spells the lead `coordinator:`, on line 4: doctor prints the file's
+    // notice before the seat's own warning, and counts both.
+    expect(io.out).toContain('warn  the file, line 4: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read\n');
     expect(io.out).toContain('warn  acme-lead: its name repeats "acme" and its label repeats "web"; the session already carries it\n');
     expect(io.out).not.toContain('reviewer:');
-    expect(io.out).toContain('team doctor: nothing missing, 1 warning\n');
+    expect(io.out).toContain('team doctor: nothing missing, 2 warnings\n');
     rmSync(base, { recursive: true, force: true });
   });
 

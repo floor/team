@@ -188,7 +188,7 @@ function statusSources(home: string): StatusSources {
 function watchSources(home: string): WatchSources {
   return {
     live: () => ({ running: false, agents: [], workspaces: [], screens: {}, processes: {} }),
-    machine: () => ({ loadPerCore: 0, memoryFree: 100, diskFree: 1e12, swapFree: 8e9, swapUsed: 0 }),
+    machine: () => ({ loadPerCore: 0, memoryFree: 100, diskFree: 1e12, swapTotal: 16e9, swapFree: 8e9, swapUsed: 0 }),
     standing: () => ({ kind: 'none' }) as Standing,
     readChecks: () => [],
     screen: () => null,
@@ -332,7 +332,7 @@ describe('a folder with no git repository', () => {
     const seat = testIo(root, { kind: 'seat', name: 'other-seat', pane: 'w9:p1', session: 'elsewhere' });
     const refused = await runAdd(['claude-coordinator-acme'], seat, addSources(home));
     expect(refused).toBe(1);
-    expect(seat.err).toContain('only the owner, the coordinator or the operator');
+    expect(seat.err).toContain('only the owner, the orchestrator or the operator');
     expect(readdirSync(join(root, '.agents')).sort()).toEqual(['team.yaml']);
 
     const doctorIo = testIo(root, { kind: 'seat', name: 'other-seat', pane: 'w9:p1' });

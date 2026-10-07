@@ -119,7 +119,7 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
   const { team, root } = loaded;
   // One verified snapshot for the whole command, read once: every value the two subcommands read
   // from the file is the approved copy's, including when the fingerprints match. The caller's
-  // gate below is judged on those values too — a seat the file added to `coordinator` is not one
+  // gate below is judged on those values too — a seat the file added to `orchestrator` is not one
   // until the owner approves it. With nothing verified the file's own values are read, exactly
   // as before, so the refusals are still main's. `project` on the snapshot is the live file's.
   if (standing === null || inForce === null) {
@@ -151,7 +151,7 @@ export async function runWorktree(argv: string[], io: Io, sources: WorktreeSourc
     return 1;
   }
   if (verdict.kind === 'refused') {
-    io.stderr(`team worktree: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(shown)}\n`);
+    io.stderr(`team worktree: only the owner, the orchestrator or the operator runs it; this call is ${describeCaller(shown)}\n`);
     // exit: worktree.caller
     return 1;
   }

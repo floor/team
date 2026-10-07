@@ -3,10 +3,11 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { init, runInit, skeleton } from '../src/commands/init.ts';
+import { firstLoggedInCli, init, runInit, skeleton } from '../src/commands/init.ts';
 import { approvalDifferences, approvalOf } from '../src/approve/approval.ts';
 import { fingerprints } from '../src/approve/fingerprint.ts';
 import { version } from '../src/cli.ts';
+import type { Profile } from '../src/profiles/profile.ts';
 import { storePath, writeApproval } from '../src/store/store.ts';
 import { loadTeamFile } from '../src/file/load.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
@@ -34,12 +35,15 @@ afterEach(() => {
 
 const owner = { kind: 'owner' } as const;
 
+/** No CLI is signed in: the pick is claude-code, and no real login is probed inside a test. */
+const noLogin = { loggedIn: () => false };
+
 describe('team init', () => {
   test('writes a skeleton that validates, and says how it stays private', async () => {
     const io = testIo(project, owner);
-    expect(await init([], io)).toBe(0);
+    expect(await runInit([], io, undefined, undefined, noLogin)).toBe(0);
     const loaded = loadTeamFile(project);
-    expect(loaded).toMatchObject({ ok: true, team: { project: 'acme', coordinator: 'coordinator' } });
+    expect(loaded).toMatchObject({ ok: true, team: { project: 'acme', orchestrator: 'orchestrator' } });
     expect(io.out).toContain('private to this clone');
     expect(io.out).toContain('team approve');
     expect(readFileSync(join(project, '.agents', 'team.log'), 'utf8')).toMatch(/ init \[owner\] wrote a skeleton as \.agents\/team\.yaml/);
@@ -47,11 +51,73 @@ describe('team init', () => {
 
   test('writes # yaml-language-server: $schema line pointing at versioned schema as the first line', async () => {
     const io = testIo(project, owner);
-    expect(await init([], io)).toBe(0);
+    expect(await runInit([], io, undefined, undefined, noLogin)).toBe(0);
     const content = readFileSync(join(project, '.agents', 'team.yaml'), 'utf8');
     const firstLine = content.split('\n')[0];
     const expected = `# yaml-language-server: $schema=https://raw.githubusercontent.com/floor/team/v${version()}/schema/team.schema.json`;
     expect(firstLine).toBe(expected);
+  });
+
+  test('the written file is the new lead shape, loads, and warns nothing', async () => {
+    const io = testIo(project, owner);
+    expect(await runInit([], io, undefined, undefined, noLogin)).toBe(0);
+    const text = readFileSync(join(project, '.agents', 'team.yaml'), 'utf8');
+    // The written bytes, pinned: no key, the operator naming the lead seat, the seat block whole.
+    expect(text).not.toContain('coordinator');
+    expect(text).toContain('operator: orchestrator        # the seat the watch reports to');
+    expect(text).toContain('#   trust: owner              # owner | orchestrator');
+    expect(text).toContain(
+      [
+        'seats:',
+        '  - role: orchestrator',
+        '    name: orchestrator',
+        '    cli: claude-code          # the first shipped CLI this machine is signed in to: claude-code | codex | cursor | antigravity; any CLI in any role',
+        '    vendor: anthropic',
+        '    model: Claude Opus        # the model\'s name without its version',
+        '    version: "0"              # the release number alone, quoted',
+        '    launch: claude            # the command and its model options; no approval flags',
+        '    leads: true               # the seat that leads: dispatches work',
+      ].join('\n'),
+    );
+    const result = validateTeamFile(text);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.warnings).toEqual([]);
+      expect(result.team.orchestrator).toBe('orchestrator');
+      expect(result.team.seats).toHaveLength(1);
+    }
+  });
+
+  test('the skeleton seat is the first CLI this machine is signed in to, in a fixed order', () => {
+    // By `cli`: everything not named answers no; `unknown` answers "can't tell" (null).
+    const login = (yes: string[], unknown: string[] = []) => ({
+      loggedIn: (profile: Profile) => (yes.includes(profile.cli) ? true : unknown.includes(profile.cli) ? null : false),
+    });
+    // The fixed order: the earlier CLI wins whatever later ones answer.
+    expect(firstLoggedInCli(login(['claude-code', 'codex', 'cursor', 'antigravity']))).toBe('claude-code');
+    expect(firstLoggedInCli(login(['codex', 'cursor', 'antigravity']))).toBe('codex');
+    expect(firstLoggedInCli(login(['cursor', 'antigravity']))).toBe('cursor');
+    expect(firstLoggedInCli(login(['antigravity']))).toBe('antigravity');
+    // A check that can't tell is not a yes: it neither selects that CLI nor ends the walk.
+    expect(firstLoggedInCli(login(['cursor'], ['claude-code', 'codex']))).toBe('cursor');
+    expect(firstLoggedInCli(login(['antigravity'], ['claude-code', 'codex', 'cursor']))).toBe('antigravity');
+    // Nothing answers yes: claude-code.
+    expect(firstLoggedInCli(login([], ['claude-code', 'codex', 'cursor', 'antigravity']))).toBe('claude-code');
+    expect(firstLoggedInCli(login([]))).toBe('claude-code');
+  });
+
+  test('a machine signed in beyond claude-code writes that CLI\'s seat', () => {
+    const only = (cli: string) => ({ loggedIn: (profile: Profile) => profile.cli === cli });
+    const codex = skeleton('acme', null, version(), undefined, firstLoggedInCli(only('codex')));
+    expect(codex).toMatch(/^    cli: codex +# the first shipped CLI this machine is signed in to: claude-code \| codex \| cursor \| antigravity; any CLI in any role$/m);
+    expect(codex).toContain('    vendor: openai\n');
+    expect(codex).toMatch(/^    model: GPT Sol +# the model's name without its version$/m);
+    expect(codex).toMatch(/^    launch: codex +# the command and its model options; no approval flags$/m);
+    expect(validateTeamFile(codex).ok).toBe(true);
+    const antigravity = skeleton('acme', null, version(), undefined, firstLoggedInCli(only('antigravity')));
+    expect(antigravity).toContain('    vendor: google\n');
+    expect(antigravity).toMatch(/^    launch: agy +# the command and its model options; no approval flags$/m);
+    expect(validateTeamFile(antigravity).ok).toBe(true);
   });
 
   test('a team file with and without the schema line produces identical approval fingerprints and zero drift', () => {
@@ -85,13 +151,13 @@ describe('team init', () => {
   });
 
   test('suggests the current commit as identity.since, as a comment', async () => {
-    await init([], testIo(project, owner));
+    await runInit([], testIo(project, owner), undefined, undefined, noLogin);
     const head = git(project, 'rev-parse', 'HEAD').trim();
     expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).toContain(`#   since: ${head}`);
   });
 
   test('keeps the file and the runtime files out of git through info/exclude, never .gitignore', async () => {
-    await init([], testIo(project, owner));
+    await runInit([], testIo(project, owner), undefined, undefined, noLogin);
     writeFileSync(join(project, '.agents', 'team.state.json'), '{}');
     writeFileSync(join(project, '.agents', 'team.log.1'), '');
     writeFileSync(join(project, '.agents', 'team.lock'), '1');
@@ -101,7 +167,7 @@ describe('team init', () => {
   });
 
   test('a linked worktree shares the exclusion', async () => {
-    await init([], testIo(project, owner));
+    await runInit([], testIo(project, owner), undefined, undefined, noLogin);
     const worktree = join(base, 'wt');
     git(project, 'worktree', 'add', '-q', worktree, '-b', 'task');
     mkdirSync(join(worktree, '.agents'));
@@ -112,7 +178,7 @@ describe('team init', () => {
   test('run from a subfolder or a worktree, it writes in the main checkout', async () => {
     const worktree = join(base, 'wt');
     git(project, 'worktree', 'add', '-q', worktree, '-b', 'task');
-    expect(await init([], testIo(worktree, owner))).toBe(0);
+    expect(await runInit([], testIo(worktree, owner), undefined, undefined, noLogin)).toBe(0);
     expect(existsSync(join(project, '.agents', 'team.yaml'))).toBe(true);
     expect(existsSync(join(worktree, '.agents'))).toBe(false);
   });

@@ -9,6 +9,7 @@ export type Machine = {
   loadPerCore: number | null;
   memoryFree: number | null;   // percent
   diskFree: number | null;     // bytes, on the project's volume
+  swapTotal: number | null;    // bytes; null when the machine has no swap
   swapFree: number | null;     // bytes; null when the machine has no swap
   swapUsed: number | null;     // bytes
 };
@@ -56,7 +57,7 @@ function procFile(proc: string, name: string): string | null {
   }
 }
 
-export function parseMeminfo(text: string): { memoryFree: number | null; swapFree: number | null; swapUsed: number | null } {
+export function parseMeminfo(text: string): { memoryFree: number | null; swapTotal: number | null; swapFree: number | null; swapUsed: number | null } {
   const kb = (name: string) => {
     const match = new RegExp(`^${name}:\\s+([0-9]+) kB`, 'm').exec(text);
     return match ? Number(match[1]) * 1024 : null;
@@ -67,6 +68,7 @@ export function parseMeminfo(text: string): { memoryFree: number | null; swapFre
   const swapFree = kb('SwapFree');
   return {
     memoryFree: total && available !== null ? (available / total) * 100 : null,
+    swapTotal: swapTotal ? swapTotal : null,
     swapFree: swapTotal ? swapFree : null,
     swapUsed: swapTotal && swapFree !== null ? swapTotal - swapFree : null,
   };
@@ -75,7 +77,7 @@ export function parseMeminfo(text: string): { memoryFree: number | null; swapFre
 // This platform's figures: macOS's commands on darwin, Linux's /proc everywhere Linux runs.
 // `platform` and `proc` are parameters for the tests; the command passes neither.
 export function readMachine(root: string, platform: string = process.platform, proc = '/proc'): Machine {
-  const machine: Machine = { loadPerCore: null, memoryFree: null, diskFree: null, swapFree: null, swapUsed: null };
+  const machine: Machine = { loadPerCore: null, memoryFree: null, diskFree: null, swapTotal: null, swapFree: null, swapUsed: null };
   const cores = cpus().length;
   try {
     const volume = statfsSync(root);
@@ -87,6 +89,7 @@ export function readMachine(root: string, platform: string = process.platform, p
     if (pressure) machine.memoryFree = parseMemoryPressure(pressure);
     const swap = parseSwapUsage(command('sysctl', ['-n', 'vm.swapusage']) ?? '');
     if (swap && swap.total > 0) {
+      machine.swapTotal = swap.total;
       machine.swapFree = swap.free;
       machine.swapUsed = swap.used;
     }
@@ -152,4 +155,17 @@ export function launchLimit(
     }
   }
   return null;
+}
+
+/**
+ * The swap the machine check asks for, when this machine can never keep it: more free swap than
+ * it has in total. `launchLimit` refuses on `swapFree < swapFreeMin`, and within one reading free
+ * is never above total, so this is the case that refusal can never be outrun here. Null when
+ * either figure wasn't read, and when the check can pass in principle: a machine with no swap at
+ * all is not this case, and neither is one that merely lacks free swap right now.
+ */
+export function swapTotalProblem(machine: Machine, limits: TeamFile['machine']): string | null {
+  if (machine.swapTotal === null || machine.swapFree === null) return null;
+  if (limits.swapFreeMin <= machine.swapTotal) return null;
+  return `the machine check asks for ${gb(limits.swapFreeMin)} free swap, more than this machine has in total (${gb(machine.swapTotal)}): \`team up\` will refuse here; set \`machine.swap_free_min\` to a figure this machine can keep, then run \`team approve\``;
 }

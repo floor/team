@@ -1167,7 +1167,7 @@
       "code": 1,
       "command": "remove",
       "id": "remove.coordinator",
-      "meaning": "only the owner removes the coordinator's or the operator's seat",
+      "meaning": "only the owner removes the orchestrator's or the operator's seat",
       "trigger": "team remove lead"
     },
     {

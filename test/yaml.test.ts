@@ -33,6 +33,7 @@ const refused: [string, string, number, RegExp][] = [
   ['an empty file', 'an-empty-file', 1, /empty/],
   ['a duplicate key', 'a-duplicate-key', 3, /duplicate key "a"/],
   ['a duplicate key in a nested map', 'a-duplicate-key-in-a-nested-map', 3, /duplicate key/],
+  ['a duplicate key in a seat', 'a-duplicate-key-in-a-seat', 4, /duplicate key "leads"/],
   ['a duplicate key in a flow map', 'a-duplicate-key-in-a-flow-map', 1, /duplicate key/],
   ['a duplicate quoted key', 'a-duplicate-quoted-key', 2, /duplicate key/],
   ['a tab in the indentation', 'a-tab-in-the-indentation', 2, /tab/],

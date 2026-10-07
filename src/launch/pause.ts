@@ -20,9 +20,9 @@ import type { Key } from './terminal.ts';
 // is polled. A pane is never typed into, and the workspace of a seat this run did not create is
 // never closed.
 //
-// Under `dialogs.trust: coordinator` the prompt is also re-read on a tick: `team answer` may be
-// racing this run, so every timeout and every return takes the lock, reads the state and the
-// pane fresh, and follows what it finds — a seat that became ready, a recovery `answer` left
+// Under a `dialogs.trust` that names the lead the prompt is also re-read on a tick: `team answer`
+// may be racing this run, so every timeout and every return takes the lock, reads the state and
+// the pane fresh, and follows what it finds — a seat that became ready, a recovery `answer` left
 // behind (which is shown and offers the same keys), or the screen's own reading. No trust key is
 // ever sent from here.
 
@@ -104,7 +104,7 @@ export type PauseHost = {
   /** The seat's idle timeout, in seconds: how long an opened pane is polled. */
   idleTimeout: number;
   /** Whether the prompt is re-read on a tick and the state and pane refreshed each time
-   *  (a trust dialog under the coordinator policy). */
+   *  (a trust dialog under a policy that names the lead). */
   polled: boolean;
 };
 
@@ -481,7 +481,7 @@ async function skip(input: PauseInput, host: PauseHost, at: string): Promise<Out
   }
 }
 
-/** The tick under the coordinator policy: the state and the pane are read fresh, and whatever
+/** The tick under the lead-answers policy: the state and the pane are read fresh, and whatever
  *  they show decides — ready, recovery, the screen's own reading, or a prompt that asks again. */
 async function refresh(input: PauseInput, host: PauseHost, view: View): Promise<Outcome> {
   const lock = host.lock();
@@ -507,7 +507,7 @@ async function refresh(input: PauseInput, host: PauseHost, view: View): Promise<
   }
 }
 
-/** The seat was made ready under this run's feet, by the coordinator's `team answer`. */
+/** The seat was made ready under this run's feet, by the orchestrator's `team answer`. */
 function ready(seat: string): PauseResult {
   return { kind: 'ready', detail: `  ${seat} was answered while its prompt was open; it is ready\n` };
 }

@@ -379,13 +379,13 @@ describe('commands and flags', () => {
 
   test('the non-delegate text, the unlisted command, and one prohibited flag of each command', () => {
     expect(refused({ command: 'down', ancestors: terminal }).text).toBe(
-      'only the owner, the coordinator, the operator or the approved delegate stops the team; this call is owner',
+      'only the owner, the orchestrator, the operator or the approved delegate stops the team; this call is owner',
     );
     expect(refused({ command: 'add', ancestors: terminal }).text).toBe(
-      'only the owner, the coordinator, the operator or the approved delegate runs it; this call is owner',
+      'only the owner, the orchestrator, the operator or the approved delegate runs it; this call is owner',
     );
     expect(refused({ command: 'remove', ancestors: terminal }).text).toBe(
-      'only the owner, the coordinator, the operator or the approved delegate runs it; this call is owner',
+      'only the owner, the orchestrator, the operator or the approved delegate runs it; this call is owner',
     );
     for (const command of DELEGATE_COMMANDS) {
       const only = parsed(yaml.replace('commands: [up, down, add, remove]', 'commands: [add]'));

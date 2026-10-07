@@ -22,7 +22,7 @@ const PANE = 'main/w1:p1';
  *  unplaced caller, which is exactly the caller the gate is for. */
 const CALLER: Caller = { kind: 'unplaced', reason: 'it runs under herdr' };
 /** Today's refusal for that caller, byte for byte. */
-const ORDINARY = `only the owner, the coordinator or the operator stops the team; this call is unplaced (it runs under herdr)`;
+const ORDINARY = `only the owner, the orchestrator or the operator stops the team; this call is unplaced (it runs under herdr)`;
 const GATE_DOWN = 'the gate refuses this caller (fixture)';
 const GATE_COMMAND = "the approved delegate may not run 'down' (fixture)";
 /** The gate's own wording for a prohibited flag. It is the gate's to write; what these tests
@@ -383,7 +383,7 @@ describe('a refused gate', () => {
     const real = rig({ gate: refusing('down.delegate', GATE_DOWN) });
     expect(await real.run()).toBe(1);
     expect(real.io.err).toBe(`team down: ${GATE_DOWN}\n`);
-    expect(real.io.err).not.toContain('only the owner, the coordinator or the operator');
+    expect(real.io.err).not.toContain('only the owner, the orchestrator or the operator');
     expect(real.typed).toEqual([]);
 
     const dry = rig({ gate: refusing('down.delegate', GATE_DOWN) });

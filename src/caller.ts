@@ -107,7 +107,7 @@ export function mayLaunchSeats(caller: Caller): boolean {
  * What a seat is judged against: the session the approved team file names, and the pane the state
  * records for the seat, when it records one. The pane it was launched on is the seat's; a pane
  * merely renamed to the seat's name, even in the right session, is not it. A state that records no
- * pane (a team never brought up; a coordinator's seat `team` didn't launch) is refused: nothing in
+ * pane (a team never brought up; an orchestrator's seat `team` didn't launch) is refused: nothing in
  * the state tells that seat apart from a renamed shell, so the check fails closed. The refusal is
  * `noPaneRefusal` — the cause, and the repair that truly records a pane.
  */
@@ -183,7 +183,7 @@ export function noPaneRefusal(name: string): string {
  * the sequence that repairs every case. (Runs on a fake host through the real commands, round 4,
  * for the seat live on a new pane, the seat gone, and the recorded pane gone:) `team up` alone
  * bails on the record it can still read (`herdr no longer shows this seat on its recorded pane;
- * nothing closed`), and `team add` bails with the same line; `team remove` of the coordinator's
+ * nothing closed`), and `team add` bails with the same line; `team remove` of the orchestrator's
  * or the operator's name — the two this refusal can name — is refused by the file's own
  * validation (`names no declared seat` / `can't be a stopped seat`, exit 2); with the recorded
  * pane gone (unreadable) `team up` alone does launch the seat afresh. `team down` then `team up`
@@ -229,17 +229,17 @@ export function sessionOwnerRefusal(walked: Caller): string {
   return `--session is the owner's, from a terminal outside herdr; this call is ${describeCaller(walked)}`;
 }
 
-// The owner, or the coordinator's or the operator's seat: who may change a running team. The
+// The owner, or the orchestrator's or the operator's seat: who may change a running team. The
 // no-pane and another-pane verdicts name the seat, so a command's refusal can say which seat the
 // state lost, or which pane it holds that the caller is not on.
-export function mayChangeTeamVerdict(caller: Caller, team: Pick<TeamFile, 'coordinator' | 'operator'>, at?: SeatStanding): CallerVerdict {
+export function mayChangeTeamVerdict(caller: Caller, team: Pick<TeamFile, 'orchestrator' | 'operator'>, at?: SeatStanding): CallerVerdict {
   if (caller.kind === 'owner') return { kind: 'ok' };
-  const asCoordinator = callerVerdict(caller, team.coordinator, at);
-  return asCoordinator.kind === 'refused' ? callerVerdict(caller, team.operator, at) : asCoordinator;
+  const asOrchestrator = callerVerdict(caller, team.orchestrator, at);
+  return asOrchestrator.kind === 'refused' ? callerVerdict(caller, team.operator, at) : asOrchestrator;
 }
 
 // The same question, as a boolean, for callers that need no reason.
-export function mayChangeTeam(caller: Caller, team: Pick<TeamFile, 'coordinator' | 'operator'>, at?: SeatStanding): boolean {
+export function mayChangeTeam(caller: Caller, team: Pick<TeamFile, 'orchestrator' | 'operator'>, at?: SeatStanding): boolean {
   return mayChangeTeamVerdict(caller, team, at).kind === 'ok';
 }
 
@@ -265,7 +265,7 @@ export function judgeCallerOf(io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'ca
  * case this adds is a team the owner started under another session — `team up --session <name>`,
  * the file still naming its own — whose seats must stand in the commands that change the team.
  * The session then comes from the caller's own placement: the state session that records this
- * caller's pane for the coordinator's or the operator's seat. The flag never comes back to a
+ * caller's pane for the orchestrator's or the operator's seat. The flag never comes back to a
  * non-owner; only a placement the owner's own state records can move the judgement. A state
  * that holds no other session — every team that never overrode one — resolves to the file's
  * own session, unchanged. A seat placed in another session but not standing in it is judged
@@ -275,7 +275,7 @@ export function judgeCallerOf(io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'ca
 export function judgeCallerIn(
   io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>,
   dir: string,
-  team: Pick<TeamFile, 'session' | 'coordinator' | 'operator'>,
+  team: Pick<TeamFile, 'session' | 'orchestrator' | 'operator'>,
 ): { caller: Caller; shown: Caller; session: string } {
   const placedIn = (session: string): { caller: Caller; shown: Caller; session: string; verdict: CallerVerdict } => {
     const { caller, shown } = judgeCallerOf(io, session === 'default' ? undefined : session);

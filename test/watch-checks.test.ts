@@ -63,8 +63,8 @@ const idle = `● Done.\n\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
 const busy = `✶ Transfiguring… (9m 34s · ↓ 64.5k tokens)\n\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
 const permission = 'Bash command\n\n  chmod +x run.sh\n\nDo you want to proceed?\n❯ 1. Yes\n  2. No, and tell Claude what to do differently\n\nEsc to cancel · Tab to amend\n';
 
-const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
-const tight: Machine = { loadPerCore: 6.5, memoryFree: 10, diskFree: 5e9, swapFree: 0.3e9, swapUsed: 23e9 };
+const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapTotal: 9e9, swapFree: 8e9, swapUsed: 1e9 };
+const tight: Machine = { loadPerCore: 6.5, memoryFree: 10, diskFree: 5e9, swapTotal: 23.3e9, swapFree: 0.3e9, swapUsed: 23e9 };
 
 function agent(name: string | null, workspace: string, status: string, kind = 'claude'): HerdrAgent {
   return { name, agent: kind, pane: `${workspace}:p1`, workspace, status, cwd: null };

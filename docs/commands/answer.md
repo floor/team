@@ -16,7 +16,7 @@ On success it writes `trust-sent-recovery` into the seat's state and reads it ba
 
 ## Who may run it
 
-The owner, from outside herdr, or the coordinator from its own seat — the seat of that name in a session this project's state records, the file's session first and then a session the state records the caller's pane in (any session key the state holds is a session the check will try), on the pane the state records for it: a seat of another session, or a pane merely renamed to the coordinator's name, is refused — and so is a seat the state records no pane for, or records on another pane than this call is on; those two refusals name the seat and the repair. What that proves is placement, and no more: the state file is in the project, and a process of the same user that writes its own pane there under the coordinator's name, and renames its pane, passes. The check guards a mistaken agent, not a hostile process running as the same user. `--file` and `--session` are the owner's alone, from a terminal outside herdr: a non-owner aiming either is refused before the flagged file or session is read at all. With `dialogs.trust: owner` (the value when `dialogs` is omitted) nobody sends a key, the owner included.
+The owner, from outside herdr, or the orchestrator from its own seat — the seat of that name in a session this project's state records, the file's session first and then a session the state records the caller's pane in (any session key the state holds is a session the check will try), on the pane the state records for it: a seat of another session, or a pane merely renamed to the orchestrator's name, is refused — and so is a seat the state records no pane for, or records on another pane than this call is on; those two refusals name the seat and the repair. What that proves is placement, and no more: the state file is in the project, and a process of the same user that writes its own pane there under the orchestrator's name, and renames its pane, passes. The check guards a mistaken agent, not a hostile process running as the same user. `--file` and `--session` are the owner's alone, from a terminal outside herdr: a non-owner aiming either is refused before the flagged file or session is read at all. With `dialogs.trust: owner` (the value when `dialogs` is omitted) nobody sends a key, the owner included.
 
 ## Flags
 
@@ -56,7 +56,7 @@ Every refusal line is `<seat>: <reason>` except an unplaced caller's, which is i
 
 | Class | Reasons |
 | --- | --- |
-| caller | `only the owner, or the coordinator from its own seat, can answer`; the unplaced caller's reason; `--session is the owner's…`; `no pane is recorded for seat <name>…`; `the state records pane <pane> for seat <name>…`; `the file was never approved on this machine: run \`team approve\``; `approved before records were signed: run \`team approve\` once`; the approval verification's own reason; `the file is not the approved one (<section> changed; …)`; `the approved copy of the team file cannot be read` |
+| caller | `only the owner, or the orchestrator from its own seat, can answer`; the unplaced caller's reason; `--session is the owner's…`; `no pane is recorded for seat <name>…`; `the state records pane <pane> for seat <name>…`; `the file was never approved on this machine: run \`team approve\``; `approved before records were signed: run \`team approve\` once`; the approval verification's own reason; `the file is not the approved one (<section> changed; …)`; `the approved copy of the team file cannot be read` |
 | policy | `use team up and [o]` |
 | state | `another command holds it`; `it is not a live seat`; `the owner has the pane open`; `it is not waiting at a trust dialog`; `its recovery state could not be recorded`; the process refusal's own reason with `(it is still recorded as a recovery)` appended, when the rollback itself did not take |
 | version | `this version has no trust answer` |
@@ -91,7 +91,7 @@ Every refusal line is `<seat>: <reason>` except an unplaced caller's, which is i
 
 ## Log lines
 
-Every transition writes one line to `team.log`: `<ISO timestamp> answer [<who>] <seat>: <message>`. `<who>` is the class the caller check returned — `owner`, `coordinator`, `seat`, or `unplaced` — never the owner for a caller that is not the owner. No line holds pane text, a pane id, a folder, or an unplaced reason.
+Every transition writes one line to `team.log`: `<ISO timestamp> answer [<who>] <seat>: <message>`. `<who>` is the class the caller check returned — `owner`, `orchestrator`, `seat`, or `unplaced` — never the owner for a caller that is not the owner. No line holds pane text, a pane id, a folder, or an unplaced reason.
 
 | Message | When |
 | --- | --- |

@@ -13,7 +13,8 @@ that copy when the file breaks. It names the command that repairs each differenc
 
 Reads the team file (or the one `--file` names), this machine's approval store, the session's state
 (`.agents/team.state.json`), and herdr: the agents, their panes, their workspaces, and each pane's
-visible text, from which the running model is read. It writes nothing but the `last_valid` copy of
+visible text, from which the running model is read. It also reads the machine's own swap, for the
+one check that can never pass here. It writes nothing but the `last_valid` copy of
 the file it read — and a run that is not the owner's writes nothing at all.
 
 ## Who may run it
@@ -132,7 +133,7 @@ here.
 | `<seat>: the agent in <pane> is named "x"` | `herdr --session <s> agent rename <pane> <seat>` |
 | `<seat> runs <model> <version>; the file says <declared>` (`<declared>` is the seat's `display` spelling) | restart it (`team remove <seat> --keep`, then `team add <seat>`), or correct the file and `team approve` |
 | `<seat> is marked stopped in the file and is running` | `team remove <seat> --keep`, or take `stopped: true` off the seat |
-| `<seat>: waiting for owner (<classification>)` | `the owner runs team up` (it offers to open the pane, skip the seat or stop cleanly), or `team answer <seat> trust` when the classification is `trust` and the policy is `dialogs.trust: coordinator` |
+| `<seat>: waiting for owner (<classification>)` | `the owner runs team up` (it offers to open the pane, skip the seat or stop cleanly), or `team answer <seat> trust` when the classification is `trust` and the policy is `dialogs.trust: orchestrator` |
 | `<seat>: trust sent; recovery required` | `the owner runs team up` |
 | `<seat>: its launch stopped at "<stage>"` | `the owner runs team up (it resumes the launch)` |
 | `<seat>: its rules were not delivered` | `team remove <seat> --keep`, then `team add <seat>` |
@@ -279,13 +280,14 @@ state:
       confirmed: true
 ```
 
-Only the implementer is up, so the coordinator's seat is a difference with its repair. The state
+Only the implementer is up, so the orchestrator's seat is a difference with its repair. The state
 also holds the watch's last readings for the `openai` account the file names: a check's `session`
 window, a `daily` one from the status line last seen 40 minutes ago, and a `weekly` one the check
 never reported — that one too comes from the status line, so its row marks it a fallback:
 
 ```console
 $ team status ; echo "exit $?"
+team status: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 team beacon, session "beacon"
   claude-keeper  missing  Claude Opus 5.5  -
   claude-beacon  working  Claude Opus 5.5  w1:p1
@@ -304,6 +306,7 @@ exit 1
 
 ```console
 $ team status --json ; echo "exit $?"
+team status: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 {
   "format": 1,
   "project": "beacon",
@@ -391,6 +394,7 @@ Now nothing disagrees:
 
 ```console
 $ team status ; echo "exit $?"
+team status: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 team beacon, session "beacon"
   claude-keeper  idle     Claude Opus 5.5  w2:p1
   claude-beacon  working  Claude Opus 5.5  w1:p1
@@ -402,3 +406,30 @@ note: approval #1 (2026-10-04), key fe21ef6293de
 0 difference(s)
 exit 0
 ```
+
+The machine's own swap is read for one case only: the check in force — the 2GB default, or the
+file's own `swap_free_min` — asks for more free swap than this machine has in total, so `up`
+refuses on it here every time. The same fact `doctor` warns about is one note, above the approval
+note, with both figures and the repair; `--json` carries it in `notes` in the same place:
+
+```console machine="small-swap"
+$ team status ; echo "exit $?"
+team status: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
+team beacon, session "beacon"
+  claude-keeper  idle     Claude Opus 5.5  w2:p1
+  claude-beacon  working  Claude Opus 5.5  w1:p1
+budgets:
+  openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh
+  openai  daily  left 70%  used 30%  resets unknown  claude-beacon  last seen 40m ago  status line (fallback)  stale
+  openai  weekly  left 5%  used 95%  resets in 44m  claude-beacon  changed 2m ago  status line (fallback)  fresh, inside reserve 20%
+note: the machine check asks for 2.0 GB free swap, more than this machine has in total (1.0 GB): `team up` will refuse here; set `machine.swap_free_min` to a figure this machine can keep, then run `team approve`
+note: approval #1 (2026-10-04), key fe21ef6293de
+0 difference(s)
+exit 0
+```
+
+A check that merely fails right now — the machine has the swap in total, and not enough of it
+free at this moment — prints no note here: `up`'s refusal names it when the owner runs it, and
+the watch reports what it reads. The total is read on macOS from `sysctl -n vm.swapusage`, and on
+Linux from `/proc/meminfo`'s `SwapTotal`; a machine with no swap at all is not this case, and
+nothing is said when the total can't be read.

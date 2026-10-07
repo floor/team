@@ -325,9 +325,9 @@ function seatPlan(
 // What only a relaunch repairs, for a ready seat this `up` leaves as it is: a process team it
 // never recorded (a launch from before identities were), or a start outside the machine lobby
 // (an old release's start). The skip line says what does repair it; both repairs relaunch the
-// seat — one seat at a time, or the whole team (for a coordinator or operator, only the whole team).
+// seat — one seat at a time, or the whole team (for an orchestrator or operator, only the whole team).
 function restartNote(
-  team: Pick<TeamFile, 'coordinator' | 'operator'>,
+  team: Pick<TeamFile, 'orchestrator' | 'operator'>,
   name: string,
   recorded: SeatState,
   home: string,

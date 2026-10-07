@@ -133,7 +133,7 @@ describe('the check commands run from the budgets in force', () => {
 });
 
 const idle = `● Done.\n\n${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
-const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
+const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapTotal: 9e9, swapFree: 8e9, swapUsed: 1e9 };
 
 function agent(name: string, workspace: string, status: string, kind: string): HerdrAgent {
   return { name, agent: kind, pane: `${workspace}:p1`, workspace, status, cwd: null };

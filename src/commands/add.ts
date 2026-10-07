@@ -247,7 +247,7 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 1;
   }
   if (mayChange.kind === 'refused' && delegatePane === null) {
-    out.stderr(`team add: only the owner, the coordinator or the operator runs it; this call is ${plainLine(describeCaller(shown))}\n`);
+    out.stderr(`team add: only the owner, the orchestrator or the operator runs it; this call is ${plainLine(describeCaller(shown))}\n`);
     // exit: add.caller
     return 1;
   }

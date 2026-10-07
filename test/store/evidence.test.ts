@@ -8,11 +8,11 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpath
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { approvalCase, approvalOf, approvedFingerprints, budgetsInForce, budgetsInForceOf, recordSeatDigest, verifiedOf, watchInForce, watchInForceOf } from '../../src/approve/approval.ts';
+import { approvalCase, approvalDifferences, approvalOf, approvedFingerprints, budgetsInForce, budgetsInForceOf, recordSeatDigest, verifiedOf, watchInForce, watchInForceOf } from '../../src/approve/approval.ts';
 import { fingerprints } from '../../src/approve/fingerprint.ts';
 import { overridesInForceOf } from '../../src/profiles/overrides.ts';
 import { runChecksOf } from '../../src/budgets/run.ts';
-import { canonicalPayload, installKey, keyFingerprint, keyOf } from '../../src/store/keys.ts';
+import { bumpGeneration, canonicalPayload, installKey, keyFingerprint, keyOf, signPayload, type StoredKey } from '../../src/store/keys.ts';
 import { approvalStanding, LEGACY_LINE, payloadOf, type Standing } from '../../src/store/store.ts';
 import { approvedCopy, readApproval, storePath, writeApproval } from '../../src/store/store.ts';
 import { defaultBudgets, defaultWatch, validateTeamFile } from '../../src/file/validate.ts';
@@ -132,6 +132,35 @@ describe('a signed record', () => {
     expect(state.generation).toBe(1);
     expect(state.signedAt).toBe('2026-10-03T14:02:00.000Z');
     expect(approvedCopy(realpathSync(root), home)).toBe(FILE);
+  });
+
+  test('a record signed by hand over a marked file verifies, with no difference', () => {
+    // The suite's committed key signs the record here — written the shape `writeApproval`
+    // stores, outside `writeApproval`. The file spells its lead with the mark, no key, and
+    // the approval's sections map carries the lead's `orchestrator` bucket: the reader that
+    // takes its lead from a field must land on the fingerprints the record signs.
+    const fixture = JSON.parse(readFileSync(new URL('../fixtures/key.json', import.meta.url), 'utf8')) as StoredKey;
+    expect(installKey(home, fixture)).toBe('installed');
+    const marked = FILE.replace('coordinator: lead\n', '').replace(
+      '    launch: claude --model claude-opus-5-5\n',
+      '    launch: claude --model claude-opus-5-5\n    leads: true\n',
+    );
+    const loaded = team(marked);
+    const at = new Date('2026-10-03T14:02:00Z');
+    const approval = approvalOf(loaded.team, loaded.root, at);
+    expect(Object.hasOwn(approval.fingerprints.sections, 'orchestrator')).toBe(true);
+    const generation = bumpGeneration(approval.root, home, at);
+    const store = storePath(loaded.team.project, loaded.root, home);
+    mkdirSync(store, { recursive: true });
+    writeFileSync(
+      join(store, 'approval.json'),
+      `${JSON.stringify({ ...approval, file: marked, generation, signature: signPayload(payloadOf(approval, marked, generation), keyOf(home)) }, null, 2)}\n`,
+    );
+    const state = approvalStanding(realpathSync(root), home);
+    expect(state.kind).toBe('verified');
+    if (state.kind !== 'verified') return;
+    expect(state.generation).toBe(generation);
+    expect(approvalDifferences(loaded.team, loaded.root, home)).toEqual([]);
   });
 
   test('the key and the generation live outside the store, in their own folder', () => {
