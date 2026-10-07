@@ -190,7 +190,10 @@ code is the same as without `--json`, and the file's warnings still go to stderr
 | `team status: herdr doesn't answer; is it installed and running?` | 2 |
 
 A team file that loads with warnings prints them on stderr as
-`team status: warning, line <n>: <message>` and goes on.
+`team status: warning, line <n>: <message>` and goes on. One warning reads the disk at load
+time, not the file's history: the credential scan exempts an absolute path only while it is a
+real directory, so a `trust` path whose directory is later removed starts warning on an
+unchanged file. That is a true advisory about this machine, not drift.
 
 ## Exit codes
 

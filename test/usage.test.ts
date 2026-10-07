@@ -278,16 +278,13 @@ describe('team usage', () => {
   test('the fixture takes the current file spelling, so no deprecation warning fires on it', () => {
     // The guard for the class a moved word breaks: if the tool's file language moves again —
     // another key renamed, another field deprecated — this fixture would warn, and this fails
-    // here rather than on the check that runs the whole suite. One warning class is not about the
-    // spelling: the trust entry is this fixture's own resolved path, and the loader warns on a
-    // long random-looking value wherever it finds one — a path reads the same as a slug there
-    // (`secrets.ts`) — so whether it fires depends on the temporary name this run drew (a run of
-    // this branch failed here on exactly that, before the filter). Filtering that one class keeps
-    // the guard about the spelling, which is deterministic.
+    // here rather than on the check that runs the whole suite. The fixture's trust entry is its
+    // own resolved path; a path no longer reads as a random value (`secrets.ts`), so the whole
+    // list is asserted: nothing here warns, whatever temporary name a run draws.
     const checked = validateTeamFile(teamText(), { home, root });
     expect(checked.ok).toBe(true);
     const warnings = checked.ok ? checked.warnings : [];
-    expect(warnings.filter((warning) => !warning.message.includes('a long random-looking value'))).toEqual([]);
+    expect(warnings).toEqual([]);
   });
 
   test('the machine report is the header, the lines and the notes — and status rows its own rows', async () => {
