@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import { approvalCase, budgetsInForceOf, notInForce, teamInForceOf, watchInForceOf } from '../approve/approval.ts';
 import { describe } from '../approve/fingerprint.ts';
 import { checkOf, countedFor, recall, recallSpend, screenOf, type ReadingSource, type Seen, type SpendReading } from '../budgets/readings.ts';
-import { budgetTable, reserveOf, sourcesOf, WINDOWS, type BudgetRow, type BudgetState } from '../budgets/table.ts';
+import { budgetTable, budgetLine, reserveOf, sourcesOf, span, whenWord, WINDOWS, type BudgetRow, type BudgetState } from '../budgets/table.ts';
+import { money } from '../budgets/gate.ts';
 import { walkCaller } from '../caller.ts';
 import { TEAM_FILE } from '../file/load.ts';
 import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
@@ -586,7 +587,10 @@ export function machineUsage(home: string, now: number, view: UsageView): Machin
     seen.add(key);
     const usage = projectUsage(root, { home, now, restricted });
     if (!existsSync(root)) {
-      usage.problems.push({ kind: 'moved', text: `the project folder ${root} is not there anymore` });
+      // The path is this machine's own derivation, so a caller who is not the owner reads the
+      // sentence without it — its own project's included (§ 2.3's paths rule); the owner reads
+      // the path, as every owner's line does.
+      usage.problems.push({ kind: 'moved', text: restricted ? 'the project folder is not there anymore' : `the project folder ${root} is not there anymore` });
     }
     entries.push({ kind: 'team', root, usage });
   }
@@ -741,4 +745,431 @@ function isFirst(one: TeamEntry, best: TeamEntry, mineKey: string | null): boole
   const mine = (team: TeamEntry) => mineKey !== null && realKey(team.root) === mineKey;
   if (mine(one) !== mine(best)) return mine(one);
   return byName(one, best) < 0;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The report (design § 2.3, revision 3): one filter over the machine's facts, a closed
+// allow-list DTO. `reportOf` names every field the design names and nothing else, so a field
+// added later to `ProjectUsage`, `TeamEntry` or `MachineUsage` cannot reach a renderer until it
+// is added to these types; the text and `--json` both render that one object and can never
+// disagree. The full view is the same object with the names allowed: `root` on every team entry,
+// `team` on every provenance, every team's rows, every lab, and the notes named per team.
+
+/** One machine line in the report: the newest counted reading's figure, provenance and state.
+ *  Every field is the design's; how a line is spelled is the renderer's business. */
+export type ReportMachine = {
+  window: WindowName | null;
+  left: number | null;
+  used: number | null;
+  resetsIn: string | null;
+  /** ISO, null when nothing counted for the line: the line reads `unknown` then. */
+  changedAt: string | null;
+  age: string | null;
+  source: ReadingSource | null;
+  fallback: boolean;
+  state: BudgetState;
+  inside: boolean;
+  reserve: number | null;
+  /** True when the newest reading is another team's: the restricted view names no team for it. */
+  other: boolean;
+  /** The clause the line carries when the newest team's watch is not recording (§ 1.4). */
+  watch?: 'not-recording' | 'not-known';
+  /** The newest team's name: the full view only. */
+  team?: string;
+  /** The newest reading's seat: the caller's own data, so the restricted view carries it for its
+   *  own rows and omits it for another team's; the full view carries every seat. */
+  seat?: string | null;
+};
+
+export type ReportSpendMachine = {
+  amount: number | null;
+  currency: string | null;
+  /** ISO, null when no team has a spend reading: the line reads `unknown` then. */
+  at: string | null;
+  age: string | null;
+  source: 'check' | null;
+  state: BudgetState;
+  other: boolean;
+  team?: string;
+};
+
+export type ReportTeamRow = { team: string; root?: string; row: BudgetRow };
+
+export type ReportSpendRow = {
+  team: string;
+  root?: string;
+  reading: { amount: number; currency: string; at: string; age: string; source: 'check'; state: BudgetState };
+};
+
+/** One machine line's entry. One entry per line, so the text and the array walk side by side. */
+export type ReportAccount =
+  | { account: string; kind: 'subscription'; machine: ReportMachine; teams: ReportTeamRow[] }
+  | { account: string; kind: 'spend'; machine: ReportSpendMachine; teams: ReportSpendRow[] };
+
+export type ReportLab = {
+  lab: string;
+  accounts: ReportAccount[];
+  /** Other teams' accounts this lab holds that the caller's own file does not name (restricted
+   *  only): counted beside the lab, never named and never given a figure. */
+  others?: number;
+};
+
+export type ReportWhy = { scope: string; account: string; why: string };
+export type ReportNote = { scope: string; why: string; count?: number };
+
+/** The one report both renderers print (design § 2.3, restricted shape). */
+export type UsageReport = {
+  format: 1;
+  at: string;
+  view: 'full' | 'restricted';
+  mine: string | null;
+  counts: { teams: number; labs: number; accounts: number };
+  labs: ReportLab[];
+  unknown: ReportWhy[];
+  notes: ReportNote[];
+};
+
+/** The tool's own words for the three whys nothing counts (`doctor.ts:154`, `:192`, `gate.ts:90`). */
+const WHY_WORDS: Record<UnknownWhy, string> = {
+  'no-pattern': 'no pattern can read this account',
+  'check-unapproved': 'its check is unapproved; that account reads unknown',
+  'first-sight': 'first sight only, not yet counted',
+};
+
+/**
+ * The fixed words an anonymized machine problem takes (§ 2.3's note bullet): `why` is the
+ * fragment `--json` carries, `sentence(n)` the line the text prints about n such teams. Every
+ * fragment is the tool's own, never a read's message, so nothing another team's read produced
+ * can cross.
+ */
+const ANON: Array<{ why: string; sentence: (count: number) => string }> = [
+  {
+    why: 'its file could not be read',
+    sentence: (n) => (n === 1 ? '1 team has no figures (its file could not be read)' : `${n} teams have no figures (their files could not be read)`),
+  },
+  {
+    why: 'its file was never approved on this machine',
+    sentence: (n) => (n === 1 ? '1 team has no figures (its file was never approved on this machine)' : `${n} teams have no figures (their files were never approved on this machine)`),
+  },
+  {
+    why: 'its file was approved before records were signed',
+    sentence: (n) => (n === 1 ? '1 team has no figures (its file was approved before records were signed)' : `${n} teams have no figures (their files were approved before records were signed)`),
+  },
+  {
+    why: 'its approval on this machine does not verify',
+    sentence: (n) => (n === 1 ? '1 team has no figures (its approval on this machine does not verify)' : `${n} teams have no figures (their approvals on this machine do not verify)`),
+  },
+  {
+    why: 'its file differs from the approved one',
+    sentence: (n) => (n === 1 ? '1 team has no figures (its file differs from the approved one)' : `${n} teams have no figures (their files differ from the approved one)`),
+  },
+  {
+    why: 'its file declares no account, so nothing is counted',
+    sentence: (n) => (n === 1 ? '1 team has no figures (its file declares no account, so nothing is counted)' : `${n} teams have no figures (their files declare no account, so nothing is counted)`),
+  },
+  {
+    why: 'its state cannot be read',
+    sentence: (n) => (n === 1 ? "1 team's state cannot be read" : `${n} teams' states cannot be read`),
+  },
+  {
+    why: 'its state cannot be read (not valid JSON; move it aside and run the command again)',
+    sentence: (n) => (n === 1 ? "1 team's state cannot be read (not valid JSON; move it aside and run the command again)" : `${n} teams' states cannot be read (not valid JSON; move it aside and run the command again)`),
+  },
+  {
+    why: 'its state cannot be read (not a team state of format 1; move it aside and run the command again)',
+    sentence: (n) => (n === 1 ? "1 team's state cannot be read (not a team state of format 1; move it aside and run the command again)" : `${n} teams' states cannot be read (not a team state of format 1; move it aside and run the command again)`),
+  },
+  {
+    why: 'its project folder is not there anymore',
+    sentence: (n) => (n === 1 ? "1 team's project folder is not there anymore" : `${n} teams' project folders are not there anymore`),
+  },
+  {
+    why: 'a store on this machine cannot be read',
+    sentence: (n) => (n === 1 ? 'a store on this machine cannot be read: the owner reads the reason' : `${n} stores on this machine cannot be read: the owner reads the reason`),
+  },
+];
+
+/** The anonymized words for one problem: the fragment `--json` carries and the text's sentence. */
+function anonOf(problem: TeamProblem): { why: string; sentence: (count: number) => string } {
+  const why = problem.kind === 'state'
+    ? problem.tail === 'json'
+      ? 'its state cannot be read (not valid JSON; move it aside and run the command again)'
+      : problem.tail === 'format'
+        ? 'its state cannot be read (not a team state of format 1; move it aside and run the command again)'
+        : 'its state cannot be read'
+    : problem.kind === 'no-figures'
+      ? 'its file could not be read'
+      : problem.kind === 'moved'
+        ? 'its project folder is not there anymore'
+        : {
+            none: 'its file was never approved on this machine',
+            legacy: 'its file was approved before records were signed',
+            refused: 'its approval on this machine does not verify',
+            differs: 'its file differs from the approved one',
+            'nothing-counted': 'its file declares no account, so nothing is counted',
+          }[problem.reason];
+  return ANON.find((one) => one.why === why) ?? { why, sentence: (n) => `${n === 1 ? '1 team' : `${n} teams`} cannot be read (${why})` };
+}
+
+/**
+ * The one filter: the machine's facts in, exactly the report's fields out. A team the caller does
+ * not own contributes counts, fixed sentences and figures of accounts the caller's own file
+ * names — never a name, a root, a seat, a path or a message a read produced. When the caller
+ * stands outside any project (`view.mine` null, `mineNotes` the position's own notes) every lab,
+ * account and row belonging to another team is out, and the counts and fixed sentences stand in.
+ */
+export function reportOf(machine: MachineUsage, view: UsageView, now: number, mineNotes: readonly string[]): UsageReport {
+  const mineEntry = view.mine === null ? null : machine.teams.find((team) => realKey(team.root) === realKey(view.mine as string)) ?? null;
+  const mineName = mineEntry?.usage.project ?? null;
+  const nameOf = (team: TeamEntry) => team.usage.project ?? team.root;
+  /** The name a member's own material prints under: its name, or `mine` when it has none. */
+  const scopeOf = (team: TeamEntry) => (team === mineEntry ? mineName ?? 'mine' : view.full ? nameOf(team) : 'another');
+  // The accounts the caller's own file names: the only accounts the restricted view may name.
+  const mineAccounts = new Set((mineEntry?.usage.accounts ?? []).map((declared) => declared.account));
+  const visible = (account: string) => view.full || mineAccounts.has(account);
+
+  const labs: ReportLab[] = [];
+  for (const lab of machine.labs) {
+    if (!view.full && (mineEntry === null || !lab.carried.includes(mineEntry))) continue;
+    const accounts: ReportAccount[] = [];
+    let others = 0;
+    for (const account of lab.accounts) {
+      if (!visible(account.account)) {
+        others += 1;
+        continue;
+      }
+      if (account.kind === 'spend') accounts.push(spendEntryOf(account, view, mineEntry, now));
+      else for (const line of account.lines) accounts.push(subscriptionEntryOf(account.account, line, view, mineEntry, now));
+    }
+    accounts.sort(byLine);
+    labs.push({ lab: lab.lab, accounts, ...(others > 0 ? { others } : {}) });
+  }
+
+  // Every why-line, the caller's own first, then by the words and the account: the order holds
+  // in both views, so hiding a name cannot reshuffle the lines around it.
+  const mineWhys = (mineEntry?.usage.whys ?? []).map((one) => ({ team: mineEntry as TeamEntry, ...one }));
+  const otherWhys = machine.teams
+    .filter((team) => team !== mineEntry)
+    .flatMap((team) => team.usage.whys.map((one) => ({ team, ...one })))
+    .filter((one) => visible(one.account));
+  const byWord = (a: { account: string; why: UnknownWhy }, b: { account: string; why: UnknownWhy }): number =>
+    a.why === b.why ? a.account.localeCompare(b.account) : a.why < b.why ? -1 : 1;
+  const unknown: ReportWhy[] = [...mineWhys.sort(byWord), ...otherWhys.sort(byWord)].map((one) => ({
+    scope: scopeOf(one.team),
+    account: one.account,
+    why: WHY_WORDS[one.why],
+  }));
+
+  const notes: ReportNote[] = [];
+  for (const text of mineNotes) notes.push({ scope: mineName ?? 'mine', why: text });
+  const teamOrder = [...machine.teams].sort(byName);
+  if (mineEntry !== null) {
+    for (const problem of mineEntry.usage.problems) notes.push({ scope: mineName ?? 'mine', why: problem.text });
+    for (const note of mineEntry.usage.notes) notes.push({ scope: mineName ?? 'mine', why: note });
+  }
+  if (view.full) {
+    for (const team of teamOrder) {
+      if (team === mineEntry) continue;
+      for (const problem of team.usage.problems) notes.push({ scope: nameOf(team), why: problem.text });
+    }
+  } else {
+    const groups = new Map<string, number>();
+    for (const team of teamOrder) {
+      if (team === mineEntry) continue;
+      for (const problem of team.usage.problems) {
+        const { why } = anonOf(problem);
+        groups.set(why, (groups.get(why) ?? 0) + 1);
+      }
+    }
+    for (const [why, count] of [...groups.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+      notes.push({ scope: 'another', why, ...(count > 1 ? { count } : {}) });
+    }
+  }
+  // A store problem's message is the read's own and carries the store's path: the owner reads it
+  // as it stands; every other caller reads the fixed sentence with the count (§ 2.3's note rule).
+  if (view.full) for (const message of machine.stores) notes.push({ scope: 'store', why: message });
+  else if (machine.stores.length > 0) {
+    notes.push({ scope: 'store', why: 'a store on this machine cannot be read', ...(machine.stores.length > 1 ? { count: machine.stores.length } : {}) });
+  }
+
+  return {
+    format: 1,
+    at: new Date(now).toISOString(),
+    view: view.full ? 'full' : 'restricted',
+    mine: mineName,
+    counts: machine.counts,
+    labs,
+    unknown,
+    notes,
+  };
+}
+
+/** The report's line order: subscription accounts by name first, then spend accounts by name, the
+ *  windows in the table's own order inside an account (`table.ts:26`), spend last (§ 2.3). */
+function byLine(a: ReportAccount, b: ReportAccount): number {
+  if (a.kind !== b.kind) return a.kind === 'subscription' ? -1 : 1;
+  if (a.account !== b.account) return a.account < b.account ? -1 : 1;
+  const rank = (account: ReportAccount) => (account.kind !== 'subscription' || account.machine.window === null ? WINDOWS.length : WINDOWS.indexOf(account.machine.window));
+  return rank(a) - rank(b);
+}
+
+function subscriptionEntryOf(
+  account: string,
+  line: MachineLine,
+  view: UsageView,
+  mineEntry: TeamEntry | null,
+  now: number,
+): ReportAccount {
+  const newest = line.newest;
+  const other = newest !== null && newest.team !== mineEntry;
+  const machine: ReportMachine = {
+    window: line.window,
+    left: newest?.row.left ?? null,
+    used: newest?.row.used ?? null,
+    resetsIn: newest?.row.resetsIn ?? null,
+    changedAt: newest === null ? null : new Date(newest.changedAt).toISOString(),
+    age: newest?.row.age ?? null,
+    source: newest?.row.source ?? null,
+    fallback: newest?.row.fallback ?? false,
+    state: newest?.row.state ?? 'unknown',
+    inside: newest?.row.inside ?? false,
+    reserve: newest?.row.reserve ?? null,
+    other,
+    ...(newest !== null && newest.team.usage.watch !== 'recording' ? { watch: newest.team.usage.watch } : {}),
+    ...(view.full && newest !== null ? { team: newest.team.usage.project ?? newest.team.root } : {}),
+    ...(newest !== null && (view.full || !other) ? { seat: newest.row.seat } : {}),
+  };
+  const rows = view.full ? line.rows : line.rows.filter((one) => one.team === mineEntry);
+  const teams: ReportTeamRow[] = rows
+    .map((one) => ({ team: view.full ? one.team.usage.project ?? one.team.root : one.team.usage.project ?? '', ...(view.full ? { root: one.team.root } : {}), row: one.row }))
+    .sort((a, b) => (a.team < b.team ? -1 : 1));
+  return { account, kind: 'subscription', machine, teams };
+}
+
+function spendEntryOf(account: MachineAccount & { kind: 'spend' }, view: UsageView, mineEntry: TeamEntry | null, now: number): ReportAccount {
+  const newest = account.spend.newest;
+  const other = newest !== null && newest.team !== mineEntry;
+  const staleAfterMs = (newest?.team ?? mineEntry)?.usage.staleAfter ?? 0;
+  const machine: ReportSpendMachine = {
+    amount: newest?.reading.amount ?? null,
+    currency: newest?.reading.currency ?? null,
+    at: newest === null ? null : new Date(newest.reading.at).toISOString(),
+    age: newest === null ? null : span(now - newest.reading.at),
+    source: newest === null ? null : 'check',
+    state: newest === null ? 'unknown' : now - newest.reading.at < staleAfterMs * 1000 ? 'fresh' : 'stale',
+    other,
+    ...(view.full && newest !== null ? { team: newest.team.usage.project ?? newest.team.root } : {}),
+  };
+  const rows = view.full ? account.spend.rows : account.spend.rows.filter((one) => one.team === mineEntry);
+  const teams: ReportSpendRow[] = rows
+    .map((one) => ({
+      team: view.full ? one.team.usage.project ?? one.team.root : one.team.usage.project ?? '',
+      ...(view.full ? { root: one.team.root } : {}),
+      reading: {
+        amount: one.reading.amount,
+        currency: one.reading.currency,
+        at: new Date(one.reading.at).toISOString(),
+        age: span(now - one.reading.at),
+        source: 'check' as const,
+        state: now - one.reading.at < one.team.usage.staleAfter * 1000 ? ('fresh' as const) : ('stale' as const),
+      },
+    }))
+    .sort((a, b) => (a.team < b.team ? -1 : 1));
+  return { account: account.account, kind: 'spend', machine, teams };
+}
+
+/**
+ * The text both views print (§ 2.3): the header's counts, then each lab's lines — an account's
+ * machine line, its allowed rows, its why-lines — then the notes. The full view differs only in
+ * what the report carries, never here: one renderer, one shape.
+ */
+export function reportText(report: UsageReport): string {
+  const lines = [`usage on this machine, ${report.counts.teams} teams, ${report.counts.labs} labs, ${report.counts.accounts} accounts`, ''];
+  for (const lab of report.labs) {
+    let at = 0;
+    while (at < lab.accounts.length) {
+      const first = lab.accounts[at];
+      if (first === undefined) break;
+      let end = at;
+      while (end < lab.accounts.length && lab.accounts[end]?.account === first.account) end += 1;
+      for (const entry of lab.accounts.slice(at, end)) {
+        if (entry.kind === 'spend') {
+          lines.push(spendText(entry, report));
+          for (const row of entry.teams) lines.push(spendRowText(row));
+        } else {
+          lines.push(subscriptionText(entry, report));
+          for (const row of entry.teams) lines.push(teamRowText(row));
+        }
+      }
+      for (const why of report.unknown.filter((one) => one.account === first.account)) {
+        lines.push(`  (${why.scope === 'another' ? 'another team' : why.scope}: ${why.why})`);
+      }
+      at = end;
+    }
+    if (lab.accounts.length === 0 && lab.others === undefined) {
+      lines.push(`${lab.lab}  not known (no team declares an account for it yet)`);
+    } else if (lab.others !== undefined) {
+      lines.push(`${lab.lab}: ${lab.others} other account${lab.others === 1 ? '' : 's'}`);
+    }
+  }
+  for (const note of report.notes) lines.push(`note: ${noteText(note)}`);
+  return `${lines.join('\n')}\n`;
+}
+
+function subscriptionText(entry: ReportAccount & { kind: 'subscription' }, report: UsageReport): string {
+  const m = entry.machine;
+  if (m.state === 'unknown' || m.left === null || m.used === null) {
+    return [entry.account, m.window, 'unknown'].filter((part) => part).join('  ');
+  }
+  const reset = m.resetsIn === null ? 'resets unknown' : `resets in ${m.resetsIn}`;
+  const from = m.source === 'status_line' ? 'status line' : m.source === 'check' ? 'check' : 'unknown source';
+  const source = m.fallback ? `${from} (fallback)` : from;
+  const state = m.inside && m.reserve !== null ? `${m.state}, inside reserve ${m.reserve}%` : m.state;
+  return `${entry.account}  ${m.window}  left ${m.left}%  used ${m.used}%  ${reset}  ${provenanceOf(m, report)}  ${source}  ${state}${watchOf(m, report)}`;
+}
+
+function spendText(entry: ReportAccount & { kind: 'spend' }, report: UsageReport): string {
+  const m = entry.machine;
+  if (m.state === 'unknown' || m.amount === null || m.currency === null || m.age === null) {
+    return [entry.account, 'spend', 'unknown'].filter((part) => part).join('  ');
+  }
+  const read = m.other
+    ? m.team === undefined
+      ? `read by another team, ${m.age} ago`
+      : `read by ${m.team}, ${m.age} ago`
+    : `read ${m.age} ago`;
+  return `${entry.account}  spend  ${money(m.amount)} ${m.currency} left  ${read}  check  ${m.state}`;
+}
+
+/** How a machine line says where its figure came from: the caller's own reading prints as its own
+ *  seat and moment (`scout  changed 4m ago`, `status`'s own shape); another team's is that team's
+ *  name when the full view allows it and `another team` when it does not. */
+function provenanceOf(m: ReportMachine, report: UsageReport): string {
+  if (!m.other) return `${m.seat ?? '-'}  ${whenWord(m)} ${m.age} ago`;
+  return m.team === undefined ? `read by another team, ${m.age} ago` : `read by ${m.team}, ${m.age} ago`;
+}
+
+/** The clause a machine line carries when the team behind its figure has no watch recording. */
+function watchOf(m: ReportMachine, report: UsageReport): string {
+  if (m.watch === undefined) return '';
+  if (m.watch === 'not-known') return '  (not known whether a watch is recording)';
+  const who = m.team ?? (m.other || report.mine === null ? 'it' : report.mine);
+  return `  (no watch is recording for ${who})`;
+}
+
+function teamRowText(row: ReportTeamRow): string {
+  return `  ${row.team}  ${budgetLine(row.row).slice(row.row.account.length)}`;
+}
+
+function spendRowText(row: ReportSpendRow): string {
+  return `  ${row.team}  spend  ${money(row.reading.amount)} ${row.reading.currency} left  read ${row.reading.age} ago  check  ${row.reading.state}`;
+}
+
+/** One `note:` line's words: an anonymized machine problem is its fixed sentence for the count,
+ *  the caller's own and store notes are printed as they stand, and any other note is named. */
+function noteText(note: ReportNote): string {
+  const anon = ANON.find((one) => one.why === note.why);
+  if (anon !== undefined) return anon.sentence(note.count ?? 1);
+  if (note.scope === 'mine' || note.scope === 'store') return note.why;
+  return `${note.scope}: ${note.why}`;
 }
