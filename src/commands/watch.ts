@@ -11,7 +11,7 @@ import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
 import type { Live } from '../status/compare.ts';
-import { readMachine } from '../watch/machine.ts';
+import { readMachine, readingsText } from '../watch/machine.ts';
 import type { Machine } from '../watch/machine.ts';
 import { notify } from '../watch/notify.ts';
 import { newMemory, ownUnsent, pass } from '../watch/pass.ts';
@@ -122,6 +122,11 @@ export default watch;
 
 export const USAGE = 'Usage: team watch [--session <name>] [--file <path>] [--no-nudge] [--no-notify]\n';
 
+// How often the watch writes the machine's readings to the log, in seconds. Not the pass rate:
+// the default pass is 120s and the machine moves on an hourly scale, so a line per pass would be
+// 720 a day saying what one every ten minutes says.
+const READINGS_EVERY = 600;
+
 export async function runWatch(argv: string[], io: Io, sources: WatchSources): Promise<number> {
   const args = readArgs(argv, ['session', 'file'], ['no-nudge', 'no-notify']);
   if (args.error || args.rest.length) {
@@ -192,6 +197,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
   const told = new Set<string>();
   let outcomes: CheckOutcome[] = [];
   let checksAt: number | null = null;
+  let readingsAt: number | null = null;
   let notice: string | undefined;
   let silent = false;
   let announced = false;
@@ -292,8 +298,17 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
           foreground[agent.pane] = sources.foreground(agent.pane, session);
           processes[agent.pane] = sources.processes?.(agent.pane, session) ?? null;
         }
+        // The machine's own readings, written to the log at the slow rate: the same figures the
+        // pass below reads, whether or not anything is wrong, so the night the incident was is
+        // on record in the tool's own files. `unread` where a figure couldn't be read; the gate
+        // that acts on these figures is elsewhere and unchanged.
+        const machine = sources.machine(root);
+        if (readingsAt === null || now - readingsAt >= READINGS_EVERY * 1000) {
+          readingsAt = now;
+          logLine(dir, 'watch', 'watch', `readings: ${readingsText(machine)}`, sources.now());
+        }
         const run = (stored: readonly Seen[]) => pass({
-          team, state, live, machine: sources.machine(root), now, memory,
+          team, state, live, machine, now, memory,
           approval: approval.differences, approvalReason: approval.reason, watch: inForce, outcomes, budgets: budget,
           quotaFor: (cli) => quotaWith(cli, overrides.profiles),
           readScreen: (cli, pane) => classifyWith(cli, pane, overrides.profiles),

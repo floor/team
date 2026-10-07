@@ -866,6 +866,27 @@ describe('team watch', () => {
     expect(log).toContain('watch [watch] nudged the operator');
   });
 
+  test('the readings are written once per ten minutes, and not more, whether or not anything is wrong', async () => {
+    const io = testIo(dir, { kind: 'owner' });
+    // Eleven passes at the default 120s: twenty minutes of watch, so one line at once, then at
+    // ten minutes and at twenty — three lines, not eleven.
+    expect(await runWatch(['--file', file], io, sources(11))).toBe(0);
+    const lines = readFileSync(join(dir, '.agents', 'team.log'), 'utf8')
+      .split('\n').filter((line) => line.includes('watch [watch] readings: '));
+    expect(lines).toEqual([
+      '2026-10-03T14:00:00.000Z watch [watch] readings: load 1.0/core, memory 50%, disk 200.0 GB free, swap used 1.0 GB of 9.0 GB (free 8.0 GB)',
+      '2026-10-03T14:10:00.000Z watch [watch] readings: load 1.0/core, memory 50%, disk 200.0 GB free, swap used 1.0 GB of 9.0 GB (free 8.0 GB)',
+      '2026-10-03T14:20:00.000Z watch [watch] readings: load 1.0/core, memory 50%, disk 200.0 GB free, swap used 1.0 GB of 9.0 GB (free 8.0 GB)',
+    ]);
+  });
+
+  test('a figure the machine couldn\'t read is written unread, never guessed', async () => {
+    const io = testIo(dir, { kind: 'owner' });
+    expect(await runWatch(['--file', file], io, sources(1, { machine: () => ({ ...fine, memoryFree: null, swapFree: null }) }))).toBe(0);
+    const log = readFileSync(join(dir, '.agents', 'team.log'), 'utf8');
+    expect(log).toContain('watch [watch] readings: load 1.0/core, memory unread, disk 200.0 GB free, swap unread');
+  });
+
   test('the values in force are what runs: the pass, the announced line and the wait read them', async () => {
     const io = testIo(dir, { kind: 'owner' });
     const waits: number[] = [];
