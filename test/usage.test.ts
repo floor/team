@@ -12,6 +12,7 @@ import type { Caller } from '../src/caller.ts';
 import { runStatus } from '../src/commands/status.ts';
 import { NO_PROJECT, runUsage, USAGE } from '../src/commands/usage.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
+import { NOTHING_COUNTED } from '../src/information/usage.ts';
 import { emptySession, updateState } from '../src/state.ts';
 import { approvalStanding, storePath, writeApproval } from '../src/store/store.ts';
 import { gitEnv, testIo } from './helpers.ts';
@@ -35,6 +36,16 @@ const BLOCK = [
   '  openai  weekly  left 5%  used 95%  resets in 44m  lead  changed 2m ago  status line (fallback)  fresh, inside reserve 20%',
   'no watch is recording for acme',
 ].join('\n');
+
+// The rows the same readings print when no budget in force names an account: the check figure has
+// no source left to count from, the 40-minute-old status-line figure is no room last seen, and
+// the fresh one prints without the reserve and fallback marks no budget gives it. Each is a
+// reading the state still holds, not an account any budget in force names.
+const LEFTOVER_ROWS = [
+  '  openai  session  unknown',
+  '  openai  daily  unknown',
+  '  openai  weekly  left 5%  used 95%  resets in 44m  lead  changed 2m ago  status line  fresh',
+];
 
 let base: string;
 let root: string;
@@ -76,6 +87,28 @@ seats:
 `;
 }
 
+/** The same file with its whole `budgets:` section taken out: it names no account. */
+function withoutBudgets(): string {
+  const text = teamText();
+  return text.slice(0, text.indexOf('budgets:')) + text.slice(text.indexOf('seats:'));
+}
+
+/** The store's record for one text: what `team approve` leaves, signed by the key the store
+ *  writes on first use. The budgets section takes effect only once the owner has approved it. */
+function approve(text: string): void {
+  const checked = validateTeamFile(text, { home, root });
+  if (!checked.ok) throw new Error(`the fixture does not validate: ${JSON.stringify(checked.errors)}`);
+  writeApproval(storePath(checked.team.project, root, home), { approval: approvalOf(checked.team, root, NOW), file: text }, [], home);
+}
+
+/** A state with the session recorded and no readings at all: with no readings to hold, the
+ *  table prints no rows, and the watch line reads `no watch is recording for <project>`. */
+function withoutReadings(): void {
+  updateState(join(root, '.agents'), (state) => {
+    state.sessions['acme-web'] = { ...emptySession() } as never;
+  });
+}
+
 /** The readings the state holds, and the watch record, as the watch would have written them. */
 function withState(watch: { pid: number; heartbeat: string } | null = null): void {
   updateState(join(root, '.agents'), (state) => {
@@ -97,9 +130,7 @@ beforeEach(() => {
   writeFileSync(file, text);
   // An approved file in a real store, signed by the key the store writes on first use: the
   // budgets section takes effect only once the owner has approved it.
-  const checked = validateTeamFile(text, { home, root });
-  if (!checked.ok) throw new Error(`the fixture does not validate: ${JSON.stringify(checked.errors)}`);
-  writeApproval(storePath(checked.team.project, root, home), { approval: approvalOf(checked.team, root, NOW), file: text }, [], home);
+  approve(text);
 });
 
 afterEach(() => {
@@ -197,6 +228,61 @@ describe('team usage', () => {
     expect(out).toContain('  anthropic  unknown\n');
     expect(out).toContain('  openai  unknown\n');
     expect(out).toContain('not known whether a watch is recording\n');
+  });
+
+  test('a file that names no account prints why nothing is counted, under leftover rows too', async () => {
+    // The file the owner approved names no account, so the budgets in force name none either.
+    const text = withoutBudgets();
+    writeFileSync(file, text);
+    approve(text);
+
+    // No readings at all: the block is the header, the sentence and the watch line.
+    withoutReadings();
+    const bare = await usageAt(root);
+    expect(bare.code).toBe(0);
+    expect(bare.out).toBe(['team acme', NOTHING_COUNTED, 'no watch is recording for acme'].join('\n') + '\n');
+    const doc = JSON.parse((await usageAt(root, undefined, '--json')).out) as Record<string, unknown>;
+    expect(doc.rows).toEqual([]);
+    expect(doc.notes).toEqual([NOTHING_COUNTED]);
+
+    // A state that still holds readings prints their rows — they are readings, not accounts a
+    // budget in force names — and the sentence still prints, under them; the JSON says the same.
+    withState();
+    const leftover = await usageAt(root);
+    expect(leftover.code).toBe(0);
+    expect(leftover.out).toBe(['team acme', ...LEFTOVER_ROWS, NOTHING_COUNTED, 'no watch is recording for acme'].join('\n') + '\n');
+    const held = JSON.parse((await usageAt(root, undefined, '--json')).out) as Record<string, unknown>;
+    expect((held.rows as unknown[]).length).toBe(LEFTOVER_ROWS.length);
+    expect(held.notes).toEqual([NOTHING_COUNTED]);
+  });
+
+  test('a file whose accounts are not the approved ones prints the why-line, rows or no rows', async () => {
+    // Never approved: the store holds no record for this project, so the file's accounts — which
+    // it declares — are not in force, and the tool's own why-line for that standing prints. The
+    // rows the state still holds print above it: the line keys on the standing, not on them.
+    rmSync(storePath('acme', root, home), { recursive: true, force: true });
+    const neverApproved = 'the file was never approved on this machine: run `team approve`';
+    withoutReadings();
+    const bare = await usageAt(root);
+    expect(bare.code).toBe(0);
+    expect(bare.out).toBe(['team acme', neverApproved, 'no watch is recording for acme'].join('\n') + '\n');
+    withState();
+    const none = await usageAt(root);
+    expect(none.out).toBe(['team acme', ...LEFTOVER_ROWS, neverApproved, 'no watch is recording for acme'].join('\n') + '\n');
+    expect(JSON.parse((await usageAt(root, undefined, '--json')).out).notes).toEqual([neverApproved]);
+
+    // Verified, but the copy the owner approved names no account: the budgets in force are the
+    // approved copy's, so the file's own accounts count nothing and `status`'s line for a file
+    // that differs from the approved one prints — again under the readings' own rows.
+    const text = withoutBudgets();
+    writeFileSync(file, text);
+    approve(text);
+    writeFileSync(file, teamText());
+    const differs = 'the file differs from the approved one: `budgets` changed';
+    const moved = await usageAt(root);
+    expect(moved.code).toBe(0);
+    expect(moved.out).toBe(['team acme', ...LEFTOVER_ROWS, differs, 'no watch is recording for acme'].join('\n') + '\n');
+    expect(JSON.parse((await usageAt(root, undefined, '--json')).out).notes).toEqual([differs]);
   });
 
   test('outside any project it is a note and exit 0, in text and in JSON', async () => {

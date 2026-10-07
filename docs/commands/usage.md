@@ -55,10 +55,47 @@ says so, `status line (fallback)` marks a row whose figure did not come from the
 account names, and an account the file names with no reading is `unknown`. A row that carries no
 figure is never dressed up as one.
 
-Two lines can follow the rows. A watch that is recording is not announced; a project with no watch
+When nothing the file declares is counted, one line follows the rows before the watch's — the
+next section has both faces. A watch that is recording is not announced; a project with no watch
 record prints `no watch is recording for <project>`, and a state whose watch record cannot be read
 leaves it `not known whether a watch is recording`. Anything else the state could not be read for
 is a `note:` line with the file and the reason, as in `status`. The exit code is 0 either way.
+
+### When nothing the file declares is counted
+
+A file that names no account gives the block nothing to count, and it says so in one line under
+the rows — `--json` puts the same sentence first in `notes`. When there is nothing at all to
+print, the block is the header, this line, and the watch's:
+
+    team beacon
+    not known: this team's file declares no account, so nothing is counted
+
+The line prints even when rows do. A row is there for every reading the state still holds, and a
+reading the budgets in force do not name is not an account any budget counts — so the sentence is
+where a reader learns why figures can show with no budget behind them:
+
+    team beacon
+      openai  session  unknown
+      openai  daily  unknown
+      openai  weekly  left 5%  used 95%  resets in 44m  claude-keeper  changed 2m ago  status line  fresh
+    not known: this team's file declares no account, so nothing is counted
+
+A file that declares accounts but is not the approved one counts none of them either: the budgets
+in force are the approved copy's — or, before any approval, the defaults', which name no account.
+The line is the tool's own why-line for that standing, in the words `team status` already prints
+for it — never approved:
+
+    team beacon
+    the file was never approved on this machine: run `team approve`
+
+and, when a verified approval is in force but the file's `budgets` section differs from the
+approved copy's:
+
+    team beacon
+    the file differs from the approved one: `budgets` changed
+
+That line keys on the standing alone, not on the rows, so it too prints under the readings' own
+rows. These are why-lines, not refusals: nothing is broken, and the exit code is still 0.
 
 ## The JSON
 
@@ -77,9 +114,10 @@ is a `note:` line with the file and the reason, as in `status`. The exit code is
 `rows` holds exactly what the block's rows hold, as `status --json` prints them under `budgets`.
 `watch` is `recording`, `not-recording` or `not-known` — the three faces the block prints as
 nothing, one line, or the other line. `notes` holds the state's own reasons, as the block's
-`note:` lines. `at` is the moment the reading was taken, and `mine` the project, or null outside
-any project — in which case `rows` is empty, `watch` is `not-known` and `notes` holds the one
-sentence the block prints.
+`note:` lines — with the block's one line for a file that counts nothing first, so a script reads
+it where the text's reader sees it. `at` is the moment the reading was taken, and `mine` the
+project, or null outside any project — in which case `rows` is empty, `watch` is `not-known` and
+`notes` holds the one sentence the block prints.
 
 ## Refusals
 

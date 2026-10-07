@@ -6,7 +6,8 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { budgetsInForceOf, watchInForceOf } from '../approve/approval.ts';
+import { approvalCase, budgetsInForceOf, notInForce, watchInForceOf } from '../approve/approval.ts';
+import { describe } from '../approve/fingerprint.ts';
 import { checkOf, countedFor, recall, recallSpend, screenOf, type Seen, type SpendReading } from '../budgets/readings.ts';
 import { budgetTable, reserveOf, sourcesOf, type BudgetRow } from '../budgets/table.ts';
 import { TEAM_FILE } from '../file/load.ts';
@@ -17,6 +18,14 @@ import { approvalStanding, type Standing } from '../store/store.ts';
 
 /** The line a team's rows read when neither its file nor an approved copy of it can be read. */
 export const NO_FIGURES = 'no figures (the file could not be read)';
+
+/** The line a block prints when its file names no account: a person or an agent asking what is
+ *  left must not get rows with no reason. It prints under the rows too, when the state still
+ *  holds a reading the budgets in force do not name — such a row is that reading, not something
+ *  a budget counts, so "nothing is counted" stays true. `status` has no words for this case to
+ *  borrow — it omits its `budgets:` section and says nothing else (`status.ts:286-290`) — so the
+ *  sentence is the coordinator's, ruled after their real run on this command. */
+export const NOTHING_COUNTED = "not known: this team's file declares no account, so nothing is counted";
 
 /** Whether a watch is recording for a project, by the state's own record (design note § 1.4). */
 export type WatchRecording = 'recording' | 'not-recording' | 'not-known';
@@ -29,6 +38,10 @@ export type ProjectUsage = {
   /** The project's name; null when neither its file nor an approved copy could be read. */
   project: string | null;
   rows: UsageRow[];
+  /** The one line the block prints when nothing the file declares is counted, in the tool's own
+   *  words; null when the file's own accounts are the ones in force. Rows can print under it: a
+   *  reading the state still holds for an account no budget in force names is not an account. */
+  whyNotCounted: string | null;
   /** The spend checks' readings, as the state holds them (§ 5). Read here, printed from S2 on. */
   spend: SpendReading[];
   watch: WatchRecording;
@@ -58,16 +71,36 @@ export function projectUsage(root: string, home: string = homedir(), now: number
     // The state's own reason, path and all: the block prints it as a note line (§ 2.3).
     notes.push(error instanceof Error ? error.message : String(error));
   }
-  if (team === null) return { project: null, rows: [], spend: [], watch: 'not-known', notes };
+  if (team === null) return { project: null, rows: [], whyNotCounted: null, spend: [], watch: 'not-known', notes };
   const budgets = budgetsInForceOf(standing, team);
   const rows = budgetTable(budgets, readings, now).map((row) => ({ row, changedAt: countedMoment(budgets, readings, row, now) }));
   return {
     project: team.project,
     rows,
+    whyNotCounted: whyNotCountedOf(standing, team, budgets),
     spend,
     watch: recordedWatch(state, team, watchInForceOf(standing, team), now),
     notes,
   };
+}
+
+/** The one line the block prints when nothing its file declares is counted, in the tool's own
+ *  words; null when the file's own accounts are the ones in force. Two conditions, ruled after
+ *  the coordinator's real run. A file that names no account prints the ruled sentence — also
+ *  when leftover readings print rows under it, while no budget in force names one. A file that
+ *  declares accounts the approval does not back counts none of them, rows or no rows: not
+ *  verified prints `notInForce`'s why-line for that standing (`approval.ts:47-52`), and a
+ *  verified standing prints `status`'s own line for a file the owner has not approved
+ *  (`status.ts:229`) whenever the budgets in force are the approved copy's — that is exactly
+ *  when `compare` reports the `budgets` section, the same digests `budgetsInForceOf` reads. */
+function whyNotCountedOf(standing: Standing, team: TeamFile, budgets: TeamFile['budgets']): string | null {
+  if (Object.keys(team.budgets.accounts).length === 0) {
+    return Object.keys(budgets.accounts).length === 0 ? NOTHING_COUNTED : null;
+  }
+  if (standing.kind !== 'verified') return notInForce(standing);
+  const changed = describe({ kind: 'section', name: 'budgets' });
+  const { differences } = approvalCase(standing, team);
+  return differences !== null && differences.includes(changed) ? `the file differs from the approved one: ${changed}` : null;
 }
 
 /** The team file at the root as the layer reads it: the file itself through `validateTeamFile`,

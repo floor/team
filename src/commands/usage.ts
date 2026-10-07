@@ -58,6 +58,9 @@ export async function runUsage(argv: string[], io: Io, sources: UsageSources): P
   }
   const report = projectUsage(loaded.root, sources.home, now.getTime());
   if (json) {
+    // The reader's one line for a block whose file counts nothing heads the notes, so a script
+    // reads it where the text's reader sees it: under the header, under the rows.
+    const notes = report.whyNotCounted === null ? report.notes : [report.whyNotCounted, ...report.notes];
     io.stdout(`${JSON.stringify({
       format: 1,
       at: now.toISOString(),
@@ -65,7 +68,7 @@ export async function runUsage(argv: string[], io: Io, sources: UsageSources): P
       mine: report.project,
       rows: report.rows.map((entry) => entry.row),
       watch: report.watch,
-      notes: report.notes,
+      notes,
     }, null, 2)}\n`);
   } else {
     io.stdout(render(report));
@@ -77,6 +80,7 @@ export async function runUsage(argv: string[], io: Io, sources: UsageSources): P
 function render(report: ProjectUsage): string {
   const lines = report.project === null ? [NO_FIGURES] : [`team ${report.project}`];
   for (const entry of report.rows) lines.push(`  ${budgetLine(entry.row)}`);
+  if (report.whyNotCounted !== null) lines.push(report.whyNotCounted);
   if (report.watch === 'not-recording' && report.project !== null) {
     lines.push(`no watch is recording for ${report.project}`);
   } else if (report.watch === 'not-known') {
