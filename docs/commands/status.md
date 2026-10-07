@@ -42,7 +42,9 @@ the owner's writes nothing at all, beside the file it read or in its own project
 The columns are the seat, its state, the model, and the pane. The state is what herdr says
 (`idle`, `working`, `blocked`…), with `, parked` added for a seat the file parks and `, temporary`
 for a temporary one; or `<state> (unsent text)` when an idle or done seat — the two states `team`
-types into — holds text in its input box that was never sent; or `missing` when the seat is in the
+types into — holds text in its input box that was never sent; or `<state> (screen not recognised)`
+when an idle or done seat's screen is not one its profile reads: herdr's word alone would read a
+stall as settled, so the row says what could not be read; or `missing` when the seat is in the
 file and nothing is running for it, or when the pane the state recorded for it runs no CLI — the
 CLI ended, or the session was restored, and the pane is back at its shell; or `restored, not
 launched by team` when its pane runs a process `team` did not launch — another session's restore,
