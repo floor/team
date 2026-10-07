@@ -3,7 +3,8 @@ import type { Problem } from './types.ts';
 
 // A team file never holds a credential. A value with a known key prefix, a private key or a URL
 // with credentials refuses the file. A long random-looking string only warns: channel ids and
-// slugs look like one.
+// slugs look like one. An absolute path with two or more segments is a location, not a value —
+// a machine's temp path is long, dotless and absolute, and must not warn.
 const KEY_PREFIXES = [
   'sk-', 'ghp_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'github_pat_', 'glpat-', 'xoxb-', 'xoxp-', 'xoxa-', 'xoxs-',
   'AKIA', 'ASIA', 'AIza', 'lin_api_', 'npm_', 'shpat_', 'dckr_pat_',
@@ -41,10 +42,15 @@ function walk(node: YamlNode, visit: (value: string, line: number) => void): voi
 }
 
 function looksRandom(word: string): boolean {
-  if (word.length < 32 || !/^[A-Za-z0-9+/_=-]+$/.test(word)) return false;
+  if (word.length < 32 || isAbsolutePath(word) || !/^[A-Za-z0-9+/_=-]+$/.test(word)) return false;
   const counts = new Map<string, number>();
   for (const c of word) counts.set(c, (counts.get(c) ?? 0) + 1);
   let entropy = 0;
   for (const count of counts.values()) entropy -= (count / word.length) * Math.log2(count / word.length);
   return entropy > 4;
+}
+
+/** Two or more path segments, starting at the root: a location, not a value. */
+function isAbsolutePath(word: string): boolean {
+  return /^\/[^/]+\//.test(word);
 }

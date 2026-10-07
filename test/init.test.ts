@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -86,6 +87,68 @@ describe('team init', () => {
       expect(result.team.orchestrator).toBe('orchestrator');
       expect(result.team.seats).toHaveLength(1);
     }
+  });
+
+  test('a project under a runner-shaped TMPDIR writes a file that warns nothing', async () => {
+    // The GitHub macOS runner's TMPDIR is /var/folders/<rand>/<rand>/T/: long, dotless, absolute.
+    // It reaches the file as the trust entry — init writes the project root there — and read as a
+    // random value there it failed CI (`secrets.ts`). This pins the case: the path is quiet.
+    const real = realpathSync(tmpdir());
+    const shaped = join(real, `team-init-runner-${randomBytes(24).toString('base64url')}`);
+    mkdirSync(shaped);
+    const savedTmpdir = process.env.TMPDIR;
+    process.env.TMPDIR = shaped;
+    try {
+      const runBase = realpathSync(mkdtempSync(join(tmpdir(), 'team-init-')));
+      const runProject = join(runBase, 'acme');
+      mkdirSync(runProject);
+      git(runProject, 'init', '-q', '-b', 'main');
+      writeFileSync(join(runProject, 'README.md'), 'acme\n');
+      git(runProject, 'add', 'README.md');
+      git(runProject, 'commit', '-q', '-m', 'first');
+      expect(await runInit([], testIo(runProject, owner), undefined, undefined, noLogin)).toBe(0);
+      const lines = readFileSync(join(runProject, '.agents', 'team.yaml'), 'utf8').split('\n');
+      expect(lines[28]).toBe(`  - ${runProject}`); // the trust entry, by position, pinned
+      const value = (lines[28] ?? '').trim().replace(/^- /, '');
+      // The shape that made this red before: under the temp root we set, 32+ chars, dotless.
+      expect(value.startsWith(`${realpathSync(shaped)}/`)).toBe(true);
+      expect(value.length).toBeGreaterThanOrEqual(32);
+      expect(value).toMatch(/^\/[A-Za-z0-9/_-]+$/);
+      expect(value.split('/').length).toBeGreaterThanOrEqual(4);
+      const result = validateTeamFile(lines.join('\n'));
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.warnings).toEqual([]);
+    } finally {
+      if (savedTmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = savedTmpdir;
+      rmSync(shaped, { recursive: true, force: true });
+    }
+  });
+
+  test('the trust line still warns on a token, and still refuses a key — a path prefix hides neither', async () => {
+    const io = testIo(project, owner);
+    expect(await runInit([], io, undefined, undefined, noLogin)).toBe(0);
+    const lines = readFileSync(join(project, '.agents', 'team.yaml'), 'utf8').split('\n');
+    expect(lines[28]).toBe(`  - ${realpathSync(project)}`); // the trust entry, by position, pinned
+    // The line above `trust:` holds the machine lobby entry; swapping in a value of a different
+    // shape (legacy vs absolute) would make the two mix and the trust section refuse the file,
+    // so the companion entry matches the swapped value's class and the verdict stays the scanner's.
+    const swap = (value: string, companion = '  - .') => validateTeamFile([...lines.slice(0, 27), companion, `  - ${value}`, ...lines.slice(29)].join('\n'));
+    // A genuine credential-shaped value at the same position still warns ...
+    const token = swap('Zx8Kq2Lm9Pv4Rt7Wy1Bn6Cd3Fg5Hj0QsAeUiOpXc');
+    expect(token.ok).toBe(true);
+    if (token.ok) expect(token.warnings).toEqual([{ line: 29, message: expect.stringMatching(/random-looking/) }]);
+    // ... and a key-shaped word there is still refused.
+    const key = swap(`sk-${'A'.repeat(24)}`);
+    expect(key.ok).toBe(false);
+    if (!key.ok) expect(key.errors).toEqual([{ line: 29, message: expect.stringMatching(/shaped like a key or token/) }]);
+    // A path prefix before a key-shaped tail never refused it — the prefix check is anchored at
+    // the word's start — and this change leaves that verdict alone; only the warn goes quiet.
+    const hidden = swap('/usr/sk-Zx8Kq2Lm9Pv4Rt7Wy1Bn6Cd3Fg5Hj0', '  - ~/.config/team/lobby');
+    expect(hidden.ok).toBe(true);
+    // A credentialed URL after a path prefix is still refused: the URL check reads the value.
+    const url = swap('/usr/https://user:pass@host', '  - ~/.config/team/lobby');
+    expect(url.ok).toBe(false);
+    if (!url.ok) expect(url.errors).toEqual([{ line: 29, message: expect.stringMatching(/URL with credentials/) }]);
   });
 
   test('the skeleton seat is the first CLI this machine is signed in to, in a fixed order', () => {

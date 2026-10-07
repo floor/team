@@ -391,6 +391,18 @@ describe('secrets', () => {
     const text = `${minimal}tools:\n  chat: { kind: slack, workspace: acme, channel: C04ABCDEF12 }\n`;
     expect(valid(text).warnings).toEqual([notice]);
   });
+  test('a filesystem path never warns, but a blob in path clothing still does', () => {
+    // The macOS runner's TMPDIR, verbatim: the value CI warned about at the trust line. A long,
+    // dotless, absolute path is a location, not a credential.
+    const runner = '/private/var/folders/17/j2x0ly_d5_34bg_9vsy5f2140000gn/T/team-init-idhWGb/acme';
+    expect(valid(`${minimal}trust:\n  - ${runner}\n`).warnings).toEqual([notice]);
+    // The boundary stays loud: a "/"-led blob with no second separator is not a path shape.
+    const blobAfterSlash = `${minimal}tools:\n  chat: { kind: slack, channel: /Zx8Kq2Lm9Pv4Rt7Wy1Bn6Cd3Fg5Hj0QsAeUiOpXc }\n`;
+    expect(valid(blobAfterSlash).warnings).toEqual([notice, { line: 16, message: expect.stringMatching(/random-looking/) }]);
+    // One segment after the slash is not a path shape either.
+    const singleSegment = `${minimal}tools:\n  chat: { kind: slack, channel: /abcdefghijklmnopqrstuvwxyz0123456789abcd }\n`;
+    expect(valid(singleSegment).warnings).toEqual([notice, { line: 16, message: expect.stringMatching(/random-looking/) }]);
+  });
 });
 
 test('every problem is reported at once, in line order', () => {
