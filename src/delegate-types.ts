@@ -1,7 +1,8 @@
 /**
  * A command an approved delegate pane may be allowed to run. `approve` is grantable like the
- * rest, under the gate's sovereign guard: a delegated approval of a change that moves a
- * sovereign section — `delegates`, `budgets`, `limits`, identity or `trust` — is refused, so a
+ * rest, under the gate's ordinary-change guard: a delegated approval admits a roster or
+ * `rules` change and refuses, fail-closed, every other owner section — `delegates`,
+ * `budgets`, `limits`, identity, `trust`, the workspace, and any section added later — so a
  * delegate can never approve a change to its own authority.
  */
 export type DelegateCommand = 'up' | 'down' | 'add' | 'remove' | 'approve';

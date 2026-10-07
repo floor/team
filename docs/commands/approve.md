@@ -9,7 +9,7 @@ nothing. The owner's write comes only from a real terminal, and refuses, before 
 input is already waiting on the terminal its own standard input is attached to — the rest of a
 pasted block, which must not be left to approve on its own — and when that terminal cannot be
 read to make the check. A delegate's write comes from the pane the file names, under the gate
-below: an ordinary change passes it, a sovereign one never does.
+below: an ordinary change — the roster, a rule — passes it, any other owner section never does.
 
 ## Synopsis
 
@@ -31,18 +31,20 @@ too: the pane a `delegates` entry names, with `approve` among its commands, plac
 the approved file puts it — the gate reads the pane, never the name a seat is given, and every
 other caller is refused with `only the owner or the approved delegate approves a team file`.
 
-A delegate's approval is for ordinary changes: the roster, a launch line, a rule. It can never
-move the sections that are the owner's own authority — `delegates` before them all, and
-`budgets`, `limits`, identity and `trust` — and a change to any of them is refused, fail-closed,
-with `this change needs the owner: <what changed>`. The ceiling counts: adding or taking out a
+A delegate's approval is for ordinary changes: the roster — seats and the launch lines that place
+them — and `rules`. The guard is an allowlist, and it is fail-closed: `rules` is the only owner
+section it admits, and every other one is refused by default — `delegates` first, and `budgets`,
+`limits`, identity, `trust`, the workspace whose `setup` runs commands, the operator and
+orchestrator sections, and any section a later version adds — with
+`this change needs the owner: <what changed>`. The ceiling counts: adding or taking out a
 seat on a file that declares no `limits` moves the default ceiling with it — `limits` changed —
 so that roster edit is the owner's, while the same edit on a file whose ceiling is declared
 leaves `limits` alone and is the delegate's. The difference is judged against the approved
 copy alone, before anything else is read, so a delegate can never widen its own grant, raise a
-ceiling, or add a folder the owner did not trust: the widened value is never signed, and the
-owner is the only caller who can approve it. A delegated run that signs prints the same
-`Approved.` sentence and writes one audit line, below. `--show` may be run by anyone, in any
-terminal.
+ceiling, hand a seat the verdict over the team, point `setup` at a command, or add a folder the
+owner did not trust: the widened value is never signed, and the owner is the only caller who
+can approve it. A delegated run that signs prints the same `Approved.` sentence and writes one
+audit line, below. `--show` may be run by anyone, in any terminal.
 
 ## Flags
 
@@ -118,7 +120,7 @@ untouched.
 | `team approve: the approval store <store> is inside <folder>, where seats work` | 1 |
 | `team approve: only the owner approves a team file, from a terminal outside herdr; this call is <caller>` (no `delegates` section) | 1 |
 | `team approve: only the owner or the approved delegate approves a team file; this call is <caller>` | 1 |
-| `team approve: this change needs the owner: <what changed>` (a sovereign section) | 1 |
+| `team approve: this change needs the owner: <what changed>` (an owner section that is not `rules`) | 1 |
 | `team approve: --file is the owner's; the approved delegate cannot use it` | 1 |
 | `team approve: delegation needs a verified approval: <what is not in force>` / `delegation needs a readable approved copy: run \`team approve\`` / `delegation cannot verify its placement or seats: <why>` / `the approved delegate must be an external non-seat pane` / `the approved delegate <pane> may not run \`approve\`; its approved commands are <commands>` | 1 |
 | `team approve: input was waiting on the terminal: run \`team approve\` on its own line` | 1 |

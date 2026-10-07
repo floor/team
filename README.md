@@ -277,12 +277,13 @@ role or an agent name. `up`, `down`, `add` and `remove` run only while the live 
 the approved one — drift is refused — and a command the entry does not list, or a prohibited
 flag, is refused with the gate's own words and exit id; `--file` and `--session` are refused
 outright. Every delegated run writes one line to the file's log naming the pane and the command.
-A delegated `approve` is for ordinary changes — the roster, a launch line, a rule — and never for
-the sections that are the owner's own authority: `delegates` first, and `budgets`, `limits`,
-identity and `trust`. A change to any of them is refused with `this change needs the owner`,
-judged against the approved copy before anything else is read, so a delegate can never approve a
-widening of its own grant. `team approve` prints the section's entries as `Delegate:` lines
-before anything is written.
+A delegated `approve` is for ordinary changes — the roster, a launch line, a rule — and never
+for any other owner section: the guard is an allowlist, and `rules` is all it admits, so
+`delegates` first, and `budgets`, `limits`, identity, `trust`, the workspace, the operator and
+orchestrator sections, and any section a later version adds are refused with `this change
+needs the owner`, judged against the approved copy before anything else is read, so a delegate
+can never approve a widening of its own grant. `team approve` prints the section's entries as
+`Delegate:` lines before anything is written.
 
 `team status --json` prints the facts `status` prints as one JSON document (`format: 1`) on stdout:
 `project`, `session`, `rows` (`name`, `state`, `model`, `pane`), `notes`, `differences` (`what`, `repair`), and `notice`.
