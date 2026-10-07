@@ -19,6 +19,11 @@ export type Seen = {
   seat: string | null;
   source: ReadingSource;
   confirmed: boolean;
+  /**
+   * The figure this reading replaced, at the moment it last moved (§ 3-S3) — the second point
+   * a pace is read from. Absent until a change was seen, and in states written before this.
+   */
+  was?: { left: number; at: number };
 };
 
 export type StoredReading = {
@@ -32,6 +37,8 @@ export type StoredReading = {
   /** Absent in state files written before sources were recorded: a screen reading then. */
   source?: ReadingSource;
   confirmed: boolean;
+  /** `Seen.was` in the state file's own convention: ISO, like `changedAt`. */
+  was?: { left: number; at: string };
 };
 
 export type Verdict =
@@ -54,6 +61,21 @@ export type StoredSpend = {
   at: string;
 };
 
+/**
+ * The point a fold keeps (§ 3-S3), by the kept-rule in one place: the figure that was standing
+ * before a change, at the moment it last moved — written only when the figure moved (`same` is
+ * the fold's movement test, inverted) and the change is inside the same window instance (the
+ * new reading's `resetsAt` strictly equals the previous one's, or both are null). When the
+ * figure did not move the standing point is kept as it stands: it marks when the figure last
+ * moved, not when it was last read. No previous reading, or a moved figure outside its window,
+ * leaves none.
+ */
+function pointOf(previous: Seen | null, same: boolean, resetsAt: number | null): Seen['was'] {
+  if (previous === null) return undefined;
+  if (same) return previous.was;
+  return previous.resetsAt === resetsAt ? { left: previous.left, at: previous.changedAt } : undefined;
+}
+
 /** Fold one seat's figure into the readings kept for this pass. */
 export function observe(list: readonly Seen[], figure: QuotaFigure, seat: string, now: number): Seen[] {
   const next = list.slice();
@@ -67,16 +89,19 @@ export function observe(list: readonly Seen[], figure: QuotaFigure, seat: string
     && item.left === figure.left
     && item.used === figure.used
     && (item.resetsAt === null || item.resetsAt > now));
+  const resetsAt = same && previous && previous.resetsAt !== null ? previous.resetsAt : resetsFrom(figure.resets, now);
+  const was = pointOf(previous, same, resetsAt);
   const reading: Seen = {
     account: figure.account,
     window: figure.window,
     left: figure.left,
     used: figure.used,
     changedAt: same && previous ? previous.changedAt : now,
-    resetsAt: same && previous && previous.resetsAt !== null ? previous.resetsAt : resetsFrom(figure.resets, now),
+    resetsAt,
     seat,
     source: 'status_line',
     confirmed: previous === null ? agreed : same ? previous.confirmed || agreed : true,
+    ...(was === undefined ? {} : { was }),
   };
   if (at < 0) next.push(reading);
   else next[at] = reading;
@@ -91,6 +116,10 @@ export function observe(list: readonly Seen[], figure: QuotaFigure, seat: string
 export function observeCheck(list: readonly Seen[], account: string, windows: readonly CheckWindow[]): Seen[] {
   const next = list.slice();
   for (const window of windows) {
+    const at = next.findIndex((item) => item.account === account && item.window === window.window && item.source === 'check');
+    const previous = at < 0 ? null : next[at] ?? null;
+    const same = previous !== null && previous.left === window.left && previous.used === window.used;
+    const was = pointOf(previous, same, window.resetsAt);
     const reading: Seen = {
       account,
       window: window.window,
@@ -101,8 +130,8 @@ export function observeCheck(list: readonly Seen[], account: string, windows: re
       seat: null,
       source: 'check',
       confirmed: true,
+      ...(was === undefined ? {} : { was }),
     };
-    const at = next.findIndex((item) => item.account === account && item.window === window.window && item.source === 'check');
     if (at < 0) next.push(reading);
     else next[at] = reading;
   }
@@ -214,6 +243,23 @@ export function countedFor(
   return { kind: 'unknown' };
 }
 
+/**
+ * The pace a reading is being used at (§ 3-S3): the figure its point replaced minus the figure
+ * kept, over the time between, in used points per hour to one decimal, signed (`-0` reads 0).
+ * Known only from a validated point inside a reading that is fresh by § 5's own time — the
+ * point must predate the change (`dt > 0`) and the change must be inside `staleAfterMs` of
+ * `now`, the test `verdict` makes. Otherwise there is no pace to read.
+ */
+export function paceFrom(reading: Seen, now: number, staleAfterMs: number): number | null {
+  const was = reading.was;
+  if (was === undefined) return null;
+  const dt = reading.changedAt - was.at;
+  if (dt <= 0) return null;
+  if (now - reading.changedAt >= staleAfterMs) return null;
+  const figure = Math.round(((was.left - reading.left) / (dt / 3_600_000)) * 10) / 10;
+  return figure === 0 ? 0 : figure;
+}
+
 /** Readings whose reset has passed are left out. One with no reset time is kept. */
 export function remember(list: readonly Seen[], now: number): Record<string, StoredReading> {
   const out: Record<string, StoredReading> = {};
@@ -305,7 +351,25 @@ export function store(reading: Seen): StoredReading {
     seat: reading.seat,
     source: reading.source,
     confirmed: reading.confirmed,
+    ...(reading.was === undefined ? {} : { was: { left: reading.was.left, at: new Date(reading.was.at).toISOString() } }),
   };
+}
+
+/**
+ * The stored point is judged by shape alone (§ 2.3): an object, `left` a finite number within
+ * 0–100, `at` a string that parses to a finite time. A malformed point — a string, `null`, an
+ * empty object, a nested shape, a `left` outside the range or not a number, an `at` that does
+ * not parse — is discarded whole, never a throw.
+ */
+function isWasPoint(value: unknown): value is { left: number; at: string } {
+  if (typeof value !== 'object' || value === null) return false;
+  const point = value as { left?: unknown; at?: unknown };
+  return typeof point.left === 'number'
+    && Number.isFinite(point.left)
+    && point.left >= 0
+    && point.left <= 100
+    && typeof point.at === 'string'
+    && Number.isFinite(Date.parse(point.at));
 }
 
 export function revive(stored: StoredReading): Seen {
@@ -319,6 +383,7 @@ export function revive(stored: StoredReading): Seen {
     seat: stored.seat,
     source: stored.source ?? 'status_line',
     confirmed: stored.confirmed,
+    ...(isWasPoint(stored.was) ? { was: { left: stored.was.left, at: Date.parse(stored.was.at) } } : {}),
   };
 }
 
