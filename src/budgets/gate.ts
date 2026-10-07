@@ -149,9 +149,10 @@ function age(ms: number): string {
 /**
  * A money figure in a refusal, as read: up to four decimals — the most a check or a floor may
  * carry — with the trailing zeros beyond the cents dropped, and never fewer than two decimals.
- * The figure the words judge is the figure the eyes see.
+ * The figure the words judge is the figure the eyes see. Exported so the machine view's spend
+ * line writes the same figure the gate judged, and the two can never disagree.
  */
-function money(amount: number): string {
+export function money(amount: number): string {
   const written = amount.toFixed(4).replace(/0+$/, '');
   return written.padEnd(written.indexOf('.') + 3, '0');
 }
