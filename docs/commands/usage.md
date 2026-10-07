@@ -91,10 +91,10 @@ where a reader learns why figures can show with no budget behind them:
     not known: this team's file declares no account, so nothing is counted
 
 Those leftover rows are the owner's reading. A caller who is not the owner reads no stored reading
-whose account its file does not name — the state file is signed by nothing, so only what the file
-itself backs is shown by name — and reads one fixed line where the rows would be; the closing
-paragraph has the rule. The sentence above is unaffected either way: it keys on the file, not on
-the readings.
+whose account the team in force does not name — the state file is signed by nothing, so only what
+the approved copy in force backs is shown by name — and reads one fixed line where the rows would
+be; the closing paragraph has the rule. The sentence above is unaffected either way: it keys on
+the file, not on the readings.
 
 A file that declares accounts but is not the approved one counts none of them either: the budgets
 in force are the approved copy's — or, before any approval, the defaults', which name no account.
@@ -309,19 +309,23 @@ exit 0
 The same command from a seat's pane, or from a folder with no project above it, reads the same
 project or prints the one note line. What a note says changes, and one thing besides: a stored
 reading — a reading in the state, rather than a figure a budget in force counts — is rendered only
-when the team's file binds it. Its account must be one the file names — a budget in force's
-account, or the account a seat's own `account:` or its `vendor:` resolves to, the resolution the
-counting rule already makes — and its window and source must be ones this tool writes: `session`,
-`daily`, `weekly`; `check`, `status_line`. A reading that fails either is not rendered at all, and
-one fixed line says so, in the block as a `note:` line and in `--json` at the end of `notes`:
+when the team in force binds it. Its account must be one that team names — a budget in force's
+account, or the account one of its seats' own `account:` or `vendor:` resolves to, the resolution
+the counting rule already makes — and its window and source must be ones this tool writes:
+`session`, `daily`, `weekly`; `check`, `status_line`. A reading that fails either is not rendered
+at all, and one fixed line says so, in the block as a `note:` line and in `--json` at the end of
+`notes`:
 
     note: a stored reading names an account this team's file does not: not shown
     note: a stored reading carries a window or source this tool does not write: not shown
 
-A seat's name is not that wide: a reading whose seat the file's seats do not name still prints its
-figures, with no seat — `-` in the block, null in `--json`. Every figure a budget in force counts
-prints for every caller, and the owner reads every stored reading the state holds, exactly as
-`status` shows it.
+The team in force is the approved copy once a verified approval is in force, never the live file: a
+name only the live file writes — a `vendor:` edited after approval, a seat it added — binds no
+stored reading, and the standing's own line already says the file differs. When nothing is
+approved, the file's own names are the only ones there are. A seat's name is not that wide: a
+reading whose seat the seats in force do not name still prints its figures, with no seat — `-` in
+the block, null in `--json`. Every figure a budget in force counts prints for every caller, and
+the owner reads every stored reading the state holds, exactly as `status` shows it.
 
 The owner reads the notes `status` would print — the loader's own
 message with the file's absolute path, the state's own reason. A caller who is not the owner reads

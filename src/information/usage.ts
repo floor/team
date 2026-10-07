@@ -5,7 +5,7 @@
 // lock, no state. It runs nothing, reads no pane, no vendor file, no vendor key.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { approvalCase, budgetsInForceOf, notInForce, watchInForceOf } from '../approve/approval.ts';
+import { approvalCase, budgetsInForceOf, notInForce, teamInForceOf, watchInForceOf } from '../approve/approval.ts';
 import { describe } from '../approve/fingerprint.ts';
 import { checkOf, countedFor, recall, recallSpend, screenOf, type Seen, type SpendReading } from '../budgets/readings.ts';
 import { budgetTable, reserveOf, sourcesOf, WINDOWS, type BudgetRow } from '../budgets/table.ts';
@@ -38,11 +38,14 @@ export const NOT_VERIFIED = 'the approval on this machine does not verify for th
 /** The line a block shows a caller who is not the owner in place of a stored reading that names
  *  an account the approved team in force does not. The state file is signed by nothing — it is a
  *  cache, not the approved copy — so an account string in it is the state's, not this team's, and
- *  a caller who is not the owner reads a reading by that name only when the file backs it: it is
- *  a budget in force's account, or the account a seat's own `account:`/`vendor:` resolves to (the
- *  counting rule's own resolution, `gate.ts:31`). The reading is not rendered at all, and the
- *  owner reads it as before — the after-review's second read found the leak this line closes:
- *  `--json` as a seat printed a stored reading's `account: /…` and `seat: /…` verbatim. */
+ *  a caller who is not the owner reads a reading by that name only when the copy in force backs
+ *  it: it is a budget in force's account, or the account a seat in force's own `account:`/`vendor:`
+ *  resolves to (the counting rule's own resolution, `budgets/gate.ts:31`). The names come from the
+ *  approved copy in force and never from the live file, so a name only the live file writes is
+ *  unbound until the owner approves it — the third read's finding, and the reason a live edit
+ *  could bind a state string by name. The reading is not rendered at all, and the owner reads it
+ *  as before — the after-review's second read found the leak this line closes: `--json` as a seat
+ *  printed a stored reading's `account: /…` and `seat: /…` verbatim. */
 export const UNBOUND_ACCOUNT = "a stored reading names an account this team's file does not: not shown";
 
 /** The same line for a stored reading whose window or source is not one this tool writes: the
@@ -97,9 +100,9 @@ export type ProjectUsageOptions = {
  * the design's first draft; that promise was corrected — the sentence above is the ruled one.
  * `restricted` says the caller is not the owner: it keeps the store's own words for a refused
  * approval out of what the block can print (`NOT_VERIFIED`), shows the project's own paths
- * relative to the project root (`shownNote`), and renders a stored reading only when the approved
- * team in force binds it (`boundReadings`) — the state's strings are the state's, and only the
- * ones the file itself backs are shown by name.
+ * relative to the project root (`shownNote`), and renders a stored reading only when the team in
+ * force binds it (`boundReadings`) — the state's strings are the state's, and only the ones the
+ * approved copy in force backs are shown by name, never one a live edit added.
  */
 export function projectUsage(root: string, options: ProjectUsageOptions): ProjectUsage {
   const { home, now, restricted } = options;
@@ -121,7 +124,8 @@ export function projectUsage(root: string, options: ProjectUsageOptions): Projec
   }
   if (team === null) return { project: null, rows: [], whyNotCounted: null, spend: [], watch: 'not-known', notes };
   const budgets = budgetsInForceOf(standing, team);
-  const bound = restricted ? boundReadings(readings, budgets, team, notes) : readings;
+  const inForce = teamInForceOf(standing, team);
+  const bound = restricted ? boundReadings(readings, budgets, inForce, notes) : readings;
   const rows = budgetTable(budgets, bound, now).map((row) => ({ row, changedAt: countedMoment(budgets, bound, row, now) }));
   return {
     project: team.project,
@@ -134,28 +138,34 @@ export function projectUsage(root: string, options: ProjectUsageOptions): Projec
 }
 
 /**
- * The readings a caller who is not the owner reads by name: the ones the approved team in force
- * binds. The state file is signed by nothing — it is a cache, not the approved copy — and the
- * one door a value from outside the program passes (`state.ts`'s `cleanClassification`) does not
- * reach budget readings, so every string a stored reading carries is the state's, whatever it
- * looks like. A reading is bound when its account is one the budgets in force name or the account
- * a seat's own `account:`/`vendor:` resolves to (the counting rule's own resolution, `gate.ts:31`,
- * over the same budgets); its window and source are ones this tool writes (`WINDOWS`, and the two
- * `ReadingSource`s — no file can write any other value). A reading that fails those is not
- * rendered at all, and one fixed line per kind says so; a seat's name is narrower than that — it
- * does not hide the figures behind it — so a reading whose seat the file's seats do not name
- * (the string `watch` writes, `watch/pass.ts:331`) prints with no seat (`-` in the block, null
- * in `--json`). The owner reads every reading the state holds, as before.
+ * The readings a caller who is not the owner reads by name: the ones the team in force binds. The
+ * state file is signed by nothing — it is a cache, not the approved copy — and the one door a
+ * value from outside the program passes (`state.ts`'s `cleanClassification`) does not reach budget
+ * readings, so every string a stored reading carries is the state's, whatever it looks like. A
+ * reading is bound when its account is one the budgets in force name or the account a seat in
+ * force's own `account:`/`vendor:` resolves to (the counting rule's own resolution,
+ * `budgets/gate.ts:31`, over the same budgets); its window and source are ones this tool writes
+ * (`WINDOWS`, and the two `ReadingSource`s — no file can write any other value). Both sets of
+ * names come from the approved copy in force (`teamInForceOf`), never from the live file: a name
+ * only the live file writes is unbound, and the standing's own line already says the file differs
+ * from the approved one. A reading that fails those is not rendered at all, and one fixed line
+ * per kind says so; a seat's name is narrower than that — it does not hide the figures behind it —
+ * so a reading whose seat the seats in force do not name (the string `watch` writes,
+ * `watch/pass.ts:331`) prints with no seat (`-` in the block, null in `--json`). The owner reads
+ * every reading the state holds, as before.
  */
 function boundReadings(
   list: readonly Seen[],
   budgets: TeamFile['budgets'],
-  team: TeamFile,
+  inForce: TeamFile | null,
   notes: string[],
 ): Seen[] {
   const accounts = new Set(Object.keys(budgets.accounts));
-  for (const seat of team.seats) accounts.add(seat.account ?? seat.vendor);
-  const seats = new Set(team.seats.map((seat) => seat.name));
+  const seats = new Set<string>();
+  for (const seat of inForce?.seats ?? []) {
+    accounts.add(seat.account ?? seat.vendor);
+    seats.add(seat.name);
+  }
   const kept: Seen[] = [];
   let account = false;
   let shape = false;

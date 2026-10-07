@@ -203,21 +203,33 @@ export function budgetsInForceOf(standing: Standing, team: TeamFile): TeamFile['
 }
 
 /**
- * The team file the two worktree subcommands read. A verified standing always uses the copy the
- * record stored, validated, never the live file — a quiet fingerprint is not a reason to skip
- * that copy. `differs` is a separate question: the live file compared with the approved copy in
- * both directions, so a section or a seat that was added, removed or changed prints the note.
- * `project` stays the live file's. It is not an owner section, so a rename is not drift, and
- * `{repo}` stays the name the file has now. Null when the stored copy can't be read, whatever
- * the fingerprints say: there is no value to work from, and the command refuses. A standing that
- * isn't verified hands the live file back with `differs: false` — the caller's gate refuses
- * before it reads any of it.
+ * The one team file in force: a verified standing's stored copy, validated, never the live file —
+ * a quiet fingerprint is not a reason to skip that copy — with `project` taken from the live file.
+ * That field is not an owner section, so a rename is not drift, and `{repo}` stays the name the
+ * file has now. Null when the stored copy can't be read, whatever the fingerprints say: there is
+ * no value to work from. A standing that isn't verified hands the live file back: nothing is
+ * approved, and the file's own names are the only ones there are. Every reader that shows a name
+ * in force reads it from this object — the two worktree subcommands and `usage`'s binding of a
+ * stored reading — so a name only the live file writes is never taken for an approved one.
+ */
+export function teamInForceOf(standing: Standing, team: TeamFile): TeamFile | null {
+  if (standing.kind !== 'verified') return team;
+  const copy = validateTeamFile(standing.record.file);
+  return copy.ok ? { ...copy.team, project: team.project } : null;
+}
+
+/**
+ * The team file the two worktree subcommands read, and whether the live file has drifted from it.
+ * `differs` is a separate question: the live file compared with the approved copy in both
+ * directions, so a section or a seat that was added, removed or changed prints the note. Null when
+ * the stored copy can't be read — there is no value to work from, and the command refuses. A
+ * standing that isn't verified hands the live file back with `differs: false` — the caller's gate
+ * refuses before it reads any of it.
  */
 export function worktreeTeamInForceOf(standing: Standing, team: TeamFile): { team: TeamFile; differs: boolean } | null {
-  if (standing.kind !== 'verified') return { team, differs: false };
-  const copy = validateTeamFile(standing.record.file);
-  if (!copy.ok) return null;
-  return { team: { ...copy.team, project: team.project }, differs: ownerDrift(copy.team, team) };
+  const inForce = teamInForceOf(standing, team);
+  if (inForce === null) return null;
+  return { team: inForce, differs: standing.kind === 'verified' && ownerDrift(inForce, team) };
 }
 
 /** An owner section or a seat added, removed or changed between the approved copy and the live file. */

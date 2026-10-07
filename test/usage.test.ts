@@ -671,6 +671,97 @@ describe('team usage', () => {
     expect(ownerRaw).toContain('/STATE-SEAT-LEAK');
   });
 
+  test('a vendor only the live file writes does not bind a stored reading', async () => {
+    // The third read's case, accepted: the permitted accounts took the approved `budgets` and
+    // were then widened with `seat.account ?? seat.vendor` read from the LIVE team, so an edit
+    // nobody approved bound a stored reading by name. The reviewer approved a file whose lead
+    // spends `anthropic`, changed only the live file's `vendor:` to a path-like string, stored a
+    // reading under that name, and `usage --json` as a seat printed it with no "not shown" note.
+    const LIVE_VENDOR = '/LIVE-VENDOR-LEAK';
+    const live = teamText().replace('    vendor: anthropic', `    vendor: ${LIVE_VENDOR}`);
+    // The route's own precondition, pinned: the edited file still loads, so the live file is the
+    // one `usage` reads. A loader that refused the edit would close the route by itself.
+    expect(validateTeamFile(live, { home, root }).ok).toBe(true);
+    writeFileSync(file, live);
+    updateState(join(root, '.agents'), (state) => {
+      state.budgets = {
+        'live/vendor': { account: LIVE_VENDOR, window: 'session', left: 40, used: 60, changedAt: '2026-10-04T08:58:00Z', resetsAt: null, seat: null, source: 'status_line', confirmed: true },
+      } as never;
+    });
+
+    // A caller who is not the owner reads no row under that name, in either face: it is not an
+    // account the budgets in force name, and not one a seat in force resolves to, so the reading
+    // is not rendered and the one fixed line stands where its row would be.
+    const mine = await usageAt(root, SEAT);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    const doc = JSON.parse(raw) as { rows: { account: string }[]; notes: string[] };
+    expect(mine.code).toBe(0);
+    expect(mine.out).toBe([
+      'team acme',
+      '  anthropic  unknown',
+      '  openai  unknown',
+      'no watch is recording for acme',
+      `note: ${UNBOUND_ACCOUNT}`,
+    ].join('\n') + '\n');
+    expect(doc.rows.map((row) => row.account)).toEqual(['anthropic', 'openai']);
+    expect(doc.notes).toEqual([UNBOUND_ACCOUNT]);
+    for (const face of [mine.out, raw]) expect(face).not.toContain('LIVE-VENDOR-LEAK');
+
+    // The owner reads it as today: the reading by its own name, and no "not shown" line.
+    const owner = await usageAt(root, { kind: 'owner' });
+    const ownerRaw = (await usageAt(root, { kind: 'owner' }, '--json')).out;
+    expect(owner.code).toBe(0);
+    expect(owner.out).toContain(`  ${LIVE_VENDOR}  session`);
+    expect(ownerRaw).toContain(LIVE_VENDOR);
+    for (const face of [owner.out, ownerRaw]) expect(face).not.toContain('not shown');
+  });
+
+  test('a seat only the live file names does not hold a stored reading', async () => {
+    // The rule's other half, in the brief's words: the permitted seat names come from the
+    // approved copy in force too, never from the live file. Only the live file names `ghost`,
+    // and the state holds a reading carrying that seat under an account the approved budgets do
+    // name — so only the seat is in question. Unfixed, the row printed `ghost`; now the reading
+    // keeps its figures and prints with no seat, as any reading whose seat the seats in force do
+    // not name (`a seat's name is not that wide`).
+    const live = teamText() + [
+      '  - role: member',
+      '    name: ghost',
+      '    cli: claude-code',
+      '    vendor: openai',
+      '    model: Claude Opus',
+      '    version: "5.5"',
+      '    launch: claude --model claude-opus-5-5',
+      '',
+    ].join('\n');
+    expect(validateTeamFile(live, { home, root }).ok).toBe(true);
+    writeFileSync(file, live);
+    updateState(join(root, '.agents'), (state) => {
+      state.budgets = {
+        'openai/weekly/ghost': { account: 'openai', window: 'weekly', left: 5, used: 95, changedAt: '2026-10-04T08:58:00Z', resetsAt: '2026-10-04T09:44:00Z', seat: 'ghost', source: 'status_line', confirmed: true },
+      } as never;
+    });
+
+    const mine = await usageAt(root, SEAT);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    const doc = JSON.parse(raw) as { rows: { account: string; seat: string | null }[] };
+    expect(mine.code).toBe(0);
+    expect(mine.out).toBe([
+      'team acme',
+      '  anthropic  unknown',
+      '  openai  weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%',
+      'no watch is recording for acme',
+    ].join('\n') + '\n');
+    expect(doc.rows.map((row) => [row.account, row.seat])).toEqual([['anthropic', null], ['openai', null]]);
+    for (const face of [mine.out, raw]) expect(face).not.toContain('ghost');
+
+    // The owner sees the reading's own seat, exactly as the state holds it.
+    const owner = await usageAt(root, { kind: 'owner' });
+    const ownerRaw = (await usageAt(root, { kind: 'owner' }, '--json')).out;
+    expect(owner.code).toBe(0);
+    expect(owner.out).toContain('ghost');
+    expect(ownerRaw).toContain('ghost');
+  });
+
   test('hostile state: not one string of a stored reading reaches a caller who is not the owner', async () => {
     // Every string field a `StoredReading` holds, each a name this test owns: account, window,
     // source and seat on readings whose account the file names, and the two time fields as
