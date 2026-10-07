@@ -287,7 +287,9 @@ function restoreWorld(page: Page, block: Block): void {
   const world = page.world as World;
   for (const entry of (block.attrs.screens ?? '').split(',')) {
     const seat = entry.split('=')[0]?.trim();
-    if (seat) world.setScreen(seat, page.spec.screens[seat] ?? 'idle');
+    // The block itself may have renamed the seat out of its name — a lifecycle removal does — or
+    // closed it: the fixture's world is put back where the seat is still there to put back.
+    if (seat && world.paneOf(seat)) world.setScreen(seat, page.spec.screens[seat] ?? 'idle');
   }
   if (block.attrs.machine) world.setMachine(page.spec.machine);
   if (block.attrs.tools) world.setTools(page.spec.tools);

@@ -11,7 +11,7 @@ import type { Problem } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import { approvalStanding, type Standing } from '../store/store.ts';
 import { writeTeamFile } from '../file/write.ts';
-import { paneForeground } from '../herdr.ts';
+import { agentRename, paneForeground } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
 import { executePlan } from '../launch/execute.ts';
@@ -28,6 +28,10 @@ import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
 export type RemoveSources = DownSources & {
   /** Foreground process names in the pane, or null when the pane can't be read. */
   foreground(session: string, pane: string): string[] | null;
+  /** Best effort: rename the pane's agent to a free name, so it no longer answers the seat's.
+   *  Used only by the unrecognised-screen removal below. Optional: a source that does not carry
+   *  herdr's rename leaves the pane under the seat's name, and the run says so and proceeds. */
+  renameAgent?(session: string, pane: string, name: string): boolean;
   /** Approval store home. The real command uses the owner's home. */
   home?: string;
   // The approval store's one read, done before anything is stopped or written and reused by the
@@ -45,6 +49,7 @@ function aim(session: string): string | undefined {
 export const realSources: RemoveSources = {
   ...downSources,
   foreground: (session, pane) => paneForeground(pane, aim(session)),
+  renameAgent: (session, pane, name) => agentRename(pane, name, aim(session)),
 };
 
 export const USAGE = 'Usage: team remove <name> [--keep] [--abandon] [--session <name>] [--file <path>]\n';
@@ -74,6 +79,17 @@ const LEFT: Record<Exclude<DownSeat['state'], 'free'>, string> = {
 
 export const remove: Command = (argv, io) => runRemove(argv, io, realSources);
 export default remove;
+
+/** A free name for the agent a non-owner's removal leaves in its pane: `<name>-left`, then
+ *  `-left-2`, `-left-3`, … The names in use are the file's seats, the session's state records and
+ *  the live agents. herdr refuses a name that is taken (`agent_name_taken`), so one attempt on a
+ *  name nothing holds is what makes the rename land; this only avoids a collision the caller can
+ *  already see. */
+function leftName(name: string, taken: Set<string>): string {
+  let candidate = `${name}-left`;
+  for (let n = 2; taken.has(candidate); n += 1) candidate = `${name}-left-${n}`;
+  return candidate;
+}
 
 /** The file edit `remove` would write, or null when that edit is valid or changes nothing. */
 function editProblems(path: string, name: string, keep: boolean): Problem[] | null {
@@ -227,6 +243,19 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   }
   const agent = agents.find((item) => item.name === name);
   const cli = declared?.cli ?? team.seats.find((seat) => seat.name === temporary?.like)?.cli ?? '';
+  // A caller other than the owner, on a seat herdr reports idle or done that this flow cannot ask
+  // to leave: `--abandon`'s kind of power scoped to a caller who may not run it — the seat is
+  // taken out of the team, the pane is left as it is (nothing typed, nothing closed, and the agent
+  // renamed out of the seat's name below), where no state ever frees it otherwise.
+  //
+  // herdr's own status is the gate, not the screen: idle or done says the seat is not mid-turn,
+  // and that signal still reads where a profile cannot — an unrecognised screen, an unreadable
+  // pane, a prompt the team never answers, unsent text. A seat herdr reports working, or one whose
+  // screen shows a running turn (`stateOf` keeps that working even when herdr's word lags), is the
+  // one thing a non-owner never takes out; every other status word keeps the old refusal too. A
+  // recognised free seat removes as before, and a box holding exactly the CLI's exit text keeps
+  // its clean stop. The owner keeps the refusal, byte for byte, with the way out it names.
+  let leave = false;
   if (agent) {
     const screen = sources.screen(session, agent.pane, cli);
     const where = stateOf(agent.status, screen);
@@ -238,16 +267,19 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     const holdsExit = where === 'unsent' && profile !== null
       && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));
     const clearable = holdsExit && profile?.exitClear !== null;
-    if (where !== 'free' && !abandon && !clearable) {
-      // The unknown screen is the one a seat can sit on for good: no state ever frees it, and
-      // only the owner may abandon it, so the refusal names that way out. The owner gets the
-      // command itself; anyone else is told whose it is. A framed exit question already on
-      // screen is the same kind of leave: this run did not ask it, and the line names the close.
-      const way = where === 'unknown'
-        ? caller.kind === 'owner'
+    leave = caller.kind !== 'owner' && where !== 'free' && where !== 'working' && !clearable
+      && (agent.status === 'idle' || agent.status === 'done');
+    if (where !== 'free' && !abandon && !clearable && !leave) {
+      // A refusal here is the kept safety: herdr reports the seat working, its screen shows a
+      // running turn, or the caller is the owner, who keeps these refusals whole — a caller other
+      // than the owner meeting an idle or done seat never arrives, the leave took it above. The
+      // way out named is the caller's own. A framed exit question already on screen is the same
+      // kind of case: this run did not ask it, and the line names the close the caller has.
+      const way = where !== 'unknown'
+        ? ''
+        : caller.kind === 'owner'
           ? ` (team remove ${name} --abandon closes its workspace without typing)`
-          : ` (the owner can close it: team remove ${name} --abandon)`
-        : '';
+          : ' (run this again once herdr reports the seat idle or done)';
       const held = screen.kind === 'exit question'
         ? `sits at its own exit question; left as it is (team remove ${name} --abandon closes it)`
         : where === 'unsent' && holdsExit
@@ -257,7 +289,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
       // exit: remove.busy
       return 1;
     }
-    if (!profile && !abandon) {
+    if (!profile && !abandon && !leave) {
       io.stderr(`team remove: no launch profile for \`${cli}\`; left as it is\n`);
       // exit: remove.no-profile
       return 1;
@@ -303,7 +335,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     // refusal came sooner; a `--keep` run never got past the gate.
     if (delegatePane !== null) logDelegated(dir, delegatePane, 'remove', sources.now());
 
-    if (agent) {
+    if (agent && !leave) {
       const screen = sources.screen(session, agent.pane, cli);
       const where = stateOf(agent.status, screen);
       const profile = profileFor(cli);
@@ -351,7 +383,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
       // signing itself stays the owner's for a delegate whatever reached here.
       if (parsed.ok && delegatePane === null) recordSeatDigestOf(standing, parsed.team, root, name, home);
     }
-    if (!agent && recorded) {
+    if (recorded && (!agent || leave)) {
       updateState(dir, (file) => {
         const seats = file.sessions[session]?.seats;
         if (seats) delete seats[name];
@@ -364,10 +396,28 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     if (temporary && sources.home) {
       removeRulesFile(sources.standing?.(root) ?? approvalStanding(root, sources.home), name, root, sources.home);
     }
+    // The leave's last act: rename the agent out of the seat's name, best effort, so the pane no
+    // longer answers a `remove` or a stray-name report as this seat. One attempt on a name the
+    // file, the state and the live agents do not hold; a refusal here (or no rename at all) costs
+    // the removal nothing, and the line says the pane still carries the seat's name.
+    let left: { pane: string; free: string; renamed: boolean } | null = null;
+    if (leave && agent) {
+      const taken = new Set<string>();
+      for (const seat of team.seats) taken.add(seat.name);
+      for (const other of Object.keys(readState(dir).sessions[session]?.seats ?? {})) taken.add(other);
+      for (const item of agents) {
+        const each = item.name;
+        if (each) taken.add(each);
+      }
+      const free = leftName(name, taken);
+      left = { pane: agent.pane, free, renamed: sources.renameAgent?.(session, agent.pane, free) ?? false };
+    }
     const who = describeCaller(caller);
     const what = temporary ? `removed temporary ${name}` : args.flags.has('keep') ? `stopped ${name}` : `removed ${name}`;
     logLine(dir, 'remove', who, what, sources.now());
-    io.stdout(`${what}\n`);
+    io.stdout(left
+      ? `${what} (its pane ${left.pane} was left running; nothing was typed; ${left.renamed ? `it now reads as ${left.free}` : "it still carries the seat's name"})\n`
+      : `${what}\n`);
     // exit: remove.removed
     // exit: remove.kept
     // exit: remove.temporary

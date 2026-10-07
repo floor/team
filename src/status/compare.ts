@@ -158,9 +158,12 @@ export function compare(
       // watch's unsent check covers both (`pass.ts`). The report reads them the same way.
       const quiet = agent.status === 'idle' || agent.status === 'done';
       const isUnsent = quiet && screen.kind === 'unsent';
-      const stateText = isUnsent
-        ? (seat.parked ? `${agent.status} (unsent text), parked` : `${agent.status} (unsent text)`)
-        : (seat.parked ? `${agent.status}, parked` : agent.status);
+      // A quiet seat on a screen no profile reads: herdr's word alone would show a bare done (the
+      // watch reports the same reading, pass.ts). The row says what herdr could not, and nothing
+      // else about the seat moves — no verdict, no difference.
+      const unread = quiet && screen.kind === 'unknown';
+      const mark = isUnsent ? ' (unsent text)' : unread ? ' (screen not recognised)' : '';
+      const stateText = `${agent.status}${mark}${seat.parked ? ', parked' : ''}`;
       rows.push({
         name: seat.name,
         state: stateText,
@@ -302,9 +305,16 @@ export function compare(
         notes.push(`${name} is temporary, until ${recorded.temporary.until}`);
         continue;
       }
+      // A quiet temporary seat on a screen no profile reads: this row must not show a bare done
+      // either. The cli comes from the like-seat, as the model string does; a like-seat gone reads
+      // nothing, and the suffix is true then too.
+      const like = recorded.temporary.like;
+      const likeCli = team.seats.find((seat) => seat.name === like)?.cli ?? '';
+      const quiet = agent.status === 'idle' || agent.status === 'done';
+      const unread = quiet && readScreen(likeCli, live.screens[agent.pane]).kind === 'unknown';
       rows.push({
         name,
-        state: `${agent.status}, temporary`,
+        state: `${agent.status}${unread ? ' (screen not recognised)' : ''}, temporary`,
         model: `like ${recorded.temporary.like}`,
         pane: agent.pane,
         ...(recorded.start_cwd ? { start_cwd: recorded.start_cwd } : {}),

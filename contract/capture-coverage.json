@@ -115,7 +115,7 @@
     "codex": {
       "idle": {
         "real": 4,
-        "constructed": 1,
+        "constructed": 2,
         "undocumented": 0
       },
       "working": {
@@ -155,7 +155,7 @@
       },
       "unknown": {
         "real": 9,
-        "constructed": 1,
+        "constructed": 2,
         "undocumented": 0
       }
     },
@@ -633,6 +633,18 @@
       "cli": "codex",
       "kind": "vendor notice",
       "provenance": "capture"
+    },
+    {
+      "file": "codex/0.157.0/terra-quiet-unknown-constructed.txt",
+      "cli": "codex",
+      "kind": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "codex/0.157.0/terra-recognised-constructed.txt",
+      "cli": "codex",
+      "kind": "idle",
+      "provenance": "constructed"
     },
     {
       "file": "codex/0.157.0/trust-folder-163.txt",

@@ -578,17 +578,146 @@ describe('team remove', () => {
     }
   });
 
-  test('the unknown refusal names the way out, to the owner and to a coordinator', async () => {
+  test('the unknown refusal names the way out to the owner', async () => {
     const made = world({ kind: 'unknown' }, 'idle');
     made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
     const ownerIo = testIo(dir, owner);
     expect(await runRemove(['worker', '--file', file], ownerIo, made.sources)).toBe(1);
     expect(ownerIo.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (team remove worker --abandon closes its workspace without typing)\n');
-    recordLead();
-    const leadIo = testIo(dir, lead);
-    expect(await runRemove(['worker'], leadIo, made.sources)).toBe(1);
-    expect(leadIo.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (the owner can close it: team remove worker --abandon)\n');
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
+  test('a working seat on an unknown screen is refused, not left', async () => {
+    // The one thing a non-owner never takes out: herdr reports the seat mid-turn. The screen
+    // shape does not enter it — the status alone refuses — and the way out the line names is the
+    // caller's own, not the owner's `--abandon`.
+    const made = world({ kind: 'unknown' }, 'working');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'working', cwd: null });
+    const renamed: [string, string, string][] = [];
+    made.sources.renameAgent = (session, pane, name) => { renamed.push([session, pane, name]); return true; };
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker'], io, made.sources)).toBe(1);
+    expect(io.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (run this again once herdr reports the seat idle or done)\n');
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(renamed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
+  test('a working seat holding unsent text is refused too: the status alone is the gate', async () => {
+    const made = world({ kind: 'unsent' }, 'working');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'working', cwd: null });
+    const renamed: [string, string, string][] = [];
+    made.sources.renameAgent = (session, pane, name) => { renamed.push([session, pane, name]); return true; };
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker'], io, made.sources)).toBe(1);
+    expect(io.err).toBe('team remove: worker holds unsent text in its input box; left as it is\n');
+    expect(made.typed).toEqual([]);
+    expect(renamed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
+  test('an unreadable pane on an idle seat is taken out, not refused', async () => {
+    // `unknown` collapses a failed read with a read that matched nothing, and herdr's word is the
+    // gate either way: idle says the seat is not mid-turn, so the delegate force-close reaches it
+    // — the case this path exists for.
+    const made = world({ kind: 'unknown' }, 'idle');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    made.sources.screenText = () => undefined;
+    const renamed: [string, string, string][] = [];
+    made.sources.renameAgent = (session, pane, name) => { renamed.push([session, pane, name]); return true; };
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker'], io, made.sources)).toBe(0);
+    expect(io.out).toBe('removed worker (its pane w1:p1 was left running; nothing was typed; it now reads as worker-left)\n');
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(renamed).toEqual([['acme', 'w1:p1', 'worker-left']]);
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+  });
+
+  test('an idle seat holding unsent text is taken out, not refused', async () => {
+    // The idle seat whose box holds text no profile calls its exit text: herdr says idle, so a
+    // delegate cycles it — nothing typed, the pane left as it is.
+    const made = world({ kind: 'unsent' }, 'idle');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const renamed: [string, string, string][] = [];
+    made.sources.renameAgent = (session, pane, name) => { renamed.push([session, pane, name]); return true; };
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker'], io, made.sources)).toBe(0);
+    expect(io.out).toBe('removed worker (its pane w1:p1 was left running; nothing was typed; it now reads as worker-left)\n');
+    expect(made.typed).toEqual([]);
+    expect(made.keys).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(renamed).toEqual([['acme', 'w1:p1', 'worker-left']]);
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+  });
+
+  test('a done seat on an unknown screen is taken out: idle and done are both the gate', async () => {
+    const made = world({ kind: 'unknown' }, 'done');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'done', cwd: null });
+    made.sources.renameAgent = (_session, _pane, name) => name === 'worker-left';
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker'], io, made.sources)).toBe(0);
+    expect(io.out).toBe('removed worker (its pane w1:p1 was left running; nothing was typed; it now reads as worker-left)\n');
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+  });
+
+  test('a coordinator on an unknown screen leaves the pane and takes the seat out', async () => {
+    // The seat has a state record — the incident's shape — and the record goes with it, so the
+    // pane can be cycled into a fresh temporary seat through the ordinary `team add`.
+    updateState(join(dir, '.agents'), (state) => {
+      (state.sessions.acme ??= emptySession()).seats.worker = { stage: 'ready', pane: 'w1:p1' };
+    });
+    const made = world({ kind: 'unknown' }, 'idle');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    // `worker-left` is held by another agent of the session: the rename steps to the next free name.
+    made.agents.push({ name: 'worker-left', agent: 'claude', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null });
+    const renamed: [string, string, string][] = [];
+    made.sources.renameAgent = (session, pane, name) => { renamed.push([session, pane, name]); return true; };
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker'], io, made.sources)).toBe(0);
+    expect(made.typed).toEqual([]);
+    expect(made.keys).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(renamed).toEqual([['acme', 'w1:p1', 'worker-left-2']]);
+    expect(io.out).toBe('removed worker (its pane w1:p1 was left running; nothing was typed; it now reads as worker-left-2)\n');
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+    expect(readFileSync(file, 'utf8')).toContain('name: lead');
+    expect(readState(join(dir, '.agents')).sessions.acme?.seats.worker).toBeUndefined();
+  });
+
+  test('a leave whose rename does not take still removes the seat, and says the pane keeps the name', async () => {
+    const made = world({ kind: 'unknown' }, 'idle');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    made.sources.renameAgent = () => false;
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker'], io, made.sources)).toBe(0);
+    expect(io.out).toBe("removed worker (its pane w1:p1 was left running; nothing was typed; it still carries the seat's name)\n");
+    expect(made.closed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+  });
+
+  test('--keep on an unknown screen: the entry stays stopped, the pane is left running', async () => {
+    const made = world({ kind: 'unknown' }, 'idle');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    made.sources.renameAgent = (_session, _pane, name) => name === 'worker-left';
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker', '--keep'], io, made.sources)).toBe(0);
+    expect(io.out).toBe('stopped worker (its pane w1:p1 was left running; nothing was typed; it now reads as worker-left)\n');
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+    expect(readFileSync(file, 'utf8')).toContain('stopped: true');
   });
 
   test('--abandon closes an unknown screen without typing; a coordinator may not', async () => {
@@ -814,6 +943,27 @@ describe('team remove delegated', () => {
     expect(readFileSync(file, 'utf8')).toContain('name: lead');
     expect(readFileSync(join(store, 'approval.json'), 'utf8')).toBe(record);
     // The audit line is the log's first line: the run is attributed before its effects.
+    expect(readFileSync(join(dir, '.agents', 'team.log'), 'utf8').startsWith(
+      '1970-01-01T00:00:00.000Z delegate [delegate] main/w1:p1 remove\n',
+    )).toBe(true);
+  });
+
+  test('a delegated removal on an unknown screen leaves the pane, takes the seat out and signs nothing', async () => {
+    const store = approveFile(FILE + DELEGATES);
+    const made = world({ kind: 'unknown' }, 'idle');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w3:p1', workspace: 'w3', status: 'idle', cwd: null });
+    const record = readFileSync(join(store, 'approval.json'), 'utf8');
+    const io = testIo(dir, pilot);
+    const code = await runRemove(['worker'], io, { ...made.sources, delegateGate: () => passed });
+    expect(code).toBe(0);
+    // This world's sources carry no rename: the removal stands and the line says the pane keeps
+    // the seat's name.
+    expect(io.out).toBe("removed worker (its pane w3:p1 was left running; nothing was typed; it still carries the seat's name)\n");
+    expect(made.typed).toEqual([]);
+    expect(made.keys).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+    expect(readFileSync(join(store, 'approval.json'), 'utf8')).toBe(record);
     expect(readFileSync(join(dir, '.agents', 'team.log'), 'utf8').startsWith(
       '1970-01-01T00:00:00.000Z delegate [delegate] main/w1:p1 remove\n',
     )).toBe(true);

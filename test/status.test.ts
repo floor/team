@@ -102,8 +102,9 @@ describe('team status', () => {
     const { code, out } = await status();
     expect(out).toContain('team acme-web, session "acme-web"');
     expect(out).toMatch(/claude-coordinator-acme\s+working\s+Claude Opus 5\.5\s+w1:p1/);
-    expect(out).toMatch(/codex-acme\s+idle, parked/);
+    expect(out).toMatch(/codex-acme\s+idle \(screen not recognised\), parked/);
     expect(out).toMatch(/grok-acme\s+stopped/);
+    // The suffix is a reading, not a difference: a team that matches its file still reads clean.
     expect(out).toContain('0 difference(s)');
     expect(code).toBe(0);
   });
@@ -495,9 +496,9 @@ describe('team status', () => {
     ]);
     expect(doc.rows).toEqual([
       { name: 'claude-coordinator-acme', state: 'working', model: 'Claude Opus 5.5', pane: 'w1:p1' },
-      { name: 'codex-acme', state: 'idle, parked', model: 'GPT-6 Sol (unread)', pane: 'w2:p1' },
-      { name: 'deepseek-acme', state: 'done', model: 'DeepSeek V4.1 Flash (unread)', pane: 'w3:p1' },
-      { name: 'deepseek-acme-2', state: 'idle', model: 'DeepSeek V4.1 Flash (unread)', pane: 'w4:p1' },
+      { name: 'codex-acme', state: 'idle (screen not recognised), parked', model: 'GPT-6 Sol (unread)', pane: 'w2:p1' },
+      { name: 'deepseek-acme', state: 'done (screen not recognised)', model: 'DeepSeek V4.1 Flash (unread)', pane: 'w3:p1' },
+      { name: 'deepseek-acme-2', state: 'idle (screen not recognised)', model: 'DeepSeek V4.1 Flash (unread)', pane: 'w4:p1' },
       { name: 'grok-acme', state: 'stopped', model: 'Grok 4.7', pane: '-' },
     ]);
   });
@@ -648,13 +649,13 @@ describe('team status', () => {
     expect(namedRes.out).toContain('repair: the owner clears or sends it in the pane, then runs team up (it resumes the launch)');
     expect(namedRes.out).not.toContain('difference: codex-acme holds text in its input box that was never sent');
 
-    // seat that reads unknown: unchanged output
+    // seat that reads unknown: no unsent reading; the row says what herdr's word could not
     live = {
       ...built(),
       screens: { ...built().screens, 'w2:p1': 'Some unknown output without composer\n' },
     };
     const unknownRes = await status();
-    expect(unknownRes.out).toMatch(/codex-acme\s+idle, parked/);
+    expect(unknownRes.out).toMatch(/codex-acme\s+idle \(screen not recognised\), parked/);
     expect(unknownRes.out).toContain('difference: codex-acme: its launch stopped at "named"\n  repair: the owner runs team up (it resumes the launch)');
     expect(unknownRes.out).not.toContain('unsent text');
     expect(unknownRes.out).not.toContain('holds text in its input box that was never sent');
@@ -693,6 +694,24 @@ describe('team status', () => {
       expect(other.out).not.toContain('unsent text');
       expect(other.out).not.toContain('holds text in its input box that was never sent');
     }
+  });
+
+  test('C3: a quiet temporary seat on a screen nothing reads: the row says so', async () => {
+    const tmp = agent('codex-acme-tmp-1', 'w5', 'done', 'codex');
+    live = { ...built(), agents: [...built().agents, tmp] };
+    updateState(join(dir, '.agents'), (state) => {
+      (state.sessions['acme-web'] ??= emptySession()).seats['codex-acme-tmp-1'] = {
+        stage: 'ready', temporary: { like: 'codex-acme', until: 'result:out.md' },
+      };
+    });
+    // Nothing is recorded for its pane, so no profile reads it: the temporary row must not show a
+    // bare done either — the cli comes from the like-seat, and the reading is still no reading.
+    const unread = await status();
+    expect(unread.out).toMatch(/codex-acme-tmp-1\s+done \(screen not recognised\), temporary/);
+    // A screen the like-seat's profile does read: the ordinary row, no suffix.
+    live = { ...built(), agents: [...built().agents, tmp], screens: { ...built().screens, 'w5:p1': codexScreen('idle') } };
+    const readable = await status();
+    expect(readable.out).toMatch(/codex-acme-tmp-1\s+done, temporary/);
   });
 
   test('D: summary line: with and without an owner repair', async () => {
@@ -839,7 +858,7 @@ describe('a pane that no longer holds the process team launched', () => {
     live = { ...built(), processes: { 'w2:p1': null } };
     const { code, out } = await status();
     expect(code).toBe(0);
-    expect(out).toMatch(/codex-acme\s+idle, parked/);
+    expect(out).toMatch(/codex-acme\s+idle \(screen not recognised\), parked/);
     expect(out).not.toContain('its pane runs no CLI');
   });
 
@@ -849,7 +868,7 @@ describe('a pane that no longer holds the process team launched', () => {
     live = { ...built(), processes: { 'w2:p1': { shell: 400, foreground: [400] } } };
     const { code, out } = await status();
     expect(code).toBe(0);
-    expect(out).toMatch(/codex-acme\s+idle, parked/);
+    expect(out).toMatch(/codex-acme\s+idle \(screen not recognised\), parked/);
     expect(out).not.toContain('its pane runs no CLI');
   });
 });

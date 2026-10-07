@@ -287,11 +287,15 @@ describe('a pass of the watch', () => {
   test('a parked seat idle for an hour is not reported idle, while its unparked neighbour is', () => {
     const memory = newMemory();
     const quiet = live({ 'codex-acme': { status: 'idle' }, 'deepseek-acme': { status: 'idle', screen: idle } });
-    expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: quiet, machine: fine, now: 0, memory }).reports).toEqual([]);
-    // Ten minutes in, the unparked seat's report lands: the shelf works, the parked seat is off it.
+    // The parked seat's screen is one nothing reads, and the fail-safe reports that — once. Its
+    // idleness is still nobody's report: the shelf is not a stall.
+    expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: quiet, machine: fine, now: 0, memory }).reports.map((report) => report.text))
+      .toEqual(['codex-acme: herdr reports the status "idle"']);
+    // Ten minutes in, the unparked seat's report lands: the shelf works, the parked seat's idle is
+    // off it.
     expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: quiet, machine: fine, now: 10 * MIN, memory }).reports.map((report) => report.text))
       .toEqual(['deepseek-acme has been idle since the watch started']);
-    // An hour in, the neighbour reports again on the idle_repeat cadence; the parked seat is
+    // An hour in, the neighbour reports again on the idle_repeat cadence; the parked seat's idle is
     // still absent from every report.
     expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: quiet, machine: fine, now: 60 * MIN, memory }).reports.map((report) => report.text))
       .toEqual(['deepseek-acme has been idle since the watch started']);
@@ -360,7 +364,10 @@ describe('a pass of the watch', () => {
     const quiet = live({ 'deepseek-acme': { status: 'idle', screen: idle } });
     quiet.agents.push(agent('grok-acme', 'w5', 'idle', 'grok'));
     quiet.workspaces.push({ id: 'w5', label: 'grok-acme' });
-    expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: quiet, machine: fine, now: 0, memory }).reports).toEqual([]);
+    // Nothing reads a grok screen, and the fail-safe reports the running stopped seat's screen as
+    // unreadable — once. Its idleness is still not a report: a stopped seat may sit idle all day.
+    expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: quiet, machine: fine, now: 0, memory }).reports.map((report) => report.text))
+      .toEqual(['grok-acme: herdr reports the status "idle"']);
     // Ten minutes in, the unparked neighbour's report lands: the shelf works, the stopped seat is
     // off it.
     expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: quiet, machine: fine, now: 10 * MIN, memory }).reports.map((report) => report.text))
@@ -388,6 +395,23 @@ describe('a pass of the watch', () => {
     expect(first.reports).toEqual([{ key: 'blocked:codex-acme', text: "codex-acme waits at a permission prompt: its owner's to answer", to: 'owner' }]);
     expect(first.nudge).toBeNull();
     expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: stuck, machine: fine, now: 30 * MIN, memory }).reports).toEqual([]);
+  });
+
+  test('a quiet seat on a screen no profile reads is reported, not taken for a free one', () => {
+    // The fail-safe: herdr says done, and no profile reads the screen. Before it this reported
+    // nothing — the shape a stalled seat leaves, and the one that read as a free seat.
+    const memory = newMemory();
+    const stalled = live({ 'codex-acme': { status: 'done', screen: 'Some unknown output without composer\n' } });
+    const first = pass({ team: team(), watch: team().watch, state: emptySession(), live: stalled, machine: fine, now: 0, memory });
+    expect(first.reports).toEqual([{ key: 'unknown:codex-acme', text: 'codex-acme: herdr reports the status "done"', to: 'operator' }]);
+    // The operator's to act on: the nudge says a report waits, nothing more.
+    expect(first.nudge).toEqual({
+      pane: 'w0:p1',
+      text: NUDGE_TEXT,
+      pending: ['codex-acme: herdr reports the status "done"'],
+    });
+    // Once: the same sight is not reported again.
+    expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: stalled, machine: fine, now: 30 * MIN, memory }).reports).toEqual([]);
   });
 
   test.each(['idle', 'working'])('a captured Codex update screen is the vendor notice, its owner\'s, when herdr says %s', (status) => {
@@ -570,6 +594,18 @@ describe('a pass of the watch', () => {
     now.screens['w7:p1'] = permission;
     const texts = pass({ team: team(), watch: team().watch, state, live: now, machine: fine, now: 0, memory: newMemory() }).reports.map((report) => report.text);
     expect(texts).toEqual(['deepseek-acme-tmp-1 waits at a permission prompt: its owner\'s to answer']);
+  });
+
+  test('a temporary seat at herdr\'s done on a screen no profile reads is reported the same way', () => {
+    // The stalled-seat shape the fail-safe was built from: a temporary seat, herdr reporting
+    // done, no profile reading its screen — reported, and the operator nudged to look at it.
+    const state = { ...emptySession(), seats: { 'codex-acme-tmp-1': { stage: 'ready' as const, temporary: { like: 'codex-acme', until: 'result:out.md' } } } };
+    const now = live();
+    now.agents.push(agent('codex-acme-tmp-1', 'w7', 'done'));
+    now.screens['w7:p1'] = 'Some unknown output without composer\n';
+    const first = pass({ team: team(), watch: team().watch, state, live: now, machine: fine, now: 0, memory: newMemory() });
+    expect(first.reports).toEqual([{ key: 'unknown:codex-acme-tmp-1', text: 'codex-acme-tmp-1: herdr reports the status "done"', to: 'operator' }]);
+    expect(first.nudge?.pending).toEqual(['codex-acme-tmp-1: herdr reports the status "done"']);
   });
 
   test('a seat that runs another maker\'s model through Claude Code is unread, never wrong', () => {
@@ -756,19 +792,23 @@ describe('the nudge', () => {
     expect(NUDGE_TEXT).not.toMatch(/^[yYnN]/);
   });
 
-  for (const [name, operator] of Object.entries({
-    'mid-turn': { status: 'working', screen: busy },
-    'at a permission prompt that herdr calls idle': { status: 'idle', screen: permission },
-    'holding unsent text': { status: 'idle', screen: unsent },
-    'with a screen the watch doesn\'t recognise': { status: 'idle', screen: 'Welcome back!' },
-  })) {
+  const askedLine = 'deepseek-acme-2 asked a question: the operator\'s to act on';
+  const variants: [string, { status?: string; screen?: string }, string[]][] = [
+    ['mid-turn', { status: 'working', screen: busy }, [askedLine]],
+    ['at a permission prompt that herdr calls idle', { status: 'idle', screen: permission }, [askedLine]],
+    ['holding unsent text', { status: 'idle', screen: unsent }, [askedLine]],
+    // The operator's own screen is one nothing reads, so the fail-safe reports that to the
+    // operator too: the question waits behind it, and is still never dropped.
+    ['with a screen the watch doesn\'t recognise', { status: 'idle', screen: 'Welcome back!' }, [`claude-operator-acme: herdr reports the status "idle"`, askedLine]],
+  ];
+  for (const [name, operator, waiting] of variants) {
     test(`waits for an operator ${name}, and is never dropped`, () => {
       const memory = newMemory();
       expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: asked(operator), machine: fine, now: 0, memory }).nudge).toBeNull();
-      expect(memory.pending.length).toBe(1);
+      expect(memory.pending).toEqual(waiting);
       const later = pass({ team: team(), watch: team().watch, state: emptySession(), live: asked({}), machine: fine, now: 5 * MIN, memory });
       expect(later.nudge?.text).toBe(NUDGE_TEXT);
-      expect(later.nudge?.pending).toEqual(['deepseek-acme-2 asked a question: the operator\'s to act on']);
+      expect(later.nudge?.pending).toEqual(waiting);
       expect(memory.pending).toEqual([]);
     });
   }

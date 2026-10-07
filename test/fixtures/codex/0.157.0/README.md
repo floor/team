@@ -175,3 +175,23 @@ the text — `unsent.txt` and `exit-typed.txt` show the drop between the text an
 line — and that row is the box's frame, not content: the profile counts it
 (`frame_rows: 1`), the box read strips just it, and an empty row beyond it is a row the
 text does not have, so the Enter is refused.
+
+## Constructed: the Terra pair
+
+Not captures. Both files are `idle.txt`'s header box, tip row and `GPT-5.6-Terra` status
+row, drawn again around the box's two rows, and they differ only in the two anchors the
+shipped composer reads:
+
+- `terra-recognised-constructed.txt` keeps the `› Ask Codex to do anything` prompt row
+  and the status row as the pane's last non-blank line, so the shipped anchors read it
+  as they read the captured idle screen — idle, and idle in the composer.
+- `terra-quiet-unknown-constructed.txt` breaks both on purpose — a `❯` prompt glyph the
+  profile does not know, and a `? for shortcuts` row under the status line, so a
+  status-last read cannot pin it. It reads unknown for the screen and for the composer:
+  the shape of a quiet Terra seat whose anchors miss — a quiet seat the watch reports
+  as the unknown attention, and one a non-owner's `remove` takes out of the team while
+  leaving its pane as it is.
+
+The pair stands for that screen without claiming to be it: a real capture replaces the
+constructed rows, not the profile's reading of them. Constructed, so neither can feed
+`trust-answer` (captures only).
