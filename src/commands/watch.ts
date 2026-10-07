@@ -3,7 +3,7 @@ import { approvalCase, budgetsInForceOf, watchInForceOf } from '../approve/appro
 import { callerOf, describeCaller, fileOwnerRefusal, isOwner } from '../caller.ts';
 import { loadReadings, saveSpendReadings, updateReadings, type Seen, type SpendReading } from '../budgets/readings.ts';
 import { runChecksOf, type CheckOutcome } from '../budgets/run.ts';
-import { currentTeam } from '../file/current.ts';
+import { currentTeam, rememberCurrent } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
 import { homedir } from 'node:os';
 import { agentStatus, PANE_WINDOW, paneForeground, paneProcesses, paneRead, pressEnter, typeText, type PaneProcesses } from '../herdr.ts';
@@ -140,7 +140,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
     // exit: watch.file-owner
     return 1;
   }
-  const first = currentTeam(io.cwd, args.values.file, sources.now(), sources.home);
+  const first = currentTeam(io.cwd, args.values.file, sources.now(), sources.home, false);
   if (!first.ok) {
     for (const problem of first.errors) io.stderr(`team watch: ${problem.line ? `team.yaml line ${problem.line}: ` : ''}${problem.message}\n`);
     // exit: watch.not-a-repo
@@ -163,6 +163,11 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
       return 1;
     }
   }
+
+  // The load above wrote nothing. An allowed run remembers now, before the already-running
+  // check and the loop, so a watch that then stops still recorded the file, and one the flag
+  // gate refused recorded nothing. The loop's own read remembers again when the file changes.
+  if (first.path !== undefined) rememberCurrent(first.dir, first.path, sources.now());
 
   const other = readState(dir).sessions[session]?.watch;
   if (other && other.pid !== sources.pid && sources.alive(other.pid)) {

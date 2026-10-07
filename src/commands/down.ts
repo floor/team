@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import { readArgs } from '../args.ts';
 import { anotherPaneRefusal, callerOf, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller } from '../caller.ts';
 import { delegateGate, logDelegated, type DelegateSources, type DelegateVerdict } from '../delegate.ts';
-import { currentTeam, type Current } from '../file/current.ts';
+import { currentTeam, rememberCurrent, type Current } from '../file/current.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
 import {
@@ -410,17 +410,17 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   const file = branching() ? undefined : args.values.file;
   const sessionFlag = branching() ? undefined : args.values.session;
 
-  // The run's file. The owner's path is today's exactly: `currentTeam`, which remembers a valid
-  // file and falls back to the last copy that validated. A caller that is not the owner may be a
-  // delegate's, and a delegated run reads the live file directly — never `currentTeam`, never
-  // `last_valid` — so a live file that carries `delegates` is the run's file, whether the gate
-  // passes that caller or refuses it. A file that does not load carries no delegate: today's
-  // path, with today's fallback and today's words, decides.
+  // The run's file. The load is today's: `currentTeam` falls back to the last copy that
+  // validated. Remembering is off until the caller rule and `--abandon` have answered, below.
+  // A caller that is not the owner may be a delegate's, and a delegated run reads the live file
+  // directly — never `currentTeam`, never `last_valid` — so a live file that carries `delegates`
+  // is the run's file, whether the gate passes that caller or refuses it. A file that does not
+  // load carries no delegate: today's path, with today's fallback and today's words, decides.
   const owner = isOwner(walkCaller(io));
   const liveNow = owner ? undefined : liveFile();
   const current: Current = liveNow !== undefined && liveNow.team.delegates !== null
     ? { ok: true, team: liveNow.team, root: liveNow.root, dir: liveNow.dir, warnings: [] }
-    : currentTeam(io.cwd, file, sources.now(), sources.home);
+    : currentTeam(io.cwd, file, sources.now(), sources.home, false);
   if (!current.ok) {
     for (const problem of current.errors) {
       io.stderr(`team down: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
@@ -465,6 +465,17 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       caller = callerOf(io);
       session = team.session;
     }
+  }
+
+  // The load above wrote nothing. Remember only a run both gates have allowed, and do it before
+  // herdr is asked, so an allowed run that then finds the session idle or herdr silent still
+  // stores the file it loaded. The clock reading is this moment; the text is that file. A
+  // refused caller leaves the state as it was, including one whose session is idle and returns
+  // before the refusal is printed. A delegated run has no loaded path and still remembers nothing.
+  const callerRefused = rule.kind !== 'ok' && !branching();
+  const abandonRefused = args.flags.has('abandon') && granted === undefined && !callerOwns(caller) && verdict === undefined;
+  if (!callerRefused && !abandonRefused && current.path !== undefined) {
+    rememberCurrent(current.dir, current.path, sources.now());
   }
 
   const running = sources.sessionRunning(session);
