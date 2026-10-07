@@ -36,6 +36,10 @@ flag, any caller detail:
 
     team check: this team is not yours to check
 
+The walk that decides it reads the processes above the call — a guard against a mistaken agent,
+not a hostile one, so a caller that forges the owner's placement is a known limitation, being
+hardened.
+
 `--file` and `--session` are the owner's. Aimed by a caller that passes the gate but is not the
 owner, each meets the refusal every command gives it (`--file is the owner's, from a terminal
 outside herdr; this call is …`) and exits 1. For every other caller the two flags aim nothing
@@ -48,12 +52,14 @@ and open nothing: the target is the file the caller's own place finds.
 - the approval store: the record, its copy, and the file against it;
 - `team.state.json`: the seats' stages, waits, rules and launch identities, the worktrees, and
   the session's watch;
-- herdr, read-only, through the same reads status makes — narrowed to one pass over the panes
-  **this project's state records for this team's seats**. A pane the state records for another
-  session, another project or nobody at all is not read, and the pass uses the watch's own
-  screen reader, so the words a seat's screen yields are the watch's own words. Nothing of the
-  watch's pass, report or nudge path runs: no key is sent, no pane is typed into, no memory is
-  written.
+- herdr, read-only, through the same reads status makes, narrowed to one pass over the panes
+  this project's state records for this team's seats: a pane the state records for another
+  session, another project or nobody at all is not read. The narrowing is what the file and the
+  state say, not a guarantee — a caller with a folder of its own can have the gate admit it on
+  that folder's terms — but the disclosure is bounded all the same: no more than what `status`
+  already discloses to the same caller, and of a screen only its kind — the watch's own fixed
+  words for it, read through the watch's own screen reader. Nothing of the watch's pass, report
+  or nudge path runs: no key is sent, no pane is typed into, no memory is written.
 
 It writes nothing at all — not the state, not the store, not the `last_valid` copy `status`
 keeps beside the file it read — for every caller, the owner included.
