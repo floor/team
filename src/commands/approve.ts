@@ -15,7 +15,7 @@ import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { OVERRIDE_CHANGED, overrideFile } from '../profiles/overrides.ts';
 import { approvalStanding, LEGACY_LINE, readApproval, storePath, writeApproval, type Ceilings } from '../store/store.ts';
-import { keyFingerprint, keyOf, keyState, recordedGeneration } from '../store/keys.ts';
+import { keyFingerprint, keyOf, keyRefusal, keyState, recordedGeneration } from '../store/keys.ts';
 
 // What a read of the terminal found: a canonical-mode line is queued (`waiting`), nothing is
 // (`empty`), or the terminal could not be read at all (`unreadable`). Only `empty` lets approve
@@ -312,6 +312,18 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     return 1;
   }
 
+  // A key that already exists and cannot be read refuses here, before the terminal is read and
+  // before the question: a run that can never sign must not consume a deliberate answer, and
+  // the repair — restore the file from a copy — is the same whether the key broke a minute or
+  // a month ago. This look is read-only; the key that is missing is still made only once every
+  // refusal below has had its chance.
+  const refusal = keyRefusal(sources.home);
+  if (refusal !== null) {
+    io.stderr(`team approve: ${refusal}\n`);
+    // exit: approve.key
+    return 1;
+  }
+
   // The default path asks nothing: the summary above is the last thing printed, and the
   // record is written. Two things keep the question's protection: the owner check above
   // (the input is a terminal) and this guard — input already waiting on that terminal is a
@@ -346,15 +358,16 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   }
 
   // The key is created only now, once every refusal above has had its chance: a not-owner, a
-  // waiting line, an unreadable terminal or a rejected answer leaves no key folder behind, so
-  // on a first approval the refusals' "nothing was written" is true. A key that exists but
-  // cannot be read fails closed here: a new key would orphan every record already signed, so
-  // the owner restores it.
+  // broken key, a waiting line, an unreadable terminal or a rejected answer leaves no key
+  // folder behind, so on a first approval the refusals' "nothing was written" is true. The
+  // look above found a key or none; a key that turns unreadable in the window between that
+  // look and this write still fails closed here — a new key would orphan every record
+  // already signed, so the owner restores it.
   try {
     keyOf(sources.home);
   } catch (error) {
     io.stderr(`team approve: ${(error as Error).message}\n`);
-    // exit: approve.key
+    // exit: approve.key-changed
     return 1;
   }
 

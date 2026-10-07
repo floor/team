@@ -578,6 +578,13 @@
     {
       "code": 1,
       "command": "approve",
+      "id": "approve.key-changed",
+      "meaning": "the signing key changed while the file was being approved",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
       "id": "approve.not-owner",
       "meaning": "a seat ran it",
       "trigger": "team approve"

@@ -88,6 +88,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `approve.input-unreadable` | `approve` | 1 | the terminal could not be read to check for input waiting | `team approve` |
 | `approve.input-waiting` | `approve` | 1 | input was waiting on the terminal | `team approve` |
 | `approve.key` | `approve` | 1 | the signing key can't be read | `team approve` |
+| `approve.key-changed` | `approve` | 1 | the signing key changed while the file was being approved | `team approve` |
 | `approve.not-owner` | `approve` | 1 | a seat ran it | `team approve` |
 | `approve.store` | `approve` | 1 | the approval store sits where seats work | `team approve` |
 | `approve.file` | `approve` | 2 | the team file can't be read | `team approve --file missing.yaml` |
