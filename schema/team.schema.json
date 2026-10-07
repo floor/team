@@ -8,7 +8,6 @@
   "required": [
     "format",
     "project",
-    "coordinator",
     "operator",
     "seats",
     "trust"
@@ -238,7 +237,8 @@
     "coordinator": {
       "type": "string",
       "minLength": 1,
-      "$comment": "must name a declared seat: one, without count, neither parked nor stopped"
+      "deprecated": true,
+      "$comment": "one seat may carry `leads: true` instead; a key must name a declared seat: one, without count, neither parked nor stopped"
     },
     "operator": {
       "type": "string",
@@ -501,6 +501,10 @@
           },
           "stopped": {
             "type": "boolean"
+          },
+          "leads": {
+            "type": "boolean",
+            "$comment": "the seat that leads: exactly one seat carries it"
           },
           "count": {
             "type": "integer",

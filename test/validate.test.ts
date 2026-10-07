@@ -23,6 +23,10 @@ seats:
     launch: claude --model claude-opus-5-5
 `;
 
+// The notice a file spelled with the legacy `coordinator:` key carries, at line 3 of `minimal`.
+// Files keep the old spelling on purpose — it is still read — so they warn.
+const notice = { line: 3, message: '`coordinator:` is now `leads: true` on the lead\'s seat, and is still read' };
+
 // Replaces one piece of a valid file, and fails loudly if the piece isn't there.
 function change(text: string, from: string, to: string): string {
   if (!text.includes(from)) throw new Error(`the fixture has no "${from}"`);
@@ -48,8 +52,8 @@ test('an absolute trust path is a folder entry', () => {
 describe('the complete example of the RFC', () => {
   const { team, warnings } = valid(example);
 
-  test('is accepted without warnings', () => {
-    expect(warnings).toEqual([]);
+  test('is accepted, carrying only the legacy key\'s notice', () => {
+    expect(warnings).toEqual([{ ...notice, line: 5 }]);
     expect(team.format).toBe(1);
     expect(team.visibility).toBe('public');
   });
@@ -115,6 +119,93 @@ describe('a minimal file', () => {
   });
 });
 
+// The lead's two spellings: the `coordinator:` key above, still read, and `leads: true` on
+// exactly one seat. `bare` drops the key and moves the operator to a second seat, so a
+// derivation's only refusal is the lead's own. `marked` puts the mark after the lead's launch.
+const workerSeat = `  - role: implementer
+    name: worker
+    cli: codex
+    vendor: openai
+    model: GPT Sol
+    version: "6"
+    launch: codex
+`;
+const bare = `${change(change(minimal, 'coordinator: lead\n', ''), 'operator: lead', 'operator: worker')}${workerSeat}`;
+const marked = change(bare, '    launch: claude --model claude-opus-5-5\n', '    launch: claude --model claude-opus-5-5\n    leads: true\n');
+
+describe('the lead is a field, or the legacy key', () => {
+  test('a marked file needs no key, and carries no notice', () => {
+    const { team, warnings } = valid(marked);
+    expect(team.coordinator).toBe('lead');
+    expect(warnings).toEqual([]);
+  });
+
+  test('a file with neither spelling is refused at its first line', () => {
+    expect(errors(bare)).toEqual(['1: the file has no seat that leads: put `leads: true` on one seat']);
+  });
+
+  test('two marks are refused at the second one', () => {
+    // `marked` carries the lead's mark on line 14 and the worker seat on 15..21, so the second
+    // mark lands on line 22.
+    const twice = change(marked, '    launch: codex\n', '    launch: codex\n    leads: true\n');
+    expect(errors(twice)).toEqual(['22: `leads` is on more than one seat: a team has one orchestrator']);
+  });
+
+  test('the key alone still reads, with its own refusals', () => {
+    const { team, warnings } = valid(minimal);
+    expect(team.coordinator).toBe('lead');
+    expect(warnings).toEqual([notice]);
+    expect(errors(change(minimal, 'coordinator: lead', 'coordinator: boss'))).toEqual(['3: coordinator "boss" names no declared seat']);
+  });
+
+  test('the key beside a mark on the same seat is the one team', () => {
+    const both = change(minimal, '    launch: claude --model claude-opus-5-5\n', '    launch: claude --model claude-opus-5-5\n    leads: true\n');
+    const { team, warnings } = valid(both);
+    expect(team.coordinator).toBe('lead');
+    expect(warnings).toEqual([notice]);
+  });
+
+  test('the key and a mark on another seat are refused at the key', () => {
+    // The key is on line 3, the mark on `worker` on line 22.
+    expect(errors(`${minimal}${workerSeat}    leads: true\n`)).toEqual([
+      '3: `coordinator:` names lead and `leads` is on worker: a file names one lead',
+    ]);
+  });
+
+  test('a marked seat that cannot lead is refused in the mark\'s spelling, key or no key', () => {
+    // Inserted before the lead's launch, the mark lands on line 15 of `marked`.
+    const refused = (field: string) =>
+      errors(change(marked, '    launch: claude --model claude-opus-5-5\n', `${field}\n    launch: claude --model claude-opus-5-5\n`));
+    expect(refused('    parked: true')).toEqual(['15: `leads` on "lead" can\'t be a parked seat']);
+    expect(refused('    stopped: true')).toEqual(['15: `leads` on "lead" can\'t be a stopped seat']);
+    expect(refused('    count: 2')).toEqual(['15: `leads` on "lead" can\'t be a seat with count']);
+    // Beside the key, the marked seat's refusal does not let the key pick another seat: the
+    // operator stands clear of both, so both lines are the lead's.
+    const parkedWorker = change(workerSeat, '    launch: codex\n', '    parked: true\n    launch: codex\n');
+    const apart = errors(`${minimal}${parkedWorker}    leads: true\n`);
+    expect(apart).toEqual([
+      '3: `coordinator:` names lead and `leads` is on worker: a file names one lead',
+      '23: `leads` on "worker" can\'t be a parked seat',
+    ]);
+  });
+
+  test('a marked seat that is broken already adds no second complaint', () => {
+    const found = errors(change(marked, '    vendor: anthropic\n', ''));
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain('vendor is required');
+  });
+
+  test('a quoted mark and `leads: false` read as no mark at all', () => {
+    const quoted = change(marked, '    leads: true\n', '    leads: "true"\n');
+    expect(errors(quoted)).toEqual([
+      '1: the file has no seat that leads: put `leads: true` on one seat',
+      '14: seat "lead": leads must be true or false',
+    ]);
+    const off = change(marked, '    leads: true\n', '    leads: false\n');
+    expect(errors(off)).toEqual(['1: the file has no seat that leads: put `leads: true` on one seat']);
+  });
+});
+
 const refusals: [string, string, RegExp][] = [
   ['no format', change(minimal, 'format: 1\n', ''), /format is required/],
   ['another format', change(minimal, 'format: 1', 'format: 2'), /format must be 1/],
@@ -123,7 +214,7 @@ const refusals: [string, string, RegExp][] = [
   ['an unknown seat field', change(minimal, '    cli:', '    shell: zsh\n    cli:'), /unknown field "shell" in a seat/],
   ['a duplicate key', change(minimal, 'operator: lead', 'operator: lead\nproject: other'), /duplicate key "project"/],
   ['no project', change(minimal, 'project: acme\n', ''), /project is required/],
-  ['no coordinator', change(minimal, 'coordinator: lead\n', ''), /coordinator is required/],
+  ['no coordinator', change(minimal, 'coordinator: lead\n', ''), /the file has no seat that leads: put `leads: true` on one seat/],
   ['no operator', change(minimal, 'operator: lead\n', ''), /operator is required/],
   ['no seats', minimal.slice(0, minimal.indexOf('seats:')), /seats is required/],
   ['a coordinator that names no seat', change(minimal, 'coordinator: lead', 'coordinator: boss'), /coordinator "boss" names no declared seat/],
@@ -294,11 +385,11 @@ describe('secrets', () => {
   test('a long random-looking value only warns, and names its line', () => {
     const text = `${minimal}tools:\n  chat: { kind: slack, channel: Zx8Kq2Lm9Pv4Rt7Wy1Bn6Cd3Fg5Hj0QsAeUiOpXc }\n`;
     const result = valid(text);
-    expect(result.warnings).toEqual([{ line: 16, message: expect.stringMatching(/random-looking/) }]);
+    expect(result.warnings).toEqual([notice, { line: 16, message: expect.stringMatching(/random-looking/) }]);
   });
   test('ordinary ids and slugs don\'t warn', () => {
     const text = `${minimal}tools:\n  chat: { kind: slack, workspace: acme, channel: C04ABCDEF12 }\n`;
-    expect(valid(text).warnings).toEqual([]);
+    expect(valid(text).warnings).toEqual([notice]);
   });
 });
 

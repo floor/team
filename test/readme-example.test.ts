@@ -32,8 +32,10 @@ const exampleTeam = example.team;
 const leadOf = (source: typeof team) => source.seats.find((seat) => seat.name === source.coordinator);
 
 describe("the README's by-example file", () => {
-  test('is accepted without warnings', () => {
-    expect(warnings).toEqual([]);
+  test('is accepted, carrying only the legacy key\'s notice', () => {
+    // The fence keeps the old spelling until the rewrite release (P3.6): it loads, and says
+    // out loud that the spelling moved.
+    expect(warnings).toEqual([{ line: 3, message: '`coordinator:` is now `leads: true` on the lead\'s seat, and is still read' }]);
     expect(team.project).toBe('hello');
   });
 

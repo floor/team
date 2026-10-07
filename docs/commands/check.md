@@ -153,6 +153,7 @@ The commit a person wrote needs no signature:
 
 ```console
 $ team check HEAD~2 ; echo "exit $?"
+team check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 team check: 1 commit checked, 1 by a human or a merge: ok
 exit 0
 ```
@@ -161,6 +162,7 @@ The newest commit signs, but leaks the forbidden line:
 
 ```console
 $ team check HEAD ; echo "exit $?"
+team check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 <sha> Tidy the logs
   line 5: forbidden pattern ^Claude-Session:
     Claude-Session: 8f21c4a9
@@ -172,6 +174,7 @@ A range reads newest first and reports every commit with findings:
 
 ```console
 $ team check HEAD~3..HEAD ; echo "exit $?"
+team check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 <sha> Tidy the logs
   line 5: forbidden pattern ^Claude-Session:
     Claude-Session: 8f21c4a9
@@ -185,6 +188,7 @@ exit 1
 
 ```console
 $ team check HEAD~3..HEAD --since HEAD~1 ; echo "exit $?"
+team check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 <sha> Tidy the logs
   line 5: forbidden pattern ^Claude-Session:
     Claude-Session: 8f21c4a9
@@ -196,6 +200,7 @@ A pull request's body is checked as well:
 
 ```console
 $ team check HEAD~3..HEAD --pr pr.md ; echo "exit $?"
+team check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 <sha> Tidy the logs
   line 5: forbidden pattern ^Claude-Session:
     Claude-Session: 8f21c4a9
@@ -209,6 +214,7 @@ A ref that names nothing can't be checked:
 
 ```console
 $ team check origin/main ; echo "exit $?"
+team check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 team check: "origin/main" doesn't name a commit
 exit 2
 ```

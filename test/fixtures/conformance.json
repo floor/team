@@ -1210,6 +1210,10 @@
       "ok": false
     },
     {
+      "file": "yaml/a-duplicate-key-in-a-seat.yaml",
+      "ok": false
+    },
+    {
       "file": "yaml/a-duplicate-key.yaml",
       "ok": false
     },

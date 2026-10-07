@@ -1,5 +1,6 @@
 import type { YamlEntry } from '../../yaml.ts';
 import type { Check } from '../check.ts';
+import type { LeadMark } from './section.ts';
 import type { DraftSeat } from './seats.ts';
 
 export function readLead(
@@ -7,15 +8,51 @@ export function readLead(
 ): string {
   const name = check.required(entry, field, 1);
   if (!name || !entry) return '';
-  const seat = seats.find((candidate) => candidate.name === name);
-  const line = entry.value.line;
-  if (!seat) {
-    if (!broken.has(name)) check.fail(line, `${field} "${name}" names no declared seat`);
-  }
-  else if (seat.count > 1) check.fail(line, `${field} "${name}" can't be a seat with count`);
-  else if (seat.parked) check.fail(line, `${field} "${name}" can't be a parked seat`);
-  else if (seat.stopped) check.fail(line, `${field} "${name}" can't be a stopped seat`);
+  seatProblems(name, `${field} "${name}"`, entry.value.line, seats, broken, check);
   return name;
+}
+
+/**
+ * The file's lead, from its two spellings: the top-level `coordinator:` key, still read, and
+ * `leads: true` on exactly one seat. One lead, or none: a file with neither spelling is refused,
+ * a file with the mark on two seats is refused, and a key naming one seat beside a mark on
+ * another is refused. A marked file and a keyed file of the same team carry the same lead's name
+ * and nothing else apart — the mark never reaches a seat object — so the two read as one team.
+ */
+export function readLeadField(
+  entry: YamlEntry | undefined, marks: readonly LeadMark[], seats: DraftSeat[], broken: Set<string>, check: Check,
+): string {
+  if (marks.length > 1) {
+    // Refused at the second mark's line: the one that makes it more than one.
+    check.fail(marks[1]!.line, '`leads` is on more than one seat: a team has one orchestrator');
+    return '';
+  }
+  const mark = marks[0];
+  if (!mark) {
+    if (entry) return readLead(entry, 'coordinator', seats, broken, check);
+    check.fail(1, 'the file has no seat that leads: put `leads: true` on one seat');
+    return '';
+  }
+  if (entry) {
+    const key = check.required(entry, 'coordinator', 1);
+    if (key !== undefined && key !== mark.name) {
+      check.fail(entry.value.line, `\`coordinator:\` names ${key} and \`leads\` is on ${mark.name}: a file names one lead`);
+    }
+  }
+  // The marked seat's own checks run whichever way the key spelled it: a mark on a seat that
+  // cannot lead is refused, and that refusal never lets the key point the lead at someone else.
+  seatProblems(mark.name, `\`leads\` on "${mark.name}"`, mark.line, seats, broken, check);
+  return mark.name;
+}
+
+/** The three ways a seat the file names cannot lead, in the words the file used to name it. */
+function seatProblems(name: string, at: string, line: number, seats: DraftSeat[], broken: Set<string>, check: Check): void {
+  const seat = seats.find((candidate) => candidate.name === name);
+  if (!seat) {
+    if (!broken.has(name)) check.fail(line, `${at} names no declared seat`);
+  } else if (seat.count > 1) check.fail(line, `${at} can't be a seat with count`);
+  else if (seat.parked) check.fail(line, `${at} can't be a parked seat`);
+  else if (seat.stopped) check.fail(line, `${at} can't be a stopped seat`);
 }
 
 /** Whether a seat is declared as coordinator or operator in the team file. */

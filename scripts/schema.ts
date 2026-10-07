@@ -16,19 +16,23 @@ export const NAME = 'schema/team.schema.json';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const target = join(root, 'schema', 'team.schema.json');
 
-// The fields the validator refuses to see missing: the format marker, the project, the two leads
+// The fields the validator refuses to see missing: the format marker, the project, the operator
 // and the seats. `required` is a shape of the whole file, not of one section, so it lives here;
-// every field it names is refused by name in the section that reads it.
-const REQUIRED = ['format', 'project', 'coordinator', 'operator', 'seats', 'trust'];
+// every field it names is refused by name in the section that reads it. The lead is required
+// too, but by either of its two spellings — the `coordinator:` key or `leads: true` on one seat —
+// and `required` can name only keys, so the loader holds that rule.
+const REQUIRED = ['format', 'project', 'operator', 'seats', 'trust'];
 
 /** The whole schema: one property per top-level key, in the order the sections run. */
 export function buildSchema(): JsonSchema {
   const properties: Record<string, JsonSchema> = {};
   for (const section of SECTIONS) {
     // `watch.checks` is a line inside `watch`, not a key of the file: its fragment is the checks
-    // property of the watch fragment, and only top-level sections become properties here.
+    // property of the watch fragment, and only top-level sections become properties here. The
+    // property is the section's declared file key — the key the validator reads — not its
+    // canonical name, which stays the digest's and the wave's.
     if (section.name.includes('.')) continue;
-    properties[section.name] = section.schema;
+    properties[section.key ?? section.name] = section.schema;
   }
   return {
     $schema: 'https://json-schema.org/draft/2020-12/schema',

@@ -286,6 +286,7 @@ never reported — that one too comes from the status line, so its row marks it 
 
 ```console
 $ team status ; echo "exit $?"
+team status: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 team beacon, session "beacon"
   claude-keeper  missing  Claude Opus 5.5  -
   claude-beacon  working  Claude Opus 5.5  w1:p1
@@ -304,6 +305,7 @@ exit 1
 
 ```console
 $ team status --json ; echo "exit $?"
+team status: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 {
   "format": 1,
   "project": "beacon",
@@ -391,6 +393,7 @@ Now nothing disagrees:
 
 ```console
 $ team status ; echo "exit $?"
+team status: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 team beacon, session "beacon"
   claude-keeper  idle     Claude Opus 5.5  w2:p1
   claude-beacon  working  Claude Opus 5.5  w1:p1

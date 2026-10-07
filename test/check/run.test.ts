@@ -386,7 +386,7 @@ describe('the command', () => {
     expect(passed).toEqual({
       code: 0,
       stdout: `team check: 2 commits checked, 17 skipped (since ${hash.spaces.slice(0, 10)}): ok\n`,
-      stderr: '',
+      stderr: 'team check: warning: line 3: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read\n',
     });
     expect((await run([hash.unsigned, '--since', hash.old], 'file')).code).toBe(1);
 

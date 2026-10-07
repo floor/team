@@ -47,9 +47,9 @@ function readTeam(root: YamlNode, check: Check, home?: string, fs?: FsReader, ro
     return null;
   }
   // `watch.checks` names a line inside `watch`, not a top-level key, so it is no field of the file.
-  const top = check.fields(root, 'the file', SECTIONS.filter((section) => !section.name.includes('.')).map((section) => section.name));
+  const top = check.fields(root, 'the file', SECTIONS.filter((section) => !section.name.includes('.')).map((section) => section.key ?? section.name));
 
-  const ctx: Ctx = { check, root, top, broken: new Set(), values: new Map(), home, fs, rootDir };
+  const ctx: Ctx = { check, root, top, broken: new Set(), leads: [], values: new Map(), home, fs, rootDir };
 
   // One wave over the list at a time: a section runs once every section it reads (`after`) has
   // run, so the code moved into the modules reports in the order it reported when it lived here.
@@ -59,7 +59,7 @@ function readTeam(root: YamlNode, check: Check, home?: string, fs?: FsReader, ro
     for (const section of SECTIONS) {
       if (!pending.has(section.name)) continue;
       if (section.after.some((name) => pending.has(name))) continue;
-      ctx.values.set(section.name, section.validate(top.get(section.name), ctx));
+      ctx.values.set(section.name, section.validate(top.get(section.key ?? section.name), ctx));
       pending.delete(section.name);
       ran++;
     }

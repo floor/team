@@ -431,6 +431,7 @@ The owner approves it, and the next pass runs without the check:
 
 ```console
 $ team approve ; echo "exit $?"
+team approve: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 ./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 
   + 10: watch:

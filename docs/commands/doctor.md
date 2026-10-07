@@ -261,6 +261,7 @@ Everything here is as it should be:
 
 ```console
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
 ok    the check for openai reads weekly 40% used
@@ -270,7 +271,7 @@ ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: nothing missing, 1 warning
+team doctor: nothing missing, 2 warnings
 exit 0
 ```
 
@@ -290,6 +291,7 @@ herdr's own version line says only where it sits, for the same reason:
 
 ```console tools="claude-code=old"
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
 ok    the check for openai reads weekly 40% used
@@ -299,7 +301,7 @@ warn  claude 2.1.200 is older than the tested 2.1.288: its screens are untested 
 ok    claude-code: logged in
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: nothing missing, 2 warnings
+team doctor: nothing missing, 3 warnings
 exit 0
 ```
 
@@ -308,6 +310,7 @@ everything else is as the owner's:
 
 ```console caller=claude-beacon
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
 --    the budget checks were not run: only the owner runs them
@@ -317,7 +320,7 @@ ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: nothing missing, 1 warning
+team doctor: nothing missing, 2 warnings
 exit 0
 ```
 
@@ -372,6 +375,7 @@ seats:
 
 ```console
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 MISS  run `team approve`: `limits` changed; seat codex-scribe is not in the approved file
 ok    the check for openai reads weekly 40% used
@@ -382,7 +386,7 @@ ok    claude-code: logged in
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: 2 missing, 1 warning: 2 of them block `up` and `add`
+team doctor: 2 missing, 2 warnings: 2 of them block `up` and `add`
 exit 1
 ```
 
@@ -437,6 +441,7 @@ seats:
 
 ```console
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 MISS  run `team approve`: `limits` changed; seat claude-beacon changed; seat codex-scribe is not in the approved file
 ok    the check for openai reads weekly 40% used
@@ -448,7 +453,7 @@ warn  claude-beacon: the launch starts Claude Opus 5.5, the file says Claude Son
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: 2 missing, 2 warnings: 2 of them block `up` and `add`
+team doctor: 2 missing, 3 warnings: 2 of them block `up` and `add`
 exit 1
 ```
 
@@ -515,6 +520,7 @@ seats:
 
 ```console tools="codex=fine"
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 MISS  run `team approve`: `limits` changed; seat codex-scribe is not in the approved file; seat codex-reader is not in the approved file
 ok    the check for openai reads weekly 40% used
@@ -527,7 +533,7 @@ ok    codex: logged in
 warn  codex-scribe: the launch runs team-codex, not codex, and names no model: if the launcher chooses the model, say so with model_from: launcher
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: 1 missing, 2 warnings: 1 of them block `up` and `add`
+team doctor: 1 missing, 3 warnings: 1 of them block `up` and `add`
 exit 1
 ```
 
@@ -594,6 +600,7 @@ seats:
 
 ```console tools="codex=fine"
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 MISS  run `team approve`: `limits` changed; seat codex-scribe is not in the approved file; seat codex-reader is not in the approved file
 ok    the check for openai reads weekly 40% used
@@ -606,7 +613,7 @@ ok    codex: logged in
 --    codex-scribe: the model is chosen by its launcher; checked on the running seat
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: 1 missing, 1 warning: 1 of them block `up` and `add`
+team doctor: 1 missing, 2 warnings: 1 of them block `up` and `add`
 exit 1
 ```
 
@@ -719,6 +726,7 @@ echo "weekly 99% used"
 
 ```console
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
 warn  the check for openai changed after approval and was not run; that account reads unknown
@@ -728,7 +736,7 @@ ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: nothing missing, 2 warnings
+team doctor: nothing missing, 3 warnings
 exit 0
 ```
 
