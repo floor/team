@@ -101,7 +101,7 @@ function sources(over: Partial<WatchSources> = {}): WatchSources {
 }
 
 describe('the watch closes what its authority allows', () => {
-  test('a temporary seat whose result exists, and that has worked and is free, is closed', async () => {
+  test('a temporary seat whose result exists, and that has worked and is free, is left', async () => {
     writeFileSync(join(dir, 'done.md'), 'done\n');
     updateState(join(dir, '.agents'), (state) => {
       const session = (state.sessions.acme ??= emptySession());
@@ -116,8 +116,8 @@ describe('the watch closes what its authority allows', () => {
       live: () => scene([tmp]),
       stopSeat: async (_session, seat) => { stopped.push(seat.name); return true; },
     }));
-    expect(stopped).toEqual(['worker-tmp-1']);
-    expect(io.out).toContain('closed worker-tmp-1');
+    expect(stopped).toEqual([]);
+    expect(io.out).toContain('worker-tmp-1: its record is not an approved seat; left as it is (the owner cleans it: team remove worker-tmp-1 --abandon)');
     expect(readFileSync(file, 'utf8')).not.toContain('tmp');
   });
 

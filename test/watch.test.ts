@@ -894,6 +894,31 @@ describe('team watch', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  test.each([
+    ['never approved', (): ReturnType<WatchSources['standing']> => () => ({ kind: 'none' })],
+    ['legacy', (): ReturnType<WatchSources['standing']> => () => ({ kind: 'legacy' })],
+    ['refused', (): ReturnType<WatchSources['standing']> => () => ({
+      kind: 'refused',
+      why: 'the record does not carry a valid signature: it was changed after approval, or written without the key: run `team approve` once',
+    })],
+  ] as const)('types nothing while the record is %s', async (_name, standing) => {
+    const io = testIo(dir, { kind: 'owner' });
+    const code = await runWatch(['--file', file], io, sources(1, { standing: standing() }));
+    expect(code).toBe(0);
+    expect(typed).toEqual([]);
+  });
+
+  test('types nothing when herdr lists two agents of the approved operator', async () => {
+    const io = testIo(dir, { kind: 'owner' });
+    const doubled = live({ 'deepseek-acme-2': { status: 'blocked', screen: question } });
+    const operator = doubled.agents.find((agent) => agent.name === 'claude-operator-acme');
+    if (!operator) throw new Error('the fixture has no operator');
+    doubled.agents.push({ ...operator, pane: 'w9:p1', workspace: 'w9' });
+    const code = await runWatch(['--file', file], io, sources(1, { live: () => doubled }));
+    expect(code).toBe(0);
+    expect(typed).toEqual([]);
+  });
+
   test('reports to the log, the desktop and the operator, and writes its heartbeat', async () => {
     const io = testIo(dir, { kind: 'owner' });
     let beat: unknown;

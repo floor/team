@@ -5,6 +5,7 @@ import { loadReadings, saveSpendReadings, updateReadings, type Seen, type SpendR
 import { runChecksOf, type CheckOutcome } from '../budgets/run.ts';
 import { currentTeam, rememberCurrent } from '../file/current.ts';
 import type { TeamFile } from '../file/types.ts';
+import { validateTeamFile } from '../file/validate.ts';
 import { homedir } from 'node:os';
 import { agentStatus, PANE_WINDOW, paneForeground, paneProcesses, paneRead, pressEnter, typeText, type PaneProcesses } from '../herdr.ts';
 import type { Command, Io } from '../io.ts';
@@ -20,8 +21,6 @@ import { judgeTemporary, judgeWorktree } from '../watch/close.ts';
 import { readEnd, type EndView } from '../watch/end.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
 import { boxHoldsText, settleScreen } from '../launch/deliver.ts';
-import type { DownSeat } from '../launch/plan.ts';
-import { stopRunning, realSources as removeSources } from './remove.ts';
 import { removeWorktree } from './worktree.ts';
 import { stateOf } from './down.ts';
 import { profileFor } from '../profiles/index.ts';
@@ -313,6 +312,7 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
           quotaFor: (cli) => quotaWith(cli, overrides.profiles),
           readScreen: (cli, pane) => classifyWith(cli, pane, overrides.profiles),
           readings: stored, foreground, processes,
+          nudgeOperator: approvedOperator(standing),
         });
         // The pass folds its figures where the state is held: two watches of the project fold one
         // after the other, not over each other. A watch on a foreign session still folds, for its
@@ -345,6 +345,15 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
   return 0;
 }
 
+/** The operator the nudge may type to: the approved copy's, and only while that copy verifies. */
+function approvedOperator(standing: Standing): { name: string; cli: string } | null {
+  if (standing.kind !== 'verified') return null;
+  const approved = validateTeamFile(standing.record.file);
+  if (!approved.ok) return null;
+  const seat = approved.team.seats.find((item) => item.name === approved.team.operator);
+  return seat ? { name: seat.name, cli: seat.cli } : null;
+}
+
 /** The spend readings among a pass's check outcomes, for the state. */
 function spendOf(outcomes: readonly CheckOutcome[]): SpendReading[] {
   const list: SpendReading[] = [];
@@ -365,11 +374,11 @@ function spendOf(outcomes: readonly CheckOutcome[]): SpendReading[] {
 // line this same process typed itself and never sent is sent instead of typed into; anything
 // else — another person's or agent's text, or the same text found after a restart — stays.
 async function deliver(
-  nudge: { pane: string; text: string; pending: string[] }, team: TeamFile, session: string, sources: WatchSources,
+  nudge: { pane: string; text: string; pending: string[]; cli?: string }, team: TeamFile, session: string, sources: WatchSources,
   memory: ReturnType<typeof newMemory>, say: (text: string, desktop: boolean) => void,
   tell: (text: string, notify: boolean) => void, told: Set<string>,
 ): Promise<void> {
-  const cli = team.seats.find((seat) => seat.name === team.operator)?.cli ?? '';
+  const cli = nudge.cli ?? team.seats.find((seat) => seat.name === team.operator)?.cli ?? '';
   const look = () => readScreen(cli, sources.screen(nudge.pane, session) ?? undefined).kind;
   const holds = () => boxHoldsText(cli, nudge.text, sources.screen(nudge.pane, session) ?? undefined);
   const status = sources.status(nudge.pane, session);
@@ -496,7 +505,7 @@ async function closeEnded(input: {
   io: Io;
   told: Set<string>;
 }): Promise<void> {
-  const { team, root, dir, session, live, sources, say, io, told } = input;
+  const { team, root, dir, session, live, sources, say, told } = input;
   const endOf = sources.readEnd ?? readEnd;
   const state = readState(dir).sessions[session] ?? emptySession();
   for (const [name, recorded] of Object.entries(state.seats)) {
@@ -526,13 +535,13 @@ async function closeEnded(input: {
     }
     sayOnce(told, `end:${name}`, decision.report, say);
     if (!decision.close || !agent) continue;
-    const seat: DownSeat = { name, cli, pane: agent.pane, workspace: agent.workspace, state: 'free' };
-    const stopped = sources.stopSeat
-      ? await sources.stopSeat(session, seat)
-      : await stopRunning({
-        io, dir, session, seat, abandon: false, sources: removeSources, logCommand: 'watch', caller: 'watch',
-      });
-    if (stopped) say(`closed ${name}; its end ${temporary.until} holds`, false);
+    // A temporary seat is not in the approved copy. The watch leaves it; the owner removes it.
+    sayOnce(
+      told,
+      `unverified:${name}`,
+      `${name}: its record is not an approved seat; left as it is (the owner cleans it: team remove ${name} --abandon)`,
+      say,
+    );
   }
 
   const again = readState(dir);

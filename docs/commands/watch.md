@@ -1,9 +1,11 @@
 # team watch
 
 Watches a running team. Every `watch.interval` seconds it reads the session — the seats, their
-screens, the file, the approval, the machine — prints what is wrong, and closes a temporary seat or
-a merged worktree whose end holds. When a seat asks a question, or goes idle, it types one fixed
-line into the operator's pane — the nudge — so the operator reads its log. It types nothing into a
+screens, the file, the approval, the machine — prints what is wrong, and removes a merged worktree
+whose end holds. A temporary seat is left as it is: the owner removes it. When a seat asks a
+question, or goes idle, and an approval is in force, it types one fixed line into the one live
+agent of the approved operator — the nudge — so the operator reads its log. A file that was never
+approved, a legacy record, and a refused record type nothing. It types nothing into a
 screen it can't read as an empty idle prompt, so a permission dialog and a half-typed sentence are
 left alone. A box that already holds the nudge's own line is sent, not typed into twice — and only
 by the watch process that typed it: the same text from anyone else, or found after a restart, is
@@ -162,7 +164,7 @@ A report that is the operator's to act on is also what the nudge stands for. The
 | `the check for <account> is unapproved; that account reads unknown` | the check's file changed since the approval, or was never approved: it is not run |
 | `the session "<session>" is not this file's "<session>": its readings are not saved` | `--session` names a session other than the file's own; said once, on the first pass that sees it |
 | `team.yaml can't be read (<problem>); watching with the team as it was` | the file broke and no copy of it validated |
-| `closed <seat>; its end <until> holds` | a temporary seat whose end is proved and whose pane is free was stopped |
+| `<name>: its record is not an approved seat; left as it is (the owner cleans it: team remove <name> --abandon)` | a temporary seat whose end is proved and whose pane is free is left running |
 | `worktree <task> was not removed` | its removal failed; it is tried again on the next pass |
 | `the watch of "<session>" stopped` | the last line, on Ctrl-C or a stop signal |
 

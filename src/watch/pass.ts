@@ -167,6 +167,8 @@ export type PassInput = {
   readScreen?: (cli: string, screen: string | undefined) => Screen;
   /** Quota patterns in force, shipped plus the approved override. The shipped list, when omitted. */
   quotaFor?: (cli: string) => readonly QuotaPattern[];
+  /** The operator the nudge may type to. Omitted, the pass uses `team`. Null, it types nothing. */
+  nudgeOperator?: { name: string; cli: string } | null;
 };
 
 // One pass of the watch. Pure: it reads what it is handed and changes only `memory`.
@@ -187,6 +189,7 @@ export function pass({
   processes,
   readScreen: read = readScreen,
   quotaFor: patternsOf = shippedQuota,
+  nudgeOperator,
 }: PassInput): PassResult {
   const reports: Report[] = [];
   const current = new Set<string>();
@@ -402,8 +405,12 @@ export function pass({
   let fallback: string | null = null;
   if (memory.pending.length) {
     memory.pendingSince ??= now;
-    const operator = live.agents.find((agent) => agent.name === team.operator);
-    const cli = team.seats.find((seat) => seat.name === team.operator)?.cli ?? '';
+    const chosen = nudgeOperator === undefined
+      ? { name: team.operator, cli: team.seats.find((seat) => seat.name === team.operator)?.cli ?? '' }
+      : nudgeOperator;
+    const named = chosen === null ? [] : live.agents.filter((agent) => agent.name === chosen.name);
+    const operator = named.length === 1 ? named[0] : undefined;
+    const cli = chosen?.cli ?? '';
     const screen = operator ? read(cli, live.screens[operator.pane]) : null;
     // The operator's box, read once more: an empty idle prompt is free to type into, and so is a
     // box still holding the line this watch typed itself, recorded in memory at the typing. The
@@ -415,7 +422,12 @@ export function pass({
     const free = operator !== undefined && (operator.status === 'idle' || operator.status === 'done')
       && (screen?.kind === 'idle' || mine);
     if (operator && free) {
-      nudge = { pane: operator.pane, text: NUDGE_TEXT, pending: memory.pending.slice() };
+      nudge = {
+        pane: operator.pane,
+        text: NUDGE_TEXT,
+        pending: memory.pending.slice(),
+        ...(nudgeOperator ? { cli: nudgeOperator.cli } : {}),
+      };
     } else if (now - memory.pendingSince >= watch.nudgeWait * 1000) {
       fallback = `the operator could not be nudged for ${minutes(now - memory.pendingSince)} minutes; ${memory.pending.length} report(s) wait: ${memory.pending.join('; ')}`;
     }
