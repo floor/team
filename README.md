@@ -261,8 +261,10 @@ Each command has its own page in [docs/commands](https://github.com/floor/team/t
 writes, who may run it, every flag, the refusals with their exact text, the exit codes, and examples
 that `bun run ci` runs against a fixture team.
 
-The owner is a terminal outside herdr with no agent process above it: a seat, or a script a seat
-runs, cannot approve a file or start a team. With no `--file`, the file is `.agents/team.yaml` of
+The owner is a terminal outside herdr with no agent process above it. `approve` and `up` read the
+processes above the call and refuse a seat — or a script a seat runs — that makes it: a guard
+against a mistaken agent, not a hostile one, so a seat that forges the owner's placement is a
+known limitation, being hardened. With no `--file`, the file is `.agents/team.yaml` of
 the repository's main checkout, found through git's common directory. A folder that is not a git
 repository is read from `.agents/team.yaml` in that folder only, not from a parent, and a link at
 `.agents` or at the file is not followed. Every command
