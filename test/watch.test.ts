@@ -13,7 +13,7 @@ import type { TeamFile } from '../src/file/types.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import { emptySession, readState, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
-import { parseLoadavg, parseMeminfo, parseMemoryPressure, parseSwapUsage, readMachine, swapTotalProblem } from '../src/watch/machine.ts';
+import { parseLoadavg, parseMeminfo, parseMemoryPressure, parseSwapUsage, readMachine, readingsText, swapTotalProblem } from '../src/watch/machine.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, NUDGE_TEXT, pass } from '../src/watch/pass.ts';
 import { readScreen } from '../src/watch/screen.ts';
@@ -208,6 +208,21 @@ describe('the machine\'s figures', () => {
     // both null, and `launchLimit`'s swap rule can't fire there either.
     expect(swapTotalProblem({ ...small, swapTotal: null, swapFree: null }, limits)).toBeNull();
     expect(swapTotalProblem({ ...small, swapFree: null }, limits)).toBeNull();
+  });
+
+  test('the readings as one sentence, in the log\'s fixed order', () => {
+    expect(readingsText({ loadPerCore: 1, memoryFree: 69, diskFree: 200e9, swapTotal: 8.2e9, swapFree: 1.2e9, swapUsed: 7e9 }))
+      .toBe('load 1.0/core, memory 69%, disk 200.0 GB free, swap used 7.0 GB of 8.2 GB (free 1.2 GB)');
+    // The watch spelling: the disk figure no moment recorded, the rest from a reading taken.
+    expect(readingsText({ loadPerCore: 0.7, memoryFree: 69, diskFree: null, swapTotal: 8.2e9, swapFree: 1.2e9, swapUsed: 6.9e9 }))
+      .toBe('load 0.7/core, memory 69%, disk unread, swap used 6.9 GB of 8.2 GB (free 1.2 GB)');
+  });
+  test('a figure that wasn\'t read prints unread, never a guessed number', () => {
+    const none: Machine = { loadPerCore: null, memoryFree: null, diskFree: null, swapTotal: null, swapFree: null, swapUsed: null };
+    expect(readingsText(none)).toBe('load unread, memory unread, disk unread, swap unread');
+    // One of the three swap figures missing makes the whole swap reading unread.
+    expect(readingsText({ ...none, swapUsed: 6.9e9 })).toBe('load unread, memory unread, disk unread, swap unread');
+    expect(readingsText({ ...none, swapTotal: 8.2e9, swapFree: 1.2e9, swapUsed: null })).toBe('load unread, memory unread, disk unread, swap unread');
   });
 });
 
