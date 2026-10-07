@@ -68,7 +68,7 @@ workspace:
 seats:
   - role: coordinator
     name: coordinator
-    cli: claude-code          # claude-code | codex | cursor | grok | antigravity
+    cli: claude-code          # a placeholder: claude-code | codex | cursor | antigravity, any CLI fits any role
     vendor: anthropic
     model: Claude Opus        # the model's name without its version
     version: "0"              # the release number alone, quoted

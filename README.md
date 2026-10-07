@@ -65,11 +65,11 @@ workspace:
 seats:
   - role: coordinator
     name: coordinator
-    cli: claude-code          # the launch profile
-    vendor: anthropic         # the model's maker
-    model: Claude Opus        # the model's name, without its version
-    version: "5.5"            # the release alone, quoted
-    launch: claude --model claude-opus-5-5   # no approval flags: the profile adds them
+    cli: cursor               # the launch profile
+    vendor: meridian          # the model's maker
+    model: Meridian           # the model's name, without its version
+    version: "1"              # the release alone, quoted
+    launch: cursor-agent      # the model is chosen inside Cursor; no approval flags: the profile adds them
 
   - role: implementer
     name: implementer
@@ -97,11 +97,11 @@ seats:
 
   - role: reviewer
     name: reviewer
-    cli: grok
-    vendor: xai
-    model: Grok
-    version: "4.7"
-    launch: grok --model grok-4.7
+    cli: antigravity
+    vendor: google
+    model: Gemini
+    version: "3"
+    launch: agy
     stopped: true             # kept in the file; `up` doesn't start it
 
 budgets:                      # the owner's: reserve or floor per account, marks, freshness
@@ -317,7 +317,7 @@ with a signed one.
 ```sh
 mkdir hello && cd hello && git init
 team init                  # the owner: writes .agents/team.yaml, private to this clone
-$EDITOR .agents/team.yaml  # name your seats — the example above is a working file
+$EDITOR .agents/team.yaml  # name your seats — the example above is a working file; any CLI fits any role
 team approve               # the owner: read the file it prints, then record it (--confirm asks first)
 team doctor                # what this machine still needs
 team up --dry-run          # every command it would run, and every refusal

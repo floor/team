@@ -13,14 +13,14 @@ describe('the fictional example file', () => {
     expect(warnings).toEqual([]);
     expect(team.project).toBe('beacon');
     expect(team.session).toBe('beacon');
-    expect(team.coordinator).toBe('claude-keeper');
-    expect(team.operator).toBe('claude-signal');
+    expect(team.coordinator).toBe('codex-keeper');
+    expect(team.operator).toBe('codex-signal');
   });
 
   test('every seat is there, count expanded', () => {
     expect(team.seats.map((seat) => seat.name)).toEqual([
-      'claude-keeper',
-      'claude-signal',
+      'codex-keeper',
+      'codex-signal',
       'codex-beacon',
       'cursor-beacon',
       'nimbus-beacon',
@@ -35,7 +35,19 @@ describe('the fictional example file', () => {
       'nimbus-2',
       'nimbus-3',
     ]);
-    expect(team.seats[0]).toMatchObject({ label: 'coordinator', declared: 'claude-keeper', count: 1, instance: 1 });
+    expect(team.seats[0]).toMatchObject({ label: 'coordinator', declared: 'codex-keeper', count: 1, instance: 1 });
+  });
+
+  test('the coordinator and the operator run the same CLI', () => {
+    expect(team.seats.find((seat) => seat.name === team.coordinator)).toMatchObject({
+      cli: 'codex',
+      vendor: 'openai',
+      model: 'GPT Compass',
+      version: '2',
+      display: 'GPT-2 Compass',
+      launch: 'codex -m gpt-compass-2',
+    });
+    expect(team.seats.find((seat) => seat.name === team.operator)?.cli).toBe('codex');
   });
 
   test('the machines gates and the useful shapes are the ones it shows', () => {
