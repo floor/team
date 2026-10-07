@@ -197,7 +197,7 @@ describe('the machine\'s figures', () => {
     };
     const small: Machine = { loadPerCore: 0.4, memoryFree: 62, diskFree: 120e9, swapTotal: 1e9, swapFree: 0.5e9, swapUsed: 0.5e9 };
     expect(swapTotalProblem(small, limits)).toBe(
-      'the machine check asks for 2.0 GB free swap, more than this machine has in total (1.0 GB): `team up` will refuse here; set `machine.swap_free_min` to a figure this machine can keep, then run `team approve`',
+      'the machine check asks for 2.0 GB free swap; at this reading the machine has 1.0 GB in total, so `team up` would refuse now; set `machine.swap_free_min` to a figure this machine can keep, then run `team approve`',
     );
     // The check can pass in principle — its floor sits under the machine's total — and the free
     // figure is low right now: `up`'s refusal and the watch's finding, and nothing here.

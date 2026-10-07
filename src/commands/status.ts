@@ -171,8 +171,9 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     const ofKey = key.kind === 'key' ? `, key ${keyFingerprint(key.key)}` : '';
     comparison.notes.unshift(`approval #${standing.generation} (${standing.signedAt.slice(0, 10)})${ofKey}`);
   }
-  // The one machine check that can never pass here — the same fact `doctor` reports as a finding,
-  // as one note. `up`'s refusal on it is its own line, and nothing here changes an exit.
+  // The one machine check this reading cannot pass — the same fact `doctor` reports as a finding,
+  // as one note, in the reading's own words. `up`'s refusal on it is its own line, and nothing
+  // here changes an exit.
   const machine = sources.machine?.(root);
   if (machine) {
     const problem = swapTotalProblem(machine, team.machine);

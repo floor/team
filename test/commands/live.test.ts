@@ -1868,6 +1868,27 @@ describe('team up, one run at a time', () => {
     expect(readFileSync(lockFile(), 'utf8')).toBe(`${process.pid} 0a1b2c3d\n`);
   });
 
+  test('a dry run beside a held run lock exits 0 with its plan while the real run exits with the lock refusal', async () => {
+    await approve();
+    const token = `${process.pid} 0a1b2c3d\n`;
+    hold(token);
+    const real = world();
+    const realIo = testIo(root, { kind: 'owner' });
+    expect(await runUp(FILE, realIo, sources({}, real))).toBe(1);
+    expect(realIo.err).toBe(
+      `team up: another session-mutating run is holding session acme-web (pid ${process.pid}); try again when it is done\n`,
+    );
+    expect(real.starts).toBe(0);
+    const dryMade = world();
+    const dryIo = testIo(root, { kind: 'owner' });
+    expect(await runUp(['--dry-run', ...FILE], dryIo, sources({}, dryMade))).toBe(0);
+    expect(dryIo.out).toContain('dry run: nothing was run\n');
+    expect(dryIo.out).not.toContain('another session-mutating run');
+    expect(dryIo.err).toBe('');
+    expect(dryMade.starts).toBe(0);
+    expect(readFileSync(lockFile(), 'utf8')).toBe(token);
+  });
+
   test('a lock that cannot be read refuses with the file to clear', async () => {
     await approve();
     hold('not a token\n');

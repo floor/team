@@ -174,14 +174,17 @@ export function launchLimit(
 }
 
 /**
- * The swap the machine check asks for, when this machine can never keep it: more free swap than
- * it has in total. `launchLimit` refuses on `swapFree < swapFreeMin`, and within one reading free
- * is never above total, so this is the case that refusal can never be outrun here. Null when
- * either figure wasn't read, and when the check can pass in principle: a machine with no swap at
- * all is not this case, and neither is one that merely lacks free swap right now.
+ * The swap the machine check asks for, when this reading cannot meet it: more free swap than the
+ * machine has in total. `launchLimit` refuses on `swapFree < swapFreeMin`, and within one reading
+ * free is never above total, so this is the one refusal this reading cannot outrun — this
+ * reading's only: macOS's `vm.swapusage` total moves with pressure, so a later run reads a total
+ * of its own and the sentence says which reading it came from (`would refuse now`), never what a
+ * later `team up` will do. Null when either figure wasn't read, and when the check can pass in
+ * principle: a machine with no swap at all is not this case, and neither is one that merely lacks
+ * free swap right now.
  */
 export function swapTotalProblem(machine: Machine, limits: TeamFile['machine']): string | null {
   if (machine.swapTotal === null || machine.swapFree === null) return null;
   if (limits.swapFreeMin <= machine.swapTotal) return null;
-  return `the machine check asks for ${gb(limits.swapFreeMin)} free swap, more than this machine has in total (${gb(machine.swapTotal)}): \`team up\` will refuse here; set \`machine.swap_free_min\` to a figure this machine can keep, then run \`team approve\``;
+  return `the machine check asks for ${gb(limits.swapFreeMin)} free swap; at this reading the machine has ${gb(machine.swapTotal)} in total, so \`team up\` would refuse now; set \`machine.swap_free_min\` to a figure this machine can keep, then run \`team approve\``;
 }
