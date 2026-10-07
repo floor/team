@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-06
+
+A release about repairs, found on the first day of 0.3.1: `down` and `remove` stop a seat and
+clear what the stop leaves, a CLI's own exit question is answered in both the forms it draws
+where its profile declares the key, every key follows a fresh check of the pane, a delegate can
+start a team whose session is down, one run at a time takes a session, the lobby may hold the
+files the shipped profiles declare, the watch's nudge waits for its text and is sent only as
+the watch's own, `up` resumes its own interrupted launch, `status` shows no model it did not
+verify, and a stop clears only the exit text it typed.
+
+### Added
+
+- `SECURITY.md`: how to report a weakness in private — the repository's security advisories,
+  never a public issue, discussion or pull request — what to include, what we do, which
+  versions get fixes, and what is not one.
+
+### Fixed
+
+- `down` and `remove` stop a seat: the exit text is typed into a box read empty and idle, read
+  back, and only a box that reads back as exactly the typed text gets the Enter (0.3.0 and
+  0.3.1 read the screen once, an instant after the typing, too early for the pane to have drawn
+  the text, and never pressed it).
+- A CLI's own exit question is answered where the profile declares a key for it, in both forms
+  Claude Code draws — its second row "2. Stay", or "2. Move to background and exit" with
+  "3. Stay" under the marked "1. Exit and stop tasks" — and never when the frame is anything
+  else: the second choice is never what a stop sends. A profile that declares no key leaves
+  the seat running, and the line says so.
+- Every key the stop sends — and the watch's nudge — follows a fresh check of the pane taken
+  after each wait: the CLI is the pane's foreground process and is not mid-turn, read again at
+  the key, never reused from before the wait.
+- `--abandon` closes a seat this run asked whose exit could not be typed or confirmed, and the
+  line names that close.
+- `down` clears the session it stopped itself: it waits until herdr lists the session stopped,
+  deletes it, and the line reads `session <name>: stopped and cleared`. `up` clears a stopped
+  session this team's state records, then starts it.
+- A delegate can start a team whose session is down: a session that is not running has no seats
+  to collide with, so the gate no longer reads "nothing listed" as "herdr does not answer".
+- One `up`, `add`, `down` or `remove` runs at a time per session: the run takes the `.run` lock
+  before its first effect, a second run is refused naming the pid that holds it (`up.run-lock`,
+  `add.run-lock`, `down.run-lock`, `remove.run-lock`), and a lock left by a dead run is taken
+  over by the next.
+- The lobby's allowed files are the union of what the shipped profiles declare, whichever seats
+  a run starts: one folder per machine, so another team's Claude Code lock
+  (`.claude/scheduled_tasks.lock`) no longer blocks a team with no Claude Code seat, `up`, `add`
+  and `doctor` read the one set, and `doctor` names the profile each declared file present
+  belongs to.
+- `up` resumes its own interrupted launch: a seat whose pane was made but never renamed — a run
+  interrupted in between — is read as this team's half-finished seat and resumed, not refused
+  as a stranger.
+- `status` shows no model it did not verify: a row whose name does not match shows the model
+  its screen names, or `(unread)`, never the model from the file.
+- `down` and `remove` clear only the exit text they typed: a box holding other text is not
+  typed onto, and a box already holding exactly this exit text is cleared with the profile's
+  one key first, never sent.
+- The watch's nudge waits for its text to be drawn, reads the box back and re-reads the pane
+  before the Enter, and a box it finds already holding the line is sent only on the record of
+  the same watch process's own typing — the same fixed line typed by a person, or found by a
+  restarted watch, is never typed over, sent or cleared.
+
+### Known limits
+
+Unchanged by this release:
+
+- `add` on a stopped session still asks for a manual clear: `herdr session delete <name>`.
+- A delegate still cannot pass `--abandon`.
+- A seat whose CLI has already exited (its pane holds a bare shell) is left by `team down` — the
+  screen is not one the profile recognises — and closed by `team down --abandon`.
+- A `team up` started within a second or two of a `team down` that left the session up can report a
+  seat the down has just stopped as left at launch — `left out: its pane has been back at its shell
+  for <n> s and shows no CLI prompt; left at launched`, and `run team up again to resume it` —
+  running `team up` again starts it.
+- `team approve` still asks its question.
+- A delegated `up` never answers a trust dialog or a vendor notice: the seat is left out —
+  reported, its workspace closed without input, nothing typed into the dialog — and the dialog
+  is the owner's to answer.
+- The lobby recheck cannot see a rewrite in place inside one filesystem timestamp tick that
+  changes no size — every number it reads would be the same.
+- The default machine check asks for 2 GB of free swap before a launch; under it, `up` refuses.
+- A refused `team approve` run by an agent on a machine that has no signing key yet still makes
+  the machine's signing key on its way to the refusal: the key folder and its key file are left
+  behind, no approval is written and nothing is signed; fixed in 0.3.3.
+
 ## [0.3.1] - 2026-10-06
 
 A release about delegation: a team's owner approves, once, which panes outside the team's own
@@ -501,7 +583,9 @@ The first release: set up, change and watch a project's team of AI agents from o
   footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
   stays idle.
 
-[Unreleased]: https://github.com/floor/team/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/floor/team/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/floor/team/releases/tag/v0.3.2
+[0.3.1]: https://github.com/floor/team/releases/tag/v0.3.1
 [0.3.0]: https://github.com/floor/team/releases/tag/v0.3.0
 [0.2.1]: https://github.com/floor/team/releases/tag/v0.2.1
 [0.2.0]: https://github.com/floor/team/releases/tag/v0.2.0
