@@ -555,6 +555,35 @@
       "flags": [
         {
           "hidden": false,
+          "name": "--help",
+          "repeatable": false,
+          "takesValue": false
+        },
+        {
+          "hidden": false,
+          "name": "--json",
+          "repeatable": false,
+          "takesValue": false
+        },
+        {
+          "hidden": true,
+          "name": "-h",
+          "repeatable": false,
+          "takesValue": false
+        }
+      ],
+      "hidden": false,
+      "name": "usage",
+      "positionals": [],
+      "subcommands": [],
+      "usage": [
+        "team usage [--json]"
+      ]
+    },
+    {
+      "flags": [
+        {
+          "hidden": false,
           "name": "--file",
           "repeatable": false,
           "takesValue": true

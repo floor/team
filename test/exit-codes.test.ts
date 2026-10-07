@@ -19,6 +19,7 @@ import { runInit } from '../src/commands/init.ts';
 import { runRemove, type RemoveSources } from '../src/commands/remove.ts';
 import { runStatus, type StatusSources } from '../src/commands/status.ts';
 import { runUp, type Launch, type UpSources } from '../src/commands/up.ts';
+import { runUsage } from '../src/commands/usage.ts';
 import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import { runWorktree, type WorktreeSources } from '../src/commands/worktree.ts';
 import { main, reportFailure, version } from '../src/cli.ts';
@@ -1651,6 +1652,21 @@ scene('watch.stopped', async (place) => {
   write(place, TEAM);
   return show(await watched(place, [], owner), 'stopped');
 });
+
+async function used(place: Place, argv: string[], caller: Caller = owner): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runUsage(argv, io, { home: place.home, now: () => NOW }), out: io.out, err: io.err };
+}
+
+// The block is reached by a seat as well: `usage` gates no caller.
+scene('usage.block', async (place) => {
+  write(place, TEAM);
+  return show(await used(place, [], other), 'team acme');
+});
+// No file at all — the bare folder is the outside case; a file that exists and does not load is
+// the same exit with the loader's own message as the note.
+scene('usage.outside', async (place) => show(await used(place, []), 'no team file is found from this folder'), false);
+scene('usage.invocation', async (place) => show(await used(place, ['extra']), 'unexpected'));
 
 async function worktree(place: Place, argv: string[], caller: Caller = owner, sources?: WorktreeSources): Promise<Ran> {
   const io = testIo(place.root, caller);

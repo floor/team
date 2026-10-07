@@ -15,6 +15,7 @@ import { runRemove } from '../../src/commands/remove.ts';
 import { runRelease } from '../../src/commands/release.ts';
 import { runStatus } from '../../src/commands/status.ts';
 import { runUp } from '../../src/commands/up.ts';
+import { runUsage } from '../../src/commands/usage.ts';
 import { runWatch } from '../../src/commands/watch.ts';
 import { runWorktree } from '../../src/commands/worktree.ts';
 import type { Caller } from '../../src/caller.ts';
@@ -194,6 +195,8 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
       return runStatus(rest, io, world.statusSources());
     case 'up':
       return runUp(rest, io, world.upSources());
+    case 'usage':
+      return runUsage(rest, io, { home: fixture.home, now: () => new Date(spec.now) });
     case 'watch':
       return runWatch(rest, io, world.watchSources());
     case 'worktree':
