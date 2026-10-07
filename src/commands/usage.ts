@@ -1,17 +1,22 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { readArgs } from '../args.ts';
-import { budgetLine } from '../budgets/table.ts';
-import { isOwner, walkCaller } from '../caller.ts';
 import { loadTeamFile, TEAM_FILE } from '../file/load.ts';
 import type { LoadResult, Problem } from '../file/types.ts';
-import { NO_FIGURES, projectUsage, type ProjectUsage } from '../information/usage.ts';
+import {
+  machineUsage,
+  reportOf,
+  reportText,
+  StoreUnreadable,
+  viewFor,
+  type MachineUsage,
+} from '../information/usage.ts';
 import type { Command, Io } from '../io.ts';
 
 export const USAGE = 'Usage: team usage [--json]\n';
 
-/** The sentence a run outside any project prints: it names no git and no flag this command
- *  does not have, and it is a note with exit 0, not a refusal. */
+/** The sentence a run outside any project contributes as its note: it names no git and no flag
+ *  this command does not have, and it is a note with exit 0, not a refusal. */
 export const NO_PROJECT = 'no team file is found from this folder; there is no project block to show';
 
 /** What the command reads from outside itself: the home whose store it consults, and the clock. */
@@ -27,29 +32,20 @@ export const usage: Command = (argv, io) => runUsage(argv, io, realSources);
 export default usage;
 
 /**
- * `team usage [--json]`: this project's block, resolved from the current folder the way
- * `currentTeam` resolves, but read-only — it writes nothing anywhere, not even the `last_valid`
- * copy `currentTeam` keeps, and it never answers from that copy when the file breaks. Any caller
- * may run it, from any folder. The caller is placed once, the way `status` places it
- * (`status.ts:133`): the owner at a terminal is the owner, and everyone else — a seat, an agent
- * outside herdr, a run without a terminal — reads the restricted view, whose differences here are
- * the fixed line for a refused approval (`NOT_VERIFIED`) in place of the store's own words, for a
- * file that does not load or cannot be read a fixed sentence naming this project's own path
- * relative to the root in place of the loader's own message (`noticeOf`, `errorNote`) — the
- * loader's bodies can name paths outside this project — and one fixed line in place of a stored
- * reading the approved team in force does not bind (`boundReadings`, `UNBOUND_ACCOUNT`,
- * `UNBOUND_SHAPE`): the state is signed by nothing, so a reading prints only an account the file
- * names, a window and a source this tool writes, and a seat the file's seats name — a seat it
- * does not name prints as none. The state's note keeps the state's own reason with its path made
- * relative (`shownNote`). A caller who is not the owner therefore reads
- * no location the tool derived from this machine — no root, no home folder, no store, no state or
- * file path — and nothing of another project; a name this team's own file writes (an account, a
- * seat, a label, a role) is this team's own agreed data and prints as written, as `status` prints
- * it, whatever it looks like. The after-review ruled that line after a real file named its account
- * like an absolute path: the guarantee is about what the tool derives from the machine, never
- * about what the owner wrote. Placing the caller reads the process table (`caller.ts`), and
- * nothing else. Exit
- * 0 whatever the figures; the one refusal is the invocation.
+ * `team usage [--json]`: the machine's report — every store this machine holds read as one team
+ * each, the caller's own project among them — resolved and printed under the caller's view, the
+ * way the design note rules (§ 2.1-§ 2.3). Read-only: it writes nothing anywhere, not even the
+ * `last_valid` copy `currentTeam` keeps, and it never answers from that copy when the file
+ * breaks. Any caller may run it, from any folder, and a run outside every project is no refusal:
+ * `mine` is null and the whole report reads restricted. The caller is placed once (`viewFor`,
+ * `caller.ts`): the owner at a terminal reads the full view — every team named, every root
+ * carried, every team's own rows — and everyone else, the restricted view, whose shape is the one
+ * closed allow-list `reportOf` builds before either renderer: no other team's name or root, no
+ * per-team row but the caller's own, no path a state read produced, another team's problem as a
+ * fixed counted sentence (`ANON`). The command itself resolves nothing twice: `mine` is the one
+ * resolution, the loader's own message is a note for the owner and a fixed sentence for anyone
+ * else (`noticeOf`, `errorNote`), and the only refusal beside the invocation is the stores folder
+ * itself unreadable (`usage.store`, § 2.4). Exit 0 whatever the figures.
  */
 export async function runUsage(argv: string[], io: Io, sources: UsageSources): Promise<number> {
   const args = readArgs(argv, [], ['json']);
@@ -58,58 +54,55 @@ export async function runUsage(argv: string[], io: Io, sources: UsageSources): P
     // exit: usage.invocation
     return 2;
   }
-  const restricted = !isOwner(walkCaller(io));
-  const now = sources.now();
   const json = args.flags.has('json');
-  let loaded: LoadResult;
+  const now = sources.now();
+  // The caller's own project, resolved from the current folder the way every command resolves it;
+  // a file that cannot be read, and a folder with no file at all, are carried as this caller's
+  // own note rather than refused — the machine report prints either way (`mineNotesOf`).
+  let loaded: LoadResult | null = null;
+  let loadError: unknown = null;
   try {
     loaded = loadTeamFile(io.cwd, { home: sources.home });
   } catch (error) {
-    // A file that exists and cannot be read: the loader's own reason, as a note line, exit 0.
-    return outside(io, json, now, [errorNote(error, restricted)]);
+    loadError = error;
   }
-  if (!loaded.ok) {
-    // No file at all — no repository, or a repository with no team file: outside a project. A
-    // file that exists and does not load is this team's own problem: the loader's own message,
-    // with the path, as note lines — or, for a caller who is not the owner, one fixed sentence per
-    // line, with no body (`noticeOf`). Exit 0 either way.
-    const notes = !loaded.path || !existsSync(loaded.path)
-      ? [NO_PROJECT]
-      : notesOf(loaded.path as string, loaded.errors, restricted);
-    return outside(io, json, now, notes);
+  const mine = loaded !== null && loaded.ok ? loaded.root : null;
+  // Placed once, from the process table alone, and read by nothing else: every line below — text
+  // and `--json` alike — comes from the one report the filter builds under this view.
+  const view = viewFor(io, mine);
+  const restricted = !view.full;
+  const mineNotes = mineNotesOf(loaded, loadError, restricted);
+  let machine: MachineUsage;
+  try {
+    machine = machineUsage(sources.home, now.getTime(), view);
+  } catch (error) {
+    if (!(error instanceof StoreUnreadable)) throw error;
+    // The stores folder itself could not be read: the one refusal beside the invocation (§ 2.4).
+    // Its message carries the folder, which is this machine's own derivation, so only the owner
+    // reads it; every other caller reads the fixed sentence with the reason left to the owner.
+    io.stderr(restricted
+      ? 'team usage: the store folder cannot be read: the owner reads the reason\n'
+      : `team usage: ${error.message}\n`);
+    // exit: usage.store
+    return 2;
   }
-  const report = projectUsage(loaded.root, { home: sources.home, now: now.getTime(), restricted });
-  if (json) {
-    // The reader's one line for a block whose file counts nothing heads the notes, so a script
-    // reads it where the text's reader sees it: under the header, under the rows.
-    const notes = report.whyNotCounted === null ? report.notes : [report.whyNotCounted, ...report.notes];
-    io.stdout(`${JSON.stringify({
-      format: 1,
-      at: now.toISOString(),
-      view: 'restricted',
-      mine: report.project,
-      rows: report.rows.map((entry) => entry.row),
-      watch: report.watch,
-      notes,
-    }, null, 2)}\n`);
-  } else {
-    io.stdout(render(report));
-  }
+  const report = reportOf(machine, view, now.getTime(), mineNotes);
+  io.stdout(json ? `${JSON.stringify(report, null, 2)}\n` : reportText(report));
   // exit: usage.block
   return 0;
 }
 
-function render(report: ProjectUsage): string {
-  const lines = report.project === null ? [NO_FIGURES] : [`team ${report.project}`];
-  for (const entry of report.rows) lines.push(`  ${budgetLine(entry.row)}`);
-  if (report.whyNotCounted !== null) lines.push(report.whyNotCounted);
-  if (report.watch === 'not-recording' && report.project !== null) {
-    lines.push(`no watch is recording for ${report.project}`);
-  } else if (report.watch === 'not-known') {
-    lines.push('not known whether a watch is recording');
-  }
-  for (const note of report.notes) lines.push(`note: ${note}`);
-  return `${lines.join('\n')}\n`;
+/** The notes the caller's own resolution contributes: the loader's own message for a file that
+ *  cannot be read, one fixed sentence per distinct line for a file that exists and does not load
+ *  (`noticeOf`), and the one outside sentence for a folder with no team file at all. All but the
+ *  last are the reason a member of this machine cannot be read, so the caller's view decides the
+ *  face they print in. */
+function mineNotesOf(loaded: LoadResult | null, error: unknown, restricted: boolean): string[] {
+  if (error !== null) return [errorNote(error, restricted)];
+  if (loaded === null || loaded.ok) return [];
+  const path = loaded.path;
+  if (path === undefined || !existsSync(path)) return [NO_PROJECT];
+  return notesOf(path, loaded.errors, restricted);
 }
 
 /** One note for a file that exists and does not load. The owner reads the loader's own message:
@@ -140,24 +133,4 @@ function notesOf(path: string, errors: Problem[], restricted: boolean): string[]
 function errorNote(error: unknown, restricted: boolean): string {
   if (restricted) return `${TEAM_FILE} cannot be read: the owner reads the reason`;
   return error instanceof Error ? error.message : String(error);
-}
-
-/** The face of a run with no project block: the notes as `note:` lines, or the same reading as
- *  one JSON document — `mine` null, no rows, the watch not known. Exit 0. */
-function outside(io: Io, json: boolean, now: Date, notes: string[]): number {
-  if (json) {
-    io.stdout(`${JSON.stringify({
-      format: 1,
-      at: now.toISOString(),
-      view: 'restricted',
-      mine: null,
-      rows: [],
-      watch: 'not-known',
-      notes,
-    }, null, 2)}\n`);
-  } else {
-    for (const note of notes) io.stdout(`note: ${note}\n`);
-  }
-  // exit: usage.outside
-  return 0;
 }

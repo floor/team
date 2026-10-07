@@ -101,8 +101,9 @@ export const SEAT_CHECKS: SeatCheck[] = [missing, restored, modelDrift, attentio
 export const TEAM_CHECKS: TeamCheck[] = [extra, teamIdle, approval, load, memoryCheck, disk, swapFree, swapGrowth, budget];
 
 // The one exclusive reading of a seat's screen and herdr status. herdr can report a seat at a
-// permission prompt as idle, so the screen decides first.
-function attentionOf(screen: Screen, status: string, quiet: boolean): Attention {
+// permission prompt as idle, so the screen decides first. `team check` reads it too, over a pane
+// the state records for a seat of this team: one reading, two readers, and no second rule.
+export function attentionOf(screen: Screen, status: string, quiet: boolean): Attention {
   if (screen.kind === 'permission' || screen.kind === 'trust') return 'permission';
   if (screen.kind === 'question' || screen.kind === 'exit question') return 'question';
   if (screen.kind === 'vendor notice') return 'vendor notice';

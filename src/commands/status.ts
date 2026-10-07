@@ -217,11 +217,11 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
   return comparison.differences.length ? 1 : 0;
 }
 
-function emptyOverrides(): OverrideForce {
+export function emptyOverrides(): OverrideForce {
   return { profiles: [], differences: [], problems: [] };
 }
 
-function overrideDrift(report: OverrideForce): Difference[] {
+export function overrideDrift(report: OverrideForce): Difference[] {
   return [
     ...report.differences.map((line): Difference => ({
       what: `the overrides differ from the approved copy: ${line}`,
@@ -246,7 +246,7 @@ export function approvalDrift(approval: { differences: string[] | null; reason: 
 /** Every message-rules seat's file, against the rules the approved file gives it. A file that
  *  differs is a difference for the owner to repair with `up` — never rewritten here. An option
  *  seat has no file, and a seat whose rules can't travel at all is `up`'s to refuse. */
-function rulesFileDifferences(standing: Standing, root: string, home: string | undefined): Difference[] {
+export function rulesFileDifferences(standing: Standing, root: string, home: string | undefined): Difference[] {
   // Like the overrides: no home set is a test that stands in for no store at all.
   if (home === undefined || standing.kind !== 'verified') return [];
   // The seats of the file as approved, against the approved rules text: a file the current
@@ -272,7 +272,9 @@ function rulesFileDifferences(standing: Standing, root: string, home: string | u
   return out;
 }
 
-function protectedCheckouts(team: TeamFile, root: string, sources: StatusSources): Difference[] {
+/** The protected checkouts left on another branch — the same rows `status` prints, for `check`
+ *  too. All it reads of the sources is the branch of a path. */
+export function protectedCheckouts(team: TeamFile, root: string, sources: { branch(path: string): string | null }): Difference[] {
   const base = team.workspace.base;
   if (!base) return [];
   const out: Difference[] = [];

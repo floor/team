@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-10-07
+
+A release about names and evidence: the bare `team check` reads the team itself and answers with
+its differences, a ref's check moves to `team commits check` and a pull request's to
+`team pr check`, the seat that leads is `leads: true` and its word is orchestrator, and
+`team usage` reads one project's budgets and approvals back, read-only. The machine gate and the
+watch leave their readings in the log, `doctor` and `status` say when the machine's total swap
+sits under what the check asks, a refused run remembers nothing and a refused dry run exits as
+the real run would, and the READMEs say plainly what the owner refusal is — and is not.
+
+### Added
+
+- `team check`, bare — every word `--session` or `--file`, or none at all — reads the team
+  itself: the caller gate in its decided order, one screen pass over the panes the state records,
+  and each difference with its repair. It is a read: it writes nothing, `remember` is false for
+  every caller, and a caller the gate refuses gets one fixed sentence and nothing else.
+- `team usage`: one project's block, read-only — the budgets in force as `status` prints its
+  rows, the watch line, and a note where the state cannot be read; `--json` carries the same
+  reading as one document. Every name it prints comes from the one approved copy in force, never
+  the live file; a block whose file names no account prints the ruled sentence under its rows,
+  and accounts the approval does not back print the tool's own why-line.
+- `doctor` and `status` say when the machine's total swap sits under the figure the check asks:
+  the figure, the total at this reading, that `team up` would refuse now, and the repair — set
+  `machine.swap_free_min`, then run `team approve`.
+- The machine gate and the watch leave their readings in the log: a machine refusal in `up` and
+  `add` logs the line and the figures it was decided on, and a watch pass logs what it read at
+  most once per ten minutes, `unread` where a figure was not taken.
+
+### Changed
+
+- The seat that leads is a field: `leads: true` on that seat, and the word for it is orchestrator
+  in every text. The `coordinator:` key still selects it, printing one notice per file, and an
+  approval over either spelling holds for both; `dialogs.trust` takes the new word too.
+- `team check <ref>` becomes `team commits check <ref>`, and its `--pr <file>` half becomes
+  `team pr check <file>`, which checks one pull request body alone and needs no repository; every
+  printed line that names the command names the new one. The old spelling is read through 0.3.3,
+  one notice line per half on stderr before the run's own bytes, the commits one first.
+- The shipped examples lead on no single lab: the README's walkthrough says any CLI fits any
+  role, and the example teams lead on cursor and codex.
+- The READMEs say what the owner refusal is: a guard against a mistaken agent, not a guarantee
+  against a hostile one — a seat that forges the owner's placement is a known limitation, being
+  hardened.
+
+### Fixed
+
+- `team approve`: the paste guard reads the command's own terminal and answers three ways — only
+  an input read empty lets the write through, a box waiting on input refuses
+  (`approve.input-waiting`), and a terminal that cannot be read refuses apart
+  (`approve.input-unreadable`) — and is proven under a real pty. The signing key is created only
+  after every refusal has had its chance: a refused first approval writes no key, record,
+  generation or log. A key that exists and cannot be read refuses before the question, not after
+  it.
+- A run refused before it acts remembers nothing: a dry run, a `down` that finds the session lock
+  held, and a watch that finds one already running leave the state file as it was, and the caller
+  gate answers before the file is remembered.
+- A refused dry run exits as the real run would — the status and the exit id are that refusal's,
+  and nothing is written; it returns a refusal only where the real run would refuse before doing
+  anything, so the plan still exits 0 and the pages list the later failures it never takes.
+- A log write that fails is dropped, never the command's exit or a watch pass: the log is
+  evidence, never a decision.
+
 ## [0.3.2] - 2026-10-06
 
 A release about repairs, found on the first day of 0.3.1: `down` and `remove` stop a seat and
@@ -583,7 +644,8 @@ The first release: set up, change and watch a project's team of AI agents from o
   footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
   stays idle.
 
-[Unreleased]: https://github.com/floor/team/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/floor/team/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/floor/team/releases/tag/v0.3.3
 [0.3.2]: https://github.com/floor/team/releases/tag/v0.3.2
 [0.3.1]: https://github.com/floor/team/releases/tag/v0.3.1
 [0.3.0]: https://github.com/floor/team/releases/tag/v0.3.0

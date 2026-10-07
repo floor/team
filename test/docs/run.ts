@@ -182,7 +182,7 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
         home: fixture.home,
       });
     case 'check':
-      return check(rest, io, (cwd, file) => loadConfig(cwd, file, fixture.home));
+      return check(rest, io, (cwd, file) => loadConfig(cwd, file, fixture.home), world.checkSources());
     case 'commits':
       return commits(rest, io, (cwd, file) => loadConfig(cwd, file, fixture.home));
     case 'doctor':

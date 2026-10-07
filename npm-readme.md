@@ -39,8 +39,10 @@ the file stays private to your clone (it goes in `.git/info/exclude`, never `.gi
 - Node 22 or later, and [herdr](https://herdr.dev), the terminal multiplexer the team runs in.
 - Each seat's CLI, installed and signed in: Claude Code, Codex, Cursor or Antigravity. `team doctor`
   says what is missing; `team doctor --login` checks the sign-ins read-only.
-- The owner's terminal, outside herdr, for `approve` and `up`. A seat, or an agent-run CLI, cannot
-  approve a file or start a team.
+- The owner's terminal, outside herdr, for `approve` and `up`: both read the processes above the
+  call and refuse a seat — or an agent-run CLI — that makes it. That guards against a mistaken
+  agent, not a hostile one; a seat that forges the owner's placement is a known limitation, being
+  hardened.
 
 ## Links
 

@@ -1,75 +1,90 @@
 # team check
 
-The old spelling of the two commands that took its halves: [`team commits check`](commits.md)
-checks a commit or a range, and [`team pr check`](pr.md) checks a pull request's body alone. A
-`team check` with any argument at all is still read through 0.3.3 — the call runs as it always
-has, with one notice line naming the new command first.
+One answer to one question: **is anything wrong with this team that someone should act on?**
+It reads the team file, the approval, the state and herdr, and changes nothing — no git is
+needed, so it answers as well in a plain folder as in a repository. It is not
+[`team status`](status.md) with fewer lines: status answers *what the team is* — the rows, the
+budgets, every difference and note — and the check answers *what to act on*: the differences
+alone, each with its repair.
 
-A `team check` with **no argument at all** is reserved for the team's own check: a different
-command, and not built in this build. There is nothing to accept yet, so bare `team check`
-refuses exactly as it always has, and never runs the old commit check.
+`team check` is also the old name of the two commands that took its halves —
+[`team commits check`](commits.md) and [`team pr check`](pr.md). A line that spells one of
+those — a `<ref>`, `--pr`, `--since`, any other word or option — is still read as that command
+through 0.3.3; the last section keeps those spellings and their bytes.
 
 ## Synopsis
 
-    team check <ref> [--pr <file>] [--since <ref>] [--file <path>]
+    team check [--session <name>] [--file <path>]
 
-## The old spelling, one notice line
+## Who the check answers
 
-Any argument is the old spelling. The run is the one the new names run — the commits half, and
-with `--pr` the body half as well — and one line goes to standard error before the command's own
-bytes, naming the new command:
+The caller decides, not the flags. Three callers get the answer:
 
-    team check: `team check` is now `team commits check`, and is still read through 0.3.3
-    team check: `team check --pr` is now `team pr check`, and is still read through 0.3.3
+- **the owner**, from a terminal outside herdr — the same walk `status` and the changing
+  commands make. An owner **without a terminal** is not this caller: a script meets the fixed
+  sentence below;
+- **a seat of the team being checked** — placed in the file's session, on the pane the state
+  records for it. A seat the state records no pane for, or records on another pane, fails
+  closed;
+- **a pane outside the team that the approved file names** in its `delegates` entries — through
+  the same gate the changing commands use, minus the command list and the audit line: the check
+  is a read, not an act.
 
-A plain call prints the first line; a `--pr` call prints both, the commits one first. Every line
-under the notices names the new command (`team commits check: …`, `team pr check: …`), and the
-exit codes are the ones [`commits check`](commits.md) and [`pr check`](pr.md) have. A refused
-invocation — a missing or doubled `<ref>`, an unknown option — keeps the bytes it always had and
-takes no notice: an error already says what to fix.
+Anyone else gets one fixed sentence and nothing else, whatever failed underneath — no file, an
+invalid one, a refused approval, a state that can't be read, herdr not answering, an aimed
+flag, any caller detail:
 
-## Bare `team check`
+    team check: this team is not yours to check
 
-Not the old spelling, and not built yet either: the team's own check arrives in a later build.
-Until then it refuses exactly as it did before the rename, and runs nothing:
+`--file` and `--session` are the owner's. Aimed by a caller that passes the gate but is not the
+owner, each meets the refusal every command gives it (`--file is the owner's, from a terminal
+outside herdr; this call is …`) and exits 1. For every other caller the two flags aim nothing
+and open nothing: the target is the file the caller's own place finds.
 
-```console
-$ team check ; echo "exit $?"
-team check: a <ref> is required
+## What it reads
 
-Usage: team check <ref> [--pr <file>] [--since <ref>] [--file <path>]
+- the team file, as [`team status`](status.md) loads it — a plain folder's own
+  `.agents/team.yaml` through the fallback, no git step;
+- the approval store: the record, its copy, and the file against it;
+- `team.state.json`: the seats' stages, waits, rules and launch identities, the worktrees, and
+  the session's watch;
+- herdr, read-only, through the same reads status makes — narrowed to one pass over the panes
+  **this project's state records for this team's seats**. A pane the state records for another
+  session, another project or nobody at all is not read, and the pass uses the watch's own
+  screen reader, so the words a seat's screen yields are the watch's own words. Nothing of the
+  watch's pass, report or nudge path runs: no key is sent, no pane is typed into, no memory is
+  written.
 
-  <ref>            a range when it holds "..", passed to git as given
-                   (origin/main..HEAD); otherwise that one commit
-  --pr <file>      also check a pull request's body ("-" reads standard input)
-  --since <ref>    skip this commit and everything reachable from it, for this
-                   run; overrides identity.since
-  --file <path>    the team file, instead of .agents/team.yaml
+It writes nothing at all — not the state, not the store, not the `last_valid` copy `status`
+keeps beside the file it read — for every caller, the owner included.
 
-Exits 0 when every commit passes, 1 when one is refused, 2 when the check
-can't run.
-exit 2
-```
+## Output
 
-## Refusals
+One line per finding, its repair under it, then the closing count; the check prints no seat
+table, no budget block and no notes:
 
-The invocation's own, in the old bytes:
+    difference: claude-beacon is in the file and is not running
+      repair: the owner runs team up
+    team check: 1 difference(s), 1 for the owner
 
-| Message | Exit |
-| --- | --- |
-| `team check: a <ref> is required` (with the usage) | 2 |
-| `team check: one <ref> at most` (with the usage) | 2 |
-| `team check: unknown option --<name>` (with the usage) | 2 |
-| `team check: --pr needs a value` (with the usage) | 2 |
+The closing line counts the differences and, after a comma, how many of their repairs are the
+owner's. With nothing to act on it is `team check: nothing wrong`.
 
-Everything else leaves through the new commands and prints their names; their pages carry those
-tables.
+Under either answer stands the one line that names what the check cannot see:
+
+    not known: work sent and unread, a lead waiting on a seat, a landing not recorded
+
+The readers are agents too, so this text is the contract: one `difference:` line per finding,
+its `  repair:` line under it, the closing count line, and the `not known:` line. A finding
+never quotes a seat's screen text beyond the profile's fixed words for the kind of screen it
+is.
 
 ## Exit codes
 
-- `0` — every commit checked passes, and so does the pull request body when one was given.
-- `1` — at least one commit, or the body, was refused.
-- `2` — the invocation can't be read; the run's own refusals are the new commands' 2s, on their pages.
+- `0` — nothing needs acting on.
+- `1` — something needs acting on (the findings are printed), or a flag the caller may not aim.
+- `2` — the check can't run (the loader's, the state's or herdr's own text), the invocation
+  can't be read, or the caller may not check this team (the one fixed sentence).
 
 ## Examples
 
@@ -109,6 +124,71 @@ seats:
     launch: claude --model claude-opus-5-5
 ```
 
+The team runs as the file and the state say, so there is nothing to act on:
+
+```console
+$ team check ; echo "exit $?"
+team check: nothing wrong
+not known: work sent and unread, a lead waiting on a seat, a landing not recorded
+exit 0
+```
+
+A seat of the team runs it too, and reads the same answer:
+
+```console caller=claude-beacon
+$ team check ; echo "exit $?"
+team check: nothing wrong
+not known: work sent and unread, a lead waiting on a seat, a landing not recorded
+exit 0
+```
+
+With the herdr session down, both seats are in the file and not running — the summary counts
+them, and one repair is the owner's:
+
+```console herdr=absent
+$ team check ; echo "exit $?"
+difference: claude-keeper is in the file and is not running
+  repair: the owner runs team up
+difference: claude-beacon is in the file and is not running
+  repair: the owner runs team up
+team check: 2 difference(s), 2 for the owner
+not known: work sent and unread, a lead waiting on a seat, a landing not recorded
+exit 1
+```
+
+An agent outside the team — no terminal, no seat, no approved pane — learns nothing but the
+one sentence:
+
+```console caller=agent
+$ team check ; echo "exit $?"
+team check: this team is not yours to check
+exit 2
+```
+
+When herdr doesn't answer at all, an authorized caller gets herdr's own line and nothing is
+guessed:
+
+```console herdr=none
+$ team check ; echo "exit $?"
+team check: herdr doesn't answer; is it installed and running?
+exit 2
+```
+
+## The old spelling, still read through 0.3.3
+
+A `<ref>`, `--pr`, `--since`, an unknown option or any other word makes the line the old
+spelling: the commits half runs as [`team commits check`](commits.md) has always run, with
+`--pr` the pull request body's half as well, and one line goes to standard error first for each
+half that runs:
+
+    team check: `team check` is now `team commits check`, and is still read through 0.3.3
+    team check: `team check --pr` is now `team pr check`, and is still read through 0.3.3
+
+Every line under the notices names the new command, and the exit codes are the ones
+[`commits check`](commits.md) and [`pr check`](pr.md) have. A refused invocation — a missing or
+doubled `<ref>`, an unknown option, a missing value — keeps the bytes it always had and takes
+no notice: an error already says what to fix.
+
 ```commit
 Tidy the logs
 
@@ -117,8 +197,6 @@ The reader printed one line too many, so the reports carried noise.
 Claude-Session: 8f21c4a9
 Agent: Claude Opus 5.5 · implementer
 ```
-
-The old spelling runs the commits check, one notice line first:
 
 ```console
 $ team check HEAD ; echo "exit $?"
@@ -149,4 +227,24 @@ team commits check: warning: line 3: `coordinator:` is now `leads: true` on the 
     Claude-Session: 8f21c4a9
 team commits check: 1 commit checked, 1 pull request body checked: 1 commit refused
 exit 1
+```
+
+An invocation that belongs to neither spelling refuses in the old bytes and takes no notice:
+
+```console
+$ team check --nope ; echo "exit $?"
+team check: unknown option --nope
+
+Usage: team check <ref> [--pr <file>] [--since <ref>] [--file <path>]
+
+  <ref>            a range when it holds "..", passed to git as given
+                   (origin/main..HEAD); otherwise that one commit
+  --pr <file>      also check a pull request's body ("-" reads standard input)
+  --since <ref>    skip this commit and everything reachable from it, for this
+                   run; overrides identity.since
+  --file <path>    the team file, instead of .agents/team.yaml
+
+Exits 0 when every commit passes, 1 when one is refused, 2 when the check
+can't run.
+exit 2
 ```

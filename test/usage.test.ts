@@ -1,34 +1,52 @@
-// `team usage` — S1: one project's block, resolved from the current folder and read-only. Its
-// rows are `status`'s own rows (the same rule and the same table), and the four holds of the
-// brief are tested too: nothing is written, no pane or key or CLI session file is read, any
-// caller may run it from any folder, and every figure carries its source and its age. The
-// restricted view's own rules are here as well: a refused approval's words reach the owner and
-// nobody else, whatever the reason (`NOT_VERIFIED`); a file that does not load or cannot be read
-// is one fixed sentence per line for every caller who is not the owner, never the loader's body —
-// whose bodies can name paths outside this project — and every other note names this project's
-// own paths relative to the project root. Such a caller reads no location the tool derived from
-// this machine (`expectNoDerivedPath`); a name the team's own file writes prints as written, and
-// its own test pins that exception to exactly the one written name, so it can never widen.
+// `team usage` — S2: the machine's report, restricted for every caller but the owner at a
+// terminal. One resolution (`viewFor`), one filter (`reportOf`), one closed allow-list DTO both
+// renderers print — and the DTO holds copies, never the machine's own objects, so a field the
+// internals grow reaches neither face (its own test below). The suite holds the design's boundary
+// as tests: the properties the restricted text and `--json` keep (no other team's name, root,
+// seat or read, no location this machine derived, no path a state read produced), the full view's
+// own shape, the anonymized note families with their counts, the store-level refusal, and the
+// five droppable allow-list entries the brief lists — the team count, whose reading a machine
+// line carries, the watch clause, the anonymized note counts, and how fine an age is — each with
+// its own test below. Read-only throughout: nothing here writes, runs, reads a pane or opens a
+// CLI session file.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalOf } from '../src/approve/approval.ts';
-import type { Caller } from '../src/caller.ts';
+import { mayLaunchSeats, walkCaller, type Caller } from '../src/caller.ts';
 import { runStatus } from '../src/commands/status.ts';
 import { NO_PROJECT, runUsage, USAGE } from '../src/commands/usage.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
-import { NO_COPY, NOTHING_COUNTED, NOT_VERIFIED, UNBOUND_ACCOUNT, UNBOUND_SHAPE } from '../src/information/usage.ts';
+import {
+  machineUsage,
+  NO_COPY,
+  NOTHING_COUNTED,
+  NOT_VERIFIED,
+  reportOf,
+  reportText,
+  UNBOUND_ACCOUNT,
+  UNBOUND_SHAPE,
+  viewFor,
+} from '../src/information/usage.ts';
 import { emptySession, updateState } from '../src/state.ts';
 import { approvalStanding, storePath, writeApproval } from '../src/store/store.ts';
 import { gitEnv, testIo } from './helpers.ts';
 
 const NOW = new Date('2026-10-04T09:00:00Z');
 
+/** A report document's outermost shape, as the two views' documents differ only in the names
+ *  inside: the tests below compare one against the other with this type on both sides. */
+type MachineDoc = {
+  view: string;
+  labs: { accounts: (Record<string, unknown> & { machine: Record<string, unknown>; teams: Record<string, unknown>[] })[] }[];
+};
+
 /** A seat's caller: the restricted view's ordinary reader, handed in so no test's view depends on
  *  the process tree it is run from. */
 const SEAT: Caller = { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'acme-web' };
+const OWNER: Caller = { kind: 'owner' };
 
 // The state's readings: a fresh check figure, a status-line figure last seen 40 minutes ago out
 // in the open (more than the reserve again, so it is the room last seen, not unknown), and a
@@ -39,24 +57,24 @@ const READINGS = {
   'openai/weekly/lead': { account: 'openai', window: 'weekly', left: 5, used: 95, changedAt: '2026-10-04T08:58:00Z', resetsAt: '2026-10-04T09:44:00Z', seat: 'lead', source: 'status_line', confirmed: true },
 };
 
-const BLOCK = [
-  'team acme',
-  '  anthropic  unknown',
-  '  openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh',
-  '  openai  daily  left 70%  used 30%  resets unknown  lead  last seen 40m ago  status line (fallback)  stale',
-  '  openai  weekly  left 5%  used 95%  resets in 44m  lead  changed 2m ago  status line (fallback)  fresh, inside reserve 20%',
-  'no watch is recording for acme',
+// The report the fixture reads, byte for byte: the machine's counts, one line per account+window
+// with the newest figure any team's reading holds, the caller's own row under each line, the
+// why-lines for the accounts that read unknown everywhere, and the watch clause on every line
+// whose newest team has no watch recording. A caller who is not the owner reads the same bytes
+// here as the owner does — this fixture has one team.
+const REPORT = [
+  'usage on this machine, 1 team, 2 labs, 2 accounts',
+  '',
+  'anthropic  unknown',
+  '  acme    unknown',
+  '  (acme: no pattern can read this account)',
+  'openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh  (no watch is recording for acme)',
+  '  acme    session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh',
+  'openai  daily  left 70%  used 30%  resets unknown  lead  last seen 40m ago  status line (fallback)  stale  (no watch is recording for acme)',
+  '  acme    daily  left 70%  used 30%  resets unknown  lead  last seen 40m ago  status line (fallback)  stale',
+  'openai  weekly  left 5%  used 95%  resets in 44m  lead  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  (no watch is recording for acme)',
+  '  acme    weekly  left 5%  used 95%  resets in 44m  lead  changed 2m ago  status line (fallback)  fresh, inside reserve 20%',
 ].join('\n');
-
-// The rows the same readings print when no budget in force names an account: the check figure has
-// no source left to count from, the 40-minute-old status-line figure is no room last seen, and
-// the fresh one prints without the reserve and fallback marks no budget gives it. Each is a
-// reading the state still holds, not an account any budget in force names.
-const LEFTOVER_ROWS = [
-  '  openai  session  unknown',
-  '  openai  daily  unknown',
-  '  openai  weekly  left 5%  used 95%  resets in 44m  lead  changed 2m ago  status line  fresh',
-];
 
 let base: string;
 let root: string;
@@ -108,16 +126,18 @@ function withoutBudgets(): string {
 
 /** The store's record for one text: what `team approve` leaves, signed by the key the store
  *  writes on first use. The budgets section takes effect only once the owner has approved it. */
-function approve(text: string): void {
-  const checked = validateTeamFile(text, { home, root });
+function approve(text: string, opts: { root?: string; name?: string } = {}): void {
+  const at = opts.root ?? root;
+  const checked = validateTeamFile(text, { home, root: at });
   if (!checked.ok) throw new Error(`the fixture does not validate: ${JSON.stringify(checked.errors)}`);
-  writeApproval(storePath(checked.team.project, root, home), { approval: approvalOf(checked.team, root, NOW), file: text }, [], home);
+  writeApproval(storePath(opts.name ?? checked.team.project, at, home), { approval: approvalOf(checked.team, at, NOW), file: text }, [], home);
 }
 
-/** A state with the session recorded and no readings at all: with no readings to hold, the
- *  table prints no rows, and the watch line reads `no watch is recording for <project>`. */
+/** A state with the session recorded and no readings at all: the session is reset and the whole
+ *  `budgets` record emptied, so a test that set readings earlier really has none. */
 function withoutReadings(): void {
   updateState(join(root, '.agents'), (state) => {
+    state.budgets = {};
     state.sessions['acme-web'] = { ...emptySession() } as never;
   });
 }
@@ -158,7 +178,7 @@ async function usageAt(cwd: string, caller?: Caller, ...argv: string[]) {
 
 /** The tokens of a face that start at the filesystem root, run to whitespace or a delimiter: what
  *  a path the tool derived from this machine looks like — a root, the home folder, the store, a
- *  state or file path — and, just as well, what a name the team wrote in its own file may look
+ *  state or file path — and, just as well, what a name a team wrote in its own file may look
  *  like. The tests here keep the two halves apart: `expectNoDerivedPath` refuses every such token
  *  where only derived paths can stand, and the account-name test pins the other half to exactly
  *  the one name the file wrote, so the exception can never widen into a hiding place. */
@@ -169,13 +189,13 @@ function absoluteTokens(face: string): string[] {
 /** No location the tool derived from this machine reaches a caller who is not the owner, in either
  *  face: the fixture's own base and home are distinctive strings — the base is under `/tmp`, and
  *  the root, the store and the state live under it — and no absolute-looking token stands in the
- *  output at all, the block or the `--json` behind it. The team's own written names are the one
- *  exception, and they are pinned by their own test, never by this one quietly allowing them. */
-function expectNoDerivedPath(faces: readonly string[], why?: string): void {
+ *  output at all. The one exception is a name a team's own file wrote, and it is pinned by its own
+ *  test, never allowed here by omission: a caller's own `budgets.accounts` name prints as written. */
+function expectNoDerivedPath(faces: readonly string[], why?: string, allowed: readonly string[] = []): void {
   const derived = [base, root, home, storePath('acme', root, home), join(root, '.agents', 'team.state.json')];
   for (const face of faces) {
     for (const path of derived) expect(face, why).not.toContain(path);
-    expect(absoluteTokens(face), why).toEqual([]);
+    expect(absoluteTokens(face).filter((token) => !allowed.includes(token)), why).toEqual([]);
   }
 }
 
@@ -201,6 +221,59 @@ function snapshot(dir: string): Record<string, string> {
   return out;
 }
 
+/** Run one scenario with the watched folders snapshotted around it. */
+async function untouched(watched: string[], run: () => Promise<unknown>): Promise<void> {
+  const before = watched.map((dir) => snapshot(dir));
+  await run();
+  watched.forEach((dir, index) => expect(snapshot(dir)).toEqual(before[index] as Record<string, string>));
+}
+
+/** A team file for the gate scene: one project, its own distinctive account, the shared `openai`,
+ *  and a seat whose vendor puts a lab in use. `project` is the distinctive string the property
+ *  sweep looks for. */
+function teamTextFor(project: string, accounts: string[], seats: string): string {
+  return `format: 1
+project: ${project}
+session: ${project}-web
+operator: lead
+trust:
+  - ~/.config/team/lobby
+  - ${join(base, project)}
+workspace:
+  mode: shared
+budgets:
+  accounts:
+    openai:
+      kind: subscription
+      reserve: 20%
+      sources: [status_line]
+${accounts.map((account) => `    ${account}:\n      kind: subscription\n      reserve: 10%`).join('\n')}
+seats:
+  - role: orchestrator
+    name: lead
+    label: lead
+    leads: true
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+${seats}`;
+}
+
+/** One other team's seat block, for the extra account a lab keeps to itself. */
+function extraSeat(name: string, account: string): string {
+  return `  - role: member
+    name: ${name}
+    account: ${account}
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+`;
+}
+
 describe('team usage', () => {
   test('the fixture takes the current file spelling, so no deprecation warning fires on it', () => {
     // The guard for the class a moved word breaks: if the tool's file language moves again —
@@ -214,16 +287,17 @@ describe('team usage', () => {
     expect(warnings).toEqual([]);
   });
 
-  test('the project block is the header, the rows, the watch line — and status rows it', async () => {
+  test('the machine report is the header, the lines and the notes — and status rows its own rows', async () => {
     withState();
     const mine = await usageAt(root);
     expect(mine.err).toBe('');
-    expect(mine.out).toBe(`${BLOCK}\n`);
+    expect(mine.out).toBe(`${REPORT}\n`);
     expect(mine.code).toBe(0);
 
-    // The rows are `status`'s own, over the same state: the fresh, unknown and last-seen rows
-    // are byte-identical to what its budgets table prints.
-    const io = testIo(root, { kind: 'owner' });
+    // The caller's own rows are `status`'s own, over the same state: the fresh, unknown and
+    // last-seen rows are the budget table's rows with the account column replaced by the team's
+    // name. One row per table row, in the table's order, and every table row is one of them.
+    const io = testIo(root, OWNER);
     await runStatus(['--file', file], io, {
       live: () => ({ running: false, agents: [], workspaces: [], screens: {} }),
       branch: () => null,
@@ -231,139 +305,325 @@ describe('team usage', () => {
       now: () => NOW,
       home,
     });
-    expect(rowsUnder(mine.out, 'team acme')).toEqual(rowsUnder(io.out, 'budgets:'));
+    const statusRows = rowsUnder(io.out, 'budgets:');
+    const ownRows = mine.out.split('\n').filter((line) => line.startsWith('  acme  '));
+    expect(statusRows.length).toBeGreaterThan(0);
+    expect(ownRows.length).toBe(statusRows.length);
+    for (const row of statusRows) {
+      const account = row.slice(0, row.indexOf('  '));
+      expect(ownRows.some((line) => line.endsWith(row.slice(account.length)))).toBe(true);
+    }
   });
 
-  test('--json prints the same reading as one document, format 1', async () => {
+  test('--json prints the same report as one document, format 1, restricted with no names of another team', async () => {
     withState();
     const { code, out } = await usageAt(root, undefined, '--json');
     const doc = JSON.parse(out) as Record<string, unknown>;
     expect(code).toBe(0);
-    expect(doc.format).toBe(1);
-    expect(doc.at).toBe('2026-10-04T09:00:00.000Z');
-    expect(doc.view).toBe('restricted');
-    expect(doc.mine).toBe('acme');
-    expect(doc.watch).toBe('not-recording');
-    expect(doc.notes).toEqual([]);
-    expect(doc.rows).toEqual([
-      { account: 'anthropic', window: null, left: null, used: null, resetsIn: null, seat: null, age: null, source: null, fallback: false, state: 'unknown', inside: false, reserve: 10 },
-      { account: 'openai', window: 'session', left: 40, used: 60, resetsIn: '44m', seat: null, age: '2m', source: 'check', fallback: false, state: 'fresh', inside: false, reserve: 20 },
-      { account: 'openai', window: 'daily', left: 70, used: 30, resetsIn: null, seat: 'lead', age: '40m', source: 'status_line', fallback: true, state: 'stale', inside: false, reserve: 20 },
-      { account: 'openai', window: 'weekly', left: 5, used: 95, resetsIn: '44m', seat: 'lead', age: '2m', source: 'status_line', fallback: true, state: 'fresh', inside: true, reserve: 20 },
-    ]);
+    expect(doc).toEqual({
+      format: 1,
+      at: '2026-10-04T09:00:00.000Z',
+      view: 'restricted',
+      mine: 'acme',
+      counts: { teams: 1, labs: 2, accounts: 2 },
+      labs: [
+        {
+          lab: 'anthropic',
+          accounts: [
+            {
+              account: 'anthropic',
+              kind: 'subscription',
+              machine: { window: null, left: null, used: null, resetsIn: null, changedAt: null, age: null, source: null, fallback: false, state: 'unknown', inside: false, reserve: null, other: false },
+              teams: [{ team: 'acme', row: { account: 'anthropic', window: null, left: null, used: null, resetsIn: null, seat: null, age: null, source: null, fallback: false, state: 'unknown', inside: false, reserve: 10 } }],
+            },
+          ],
+        },
+        {
+          lab: 'openai',
+          accounts: [
+            {
+              account: 'openai',
+              kind: 'subscription',
+              machine: { window: 'session', left: 40, used: 60, resetsIn: '44m', changedAt: '2026-10-04T08:58:00.000Z', age: '2m', source: 'check', fallback: false, state: 'fresh', inside: false, reserve: 20, other: false, watch: 'not-recording', seat: null },
+              teams: [{ team: 'acme', row: { account: 'openai', window: 'session', left: 40, used: 60, resetsIn: '44m', seat: null, age: '2m', source: 'check', fallback: false, state: 'fresh', inside: false, reserve: 20 } }],
+            },
+            {
+              account: 'openai',
+              kind: 'subscription',
+              machine: { window: 'daily', left: 70, used: 30, resetsIn: null, changedAt: '2026-10-04T08:20:00.000Z', age: '40m', source: 'status_line', fallback: true, state: 'stale', inside: false, reserve: 20, other: false, watch: 'not-recording', seat: 'lead' },
+              teams: [{ team: 'acme', row: { account: 'openai', window: 'daily', left: 70, used: 30, resetsIn: null, seat: 'lead', age: '40m', source: 'status_line', fallback: true, state: 'stale', inside: false, reserve: 20 } }],
+            },
+            {
+              account: 'openai',
+              kind: 'subscription',
+              machine: { window: 'weekly', left: 5, used: 95, resetsIn: '44m', changedAt: '2026-10-04T08:58:00.000Z', age: '2m', source: 'status_line', fallback: true, state: 'fresh', inside: true, reserve: 20, other: false, watch: 'not-recording', seat: 'lead' },
+              teams: [{ team: 'acme', row: { account: 'openai', window: 'weekly', left: 5, used: 95, resetsIn: '44m', seat: 'lead', age: '2m', source: 'status_line', fallback: true, state: 'fresh', inside: true, reserve: 20 } }],
+            },
+          ],
+        },
+      ],
+      unknown: [{ scope: 'acme', account: 'anthropic', why: 'no pattern can read this account' }],
+      notes: [],
+    });
   });
 
-  test('a watch whose heartbeat is fresh prints no watch line; a stale or odd one says which', async () => {
+  test('the report carries copies, not the machine’s own objects: a field the internals grow reaches neither face', async () => {
+    // The closed allow-list's own rule, pinned where it can break in silence: `reportOf` builds
+    // the one DTO both renderers print from, and the command `JSON.stringify`s it for `--json` —
+    // so a row (or the counts) carried by reference would print whatever field the internal type
+    // grows next, the restricted view's rows included. The marker below stands for that field:
+    // planted on every internal row, reading and count the report reads from, it must reach
+    // neither face. The spend account is in the fixture so the sweep covers a spend reading too.
+    const text = teamText().replace(
+      '  accounts:\n',
+      '  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: acme-quota }\n',
+    );
+    writeFileSync(file, text);
+    approve(text);
+    updateState(join(root, '.agents'), (state) => {
+      state.spend = { deepseek: { account: 'deepseek', amount: 12.4, currency: 'USD', at: '2026-10-04T08:56:00Z' } } as never;
+    });
+    withState();
+    const view = viewFor(testIo(root, SEAT), root);
+    expect(view.full).toBe(false);
+    const machine = machineUsage(home, NOW.getTime(), view);
+
+    const marker = 'ZAP-MARKER-2b5f';
+    const plant = (one: object): void => {
+      (one as Record<string, unknown>).zap = marker;
+    };
+    plant(machine.counts);
+    for (const lab of machine.labs) {
+      for (const account of lab.accounts) {
+        if (account.kind === 'spend') {
+          for (const one of account.spend.rows) plant(one.reading);
+          if (account.spend.newest !== null) plant(account.spend.newest.reading);
+        } else {
+          for (const line of account.lines) {
+            for (const one of line.rows) plant(one.row);
+            if (line.newest !== null) plant(line.newest.row);
+          }
+        }
+      }
+    }
+
+    const report = reportOf(machine, view, NOW.getTime(), []);
+    expect(JSON.stringify(report)).not.toContain(marker);
+    expect(reportText(report)).not.toContain(marker);
+
+    // And the key sets themselves, level by level — the report, the counts, a team row and a
+    // spend reading — so a key that does cross fails here by name, not only by plant.
+    expect(Object.keys(report)).toEqual(['format', 'at', 'view', 'mine', 'counts', 'labs', 'unknown', 'notes']);
+    expect(Object.keys(report.counts)).toEqual(['teams', 'labs', 'accounts']);
+    const teamRows = report.labs.flatMap((lab) => lab.accounts.flatMap((entry) => (entry.kind === 'subscription' ? entry.teams : [])));
+    const spendRows = report.labs.flatMap((lab) => lab.accounts.flatMap((entry) => (entry.kind === 'spend' ? entry.teams : [])));
+    expect(teamRows.length).toBeGreaterThan(0);
+    expect(spendRows.length).toBeGreaterThan(0);
+    for (const row of teamRows) {
+      expect(Object.keys(row.row)).toEqual(['account', 'window', 'left', 'used', 'resetsIn', 'seat', 'age', 'source', 'fallback', 'state', 'inside', 'reserve']);
+    }
+    for (const row of spendRows) {
+      expect(Object.keys(row.reading)).toEqual(['amount', 'currency', 'at', 'age', 'source', 'state']);
+    }
+  });
+
+  test("the owner's document is the same one with the names on: `team`, `root`, and the full view", async () => {
+    withState();
+    const seat = JSON.parse((await usageAt(root, SEAT, '--json')).out) as MachineDoc;
+    const { code, out } = await usageAt(root, OWNER, '--json');
+    const doc = JSON.parse(out) as {
+      view: string;
+      labs: Array<{ accounts: Array<{ machine: Record<string, unknown>; teams: Array<Record<string, unknown>> }> }>;
+    };
+    expect(code).toBe(0);
+    expect(doc.view).toBe('full');
+    // The full view is the restricted document with exactly the names the restricted one leaves
+    // out: `root` on every team row, and `team` on every machine line that has a figure (whose
+    // reading it is). A row's own `team` is not one of those — it is the caller's own name, which
+    // the restricted view prints too — so taking the two full-view fields off a copy of the
+    // owner's document must give the caller's document back, key for key.
+    const copy = JSON.parse(JSON.stringify(doc)) as MachineDoc;
+    let roots = 0;
+    let machineTeams = 0;
+    for (const entry of copy.labs.flatMap((lab) => lab.accounts)) {
+      for (const row of entry.teams) {
+        expect(typeof row.root).toBe('string');
+        delete row.root;
+        roots += 1;
+        // The row's name is the caller's own, and the caller is the whole of this fixture.
+        expect(row.team).toBe('acme');
+      }
+      if ('team' in entry.machine) {
+        machineTeams += 1;
+        delete entry.machine.team;
+      }
+    }
+    copy.view = 'restricted';
+    expect(roots).toBe(4);
+    expect(machineTeams).toBe(3);
+    expect(copy).toEqual(seat);
+  });
+
+  test('a watch whose heartbeat is fresh prints no clause; a stale or odd one says which', async () => {
     withState({ pid: 1, heartbeat: '2026-10-04T08:59:30Z' });
-    const recording = await usageAt(root);
+    const recording = await usageAt(root, SEAT);
     expect(recording.out).not.toContain('watch');
+    expect(recording.out).toBe(`${REPORT.replaceAll('  (no watch is recording for acme)', '')}\n`);
 
     withState({ pid: 1, heartbeat: '2026-10-04T08:55:00Z' });
-    const stale = await usageAt(root);
-    expect(stale.out).toContain('no watch is recording for acme\n');
+    const stale = await usageAt(root, SEAT);
+    expect(stale.out).toBe(`${REPORT}\n`);
 
     withState({ pid: 1, heartbeat: 'not a time' });
-    const odd = await usageAt(root);
-    expect(odd.out).toContain('not known whether a watch is recording\n');
+    const odd = await usageAt(root, SEAT);
+    expect(odd.out).toBe(`${REPORT.replaceAll('(no watch is recording for acme)', '(not known whether a watch is recording)')}\n`);
   });
 
-  test('an unreadable state is a note line: the path is absolute for the owner, relative for a seat', async () => {
+  test('an unreadable state is a note line: this project’s own path, absolute for the owner, relative for a seat', async () => {
     const state = join(root, '.agents', 'team.state.json');
     writeFileSync(state, 'not json');
     const why = 'is not valid JSON; move it aside and run the command again';
 
     // The owner reads the state's message exactly as the state wrote it, its absolute path and
-    // all, and the rows still print under it.
-    const owner = await usageAt(root, { kind: 'owner' });
+    // all, named for the team it belongs to; the lines still print under it.
+    const owner = await usageAt(root, OWNER);
     expect(owner.code).toBe(0);
-    expect(owner.out).toContain(`note: ${state} ${why}`);
-    expect(owner.out).toContain('  anthropic  unknown\n');
-    expect(owner.out).toContain('  openai  unknown\n');
-    expect(owner.out).toContain('not known whether a watch is recording\n');
+    expect(owner.out).toContain(`note: acme: ${state} ${why}\n`);
+    expect(owner.out).toContain('openai  unknown\n  acme    unknown\n  (acme: no pattern can read this account)\n');
 
     // A caller who is not the owner reads the project's own path relative to the project root —
-    // and no absolute path at all, the fixture's base included — in the block and in `--json`.
+    // and no absolute path at all, the fixture's base included — in the text and in `--json`.
     const mine = await usageAt(root, SEAT);
     const raw = (await usageAt(root, SEAT, '--json')).out;
     expect(mine.code).toBe(0);
-    expect(mine.out).toContain(`note: .agents/team.state.json ${why}`);
-    expect(mine.out).toContain('  anthropic  unknown\n');
+    expect(mine.out).toBe([
+      'usage on this machine, 1 team, 2 labs, 2 accounts',
+      '',
+      'anthropic  unknown',
+      '  acme    unknown',
+      '  (acme: no pattern can read this account)',
+      'openai  unknown',
+      '  acme    unknown',
+      '  (acme: no pattern can read this account)',
+      'note: acme: .agents/team.state.json is not valid JSON; move it aside and run the command again',
+    ].join('\n') + '\n');
+    expect((JSON.parse(raw) as { notes: unknown[] }).notes).toEqual([
+      { scope: 'acme', why: '.agents/team.state.json is not valid JSON; move it aside and run the command again' },
+    ]);
     expectNoDerivedPath([mine.out, raw]);
-    expect((JSON.parse(raw) as { notes: string[] }).notes).toEqual([`.agents/team.state.json ${why}`]);
   });
 
-  test('a file that names no account prints why nothing is counted, under leftover rows too', async () => {
+  test('a file that names no account prints why nothing is counted, and a seat reads no leftover rows', async () => {
     // The file the owner approved names no account, so the budgets in force name none either.
     const text = withoutBudgets();
     writeFileSync(file, text);
     approve(text);
 
-    // No readings at all: the block is the header, the sentence and the watch line.
+    // No readings at all: the lab the seat's vendor keeps in use, and the sentence.
     withoutReadings();
     const bare = await usageAt(root);
     expect(bare.code).toBe(0);
-    expect(bare.out).toBe(['team acme', NOTHING_COUNTED, 'no watch is recording for acme'].join('\n') + '\n');
-    const doc = JSON.parse((await usageAt(root, undefined, '--json')).out) as Record<string, unknown>;
-    expect(doc.rows).toEqual([]);
-    expect(doc.notes).toEqual([NOTHING_COUNTED]);
+    expect(bare.out).toBe([
+      'usage on this machine, 1 team, 1 lab, 0 accounts',
+      '',
+      'anthropic  not known (no team declares an account for it yet)',
+      `note: acme: ${NOTHING_COUNTED}`,
+    ].join('\n') + '\n');
 
-    // A state that still holds readings prints their rows for the owner — they are readings, not
-    // accounts a budget in force names — and the sentence still prints, under them; the JSON says
-    // the same.
+    // A state that still holds readings: a caller who is not the owner reads none of them — the
+    // state's account is not one the file names, so no line and no row is rendered, and one fixed
+    // line says so, under the same sentence, which keys on the file either way.
     withState();
-    const owner: Caller = { kind: 'owner' };
-    const leftover = await usageAt(root, owner);
-    expect(leftover.code).toBe(0);
-    expect(leftover.out).toBe(['team acme', ...LEFTOVER_ROWS, NOTHING_COUNTED, 'no watch is recording for acme'].join('\n') + '\n');
-    const held = JSON.parse((await usageAt(root, owner, '--json')).out) as Record<string, unknown>;
-    expect((held.rows as unknown[]).length).toBe(LEFTOVER_ROWS.length);
-    expect(held.notes).toEqual([NOTHING_COUNTED]);
-
-    // A caller who is not the owner reads none of those rows: the state's account is not one the
-    // file names, so the reading is not rendered at all and one fixed line says so — under the
-    // same sentence, which keys on the file either way. The second read's rule on an ordinary
-    // state; the hostile-strings test below is its own.
     const mine = await usageAt(root, SEAT);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    const doc = JSON.parse(raw) as { counts: Record<string, number>; labs: unknown[]; notes: unknown[] };
     expect(mine.code).toBe(0);
-    expect(mine.out).toBe(['team acme', NOTHING_COUNTED, 'no watch is recording for acme', `note: ${UNBOUND_ACCOUNT}`].join('\n') + '\n');
-    const heldMine = JSON.parse((await usageAt(root, SEAT, '--json')).out) as Record<string, unknown>;
-    expect(heldMine.rows).toEqual([]);
-    expect(heldMine.notes).toEqual([NOTHING_COUNTED, UNBOUND_ACCOUNT]);
+    expect(mine.out).toBe([
+      'usage on this machine, 1 team, 1 lab, 0 accounts',
+      '',
+      'anthropic  not known (no team declares an account for it yet)',
+      `note: acme: ${NOTHING_COUNTED}`,
+      `note: acme: ${UNBOUND_ACCOUNT}`,
+    ].join('\n') + '\n');
+    expect(doc.counts).toEqual({ teams: 1, labs: 1, accounts: 0 });
+    expect(doc.labs).toEqual([{ lab: 'anthropic', accounts: [] }]);
+    expect(doc.notes).toEqual([{ scope: 'acme', why: NOTHING_COUNTED }, { scope: 'acme', why: UNBOUND_ACCOUNT }]);
+
+    // The owner reads the account the state holds — the report is keyed by declarations, so it
+    // gets no line and no lab, and it is counted all the same — and no "not shown" line.
+    const owner = await usageAt(root, OWNER);
+    const ownerRaw = (await usageAt(root, OWNER, '--json')).out;
+    const held = JSON.parse(ownerRaw) as { counts: Record<string, number>; labs: unknown[]; notes: unknown[] };
+    expect(owner.out).toBe([
+      'usage on this machine, 1 team, 1 lab, 1 account',
+      '',
+      'anthropic  not known (no team declares an account for it yet)',
+      `note: acme: ${NOTHING_COUNTED}`,
+    ].join('\n') + '\n');
+    expect(held.counts).toEqual({ teams: 1, labs: 1, accounts: 1 });
+    expect(held.labs).toEqual([{ lab: 'anthropic', accounts: [] }]);
+    expect(held.notes).toEqual([{ scope: 'acme', why: NOTHING_COUNTED }]);
   });
 
   test('a file whose accounts are not the approved ones prints the why-line, rows or no rows', async () => {
     // Never approved: the store holds no record for this project, so the file's accounts — which
-    // it declares — are not in force, and the tool's own why-line for that standing prints. The
-    // rows the state still holds print above it for the owner — the line keys on the standing,
-    // not on them — and a caller who is not the owner reads neither those rows nor the accounts
-    // they are not approved for: the same why-line, with the dropped reading's own line under it.
+    // it declares — are not in force, and the tool's own why-line for that standing prints.
     rmSync(storePath('acme', root, home), { recursive: true, force: true });
-    const neverApproved = 'the file was never approved on this machine: run `team approve`';
     withoutReadings();
     const bare = await usageAt(root);
-    expect(bare.code).toBe(0);
-    expect(bare.out).toBe(['team acme', neverApproved, 'no watch is recording for acme'].join('\n') + '\n');
+    expect(bare.out).toBe([
+      'usage on this machine, 1 team, 1 lab, 0 accounts',
+      '',
+      'anthropic  not known (no team declares an account for it yet)',
+      'note: acme: the file was never approved on this machine: run `team approve`',
+    ].join('\n') + '\n');
+
+    // The readings the state holds are not bound to the accounts the file declares: a caller who
+    // is not the owner reads no line for them and the one fixed line for the dropped readings.
     withState();
-    const owner: Caller = { kind: 'owner' };
-    const none = await usageAt(root, owner);
-    expect(none.out).toBe(['team acme', ...LEFTOVER_ROWS, neverApproved, 'no watch is recording for acme'].join('\n') + '\n');
-    expect(JSON.parse((await usageAt(root, owner, '--json')).out).notes).toEqual([neverApproved]);
     const mine = await usageAt(root, SEAT);
-    expect(mine.out).toBe(['team acme', neverApproved, 'no watch is recording for acme', `note: ${UNBOUND_ACCOUNT}`].join('\n') + '\n');
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    const doc = JSON.parse(raw) as { counts: Record<string, number>; labs: unknown[]; notes: unknown[] };
+    expect(mine.out).toBe([
+      'usage on this machine, 1 team, 1 lab, 0 accounts',
+      '',
+      'anthropic  not known (no team declares an account for it yet)',
+      'note: acme: the file was never approved on this machine: run `team approve`',
+      `note: acme: ${UNBOUND_ACCOUNT}`,
+    ].join('\n') + '\n');
+    expect(doc.notes).toEqual([
+      { scope: 'acme', why: 'the file was never approved on this machine: run `team approve`' },
+      { scope: 'acme', why: UNBOUND_ACCOUNT },
+    ]);
+
+    // The owner reads the readings' own account under the same sentence, and no "not shown" line.
+    const owner = await usageAt(root, OWNER);
+    expect(owner.out).toBe([
+      'usage on this machine, 1 team, 1 lab, 1 account',
+      '',
+      'anthropic  not known (no team declares an account for it yet)',
+      'note: acme: the file was never approved on this machine: run `team approve`',
+    ].join('\n') + '\n');
 
     // Verified, but the copy the owner approved names no account: the budgets in force are the
     // approved copy's, so the file's own accounts count nothing and `status`'s line for a file
-    // that differs from the approved one prints — again under the readings' own rows, for the
-    // owner.
+    // that differs from the approved one prints — for both views, one sentence each.
     const text = withoutBudgets();
     writeFileSync(file, text);
     approve(text);
     writeFileSync(file, teamText());
     const differs = 'the file differs from the approved one: `budgets` changed';
-    const moved = await usageAt(root, owner);
+    const moved = await usageAt(root, SEAT);
     expect(moved.code).toBe(0);
-    expect(moved.out).toBe(['team acme', ...LEFTOVER_ROWS, differs, 'no watch is recording for acme'].join('\n') + '\n');
-    expect(JSON.parse((await usageAt(root, owner, '--json')).out).notes).toEqual([differs]);
+    expect(moved.out).toBe([
+      'usage on this machine, 1 team, 1 lab, 0 accounts',
+      '',
+      'anthropic  not known (no team declares an account for it yet)',
+      `note: acme: ${differs}`,
+      `note: acme: ${UNBOUND_ACCOUNT}`,
+    ].join('\n') + '\n');
+    const ownerMoved = await usageAt(root, OWNER);
+    expect(ownerMoved.out).toContain(`note: acme: ${differs}`);
   });
 
   test("a refused approval's own words are the owner's: one fixed sentence for a seat, every reason", async () => {
@@ -387,9 +647,6 @@ describe('team usage', () => {
       mkdirSync(join(home, '.config', 'team', 'lobby'), { recursive: true });
       approve(text);
     };
-
-    const seat: Caller = { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'acme-web' };
-    const owner: Caller = { kind: 'owner' };
 
     // Every refusal reason `approvalStanding` can produce, with its store.ts line. Two of the ten
     // cannot be reached by a record on disk — `:162`, guarded by the shape check (`store.ts:159-161`),
@@ -423,19 +680,21 @@ describe('team usage', () => {
       const standing = approvalStanding(root, home);
       expect([one.at, standing.kind], one.at).toEqual([one.at, 'refused']);
       const why = (standing as { why: string }).why;
+      withState();
 
       // A seat gets the one fixed sentence, in both faces, and nothing that names the fixture.
-      const mine = await usageAt(root, seat);
+      const mine = await usageAt(root, SEAT);
       expect(mine.code, one.at).toBe(0);
-      expect(mine.out.split('\n'), one.at).toContain(NOT_VERIFIED);
+      expect(mine.out.split('\n'), one.at).toContain(`note: acme: ${NOT_VERIFIED}`);
       expect(mine.out, one.at).not.toContain('another project root');
 
-      const raw = (await usageAt(root, seat, '--json')).out;
+      const raw = (await usageAt(root, SEAT, '--json')).out;
       expectNoDerivedPath([mine.out, raw], one.at);
-      expect((JSON.parse(raw) as { notes: string[] }).notes, one.at).toEqual([NOT_VERIFIED]);
+      const notes = (JSON.parse(raw) as { notes: { scope: string; why: string }[] }).notes;
+      expect(notes[0], one.at).toEqual({ scope: 'acme', why: NOT_VERIFIED });
 
       // The owner keeps the store's own words, byte for byte — the leak's own path included.
-      const theirs = await usageAt(root, owner);
+      const theirs = await usageAt(root, OWNER);
       expect(theirs.out, one.at).toContain(why);
       if (one.at.startsWith(':185')) {
         expect(why, one.at).toContain(foreign);
@@ -452,16 +711,17 @@ describe('team usage', () => {
     const text = await usageAt(elsewhere);
     expect(text.code).toBe(0);
     expect(text.err).toBe('');
-    expect(text.out).toBe(`note: ${NO_PROJECT}\n`);
+    expect(text.out).toBe(`usage on this machine, 1 team, 2 labs, 2 accounts\n\nnote: ${NO_PROJECT}\n`);
     const json = await usageAt(elsewhere, undefined, '--json');
     expect(JSON.parse(json.out)).toEqual({
       format: 1,
       at: '2026-10-04T09:00:00.000Z',
       view: 'restricted',
       mine: null,
-      rows: [],
-      watch: 'not-known',
-      notes: [NO_PROJECT],
+      counts: { teams: 1, labs: 2, accounts: 2 },
+      labs: [],
+      unknown: [],
+      notes: [{ scope: 'mine', why: NO_PROJECT }],
     });
   });
 
@@ -471,27 +731,39 @@ describe('team usage', () => {
     execFileSync('git', ['init', repo], { env: gitEnv(), stdio: 'ignore' });
     const { code, out } = await usageAt(repo);
     expect(code).toBe(0);
-    expect(out).toBe(`note: ${NO_PROJECT}\n`);
+    expect(out).toContain(`note: ${NO_PROJECT}\n`);
   });
 
   test("a file that exists and does not load is the loader's message for the owner, one fixed sentence for anyone else", async () => {
     writeFileSync(file, 'format: 1\nproject: acme\n');
 
-    // The owner reads every note with the file's absolute path, the shape S1 shipped.
-    const owner = await usageAt(root, { kind: 'owner' });
+    // The owner reads every note with the file's absolute path, one per problem, and — because
+    // the store's record still names this project — the machine's lines for it: the member the
+    // walk read out of the store, the labs the approved copy declares, and the why-lines for the
+    // accounts nothing counts. (A run of this branch showed exactly this face.)
+    const owner = await usageAt(root, OWNER);
     expect(owner.code).toBe(0);
-    expect(owner.out.startsWith(`note: ${file} line 1: seats is required`)).toBe(true);
-    expect(owner.out).not.toContain('team acme\n');
+    expect(owner.out).toContain(`note: ${file} line 1: seats is required`);
+    expect(owner.out).toContain(`note: ${file} line 1: the file has no seat that leads`);
+    expect(owner.out).toContain('anthropic  unknown\n  acme    unknown\n  (acme: no pattern can read this account)\n');
 
     // A caller who is not the owner reads one fixed sentence per line instead — this project's
     // own path, the line, and where the reason is — and never a body: the loader's bodies can name
     // paths outside this project (`trust: must list the lobby <home>/…`). The three problems here
-    // all name line 1, so the one sentence prints once.
+    // all name line 1, so the one sentence prints once; the machine's own counts stand in the
+    // header, and no lab or line of this project's is rendered, because none of it can be read.
     const mine = await usageAt(root, SEAT);
     expect(mine.code).toBe(0);
-    expect(mine.out).toBe('note: .agents/team.yaml does not load (line 1): run team status for the reason\n');
+    expect(mine.out).toBe([
+      'usage on this machine, 1 team, 2 labs, 2 accounts',
+      '',
+      'note: .agents/team.yaml does not load (line 1): run team status for the reason',
+    ].join('\n') + '\n');
     const raw = (await usageAt(root, SEAT, '--json')).out;
-    expect((JSON.parse(raw) as { notes: string[] }).notes).toEqual(['.agents/team.yaml does not load (line 1): run team status for the reason']);
+    const doc = JSON.parse(raw) as { mine: string | null; labs: unknown[]; notes: unknown[] };
+    expect(doc.mine).toBeNull();
+    expect(doc.labs).toEqual([]);
+    expect(doc.notes).toEqual([{ scope: 'mine', why: '.agents/team.yaml does not load (line 1): run team status for the reason' }]);
     expectNoDerivedPath([mine.out, raw]);
   });
 
@@ -507,14 +779,18 @@ describe('team usage', () => {
     mkdirSync(file, { recursive: true });
     execFileSync('git', ['init', root], { env: gitEnv(), stdio: 'ignore' });
     const note = 'EISDIR: illegal operation on a directory, read';
-    const owner = await usageAt(root, { kind: 'owner' });
+    const owner = await usageAt(root, OWNER);
     expect(owner.code).toBe(0);
-    expect(owner.out).toBe(`note: ${note}\n`);
+    expect(owner.out).toContain(`note: ${note}\n`);
     const mine = await usageAt(root, SEAT);
     expect(mine.code).toBe(0);
-    expect(mine.out).toBe('note: .agents/team.yaml cannot be read: the owner reads the reason\n');
+    expect(mine.out).toBe([
+      'usage on this machine, 1 team, 2 labs, 2 accounts',
+      '',
+      'note: .agents/team.yaml cannot be read: the owner reads the reason',
+    ].join('\n') + '\n');
     const raw = (await usageAt(root, SEAT, '--json')).out;
-    expect((JSON.parse(raw) as { notes: string[] }).notes).toEqual(['.agents/team.yaml cannot be read: the owner reads the reason']);
+    expect((JSON.parse(raw) as { notes: unknown[] }).notes).toEqual([{ scope: 'mine', why: '.agents/team.yaml cannot be read: the owner reads the reason' }]);
     expectNoDerivedPath([mine.out, raw]);
   });
 
@@ -522,8 +798,7 @@ describe('team usage', () => {
     // Every class the loader, its placement checks, the state and the resolution can hand this
     // command, provoked one at a time. Each runs through both faces, and `expectNoDerivedPath`
     // sweeps the whole of each: not a figure or a row depends on who asks, and no note may name a
-    // root, the home folder, the store or a state or file path of this machine. Recorded runs of
-    // each case on this branch are quoted in the pull request's list.
+    // root, the home folder, the store or a state or file path of this machine.
     const faces = async (cwd: string): Promise<string> => {
       const text = await usageAt(cwd, SEAT);
       const raw = (await usageAt(cwd, SEAT, '--json')).out;
@@ -534,12 +809,12 @@ describe('team usage', () => {
 
     // Validation: three problems, all on line 1 — one fixed sentence, once.
     writeFileSync(file, 'format: 1\nproject: acme\n');
-    expect(await faces(root)).toBe('note: .agents/team.yaml does not load (line 1): run team status for the reason\n');
+    expect(await faces(root)).toContain('note: .agents/team.yaml does not load (line 1): run team status for the reason\n');
 
     // Placement, no line: the trust list omits the lobby, whose absolute path the loader's body
     // names (`trust: must list the lobby <home>/.config/team/lobby`).
     writeFileSync(file, teamText().replace('  - ~/.config/team/lobby\n', ''));
-    expect(await faces(root)).toBe('note: .agents/team.yaml does not load: run team status for the reason\n');
+    expect(await faces(root)).toContain('note: .agents/team.yaml does not load: run team status for the reason\n');
 
     // Placement, with a line: a trust entry is a symbolic link; the loader's body names the entry
     // and the target it resolves to, both absolute.
@@ -550,35 +825,35 @@ describe('team usage', () => {
     const withLink = teamText().replace(`  - ${root}`, `  - ${linked}\n  - ${root}`);
     writeFileSync(file, withLink);
     const entry = withLink.split('\n').findIndex((line) => line.includes(linked)) + 1;
-    expect(await faces(root)).toBe(`note: .agents/team.yaml does not load (line ${entry}): run team status for the reason\n`);
+    expect(await faces(root)).toContain(`note: .agents/team.yaml does not load (line ${entry}): run team status for the reason\n`);
 
     // YAML that does not parse: the parser's own line.
     writeFileSync(file, 'project: [unclosed\n');
-    expect(await faces(root)).toBe('note: .agents/team.yaml does not load (line 1): run team status for the reason\n');
+    expect(await faces(root)).toContain('note: .agents/team.yaml does not load (line 1): run team status for the reason\n');
 
     // A file that exists and cannot be read: the read fails with a bare errno error.
     rmSync(file);
     mkdirSync(file, { recursive: true });
     execFileSync('git', ['init', root], { env: gitEnv(), stdio: 'ignore' });
-    expect(await faces(root)).toBe('note: .agents/team.yaml cannot be read: the owner reads the reason\n');
+    expect(await faces(root)).toContain('note: .agents/team.yaml cannot be read: the owner reads the reason\n');
 
     // A team file that is a symbolic link in a plain folder: not followed, so no project here.
     const plain = join(base, 'plain');
     mkdirSync(join(plain, '.agents'), { recursive: true });
     writeFileSync(join(base, 'target.yaml'), 'format: 1\n');
     symlinkSync(join(base, 'target.yaml'), join(plain, '.agents', 'team.yaml'));
-    expect(await faces(plain)).toBe(`note: ${NO_PROJECT}\n`);
+    expect(await faces(plain)).toContain(`note: ${NO_PROJECT}\n`);
 
     // A state that cannot be read: the state's own reason with this project's own path in it.
     rmSync(file, { recursive: true, force: true });
     writeFileSync(file, teamText());
     writeFileSync(join(root, '.agents', 'team.state.json'), 'not json');
-    expect(await faces(root)).toContain('note: .agents/team.state.json is not valid JSON; move it aside and run the command again\n');
+    expect(await faces(root)).toContain('note: acme: .agents/team.state.json is not valid JSON; move it aside and run the command again\n');
 
     // No project at all: the one note, and nothing for it to name.
     const nowhere = join(base, 'nowhere');
     mkdirSync(nowhere);
-    expect(await faces(nowhere)).toBe(`note: ${NO_PROJECT}\n`);
+    expect(await faces(nowhere)).toContain(`note: ${NO_PROJECT}\n`);
   });
 
   test('an account named like an absolute path prints as written, and is the only such string a seat reads', async () => {
@@ -592,14 +867,19 @@ describe('team usage', () => {
     const text = teamText().replace('    anthropic:', `    ${name}:`);
     writeFileSync(file, text);
     approve(text);
+    withState();
 
     const mine = await usageAt(root, SEAT);
     const raw = (await usageAt(root, SEAT, '--json')).out;
     expect(mine.code).toBe(0);
-    expect(mine.out).toContain(`  ${name}  unknown\n`);
-    expect((JSON.parse(raw) as { rows: { account: string }[] }).rows.map((row) => row.account)).toEqual([name, 'openai']);
+    expect(mine.out).toContain(`\n${name}  unknown\n  acme    unknown\n  (acme: no pattern can read this account)\n`);
+    // The name is the only absolute-looking string in either face, however often it repeats in
+    // the document — once in the text, at each place the document names the account — and no
+    // string the tool derived stands anywhere near it.
     expect(absoluteTokens(mine.out)).toEqual([name]);
-    expect(absoluteTokens(raw)).toEqual([name]);
+    expect(absoluteTokens(raw).length).toBeGreaterThan(0);
+    expect(absoluteTokens(raw).filter((token) => token !== name)).toEqual([]);
+    expectNoDerivedPath([mine.out, raw], undefined, [name]);
     for (const face of [mine.out, raw]) {
       expect(face).not.toContain(base);
       expect(face).not.toContain(home);
@@ -607,9 +887,9 @@ describe('team usage', () => {
 
     // And the owner reads the same name, exactly as `status` prints it: the exception is about
     // who wrote the string, never about who is reading it.
-    const owner = await usageAt(root, { kind: 'owner' });
+    const owner = await usageAt(root, OWNER);
     expect(owner.code).toBe(0);
-    expect(owner.out).toContain(`  ${name}  unknown\n`);
+    expect(owner.out).toContain(`${name}  unknown\n  acme    unknown\n`);
   });
 
   test("a stored reading's own names are the state's: a seat reads only what the file binds", async () => {
@@ -638,34 +918,43 @@ describe('team usage', () => {
       state.sessions['acme-web'] = { ...emptySession() } as never;
     });
 
-    // A caller who is not the owner reads no row and no name: the sentence for a file that
-    // counts nothing, the watch's line, and one fixed line for the reading that was dropped —
-    // `nothing in rows`, as the ruling has it, because the file names no account to bind it to.
+    // A caller who is not the owner reads no line and no name: the sentence for a file that
+    // counts nothing, and one fixed line for the reading that was dropped — `nothing in rows`, as
+    // the ruling has it, because the file names no account to bind it to.
     const mine = await usageAt(root, SEAT);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    const doc = JSON.parse(raw) as { labs: unknown[]; notes: unknown[] };
     expect(mine.code).toBe(0);
     expect(mine.out).toBe([
-      'team acme',
-      NOTHING_COUNTED,
-      'no watch is recording for acme',
-      `note: ${UNBOUND_ACCOUNT}`,
+      'usage on this machine, 1 team, 1 lab, 0 accounts',
+      '',
+      'anthropic  not known (no team declares an account for it yet)',
+      `note: acme: ${NOTHING_COUNTED}`,
+      `note: acme: ${UNBOUND_ACCOUNT}`,
     ].join('\n') + '\n');
-    const raw = (await usageAt(root, SEAT, '--json')).out;
-    const doc = JSON.parse(raw) as { rows: unknown[]; notes: string[] };
-    expect(doc.rows).toEqual([]);
-    expect(doc.notes).toEqual([NOTHING_COUNTED, UNBOUND_ACCOUNT]);
+    expect(doc.labs).toEqual([{ lab: 'anthropic', accounts: [] }]);
+    expect(doc.notes).toEqual([{ scope: 'acme', why: NOTHING_COUNTED }, { scope: 'acme', why: UNBOUND_ACCOUNT }]);
     for (const face of [mine.out, raw]) {
       expect(face).not.toContain('STATE-ACCOUNT-LEAK');
       expect(face).not.toContain('STATE-SEAT-LEAK');
     }
 
-    // The owner reads everything, as today: the row, the account and the seat, in both faces.
-    const owner = await usageAt(root, { kind: 'owner' });
-    const ownerRaw = (await usageAt(root, { kind: 'owner' }, '--json')).out;
+    // The owner reads no such name either: a face is keyed by the file's own declarations, and
+    // none declares this reading, so neither view prints what the state wrote. What the owner
+    // reads and the caller does not is the machine's own count — the reading is there, so one
+    // account is counted — and neither reads a "not shown" line for it.
+    const owner = await usageAt(root, OWNER);
+    const ownerRaw = (await usageAt(root, OWNER, '--json')).out;
+    const ownerDoc = JSON.parse(ownerRaw) as { counts: Record<string, number>; notes: unknown[] };
     expect(owner.code).toBe(0);
-    expect(owner.out).toContain('/STATE-ACCOUNT-LEAK');
-    expect(owner.out).toContain('/STATE-SEAT-LEAK');
-    expect(ownerRaw).toContain('/STATE-ACCOUNT-LEAK');
-    expect(ownerRaw).toContain('/STATE-SEAT-LEAK');
+    expect(owner.out).toContain('usage on this machine, 1 team, 1 lab, 1 account\n');
+    expect(ownerDoc.counts).toEqual({ teams: 1, labs: 1, accounts: 1 });
+    expect(ownerDoc.notes).toEqual([{ scope: 'acme', why: NOTHING_COUNTED }]);
+    for (const face of [owner.out, ownerRaw]) {
+      expect(face).not.toContain('STATE-ACCOUNT-LEAK');
+      expect(face).not.toContain('STATE-SEAT-LEAK');
+      expect(face).not.toContain('not shown');
+    }
   });
 
   test('a vendor only the live file writes does not bind a stored reading', async () => {
@@ -686,29 +975,35 @@ describe('team usage', () => {
       } as never;
     });
 
-    // A caller who is not the owner reads no row under that name, in either face: it is not an
+    // A caller who is not the owner reads no line under that name, in either face: it is not an
     // account the budgets in force name, and not one a seat in force resolves to, so the reading
-    // is not rendered and the one fixed line stands where its row would be.
+    // is not rendered and the one fixed line stands where its line would be.
     const mine = await usageAt(root, SEAT);
     const raw = (await usageAt(root, SEAT, '--json')).out;
-    const doc = JSON.parse(raw) as { rows: { account: string }[]; notes: string[] };
+    const doc = JSON.parse(raw) as { counts: Record<string, number>; labs: unknown[]; notes: unknown[] };
     expect(mine.code).toBe(0);
     expect(mine.out).toBe([
-      'team acme',
-      '  anthropic  unknown',
-      '  openai  unknown',
-      'no watch is recording for acme',
-      `note: ${UNBOUND_ACCOUNT}`,
+      'usage on this machine, 1 team, 2 labs, 2 accounts',
+      '',
+      'anthropic  unknown',
+      '  acme    unknown',
+      '  (acme: no pattern can read this account)',
+      'openai  unknown',
+      '  acme    unknown',
+      '  (acme: no pattern can read this account)',
+      `note: acme: ${UNBOUND_ACCOUNT}`,
     ].join('\n') + '\n');
-    expect(doc.rows.map((row) => row.account)).toEqual(['anthropic', 'openai']);
-    expect(doc.notes).toEqual([UNBOUND_ACCOUNT]);
+    expect(doc.counts).toEqual({ teams: 1, labs: 2, accounts: 2 });
+    expect(doc.notes).toEqual([{ scope: 'acme', why: UNBOUND_ACCOUNT }]);
     for (const face of [mine.out, raw]) expect(face).not.toContain('LIVE-VENDOR-LEAK');
 
-    // The owner reads it as today: the reading by its own name, and no "not shown" line.
-    const owner = await usageAt(root, { kind: 'owner' });
-    const ownerRaw = (await usageAt(root, { kind: 'owner' }, '--json')).out;
+    // The owner reads it as today: the live vendor's own lab and the reading by its own name, and
+    // no "not shown" line.
+    const owner = await usageAt(root, OWNER);
+    const ownerRaw = (await usageAt(root, OWNER, '--json')).out;
     expect(owner.code).toBe(0);
-    expect(owner.out).toContain(`  ${LIVE_VENDOR}  session`);
+    expect(owner.out).toContain(`${LIVE_VENDOR}  not known (no team declares an account for it yet)\n`);
+    expect(owner.out).toContain(`${LIVE_VENDOR}  not known`);
     expect(ownerRaw).toContain(LIVE_VENDOR);
     for (const face of [owner.out, ownerRaw]) expect(face).not.toContain('not shown');
   });
@@ -717,7 +1012,7 @@ describe('team usage', () => {
     // The rule's other half, in the brief's words: the permitted seat names come from the
     // approved copy in force too, never from the live file. Only the live file names `ghost`,
     // and the state holds a reading carrying that seat under an account the approved budgets do
-    // name — so only the seat is in question. Unfixed, the row printed `ghost`; now the reading
+    // name — so only the seat is in question. Unfixed, the line printed `ghost`; now the reading
     // keeps its figures and prints with no seat, as any reading whose seat the seats in force do
     // not name (`a seat's name is not that wide`).
     const live = teamText() + [
@@ -740,20 +1035,23 @@ describe('team usage', () => {
 
     const mine = await usageAt(root, SEAT);
     const raw = (await usageAt(root, SEAT, '--json')).out;
-    const doc = JSON.parse(raw) as { rows: { account: string; seat: string | null }[] };
+    const doc = JSON.parse(raw) as { labs: { accounts: { machine: { seat?: unknown } }[] }[] };
     expect(mine.code).toBe(0);
     expect(mine.out).toBe([
-      'team acme',
-      '  anthropic  unknown',
-      '  openai  weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%',
-      'no watch is recording for acme',
+      'usage on this machine, 1 team, 2 labs, 2 accounts',
+      '',
+      'anthropic  unknown',
+      '  acme    unknown',
+      '  (acme: no pattern can read this account)',
+      'openai  weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  (no watch is recording for acme)',
+      '  acme    weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%',
     ].join('\n') + '\n');
-    expect(doc.rows.map((row) => [row.account, row.seat])).toEqual([['anthropic', null], ['openai', null]]);
+    expect(doc.labs.flatMap((lab) => lab.accounts).map((entry) => entry.machine.seat)).toEqual([undefined, null]);
     for (const face of [mine.out, raw]) expect(face).not.toContain('ghost');
 
     // The owner sees the reading's own seat, exactly as the state holds it.
-    const owner = await usageAt(root, { kind: 'owner' });
-    const ownerRaw = (await usageAt(root, { kind: 'owner' }, '--json')).out;
+    const owner = await usageAt(root, OWNER);
+    const ownerRaw = (await usageAt(root, OWNER, '--json')).out;
     expect(owner.code).toBe(0);
     expect(owner.out).toContain('ghost');
     expect(ownerRaw).toContain('ghost');
@@ -763,7 +1061,7 @@ describe('team usage', () => {
     // The second lab's (xAI) second finding, accepted: `teamInForceOf` merged `project` in from
     // the LIVE file whatever the standing, and that field is not an owner section — so a rename
     // is not drift and the approval stays verified — so a caller who is not the owner read a name
-    // nobody approved in the header, the watch line and `--json`'s `mine`. Both of the route's
+    // nobody approved in the header, the watch clause and `--json`'s `mine`. Both of the route's
     // preconditions are pinned here: the edited file loads, and the standing is still verified.
     const LIVE_PROJECT = 'a-project-nobody-approved';
     const live = teamText().replace('project: acme', `project: ${LIVE_PROJECT}`);
@@ -773,20 +1071,20 @@ describe('team usage', () => {
     withState();
 
     // A caller who is not the owner reads the copy in force's project, and nothing else: the
-    // whole block is the approved file's, byte for byte, and `mine` is the approved name.
+    // whole report is the approved file's, byte for byte, and `mine` is the approved name.
     const mine = await usageAt(root, SEAT);
     const raw = (await usageAt(root, SEAT, '--json')).out;
     expect(mine.code).toBe(0);
-    expect(mine.out).toBe(`${BLOCK}\n`);
+    expect(mine.out).toBe(`${REPORT}\n`);
     expect((JSON.parse(raw) as { mine: string }).mine).toBe('acme');
     for (const face of [mine.out, raw]) expect(face).not.toContain(LIVE_PROJECT);
 
     // The owner reads the live name as today: the view this command had before the restricted
     // path, and the name the file has now.
-    const owner = await usageAt(root, { kind: 'owner' });
-    const ownerRaw = (await usageAt(root, { kind: 'owner' }, '--json')).out;
+    const owner = await usageAt(root, OWNER);
+    const ownerRaw = (await usageAt(root, OWNER, '--json')).out;
     expect(owner.code).toBe(0);
-    expect(owner.out).toBe(`${BLOCK.replaceAll('acme', LIVE_PROJECT)}\n`);
+    expect(owner.out).toBe(`${REPORT.replaceAll('acme', LIVE_PROJECT)}\n`);
     expect((JSON.parse(ownerRaw) as { mine: string }).mine).toBe(LIVE_PROJECT);
   });
 
@@ -824,19 +1122,22 @@ describe('team usage', () => {
       state.sessions['acme-web'] = { ...emptySession() } as never;
     });
 
-    // A caller who is not the owner reads no name at all: no declared row, no stored reading, no
-    // project — the block's own no-figures line stands where the header would, `mine` is null,
-    // and the one fixed line where the rows would stand names the reason.
+    // A caller who is not the owner reads no name at all: no declared line, no stored reading, no
+    // project — the counts say what the machine holds, `mine` is null, and the two fixed lines
+    // name the reasons.
     const mine = await usageAt(root, SEAT);
     const raw = (await usageAt(root, SEAT, '--json')).out;
-    const doc = JSON.parse(raw) as { rows: unknown[]; notes: string[]; mine: string | null };
+    const doc = JSON.parse(raw) as { counts: Record<string, number>; labs: unknown[]; notes: unknown[]; mine: string | null };
     expect(mine.code).toBe(0);
     expect(mine.out).toBe([
-      'no figures (the file could not be read)',
+      'usage on this machine, 1 team, 0 labs, 0 accounts',
+      '',
+      'note: no figures (the file could not be read)',
       `note: ${NO_COPY}`,
     ].join('\n') + '\n');
-    expect(doc.rows).toEqual([]);
-    expect(doc.notes).toEqual([NO_COPY]);
+    expect(doc.counts).toEqual({ teams: 1, labs: 0, accounts: 0 });
+    expect(doc.labs).toEqual([]);
+    expect(doc.notes).toEqual([{ scope: 'mine', why: 'no figures (the file could not be read)' }, { scope: 'mine', why: NO_COPY }]);
     expect(doc.mine).toBeNull();
     for (const face of [mine.out, raw]) {
       expect(face).not.toContain(name);
@@ -847,13 +1148,11 @@ describe('team usage', () => {
 
     // The owner reads the live file's own names as today — exactly what `status` still shows —
     // the live project among them, and no "not shown" line.
-    const owner = await usageAt(root, { kind: 'owner' });
-    const ownerRaw = (await usageAt(root, { kind: 'owner' }, '--json')).out;
+    const owner = await usageAt(root, OWNER);
+    const ownerRaw = (await usageAt(root, OWNER, '--json')).out;
     expect(owner.code).toBe(0);
-    expect(owner.out).toContain(`team ${LIVE_PROJECT}`);
-    expect(owner.out).toContain(`no watch is recording for ${LIVE_PROJECT}`);
-    expect(owner.out).toContain(`  ${name}  `);
-    expect(owner.out).toContain('  anthropic  ');
+    expect(owner.out).toContain(`${name}  session`);
+    expect(owner.out).toContain(`${LIVE_PROJECT}    session`);
     expect(ownerRaw).toContain(name);
     expect((JSON.parse(ownerRaw) as { mine: string }).mine).toBe(LIVE_PROJECT);
     for (const face of [owner.out, ownerRaw]) expect(face).not.toContain('not shown');
@@ -918,42 +1217,44 @@ describe('team usage', () => {
     // figures behind it — and the other two are not rendered at all, one fixed line for both.
     const mine = await usageAt(root, SEAT);
     const raw = (await usageAt(root, SEAT, '--json')).out;
-    const doc = JSON.parse(raw) as { rows: { account: string; window: string | null; seat: string | null }[]; notes: string[] };
+    const doc = JSON.parse(raw) as { labs: { lab: string; accounts: { machine: { window: string | null; seat?: unknown } }[] }[]; notes: unknown[] };
     expect(mine.code).toBe(0);
     expect(mine.out).toBe([
-      'team acme',
-      '  anthropic  unknown',
-      '  openai  weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%',
-      'no watch is recording for acme',
-      `note: ${UNBOUND_SHAPE}`,
+      'usage on this machine, 1 team, 2 labs, 2 accounts',
+      '',
+      'anthropic  unknown',
+      '  acme    unknown',
+      '  (acme: no pattern can read this account)',
+      'openai  weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  (no watch is recording for acme)',
+      '  acme    weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%',
+      `note: acme: ${UNBOUND_SHAPE}`,
     ].join('\n') + '\n');
-    expect(doc.rows.map((row) => [row.account, row.window, row.seat])).toEqual([
-      ['anthropic', null, null],
-      ['openai', 'weekly', null],
+    // The labs run in name order; the anthropic line has no figure at all, so its machine entry
+    // carries no `seat` key (a machine entry with a figure carries the seat when it knows one),
+    // and the weekly line's seat — the state's string, which the file's seats do not name — is
+    // dropped for both the line and the row.
+    expect(doc.labs.map((lab) => [lab.lab, ...lab.accounts.map((entry) => [entry.machine.window, entry.machine.seat])])).toEqual([
+      ['anthropic', [null, undefined]],
+      ['openai', ['weekly', null]],
     ]);
-    expect(doc.notes).toEqual([UNBOUND_SHAPE]);
+    expect(doc.notes).toEqual([{ scope: 'acme', why: UNBOUND_SHAPE }]);
     for (const face of [mine.out, raw]) {
       for (const leak of [WINDOW_LEAK, SOURCE_LEAK, SEAT_LEAK, TIME_LEAK]) {
         expect(face).not.toContain(leak);
       }
     }
 
-    // The owner reads them, exactly as the state holds them, where a face can carry them: the
-    // window and the seat render in the block, the seat in `--json` too. Two of the strings no
-    // face carries at all, the owner's included: a source string is partitioned on the two the
-    // tool writes before any row is built (`screenOf`, `checkOf`), so a reading from anywhere
-    // else counts for nothing and its row is blank, and a time string is parsed before any face
-    // sees it.
-    const owner = await usageAt(root, { kind: 'owner' });
-    const ownerRaw = (await usageAt(root, { kind: 'owner' }, '--json')).out;
-    const ownerRows = (JSON.parse(ownerRaw) as { rows: { window: string | null; source: string | null }[] }).rows;
+    // The owner reads what a face can carry, exactly as the state holds it: the seat of a reading
+    // whose account and window the file backs. Neither the window nor the source string can reach
+    // any face — the report's lines are the table's own windows and the tool's two sources, so a
+    // reading from anywhere else counts for nothing and its row is blank — and a time string is
+    // parsed before any face sees it.
+    const owner = await usageAt(root, OWNER);
+    const ownerRaw = (await usageAt(root, OWNER, '--json')).out;
     expect(owner.code).toBe(0);
-    expect(owner.out).toContain(WINDOW_LEAK);
     expect(owner.out).toContain(SEAT_LEAK);
-    expect(ownerRaw).toContain(WINDOW_LEAK);
     expect(ownerRaw).toContain(SEAT_LEAK);
-    expect(ownerRows.find((row) => row.window === 'session')?.source).toBeNull();
-    for (const leak of [SOURCE_LEAK, TIME_LEAK]) {
+    for (const leak of [WINDOW_LEAK, SOURCE_LEAK, TIME_LEAK]) {
       expect(owner.out).not.toContain(leak);
       expect(ownerRaw).not.toContain(leak);
     }
@@ -962,16 +1263,15 @@ describe('team usage', () => {
 
   test('any caller may run it, and a subfolder of a checkout reads the same project', async () => {
     withState();
-    const seat: Caller = { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'acme-web' };
     const unplaced: Caller = { kind: 'unplaced', reason: 'it is run by an agent (claude) outside herdr' };
-    expect((await usageAt(root, seat)).out).toBe(`${BLOCK}\n`);
-    expect((await usageAt(root, unplaced)).out).toBe(`${BLOCK}\n`);
+    expect((await usageAt(root, SEAT)).out).toBe(`${REPORT}\n`);
+    expect((await usageAt(root, unplaced)).out).toBe(`${REPORT}\n`);
 
     execFileSync('git', ['init', root], { env: gitEnv(), stdio: 'ignore' });
     const sub = join(root, 'src', 'deep');
     mkdirSync(sub, { recursive: true });
-    const nested = await usageAt(sub, seat);
-    expect(nested.out).toBe(`${BLOCK}\n`);
+    const nested = await usageAt(sub, SEAT);
+    expect(nested.out).toBe(`${REPORT}\n`);
   });
 
   test('the invocation is the one refusal, and it prints the usage', async () => {
@@ -984,33 +1284,395 @@ describe('team usage', () => {
     expect(extra.err).toBe(`team usage: unexpected "now"\n${USAGE}`);
   });
 
+  test('the store folder itself unreadable is the other refusal: the owner reads the reason, a seat does not', async () => {
+    // § 2.4's one refusal beside the invocation. The store folder's own path and the read's why
+    // are this machine's derivation, so a caller who is not the owner reads the fixed sentence,
+    // exit 2, and nothing of the folder; the owner reads both.
+    rmSync(join(home, '.config', 'team'), { recursive: true, force: true });
+    writeFileSync(join(home, '.config', 'team'), 'not a folder\n');
+    const mine = await usageAt(root, SEAT);
+    expect(mine.code).toBe(2);
+    expect(mine.err).toBe('team usage: the store folder cannot be read: the owner reads the reason\n');
+    expect(mine.out).toBe('');
+    expectNoDerivedPath([mine.err]);
+    const owner = await usageAt(root, OWNER);
+    expect(owner.code).toBe(2);
+    expect(owner.err).toBe(`team usage: the store folder ${join(home, '.config', 'team')} could not be read: ENOTDIR: not a directory, scandir '${join(home, '.config', 'team')}'\n`);
+    expect(owner.out).toBe('');
+  });
+
+  test('the gate: with two stores, nothing of the other team reaches a seat — in the text, in --json, in every note', async () => {
+    // The brief's gate, as a test: a temporary home with two stores whose team names and roots
+    // are distinctive strings, each holding one account the other does not, both spending one
+    // shared account. Two further stores hold broken states, so the anonymized note families and
+    // their counts are in the report too. Every string a seat must not read is in `theirs`, and
+    // the same list is swept over the text, the `--json` and the notes of the restricted run —
+    // and over the owner's run as a positive control, so the sweep can never pass by the string
+    // never having been there.
+    const project = 'acme-7QK';
+    // The scene is exactly the stores this test builds: the suite's own fixture is taken away,
+    // its store and its root both, so the counts below are the two sound teams and the two
+    // broken ones and no other.
+    rmSync(storePath('acme', root, home), { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+    const mineRoot = join(base, project);
+    mkdirSync(join(mineRoot, '.agents'), { recursive: true });
+    writeFileSync(join(mineRoot, '.agents', 'team.yaml'), teamTextFor(project, ['acme-only-8ZKQ'], ''));
+    approve(teamTextFor(project, ['acme-only-8ZKQ'], ''), { root: mineRoot, name: project });
+    updateState(join(mineRoot, '.agents'), (state) => {
+      state.sessions[`${project}-web`] = { ...emptySession() } as never;
+      state.budgets = {
+        'openai/weekly/lead': { account: 'openai', window: 'weekly', left: 5, used: 95, changedAt: '2026-10-04T08:50:00Z', resetsAt: '2026-10-04T09:44:00Z', seat: 'lead', source: 'status_line', confirmed: true },
+        'mine/weekly': { account: 'acme-only-8ZKQ', window: 'weekly', left: 9, used: 91, changedAt: '2026-10-04T08:58:00Z', resetsAt: null, seat: null, source: 'status_line', confirmed: true },
+        // A reading of mine under the other team's account: bound by nothing, and dropped.
+        'stray/weekly': { account: 'zeta-only-3HMV', window: 'weekly', left: 9, used: 91, changedAt: '2026-10-04T08:58:00Z', resetsAt: null, seat: null, source: 'status_line', confirmed: true },
+      } as never;
+    });
+
+    const theirProject = 'zeta-4WX';
+    const theirRoot = join(base, theirProject);
+    const theirFile = join(theirRoot, '.agents', 'team.yaml');
+    mkdirSync(join(theirRoot, '.agents'), { recursive: true });
+    const theirText = teamTextFor(theirProject, ['zeta-only-3HMV', 'claude-extra'], extraSeat('extra-seat-6RT', 'claude-extra'));
+    writeFileSync(theirFile, theirText);
+    approve(theirText, { root: theirRoot, name: theirProject });
+    updateState(join(theirRoot, '.agents'), (state) => {
+      state.sessions[`${theirProject}-web`] = { ...emptySession() } as never;
+      state.budgets = {
+        // The newest reading of the shared account is theirs: a seat of mine reads the figure,
+        // never the team (`§ 2.3`: `read by another team`).
+        'openai/weekly/scout': { account: 'openai', window: 'weekly', left: 88, used: 12, changedAt: '2026-10-04T08:59:00Z', resetsAt: '2026-10-04T09:44:00Z', seat: 'scout', source: 'status_line', confirmed: true },
+        'zeta/weekly': { account: 'zeta-only-3HMV', window: 'weekly', left: 63, used: 37, changedAt: '2026-10-04T08:59:00Z', resetsAt: null, seat: null, source: 'status_line', confirmed: true },
+        'extra/weekly': { account: 'claude-extra', window: 'weekly', left: 44, used: 56, changedAt: '2026-10-04T08:59:00Z', resetsAt: null, seat: 'extra-seat-6RT', source: 'status_line', confirmed: true },
+      } as never;
+    });
+
+    // Two stores whose states cannot be read: the anonymized family for that, twice, so its count
+    // is in the report (`2 teams' states cannot be read`).
+    const broken = ['omega-9PL', 'kappa-2VN'];
+    for (const brokenProject of broken) {
+      const brokenRoot = join(base, brokenProject);
+      mkdirSync(join(brokenRoot, '.agents'), { recursive: true });
+      const brokenText = teamTextFor(brokenProject, [], '');
+      writeFileSync(join(brokenRoot, '.agents', 'team.yaml'), brokenText);
+      approve(brokenText, { root: brokenRoot, name: brokenProject });
+      writeFileSync(join(brokenRoot, '.agents', 'team.state.json'), 'not json');
+    }
+
+    const theirs = [theirProject, theirRoot, join(theirRoot, '.agents'), 'zeta-only-3HMV', 'claude-extra', 'scout', 'extra-seat-6RT', `${theirProject}-web`, join(base, 'omega-9PL'), join(base, 'kappa-2VN'), 'omega-9PL', 'kappa-2VN'];
+
+    const seat = await usageAt(mineRoot, SEAT);
+    const raw = (await usageAt(mineRoot, SEAT, '--json')).out;
+    const doc = JSON.parse(raw) as { counts: Record<string, number>; notes: unknown[] };
+    expect(seat.code).toBe(0);
+    // The whole restricted face, pinned: the machine's counts, one block per lab this caller
+    // carries, the account lines of the labs it does not (their figures are the machine's — an
+    // account the caller's own file names is the caller's business, its team's name is not), the
+    // caller's own rows, and the two notes. The `anthropic` lab is the caller's own by its
+    // seat's vendor, and its one account is the other team's, so the block is the count alone.
+    expect(seat.out).toBe([
+      'usage on this machine, 4 teams, 4 labs, 4 accounts',
+      '',
+      'acme-only-8ZKQ  weekly  left 9%  used 91%  resets unknown  -  changed 2m ago  status line  fresh, inside reserve 10%  (no watch is recording for acme-7QK)',
+      '  acme-7QK    weekly  left 9%  used 91%  resets unknown  -  changed 2m ago  status line  fresh, inside reserve 10%',
+      'anthropic: 1 other account',
+      'openai  weekly  left 88%  used 12%  resets in 44m  read by another team, 1m ago  status line  fresh  (no watch is recording for it)',
+      '  acme-7QK    weekly  left 5%  used 95%  resets in 44m  lead  changed 10m ago  status line  fresh, inside reserve 20%',
+      "note: acme-7QK: a stored reading names an account this team's file does not: not shown",
+      "note: 2 teams' states cannot be read (not valid JSON; move it aside and run the command again)",
+    ].join('\n') + '\n');
+    expect(doc.counts).toEqual({ teams: 4, labs: 4, accounts: 4 });
+    expect(doc.notes).toEqual([
+      { scope: 'acme-7QK', why: "a stored reading names an account this team's file does not: not shown" },
+      { scope: 'another', why: 'its state cannot be read (not valid JSON; move it aside and run the command again)', count: 2 },
+    ]);
+    for (const face of [seat.out, raw]) {
+      for (const string of theirs) expect(face).not.toContain(string);
+    }
+
+    // The positive control: the owner reads every one of those strings — the names, the roots,
+    // the seats, the labs — so the sweep above is never vacuous.
+    const owner = await usageAt(mineRoot, OWNER);
+    const ownerRaw = (await usageAt(mineRoot, OWNER, '--json')).out;
+    expect(owner.out).toContain('read by zeta-4WX, 1m ago');
+    expect(owner.out).toContain('claude-extra  weekly');
+    expect(owner.out).toContain('  zeta-4WX    weekly  left 88%');
+    expect(owner.out).toContain('scout');
+    expect(ownerRaw).toContain(theirRoot);
+    expect(ownerRaw).toContain('extra-seat-6RT');
+    // The broken teams' own paths reach the owner too, one note per team, named per team.
+    expect(owner.out).toContain(join(base, 'omega-9PL', '.agents', 'team.state.json'));
+
+    // And the other side of the property: their seat reads their own material and none of mine.
+    const theirSeat = await usageAt(theirRoot, { kind: 'seat', name: 'scout', pane: 'w1:p1', session: `${theirProject}-web` });
+    const theirRaw = (await usageAt(theirRoot, { kind: 'seat', name: 'scout', pane: 'w1:p1', session: `${theirProject}-web` }, '--json')).out;
+    expect(theirSeat.out).toContain('zeta-only-3HMV');
+    expect(theirSeat.out).toContain('claude-extra');
+    expect(theirSeat.out).not.toContain('acme-only-8ZKQ');
+    expect(theirSeat.out).not.toContain(project);
+    expect(theirRaw).not.toContain(mineRoot);
+  });
+
+  test('a process placed as the owner without a terminal still reads the restricted view', async () => {
+    // The forged-owner witness, and the interim rule's own reason: a confined process that
+    // double-forks out of the herdr tree walks to no herdr ancestor and no agent above it, so the
+    // walk resolves it as the owner — `owner-no-tty` — and `mayLaunchSeats` admits that caller to
+    // launch seats. The full view must not follow from that placement: `viewFor` turns on
+    // `kind === 'owner'`, the owner at a terminal alone, while owner placement is forgeable. The
+    // witness below is placed as the owner by the same walk every command uses, and the full view
+    // is still not its to read.
+    const io = testIo(root);
+    io.callerSources = () => ({
+      ancestors: () => [{ pid: process.pid, name: 'zsh' }],
+      agents: () => null,
+      paneRootPid: () => null,
+      env: {},
+      stdinIsTTY: false,
+    });
+    const placed = walkCaller(io);
+    expect(placed).toEqual({ kind: 'owner-no-tty' });
+    // It is the owner for the one gate that admits the owner without a terminal — which is what
+    // makes the witness a witness, not a caller the walk already refused.
+    expect(mayLaunchSeats(placed)).toBe(true);
+    expect(viewFor(io, root)).toEqual({ full: false, mine: root });
+
+    // And the command it runs reads the restricted view: no name, no root, no seat of another
+    // team, while the owner at a terminal reads the same machine with every name on.
+    const theirProject = 'zeta-4WX';
+    const theirRoot = join(base, theirProject);
+    mkdirSync(join(theirRoot, '.agents'), { recursive: true });
+    const theirText = teamTextFor(theirProject, ['zeta-only-3HMV'], '');
+    writeFileSync(join(theirRoot, '.agents', 'team.yaml'), theirText);
+    approve(theirText, { root: theirRoot, name: theirProject });
+
+    const code = await runUsage(['--json'], io, { home, now: () => NOW });
+    expect(code).toBe(0);
+    expect(io.out).not.toContain(theirProject);
+    expect(io.out).not.toContain(theirRoot);
+    expect((JSON.parse(io.out) as { view: string }).view).toBe('restricted');
+
+    const ownerText = await usageAt(root, OWNER);
+    expect(ownerText.out).toContain(theirProject);
+  });
+
+  test('the droppable entries, 1 of 5: the machine’s team count is carried, and counts a member it cannot read', async () => {
+    // One allow-list entry per test, as the brief lists them. The team count is the machine's
+    // own — every store read as one team, the caller's project included — so a store whose record
+    // cannot be read still counts: the machine holds it, and the fixed sentence says why it
+    // contributes nothing.
+    const theirProject = 'zeta-4WX';
+    const theirRoot = join(base, theirProject);
+    mkdirSync(join(theirRoot, '.agents'), { recursive: true });
+    const theirText = teamTextFor(theirProject, [], '');
+    writeFileSync(join(theirRoot, '.agents', 'team.yaml'), theirText);
+    approve(theirText, { root: theirRoot, name: theirProject });
+    writeFileSync(join(storePath(theirProject, theirRoot, home), 'approval.json'), `${JSON.stringify({ format: 3 }, null, 2)}\n`);
+    withState();
+
+    // Two members: this project, and the store of theirs whose record does not read. The seat
+    // reads the count and the fixed sentence, never the store's name or path.
+    const mine = await usageAt(root, SEAT);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    expect(mine.out.split('\n')[0]).toBe('usage on this machine, 2 teams, 2 labs, 2 accounts');
+    expect(mine.out).toContain('note: a store on this machine cannot be read: the owner reads the reason\n');
+    for (const face of [mine.out, raw]) {
+      expect(face).not.toContain(theirProject);
+      expect(face).not.toContain(theirRoot);
+    }
+    // The owner reads the store's own message, its path and all.
+    const owner = await usageAt(root, OWNER);
+    expect(owner.out).toContain(join(storePath(theirProject, theirRoot, home), 'approval.json'));
+  });
+
+  test('the droppable entries, 2 of 5: a machine line says whose reading it carries, never whose name', async () => {
+    // The second entry: whether the figure on a machine line is the caller's own or another
+    // team's is carried (`other`, and `read by another team` in the text), because a figure of an
+    // account the caller's own file names is the caller's business — its name is not.
+    const theirProject = 'zeta-4WX';
+    const theirRoot = join(base, theirProject);
+    mkdirSync(join(theirRoot, '.agents'), { recursive: true });
+    const theirText = teamTextFor(theirProject, [], '');
+    writeFileSync(join(theirRoot, '.agents', 'team.yaml'), theirText);
+    approve(theirText, { root: theirRoot, name: theirProject });
+    updateState(join(theirRoot, '.agents'), (state) => {
+      state.budgets = {
+        'openai/weekly/scout': { account: 'openai', window: 'weekly', left: 88, used: 12, changedAt: '2026-10-04T08:59:00Z', resetsAt: '2026-10-04T09:44:00Z', seat: 'scout', source: 'status_line', confirmed: true },
+      } as never;
+    });
+    withoutReadings();
+
+    const mine = await usageAt(root, SEAT);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    const line = mine.out.split('\n').find((text) => text.startsWith('openai  weekly'));
+    expect(line).toBe('openai  weekly  left 88%  used 12%  resets in 44m  read by another team, 1m ago  status line  fresh  (no watch is recording for it)');
+    const entries = (JSON.parse(raw) as { labs: { accounts: { account: string; machine: Record<string, unknown> }[] }[] }).labs.flatMap((lab) => lab.accounts);
+    const openai = entries.find((entry) => entry.account === 'openai');
+    expect(openai?.machine.other).toBe(true);
+    expect(openai?.machine.team).toBeUndefined();
+    expect(openai?.machine.seat).toBeUndefined();
+    for (const face of [mine.out, raw]) expect(face).not.toContain(theirProject);
+
+    // The owner reads the same figure with the team's name on it, and the team's own row under it.
+    const owner = await usageAt(root, OWNER);
+    expect(owner.out).toContain('read by zeta-4WX, 1m ago');
+  });
+
+  test('the droppable entries, 3 of 5: the watch clause rides the line it belongs to, in both views', async () => {
+    // The third entry: whose watch is not recording is the line's business, and it prints only
+    // where a figure is — a team with nothing counted has no line to carry it.
+    withState({ pid: 1, heartbeat: '2026-10-04T08:55:00Z' });
+    const stale = await usageAt(root, SEAT);
+    expect(stale.out).toBe(`${REPORT}\n`);
+    expect(stale.out.split('\n').filter((line) => line.includes('watch')).length).toBe(3);
+    const recording = await usageAt(root, OWNER);
+    expect(recording.out).toBe(`${REPORT}\n`);
+
+    // With no readings at all there is no line, and so no clause: the report has nothing to say
+    // about a watch for a team it shows no figure of.
+    withoutReadings();
+    const bare = await usageAt(root, SEAT);
+    expect(bare.out).not.toContain('watch');
+  });
+
+  test('the droppable entries, 4 of 5: other teams’ notes are counted, never named, and the count is one line', async () => {
+    // The fourth entry: the anonymized sentences carry the count of the teams behind them, one
+    // line per distinct reason, and nothing else of those teams.
+    for (const brokenProject of ['omega-9PL', 'kappa-2VN']) {
+      const brokenRoot = join(base, brokenProject);
+      mkdirSync(join(brokenRoot, '.agents'), { recursive: true });
+      const brokenText = teamTextFor(brokenProject, [], '');
+      writeFileSync(join(brokenRoot, '.agents', 'team.yaml'), brokenText);
+      approve(brokenText, { root: brokenRoot, name: brokenProject });
+      writeFileSync(join(brokenRoot, '.agents', 'team.state.json'), 'not json');
+    }
+    withState();
+    const mine = await usageAt(root, SEAT);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    const doc = JSON.parse(raw) as { notes: { scope: string; why: string; count?: number }[] };
+    expect(mine.out).toContain("note: 2 teams' states cannot be read (not valid JSON; move it aside and run the command again)\n");
+    expect(doc.notes).toEqual([
+      { scope: 'another', why: 'its state cannot be read (not valid JSON; move it aside and run the command again)', count: 2 },
+    ]);
+    for (const face of [mine.out, raw]) {
+      expect(face).not.toContain('omega-9PL');
+      expect(face).not.toContain('kappa-2VN');
+    }
+
+    // One team with that reason is the singular sentence, with no count in the document beyond
+    // the sentence's own `1`; the owner reads each team's own message instead, named per team.
+    rmSync(join(base, 'kappa-2VN'), { recursive: true, force: true });
+    const one = await usageAt(root, SEAT);
+    expect(one.out).toContain("note: 1 team's state cannot be read (not valid JSON; move it aside and run the command again)\n");
+    const owner = await usageAt(root, OWNER);
+    expect(owner.out).toContain('note: omega-9PL: ');
+    expect(owner.out).toContain('kappa-2VN');
+  });
+
+  test('the droppable entries, 5 of 5: an age is as fine as the report always printed it', async () => {
+    // The fifth entry: how fine an age is. The report carries the same age words it always did —
+    // minutes under the hour, hours and minutes beyond — and the same span the owner reads, so
+    // restricting a view never coarsens a figure either view prints.
+    withState();
+    const mine = await usageAt(root, SEAT);
+    expect(mine.out).toContain('read 2m ago');
+    expect(mine.out).toContain('last seen 40m ago');
+    expect(mine.out).toContain('changed 2m ago');
+    // A reading 90 minutes old reads in hours and minutes, in both views, in the two shapes an
+    // old reading still prints in: inside its reserve with a known reset (kept as the fallback,
+    // refusing until the reset), and past the reserve again with no reset, as the room last
+    // seen. Both lines below are a recorded run of this branch, quoted as they printed.
+    updateState(join(root, '.agents'), (state) => {
+      state.budgets = {
+        'openai/weekly/lead': { account: 'openai', window: 'weekly', left: 5, used: 95, changedAt: '2026-10-04T07:30:00Z', resetsAt: '2026-10-04T09:44:00Z', seat: 'lead', source: 'status_line', confirmed: true },
+        'openai/daily/lead': { account: 'openai', window: 'daily', left: 70, used: 30, changedAt: '2026-10-04T07:30:00Z', resetsAt: null, seat: 'lead', source: 'status_line', confirmed: true },
+      } as never;
+    });
+    const older = await usageAt(root, SEAT);
+    const owner = await usageAt(root, OWNER);
+    for (const face of [older.out, owner.out]) {
+      expect(face).toContain('changed 1h30m ago  status line (fallback)  refusing, inside reserve 20%');
+      expect(face).toContain('last seen 1h30m ago  status line (fallback)  stale');
+    }
+  });
+
+  test('a spend account reads from the state\'s spend readings: money on the line, the reading in the allow-list', async () => {
+    // The spend line is read from the state's own spend readings (§ 5), the newest across teams;
+    // this caller is its own team, so the line says `read`, not `read by another team`. The
+    // allow-list entry is the reading the line renders from — `amount`, `currency`, `at` and the
+    // `age` computed against the report's `at` — never a state's own words. A spend account has
+    // no window, so the line carries no window word either.
+    const text = teamText().replace(
+      '  accounts:\n',
+      '  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: acme-quota }\n',
+    );
+    writeFileSync(file, text);
+    approve(text);
+    updateState(join(root, '.agents'), (state) => {
+      state.spend = { deepseek: { account: 'deepseek', amount: 12.4, currency: 'USD', at: '2026-10-04T08:56:00Z' } } as never;
+    });
+    const mine = await usageAt(root, SEAT);
+    expect(mine.out).toContain('deepseek  spend  12.40 USD left  read 4m ago  check  fresh\n');
+    expect(mine.out).toContain('  acme  spend  12.40 USD left  read 4m ago  check  fresh\n');
+    const doc = JSON.parse((await usageAt(root, SEAT, '--json')).out) as {
+      labs: { lab: string; accounts: Record<string, unknown>[] }[];
+    };
+    expect(doc.labs.find((one) => one.lab === 'deepseek')?.accounts).toEqual([
+      {
+        account: 'deepseek',
+        kind: 'spend',
+        machine: {
+          amount: 12.4,
+          currency: 'USD',
+          at: '2026-10-04T08:56:00.000Z',
+          age: '4m',
+          source: 'check',
+          state: 'fresh',
+          other: false,
+        },
+        teams: [
+          {
+            team: 'acme',
+            reading: {
+              amount: 12.4,
+              currency: 'USD',
+              at: '2026-10-04T08:56:00.000Z',
+              age: '4m',
+              source: 'check',
+              state: 'fresh',
+            },
+          },
+        ],
+      },
+    ]);
+    // The full view adds the team to the line's own fields and the row's; the entry above, with
+    // no `team` on its machine, is the restricted one — the same entry, one field apart.
+    const owner = JSON.parse((await usageAt(root, OWNER, '--json')).out) as typeof doc;
+    const line = owner.labs.find((one) => one.lab === 'deepseek')?.accounts[0] as { machine: { team?: string } };
+    expect(line.machine.team).toBe('acme');
+  });
+
   test('it writes nothing: every file under the state, the store and the key is byte-identical', async () => {
     withState();
     const watched = [join(root, '.agents'), join(home, '.config', 'team'), join(home, '.config', 'team-key')];
-    const seat: Caller = { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'acme-web' };
 
     // Each face of the command, allowed or refused, with the folders compared around it: the
-    // block, its JSON, a seat's run, a run outside any project, a refused invocation, a file
-    // that does not load, and a state that does not read.
+    // report, its JSON, a seat's run, the owner's run, a run outside any project, a refused
+    // invocation, a refused stores folder, a file that does not load, and a state that does not
+    // read.
     await untouched(watched, () => usageAt(root));
     await untouched(watched, () => usageAt(root, undefined, '--json'));
-    await untouched(watched, () => usageAt(root, seat));
+    await untouched(watched, () => usageAt(root, SEAT));
+    await untouched(watched, () => usageAt(root, OWNER));
     await untouched(watched, async () => {
       const elsewhere = join(base, 'elsewhere');
       mkdirSync(elsewhere);
       await usageAt(elsewhere);
     });
     await untouched(watched, () => runUsage(['--nope'], testIo(root), { home, now: () => NOW }));
+    await untouched(watched, () => runUsage([], testIo(root), { home: join(base, 'no-home'), now: () => NOW }));
     writeFileSync(join(root, '.agents', 'team.state.json'), 'not json');
     await untouched(watched, () => usageAt(root));
     writeFileSync(file, 'format: 1\nproject: acme\n');
     await untouched(watched, () => usageAt(root));
   });
 });
-
-/** Run one scenario with the watched folders snapshotted around it. */
-async function untouched(watched: string[], run: () => Promise<unknown>): Promise<void> {
-  const before = watched.map((dir) => snapshot(dir));
-  await run();
-  watched.forEach((dir, index) => expect(snapshot(dir)).toEqual(before[index] as Record<string, string>));
-}

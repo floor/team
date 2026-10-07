@@ -9,6 +9,7 @@ import { expect, test } from 'bun:test';
 import { approvalOf } from '../src/approve/approval.ts';
 import { saveReadings, type Seen } from '../src/budgets/readings.ts';
 import type { Caller } from '../src/caller.ts';
+import type { CheckSources } from '../src/check/team.ts';
 import { runAdd, type AddSources } from '../src/commands/add.ts';
 import { runAnswer, type AnswerHost } from '../src/commands/answer.ts';
 import { runApprove, type ApproveSources, type Waiting } from '../src/commands/approve.ts';
@@ -833,11 +834,81 @@ scene('approve.approved', async (place) => {
   return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'Approved.');
 });
 
+async function checked(place: Place, argv: string[], caller: Caller, sources: CheckSources): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await check(argv, io, loader(place), sources), out: io.out, err: io.err };
+}
+
+function checkSources(live: Live | null, standing: Standing = { kind: 'none' }): CheckSources {
+  return { live: () => live, branch: () => 'main', standing: () => standing, now: () => NOW };
+}
+
+// The state record a passing seat stands on: the file's own seat, on the pane herdr lists it in.
+// Without it the walk cannot place the caller, and every seat is not-yours.
+function recordsLead(place: Place, pane = 'w1:p1'): void {
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.seats.lead = { stage: 'ready', pane };
+  });
+}
+
 scene('check.invocation', async (place) => {
-  // Bare `team check` is reserved for the team's own check, which this slice does not build:
-  // it refuses exactly as it did before the rename, and takes no notice line.
-  const io = testIo(place.root, owner);
-  return show({ code: await check([], io, loader(place)), out: io.out, err: io.err }, 'team check: a <ref> is required');
+  // A word that belongs to neither spelling's options keeps the old refusal, byte for byte, and
+  // takes no notice line: an error already says what to fix.
+  return show(await checked(place, ['--nope'], owner, checkSources(quiet)), 'unknown option --nope');
+});
+scene('check.ok', async (place) => {
+  write(place, TEAM);
+  updateState(join(place.root, '.agents'), (state) => {
+    const session = (state.sessions.acme ??= emptySession());
+    session.watch = { pid: 1, heartbeat: NOW.toISOString() };
+    session.seats.lead = { stage: 'ready', pane: 'w1:p1', workspace: 'w1' };
+  });
+  approve(place, TEAM);
+  const matched: Live = {
+    running: true,
+    agents: [agent('lead')],
+    workspaces: [{ id: 'w1', label: 'lead' }],
+    screens: {},
+  };
+  return show(await checked(place, [], owner, checkSources(matched, approvalStanding(place.root, place.home))), 'team check: nothing wrong');
+});
+scene('check.findings', async (place) => {
+  write(place, TEAM);
+  return show(await checked(place, [], owner, checkSources(quiet)), 'is in the file and is not running');
+});
+scene('check.file-owner', async (place) => {
+  write(place, TEAM);
+  recordsLead(place);
+  return show(await checked(place, ['--file', '.agents/team.yaml'], leadSeat, checkSources(quiet)), "--file is the owner's");
+});
+scene('check.session-owner', async (place) => {
+  write(place, TEAM);
+  recordsLead(place);
+  return show(await checked(place, ['--session', 'other'], leadSeat, checkSources(quiet)), "--session is the owner's");
+});
+scene('check.not-yours', async (place) => {
+  // A caller that does not pass learns nothing, even when the target does not load: the answer is
+  // the one fixed sentence, byte for byte, on stderr, and nothing else anywhere.
+  const ran = await checked(place, [], other, checkSources(quiet));
+  expect(ran.err).toBe('team check: this team is not yours to check\n');
+  expect(ran.out).toBe('');
+  return ran;
+});
+scene('check.not-a-repo', async (place) => show(await checked(place, [], owner, checkSources(quiet)), 'not inside a git repository'), false);
+scene('check.file', async (place) => show(await checked(place, ['--file', 'missing.yaml'], owner, checkSources(quiet)), 'no team file'));
+scene('check.file-invalid', async (place) => {
+  invalid(place);
+  return show(await checked(place, ['--file', 'team.yaml'], owner, checkSources(quiet)), 'line');
+});
+scene('check.state', async (place) => {
+  write(place, TEAM);
+  writeFileSync(join(place.root, '.agents', 'team.state.json'), '{');
+  return show(await checked(place, [], owner, checkSources(quiet)), 'not valid JSON');
+});
+scene('check.herdr', async (place) => {
+  write(place, TEAM);
+  return show(await checked(place, [], owner, checkSources(null)), "doesn't answer");
 });
 scene('commits.invocation', async (place) => {
   const io = testIo(place.root, owner);
@@ -1731,15 +1802,21 @@ async function used(place: Place, argv: string[], caller: Caller = owner): Promi
   return { code: await runUsage(argv, io, { home: place.home, now: () => NOW }), out: io.out, err: io.err };
 }
 
-// The block is reached by a seat as well: `usage` gates no caller.
+// The machine's report is reached by a seat as well: `usage` gates no caller, and a seat reads
+// the restricted view of it. A folder with no team file is the same exit: the report prints and
+// the one note says there is no project block from here.
 scene('usage.block', async (place) => {
   write(place, TEAM);
-  return show(await used(place, [], other), 'team acme');
+  return show(await used(place, [], other), 'usage on this machine');
 });
-// No file at all — the bare folder is the outside case; a file that exists and does not load is
-// the same exit with the loader's own message as the note.
-scene('usage.outside', async (place) => show(await used(place, []), 'no team file is found from this folder'), false);
 scene('usage.invocation', async (place) => show(await used(place, ['extra']), 'unexpected'));
+// The one refusal beside the invocation: the stores folder itself cannot be read. It is a file
+// where the folder belongs, and the caller here is the owner, who alone reads its message.
+scene('usage.store', async (place) => {
+  mkdirSync(join(place.home, '.config'), { recursive: true });
+  writeFileSync(join(place.home, '.config', 'team'), 'not a folder\n');
+  return show(await used(place, []), 'the store folder');
+});
 
 async function worktree(place: Place, argv: string[], caller: Caller = owner, sources?: WorktreeSources): Promise<Ran> {
   const io = testIo(place.root, caller);
