@@ -6,6 +6,10 @@ current folder, the way every command does, and it only reads: it writes nothing
 `last_valid` copy, no log line, no lock, no state — it runs nothing, it reads no pane, and it opens
 no CLI's own session file or credential. Any caller may run it, from any folder.
 
+This page documents what this build prints: **one project's block** — no machine-wide view, and no
+spend rows. The rows it does print are the ones `status` prints, from the same table over the same
+state.
+
 ## Synopsis
 
     team usage [--json]
