@@ -57,7 +57,11 @@ stand. A caller that rule accepts keeps its own authority whatever the section s
 call never reaches the gate, and neither does the orchestrator's or the operator's. A gate refusal
 takes the place of the rule above, in the gate's own words, wherever that rule would have refused:
 a real run exits 1, and a dry run prints `! down would refuse: <the gate's text>` and then the
-plan. A dry run exits as the real run would, and changes nothing.
+plan. A dry run that reaches a refusal the real run would give before doing anything returns that refusal's status and exit id; a dry run that reaches its plan exits 0 and promises nothing about what happens after (the run lock, a launch, the watch). It returns before these real-run failures, and never takes their status:
+
+- `down.no-launch`, this call has no way to reach herdr (`src/commands/down.ts:637`)
+- `down.run-lock`, another run holds the session (`src/commands/down.ts:648`)
+- `down.held`, a step of the stop was held (`src/commands/down.ts:746`)
 
 A delegated run stops the whole team — the orchestrator's and the operator's seats included — and
 never abandons. `--abandon`, `--session` and `--file` are the owner's: a delegate that passes one
@@ -82,7 +86,7 @@ gate asked and answered, the refusal standing unless the gate placed the caller.
 
 | Flag | Meaning |
 | --- | --- |
-| `--dry-run` | print the plan, and the refusals the real run would stop on. A dry run exits as the real run would, and changes nothing — except a non-owner's `--session`, refused at once with no plan |
+| `--dry-run` | print the plan, and the refusals the real run would stop on. A dry run that reaches a refusal the real run would give before doing anything returns that refusal's status and exit id; a dry run that reaches its plan exits 0 and promises nothing about what happens after (the run lock, a launch, the watch). A non-owner's `--session` is refused at once, with no plan |
 | `--wait` | give a working seat up to 120 seconds to come free, then stop it |
 | `--abandon` | the owner's: close the workspace of a seat that can't be asked, typing nothing into it. A seat this run asks, whose exit cannot be typed or confirmed, or whose exit was sent and which does not leave within the wait, is closed in the same run |
 | `--session <name>` | the herdr session to stop, instead of `team.session`; the owner's alone — a delegate is refused it by the gate |
@@ -151,8 +155,7 @@ stop at all.
 ## Exit codes
 
 - `0` — the seats it could stop were stopped, the watch and the session with them; or there was
-  nothing to stop; or `--dry-run` printed a plan the real run would have finished. A dry run exits
-  as the real run would, and changes nothing. A seat left running because it was busy is not a
+  nothing to stop; or `--dry-run` reached its plan. A dry run that reaches a refusal the real run would give before doing anything returns that refusal's status and exit id; a dry run that reaches its plan exits 0 and promises nothing about what happens after (the run lock, a launch, the watch). A seat left running because it was busy is not a
   failure.
 - `1` — refused, or a step failed: a seat's exit was not typed, or was typed and not confirmed —
   the pane never drew it, a dialog covered its box before the Enter, its box held other text, or

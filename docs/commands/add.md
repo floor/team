@@ -68,7 +68,7 @@ that proceeds is attributed in the log before its effects, as
 | `--until <end>` | what the temporary seat works for: `result:<path>` (a file it writes, relative to the project) or `merged:<branch>` (a branch merged into the base) |
 | `--worktree <task>` | the worktree the temporary seat is started in, instead of the seat's own `cwd` |
 | `--session <name>` | the herdr session, instead of `team.session`; the owner's alone |
-| `--dry-run` | print whether this seat would launch or be refused. A dry run exits as the real run would, and changes nothing |
+| `--dry-run` | print whether this seat would launch or be refused. A dry run that reaches a refusal the real run would give before doing anything returns that refusal's status and exit id; a dry run that reaches its plan exits 0 and promises nothing about what happens after (the run lock, a launch, the watch) |
 | `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone |
 | `--help`, `-h` | the usage, and exit 0 |
 
@@ -114,7 +114,13 @@ there — its state names the workspace, and an unnamed pane is in it — runs n
 checked where that pane runs when the state records the folder it was started in, and otherwise is
 not checked at all, the note saying so, and a miss found there is never refused. A `--dry-run`
 prints a refusal in the plan instead — `  skip <name>: would refuse: …` above `dry run: nothing was
-run` — and makes nothing. A dry run exits as the real run would, and changes nothing.
+run` — and makes nothing. A dry run that reaches a refusal the real run would give before doing anything returns that refusal's status and exit id; a dry run that reaches its plan exits 0 and promises nothing about what happens after (the run lock, a launch, the watch). It returns before these real-run failures, and never takes their status:
+
+- `add.run-lock`, another run holds the session (`src/commands/add.ts:555`)
+- `add.lobby`, the lobby could not be created (`src/commands/add.ts:563`)
+- `add.changed`, the file changed while add was checking (`src/commands/add.ts:584`)
+- `add.locked`, the locked edit does not validate (`src/commands/add.ts:589`)
+- `add.not-ready`, the launch finished without a ready seat; `add.server`, the server did not start (`src/commands/add.ts:620-622`)
 
 ## Refusals
 
@@ -170,7 +176,7 @@ session past `limits.seats`, past `limits.temporary` for a temporary seat, or pa
 
 ## Exit codes
 
-- `0` — the seat reached its idle prompt and is ready; or the temporary seat is; or `--dry-run` printed a plan the real run would have finished. A dry run exits as the real run would, and changes nothing.
+- `0` — the seat reached its idle prompt and is ready; or the temporary seat is; or `--dry-run` reached its plan. A dry run that reaches a refusal the real run would give before doing anything returns that refusal's status and exit id; a dry run that reaches its plan exits 0 and promises nothing about what happens after (the run lock, a launch, the watch).
 - `1` — the run was refused, or the seat was left behind at some stage of its launch.
 - `2` — the invocation or the team file can't be read.
 
