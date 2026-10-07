@@ -1720,6 +1720,65 @@ describe('team up, live', () => {
     }
   });
 
+  test('a machine refusal writes one line with the printed refusal and its readings', async () => {
+    await approve();
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    const machine: Machine = { loadPerCore: 1, memoryFree: 69, diskFree: 200e9, swapTotal: 8.2e9, swapFree: 1.2e9, swapUsed: 7e9 };
+    expect(await runUp(FILE, io, sources({ machine: () => machine }, made))).toBe(1);
+    expect(io.err).toContain('free swap is 1.2 GB, below 2.0 GB');
+    const lines = readFileSync(join(root, '.agents', 'team.log'), 'utf8').split('\n')
+      .filter((line) => line.includes('refused: free swap is '));
+    expect(lines).toEqual([
+      '2026-10-03T14:02:00.000Z up [owner] refused: free swap is 1.2 GB, below 2.0 GB — readings: load 1.0/core, memory 69%, disk 200.0 GB free, swap used 7.0 GB of 8.2 GB (free 1.2 GB)',
+    ]);
+  });
+
+  test('a caller refused before the gate writes nothing, and a dry run writes nothing', async () => {
+    await approve();
+    const refusing = { ...fine, swapFree: 1.2e9 };
+    // A seat may not run `up`; the machine gate below the caller gate still reads and refuses —
+    // and this call leaves the files as they were, so the log gains nothing.
+    const seat = testIo(root, { kind: 'seat', name: 'claude-coordinator-acme', pane: 'w1:p1' });
+    expect(await runUp(FILE, seat, sources({ machine: () => refusing }, world()))).toBe(1);
+    expect(seat.err).toContain('only the owner runs `up`');
+    let log = existsSync(join(root, '.agents', 'team.log')) ? readFileSync(join(root, '.agents', 'team.log'), 'utf8') : '';
+    expect(log).not.toContain('readings:');
+    // A dry run decides nothing — its refused run exits as the real one, and it writes nothing.
+    const dry = testIo(root, { kind: 'owner' });
+    expect(await runUp(['--dry-run', ...FILE], dry, sources({ machine: () => refusing }, world()))).toBe(1);
+    expect(dry.out).toContain('! up would refuse: free swap is 1.2 GB, below 2.0 GB');
+    log = existsSync(join(root, '.agents', 'team.log')) ? readFileSync(join(root, '.agents', 'team.log'), 'utf8') : '';
+    expect(log).not.toContain('readings:');
+  });
+
+  test('a reading that crosses mid-up writes its line at that refusal too', async () => {
+    await approve();
+    let reads = 0;
+    const made = world();
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(FILE, io, sources({
+      machine: () => {
+        reads += 1;
+        return { ...fine, swapUsed: reads >= 4 ? 3e9 : 1e9 };
+      },
+    }, made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('swap grew by 2.0 GB in 10 minutes, above 1.0 GB');
+    // Every seat this reading left out is one refusal — and so exactly one line, no more.
+    const printed = io.out.split('\n').filter((line) => line.includes('left out: swap grew by '));
+    expect(printed.length).toBeGreaterThan(0);
+    const lines = readFileSync(join(root, '.agents', 'team.log'), 'utf8').split('\n')
+      .filter((line) => line.includes('refused: swap grew by '));
+    expect(lines).toHaveLength(printed.length);
+    for (const line of lines) {
+      // The sentence byte for byte; the stamp is the run's own clock, so only its shape is pinned.
+      const [stamp, ...rest] = line.split(' ');
+      expect(stamp).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+      expect(rest.join(' ')).toBe('up [owner] refused: swap grew by 2.0 GB in 10 minutes, above 1.0 GB — readings: load 1.0/core, memory 50%, disk 200.0 GB free, swap used 3.0 GB of 9.0 GB (free 8.0 GB)');
+    }
+  });
+
   test('a reading that crosses mid-up stops before the next seat', async () => {
     await approve();
     let reads = 0;
