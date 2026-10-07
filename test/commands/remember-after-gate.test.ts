@@ -86,7 +86,7 @@ function launch(now: () => Date): DownLaunch {
 function watchSources(now: () => Date): WatchSources {
   return {
     live: () => null,
-    machine: () => ({ loadPerCore: 0, memoryFree: 50, diskFree: 1, swapFree: 1, swapUsed: 0 }),
+    machine: () => ({ loadPerCore: 0, memoryFree: 50, diskFree: 1, swapTotal: 2, swapFree: 1, swapUsed: 0 }),
     standing: () => ({ kind: 'none' }),
     readChecks: () => [],
     screen: () => null,

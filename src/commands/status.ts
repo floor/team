@@ -20,6 +20,7 @@ import { rulesOf } from '../launch/rules.ts';
 import { profileFor } from '../profiles/index.ts';
 import { APPROVAL_REPAIR, compare, orderAndAnnotateDifferences } from '../status/compare.ts';
 import type { Comparison, Difference, Live } from '../status/compare.ts';
+import { readMachine, swapTotalProblem, type Machine } from '../watch/machine.ts';
 
 // What `status` reads from outside the file and the state, so tests can stand in for it.
 export type StatusSources = {
@@ -32,6 +33,9 @@ export type StatusSources = {
   now(): Date;
   /** The home whose store holds the override file and the key. Absent in a test that does not set one. */
   home?: string;
+  /** This machine's own figures, read for the one check no machine can ever meet. Absent in a test
+   *  that does not read them; absent is not "fine", it is nothing said. */
+  machine?(root: string): Machine;
 };
 
 /**
@@ -85,6 +89,7 @@ export const realSources: StatusSources = {
   standing: standingSource(homedir()),
   now: () => new Date(),
   home: homedir(),
+  machine: readMachine,
 };
 
 export const status: Command = (argv, io) => runStatus(argv, io, realSources);
@@ -165,6 +170,13 @@ export async function runStatus(argv: string[], io: Io, sources: StatusSources):
     const key = sources.home ? keyState(sources.home) : { kind: 'missing' as const };
     const ofKey = key.kind === 'key' ? `, key ${keyFingerprint(key.key)}` : '';
     comparison.notes.unshift(`approval #${standing.generation} (${standing.signedAt.slice(0, 10)})${ofKey}`);
+  }
+  // The one machine check that can never pass here — the same fact `doctor` reports as a finding,
+  // as one note. `up`'s refusal on it is its own line, and nothing here changes an exit.
+  const machine = sources.machine?.(root);
+  if (machine) {
+    const problem = swapTotalProblem(machine, team.machine);
+    if (problem !== null) comparison.notes.unshift(problem);
   }
   if (!live.running) comparison.notes.unshift(`the herdr session "${session}" is not running`);
   comparison.differences = orderAndAnnotateDifferences([

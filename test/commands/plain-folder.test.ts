@@ -188,7 +188,7 @@ function statusSources(home: string): StatusSources {
 function watchSources(home: string): WatchSources {
   return {
     live: () => ({ running: false, agents: [], workspaces: [], screens: {}, processes: {} }),
-    machine: () => ({ loadPerCore: 0, memoryFree: 100, diskFree: 1e12, swapFree: 8e9, swapUsed: 0 }),
+    machine: () => ({ loadPerCore: 0, memoryFree: 100, diskFree: 1e12, swapTotal: 16e9, swapFree: 8e9, swapUsed: 0 }),
     standing: () => ({ kind: 'none' }) as Standing,
     readChecks: () => [],
     screen: () => null,

@@ -31,7 +31,7 @@ import { gitEnv, testIo } from '../helpers.ts';
 import type { Machine } from '../../src/watch/machine.ts';
 
 const NOW = new Date('2026-10-04T00:00:00Z');
-const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
+const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapTotal: 9e9, swapFree: 8e9, swapUsed: 1e9 };
 const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
 function makeFile(basePath: string, projPath: string): string {
   return `format: 1
