@@ -317,7 +317,7 @@ with a signed one.
 ```sh
 mkdir hello && cd hello && git init
 team init                  # the owner: writes .agents/team.yaml, private to this clone
-$EDITOR .agents/team.yaml  # name your seats — the example above is a working file
+$EDITOR .agents/team.yaml  # name your seats — the example above is a working file; any CLI fits any role
 team approve               # the owner: read the file it prints, then type the seat count
 team doctor                # what this machine still needs
 team up --dry-run          # every command it would run, and every refusal
