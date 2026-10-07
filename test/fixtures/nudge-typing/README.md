@@ -20,6 +20,11 @@ only then presses Enter.
 - `claude-code-nudge-idle-ansi.txt`: the operator's idle box the instant after the nudge line was
   sent. The placeholder is faint; the box is empty, the text not drawn yet. Reads `idle`, and the
   box does not read back as the line.
+- `claude-code-nudge-partial-ansi.txt`: constructed fixture (made from the unsent capture by
+  removing the wrapped continuation row; no real partial-draw screen has been captured, and
+  the coverage contract must not claim one) modeling the operator's box after the prompt row
+  has rendered, but before the continuation row draws. Reads `unsent`, but does not yet read
+  back as the whole nudge text.
 - `claude-code-nudge-unsent-ansi.txt`: the same pane about two seconds later. The box holds
   exactly the line — `Team watch: reports are waiting in` on the prompt row, `.agents/team.log`
   on the continuation row — and reads back as exactly the nudge's own text. Reads `unsent`.

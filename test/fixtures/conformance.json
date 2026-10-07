@@ -1191,6 +1191,13 @@
       "provenance": "capture"
     },
     {
+      "file": "nudge-typing/claude-code-nudge-partial-ansi.txt",
+      "cli": "claude-code",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "constructed"
+    },
+    {
       "file": "nudge-typing/claude-code-nudge-unsent-ansi.txt",
       "cli": "claude-code",
       "classify": "unsent",

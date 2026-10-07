@@ -78,7 +78,7 @@
       },
       "unsent": {
         "real": 8,
-        "constructed": 2,
+        "constructed": 3,
         "undocumented": 0
       },
       "permission": {
@@ -1233,6 +1233,12 @@
       "cli": "claude-code",
       "kind": "idle",
       "provenance": "capture"
+    },
+    {
+      "file": "nudge-typing/claude-code-nudge-partial-ansi.txt",
+      "cli": "claude-code",
+      "kind": "unsent",
+      "provenance": "constructed"
     },
     {
       "file": "nudge-typing/claude-code-nudge-unsent-ansi.txt",

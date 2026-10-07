@@ -1027,6 +1027,24 @@ describe('team watch', () => {
     expect(io.out).not.toContain('a nudge was typed and not sent');
   });
 
+  test('a box reading unsent with part of the line first poll draws whole later and gets the Enter', async () => {
+    // The core defect this fix closes: terminal painting is asynchronous, so a pane may draw the
+    // composer frame and part of the typed line (reading unsent, but boxHoldsText is false) on the
+    // first poll, and the remainder of the line a moment later. On main, the first unsent reading
+    // ended settleScreen immediately, saw boxHoldsText false, and gave up without sending Enter.
+    // The bounded loop waits up to DRAW_WAIT_MS for the box to hold the whole line, and sends the Enter.
+    const partial = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-partial-ansi.txt', import.meta.url), 'utf8');
+    const drawn = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-unsent-ansi.txt', import.meta.url), 'utf8');
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = partial; return true; },
+      sleep: async (ms) => { clock += ms; screenNow = drawn; },
+    }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+    expect(io.out).toContain('nudged the operator');
+    expect(io.out).not.toContain('a nudge was typed and not sent');
+  });
+
   test('a pane that never draws the nudge is left, with the line that says so', async () => {
     // The wait is bounded, as the exit typing's is: a screen still idle at the deadline is the
     // text never drawn, and nothing but the typing was sent.
@@ -1035,6 +1053,22 @@ describe('team watch', () => {
     await runWatch(['--file', file], io, sources(1, {
       typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = justTyped; return true; },
     }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
+    expect(io.out).toContain('a nudge was typed and not sent');
+  });
+
+  test('a clock that does not advance ends the draw wait without spinning forever', async () => {
+    // settleScreen's no-advance clock guard ensures that under a fixed mock clock (where sleep
+    // does not advance now()), the draw-wait loop breaks immediately rather than spinning forever.
+    const justTyped = readFileSync(new URL('./fixtures/nudge-typing/claude-code-nudge-idle-ansi.txt', import.meta.url), 'utf8');
+    const io = testIo(dir, { kind: 'owner' });
+    let sleeps = 0;
+    await runWatch(['--file', file], io, sources(1, {
+      typeText: (pane, text) => { typed.push(`${pane} ${text}`); screenNow = justTyped; return true; },
+      sleep: async () => { sleeps++; },
+      now: () => new Date('2026-10-03T14:00:00Z'),
+    }));
+    expect(sleeps).toBe(1);
     expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`]);
     expect(io.out).toContain('a nudge was typed and not sent');
   });

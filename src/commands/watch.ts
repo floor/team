@@ -20,7 +20,7 @@ import { readScreen } from '../watch/screen.ts';
 import { judgeTemporary, judgeWorktree } from '../watch/close.ts';
 import { readEnd, type EndView } from '../watch/end.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
-import { boxHoldsText, settleScreen } from '../launch/deliver.ts';
+import { boxHoldsText, DRAW_WAIT_MS } from '../launch/deliver.ts';
 import { removeWorktree } from './worktree.ts';
 import { stateOf } from './down.ts';
 import type { DownSeat } from '../launch/plan.ts';
@@ -431,8 +431,29 @@ async function deliver(
   // deadline is the text never drawn. Unsent text alone is not this nudge.
   let drawn = mine || holds();
   if (!drawn) {
-    await settleScreen('idle', look, { now: () => sources.now().getTime(), sleep: (ms) => sources.sleep(ms) });
-    drawn = holds();
+    const deadline = sources.now().getTime() + DRAW_WAIT_MS;
+    for (;;) {
+      if (holds()) {
+        drawn = true;
+        break;
+      }
+      const currentStatus = sources.status(nudge.pane, session);
+      if (currentStatus !== 'idle' && currentStatus !== 'done') {
+        tell('a nudge was typed and not sent: the operator was not free when the box was read back', true);
+        keep();
+        return;
+      }
+      const kind = look();
+      if (kind !== 'idle' && kind !== 'unsent') {
+        tell('a nudge was typed and not sent: the operator\'s box does not hold it', true);
+        keep();
+        return;
+      }
+      if (sources.now().getTime() >= deadline) break;
+      const before = sources.now().getTime();
+      await sources.sleep(100);
+      if (sources.now().getTime() <= before) break;
+    }
   }
   // The wait is a window the pane's state can change in: the agent can go, and the operator can
   // start a turn. Every check the Enter needs — the live agent, the status as it reads now, the
