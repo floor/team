@@ -74,8 +74,9 @@ export function budgetLine(row: BudgetRow): string {
   return `${row.account}  ${row.window}  left ${row.left}%  used ${row.used}%  ${reset}  ${row.seat ?? '-'}  ${when} ${row.age} ago  ${source}  ${state}`;
 }
 
-/** The sources the account's figures are read from, in order: a status line when the file is silent. */
-function sourcesOf(budgets: TeamFile['budgets'], account: string): readonly ReadingSource[] {
+/** The sources the account's figures are read from, in order: a status line when the file is
+ *  silent. Exported so a reader that pairs a row with the reading behind it asks the same rule. */
+export function sourcesOf(budgets: TeamFile['budgets'], account: string): readonly ReadingSource[] {
   return budgets.accounts[account]?.sources ?? ['status_line'];
 }
 
