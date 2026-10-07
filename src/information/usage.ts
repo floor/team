@@ -3,19 +3,21 @@
 // only — the team file (one that cannot be read falls back to the copy the approval stored), the
 // state beside it, the store — and writes nothing at all: no `last_valid` copy, no log line, no
 // lock, no state. It runs nothing, reads no pane, no vendor file, no vendor key.
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { approvalCase, budgetsInForceOf, notInForce, teamInForceOf, watchInForceOf } from '../approve/approval.ts';
 import { describe } from '../approve/fingerprint.ts';
-import { checkOf, countedFor, recall, recallSpend, screenOf, type Seen, type SpendReading } from '../budgets/readings.ts';
-import { budgetTable, reserveOf, sourcesOf, WINDOWS, type BudgetRow } from '../budgets/table.ts';
+import { checkOf, countedFor, recall, recallSpend, screenOf, type ReadingSource, type Seen, type SpendReading } from '../budgets/readings.ts';
+import { budgetTable, reserveOf, sourcesOf, WINDOWS, type BudgetRow, type BudgetState } from '../budgets/table.ts';
 import { walkCaller } from '../caller.ts';
 import { TEAM_FILE } from '../file/load.ts';
-import type { TeamFile } from '../file/types.ts';
+import type { BudgetAccount, Seat, TeamFile } from '../file/types.ts';
 import { validateTeamFile, defaultBudgets } from '../file/validate.ts';
 import type { Io } from '../io.ts';
+import { overridesInForceOf, quotaWith, type ProfileOverride } from '../profiles/overrides.ts';
+import type { WindowName } from '../profiles/quota.ts';
 import { readState, type State } from '../state.ts';
-import { approvalStanding, type Standing } from '../store/store.ts';
+import { approvalStanding, readApproval, storesFolder, type ApprovalRecord, type Standing } from '../store/store.ts';
 
 /** The caller's view of the machine, decided once (design note § 2.1): whether every team's
  *  names, roots and rows print, and which project is the caller's own. */
@@ -104,6 +106,28 @@ export type WatchRecording = 'recording' | 'not-recording' | 'not-known';
  *  `changedAt` a machine-scope reader orders by, null when no reading counted for the row. */
 export type UsageRow = { row: BudgetRow; changedAt: number | null };
 
+/** One account a team's file in force declares, as the machine view reads it: the kind a machine
+ *  line is built by, and the lab the design's rule (§ 2.3) puts it under — the vendor of the first
+ *  in-force seat that spends it (`seat.account ?? seat.vendor`, the counting rule's own resolution,
+ *  `budgets/gate.ts:31`), else the account's own name. */
+export type DeclaredAccount = { account: string; kind: 'subscription' | 'spend'; lab: string };
+
+/** Why nothing counts for an account, in the tool's own kinds — the words are the renderer's
+ *  (`doctor.ts:154`, `:187`, `gate.ts:90`), never a message a read produced. `first-sight` is the
+ *  gate's: a reading this tool has seen once is stored unconfirmed and counts for nothing yet. */
+export type UnknownWhy = 'no-pattern' | 'check-unapproved' | 'first-sight';
+export type AccountWhy = { account: string; why: UnknownWhy };
+
+/** A machine problem with one team, structured: the filter — never a read's own message — turns
+ *  these into words (§ 2.1), and `text` is the caller-appropriate sentence for the team's own
+ *  reader (relative paths for a caller who is not the owner, `shownNote`) while every other
+ *  caller reads the filter's fixed sentence for the kind. */
+export type TeamProblem =
+  | { kind: 'state'; tail: 'json' | 'format' | null; text: string }
+  | { kind: 'no-figures'; text: string }
+  | { kind: 'not-verified'; reason: 'none' | 'legacy' | 'refused' | 'differs' | 'nothing-counted'; text: string }
+  | { kind: 'moved'; text: string };
+
 export type ProjectUsage = {
   /** The project's name as this caller reads it. For a caller who is not the owner that is the
    *  one validated copy in force's own `project` — never the live file's, whatever a rename wrote
@@ -119,10 +143,26 @@ export type ProjectUsage = {
   /** The spend checks' readings, as the state holds them (§ 5). Read here, printed from S2 on. */
   spend: SpendReading[];
   watch: WatchRecording;
-  /** What the block prints as its `note:` lines: the state's own reason, path and all — and, for
-   *  a caller who is not the owner, the fixed lines for stored readings the file does not bind
-   *  (`UNBOUND_ACCOUNT`, `UNBOUND_SHAPE`) or for a copy in force that cannot be read (`NO_COPY`,
-   *  which stands for the declared rows too). */
+  /** The budgets in force's staleness, in seconds: a machine spend line reads `fresh` or `stale`
+   *  by the same rule the gate applies (`gate.ts:40`), and the numbers must be this team's own. */
+  staleAfter: number;
+  /** The accounts the file in force declares, kind and lab (§ 2.3's lab rule), sorted by name. */
+  accounts: DeclaredAccount[];
+  /** The labs a seat of this team puts in use — its vendors, distinct, in file order — whether or
+   *  not an account is declared for them: the machine view's `not known (no team declares an
+   *  account for it yet)` line counts a lab with none. */
+  vendors: string[];
+  /** For every declared account nothing can read, the tool's own reason (§ 2.3's why-lines). An
+   *  account with no entry has no such reason — it may still read unknown, with nothing to say. */
+  whys: AccountWhy[];
+  /** This team's machine problems, structured, in the order a block prints them (the why-line
+   *  first, then the state): the filter turns them into the restricted words and the reader who
+   *  stands here reads `text`. */
+  problems: TeamProblem[];
+  /** What the block prints as its `note:` lines: for a caller who is not the owner, the fixed
+   *  lines for stored readings the file does not bind (`UNBOUND_ACCOUNT`, `UNBOUND_SHAPE`) or for
+   *  a copy in force that cannot be read (`NO_COPY`, which stands for the declared rows too). The
+   *  state's own reason is a `problems` entry now, structured, so no raw message is left here. */
   notes: string[];
 };
 
@@ -164,17 +204,29 @@ export function projectUsage(root: string, options: ProjectUsageOptions): Projec
   let readings: Seen[] = [];
   let spend: SpendReading[] = [];
   let state: State | null = null;
+  let stateProblem: TeamProblem | null = null;
   try {
     state = readState(join(root, '.agents'));
     readings = recall(state.budgets);
     spend = recallSpend(state.spend);
   } catch (error) {
-    // The state's own reason, path and all: the block prints it as a note line (§ 2.3). A caller
-    // who is not the owner reads the project's own path relative to the project root — the state
-    // beside the file — and the owner reads the message as the state wrote it.
-    notes.push(shownNote(error instanceof Error ? error.message : String(error), root, restricted));
+    // The state's own reason, path and all, as *structured* text: the team's own reader prints it
+    // (a caller who is not the owner the project's own path relative to the project root — the
+    // state beside the file), and the filter turns the kind into a fixed sentence for every other
+    // team, so no message a state read produced can cross teams (§ 2.1).
+    const message = error instanceof Error ? error.message : String(error);
+    stateProblem = { kind: 'state', tail: stateTailOf(message), text: shownNote(message, root, restricted) };
+    // The block's own reader still prints the note from `notes` until the S2 renderer replaces it,
+    // which prints the structured problem above; both carry the same one sentence.
+    notes.push(stateProblem.text);
   }
-  if (team === null) return { project: null, rows: [], whyNotCounted: null, spend: [], watch: 'not-known', notes };
+  if (team === null) {
+    // Neither the file nor an approved copy of it can be read: no figures at all (`NO_FIGURES`),
+    // plus the state's own problem when there is one.
+    const problems: TeamProblem[] = [{ kind: 'no-figures', text: NO_FIGURES }];
+    if (stateProblem !== null) problems.push(stateProblem);
+    return { project: null, rows: [], whyNotCounted: null, spend: [], watch: 'not-known', staleAfter: defaultBudgets().staleAfter, accounts: [], vendors: [], whys: [], problems, notes };
+  }
   const inForce = teamInForceOf(standing, team);
   // The rows a caller who is not the owner reads are built from the one validated copy in force,
   // never from `budgetsInForceOf`'s fingerprint shortcut: the shortcut lets the live file stand in
@@ -187,19 +239,100 @@ export function projectUsage(root: string, options: ProjectUsageOptions): Projec
     : budgetsInForceOf(standing, team);
   const bound = restricted ? boundReadings(readings, budgets, inForce, notes) : readings;
   const rows = budgetTable(budgets, bound, now).map((row) => ({ row, changedAt: countedMoment(budgets, bound, row, now) }));
+  const whyNotCounted = whyNotCountedOf(standing, team, budgets, restricted);
+  // The project name this caller reads. A caller who is not the owner reads the one validated
+  // copy in force's own name — a live `project:` edit is not approved, and the approval stays
+  // verified whatever it says, so the live value must not stand in — and no name at all when
+  // that copy cannot be read (`inForce` null, the standing verified; `NO_COPY` names the
+  // reason). The owner reads the live file's name, as this command always did.
+  const project = restricted ? inForce?.project ?? null : team.project;
+  // The seats this caller reads: the in-force ones for a caller who is not the owner (the same
+  // object the binding used), the live file's for the owner — as `status` reads them.
+  const seats = restricted ? inForce?.seats ?? [] : team.seats;
+  const patterns = overridesInForceOf(standing, team.project, root, home).profiles;
+  const problems: TeamProblem[] = [];
+  if (whyNotCounted !== null) problems.push(problemOf(standing, whyNotCounted));
+  else if (project === null) problems.push({ kind: 'no-figures', text: NO_FIGURES });
+  if (stateProblem !== null) problems.push(stateProblem);
   return {
-    // The project name this caller reads. A caller who is not the owner reads the one validated
-    // copy in force's own name — a live `project:` edit is not approved, and the approval stays
-    // verified whatever it says, so the live value must not stand in — and no name at all when
-    // that copy cannot be read (`inForce` null, the standing verified; `NO_COPY` names the
-    // reason). The owner reads the live file's name, as this command always did.
-    project: restricted ? inForce?.project ?? null : team.project,
+    project,
     rows,
-    whyNotCounted: whyNotCountedOf(standing, team, budgets, restricted),
+    whyNotCounted,
     spend,
     watch: recordedWatch(state, team, watchInForceOf(standing, team), now),
+    staleAfter: budgets.staleAfter,
+    accounts: declaredOf(budgets, seats),
+    vendors: [...new Set(seats.map((seat) => seat.vendor))],
+    whys: Object.entries(budgets.accounts).flatMap(([account, entry]) => {
+      const why = unknownWhyOf(account, entry, seats, patterns, standing, rows);
+      return why === null ? [] : [{ account, why }];
+    }),
+    problems,
     notes,
   };
+}
+
+/** The account list a machine line is built from: every declared account, sorted by name, each
+ *  with its kind and its lab (§ 2.3's rule). */
+function declaredOf(budgets: TeamFile['budgets'], seats: readonly Seat[]): DeclaredAccount[] {
+  return Object.entries(budgets.accounts)
+    .map(([account, entry]): DeclaredAccount => ({
+      account,
+      kind: entry.kind,
+      lab: seats.find((seat) => (seat.account ?? seat.vendor) === account)?.vendor ?? account,
+    }))
+    .sort((a, b) => (a.account < b.account ? -1 : 1));
+}
+
+/** The tool's own reason nothing counts for an account, or null when no such reason applies (the
+ *  account may simply have no reading yet — there is nothing to say, and nothing is invented).
+ *  The file's conditions are `doctor`'s (`doctor.ts:190-193`, `:148-158`): the status line is
+ *  named with no seat's CLI shipping a quota pattern for the account, or a check is named with no
+ *  command; and a check-sourced account reads unknown when the approval does not record that
+ *  check — doctor's own rule, followed exactly: only a verified standing's record can approve a
+ *  check, and the "changed since approval" variant is doctor's business, not this reading's.
+ *  The last reason is the gate's (`gate.ts:88-90`): a reading this tool has seen once is stored
+ *  unconfirmed and counts for nothing yet — no figure of this account counted anywhere, and at
+ *  least one window holding a first-sight reading. */
+function unknownWhyOf(
+  account: string,
+  entry: BudgetAccount,
+  seats: readonly Seat[],
+  patterns: readonly ProfileOverride[],
+  standing: Standing,
+  rows: readonly UsageRow[],
+): UnknownWhy | null {
+  const readable = seats
+    .filter((seat) => (seat.account ?? seat.vendor) === account)
+    .some((seat) => quotaWith(seat.cli, patterns).some((one) => one.account === account));
+  if (entry.sources.includes('status_line') && !readable) return 'no-pattern';
+  if (entry.sources.includes('check') && entry.check === null) return 'no-pattern';
+  if (entry.sources.includes('check') && standing.kind === 'verified') {
+    const approved = standing.record.approval.checks;
+    if (!approved || approved[account] === undefined) return 'check-unapproved';
+  }
+  const mine = rows.filter((one) => one.row.account === account);
+  if (mine.every((one) => one.changedAt === null) && mine.some((one) => one.row.state === 'unconfirmed')) {
+    return 'first-sight';
+  }
+  return null;
+}
+
+/** The structured problem behind a `whyNotCounted` line: which kind of nothing it is. The switch
+ *  is on the structured standing and the tool's own sentence, never on a message's words. */
+function problemOf(standing: Standing, whyNotCounted: string): TeamProblem {
+  if (whyNotCounted === NOTHING_COUNTED) return { kind: 'not-verified', reason: 'nothing-counted', text: whyNotCounted };
+  if (standing.kind !== 'verified') return { kind: 'not-verified', reason: standing.kind, text: whyNotCounted };
+  return { kind: 'not-verified', reason: 'differs', text: whyNotCounted };
+}
+
+/** Which of the state reader's own two tails an unreadable state carries — matched against the
+ *  tool's own sentences (`state.ts:100`, `:104`), so the fixed restricted tail is one of exactly
+ *  those two and any other read error (an unreadable file, an errno message) carries none. */
+function stateTailOf(message: string): 'json' | 'format' | null {
+  if (message.includes('is not valid JSON')) return 'json';
+  if (message.includes('is not a team state of format 1')) return 'format';
+  return null;
 }
 
 /**
@@ -335,4 +468,277 @@ function recordedWatch(state: State | null, team: TeamFile, watch: TeamFile['wat
   const beat = typeof recorded.heartbeat === 'string' ? Date.parse(recorded.heartbeat) : Number.NaN;
   if (!Number.isFinite(beat)) return 'not-known';
   return (now - beat) / 1000 <= 2 * watch.interval ? 'recording' : 'not-recording';
+}
+
+// ---------------------------------------------------------------------------------------------
+// The machine view (design note § 2.1-§ 2.3, S2). `machineUsage` reads every store this machine
+// holds and returns structured facts; `reportOf` is the one filter that turns those facts into
+// the report both renderers print — a closed allow-list DTO for the restricted view, the wider
+// same-shaped report for the full one. Nothing here writes, runs or reads a pane.
+
+/** One team the machine walk read: the root its store records and its own reading. */
+export type TeamEntry = { kind: 'team'; root: string; usage: ProjectUsage };
+/** A store whose own record cannot be read: `text` is the read's message, the owner's to see. */
+export type StoreEntry = { kind: 'store'; text: string };
+export type MachineTeam = TeamEntry | StoreEntry;
+
+/** One account+window machine line: the newest reading with a figure, whichever team it is, and
+ *  every declaring team's own row for that window. */
+export type MachineLine = {
+  window: WindowName | null;
+  newest: { team: TeamEntry; row: BudgetRow; changedAt: number } | null;
+  rows: Array<{ team: TeamEntry; row: BudgetRow }>;
+};
+
+/** A spend account's machine line: the newest spend reading across teams, never a sum. */
+export type MachineSpend = {
+  newest: { team: TeamEntry; reading: SpendReading } | null;
+  rows: Array<{ team: TeamEntry; reading: SpendReading }>;
+};
+
+export type MachineAccount =
+  | { account: string; kind: 'subscription'; lines: MachineLine[]; declaring: TeamEntry[] }
+  | { account: string; kind: 'spend'; spend: MachineSpend; declaring: TeamEntry[] };
+
+export type MachineLab = {
+  lab: string;
+  accounts: MachineAccount[];
+  /** The teams this lab belongs to: the ones declaring one of its accounts, and the ones putting
+   *  it in use as a seat's vendor. The restricted view prints a lab, and its lines, only for a
+   *  lab the caller's own team carries (the coordinator's ruling of 7 Oct). */
+  carried: TeamEntry[];
+};
+
+export type MachineUsage = {
+  /** Every team the walk read, in walk order. */
+  teams: TeamEntry[];
+  /** Store-level problems: a record that cannot be read, its read's own message. */
+  stores: string[];
+  counts: { teams: number; labs: number; accounts: number };
+  labs: MachineLab[];
+};
+
+/** The store folder itself cannot be read: the command's `usage.store` refusal (§ 2.4). Carries
+ *  the folder and the read's own why, so the owner reads both and no note line claims it. */
+export class StoreUnreadable extends Error {
+  folder: string;
+  why: string;
+  constructor(folder: string, why: string) {
+    super(`the store folder ${folder} could not be read: ${why}`);
+    this.name = 'StoreUnreadable';
+    this.folder = folder;
+    this.why = why;
+  }
+}
+
+/** The stores' own suffix: `<project>-<12 hex of the root's path>` (`store.ts:55-73`). A folder
+ *  that does not end in it is not a store and is skipped — the lobby's own `lobby` entry among
+ *  them — and every store read is one team counted. */
+function isStoreName(name: string): boolean {
+  return /-[0-9a-f]{12}$/.test(name);
+}
+
+function realKey(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
+ * Every store this machine holds, read the one way the design note rules (§ 2.1): the stores
+ * folder listed, each name ending `-<12 hex>`, each record read whole for its root, each root
+ * read by `projectUsage` under this caller's view. One bad store, one moved project, one
+ * unreadable state is a problem on that entry, never a refusal for the rest. A root two stores
+ * record (a rename keeps the old folder) is one team: the first store in name order stands. The
+ * caller's own project is the one entry that needs no store: it prints whether or not the owner
+ * ever approved it, because it is the caller's own material. The store folder not existing is an
+ * empty machine; the folder itself unreadable is `StoreUnreadable`, the one refusal (§ 2.4).
+ */
+export function machineUsage(home: string, now: number, view: UsageView): MachineUsage {
+  const folder = storesFolder(home);
+  let names: string[];
+  try {
+    names = readdirSync(folder);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') names = [];
+    else throw new StoreUnreadable(folder, error instanceof Error ? error.message : String(error));
+  }
+  const restricted = !view.full;
+  const mineKey = view.mine === null ? null : realKey(view.mine);
+  const entries: MachineTeam[] = [];
+  const seen = new Set<string>();
+  for (const name of names.filter(isStoreName).sort()) {
+    const store = join(folder, name);
+    let record: ApprovalRecord | null;
+    try {
+      record = readApproval(store);
+    } catch (error) {
+      entries.push({ kind: 'store', text: error instanceof Error ? error.message : String(error) });
+      continue;
+    }
+    // A store folder with no record at all is not a team: nothing was ever approved in it.
+    if (record === null) continue;
+    const root = record.approval.root;
+    const key = realKey(root);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const usage = projectUsage(root, { home, now, restricted });
+    if (!existsSync(root)) {
+      usage.problems.push({ kind: 'moved', text: `the project folder ${root} is not there anymore` });
+    }
+    entries.push({ kind: 'team', root, usage });
+  }
+  if (view.mine !== null && !seen.has(realKey(view.mine))) {
+    entries.push({ kind: 'team', root: view.mine, usage: projectUsage(view.mine, { home, now, restricted }) });
+  }
+  const teams = entries.filter((entry): entry is TeamEntry => entry.kind === 'team');
+  // The labs: every declared account under the lab its own team's rule gives it, and every vendor
+  // a seat puts in use. One account keeps one lab — the first team in walk order decides — so two
+  // teams that map a shared account differently cannot print it twice. Each lab also keeps the
+  // teams it is carried by: the teams declaring one of its accounts, and the teams putting it in
+  // use as a seat's vendor. The restricted view prints a lab, and its lines, only for a lab the
+  // caller's own team carries.
+  const labOf = new Map<string, string>();
+  type LabSlot = { accounts: Map<string, { account: string; kind: 'subscription' | 'spend'; declaring: TeamEntry[] }>; carried: TeamEntry[] };
+  const labs = new Map<string, LabSlot>();
+  const labSlot = (lab: string): LabSlot => {
+    const known = labs.get(lab);
+    if (known) return known;
+    const made: LabSlot = { accounts: new Map(), carried: [] };
+    labs.set(lab, made);
+    return made;
+  };
+  for (const team of teams) {
+    for (const declared of team.usage.accounts) {
+      const lab = labOf.get(declared.account) ?? declared.lab;
+      labOf.set(declared.account, lab);
+      const slot = labSlot(lab);
+      if (!slot.carried.includes(team)) slot.carried.push(team);
+      const account = slot.accounts.get(declared.account) ?? { account: declared.account, kind: declared.kind, declaring: [] };
+      account.declaring.push(team);
+      slot.accounts.set(declared.account, account);
+    }
+    for (const vendor of team.usage.vendors) {
+      const slot = labSlot(vendor);
+      if (!slot.carried.includes(team)) slot.carried.push(team);
+    }
+  }
+  const accountNames = new Set<string>();
+  const built: MachineLab[] = [...labs.entries()]
+    .map(([lab, slot]) => ({
+      lab,
+      accounts: [...slot.accounts.values()]
+        .map((account) => {
+          accountNames.add(account.account);
+          return machineAccountOf(account, mineKey);
+        })
+        .sort((a, b) => (a.account < b.account ? -1 : 1)),
+      carried: [...slot.carried].sort(byName),
+    }))
+    .sort((a, b) => (a.lab < b.lab ? -1 : 1));
+  // An account a state holds without any file declaring it — a reading that survived a removed
+  // declaration — is still an account this machine counts; it gets no lab and no line (the report
+  // is keyed by declarations, and a name no team's file backs is no team's to show).
+  for (const team of teams) {
+    for (const entry of team.usage.rows) if (entry.row.window !== null) accountNames.add(entry.row.account);
+    for (const reading of team.usage.spend) accountNames.add(reading.account);
+  }
+  return {
+    teams,
+    stores: entries.filter((entry): entry is StoreEntry => entry.kind === 'store').map((entry) => entry.text),
+    counts: { teams: entries.length, labs: labs.size, accounts: accountNames.size },
+    labs: built,
+  };
+}
+
+function byName(a: TeamEntry, b: TeamEntry): number {
+  const name = (team: TeamEntry) => team.usage.project ?? team.root;
+  return name(a) < name(b) ? -1 : name(a) > name(b) ? 1 : 0;
+}
+
+/** One account's machine lines. Subscription rows are grouped by window: one line per window any
+ *  team read, in the table's window order; a window nobody counted anywhere still gets a line
+ *  from the rows that exist (`unknown`, `budgetLine`'s word), and an account with no row at all
+ *  gets one line with no window (a blank row's own shape). Spend accounts take the spend rule:
+ *  newest, never a sum. On equal moments the caller's own team stands first: the machine line
+ *  says least about another team when the figure could be the caller's. */
+function machineAccountOf(
+  slot: { account: string; kind: 'subscription' | 'spend'; declaring: TeamEntry[] },
+  mineKey: string | null,
+): MachineAccount {
+  const declaring = [...slot.declaring].sort(byName);
+  if (slot.kind === 'spend') {
+    const rows = declaring
+      .flatMap((team) => team.usage.spend.filter((reading) => reading.account === slot.account).map((reading) => ({ team, reading })))
+      .sort((a, b) => byName(a.team, b.team));
+    const newest = rows.reduce<{ reading: SpendReading; team: TeamEntry } | null>(
+      (best, one) => (best === null || isNewerSpend(one, best, mineKey) ? one : best),
+      null,
+    );
+    return { account: slot.account, kind: 'spend', spend: { newest, rows }, declaring };
+  }
+  const rows = declaring
+    .flatMap((team) => team.usage.rows.filter((entry) => entry.row.account === slot.account).map((entry) => ({ team, ...entry })))
+    .sort((a, b) => byName(a.team, b.team));
+  const windowed = rows.filter((one) => one.row.window !== null);
+  const counted = windowed.filter((one) => one.changedAt !== null);
+  let lines: MachineLine[];
+  if (counted.length > 0) {
+    lines = WINDOWS.filter((window) => counted.some((one) => one.row.window === window)).map((window) =>
+      lineOf(window, windowed, mineKey),
+    );
+  } else if (windowed.length > 0) {
+    const entry = windowed[0];
+    const first = WINDOWS.find((window) => windowed.some((one) => one.row.window === window)) ?? entry?.row.window ?? null;
+    lines = [lineOf(first, windowed, mineKey)];
+  } else {
+    lines = [{ window: null, newest: null, rows: rows.map(({ team, row }) => ({ team, row })) }];
+  }
+  return { account: slot.account, kind: 'subscription', lines, declaring };
+}
+
+function lineOf(
+  window: WindowName | null,
+  windowed: Array<{ team: TeamEntry; row: BudgetRow; changedAt: number | null }>,
+  mineKey: string | null,
+): MachineLine {
+  const rows = windowed.filter((one) => one.row.window === window).map(({ team, row }) => ({ team, row }));
+  const counted = windowed.filter(
+    (one): one is { team: TeamEntry; row: BudgetRow; changedAt: number } => one.row.window === window && one.changedAt !== null,
+  );
+  let newest: MachineLine['newest'] = null;
+  for (const one of counted) {
+    if (newest === null || isNewerRow(one, newest, mineKey)) newest = one;
+  }
+  return { window, newest, rows };
+}
+
+/** Which of two counted readings of one window is newer: the later moment first, the caller's own
+ *  team on an equal moment, then name order. Both sides carry their moment, so the comparison
+ *  never has to read it back off a row. */
+function isNewerRow(
+  one: { team: TeamEntry; row: BudgetRow; changedAt: number },
+  best: { team: TeamEntry; row: BudgetRow; changedAt: number },
+  mineKey: string | null,
+): boolean {
+  if (one.changedAt !== best.changedAt) return one.changedAt > best.changedAt;
+  return isFirst(one.team, best.team, mineKey);
+}
+
+function isNewerSpend(
+  one: { team: TeamEntry; reading: SpendReading },
+  best: { reading: SpendReading; team: TeamEntry },
+  mineKey: string | null,
+): boolean {
+  if (one.reading.at !== best.reading.at) return one.reading.at > best.reading.at;
+  return isFirst(one.team, best.team, mineKey);
+}
+
+/** The tie-break both newest rules share: the caller's own team stands first, then name order. */
+function isFirst(one: TeamEntry, best: TeamEntry, mineKey: string | null): boolean {
+  const mine = (team: TeamEntry) => mineKey !== null && realKey(team.root) === mineKey;
+  if (mine(one) !== mine(best)) return mine(one);
+  return byName(one, best) < 0;
 }
