@@ -108,6 +108,7 @@ Hidden: no
 
 Usage:
 
+    team check [--session <name>] [--file <path>]
     team check <ref> [--pr <file>] [--since <ref>] [--file <path>]
 
 ### Flags
@@ -117,6 +118,7 @@ Usage:
 | `--file` | yes | no | no |
 | `--help` | no | no | no |
 | `--pr` | yes | no | no |
+| `--session` | yes | no | no |
 | `--since` | yes | no | no |
 | `-h` | no | no | yes |
 
@@ -124,7 +126,7 @@ Usage:
 
 | Name | Optional | Repeatable |
 | --- | --- | --- |
-| `ref` | no | no |
+| `ref` | yes | no |
 
 ## `commits`
 

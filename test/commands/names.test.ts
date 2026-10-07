@@ -1,13 +1,15 @@
 // S1 of the command-name change, pinned: `team check <ref>` is `team commits check <ref>`, the
 // `--pr` half is `team pr check <file>`, and the old spelling is read through 0.3.3 — the same
-// report, the same exit, and one notice line naming the new command. Bare `team check` is the new
-// team check's own spelling: not built in this slice, it refuses exactly as it did before the
-// rename, and takes no notice. `team pr check` runs in a folder with no repository at all.
+// report, the same exit, and one notice line naming the new command. Bare `team check` — and a
+// line that spells only the check's own options — is the team check itself (S2): it reads the
+// team and the world, prints its answer, needs no commit and takes no notice. `team pr check`
+// runs in a folder with no repository at all.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { check, loadConfig, USAGE as CHECK_USAGE, type LoadConfig } from '../../src/commands/check.ts';
+import type { CheckSources } from '../../src/check/team.ts';
 import { commits, USAGE as COMMITS_USAGE } from '../../src/commands/commits.ts';
 import { pr } from '../../src/commands/pr.ts';
 import type { Io } from '../../src/io.ts';
@@ -17,6 +19,29 @@ import { createRepository, type Repository } from '../check/repository.ts';
 /** The notice the old spelling prints, and the twin the `--pr` form adds after it. */
 const NOTICE = 'team check: `team check` is now `team commits check`, and is still read through 0.3.3\n';
 const TWIN = 'team check: `team check --pr` is now `team pr check`, and is still read through 0.3.3\n';
+
+/** The usage block an old spelling's refusal prints: the tail of the export, where the combined
+ *  text keeps it byte for byte. */
+const OLD_USAGE = CHECK_USAGE.slice(CHECK_USAGE.indexOf('Usage: team check <ref>'));
+
+/** The file both folder cases load: one seat, no trust, no repository. */
+const TEAM = [
+  'format: 1',
+  'project: acme-web',
+  'coordinator: lead',
+  'operator: lead',
+  'workspace:',
+  '  mode: shared',
+  'seats:',
+  '  - role: implementer',
+  '    name: lead',
+  '    cli: claude-code',
+  '    vendor: anthropic',
+  '    model: Claude Opus',
+  '    version: "5.5"',
+  '    launch: claude --model claude-opus-5-5',
+  '',
+].join('\n');
 
 let repo: Repository;
 const hash = {} as Record<'clean' | 'unsigned' | 'forbidden', string>;
@@ -49,6 +74,23 @@ async function run(command: Command, argv: string[]) {
   return { code, stdout, stderr };
 }
 
+/** The team check's own form, in a folder of its own with the world handed in: no herdr, no
+ *  store and no home of the invoker's are read. */
+async function runCheck(cwd: string, argv: string[], sources: CheckSources) {
+  let stdout = '';
+  let stderr = '';
+  const io: Io = {
+    stdout: (text: string) => void (stdout += text),
+    stderr: (text: string) => void (stderr += text),
+    cwd,
+    env: {},
+    stdinIsTTY: false,
+    caller: { kind: 'owner' },
+  };
+  const code = await check(argv, io, load as LoadConfig, sources);
+  return { code, stdout, stderr };
+}
+
 describe('the old spelling is the new run, one notice line first', () => {
   // The tails are built lazily: the hashes exist only after `beforeAll`.
   const cases: { label: string; tail: () => string[]; exit: number }[] = [
@@ -72,7 +114,7 @@ describe('the old spelling is the new run, one notice line first', () => {
   }
 
   test('a refused invocation keeps its old bytes and takes no notice', async () => {
-    const refusals: string[][] = [[], ['a', 'b'], ['main', '--force'], ['main', '--since']];
+    const refusals: string[][] = [['a', 'b'], ['main', '--force'], ['main', '--since']];
     for (const tail of refusals) {
       const old = await run(check, tail);
       const now = await run(commits, ['check', ...tail]);
@@ -82,16 +124,39 @@ describe('the old spelling is the new run, one notice line first', () => {
       // fix. The usage below it is each command's own — the old form alone takes `--pr`.
       const first = (text: string) => text.split('\n')[0] ?? '';
       expect(first(old.stderr).replace('team check:', 'team commits check:')).toBe(first(now.stderr));
-      expect(old.stderr).toEndWith(CHECK_USAGE);
+      expect(old.stderr).toEndWith(OLD_USAGE);
       expect(now.stderr).toEndWith(COMMITS_USAGE);
       expect(old.stderr).not.toContain('is now');
     }
   });
 
-  test('bare team check is the new check’s spelling: it refuses, and runs nothing', async () => {
-    const bare = await run(check, []);
-    expect(bare).toEqual({ code: 2, stdout: '', stderr: `team check: a <ref> is required\n\n${CHECK_USAGE}` });
-    expect(bare.stderr).not.toContain('is now');
+  test('bare team check is the team check itself: it reads the team and prints its answer', async () => {
+    const folder = mkdtempSync(join(tmpdir(), 'team-names-bare-'));
+    const home = mkdtempSync(join(tmpdir(), 'team-names-bare-home-'));
+    try {
+      mkdirSync(join(folder, '.agents'), { recursive: true });
+      writeFileSync(join(folder, '.agents', 'team.yaml'), TEAM);
+      const ran = await runCheck(folder, [], {
+        live: () => ({ running: false, agents: [], workspaces: [], screens: {} }),
+        branch: () => 'main',
+        standing: () => ({ kind: 'none' }),
+        now: () => new Date(0),
+        home,
+      });
+      expect(ran.code).toBe(1);
+      expect(ran.stdout).toBe(
+        'difference: the file was never approved on this machine\n' +
+          '  repair: the owner runs team approve\n' +
+          'difference: lead is in the file and is not running\n' +
+          '  repair: the owner runs team up (after: the owner runs team approve)\n' +
+          'team check: 2 difference(s), 2 for the owner\n' +
+          'not known: work sent and unread, a lead waiting on a seat, a landing not recorded\n',
+      );
+      expect(ran.stderr).toBe('');
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   test('the --pr form runs both halves and prints both notices, the commits one first', async () => {
@@ -140,24 +205,6 @@ describe('the old spelling is the new run, one notice line first', () => {
 });
 
 describe('team pr check needs no repository', () => {
-  const TEAM = [
-    'format: 1',
-    'project: acme-web',
-    'coordinator: lead',
-    'operator: lead',
-    'workspace:',
-    '  mode: shared',
-    'seats:',
-    '  - role: implementer',
-    '    name: lead',
-    '    cli: claude-code',
-    '    vendor: anthropic',
-    '    model: Claude Opus',
-    '    version: "5.5"',
-    '    launch: claude --model claude-opus-5-5',
-    '',
-  ].join('\n');
-
   test('checks a body in a folder that is not a repository', async () => {
     const folder = mkdtempSync(join(tmpdir(), 'team-names-plain-'));
     const home = mkdtempSync(join(tmpdir(), 'team-names-home-'));

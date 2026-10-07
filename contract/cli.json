@@ -185,6 +185,12 @@
         },
         {
           "hidden": false,
+          "name": "--session",
+          "repeatable": false,
+          "takesValue": true
+        },
+        {
+          "hidden": false,
           "name": "--since",
           "repeatable": false,
           "takesValue": true
@@ -201,12 +207,13 @@
       "positionals": [
         {
           "name": "ref",
-          "optional": false,
+          "optional": true,
           "repeatable": false
         }
       ],
       "subcommands": [],
       "usage": [
+        "team check [--session <name>] [--file <path>]",
         "team check <ref> [--pr <file>] [--since <ref>] [--file <path>]"
       ]
     },
