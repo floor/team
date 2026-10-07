@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateTeamFile } from '../src/file/validate.ts';
@@ -391,17 +393,38 @@ describe('secrets', () => {
     const text = `${minimal}tools:\n  chat: { kind: slack, workspace: acme, channel: C04ABCDEF12 }\n`;
     expect(valid(text).warnings).toEqual([notice]);
   });
-  test('a filesystem path never warns, but a blob in path clothing still does', () => {
-    // The macOS runner's TMPDIR, verbatim: the value CI warned about at the trust line. A long,
-    // dotless, absolute path is a location, not a credential.
+  test('a path that is a real directory never warns; everything shapeless of it, and a blob in path clothing, still does', () => {
+    // The runner's TMPDIR shape, for real: long, dotless, absolute, on disk. The value CI warned
+    // about at the trust line was this shape as a project root — and only a directory the reader
+    // can see exempts the shape now. Build one; the shape alone silences nothing.
+    const base = realpathSync(mkdtempSync(join(realpathSync(tmpdir()), 'team-secrets-')));
+    const shaped = join(base, `team-init-${randomBytes(24).toString('base64url')}`);
+    mkdirSync(shaped);
+    const inTrustLine = `${minimal}trust:\n  - ${shaped}\n`;
+    try {
+      expect(shaped).toMatch(/^\/[A-Za-z0-9/_-]+$/);
+      expect(shaped.length).toBeGreaterThanOrEqual(32);
+      expect(valid(inTrustLine).warnings).toEqual([notice]);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+    // Pairwise: the same file, the same word, the directory gone — it warns. So the quiet above
+    // was the lstat's verdict, not a word the scanner never found random-looking.
+    expect(valid(inTrustLine).warnings).toEqual([notice, { line: 16, message: expect.stringMatching(/random-looking/) }]);
+    // The field's own runner literal, on this machine: nothing behind it, so nothing exempts it —
+    // absence fails closed and the value warns.
     const runner = '/private/var/folders/17/j2x0ly_d5_34bg_9vsy5f2140000gn/T/team-init-idhWGb/acme';
-    expect(valid(`${minimal}trust:\n  - ${runner}\n`).warnings).toEqual([notice]);
+    expect(valid(`${minimal}trust:\n  - ${runner}\n`).warnings).toEqual([notice, { line: 16, message: expect.stringMatching(/random-looking/) }]);
     // The boundary stays loud: a "/"-led blob with no second separator is not a path shape.
     const blobAfterSlash = `${minimal}tools:\n  chat: { kind: slack, channel: /Zx8Kq2Lm9Pv4Rt7Wy1Bn6Cd3Fg5Hj0QsAeUiOpXc }\n`;
     expect(valid(blobAfterSlash).warnings).toEqual([notice, { line: 16, message: expect.stringMatching(/random-looking/) }]);
     // One segment after the slash is not a path shape either.
     const singleSegment = `${minimal}tools:\n  chat: { kind: slack, channel: /abcdefghijklmnopqrstuvwxyz0123456789abcd }\n`;
     expect(valid(singleSegment).warnings).toEqual([notice, { line: 16, message: expect.stringMatching(/random-looking/) }]);
+    // A path-shaped prefix over a credential-shaped word is not a directory either: what once
+    // silenced it silences nothing now, and the value warns like any other.
+    const inPathClothing = `${minimal}trust:\n  - /x/sk-Zx8Kq2Lm9Pv4Rt7Wy1Bn6Cd3Fg5Hj0QsAeUiOpXc\n`;
+    expect(valid(inPathClothing).warnings).toEqual([notice, { line: 16, message: expect.stringMatching(/random-looking/) }]);
   });
 });
 
