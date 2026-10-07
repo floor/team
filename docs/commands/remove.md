@@ -131,7 +131,7 @@ with the text named, in the refusal below.
 | `team remove: <seat> is working; left as it is` | 1 |
 | `team remove: <seat> is blocked at a prompt, which team never answers` | 1 |
 | `team remove: <seat> sits at its own exit question; left as it is (team remove <seat> --abandon closes it)` | 1 |
-| `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` (the owner) or `… left as it is (the owner can close it: team remove <seat> --abandon)` (a coordinator or the operator) — not printed when the pane's foreground process is its own shell: the CLI has already left, and the seat is removed without being asked | 1 |
+| `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` (the owner) or `… left as it is (the owner can close it: team remove <seat> --abandon)` (a coordinator or the operator) — not printed when the pane's foreground process is its own shell with no child of it: the CLI has already left, and the seat is removed without being asked. That close re-reads the whole proof directly before it acts; a pane that changed, cannot be read, or reads live prints `<seat>: its pane no longer reads as a CLI that had exited; left as it is` instead, and the seat and the file are left as they are | 1 |
 | `team remove: <seat> holds unsent text in its input box; left as it is` | 1 |
 | `team remove: <seat> holds this CLI's exit text (<exit>) unsent in its input box; left as it is (the owner sends it or clears it in its pane)` | 1 |
 | ``team remove: no launch profile for `<cli>`; left as it is`` | 1 |

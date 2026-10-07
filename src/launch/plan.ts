@@ -71,7 +71,17 @@ export type Op =
       workspace?: string;
       unasked?: string;
     }
-  | { do: 'close'; seat: string; workspace: string; line?: string }
+  | {
+    do: 'close';
+    seat: string;
+    workspace: string;
+    line?: string;
+    /** Present only on the close of a seat whose CLI had already exited: the pane and CLI the
+     *  executor re-reads the whole exited proof for, directly before the workspace closes. A
+     *  close the owner sanctioned (`--abandon`) carries none: it was blind when it was
+     *  ordered. */
+    reproof?: { pane: string; cli: string };
+  }
   | { do: 'kill'; pid: number }
   | { do: 'stop'; session: string };
 
@@ -477,12 +487,20 @@ export function downPlan(input: DownInput): Step[] {
       // The CLI has already left the pane: its foreground process is the pane's own shell, so
       // there is nothing to ask and no key is ever sent — the reading that classified the seat
       // said so, not this plan. The workspace closes as `--abandon` closes every seat that
-      // cannot be asked, and the line says what happened instead of "stopped".
+      // cannot be asked, and the line says what happened instead of "stopped". The close
+      // carries the pane and the CLI so the executor can read the whole proof again directly
+      // before it closes anything: a CLI that started after this plan was built is left alone.
       steps.push({
         kind: 'run',
         argv: herdr(session, 'workspace', 'close', seat.workspace),
         note: 'its CLI had already exited; nothing was typed',
-        do: { do: 'close', seat: seat.name, workspace: seat.workspace, line: 'its CLI had already exited; closed' },
+        do: {
+          do: 'close',
+          seat: seat.name,
+          workspace: seat.workspace,
+          reproof: { pane: seat.pane, cli: seat.cli },
+          line: 'its CLI had already exited; closed',
+        },
       });
       continue;
     }

@@ -283,7 +283,13 @@ describe('down --dry-run', () => {
       kind: 'run',
       argv: ['herdr', '--session', 's', 'workspace', 'close', 'w1'],
       note: 'its CLI had already exited; nothing was typed',
-      do: { do: 'close', seat: 'w1', workspace: 'w1', line: 'its CLI had already exited; closed' },
+      do: {
+        do: 'close',
+        seat: 'w1',
+        workspace: 'w1',
+        reproof: { pane: 'w1:p1', cli: 'unknown' },
+        line: 'its CLI had already exited; closed',
+      },
     });
     // An abandoned run closes it the same way, with the same line — the exited close is the
     // one close `--abandon` adds nothing to.

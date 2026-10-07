@@ -108,7 +108,11 @@ gate asked and answered, the refusal standing unless the gate placed the caller.
 A seat it stops prints `<seat>: stopped`; a seat whose CLI had already left its pane prints
 `<seat>: its CLI had already exited; closed` — its workspace is closed the way `--abandon` closes
 every seat that cannot be asked, but no key is ever sent and no `--abandon` is passed, because
-the pane's own shell was its foreground process and there was nothing left to ask. The watch
+the pane's own shell was its foreground process and there was nothing left to ask. That close
+re-reads the whole proof — screen, status, foreground, children — directly before it acts, with
+nothing between the reading and the close: a pane that changed, cannot be read, or reads live
+prints `<seat>: its pane no longer reads as a CLI that had exited; left as it is` instead, and
+the seat, its workspace and the session are left as they are. The watch
 prints `watch: stopped`; the session prints
 `session <session>: stopped and cleared` — herdr keeps a stopped session listed until it is
 deleted, so `down` clears the one it has itself just stopped, retrying while herdr still reports

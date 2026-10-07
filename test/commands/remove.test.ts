@@ -637,6 +637,25 @@ describe('team remove', () => {
       expect(refused.err).toContain('shows a screen the profile does not recognise');
       expect(unreadable.closed).toEqual([]);
     }
+    // The close re-reads the whole proof directly before it acts: a CLI that started after
+    // the seat was classified — the children read comes back full — keeps its workspace, its
+    // files and its place in the team file, and the line says why.
+    writeFileSync(file, FILE);
+    const changed = world({ kind: 'unknown' }, 'idle');
+    changed.sources.shellBack = () => true;
+    changed.sources.shellChildless = (() => {
+      // The reading is asked twice before the close (the refusal check, the stop's own
+      // classification); the close's re-proof is the third read.
+      let reads = 0;
+      return () => ++reads <= 2;
+    })();
+    changed.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const reproof = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], reproof, changed.sources)).toBe(1);
+    expect(reproof.out).toContain('worker: its pane no longer reads as a CLI that had exited; left as it is\n');
+    expect(changed.typed).toEqual([]);
+    expect(changed.closed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
   test('a Cursor queue screen is working: the seat is left and nothing is typed', async () => {

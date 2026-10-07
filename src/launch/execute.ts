@@ -82,6 +82,12 @@ export type Host = {
   paneText?(session: string, pane: string): string | null;
   /** Whether the pane's foreground program is back to its shell; null when herdr can't tell. */
   shellBack?(session: string, pane: string): boolean | null;
+  /** The whole exited proof — screen, status, the one-foreground shell, the shell's children —
+   *  read again at the one moment it guards: directly before the workspace of a seat whose CLI
+   *  had already exited closes. True only when every part still holds; false or null when
+   *  anything changed, cannot be read, or reads live. Synchronous on purpose: nothing may run
+   *  between this reading and the close it permits. Absent refuses the close. */
+  stillExited?(session: string, pane: string, cli: string): boolean | null;
   /** The pane's process identity, read to record it for the seat; null when herdr can't tell. */
   processInfo?(session: string, pane: string): PaneProcesses | null;
   sleep(ms: number): Promise<void>;
@@ -1048,6 +1054,16 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         break;
       }
       case 'close': {
+        // An exited close re-reads the whole proof here — screen, status, foreground, children —
+        // with nothing between the reading and the close it permits: anything changed,
+        // unreadable or live keeps the seat, its workspace and its files, and the line says why.
+        // A close the owner sanctioned (`--abandon`) carries no reproof: it was blind when it
+        // was ordered.
+        if (op.reproof && host.stillExited?.(session, op.reproof.pane, op.reproof.cli) !== true) {
+          held = true;
+          finish(op.seat, 'its pane no longer reads as a CLI that had exited; left as it is');
+          break;
+        }
         if (!host.closeWorkspace(session, op.workspace)) {
           held = true;
           finish(op.seat, 'its workspace did not close');

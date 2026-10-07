@@ -194,6 +194,20 @@ export function seatState(
   return shellChildless() === true ? 'exited' : 'unknown';
 }
 
+/** The whole exited proof read again, for the one moment it guards: directly before the
+ *  workspace of a seat whose CLI had already exited closes. The same four readings that
+ *  classified the seat — screen, status, foreground, children — so a CLI that started after
+ *  the plan was built keeps its seat, its workspace and its files. Synchronous: the executor
+ *  permits no await between this reading and the close. */
+export function stillExitedOf(sources: DownSources, session: string, pane: string, cli: string): boolean {
+  return seatState(
+    sources.status(session, pane) ?? 'unknown',
+    sources.screen(session, pane, cli),
+    () => sources.shellBack?.(session, pane) ?? null,
+    () => sources.shellChildless?.(session, pane) ?? null,
+  ) === 'exited';
+}
+
 /** What `typeExit` may do to one pane, so `down` and `remove` share the whole sequence and the
  *  tests can stand in for every part of it. */
 export type ExitIo = {
@@ -742,6 +756,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
         });
       },
       classify: () => 'unknown',
+      stillExited: (sessionName, pane, cli) => stillExitedOf(sources, sessionName, pane, cli),
       sleep: sources.sleep ?? launch.sleep,
       now: () => now().getTime(),
       allow: () => null,

@@ -20,7 +20,7 @@ import { downPlan, type DownSeat, type LeftState } from '../launch/plan.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock } from '../state.ts';
-import { paneStillRunning, realSources as downSources, seatState, typeExit, type DownSources } from './down.ts';
+import { paneStillRunning, realSources as downSources, seatState, stillExitedOf, typeExit, type DownSources } from './down.ts';
 import { boxHoldsText } from '../launch/deliver.ts';
 import { removeRulesFile } from '../launch/rules-file.ts';
 import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
@@ -454,6 +454,7 @@ export async function stopRunning(input: {
       return listed.filter((pane) => paneStillRunning(sources.foreground(sessionName, pane), names));
     },
     classify: () => 'unknown',
+    stillExited: (sessionName, pane, cli) => stillExitedOf(sources, sessionName, pane, cli),
     sleep: sources.sleep ?? launch.sleep,
     now: () => sources.now().getTime(),
     allow: () => null,

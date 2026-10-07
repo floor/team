@@ -784,7 +784,9 @@ describe('team down', () => {
     // The screen the profile does not recognise — the CLI's leftover transcript under a bare
     // shell prompt — and the pane's foreground process the pane's own shell: the capture
     // zsh-after-exit.json is this reading. Nothing is typed; the workspace closes; the line
-    // says the CLI had already exited.
+    // says the CLI had already exited. The whole proof is read a second time directly before
+    // the close (the children are asked twice), and the close follows it with nothing between.
+    const calls: string[] = [];
     const typed: string[] = [];
     const closed: string[] = [];
     let stopped = false;
@@ -795,15 +797,15 @@ describe('team down', () => {
     const run = await down([], OWNER, {
       agents: () => [agent('deepseek-acme', 'idle')],
       screen: () => ({ kind: 'unknown' }),
-      shellBack: () => true,
-      shellChildless: () => true,
+      shellBack: () => { calls.push('shell'); return true; },
+      shellChildless: () => { calls.push('children'); return true; },
       sessionRunning: () => running,
       launch: {
         typeText: (_session, _pane, text) => { typed.push(text); return true; },
         sendKey: () => true,
         pressEnter: () => true,
         agentPanes: () => [],
-        closeWorkspace: (_session, workspace) => { closed.push(workspace); return true; },
+        closeWorkspace: (_session, workspace) => { closed.push(workspace); calls.push('close'); return true; },
         stopSession: () => { stopped = true; running = false; return true; },
         deleteSession: () => { deleted = true; return true; },
         kill: () => true,
@@ -816,7 +818,48 @@ describe('team down', () => {
     expect(run.out).toContain('session acme-web: stopped and cleared\n');
     expect(typed).toEqual([]);
     expect(closed).toEqual(['deepseek-acme']);
+    // Classification read the shell and the children; the close's own re-proof read them
+    // again, and the close came after it — never before.
+    expect(calls).toEqual(['shell', 'children', 'shell', 'children', 'close']);
     expect(stopped && deleted).toBe(true);
+  });
+
+  test('a close whose re-proof no longer holds leaves the seat, its files and the session', async () => {
+    // The classification read a gone CLI; by the time the close runs, the pane holds a child
+    // again — a CLI that started after the plan was built. The workspace is not closed,
+    // nothing is typed, the session is not stopped, and the line says why.
+    const typed: string[] = [];
+    const closed: string[] = [];
+    let stopAsked = false;
+    const run = await down([], OWNER, {
+      agents: () => [agent('deepseek-acme', 'idle')],
+      screen: () => ({ kind: 'unknown' }),
+      shellBack: () => true,
+      shellChildless: (() => {
+        // First read (the classification): childless. Second (the close's re-proof): a child.
+        let reads = 0;
+        return () => ++reads <= 1;
+      })(),
+      sessionRunning: () => true,
+      launch: {
+        typeText: (_session, _pane, text) => { typed.push(text); return true; },
+        sendKey: () => true,
+        pressEnter: () => true,
+        agentPanes: () => [],
+        closeWorkspace: (_session, workspace) => { closed.push(workspace); return true; },
+        stopSession: () => { stopAsked = true; return true; },
+        deleteSession: () => true,
+        kill: () => true,
+        sleep: async () => {},
+        now: () => NOW,
+      },
+    });
+    expect(run.code).toBe(1);
+    expect(run.out).toContain('deepseek-acme: its pane no longer reads as a CLI that had exited; left as it is\n');
+    expect(run.out).toContain('session acme-web: not stopped, something was left in it\n');
+    expect(typed).toEqual([]);
+    expect(closed).toEqual([]);
+    expect(stopAsked).toBe(false);
   });
 
   test('a pane that cannot be read, one with another program in front, or one with a child of its shell, keeps the unknown line', async () => {
