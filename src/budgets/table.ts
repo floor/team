@@ -49,7 +49,7 @@ export function budgetTable(budgets: TeamFile['budgets'], list: readonly Seen[],
     const result = countedFor(sources, screenOf(group), checkOf(group), now, staleAfterMs, reserve);
     rows.push(result.kind === 'unknown'
       ? { ...blank(account, reserve), window }
-      : rowOf(result, now, staleAfterMs, reserve, result.reading.source !== sources[0]));
+      : budgetRowOf(result, now, staleAfterMs, reserve, result.reading.source !== sources[0]));
   }
   for (const account of Object.keys(budgets.accounts)) {
     if (!named.has(account)) rows.push(blank(account, reserveOf(budgets, account)));
@@ -82,7 +82,10 @@ export function sourcesOf(budgets: TeamFile['budgets'], account: string): readon
   return budgets.accounts[account]?.sources ?? ['status_line'];
 }
 
-function rowOf(
+/** The row for one counted group. Exported as `budgetRowOf` so a machine-scope reader that reads
+ *  a team's stored readings itself (`machineUsage`) builds the row through the same one rule
+ *  `budgetTable` uses, and the two can never disagree. */
+export function budgetRowOf(
   result: { kind: 'counted' | 'unconfirmed'; reading: Seen },
   now: number,
   staleAfterMs: number,

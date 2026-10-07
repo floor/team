@@ -62,7 +62,8 @@ function rootHash(root: string): string {
   return createHash('sha256').update(real).digest('hex').slice(0, 12);
 }
 
-function storesFolder(home: string): string {
+/** The folder every store lives in. Exported so the machine-scope reader (`usage`) can walk it. */
+export function storesFolder(home: string): string {
   return join(home, '.config', 'team');
 }
 
