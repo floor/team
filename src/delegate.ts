@@ -146,6 +146,39 @@ export function delegateGate(input: {
   return { kind: 'passed', pane: found.entry.pane };
 }
 
+/**
+ * Whether this caller may read the team's answer as an approved delegate pane: the acting gate's
+ * authorization in the acting gate's order, and nothing else — no command word, no flag list, no
+ * check of the entry's commands, and no audit line (`logDelegated` is the act's record, and a read
+ * performs no act). It decides and stops, and it speaks nothing of its own: every failure —
+ * approval not verified, no readable copy, drift, unreadable evidence, a collision, no matching
+ * entry — is simply "does not pass", so an unapproved caller learns no detail: not which step
+ * failed, not whose pane an entry is, not that a `delegates` section exists at all.
+ */
+export function delegateReadGate(input: {
+  team: TeamFile;
+  root: string;
+  dir: string;
+  io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>;
+  /** Approval store home. Absent: the owner's home, the same default the store uses. */
+  home?: string;
+  sources?: DelegateSources;
+}): boolean {
+  const { team, root, dir, home } = input;
+  const sources = input.sources ?? {};
+  const standing = sources.standing ? sources.standing(root) : approvalStanding(root, home);
+  if (standing.kind !== 'verified') return false;
+  const copy = sources.approvedCopy ? sources.approvedCopy(root) : approvedCopy(root, home);
+  if (copy === null || validated(copy) === null) return false;
+  if (approvalDifferencesOf(standing, team).length > 0) return false;
+  const entries = team.delegates ?? [];
+  const io = sources.callerSources ? { ...input.io, callerSources: sources.callerSources } : input.io;
+  const evidence = evidenceOf(team, dir, io, sources, entries);
+  if (!evidence.ok) return false;
+  if (entries.some((entry) => collides(team, entry, evidence.state))) return false;
+  return findEntry(entries, io).kind === 'match';
+}
+
 const NON_DELEGATE: Record<DelegateCommand, (caller: string) => string> = {
   up: (caller) => `only the owner or the approved delegate runs \`up\`; this call is ${caller}`,
   down: (caller) => `only the owner, the orchestrator, the operator or the approved delegate stops the team; this call is ${caller}`,
