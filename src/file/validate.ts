@@ -27,7 +27,7 @@ export function validateTeamFile(text: string, options: { home?: string; fs?: Fs
     throw error;
   }
   const check = new Check();
-  const secrets = findSecrets(root);
+  const secrets = findSecrets(root, options.fs);
   check.problems.push(...secrets.refused);
   check.warnings.push(...secrets.warned);
   const team = readTeam(root, check, options.home, options.fs, options.root);
