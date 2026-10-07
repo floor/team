@@ -303,16 +303,6 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   // exit: approve.show
   if (args.flags.has('show')) return 0;
 
-  // A key that cannot be read fails closed here, before anything is asked or written:
-  // a new key would orphan every record already signed, so the owner restores it.
-  try {
-    keyOf(sources.home);
-  } catch (error) {
-    io.stderr(`team approve: ${(error as Error).message}\n`);
-    // exit: approve.key
-    return 1;
-  }
-
   const caller = callerOf(io);
   if (!isOwner(caller)) {
     io.stderr(
@@ -353,6 +343,19 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
       // exit: approve.input-unreadable
       return 1;
     }
+  }
+
+  // The key is created only now, once every refusal above has had its chance: a not-owner, a
+  // waiting line, an unreadable terminal or a rejected answer leaves no key folder behind, so
+  // on a first approval the refusals' "nothing was written" is true. A key that exists but
+  // cannot be read fails closed here: a new key would orphan every record already signed, so
+  // the owner restores it.
+  try {
+    keyOf(sources.home);
+  } catch (error) {
+    io.stderr(`team approve: ${(error as Error).message}\n`);
+    // exit: approve.key
+    return 1;
   }
 
   const now = sources.now();
