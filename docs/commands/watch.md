@@ -98,6 +98,13 @@ Every line carries its time, and every line goes to `.agents/team.log` as well:
 A report is printed when it starts, and again only after it has cleared: a seat that stays blocked,
 or a machine that stays full, is said once, not every pass.
 
+Two things go to `.agents/team.log` without being printed: the watch writes the machine's own
+readings once every ten minutes per watch — `readings: load 1.0/core, memory 69%, disk 200.0 GB
+free, swap used 7.0 GB of 8.2 GB (free 1.2 GB)`, `unread` where a figure couldn't be read — and
+`up` and `add` write one line per machine refusal, carrying the refusal and the readings it was
+decided on. At the watch's worst rate that is 144 readings lines a day plus refusals, ≈190 bytes
+a line and ≈28 KB a day: a 1 MB log holds ≈5 weeks of that, and three are kept, ≈4 months.
+
 | Report | Made when |
 | --- | --- |
 | `<seat> is in the file and is not running` | herdr lists no agent for a seat the file has, does not stop, and the watch has not seen running |
