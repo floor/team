@@ -115,14 +115,14 @@ function statusIndex(
       if (statusRowAt(composer, lines, i)) return i;
       continue;
     }
-    const trailing = lines.slice(i + 1).map((l) => l.trim()).filter(Boolean);
+    const trailing = lines.slice(i + 1).filter((line) => line.trim());
     if (allowOneTrailing) {
       if (trailing.length === 0) return i;
       if (trailing.some((line) => composer.prompt.test(line))) return -1;
       if (trailing.length === 1) return i;
       // Multiple trailing lines: whole-line grammar matching foreground_cwd
       if (expectedCwd) {
-        let joined = trailing.join('');
+        let joined = trailing.map((l) => l.trim()).join('');
         if (home && (joined === '~' || joined.startsWith('~/'))) {
           joined = home.replace(/\/+$/, '') + joined.slice(1);
         }

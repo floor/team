@@ -224,9 +224,15 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // one that stays after the key, is reported at once: the seat could not be stopped by asking.
   const sendExit = async (): Promise<ExitTyping> => {
     if (!live()) return 'no-agent';
-    if (!resting()) return false;
-    if (kindOf() !== 'unsent' || !holds()) return false;
-    if (!io.pressEnter()) return false;
+    if (!resting()) {
+      return { left: 'its exit was not confirmed; the exit text was typed and not sent; left running' };
+    }
+    if (kindOf() !== 'unsent' || !holds()) {
+      return { left: 'its exit was not confirmed; the exit text was typed and not sent; left running' };
+    }
+    if (!io.pressEnter()) {
+      return { left: 'its exit was not confirmed; the exit text was typed and not sent; left running' };
+    }
     const confirm = profileFor(cli)?.exitConfirm ?? null;
     const deadline = io.now() + DRAW_WAIT_MS;
     let confirmed = false;

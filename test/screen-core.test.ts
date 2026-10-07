@@ -1244,6 +1244,22 @@ describe('status-then-one status row trailing path matching', () => {
     expect(statusRowOf(data, lines, { cwd: '/Users/jvial/other', home })).toBeNull();
   });
 
+  test('single prompt row in trailing lines rejects status row (reviewer-claude probe)', () => {
+    const lines = [
+      '  Cursor Agent',
+      '',
+      '  → Plan, search, build anything',
+      '',
+      '  Grok 4.7 256K High                  Run Everything',
+      '  → rm -rf build && deploy',
+    ];
+    // Must read unknown (never idle), both with and without cwd options
+    expect(classifyLines(data, lines, { cwd: liveDir, home }).kind).toBe('unknown');
+    expect(statusRowOf(data, lines, { cwd: liveDir, home })).toBeNull();
+    expect(classifyLines(data, lines).kind).toBe('unknown');
+    expect(statusRowOf(data, lines)).toBeNull();
+  });
+
   test('prompt row in trailing lines rejects status row', () => {
     const lines = [
       '  Cursor Agent',
@@ -1255,5 +1271,6 @@ describe('status-then-one status row trailing path matching', () => {
       '  → malicious command',
     ];
     expect(classifyLines(data, lines, { cwd: liveDir, home }).kind).toBe('unknown');
+    expect(statusRowOf(data, lines, { cwd: liveDir, home })).toBeNull();
   });
 });

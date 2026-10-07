@@ -915,6 +915,47 @@ describe('per-key fresh witness contract in typeExit', () => {
     expect(await typeExit(pane.io, 'claude-code', '/exit')).toBe(false);
     expect(pane.sent).toEqual([]);
   });
+
+  test('resting status failure before pressEnter in sendExit returns typed and not sent', async () => {
+    let call = 0;
+    const pane = paneOf('claude-code', 'claude', idle, unsent);
+    pane.io.status = () => {
+      call++;
+      return call >= 4 ? 'working' : 'idle';
+    };
+    expect(await typeExit(pane.io, 'claude-code', '/exit')).toEqual({
+      left: 'its exit was not confirmed; the exit text was typed and not sent; left running',
+    });
+    expect(pane.types).toEqual(['/exit']);
+    expect(pane.sent).toEqual([]);
+  });
+
+  test('screen classification failure before pressEnter in sendExit returns typed and not sent', async () => {
+    let screenCalls = 0;
+    const pane = paneOf('claude-code', 'claude', idle, unsent);
+    const origScreen = pane.io.screen;
+    pane.io.screen = () => {
+      screenCalls++;
+      // calls 1-5: progression up to line 307 holds() passing
+      // call 6: inside sendExit before pressEnter -> fails kindOf/holds
+      return screenCalls >= 6 ? fixture('claude-code-other-text-ansi.txt') : origScreen();
+    };
+    expect(await typeExit(pane.io, 'claude-code', '/exit')).toEqual({
+      left: 'its exit was not confirmed; the exit text was typed and not sent; left running',
+    });
+    expect(pane.types).toEqual(['/exit']);
+    expect(pane.sent).toEqual([]);
+  });
+
+  test('pressEnter failure in sendExit returns typed and not sent', async () => {
+    const pane = paneOf('claude-code', 'claude', idle, unsent);
+    pane.io.pressEnter = () => false;
+    expect(await typeExit(pane.io, 'claude-code', '/exit')).toEqual({
+      left: 'its exit was not confirmed; the exit text was typed and not sent; left running',
+    });
+    expect(pane.types).toEqual(['/exit']);
+    expect(pane.sent).toEqual([]);
+  });
 });
 
 
