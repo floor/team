@@ -3,7 +3,9 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { findRoot, loadTeamFile, NOT_A_REPO } from '../src/file/load.ts';
+import type { LoadResult } from '../src/file/types.ts';
 import { gitEnv } from './helpers.ts';
 
 const example = new URL('./fixtures/example.yaml', import.meta.url).pathname;
@@ -137,100 +139,146 @@ describe('loading the file', () => {
   });
 });
 
-// The git-project inputs of the tests above, run through this tree and through origin/main.
-// The fallback is the no-repository case only, so these stay identical — save the lead's own
-// refusal, which the field replaced with the key: the two trees name it differently, and both
-// texts read as one marker here so the parity of everything else stays the assertion.
-const LEAD_REFUSAL = /^(coordinator is required|the file has no seat that leads: put `leads: true` on one seat)$/;
-// The seats-required refusal names the lead's seat too: main says `coordinator's`, this tree
-// says `orchestrator's` (the word moved in 0.3.3). One marker, as above.
-const SEATS_REFUSAL = /^seats is required: at least the (coordinator|orchestrator)'s and the operator's seat$/;
-test('a git project loads as the main tree loads it', async () => {
-  const { pathToFileURL } = await import('node:url');
-  const repo = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-    cwd: import.meta.dir,
-    encoding: 'utf8',
-  }).trim();
-  const archive = realpathSync(mkdtempSync(join(tmpdir(), 'team-load-main-')));
+// The git-project inputs of the tests above, run through this tree and through the tree it
+// forked from main at — merge-base(HEAD, origin/main), which is origin/main itself on main and
+// on every branch carrying it. Against origin/main's tip the comparison fails on any tree
+// behind main over main's own deliberate changes (the renamed refusals, for one), which is
+// drift no branch behind main should be held to; against the fork point it fails only on this
+// tree's own loader moving away from what it forked as. The fallback is the no-repository
+// case only, so these stay identical.
+type Loader = {
+  findRoot(cwd: string): string | null;
+  loadTeamFile(cwd: string, options?: { file?: string }): LoadResult;
+};
+
+const repo = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: import.meta.dir, encoding: 'utf8' }).trim();
+
+// The tree this one forked from main at.
+function forkPoint(): string {
+  return execFileSync('git', ['merge-base', 'HEAD', 'origin/main'], { cwd: repo, encoding: 'utf8' }).trim();
+}
+
+// The tree of `ref`, unpacked into `where` (a fresh folder) with its src/file/load.ts imported.
+async function loaderOf(ref: string, where: string): Promise<Loader> {
+  const packed = join(where, 'tree.tar');
+  execFileSync('git', ['archive', '-o', packed, ref], { cwd: repo, stdio: 'ignore' });
+  execFileSync('tar', ['-x', '-C', where, '-f', packed], { stdio: 'ignore' });
+  rmSync(packed);
+  return (await import(pathToFileURL(join(where, 'src/file/load.ts')).href)) as Loader;
+}
+
+// The fixture project, the sequence the tests above use, run through both loaders: one line
+// per case they disagree on. The guard asserts an empty list; the drift test asserts the
+// opposite, so the comparison cannot quietly stop comparing.
+function disagreements(candidate: Loader, reference: Loader, fixture: string): string[] {
+  const project = join(fixture, 'acme-web');
+  const worktree = join(fixture, 'worktrees', 'acme-web', 'task');
+  mkdirSync(join(project, 'src'), { recursive: true });
+  git(project, 'init', '-q', '-b', 'main');
+  writeFileSync(join(project, 'README.md'), 'acme\n');
+  git(project, 'add', 'README.md');
+  git(project, 'commit', '-q', '-m', 'first');
+  git(project, 'worktree', 'add', '-q', worktree, '-b', 'task');
+
+  const found: string[] = [];
+  const shape = (result: LoadResult) =>
+    result.ok
+      ? { ok: true as const, root: result.root, path: result.path }
+      : { ok: false as const, path: result.path, errors: result.errors.map((problem) => problem.message) };
+  const roots = (label: string, cwd: string) => {
+    const candidateRoot = candidate.findRoot(cwd);
+    const referenceRoot = reference.findRoot(cwd);
+    if (candidateRoot !== referenceRoot) found.push(`${label}: ${candidateRoot} vs ${referenceRoot}`);
+  };
+  const same = (label: string, cwd: string, options?: { file?: string }) => {
+    const candidateShape = JSON.stringify(shape(candidate.loadTeamFile(cwd, options)));
+    const referenceShape = JSON.stringify(shape(reference.loadTeamFile(cwd, options)));
+    if (candidateShape !== referenceShape) found.push(`${label}\n  candidate:  ${candidateShape}\n  reference:  ${referenceShape}`);
+  };
+
+  roots('findRoot(project)', project);
+  roots('findRoot(project/src)', join(project, 'src'));
+  roots('findRoot(worktree)', worktree);
+  roots('findRoot(fixture)', fixture);
+  same('no file', project);
+  same('no file, from src/', join(project, 'src'));
+  same('no file, from the worktree', worktree);
+  same('no repository', fixture);
+
+  mkdirSync(join(project, '.agents'), { recursive: true });
+  copyFileSync(example, join(project, '.agents', 'team.yaml'));
+  same('the file, from the worktree', worktree);
+  same('the file, by --file', project, { file: join(project, '.agents', 'team.yaml') });
+
+  writeFileSync(join(project, '.agents', 'team.yaml'), 'format: 2\n');
+  same('an invalid file', join(project, 'src'));
+
+  const parent = fixture.split('/').pop() as string;
+  const text = readFileSync(example, 'utf8')
+    .replace('  - ../worktrees/acme-web/*', `  - ../../${parent}/*`)
+    .replace('path: ../worktrees/{repo}/{task}', `path: ../../${parent}/{task}`);
+  writeFileSync(join(project, '.agents', 'team.yaml'), text);
+  same('the parent-naming trust', project);
+
+  symlinkSync(fixture, join(fixture, 'alias'));
+  const linked = readFileSync(example, 'utf8').replace(
+    '  - ../worktrees/acme-web/*',
+    '  - ../worktrees/acme-web/*\n  - ../alias/*',
+  );
+  writeFileSync(join(project, '.agents', 'team.yaml'), linked);
+  same('the symlinked parent', project);
+
+  // A nested file is the case that is not extended: the git root's file, missing here, wins.
+  mkdirSync(join(project, 'nested', '.agents'), { recursive: true });
+  copyFileSync(example, join(project, 'nested', '.agents', 'team.yaml'));
+  rmSync(join(project, '.agents', 'team.yaml'));
+  same('the nested file', join(project, 'nested'));
+
+  return found;
+}
+
+test('a git project loads as the tree at its merge-base with main loads it', async () => {
+  const archive = realpathSync(mkdtempSync(join(tmpdir(), 'team-load-fork-')));
   const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'team-load-both-')));
   try {
-    const packed = join(archive, 'main.tar');
-    execFileSync('git', ['archive', '-o', packed, 'origin/main'], { cwd: repo, stdio: 'ignore' });
-    execFileSync('tar', ['-x', '-C', archive, '-f', packed], { stdio: 'ignore' });
-    rmSync(packed);
-    const main = await import(pathToFileURL(join(archive, 'src/file/load.ts')).href) as {
-      findRoot(cwd: string): string | null;
-      loadTeamFile(cwd: string, options?: { file?: string }): {
-        ok: boolean;
-        root?: string;
-        path?: string;
-        errors?: { message: string }[];
-      };
-    };
-    const project = join(fixture, 'acme-web');
-    const worktree = join(fixture, 'worktrees', 'acme-web', 'task');
-    mkdirSync(join(project, 'src'), { recursive: true });
-    git(project, 'init', '-q', '-b', 'main');
-    writeFileSync(join(project, 'README.md'), 'acme\n');
-    git(project, 'add', 'README.md');
-    git(project, 'commit', '-q', '-m', 'first');
-    git(project, 'worktree', 'add', '-q', worktree, '-b', 'task');
-
-    const shape = (result: { ok: boolean; root?: string; path?: string; errors?: { message: string }[] }) =>
-      result.ok
-        ? { ok: true as const, root: result.root, path: result.path }
-        : {
-            ok: false as const,
-            path: result.path,
-            errors: result.errors?.map((problem) =>
-              problem.message.replace(LEAD_REFUSAL, 'the lead is required').replace(SEATS_REFUSAL, 'the seats are required')),
-          };
-    const same = (cwd: string, options?: { file?: string }) => {
-      expect(shape(loadTeamFile(cwd, options))).toEqual(shape(main.loadTeamFile(cwd, options)));
-    };
-
-    expect(findRoot(project)).toBe(main.findRoot(project));
-    expect(findRoot(join(project, 'src'))).toBe(main.findRoot(join(project, 'src')));
-    expect(findRoot(worktree)).toBe(main.findRoot(worktree));
-    expect(findRoot(fixture)).toBe(main.findRoot(fixture));
-    same(project);
-    same(join(project, 'src'));
-    same(worktree);
-    same(fixture);
-
-    mkdirSync(join(project, '.agents'), { recursive: true });
-    copyFileSync(example, join(project, '.agents', 'team.yaml'));
-    same(worktree);
-    same(project, { file: join(project, '.agents', 'team.yaml') });
-
-    writeFileSync(join(project, '.agents', 'team.yaml'), 'format: 2\n');
-    same(join(project, 'src'));
-
-    const parent = fixture.split('/').pop() as string;
-    const text = readFileSync(example, 'utf8')
-      .replace('  - ../worktrees/acme-web/*', `  - ../../${parent}/*`)
-      .replace('path: ../worktrees/{repo}/{task}', `path: ../../${parent}/{task}`);
-    writeFileSync(join(project, '.agents', 'team.yaml'), text);
-    same(project);
-
-    symlinkSync(fixture, join(fixture, 'alias'));
-    const linked = readFileSync(example, 'utf8').replace(
-      '  - ../worktrees/acme-web/*',
-      '  - ../worktrees/acme-web/*\n  - ../alias/*',
-    );
-    writeFileSync(join(project, '.agents', 'team.yaml'), linked);
-    same(project);
-
-    // A nested file is the case that is not extended: the git root's file, missing here, wins.
-    mkdirSync(join(project, 'nested', '.agents'), { recursive: true });
-    copyFileSync(example, join(project, 'nested', '.agents', 'team.yaml'));
-    rmSync(join(project, '.agents', 'team.yaml'));
-    same(join(project, 'nested'));
-    const nested = loadTeamFile(join(project, 'nested'));
+    const atFork = await loaderOf(forkPoint(), archive);
+    expect(disagreements({ findRoot, loadTeamFile }, atFork, fixture)).toEqual([]);
+    const nested = loadTeamFile(join(fixture, 'acme-web', 'nested'));
     expect(nested.ok).toBe(false);
-    if (!nested.ok) expect(nested.path).toBe(join(project, '.agents', 'team.yaml'));
+    if (!nested.ok) expect(nested.path).toBe(join(fixture, 'acme-web', '.agents', 'team.yaml'));
   } finally {
     rmSync(archive, { recursive: true, force: true });
+    rmSync(fixture, { recursive: true, force: true });
+  }
+}, 30_000);
+
+// The guard is only a guard while it fails on a real difference: this imports a loadTeamFile
+// that answers every error with one line more — the drift an edit to src/file/load.ts makes —
+// and expects the same comparison the guard holds empty to report it against the very tree the
+// guard compares against.
+test('the comparison catches a load.ts that drifted', async () => {
+  const archive = realpathSync(mkdtempSync(join(tmpdir(), 'team-load-drift-')));
+  const probe = realpathSync(mkdtempSync(join(tmpdir(), 'team-load-probe-')));
+  const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'team-load-drift-both-')));
+  try {
+    const reference = await loaderOf(forkPoint(), archive);
+    const base = pathToFileURL(join(archive, 'src/file/load.ts')).href;
+    writeFileSync(join(probe, 'drifted.ts'), [
+      `export * from ${JSON.stringify(base)};`,
+      `import * as load from ${JSON.stringify(base)};`,
+      `export function loadTeamFile(cwd, options) {`,
+      `  const result = load.loadTeamFile(cwd, options);`,
+      `  return result.ok ? result : { ...result, errors: [...result.errors, { message: 'drift: the loader was changed' }] };`,
+      `}`,
+      ``,
+    ].join('\n'));
+    const drifted = (await import(pathToFileURL(join(probe, 'drifted.ts')).href)) as Loader;
+    const mismatches = disagreements(drifted, reference, fixture);
+    expect(mismatches.length).toBeGreaterThan(0);
+    expect(mismatches.join('\n')).toMatch(/drift: the loader was changed/);
+  } finally {
+    rmSync(archive, { recursive: true, force: true });
+    rmSync(probe, { recursive: true, force: true });
     rmSync(fixture, { recursive: true, force: true });
   }
 }, 30_000);
