@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import { readArgs } from '../args.ts';
 import { anotherPaneRefusal, callerOf, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller } from '../caller.ts';
 import { delegateGate, logDelegated, type DelegateSources, type DelegateVerdict } from '../delegate.ts';
-import { currentTeam, type Current } from '../file/current.ts';
+import { currentTeam, rememberCurrent, type Current } from '../file/current.ts';
 import { loadTeamFile } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
 import {
@@ -410,17 +410,17 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   const file = branching() ? undefined : args.values.file;
   const sessionFlag = branching() ? undefined : args.values.session;
 
-  // The run's file. The owner's path is today's exactly: `currentTeam`, which remembers a valid
-  // file and falls back to the last copy that validated. A caller that is not the owner may be a
-  // delegate's, and a delegated run reads the live file directly — never `currentTeam`, never
-  // `last_valid` — so a live file that carries `delegates` is the run's file, whether the gate
-  // passes that caller or refuses it. A file that does not load carries no delegate: today's
-  // path, with today's fallback and today's words, decides.
+  // The run's file. The load is today's: `currentTeam` falls back to the last copy that
+  // validated. Remembering is off until the caller rule and `--abandon` have answered, below.
+  // A caller that is not the owner may be a delegate's, and a delegated run reads the live file
+  // directly — never `currentTeam`, never `last_valid` — so a live file that carries `delegates`
+  // is the run's file, whether the gate passes that caller or refuses it. A file that does not
+  // load carries no delegate: today's path, with today's fallback and today's words, decides.
   const owner = isOwner(walkCaller(io));
   const liveNow = owner ? undefined : liveFile();
   const current: Current = liveNow !== undefined && liveNow.team.delegates !== null
     ? { ok: true, team: liveNow.team, root: liveNow.root, dir: liveNow.dir, warnings: [] }
-    : currentTeam(io.cwd, file, sources.now(), sources.home);
+    : currentTeam(io.cwd, file, sources.now(), sources.home, false);
   if (!current.ok) {
     for (const problem of current.errors) {
       io.stderr(`team down: ${problem.line ? `line ${problem.line}: ` : ''}${problem.message}\n`);
@@ -467,20 +467,36 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     }
   }
 
+  // The load above wrote nothing. A refused caller, a dry run, and a run that finds the
+  // session lock held leave the state file as it was. An allowed run that is not a dry run
+  // remembers when it leaves through an early failure (herdr silent, the session idle, the
+  // agent list unreadable), and a run that takes the lock remembers once that lock is held,
+  // before anything the stop itself can fail at. A delegated run has no loaded path and still
+  // remembers nothing.
+  const callerRefused = rule.kind !== 'ok' && !branching();
+  const abandonRefused = args.flags.has('abandon') && granted === undefined && !callerOwns(caller) && verdict === undefined;
+  const mayRemember = !callerRefused && !abandonRefused && !dry && current.path !== undefined;
+  const remember = (): void => {
+    if (mayRemember && current.path !== undefined) rememberCurrent(current.dir, current.path, sources.now());
+  };
+
   const running = sources.sessionRunning(session);
   if (running === null) {
     io.stderr("team down: herdr doesn't answer; is it installed and running?\n");
+    remember();
     // exit: down.herdr
     return 2;
   }
   if (!running) {
     io.stdout(`session ${session} is not running: nothing to stop${dry ? '\ndry run: nothing was run' : ''}\n`);
+    remember();
     // exit: down.idle
     return 0;
   }
   let agents = sources.agents(session);
   if (agents === null) {
     io.stderr(`team down: the agents of session ${session} can't be read\n`);
+    remember();
     // exit: down.agents
     return 2;
   }
@@ -629,6 +645,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     return 1;
   }
   try {
+    remember();
     // The audit line goes in exactly when the delegate's run passes its gate and proceeds to
     // effects — never on a dry run (returned above), never on an already-idle `down` (which
     // returns at its own check, before any caller rule), never when a refusal held the run, and

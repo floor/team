@@ -33,7 +33,9 @@ and that relative path is found from the project root and not from the seat's st
 option-bearing line such as `zsh -x ../x` is a note, not a refusal); the shell cannot start without
 it and is a `MISS`. The owner's `doctor` also
 runs each approved account's check command once, the way the watch runs it; the command's raw output
-is parsed and dropped, never shown. It writes nothing.
+is parsed and dropped, never shown. The machine's own swap is read for the one check that can never
+pass here — `swap_free_min` above what the machine has in total (macOS's `vm.swapusage`, Linux's
+`/proc/meminfo`). It writes nothing.
 
 ## Who may run it
 
@@ -285,6 +287,34 @@ the machine, so a file another team's CLI left is named with whose it is:
 ok    the lobby ~/.config/team/lobby: verified
 ok    the lobby ~/.config/team/lobby: .claude/scheduled_tasks.lock is claude-code's
 ```
+
+The machine's own swap is read for one case only: the check in force — the 2GB default, or the
+file's own `swap_free_min` — asks for more free swap than this machine has in total, so `up`
+refuses on it here every time. One warning names both figures and the repair, the key to write
+and the approval a change needs:
+
+```console machine="small-swap"
+$ team doctor ; echo "exit $?"
+warn  claude-beacon: its name repeats "beacon"; the session already carries it
+ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
+ok    the check for openai reads weekly 40% used
+ok    herdr 0.7.1
+--    session beacon is running
+ok    claude 2.1.288
+ok    claude-code: logged in
+ok    the watch is running
+ok    the lobby ~/.config/team/lobby: will be created at the first launch
+warn  the machine check asks for 2.0 GB free swap, more than this machine has in total (1.0 GB): `team up` will refuse here; set `machine.swap_free_min` to a figure this machine can keep, then run `team approve`
+team doctor: nothing missing, 2 warnings
+exit 0
+```
+
+A check that merely fails right now — the machine has the swap in total, and not enough of it
+free at this moment — prints nothing of this: `up`'s refusal names it when the owner runs it,
+and the watch's `swap-free` check reports it as its own finding. The line above is only for the
+case the file can fix. The total is read on macOS from `sysctl -n vm.swapusage`, and on Linux
+from `/proc/meminfo`'s `SwapTotal`; a machine with no swap at all is not this case — `up` does
+not refuse a swap check it cannot read, and nothing here guesses one.
 
 A CLI outside the range this version was tested with keeps its warning and says what that means —
 herdr's own version line says only where it sits, for the same reason:

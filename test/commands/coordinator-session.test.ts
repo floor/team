@@ -971,7 +971,7 @@ function upSources(over: Partial<UpSources> = {}): UpSources {
       now: () => new Date(0),
       home,
     },
-    machine: () => ({ loadPerCore: 0, memoryFree: 100, diskFree: 1e12, swapFree: 8e9, swapUsed: 0 }),
+    machine: () => ({ loadPerCore: 0, memoryFree: 100, diskFree: 1e12, swapTotal: 16e9, swapFree: 8e9, swapUsed: 0 }),
     now: () => new Date(0),
     sleep: async () => {},
     alive: () => false,

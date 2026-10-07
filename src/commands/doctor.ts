@@ -31,6 +31,7 @@ import { canShowModel, seatModel } from '../status/statusline.ts';
 import { keyFingerprint, keyState } from '../store/keys.ts';
 import { approvalStanding, LEGACY_LINE, type Standing } from '../store/store.ts';
 import { readScreen } from '../watch/screen.ts';
+import { readMachine, swapTotalProblem, type Machine } from '../watch/machine.ts';
 import { lobbyPath as derivedLobby } from '../worktree/place.ts';
 
 // What `doctor` reads from the machine, so tests can stand in for it.
@@ -55,6 +56,9 @@ export type DoctorSources = {
   standing?(root: string): Standing;
   /** A pane's visible text. Absent in a test that does not read panes; the real command reads them. */
   paneText?(session: string, pane: string): string | undefined;
+  /** This machine's own figures, read for the one check no machine can ever meet. Absent in a test
+   *  that does not read them; absent is not "fine", it is nothing said. */
+  machine?(root: string): Machine;
 };
 
 export type CommandRunner = (binary: string, args: string[]) => { status: number | null; stdout: string } | null;
@@ -100,6 +104,7 @@ export const realSources: DoctorSources = {
   getuid: () => process.getuid?.() ?? 0,
   runCheck: (path) => runCommand(path),
   paneText: (session, pane) => paneRead(pane, 40, session) ?? undefined,
+  machine: readMachine,
 };
 
 export const USAGE = 'Usage: team doctor [--session <name>] [--file <path>] [--login]\n';
@@ -314,6 +319,18 @@ export function modelFlagFinding(
     level: 'warn',
     text: `${seat.name}: the launch runs ${first}, not ${profile.binary}, and names no model: if the launcher chooses the model, say so with model_from: launcher`,
   };
+}
+
+// The machine's own figures against the check in force, in the one case that can never pass
+// here: the check asks for more free swap than this machine has in total. `up` refuses on that
+// same comparison (`swapTotalProblem`), so the line is the refusal's own fact, told before it
+// happens. A check that merely fails right now is `up`'s refusal beside it and the watch's
+// finding; this report does not repeat that, and neither reading changes an exit.
+export function machineFindings(team: TeamFile, root: string, sources: DoctorSources): Finding[] {
+  const machine = sources.machine?.(root);
+  if (!machine) return [];
+  const problem = swapTotalProblem(machine, team.machine);
+  return problem === null ? [] : [{ level: 'warn', text: problem }];
 }
 
 // `watch` is the watch values in force — the approved ones — so an unapproved interval edit can't
@@ -721,18 +738,22 @@ export async function runDoctor(argv: string[], io: Io, sources: DoctorSources):
   const standing = sources.standing?.(root) ?? approvalStanding(root, sources.home);
   const findings = args.flags.has('login')
     ? doctorLoginFindings(team, sources)
-    : doctorFindings(
-        team,
-        root,
-        dirname(loaded.path),
-        session,
-        sources,
-        loaded.warnings,
-        standing,
-        undefined,
-        budgetCheckFindings(team, standing, root, sources, callerOf(io)),
-        launchLineFindings(team, root, { onPath: (binary) => sources.onPath(binary), home: sources.home }),
-      );
+    : [
+        ...doctorFindings(
+          team,
+          root,
+          dirname(loaded.path),
+          session,
+          sources,
+          loaded.warnings,
+          standing,
+          undefined,
+          budgetCheckFindings(team, standing, root, sources, callerOf(io)),
+          launchLineFindings(team, root, { onPath: (binary) => sources.onPath(binary), home: sources.home }),
+        ),
+        // The machine's own reading, last: the one check no machine can ever meet here.
+        ...machineFindings(team, root, sources),
+      ];
 
   const label: Record<Level, string> = { ok: 'ok  ', warn: 'warn', miss: 'MISS', note: '--  ' };
   io.stdout(findings.map((finding) => `${label[finding.level]}  ${finding.text}\n`).join(''));

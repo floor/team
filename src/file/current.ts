@@ -13,7 +13,7 @@ import { validateTeamFile } from './validate.ts';
 // anywhere, so the command passes the walk's verdict as `remember` and everything else here —
 // the load, the fallback, the notice — is a read either way.
 export type Current =
-  | { ok: true; team: TeamFile; root: string; dir: string; warnings: Problem[]; notice?: string }
+  | { ok: true; team: TeamFile; root: string; dir: string; warnings: Problem[]; notice?: string; path?: string }
   | { ok: false; errors: Problem[] };
 
 export function currentTeam(cwd: string, file: string | undefined, now: Date, home?: string, remember = true): Current {
@@ -21,7 +21,7 @@ export function currentTeam(cwd: string, file: string | undefined, now: Date, ho
   if (loaded.ok) {
     const dir = dirname(loaded.path);
     if (remember) rememberLastValid(dir, loaded.path, now);
-    return { ok: true, team: loaded.team, root: loaded.root, dir, warnings: loaded.warnings };
+    return { ok: true, team: loaded.team, root: loaded.root, dir, warnings: loaded.warnings, path: loaded.path };
   }
   if (!loaded.path || !existsSync(loaded.path)) return { ok: false, errors: loaded.errors };
   const dir = dirname(loaded.path);
@@ -36,6 +36,12 @@ export function currentTeam(cwd: string, file: string | undefined, now: Date, ho
     warnings: [],
     notice: `team.yaml is invalid (${first && first.line ? `line ${first.line}: ` : ''}${first?.message ?? 'unreadable'}); using the copy of ${saved.readAt}`,
   };
+}
+
+/** The `last_valid` write `currentTeam` makes when `remember` is left on. A command that loaded
+ *  with `remember` false calls this only after its caller gate has allowed the run. */
+export function rememberCurrent(dir: string, path: string, now: Date): void {
+  rememberLastValid(dir, path, now);
 }
 
 function rememberLastValid(dir: string, path: string, now: Date): void {
