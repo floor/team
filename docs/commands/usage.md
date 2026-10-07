@@ -161,7 +161,6 @@ its `session` window is read from the check and the windows the check does not r
 ```yaml file=.agents/team.yaml
 format: 1
 project: beacon
-coordinator: claude-keeper
 operator: claude-keeper
 
 trust:
@@ -172,9 +171,10 @@ workspace:
   mode: shared
 
 seats:
-  - role: coordinator
+  - role: orchestrator
     name: claude-keeper
-    label: coordinator
+    label: orchestrator
+    leads: true
     cli: claude-code
     vendor: anthropic
     model: Claude Opus
