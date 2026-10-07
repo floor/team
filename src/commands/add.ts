@@ -39,7 +39,7 @@ import { logLine } from '../log.ts';
 import { profileFor, shippedLobbyFiles } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock, type SeatState, type SessionState } from '../state.ts';
 import { approvalStanding, recordLedger, storePath, type Ceilings, type Standing } from '../store/store.ts';
-import { launchLimit, readMachine, type Machine, type SwapSample } from '../watch/machine.ts';
+import { launchLimit, readMachine, readingsText, type Machine, type SwapSample } from '../watch/machine.ts';
 import { readScreen } from '../watch/screen.ts';
 import { seatStart, type SeatStart } from '../worktree/place.ts';
 
@@ -484,11 +484,16 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
   const samples: SwapSample[] = [];
   const crossed = () => {
     const machine = sources.machine?.(root);
-    return machine ? launchLimit(machine, team.machine, samples, sources.now().getTime()) : null;
+    return machine ? { machine, problem: launchLimit(machine, team.machine, samples, sources.now().getTime()) } : null;
   };
-  const problem = crossed();
-  if (problem) {
-    out.stderr(`team add: ${plainText(problem)}\n`);
+  const first = crossed();
+  if (first?.problem) {
+    // The incident log: the printed refusal and the readings it was decided on, one line in the
+    // project's own log, through the same sink every command logs through. It changes no
+    // decision. Every caller refusal above returns before this gate, so a line is only ever
+    // written for a call that was allowed this far; a dry run decides nothing and writes none.
+    if (!dry) logLine(dir, 'add', describeCaller(caller), `refused: ${first.problem} — readings: ${readingsText(first.machine)}`, sources.now());
+    out.stderr(`team add: ${plainText(first.problem)}\n`);
     // exit: add.machine
     return 1;
   }
@@ -500,8 +505,9 @@ export async function runAdd(argv: string[], io: Io, sources: AddSources = realS
     return 1;
   }
   const again = crossed();
-  if (again) {
-    out.stderr(`team add: ${plainText(again)}\n`);
+  if (again?.problem) {
+    if (!dry) logLine(dir, 'add', describeCaller(caller), `refused: ${again.problem} — readings: ${readingsText(again.machine)}`, sources.now());
+    out.stderr(`team add: ${plainText(again.problem)}\n`);
     // exit: add.machine-again
     return 1;
   }
@@ -841,8 +847,14 @@ function hostOf(input: {
     now: () => input.now().getTime(),
     allow(name) {
       if (input.readMachine) {
-        const problem = launchLimit(input.readMachine(input.root), input.limits, input.samples, input.now().getTime());
-        if (problem) return problem;
+        const machine = input.readMachine(input.root);
+        const problem = launchLimit(machine, input.limits, input.samples, input.now().getTime());
+        if (problem) {
+          // The incident log, as at the gates above: this reading stops a launch, and it is
+          // taken after the caller gate let the run through, so it is always the call's own.
+          logLine(dir, 'add', input.caller, `refused: ${problem} — readings: ${readingsText(machine)}`, input.now());
+          return problem;
+        }
       }
       if (name !== seat.name) return null;
       return ceilingProblem(input.ceilings, running, seat, Boolean(temporary));
