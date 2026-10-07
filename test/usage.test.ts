@@ -15,6 +15,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalOf } from '../src/approve/approval.ts';
+import { loadReadings, observe, saveReadings } from '../src/budgets/readings.ts';
 import { mayLaunchSeats, walkCaller, type Caller } from '../src/caller.ts';
 import { runStatus } from '../src/commands/status.ts';
 import { NO_PROJECT, runUsage, USAGE } from '../src/commands/usage.ts';
@@ -50,30 +51,35 @@ const OWNER: Caller = { kind: 'owner' };
 
 // The state's readings: a fresh check figure, a status-line figure last seen 40 minutes ago out
 // in the open (more than the reserve again, so it is the room last seen, not unknown), and a
-// fresh status-line figure inside its reserve. `anthropic` is named by the file and has none.
+// fresh status-line figure inside its reserve, carrying a valid point — the figure it replaced,
+// an hour before it moved, so its pace reads exactly 5.3%/h (§ 3-S3's exact arithmetic).
+// `anthropic` is named by the file and has none.
 const READINGS = {
   'openai/session': { account: 'openai', window: 'session', left: 40, used: 60, changedAt: '2026-10-04T08:58:00Z', resetsAt: '2026-10-04T09:44:00Z', seat: null, source: 'check', confirmed: true },
   'openai/daily/lead': { account: 'openai', window: 'daily', left: 70, used: 30, changedAt: '2026-10-04T08:20:00Z', resetsAt: null, seat: 'lead', source: 'status_line', confirmed: true },
-  'openai/weekly/lead': { account: 'openai', window: 'weekly', left: 5, used: 95, changedAt: '2026-10-04T08:58:00Z', resetsAt: '2026-10-04T09:44:00Z', seat: 'lead', source: 'status_line', confirmed: true },
+  'openai/weekly/lead': { account: 'openai', window: 'weekly', left: 5, used: 95, changedAt: '2026-10-04T08:58:00Z', resetsAt: '2026-10-04T09:44:00Z', seat: 'lead', source: 'status_line', confirmed: true, was: { left: 10.3, at: '2026-10-04T07:58:00Z' } },
 };
 
 // The report the fixture reads, byte for byte: the machine's counts, one line per account+window
 // with the newest figure any team's reading holds, the caller's own row under each line, the
 // why-lines for the accounts that read unknown everywhere, and the watch clause on every line
-// whose newest team has no watch recording. A caller who is not the owner reads the same bytes
-// here as the owner does — this fixture has one team.
+// whose newest team has no watch recording. The pace word rides the machine line after its state
+// clause and every row after its figure: a real pace where the reading carries a point, and the
+// tool's own `pace not known` where there is none — the check line's reading has none, and the
+// daily line's point was dropped with its window. A caller who is not the owner reads the same
+// bytes here as the owner does — this fixture has one team.
 const REPORT = [
   'usage on this machine, 1 team, 2 labs, 2 accounts',
   '',
   'anthropic  unknown',
-  '  acme    unknown',
+  '  acme    unknown  pace not known',
   '  (acme: no pattern can read this account)',
-  'openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh  (no watch is recording for acme)',
-  '  acme    session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh',
-  'openai  daily  left 70%  used 30%  resets unknown  lead  last seen 40m ago  status line (fallback)  stale  (no watch is recording for acme)',
-  '  acme    daily  left 70%  used 30%  resets unknown  lead  last seen 40m ago  status line (fallback)  stale',
-  'openai  weekly  left 5%  used 95%  resets in 44m  lead  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  (no watch is recording for acme)',
-  '  acme    weekly  left 5%  used 95%  resets in 44m  lead  changed 2m ago  status line (fallback)  fresh, inside reserve 20%',
+  'openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh  pace not known  (no watch is recording for acme)',
+  '  acme    session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh  pace not known',
+  'openai  daily  left 70%  used 30%  resets unknown  lead  last seen 40m ago  status line (fallback)  stale  pace not known  (no watch is recording for acme)',
+  '  acme    daily  left 70%  used 30%  resets unknown  lead  last seen 40m ago  status line (fallback)  stale  pace not known',
+  'openai  weekly  left 5%  used 95%  resets in 44m  lead  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  pace 5.3%/h  (no watch is recording for acme)',
+  '  acme    weekly  left 5%  used 95%  resets in 44m  lead  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  pace 5.3%/h',
 ].join('\n');
 
 let base: string;
@@ -312,9 +318,13 @@ describe('team usage', () => {
     const ownRows = mine.out.split('\n').filter((line) => line.startsWith('  acme  '));
     expect(statusRows.length).toBeGreaterThan(0);
     expect(ownRows.length).toBe(statusRows.length);
+    // The pace word rides after the figure text (`pace 5.3%/h`, `pace not known`, § 3-S3): with
+    // it taken off, a usage row is the status row byte for byte — and every row carries one.
+    const figure = (line: string) => line.replace(/  pace (?:not known|-?[0-9]+\.[0-9]%\/h)$/, '');
+    for (const row of ownRows) expect(figure(row)).not.toBe(row);
     for (const row of statusRows) {
       const account = row.slice(0, row.indexOf('  '));
-      expect(ownRows.some((line) => line.endsWith(row.slice(account.length)))).toBe(true);
+      expect(ownRows.some((line) => figure(line).endsWith(row.slice(account.length)))).toBe(true);
     }
   });
 
@@ -336,8 +346,8 @@ describe('team usage', () => {
             {
               account: 'anthropic',
               kind: 'subscription',
-              machine: { window: null, left: null, used: null, resetsIn: null, changedAt: null, age: null, source: null, fallback: false, state: 'unknown', inside: false, reserve: null, other: false },
-              teams: [{ team: 'acme', row: { account: 'anthropic', window: null, left: null, used: null, resetsIn: null, seat: null, age: null, source: null, fallback: false, state: 'unknown', inside: false, reserve: 10 } }],
+              machine: { window: null, left: null, used: null, resetsIn: null, changedAt: null, age: null, source: null, fallback: false, state: 'unknown', inside: false, reserve: null, pace: null, other: false },
+              teams: [{ team: 'acme', row: { account: 'anthropic', window: null, left: null, used: null, resetsIn: null, seat: null, age: null, source: null, fallback: false, state: 'unknown', inside: false, reserve: 10, pace: null } }],
             },
           ],
         },
@@ -347,20 +357,20 @@ describe('team usage', () => {
             {
               account: 'openai',
               kind: 'subscription',
-              machine: { window: 'session', left: 40, used: 60, resetsIn: '44m', changedAt: '2026-10-04T08:58:00.000Z', age: '2m', source: 'check', fallback: false, state: 'fresh', inside: false, reserve: 20, other: false, watch: 'not-recording', seat: null },
-              teams: [{ team: 'acme', row: { account: 'openai', window: 'session', left: 40, used: 60, resetsIn: '44m', seat: null, age: '2m', source: 'check', fallback: false, state: 'fresh', inside: false, reserve: 20 } }],
+              machine: { window: 'session', left: 40, used: 60, resetsIn: '44m', changedAt: '2026-10-04T08:58:00.000Z', age: '2m', source: 'check', fallback: false, state: 'fresh', inside: false, reserve: 20, pace: null, other: false, watch: 'not-recording', seat: null },
+              teams: [{ team: 'acme', row: { account: 'openai', window: 'session', left: 40, used: 60, resetsIn: '44m', seat: null, age: '2m', source: 'check', fallback: false, state: 'fresh', inside: false, reserve: 20, pace: null } }],
             },
             {
               account: 'openai',
               kind: 'subscription',
-              machine: { window: 'daily', left: 70, used: 30, resetsIn: null, changedAt: '2026-10-04T08:20:00.000Z', age: '40m', source: 'status_line', fallback: true, state: 'stale', inside: false, reserve: 20, other: false, watch: 'not-recording', seat: 'lead' },
-              teams: [{ team: 'acme', row: { account: 'openai', window: 'daily', left: 70, used: 30, resetsIn: null, seat: 'lead', age: '40m', source: 'status_line', fallback: true, state: 'stale', inside: false, reserve: 20 } }],
+              machine: { window: 'daily', left: 70, used: 30, resetsIn: null, changedAt: '2026-10-04T08:20:00.000Z', age: '40m', source: 'status_line', fallback: true, state: 'stale', inside: false, reserve: 20, pace: null, other: false, watch: 'not-recording', seat: 'lead' },
+              teams: [{ team: 'acme', row: { account: 'openai', window: 'daily', left: 70, used: 30, resetsIn: null, seat: 'lead', age: '40m', source: 'status_line', fallback: true, state: 'stale', inside: false, reserve: 20, pace: null } }],
             },
             {
               account: 'openai',
               kind: 'subscription',
-              machine: { window: 'weekly', left: 5, used: 95, resetsIn: '44m', changedAt: '2026-10-04T08:58:00.000Z', age: '2m', source: 'status_line', fallback: true, state: 'fresh', inside: true, reserve: 20, other: false, watch: 'not-recording', seat: 'lead' },
-              teams: [{ team: 'acme', row: { account: 'openai', window: 'weekly', left: 5, used: 95, resetsIn: '44m', seat: 'lead', age: '2m', source: 'status_line', fallback: true, state: 'fresh', inside: true, reserve: 20 } }],
+              machine: { window: 'weekly', left: 5, used: 95, resetsIn: '44m', changedAt: '2026-10-04T08:58:00.000Z', age: '2m', source: 'status_line', fallback: true, state: 'fresh', inside: true, reserve: 20, pace: 5.3, other: false, watch: 'not-recording', seat: 'lead' },
+              teams: [{ team: 'acme', row: { account: 'openai', window: 'weekly', left: 5, used: 95, resetsIn: '44m', seat: 'lead', age: '2m', source: 'status_line', fallback: true, state: 'fresh', inside: true, reserve: 20, pace: 5.3 } }],
             },
           ],
         },
@@ -375,8 +385,10 @@ describe('team usage', () => {
     // the one DTO both renderers print from, and the command `JSON.stringify`s it for `--json` —
     // so a row (or the counts) carried by reference would print whatever field the internal type
     // grows next, the restricted view's rows included. The marker below stands for that field:
-    // planted on every internal row, reading and count the report reads from, it must reach
-    // neither face. The spend account is in the fixture so the sweep covers a spend reading too.
+    // planted on every internal row, reading, count and machine-line entry the report reads from,
+    // it must reach neither face. The spend account is in the fixture so the sweep covers a spend
+    // reading too, and the weekly reading carries a point — its pace 5.3%/h (§ 3-S3) — so a pace
+    // carried by reference instead of copied is planted and swept like everything else.
     const text = teamText().replace(
       '  accounts:\n',
       '  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: acme-quota }\n',
@@ -403,8 +415,14 @@ describe('team usage', () => {
           if (account.spend.newest !== null) plant(account.spend.newest.reading);
         } else {
           for (const line of account.lines) {
-            for (const one of line.rows) plant(one.row);
-            if (line.newest !== null) plant(line.newest.row);
+            for (const one of line.rows) {
+              plant(one.row);
+              plant(one);
+            }
+            if (line.newest !== null) {
+              plant(line.newest.row);
+              plant(line.newest);
+            }
           }
         }
       }
@@ -414,20 +432,106 @@ describe('team usage', () => {
     expect(JSON.stringify(report)).not.toContain(marker);
     expect(reportText(report)).not.toContain(marker);
 
-    // And the key sets themselves, level by level — the report, the counts, a team row and a
-    // spend reading — so a key that does cross fails here by name, not only by plant.
+    // And the key sets themselves, level by level — the report, the counts, a machine line, a
+    // team row and a spend reading — so a key that does cross fails here by name, not only by
+    // plant. A machine's optional tail (`watch`, `team`, `seat`) varies with the line, so its
+    // fixed head is pinned in order and the whole object by the `--json` document test above.
     expect(Object.keys(report)).toEqual(['format', 'at', 'view', 'mine', 'counts', 'labs', 'unknown', 'notes']);
     expect(Object.keys(report.counts)).toEqual(['teams', 'labs', 'accounts']);
+    const accountEntries = report.labs.flatMap((lab) => lab.accounts);
+    for (const entry of accountEntries) {
+      if (entry.kind !== 'subscription') continue;
+      expect(Object.keys(entry.machine).slice(0, 13)).toEqual(['window', 'left', 'used', 'resetsIn', 'changedAt', 'age', 'source', 'fallback', 'state', 'inside', 'reserve', 'pace', 'other']);
+    }
     const teamRows = report.labs.flatMap((lab) => lab.accounts.flatMap((entry) => (entry.kind === 'subscription' ? entry.teams : [])));
     const spendRows = report.labs.flatMap((lab) => lab.accounts.flatMap((entry) => (entry.kind === 'spend' ? entry.teams : [])));
     expect(teamRows.length).toBeGreaterThan(0);
     expect(spendRows.length).toBeGreaterThan(0);
     for (const row of teamRows) {
-      expect(Object.keys(row.row)).toEqual(['account', 'window', 'left', 'used', 'resetsIn', 'seat', 'age', 'source', 'fallback', 'state', 'inside', 'reserve']);
+      expect(Object.keys(row.row)).toEqual(['account', 'window', 'left', 'used', 'resetsIn', 'seat', 'age', 'source', 'fallback', 'state', 'inside', 'reserve', 'pace']);
     }
     for (const row of spendRows) {
       expect(Object.keys(row.reading)).toEqual(['amount', 'currency', 'at', 'age', 'source', 'state']);
     }
+  });
+
+  test('the pace word reads from the stored point alone: its not-known faces, and the unknown line that carries none', async () => {
+    // § 3-S3's word, against the fixture's own report: the weekly reading's point is a real pair
+    // (10.3% an hour before 5%, 5.3%/h), while the two records below are given points their own
+    // lines must not read. The check reading's point is as old as the change it sits beside
+    // (`dt = 0`: the odd pair `revive` keeps by shape but `paceFrom` refuses by arithmetic), and
+    // the daily record's point is a real drop — 77% to 70% over 30 minutes, 14.0%/h — on a figure
+    // that moved 40 minutes ago, stale by the file's own `stale_after` of 30 minutes.
+    withState();
+    updateState(join(root, '.agents'), (state) => {
+      const stored = state.budgets as Record<string, Record<string, unknown>>;
+      stored['openai/session'] = { ...(stored['openai/session'] ?? {}), was: { left: 60, at: '2026-10-04T08:58:00Z' } };
+      stored['openai/daily/lead'] = { ...(stored['openai/daily/lead'] ?? {}), was: { left: 77, at: '2026-10-04T07:50:00Z' } };
+    });
+    const mine = await usageAt(root, SEAT);
+    expect(mine.code).toBe(0);
+    expect(mine.out).toContain('openai  session  left 40%  used 60%  resets in 44m  -  read 2m ago  check  fresh  pace not known  (no watch is recording for acme)');
+    expect(mine.out).toContain('openai  daily  left 70%  used 30%  resets unknown  lead  last seen 40m ago  status line (fallback)  stale  pace not known  (no watch is recording for acme)');
+    // The one record whose point stands reads its figure — the positive control the refusals
+    // above need: not the stale record's real 14.0%/h, and not a 0.0 the zero-distance pair could
+    // fake if the rule were only "a point is present".
+    expect(mine.out).toContain('openai  weekly  left 5%  used 95%  resets in 44m  lead  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  pace 5.3%/h  (no watch is recording for acme)');
+    expect(mine.out).not.toContain('14.0%/h');
+    expect(mine.out).not.toContain('0.0%/h');
+    // A machine line with no figure carries no word either: `anthropic` reads `unknown`, where
+    // the caller's row under it reads `pace not known` like every row of a subscription account.
+    expect(mine.out).toContain('anthropic  unknown\n  acme    unknown  pace not known\n');
+
+    // The window-change face, through the real fold: a figure that moved while a different window
+    // stands ahead of it is written with no point at all (§ 2's kept-rule), so the record a later
+    // pass reads carries none — and its line reads `pace not known`, left 3% and all.
+    const folded = observe(loadReadings(join(root, '.agents')), { account: 'openai', window: 'weekly', left: 3, used: 97, resets: '1h44m' }, 'lead', NOW.getTime());
+    saveReadings(join(root, '.agents'), folded, NOW.getTime());
+    const stored = (JSON.parse(readFileSync(join(root, '.agents', 'team.state.json'), 'utf8')) as { budgets: Record<string, Record<string, unknown>> }).budgets['openai/weekly/lead'] as Record<string, unknown>;
+    expect('was' in stored).toBe(false);
+    const after = await usageAt(root, SEAT);
+    expect(after.out).toContain('openai  weekly  left 3%  used 97%  resets in 1h44m  lead  changed 0m ago  status line (fallback)  fresh, inside reserve 20%  pace not known  (no watch is recording for acme)');
+  });
+
+  test("the machine line takes the newest team's pace, and each row its own", async () => {
+    // § 3.3's both-views decision, as bytes: over an account two teams hold, the machine line
+    // carries the newest reading's pace whichever team it came from — a caller who is not that
+    // team reads the number without the name — and each team's own row carries its own. The
+    // fixture's reading is 5.3%/h; the other team's newer one (30 points down over half an hour)
+    // is 60.0%/h and is the line's.
+    const project = 'zeta-4WX';
+    const theirRoot = join(base, project);
+    mkdirSync(join(theirRoot, '.agents'), { recursive: true });
+    const theirText = teamTextFor(project, [], '');
+    writeFileSync(join(theirRoot, '.agents', 'team.yaml'), theirText);
+    approve(theirText, { root: theirRoot, name: project });
+    updateState(join(theirRoot, '.agents'), (state) => {
+      state.sessions[`${project}-web`] = { ...emptySession() } as never;
+      state.budgets = {
+        'openai/weekly/scout': { account: 'openai', window: 'weekly', left: 30, used: 70, changedAt: '2026-10-04T08:59:00Z', resetsAt: '2026-10-04T09:44:00Z', seat: 'scout', source: 'status_line', confirmed: true, was: { left: 60, at: '2026-10-04T08:29:00Z' } },
+      } as never;
+    });
+    withState();
+
+    const seat = await usageAt(root, SEAT);
+    expect(seat.code).toBe(0);
+    expect(seat.out).toContain('openai  weekly  left 30%  used 70%  resets in 44m  read by another team, 1m ago  status line  fresh  pace 60.0%/h  (no watch is recording for it)');
+    expect(seat.out).toContain('  acme    weekly  left 5%  used 95%  resets in 44m  lead  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  pace 5.3%/h');
+
+    const owner = await usageAt(root, OWNER);
+    expect(owner.code).toBe(0);
+    expect(owner.out).toContain('openai  weekly  left 30%  used 70%  resets in 44m  read by zeta-4WX, 1m ago  status line  fresh  pace 60.0%/h  (no watch is recording for zeta-4WX)');
+    expect(owner.out).toContain(`  ${project}    weekly  left 30%  used 70%  resets in 44m  scout  changed 1m ago  status line  fresh  pace 60.0%/h`);
+
+    // The same split in the allow-list: the machine's `pace` is the newest reading's — with the
+    // newest reading's team beside it in the full view — and each row's is its own.
+    const doc = JSON.parse((await usageAt(root, OWNER, '--json')).out) as {
+      labs: { accounts: { account: string; kind: string; machine: { window: string | null; pace: number | null; team?: string }; teams: { team: string; row: { pace: number | null } }[] }[] }[];
+    };
+    const weekly = doc.labs.flatMap((lab) => lab.accounts).find((one) => one.account === 'openai' && one.machine.window === 'weekly');
+    expect(weekly?.machine.pace).toBe(60);
+    expect(weekly?.machine.team).toBe(project);
+    expect(weekly?.teams.map((peer) => [peer.team, peer.row.pace])).toEqual([['acme', 5.3], [project, 60]]);
   });
 
   test("the owner's document is the same one with the names on: `team`, `root`, and the full view", async () => {
@@ -492,7 +596,7 @@ describe('team usage', () => {
     const owner = await usageAt(root, OWNER);
     expect(owner.code).toBe(0);
     expect(owner.out).toContain(`note: acme: ${state} ${why}\n`);
-    expect(owner.out).toContain('openai  unknown\n  acme    unknown\n  (acme: no pattern can read this account)\n');
+    expect(owner.out).toContain('openai  unknown\n  acme    unknown  pace not known\n  (acme: no pattern can read this account)\n');
 
     // A caller who is not the owner reads the project's own path relative to the project root —
     // and no absolute path at all, the fixture's base included — in the text and in `--json`.
@@ -503,10 +607,10 @@ describe('team usage', () => {
       'usage on this machine, 1 team, 2 labs, 2 accounts',
       '',
       'anthropic  unknown',
-      '  acme    unknown',
+      '  acme    unknown  pace not known',
       '  (acme: no pattern can read this account)',
       'openai  unknown',
-      '  acme    unknown',
+      '  acme    unknown  pace not known',
       '  (acme: no pattern can read this account)',
       'note: acme: .agents/team.state.json is not valid JSON; move it aside and run the command again',
     ].join('\n') + '\n');
@@ -748,7 +852,7 @@ describe('team usage', () => {
     expect(owner.code).toBe(0);
     expect(owner.out).toContain(`note: ${file} line 1: seats is required`);
     expect(owner.out).toContain(`note: ${file} line 1: the file has no seat that leads`);
-    expect(owner.out).toContain('anthropic  unknown\n  acme    unknown\n  (acme: no pattern can read this account)\n');
+    expect(owner.out).toContain('anthropic  unknown\n  acme    unknown  pace not known\n  (acme: no pattern can read this account)\n');
 
     // A caller who is not the owner reads one fixed sentence per line instead — this project's
     // own path, the line, and where the reason is — and never a body: the loader's bodies can name
@@ -875,7 +979,7 @@ describe('team usage', () => {
     const mine = await usageAt(root, SEAT);
     const raw = (await usageAt(root, SEAT, '--json')).out;
     expect(mine.code).toBe(0);
-    expect(mine.out).toContain(`\n${name}  unknown\n  acme    unknown\n  (acme: no pattern can read this account)\n`);
+    expect(mine.out).toContain(`\n${name}  unknown\n  acme    unknown  pace not known\n  (acme: no pattern can read this account)\n`);
     // The name is the only absolute-looking string in either face, however often it repeats in
     // the document — once in the text, at each place the document names the account — and no
     // string the tool derived stands anywhere near it.
@@ -892,7 +996,7 @@ describe('team usage', () => {
     // who wrote the string, never about who is reading it.
     const owner = await usageAt(root, OWNER);
     expect(owner.code).toBe(0);
-    expect(owner.out).toContain(`${name}  unknown\n  acme    unknown\n`);
+    expect(owner.out).toContain(`${name}  unknown\n  acme    unknown  pace not known\n`);
   });
 
   test("a stored reading's own names are the state's: a seat reads only what the file binds", async () => {
@@ -989,10 +1093,10 @@ describe('team usage', () => {
       'usage on this machine, 1 team, 2 labs, 2 accounts',
       '',
       'anthropic  unknown',
-      '  acme    unknown',
+      '  acme    unknown  pace not known',
       '  (acme: no pattern can read this account)',
       'openai  unknown',
-      '  acme    unknown',
+      '  acme    unknown  pace not known',
       '  (acme: no pattern can read this account)',
       `note: acme: ${UNBOUND_ACCOUNT}`,
     ].join('\n') + '\n');
@@ -1044,10 +1148,10 @@ describe('team usage', () => {
       'usage on this machine, 1 team, 2 labs, 2 accounts',
       '',
       'anthropic  unknown',
-      '  acme    unknown',
+      '  acme    unknown  pace not known',
       '  (acme: no pattern can read this account)',
-      'openai  weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  (no watch is recording for acme)',
-      '  acme    weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%',
+      'openai  weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  pace not known  (no watch is recording for acme)',
+      '  acme    weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  pace not known',
     ].join('\n') + '\n');
     expect(doc.labs.flatMap((lab) => lab.accounts).map((entry) => entry.machine.seat)).toEqual([undefined, null]);
     for (const face of [mine.out, raw]) expect(face).not.toContain('ghost');
@@ -1226,10 +1330,10 @@ describe('team usage', () => {
       'usage on this machine, 1 team, 2 labs, 2 accounts',
       '',
       'anthropic  unknown',
-      '  acme    unknown',
+      '  acme    unknown  pace not known',
       '  (acme: no pattern can read this account)',
-      'openai  weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  (no watch is recording for acme)',
-      '  acme    weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%',
+      'openai  weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  pace not known  (no watch is recording for acme)',
+      '  acme    weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  pace not known',
       `note: acme: ${UNBOUND_SHAPE}`,
     ].join('\n') + '\n');
     // The labs run in name order; the anthropic line has no figure at all, so its machine entry
@@ -1376,11 +1480,11 @@ describe('team usage', () => {
     expect(seat.out).toBe([
       'usage on this machine, 4 teams, 4 labs, 4 accounts',
       '',
-      'acme-only-8ZKQ  weekly  left 9%  used 91%  resets unknown  -  changed 2m ago  status line  fresh, inside reserve 10%  (no watch is recording for acme-7QK)',
-      '  acme-7QK    weekly  left 9%  used 91%  resets unknown  -  changed 2m ago  status line  fresh, inside reserve 10%',
+      'acme-only-8ZKQ  weekly  left 9%  used 91%  resets unknown  -  changed 2m ago  status line  fresh, inside reserve 10%  pace not known  (no watch is recording for acme-7QK)',
+      '  acme-7QK    weekly  left 9%  used 91%  resets unknown  -  changed 2m ago  status line  fresh, inside reserve 10%  pace not known',
       'anthropic: 1 other account',
-      'openai  weekly  left 88%  used 12%  resets in 44m  read by another team, 1m ago  status line  fresh  (no watch is recording for it)',
-      '  acme-7QK    weekly  left 5%  used 95%  resets in 44m  lead  changed 10m ago  status line  fresh, inside reserve 20%',
+      'openai  weekly  left 88%  used 12%  resets in 44m  read by another team, 1m ago  status line  fresh  pace not known  (no watch is recording for it)',
+      '  acme-7QK    weekly  left 5%  used 95%  resets in 44m  lead  changed 10m ago  status line  fresh, inside reserve 20%  pace not known',
       "note: acme-7QK: a stored reading names an account this team's file does not: not shown",
       "note: 2 teams' states cannot be read (not valid JSON; move it aside and run the command again)",
     ].join('\n') + '\n');
@@ -1507,7 +1611,7 @@ describe('team usage', () => {
     const mine = await usageAt(root, SEAT);
     const raw = (await usageAt(root, SEAT, '--json')).out;
     const line = mine.out.split('\n').find((text) => text.startsWith('openai  weekly'));
-    expect(line).toBe('openai  weekly  left 88%  used 12%  resets in 44m  read by another team, 1m ago  status line  fresh  (no watch is recording for it)');
+    expect(line).toBe('openai  weekly  left 88%  used 12%  resets in 44m  read by another team, 1m ago  status line  fresh  pace not known  (no watch is recording for it)');
     const entries = (JSON.parse(raw) as { labs: { accounts: { account: string; machine: Record<string, unknown> }[] }[] }).labs.flatMap((lab) => lab.accounts);
     const openai = entries.find((entry) => entry.account === 'openai');
     expect(openai?.machine.other).toBe(true);
@@ -1616,6 +1720,11 @@ describe('team usage', () => {
     const mine = await usageAt(root, SEAT);
     expect(mine.out).toContain('deepseek  spend  12.40 USD left  read 4m ago  check  fresh\n');
     expect(mine.out).toContain('  acme  spend  12.40 USD left  read 4m ago  check  fresh\n');
+    // The pace word never rides a spend line (§ 3.4): money has no window and no stored point, so
+    // both of the account's lines are whole — the two `contains` above would fail on any word.
+    const spendLines = mine.out.split('\n').filter((line) => line.includes(' spend '));
+    expect(spendLines).toHaveLength(2);
+    for (const line of spendLines) expect(line).not.toContain('pace');
     const doc = JSON.parse((await usageAt(root, SEAT, '--json')).out) as {
       labs: { lab: string; accounts: Record<string, unknown>[] }[];
     };
