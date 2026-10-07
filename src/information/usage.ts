@@ -7,7 +7,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { approvalCase, budgetsInForceOf, notInForce, teamInForceOf, watchInForceOf } from '../approve/approval.ts';
 import { describe } from '../approve/fingerprint.ts';
-import { checkOf, countedFor, recall, recallSpend, screenOf, type ReadingSource, type Seen, type SpendReading } from '../budgets/readings.ts';
+import { checkOf, countedFor, paceFrom, recall, recallSpend, screenOf, type ReadingSource, type Seen, type SpendReading } from '../budgets/readings.ts';
 import { budgetTable, budgetLine, reserveOf, sourcesOf, span, whenWord, WINDOWS, type BudgetRow, type BudgetState } from '../budgets/table.ts';
 import { money } from '../budgets/gate.ts';
 import { walkCaller } from '../caller.ts';
@@ -103,9 +103,11 @@ export const NO_COPY = 'the approved copy of the team file cannot be read: nothi
 /** Whether a watch is recording for a project, by the state's own record (design note § 1.4). */
 export type WatchRecording = 'recording' | 'not-recording' | 'not-known';
 
-/** One row of a project's table, and the moment behind the figure it counts: the numeric
- *  `changedAt` a machine-scope reader orders by, null when no reading counted for the row. */
-export type UsageRow = { row: BudgetRow; changedAt: number | null };
+/** One row of a project's table, the moment behind the figure it counts and the pace that figure
+ *  is being used at: the numeric `changedAt` a machine-scope reader orders by, null when no
+ *  reading counted for the row; the pace beside it, read from the same reading — null when there
+ *  is nothing to read (no point, no counted reading, or a figure that is not fresh). */
+export type UsageRow = { row: BudgetRow; changedAt: number | null; pace: number | null };
 
 /** One account a team's file in force declares, as the machine view reads it: the kind a machine
  *  line is built by, and the lab the design's rule (§ 2.3) puts it under — the vendor of the first
@@ -236,7 +238,11 @@ export function projectUsage(root: string, options: ProjectUsageOptions): Projec
     ? inForce?.budgets ?? defaultBudgets()
     : budgetsInForceOf(standing, team);
   const bound = restricted ? boundReadings(readings, budgets, inForce, notes) : readings;
-  const rows = budgetTable(budgets, bound, now).map((row) => ({ row, changedAt: countedMoment(budgets, bound, row, now) }));
+  const rows = budgetTable(budgets, bound, now).map((row) => ({
+    row,
+    changedAt: countedMoment(budgets, bound, row, now),
+    pace: paceOf(budgets, bound, row, now),
+  }));
   const whyNotCounted = whyNotCountedOf(standing, team, budgets, restricted);
   // The project name this caller reads. A caller who is not the owner reads the one validated
   // copy in force's own name — a live `project:` edit is not approved, and the approval stays
@@ -456,6 +462,24 @@ function countedMoment(budgets: TeamFile['budgets'], list: readonly Seen[], row:
   return result.kind === 'unknown' ? null : result.reading.changedAt;
 }
 
+/** The pace the row's figure is being used at (§ 3-S3): read from the same reading the moment
+ *  above comes from — the same `countedFor` call over the same group, so the two can never drift
+ *  apart. Null for a blank row, one nothing counted for, or one whose reading has no point or is
+ *  not fresh; `paceFrom` holds that rule. */
+function paceOf(budgets: TeamFile['budgets'], list: readonly Seen[], row: BudgetRow, now: number): number | null {
+  const group = list.filter((reading) => reading.account === row.account && reading.window === row.window);
+  if (group.length === 0) return null;
+  const result = countedFor(
+    sourcesOf(budgets, row.account),
+    screenOf(group),
+    checkOf(group),
+    now,
+    budgets.staleAfter * 1000,
+    reserveOf(budgets, row.account),
+  );
+  return result.kind === 'unknown' ? null : paceFrom(result.reading, now, budgets.staleAfter * 1000);
+}
+
 /** § 1.4's rule, in the tool's existing words: a record whose heartbeat is no older than two
  *  in-force intervals is a watch that is recording; no record is a watch that is not; a state
  *  that cannot be read, or a heartbeat that cannot, leaves it not known either way. */
@@ -481,11 +505,12 @@ export type StoreEntry = { kind: 'store'; text: string };
 export type MachineTeam = TeamEntry | StoreEntry;
 
 /** One account+window machine line: the newest reading with a figure, whichever team it is, and
- *  every declaring team's own row for that window. */
+ *  every declaring team's own row for that window — each with the pace of its own reading, so a
+ *  team row can print it (`ReportRow` carries no field the line did not). */
 export type MachineLine = {
   window: WindowName | null;
-  newest: { team: TeamEntry; row: BudgetRow; changedAt: number } | null;
-  rows: Array<{ team: TeamEntry; row: BudgetRow }>;
+  newest: { team: TeamEntry; row: BudgetRow; changedAt: number; pace: number | null } | null;
+  rows: Array<{ team: TeamEntry; row: BudgetRow; pace: number | null }>;
 };
 
 /** A spend account's machine line: the newest spend reading across teams, never a sum. */
@@ -695,19 +720,19 @@ function machineAccountOf(
     const first = WINDOWS.find((window) => windowed.some((one) => one.row.window === window)) ?? entry?.row.window ?? null;
     lines = [lineOf(first, windowed, mineKey)];
   } else {
-    lines = [{ window: null, newest: null, rows: rows.map(({ team, row }) => ({ team, row })) }];
+    lines = [{ window: null, newest: null, rows: rows.map(({ team, row, pace }) => ({ team, row, pace })) }];
   }
   return { account: slot.account, kind: 'subscription', lines, declaring };
 }
 
 function lineOf(
   window: WindowName | null,
-  windowed: Array<{ team: TeamEntry; row: BudgetRow; changedAt: number | null }>,
+  windowed: Array<{ team: TeamEntry; row: BudgetRow; changedAt: number | null; pace: number | null }>,
   mineKey: string | null,
 ): MachineLine {
-  const rows = windowed.filter((one) => one.row.window === window).map(({ team, row }) => ({ team, row }));
+  const rows = windowed.filter((one) => one.row.window === window).map(({ team, row, pace }) => ({ team, row, pace }));
   const counted = windowed.filter(
-    (one): one is { team: TeamEntry; row: BudgetRow; changedAt: number } => one.row.window === window && one.changedAt !== null,
+    (one): one is { team: TeamEntry; row: BudgetRow; changedAt: number; pace: number | null } => one.row.window === window && one.changedAt !== null,
   );
   let newest: MachineLine['newest'] = null;
   for (const one of counted) {
@@ -767,6 +792,10 @@ export type ReportMachine = {
   state: BudgetState;
   inside: boolean;
   reserve: number | null;
+  /** The pace the newest reading's figure is being used at (§ 3-S3): null when there is none to
+   *  read. Carried by both views — a figure of the same reading as `left`/`used`, allowed and
+   *  withheld with them. */
+  pace: number | null;
   /** True when the newest reading is another team's: the restricted view names no team for it. */
   other: boolean;
   /** The clause the line carries when the newest team's watch is not recording (§ 1.4). */
@@ -806,6 +835,8 @@ export type ReportRow = {
   state: BudgetState;
   inside: boolean;
   reserve: number | null;
+  /** The pace the row's figure is being used at (§ 3-S3): null when there is none to read. */
+  pace: number | null;
 };
 
 export type ReportTeamRow = { team: string; root?: string; row: ReportRow };
@@ -1068,6 +1099,7 @@ function subscriptionEntryOf(
     state: newest?.row.state ?? 'unknown',
     inside: newest?.row.inside ?? false,
     reserve: newest?.row.reserve ?? null,
+    pace: newest?.pace ?? null,
     other,
     ...(newest !== null && newest.team.usage.watch !== 'recording' ? { watch: newest.team.usage.watch } : {}),
     ...(view.full && newest !== null ? { team: newest.team.usage.project ?? newest.team.root } : {}),
@@ -1075,7 +1107,7 @@ function subscriptionEntryOf(
   };
   const rows = view.full ? line.rows : line.rows.filter((one) => one.team === mineEntry);
   const teams: ReportTeamRow[] = rows
-    .map((one) => ({ team: view.full ? one.team.usage.project ?? one.team.root : one.team.usage.project ?? '', ...(view.full ? { root: one.team.root } : {}), row: reportRowOf(one.row) }))
+    .map((one) => ({ team: view.full ? one.team.usage.project ?? one.team.root : one.team.usage.project ?? '', ...(view.full ? { root: one.team.root } : {}), row: reportRowOf(one.row, one.pace) }))
     .sort((a, b) => (a.team < b.team ? -1 : 1));
   return { account, kind: 'subscription', machine, teams };
 }
@@ -1084,7 +1116,7 @@ function subscriptionEntryOf(
  *  byte-identical. The report is `JSON.stringify`'d, so a row carried by reference would print
  *  whatever field the internal type grows next; a field away from this list is away from both
  *  faces. The spend row's `reading` (`spendEntryOf`) is the same rule for the same reason. */
-function reportRowOf(row: BudgetRow): ReportRow {
+function reportRowOf(row: BudgetRow, pace: number | null): ReportRow {
   return {
     account: row.account,
     window: row.window,
@@ -1098,6 +1130,7 @@ function reportRowOf(row: BudgetRow): ReportRow {
     state: row.state,
     inside: row.inside,
     reserve: row.reserve,
+    pace,
   };
 }
 
@@ -1175,6 +1208,13 @@ export function reportText(report: UsageReport): string {
   return `${lines.join('\n')}\n`;
 }
 
+/** The pace word a line carries (§ 3-S3): one decimal always, in used points per hour — never a
+ *  bare integer — or the tool's own words when there is no pace to read. A line with no figure at
+ *  all (`unknown`) carries no word: there is nothing to pace. */
+function paceWord(pace: number | null): string {
+  return pace === null ? 'pace not known' : `pace ${pace.toFixed(1)}%/h`;
+}
+
 function subscriptionText(entry: ReportAccount & { kind: 'subscription' }, report: UsageReport): string {
   const m = entry.machine;
   if (m.state === 'unknown' || m.left === null || m.used === null) {
@@ -1184,7 +1224,7 @@ function subscriptionText(entry: ReportAccount & { kind: 'subscription' }, repor
   const from = m.source === 'status_line' ? 'status line' : m.source === 'check' ? 'check' : 'unknown source';
   const source = m.fallback ? `${from} (fallback)` : from;
   const state = m.inside && m.reserve !== null ? `${m.state}, inside reserve ${m.reserve}%` : m.state;
-  return `${entry.account}  ${m.window}  left ${m.left}%  used ${m.used}%  ${reset}  ${provenanceOf(m, report)}  ${source}  ${state}${watchOf(m, report)}`;
+  return `${entry.account}  ${m.window}  left ${m.left}%  used ${m.used}%  ${reset}  ${provenanceOf(m, report)}  ${source}  ${state}  ${paceWord(m.pace)}${watchOf(m, report)}`;
 }
 
 function spendText(entry: ReportAccount & { kind: 'spend' }, report: UsageReport): string {
@@ -1217,7 +1257,7 @@ function watchOf(m: ReportMachine, report: UsageReport): string {
 }
 
 function teamRowText(row: ReportTeamRow): string {
-  return `  ${row.team}  ${budgetLine(row.row).slice(row.row.account.length)}`;
+  return `  ${row.team}  ${budgetLine(row.row).slice(row.row.account.length)}  ${paceWord(row.row.pace)}`;
 }
 
 function spendRowText(row: ReportSpendRow): string {
