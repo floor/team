@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { firstLoggedInCli, init, runInit, skeleton } from '../src/commands/init.ts';
 import { approvalDifferences, approvalOf } from '../src/approve/approval.ts';
@@ -21,7 +20,13 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 beforeEach(() => {
-  base = realpathSync(mkdtempSync(join(tmpdir(), 'team-init-')));
+  // A deliberately short root, not the platform's TMPDIR: `init` writes the project root as the
+  // file's trust entry, and the credential scanner warns on a dotless absolute value of 32+
+  // characters that reads as random-looking. A GitHub macOS runner's TMPDIR
+  // (`/var/folders/<rand>/<rand>/T/…`) puts that entry over the gate and the `warns nothing`
+  // test below went red there; from `/tmp` the whole path stays under the gate — 26 characters
+  // on macOS, where /tmp realpaths to /private/tmp (measured: `/private/tmp/t-v58YTJ/acme`).
+  base = realpathSync(mkdtempSync('/tmp/t-'));
   project = join(base, 'acme');
   mkdirSync(project);
   git(project, 'init', '-q', '-b', 'main');
