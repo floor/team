@@ -248,6 +248,12 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   // takes the seat out and leaves the pane as it is instead — nothing typed, nothing closed, and
   // the agent renamed out of the seat's name (below). The owner keeps the refusal, byte for byte,
   // with the way out it names.
+  //
+  // The trigger is narrow on purpose: only a seat herdr itself calls quiet (idle or done — never
+  // a working one) whose pane text this run actually read. `screen.kind` cannot tell a failed read
+  // from a read that matched nothing — both come back `unknown` — so "the pane was read" is told
+  // by `screenText`'s presence instead. A working seat on an unrecognised screen and a pane
+  // nothing could read both keep the refusal the owner gets.
   let leave = false;
   if (agent) {
     const screen = sources.screen(session, agent.pane, cli);
@@ -260,7 +266,9 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     const holdsExit = where === 'unsent' && profile !== null
       && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));
     const clearable = holdsExit && profile?.exitClear !== null;
-    leave = where === 'unknown' && caller.kind !== 'owner';
+    leave = where === 'unknown' && caller.kind !== 'owner'
+      && (agent.status === 'idle' || agent.status === 'done')
+      && sources.screenText(session, agent.pane, cli) !== undefined;
     if (where !== 'free' && !abandon && !clearable && !leave) {
       // The unknown screen is the one a seat can sit on for good: no state ever frees it, and
       // only the owner may abandon it, so the refusal names that way out — and only the owner's

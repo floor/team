@@ -589,6 +589,44 @@ describe('team remove', () => {
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
+  test('a working seat on an unknown screen is refused, not left', async () => {
+    // The leave is for a seat that is quiet on a screen nothing reads — herdr's own word says
+    // idle or done. A working seat is still doing something there, and a non-owner does not get
+    // to take it out on a classifier miss: the refusal stands, with the owner's way out named.
+    const made = world({ kind: 'unknown' }, 'working');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'working', cwd: null });
+    const renamed: [string, string, string][] = [];
+    made.sources.renameAgent = (session, pane, name) => { renamed.push([session, pane, name]); return true; };
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker'], io, made.sources)).toBe(1);
+    expect(io.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (team remove worker --abandon closes its workspace without typing)\n');
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(renamed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
+  test('an unreadable pane on an unknown screen is refused, not left', async () => {
+    // `unknown` collapses two situations — a pane that could not be read, and one that was read
+    // and matched no profile. The leave reaches only the second: a read that failed tells nothing
+    // about what the pane holds. screenText's `undefined` is how this run tells the two apart,
+    // since both produce the same screen kind.
+    const made = world({ kind: 'unknown' }, 'idle');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    made.sources.screenText = () => undefined;
+    const renamed: [string, string, string][] = [];
+    made.sources.renameAgent = (session, pane, name) => { renamed.push([session, pane, name]); return true; };
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker'], io, made.sources)).toBe(1);
+    expect(io.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (team remove worker --abandon closes its workspace without typing)\n');
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(renamed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
   test('a coordinator on an unknown screen leaves the pane and takes the seat out', async () => {
     // The seat has a state record — the incident's shape — and the record goes with it, so the
     // pane can be cycled into a fresh temporary seat through the ordinary `team add`.
