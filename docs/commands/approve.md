@@ -24,7 +24,7 @@ line in `.agents/team.log`. The record is signed, and signing moves this project
 
 ## Who may run it
 
-The owner, from a terminal outside herdr: no seat approves a file, not even the coordinator's,
+The owner, from a terminal outside herdr: no seat approves a file, not even the orchestrator's,
 and no delegate: approval is the owner's alone, and a `delegates` entry whose commands name
 `approve` is refused when the file loads.
 `--show` may be run by anyone, in any terminal.
@@ -64,7 +64,7 @@ write follows directly. The seat ceiling defaults
 to the seats the file declares plus the
 temporary ones, so adding a seat widens it, and that shows up as `limits` changed too. What needs a
 new approval is a change to an owner section
-(`trust`, `limits`, `machine`, `rules`, `identity`, `workspace`, `coordinator`, `operator`,
+(`trust`, `limits`, `machine`, `rules`, `identity`, `workspace`, `orchestrator`, `operator`,
 `session`, `visibility`, `tools`, `budgets`, `watch` — its timings included, down to `watch.checks`,
 whose turn-offs are their own line — and `delegates`, its entries, their panes and their command
 lists included) or to a seat's own fields. A seat taken out does not.
@@ -198,6 +198,7 @@ The first run shows the whole file, because this machine has no copy of it to co
 
 ```console
 $ team approve --show ; echo "exit $?"
+team approve: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 ./.agents/team.yaml: never approved on this machine. The whole file:
 
   1: format: 1
@@ -232,6 +233,7 @@ The owner approves it — no question by default:
 
 ```console
 $ team approve
+team approve: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 ./.agents/team.yaml: never approved on this machine. The whole file:
 
   1: format: 1
@@ -262,11 +264,12 @@ approval #1 for this project; key fe21ef6293de.
 Approved. The record is in ~/.config/team/beacon-<hash>; signed with key fe21ef6293de; check the rest with `team doctor`.
 ```
 
-A seat can read the comparison — even the coordinator's — but a seat is not the owner, and nothing is
+A seat can read the comparison — even the orchestrator's — but a seat is not the owner, and nothing is
 written for it:
 
 ```console caller=claude-keeper
 $ team approve ; echo "exit $?"
+team approve: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 ./.agents/team.yaml: the same text as the copy approved on 2026-10-04T09:00:00.000Z.
 
 Nothing in it needs a new approval.
@@ -306,6 +309,7 @@ seats:
 
 ```console
 $ team approve --show ; echo "exit $?"
+team approve: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 ./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 
   + 9:   - ~/Code/worktrees/beacon
@@ -358,6 +362,7 @@ seats:
 
 ```console answer="1"
 $ team approve --confirm ; echo "exit $?"
+team approve: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 ./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 
   + 9:   - ~/Code/worktrees/beacon
@@ -386,6 +391,7 @@ pasted block — makes the run refuse before anything is written:
 
 ```console waiting="1"
 $ team approve ; echo "exit $?"
+team approve: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 ./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 
   + 9:   - ~/Code/worktrees/beacon
@@ -411,6 +417,7 @@ A terminal the check cannot read refuses as well, saying which failure it was, a
 
 ```console waiting="unreadable"
 $ team approve ; echo "exit $?"
+team approve: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 ./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 
   + 9:   - ~/Code/worktrees/beacon
@@ -436,6 +443,7 @@ With `--confirm`, the answer is the number of seats, and nothing else — here, 
 
 ```console answer="2"
 $ team approve --confirm
+team approve: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 ./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
 
   + 9:   - ~/Code/worktrees/beacon
@@ -462,6 +470,7 @@ The same file again is the same text as the approved copy, and the approval stan
 
 ```console
 $ team approve --show ; echo "exit $?"
+team approve: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 ./.agents/team.yaml: the same text as the copy approved on 2026-10-04T09:00:00.000Z.
 
 Nothing in it needs a new approval.
@@ -503,6 +512,7 @@ profiles:
 
 ```console
 $ team approve --show ; echo "exit $?"
+team approve: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 ./.agents/team.yaml: the same text as the copy approved on 2026-10-04T09:00:00.000Z.
 
 overrides.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:

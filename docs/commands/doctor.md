@@ -86,7 +86,7 @@ message: its file in the project state folder — missing, a symbolic link, not 
 wider than `0600`, not the owner's, unreadable, or holding something other than the approved
 rules text — is one `warn` (`codex-scribe: its rules file differs from the approved rules; run
 \`team remove codex-scribe --keep\` then \`team add codex-scribe\` (or \`team down\` then \`team up\` for
-the whole team)` — for a coordinator or operator, `team down` then `team up` (to restart the whole team) —
+the whole team)` — for an orchestrator or operator, `team down` then `team up` (to restart the whole team) —
 `up` skips a ready seat, so only the relaunch writes the file),
 never a rewrite. herdr, one CLI at a time (its
 version, its login, then each of its seats' launchers and models), one line per seat whose launch
@@ -96,7 +96,7 @@ instead; a line only said to be unchecked, or a relative path that exists nowher
 note — `not checked: the command may create it`), one note per seat the state records from a launch
 that predates the process identity — `--    <seat>: launched before team recorded its process; run
 \`team remove <seat> --keep\` then \`team add <seat>\` (or \`team down\` then \`team up\` for the whole
-team) to launch it again` (for a coordinator or operator, `team down` then `team up` (to restart the whole
+team) to launch it again` (for an orchestrator or operator, `team down` then `team up` (to restart the whole
 team)), the relaunch being what records the identity — one note per live seat
 whose file still carries the placeholder `version: "0"` `init` writes, saying what it runs and the
 one edit that pins it (or a warning when the model family differs, so the one edit covers both) — the watch, and the
@@ -263,6 +263,7 @@ Everything here is as it should be:
 
 ```console
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
 ok    the check for openai reads weekly 40% used
@@ -272,7 +273,7 @@ ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: nothing missing, 1 warning
+team doctor: nothing missing, 2 warnings
 exit 0
 ```
 
@@ -294,6 +295,7 @@ and the approval a change needs:
 
 ```console machine="small-swap"
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
 ok    the check for openai reads weekly 40% used
@@ -304,7 +306,7 @@ ok    claude-code: logged in
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
 warn  the machine check asks for 2.0 GB free swap, more than this machine has in total (1.0 GB): `team up` will refuse here; set `machine.swap_free_min` to a figure this machine can keep, then run `team approve`
-team doctor: nothing missing, 2 warnings
+team doctor: nothing missing, 3 warnings
 exit 0
 ```
 
@@ -320,6 +322,7 @@ herdr's own version line says only where it sits, for the same reason:
 
 ```console tools="claude-code=old"
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
 ok    the check for openai reads weekly 40% used
@@ -329,7 +332,7 @@ warn  claude 2.1.200 is older than the tested 2.1.288: its screens are untested 
 ok    claude-code: logged in
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: nothing missing, 2 warnings
+team doctor: nothing missing, 3 warnings
 exit 0
 ```
 
@@ -338,6 +341,7 @@ everything else is as the owner's:
 
 ```console caller=claude-beacon
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
 --    the budget checks were not run: only the owner runs them
@@ -347,7 +351,7 @@ ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: nothing missing, 1 warning
+team doctor: nothing missing, 2 warnings
 exit 0
 ```
 
@@ -402,6 +406,7 @@ seats:
 
 ```console
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 MISS  run `team approve`: `limits` changed; seat codex-scribe is not in the approved file
 ok    the check for openai reads weekly 40% used
@@ -412,7 +417,7 @@ ok    claude-code: logged in
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: 2 missing, 1 warning: 2 of them block `up` and `add`
+team doctor: 2 missing, 2 warnings: 2 of them block `up` and `add`
 exit 1
 ```
 
@@ -467,6 +472,7 @@ seats:
 
 ```console
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 MISS  run `team approve`: `limits` changed; seat claude-beacon changed; seat codex-scribe is not in the approved file
 ok    the check for openai reads weekly 40% used
@@ -478,7 +484,7 @@ warn  claude-beacon: the launch starts Claude Opus 5.5, the file says Claude Son
 MISS  install `codex`: it is not on the PATH (codex: codex-scribe)
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: 2 missing, 2 warnings: 2 of them block `up` and `add`
+team doctor: 2 missing, 3 warnings: 2 of them block `up` and `add`
 exit 1
 ```
 
@@ -545,6 +551,7 @@ seats:
 
 ```console tools="codex=fine"
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 MISS  run `team approve`: `limits` changed; seat codex-scribe is not in the approved file; seat codex-reader is not in the approved file
 ok    the check for openai reads weekly 40% used
@@ -557,7 +564,7 @@ ok    codex: logged in
 warn  codex-scribe: the launch runs team-codex, not codex, and names no model: if the launcher chooses the model, say so with model_from: launcher
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: 1 missing, 2 warnings: 1 of them block `up` and `add`
+team doctor: 1 missing, 3 warnings: 1 of them block `up` and `add`
 exit 1
 ```
 
@@ -624,6 +631,7 @@ seats:
 
 ```console tools="codex=fine"
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 MISS  run `team approve`: `limits` changed; seat codex-scribe is not in the approved file; seat codex-reader is not in the approved file
 ok    the check for openai reads weekly 40% used
@@ -636,7 +644,7 @@ ok    codex: logged in
 --    codex-scribe: the model is chosen by its launcher; checked on the running seat
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: 1 missing, 1 warning: 1 of them block `up` and `add`
+team doctor: 1 missing, 2 warnings: 1 of them block `up` and `add`
 exit 1
 ```
 
@@ -749,6 +757,7 @@ echo "weekly 99% used"
 
 ```console
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
 warn  the check for openai changed after approval and was not run; that account reads unknown
@@ -758,7 +767,7 @@ ok    claude 2.1.288
 ok    claude-code: logged in
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
-team doctor: nothing missing, 2 warnings
+team doctor: nothing missing, 3 warnings
 exit 0
 ```
 

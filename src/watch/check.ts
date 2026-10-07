@@ -64,7 +64,7 @@ export type SeatObservation = {
   quiet: boolean;
   working: boolean;
   prompt: boolean;
-  // The coordinator and the operator: the leads, which are reported on but not counted idle.
+  // The orchestrator and the operator: the leads, which are reported on but not counted idle.
   lead: boolean;
   // Parked or stopped: watched for attention, unsent text and model drift; idle is skipped.
   parked: boolean;

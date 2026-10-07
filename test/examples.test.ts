@@ -8,12 +8,17 @@ const result = validateTeamFile(example);
 if (!result.ok) throw new Error(`examples/team.yaml is refused: ${JSON.stringify(result.errors)}`);
 const { team, warnings } = result;
 
+// The notice examples/team.yaml carries for its legacy `coordinator:` key, on line 6.
+const notice = { line: 6, message: '`coordinator:` is now `leads: true` on the lead\'s seat, and is still read' };
+
 describe('the fictional example file', () => {
-  test('is accepted without warnings', () => {
-    expect(warnings).toEqual([]);
+  test('is accepted, carrying only the legacy key\'s notice', () => {
+    // The shipped examples keep the old spelling until the rewrite release (P3.6): they load,
+    // and the file says out loud that the spelling moved.
+    expect(warnings).toEqual([notice]);
     expect(team.project).toBe('beacon');
     expect(team.session).toBe('beacon');
-    expect(team.coordinator).toBe('codex-keeper');
+    expect(team.orchestrator).toBe('codex-keeper');
     expect(team.operator).toBe('codex-signal');
   });
 
@@ -39,7 +44,7 @@ describe('the fictional example file', () => {
   });
 
   test('the coordinator and the operator run the same CLI', () => {
-    expect(team.seats.find((seat) => seat.name === team.coordinator)).toMatchObject({
+    expect(team.seats.find((seat) => seat.name === team.orchestrator)).toMatchObject({
       cli: 'codex',
       vendor: 'openai',
       model: 'GPT Compass',

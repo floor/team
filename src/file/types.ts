@@ -58,7 +58,8 @@ export type TeamFile = {
   project: string;
   visibility: 'public' | 'private';
   session: string;
-  coordinator: string;
+  /** The lead's seat, however the file spelled it: the `coordinator:` key or `leads: true`. */
+  orchestrator: string;
   operator: string;
   tools: Record<string, Record<string, string>>;
   identity: {
@@ -74,7 +75,11 @@ export type TeamFile = {
   };
   rules: string[];
   trust: string[];
-  /** Who may answer a folder-trust dialog. Omitted in the file means owner. */
+  /**
+   * Who may answer a folder-trust dialog. Omitted in the file means owner. The file may spell the
+   * second value `orchestrator`; it normalises to `coordinator` here, the value every record's
+   * digest was written with, so a file rewritten to the new word stays the approved one.
+   */
   dialogs: { trust: 'owner' | 'coordinator' };
   workspace: {
     mode: Mode;

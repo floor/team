@@ -86,6 +86,9 @@ describe('team doctor on a file of every model shape', () => {
     expect(run.err).toBe('');
     expect(run.out).toBe(
       [
+        // The fixture still spells the lead `coordinator:`, on line 4: doctor prints the file's
+        // notice before the seats' own warnings, and counts it.
+        'warn  the file, line 4: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read',
         'ok    the file is the one the owner approved (approval #1, 2026-10-03, key fe21ef6293de)',
         // the message seats' rules files: written by `up`, absent in this fixture
         'warn  plain-codex: its rules file is missing; run `team remove plain-codex --keep` then `team add plain-codex` (or `team down` then `team up` for the whole team)',
@@ -109,7 +112,7 @@ describe('team doctor on a file of every model shape', () => {
         '  - ~/.config/team/lobby',
         `  - ${root}`,
         `~/.config/team/lobby is the machine lobby, where every seat starts now; ${root} is the project root`,
-        'team doctor: nothing missing, 5 warnings',
+        'team doctor: nothing missing, 6 warnings',
         '',
       ].join('\n'),
     );
@@ -123,8 +126,9 @@ describe('team doctor on a file of every model shape', () => {
     // claude-code's screen names the seat's declared model, so the running seat is checked
     expect(run.out).toContain('--    script-seat: the model is chosen by its launcher; checked on the running seat\n');
     expect(run.out).not.toContain('script-seat: the launch');
-    // the three message seats' rules files count with the one model warning
-    expect(run.out).toEndWith('team doctor: nothing missing, 4 warnings\n');
+    // the three message seats' rules files count with the one model warning, and the file's
+    // notice counts too
+    expect(run.out).toEndWith('team doctor: nothing missing, 5 warnings\n');
   });
 
   test('model_from is part of the seat the owner approves', async () => {
@@ -146,6 +150,7 @@ describe('team doctor on a file of every model shape', () => {
     const run = await doctor({ sessionRunning: () => true, version: versions('2.2.0 (Claude Code)') });
     const warns = run.out.split('\n').filter((line) => line.startsWith('warn'));
     expect(warns).toEqual([
+      'warn  the file, line 4: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read',
       'warn  plain-codex: its rules file is missing; run `team remove plain-codex --keep` then `team add plain-codex` (or `team down` then `team up` for the whole team)',
       'warn  plain-voyager: its rules file is missing; run `team remove plain-voyager --keep` then `team add plain-voyager` (or `team down` then `team up` for the whole team)',
       'warn  plain-reviewer: its rules file is missing; run `team remove plain-reviewer --keep` then `team add plain-reviewer` (or `team down` then `team up` for the whole team)',
@@ -153,7 +158,7 @@ describe('team doctor on a file of every model shape', () => {
       'warn  script-seat: the launch runs zsh, not claude, and names no model: if the launcher chooses the model, say so with model_from: launcher',
     ]);
     expect(run.out).toContain('ok    the watch is running\n');
-    expect(run.out).toEndWith('team doctor: nothing missing, 5 warnings\n');
+    expect(run.out).toEndWith('team doctor: nothing missing, 6 warnings\n');
     expect(run.code).toBe(0);
   });
 });

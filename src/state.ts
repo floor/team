@@ -35,7 +35,7 @@ export type SeatState = {
   temporary?: { like: string; until: string; task?: string; own_commits?: boolean };
   /**
    * Set when a launch left the pane at a dialog. `waiting-owner` is the stored name
-   * even when the coordinator may answer: it is waiting for an authorised human path.
+   * even when the orchestrator may answer: it is waiting for an authorised human path.
    */
   waiting?: {
     state: 'waiting-owner' | 'trust-sent-recovery';

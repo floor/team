@@ -5,7 +5,7 @@ import { profileFor } from '../profiles/index.ts';
 
 /** What the rules of a seat are written from. */
 export interface RulesInput {
-  coordinator: string;
+  orchestrator: string;
   /** The file's own `rules`. */
   rules: readonly string[];
   /** The seat's signature lines, already rendered. */
@@ -33,7 +33,7 @@ export function seatRules(input: RulesInput): string[] {
   const { signature, workspace } = input;
   const own = [
     'End every commit message and every pull request body with your signature, given below.',
-    `Never stop at a question: tell the coordinator (${input.coordinator}) in one line and keep working.`,
+    `Never stop at a question: tell the orchestrator (${input.orchestrator}) in one line and keep working.`,
     'Never run `team trust` or `team approve`, and never edit `trust:` in the team file.',
     'In a protected checkout, never switch the branch, reset or commit.',
   ];
@@ -89,7 +89,7 @@ export function rulesOf(team: TeamFile, seat: Seat, root: string): string {
   const delivery = profile && profile.rulesOption !== null ? 'option' : 'message';
   return rulesText(
     {
-      coordinator: team.coordinator,
+      orchestrator: team.orchestrator,
       rules: team.rules,
       signature: {
         commit: renderSignature(commits.template, seat),

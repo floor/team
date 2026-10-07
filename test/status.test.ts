@@ -20,6 +20,9 @@ import { testIo } from './helpers.ts';
 const example = readFileSync(new URL('./fixtures/example.yaml', import.meta.url), 'utf8');
 const NOW = new Date('2026-10-03T14:10:00Z');
 
+/** The notice the example fixture carries: it still spells the lead `coordinator:`, on line 5. */
+const WARNING = 'team status: warning, line 5: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read\n';
+
 const claudeScreen = (model: string) => `❯ \n${'─'.repeat(40)}\n  main · …/acme · ${model} · S: $1.2 · W: 12%\n  ⏵⏵ bypass permissions on\n`;
 const codexScreen = (name: string) => readFileSync(new URL(`./fixtures/codex/0.157.0/${name}.txt`, import.meta.url), 'utf8');
 
@@ -437,7 +440,7 @@ describe('team status', () => {
   test('--json: pins the stable format 1 shape on a clean team', async () => {
     const { code, out, err } = await status('--json');
     expect(code).toBe(0);
-    expect(err).toBe('');
+    expect(err).toBe(WARNING);
     const doc = JSON.parse(out);
     expect(Object.keys(doc).sort()).toEqual(['differences', 'format', 'notes', 'notice', 'project', 'rows', 'session']);
     expect(doc.format).toBe(1);

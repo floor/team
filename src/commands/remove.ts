@@ -152,7 +152,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   // the approved copy, the drift and the placement, that this caller is the entry's pane, that
   // `remove` is in its list and that no flag of the owner's was passed. The rest of this command
   // is then a delegated run: an ordinary removal of a named seat, never `--keep` (the gate
-  // refused it, so nothing re-signs the approval), the coordinator and the operator still
+  // refused it, so nothing re-signs the approval), the orchestrator and the operator still
   // refused below, and `logDelegated` attributing it at its effects.
   let delegatePane: string | null = null;
   if (verdict.kind !== 'ok' && team.delegates) {
@@ -178,7 +178,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     return 1;
   }
   if (verdict.kind === 'refused' && delegatePane === null) {
-    io.stderr(`team remove: only the owner, the coordinator or the operator runs it; this call is ${describeCaller(shown)}\n`);
+    io.stderr(`team remove: only the owner, the orchestrator or the operator runs it; this call is ${describeCaller(shown)}\n`);
     // exit: remove.caller
     return 1;
   }
@@ -193,8 +193,8 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     // exit: remove.abandon
     return 1;
   }
-  if ((name === team.coordinator || name === team.operator) && caller.kind !== 'owner') {
-    io.stderr(`team remove: only the owner removes the coordinator's or the operator's seat; this call is ${describeCaller(caller)}\n`);
+  if ((name === team.orchestrator || name === team.operator) && caller.kind !== 'owner') {
+    io.stderr(`team remove: only the owner removes the orchestrator's or the operator's seat; this call is ${describeCaller(caller)}\n`);
     // exit: remove.coordinator
     return 1;
   }

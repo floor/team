@@ -34,6 +34,17 @@ That is one edit, one approval, one `up`, and the team is in force again. Read-o
 
 What else changes for you:
 
+- **The lead's spelling moved.** Everything `team` prints now calls the seat that leads the
+  **orchestrator**, and the new spelling in the file is `leads: true` on that seat's block. The
+  `coordinator:` key is still read, exactly as before: it prints one notice per load
+  (`` `coordinator:` is now `leads: true` on the lead's seat, and is still read ``), and
+  `dialogs.trust: coordinator` is read beside `orchestrator` and `owner`. The notice is the only
+  line either spelling gains: a keyed file and a marked file approve to the same record, so
+  rewriting the key to the mark needs no new `team approve`.
+- **`team init` writes the new spelling**: the seat is `role: orchestrator`, `name: orchestrator`,
+  carries `leads: true`, and `operator:` names it. Its `cli:` line is the first of `claude-code`,
+  `codex`, `cursor`, `antigravity` this machine is signed in to (a login check that cannot tell is
+  not a yes; `claude-code` when none answers).
 - **Your coordinator's commands.** If 0.2.1 recorded the coordinator's pane, `add`, `remove`, `worktree`,
   `down` and `answer` keep working from that pane. If it did not (a coordinator started by hand), they are
   refused with ``no pane is recorded for seat <name> in this session: the owner stops that seat and runs

@@ -347,7 +347,7 @@ const COMMANDS: Case[] = [
   {
     name: 'add',
     run: (caller, argv = [], options) => call((io) => runAdd(['probe-seat', ...argv], io, addSources()), caller, options),
-    refusal: (who) => `team add: only the owner, the coordinator or the operator runs it; this call is ${who}\n`,
+    refusal: (who) => `team add: only the owner, the orchestrator or the operator runs it; this call is ${who}\n`,
     noPane: (name) => `team add: ${NO_PANE(name)}\n`,
     anotherPane: (name, pane) => `team add: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team add: ${OWNER_ONLY(who)}\n`,
@@ -357,7 +357,7 @@ const COMMANDS: Case[] = [
   {
     name: 'remove',
     run: (caller, argv = [], options) => call((io) => runRemove([SEAT, ...argv], io, removeSources()), caller, options),
-    refusal: (who) => `team remove: only the owner, the coordinator or the operator runs it; this call is ${who}\n`,
+    refusal: (who) => `team remove: only the owner, the orchestrator or the operator runs it; this call is ${who}\n`,
     noPane: (name) => `team remove: ${NO_PANE(name)}\n`,
     anotherPane: (name, pane) => `team remove: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team remove: ${OWNER_ONLY(who)}\n`,
@@ -368,7 +368,7 @@ const COMMANDS: Case[] = [
     name: 'worktree new',
     run: (caller, argv = [], options) =>
       call((io) => runWorktree(['new', 'probe-task', ...argv], io, worktreeSources()), caller, options),
-    refusal: (who) => `team worktree: only the owner, the coordinator or the operator runs it; this call is ${who}\n`,
+    refusal: (who) => `team worktree: only the owner, the orchestrator or the operator runs it; this call is ${who}\n`,
     noPane: (name) => `team worktree: ${NO_PANE(name)}\n`,
     anotherPane: (name, pane) => `team worktree: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team worktree: ${OWNER_ONLY(who)}\n`,
@@ -379,7 +379,7 @@ const COMMANDS: Case[] = [
     name: 'worktree remove',
     run: (caller, argv = [], options) =>
       call((io) => runWorktree(['remove', 'probe-task', ...argv], io, worktreeSources()), caller, options),
-    refusal: (who) => `team worktree: only the owner, the coordinator or the operator runs it; this call is ${who}\n`,
+    refusal: (who) => `team worktree: only the owner, the orchestrator or the operator runs it; this call is ${who}\n`,
     noPane: (name) => `team worktree: ${NO_PANE(name)}\n`,
     anotherPane: (name, pane) => `team worktree: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team worktree: ${OWNER_ONLY(who)}\n`,
@@ -389,7 +389,7 @@ const COMMANDS: Case[] = [
   {
     name: 'down',
     run: (caller, argv = [], options) => call((io) => runDown([...argv], io, downSources()), caller, options),
-    refusal: (who) => `team down: only the owner, the coordinator or the operator stops the team; this call is ${who}\n`,
+    refusal: (who) => `team down: only the owner, the orchestrator or the operator stops the team; this call is ${who}\n`,
     noPane: (name) => `team down: ${NO_PANE(name)}\n`,
     anotherPane: (name, pane) => `team down: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team down: ${OWNER_ONLY(who)}\n`,
@@ -399,7 +399,7 @@ const COMMANDS: Case[] = [
   {
     name: 'answer',
     run: (caller, argv = [], options) => call((io) => runAnswer([SEAT, 'trust', ...argv], io, answerHost()), caller, options),
-    refusal: () => `${SEAT}: only the owner, or the coordinator from its own seat, can answer\n`,
+    refusal: () => `${SEAT}: only the owner, or the orchestrator from its own seat, can answer\n`,
     noPane: (name) => `team answer: ${NO_PANE(name)}\n`,
     anotherPane: (name, pane) => `team answer: ${ANOTHER_PANE(name, pane)}\n`,
     sessionOwner: (who) => `team answer: ${OWNER_ONLY(who)}\n`,
@@ -792,7 +792,7 @@ describe('the renamed pane in another session', () => {
     const run = await call((io) => runRemove([SEAT], io, removeSources()), placed(OTHER, COORDINATOR, COORDINATOR_PANE));
     expect(run.code).toBe(1);
     expect(run.out).toBe('');
-    expect(run.err).toBe(`team remove: only the owner, the coordinator or the operator runs it; this call is ${COORDINATOR}\n`);
+    expect(run.err).toBe(`team remove: only the owner, the orchestrator or the operator runs it; this call is ${COORDINATOR}\n`);
     expect(readFileSync(file, 'utf8')).toBe(run.before);
     expect(readFileSync(stateFile, 'utf8')).toBe(run.beforeState);
     expect(readFileSync(file, 'utf8')).toContain(`name: ${SEAT}`);

@@ -40,9 +40,34 @@ describe('dialogs', () => {
     expect(problems('dialogs:\n')).toContain('dialogs must be a map containing trust');
     expect(problems('dialogs:\n  permission: owner\n').join('\n')).toContain('unknown field "permission"');
     expect(problems('dialogs:\n  permission: owner\n').join('\n')).toContain('dialogs must contain trust');
-    expect(problems('dialogs:\n  trust: someone\n').join('\n')).toContain('dialogs.trust must be one of: owner, coordinator');
-    expect(problems('dialogs:\n  trust: 1\n').join('\n')).toContain('dialogs.trust must be one of: owner, coordinator');
+    expect(problems('dialogs:\n  trust: someone\n').join('\n')).toContain('dialogs.trust must be one of: owner, orchestrator, coordinator');
+    expect(problems('dialogs:\n  trust: 1\n').join('\n')).toContain('dialogs.trust must be one of: owner, orchestrator, coordinator');
     expect(problems('dialogs:\n  trust: owner\n  trust: coordinator\n').join('\n')).toContain('duplicate key "trust"');
+  });
+
+  test('the new spelling reads, normalises to the hashed value, and warns nothing of its own', () => {
+    const result = validateTeamFile(`${minimal}dialogs:\n  trust: orchestrator\n`);
+    if (!result.ok) throw new Error(JSON.stringify(result.errors));
+    // Only the fixture's own legacy `coordinator:` key warns here (line 3); the new trust
+    // value is today's word and says nothing.
+    expect(result.warnings).toEqual([
+      { line: 3, message: '`coordinator:` is now `leads: true` on the lead\'s seat, and is still read' },
+    ]);
+    expect(result.team.dialogs).toEqual({ trust: 'coordinator' });
+    expect(trustPolicy(result.team)).toBe('coordinator');
+    // One policy, one parsed value: both spellings hash the same, so a file rewritten to the
+    // new word is still the file the owner approved, and an old record still matches it.
+    expect(fingerprints(result.team).sections.dialogs).toBe(fingerprints(team('dialogs:\n  trust: coordinator\n')).sections.dialogs);
+  });
+
+  test('the old spelling still reads, with its notice at its own line', () => {
+    const result = validateTeamFile(`${minimal}dialogs:\n  trust: coordinator\n`);
+    if (!result.ok) throw new Error(JSON.stringify(result.errors));
+    expect(result.warnings).toEqual([
+      { line: 3, message: '`coordinator:` is now `leads: true` on the lead\'s seat, and is still read' },
+      { line: minimal.split('\n').length + 1, message: '`dialogs.trust: coordinator` is now `orchestrator`, and is still read' },
+    ]);
+    expect(result.team.dialogs).toEqual({ trust: 'coordinator' });
   });
 
   test('the owner-section fingerprint changes with it, and the diff names the line', () => {

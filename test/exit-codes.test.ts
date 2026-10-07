@@ -489,7 +489,7 @@ scene('add.file-owner', async (place) => {
 });
 scene('add.caller', async (place) => {
   write(place, TWO);
-  return show(await added(place, ['worker'], other, addSources(place)), 'only the owner, the coordinator or the operator');
+  return show(await added(place, ['worker'], other, addSources(place)), 'only the owner, the orchestrator or the operator');
 });
 scene('add.no-pane', async (place) => {
   write(place, TWO);
@@ -707,7 +707,7 @@ const ADD_GATE_REFUSALS: [suffix: string, sentence: string, needle: string][] = 
   ['delegate-drift', 'delegation needs the approved file: the file is not the approved one (seat worker changed): run `team approve`', 'not the approved one'],
   ['delegate-evidence', "delegation cannot verify its placement or seats: herdr doesn't answer", 'placement or seats'],
   ['delegate-placement', 'the approved delegate must be an external non-seat pane', 'non-seat pane'],
-  ['delegate', 'only the owner, the coordinator, the operator or the approved delegate runs it; this call is pilot', 'or the approved delegate runs it'],
+  ['delegate', 'only the owner, the orchestrator, the operator or the approved delegate runs it; this call is pilot', 'or the approved delegate runs it'],
   ['delegate-command', 'the approved delegate main/w1:p1 may not run `add`; its approved commands are remove', 'may not run'],
 ];
 for (const [suffix, sentence, needle] of ADD_GATE_REFUSALS) {
@@ -972,7 +972,7 @@ scene('down.dry-run', async (place) => {
 });
 scene('down.caller', async (place) => {
   write(place, TEAM);
-  return show(await down(place, [], other, downSources({ sessionRunning: () => true, agents: () => [] })), 'only the owner, the coordinator or the operator');
+  return show(await down(place, [], other, downSources({ sessionRunning: () => true, agents: () => [] })), 'only the owner, the orchestrator or the operator');
 });
 scene('down.file-owner', async (place) => {
   write(place, TWO);
@@ -1008,7 +1008,7 @@ const delegated = (id: string, text: string) => downSources({ sessionRunning: ()
 
 scene('down.delegate', async (place) => {
   write(place, DELEGATED);
-  const text = 'only the owner, the coordinator, the operator or the approved delegate stops the team; this call is other';
+  const text = 'only the owner, the orchestrator, the operator or the approved delegate stops the team; this call is other';
   const ran = await down(place, [], other, delegated('down.delegate', text));
   expect(ran.err).toBe(`team down: ${text}\n`);
   return ran;
@@ -1177,7 +1177,7 @@ scene('remove.file-owner', async (place) => {
 });
 scene('remove.caller', async (place) => {
   write(place, TWO);
-  return show(await removed(place, ['worker'], other, downSources({ home: place.home })), 'only the owner, the coordinator or the operator');
+  return show(await removed(place, ['worker'], other, downSources({ home: place.home })), 'only the owner, the orchestrator or the operator');
 });
 scene('remove.no-pane', async (place) => {
   write(place, TWO);
@@ -1210,7 +1210,7 @@ scene('remove.coordinator', async (place) => {
   updateState(join(place.root, '.agents'), (state) => {
     (state.sessions.acme ??= emptySession()).seats.lead = { stage: 'ready', pane: 'w1:p1' };
   });
-  return show(await removed(place, ['lead'], leadSeat, downSources({ home: place.home })), 'only the owner removes the coordinator');
+  return show(await removed(place, ['lead'], leadSeat, downSources({ home: place.home })), 'only the owner removes the orchestrator');
 });
 scene('remove.no-seat', async (place) => {
   write(place, TWO);
@@ -1338,7 +1338,7 @@ const REMOVE_GATE_REFUSALS: [suffix: string, sentence: string, needle: string][]
   ['delegate-drift', 'delegation needs the approved file: the file is not the approved one (seat worker changed): run `team approve`', 'not the approved one'],
   ['delegate-evidence', "delegation cannot verify its placement or seats: herdr doesn't answer", 'placement or seats'],
   ['delegate-placement', 'the approved delegate must be an external non-seat pane', 'non-seat pane'],
-  ['delegate', 'only the owner, the coordinator, the operator or the approved delegate runs it; this call is pilot', 'or the approved delegate runs it'],
+  ['delegate', 'only the owner, the orchestrator, the operator or the approved delegate runs it; this call is pilot', 'or the approved delegate runs it'],
   ['delegate-command', 'the approved delegate main/w1:p1 may not run `remove`; its approved commands are add', 'may not run'],
 ];
 for (const [suffix, sentence, needle] of REMOVE_GATE_REFUSALS) {
@@ -1690,7 +1690,7 @@ scene('worktree.file-owner', async (place) => {
 });
 scene('worktree.caller', async (place) => {
   approve(place, worktreeText());
-  return show(await worktree(place, ['new', 'task'], other), 'only the owner, the coordinator or the operator');
+  return show(await worktree(place, ['new', 'task'], other), 'only the owner, the orchestrator or the operator');
 });
 scene('worktree.no-pane', async (place) => {
   approve(place, worktreeText());

@@ -299,7 +299,7 @@ describe('Antigravity rules delivery', () => {
 // The rules a lane seat was given, as `up` renders them: the fixture below is this text folded
 // in agy's composer at 54 columns (see the fixtures README).
 const RULES_INPUT: RulesInput = {
-  coordinator: 'floor-30',
+  orchestrator: 'floor-30',
   rules: [
     'Work only on the brief in front of you, and skip nothing in it.',
     'Never push: your `ready` file is the hand-off.',

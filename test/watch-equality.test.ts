@@ -1,6 +1,8 @@
 // The modular watch core must report, nudge and remember exactly what the pass it replaced did.
 // `oldPass` below is src/watch/pass.ts as it stood before the checks were split into modules
-// (the merge of #45), copied in unchanged and used by this file alone. Every scenario runs both
+// (the merge of #45), copied in unchanged — except the one field read the lead's rename moved,
+// `team.coordinator` to `team.orchestrator`, the same value under the section's canonical name —
+// and used by this file alone. Every scenario runs both
 // implementations over the same fixtures, step for step, and demands equal PassResults and equal
 // pending state — for a team file without `watch.checks`, which is every fixture here.
 import { describe, expect, test } from 'bun:test';
@@ -91,7 +93,7 @@ function oldPass(
       continue;
     }
     known.add(agent.pane);
-    const lead = name === team.coordinator || name === team.operator;
+    const lead = name === team.orchestrator || name === team.operator;
     const screen = readScreen(cli, live.screens[agent.pane]);
     const quiet = agent.status === 'idle' || agent.status === 'done';
     const working = agent.status === 'working' || screen.kind === 'working';

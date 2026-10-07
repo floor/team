@@ -186,7 +186,8 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
     case 'down':
       return runDown(rest, io, world.downSources());
     case 'init':
-      return runInit(rest, io, fixture.home);
+      // No login is probed in a doc run: the skeleton's seat is claude-code's, deterministically.
+      return runInit(rest, io, fixture.home, undefined, { loggedIn: () => false });
     case 'remove':
       return runRemove(rest, io, world.removeSources());
     case 'release':
