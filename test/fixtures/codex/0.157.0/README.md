@@ -188,8 +188,9 @@ shipped composer reads:
 - `terra-quiet-unknown-constructed.txt` breaks both on purpose — a `❯` prompt glyph the
   profile does not know, and a `? for shortcuts` row under the status line, so a
   status-last read cannot pin it. It reads unknown for the screen and for the composer:
-  the shape of a quiet Terra seat whose anchors miss, which nothing reports and no state
-  frees.
+  the shape of a quiet Terra seat whose anchors miss — a quiet seat the watch reports
+  as the unknown attention, and one a non-owner's `remove` takes out of the team while
+  leaving its pane as it is.
 
 The pair stands for that screen without claiming to be it: a real capture replaces the
 constructed rows, not the profile's reading of them. Constructed, so neither can feed
