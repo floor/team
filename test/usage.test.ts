@@ -66,8 +66,10 @@ const READINGS = {
 // whose newest team has no watch recording. The pace word rides the machine line after its state
 // clause and every row after its figure: a real pace where the reading carries a point, and the
 // tool's own `pace not known` where there is none — the check line's reading has none, and the
-// daily line's point was dropped with its window. A caller who is not the owner reads the same
-// bytes here as the owner does — this fixture has one team.
+// daily line's point was dropped with its window. A restricted line whose newest reading is
+// another team's drops the element outright — the pace is that team's, withheld, and nothing
+// stands in its place. A caller who is not the owner reads the same bytes here as the owner does
+// — this fixture has one team.
 const REPORT = [
   'usage on this machine, 1 team, 2 labs, 2 accounts',
   '',
@@ -494,11 +496,12 @@ describe('team usage', () => {
   });
 
   test("the machine line takes the newest team's pace, and each row its own", async () => {
-    // § 3.3's both-views decision, as bytes: over an account two teams hold, the machine line
-    // carries the newest reading's pace whichever team it came from — a caller who is not that
-    // team reads the number without the name — and each team's own row carries its own. The
-    // fixture's reading is 5.3%/h; the other team's newer one (30 points down over half an hour)
-    // is 60.0%/h and is the line's.
+    // § 3.3's rule, as bytes: over an account two teams hold, the full view's machine line carries
+    // the newest reading's pace whichever team it came from — 5.3%/h for the fixture's reading,
+    // 60.0%/h for the other team's newer one (30 points down over half an hour) — and each team's
+    // own row carries its own. The restricted caller reads that other team's line with no pace at
+    // all: the number is withheld there — null in `--json` — and nothing stands in its place,
+    // never `pace not known`, while the caller's own row keeps its word.
     const project = 'zeta-4WX';
     const theirRoot = join(base, project);
     mkdirSync(join(theirRoot, '.agents'), { recursive: true });
@@ -515,7 +518,9 @@ describe('team usage', () => {
 
     const seat = await usageAt(root, SEAT);
     expect(seat.code).toBe(0);
-    expect(seat.out).toContain('openai  weekly  left 30%  used 70%  resets in 44m  read by another team, 1m ago  status line  fresh  pace 60.0%/h  (no watch is recording for it)');
+    expect(seat.out).toContain('openai  weekly  left 30%  used 70%  resets in 44m  read by another team, 1m ago  status line  fresh  (no watch is recording for it)');
+    const seatLine = seat.out.split('\n').find((text) => text.startsWith('openai  weekly'));
+    expect(seatLine).not.toContain('pace');
     expect(seat.out).toContain('  acme    weekly  left 5%  used 95%  resets in 44m  lead  changed 2m ago  status line (fallback)  fresh, inside reserve 20%  pace 5.3%/h');
 
     const owner = await usageAt(root, OWNER);
@@ -523,8 +528,9 @@ describe('team usage', () => {
     expect(owner.out).toContain('openai  weekly  left 30%  used 70%  resets in 44m  read by zeta-4WX, 1m ago  status line  fresh  pace 60.0%/h  (no watch is recording for zeta-4WX)');
     expect(owner.out).toContain(`  ${project}    weekly  left 30%  used 70%  resets in 44m  scout  changed 1m ago  status line  fresh  pace 60.0%/h`);
 
-    // The same split in the allow-list: the machine's `pace` is the newest reading's — with the
-    // newest reading's team beside it in the full view — and each row's is its own.
+    // The same split in the allow-list: the machine's `pace` is the newest reading's in the full
+    // view — with the newest reading's team beside it — and null on the restricted line that
+    // withholds it; each row's is its own.
     const doc = JSON.parse((await usageAt(root, OWNER, '--json')).out) as {
       labs: { accounts: { account: string; kind: string; machine: { window: string | null; pace: number | null; team?: string }; teams: { team: string; row: { pace: number | null } }[] }[] }[];
     };
@@ -532,6 +538,13 @@ describe('team usage', () => {
     expect(weekly?.machine.pace).toBe(60);
     expect(weekly?.machine.team).toBe(project);
     expect(weekly?.teams.map((peer) => [peer.team, peer.row.pace])).toEqual([['acme', 5.3], [project, 60]]);
+    const seatDoc = JSON.parse((await usageAt(root, SEAT, '--json')).out) as {
+      labs: { accounts: { account: string; machine: { window: string | null; pace: number | null; other: boolean }; teams: { team: string; row: { pace: number | null } }[] }[] }[];
+    };
+    const seatWeekly = seatDoc.labs.flatMap((lab) => lab.accounts).find((one) => one.account === 'openai' && one.machine.window === 'weekly');
+    expect(seatWeekly?.machine.pace).toBeNull();
+    expect(seatWeekly?.machine.other).toBe(true);
+    expect(seatWeekly?.teams.map((peer) => [peer.team, peer.row.pace])).toEqual([['acme', 5.3]]);
   });
 
   test("the owner's document is the same one with the names on: `team`, `root`, and the full view", async () => {
@@ -1483,7 +1496,7 @@ describe('team usage', () => {
       'acme-only-8ZKQ  weekly  left 9%  used 91%  resets unknown  -  changed 2m ago  status line  fresh, inside reserve 10%  pace not known  (no watch is recording for acme-7QK)',
       '  acme-7QK    weekly  left 9%  used 91%  resets unknown  -  changed 2m ago  status line  fresh, inside reserve 10%  pace not known',
       'anthropic: 1 other account',
-      'openai  weekly  left 88%  used 12%  resets in 44m  read by another team, 1m ago  status line  fresh  pace not known  (no watch is recording for it)',
+      'openai  weekly  left 88%  used 12%  resets in 44m  read by another team, 1m ago  status line  fresh  (no watch is recording for it)',
       '  acme-7QK    weekly  left 5%  used 95%  resets in 44m  lead  changed 10m ago  status line  fresh, inside reserve 20%  pace not known',
       "note: acme-7QK: a stored reading names an account this team's file does not: not shown",
       "note: 2 teams' states cannot be read (not valid JSON; move it aside and run the command again)",
@@ -1594,7 +1607,8 @@ describe('team usage', () => {
   test('the droppable entries, 2 of 5: a machine line says whose reading it carries, never whose name', async () => {
     // The second entry: whether the figure on a machine line is the caller's own or another
     // team's is carried (`other`, and `read by another team` in the text), because a figure of an
-    // account the caller's own file names is the caller's business — its name is not.
+    // account the caller's own file names is the caller's business — its name is not, and the
+    // pace of that reading is not either: the element is dropped on that line (§ 3.3).
     const theirProject = 'zeta-4WX';
     const theirRoot = join(base, theirProject);
     mkdirSync(join(theirRoot, '.agents'), { recursive: true });
@@ -1611,10 +1625,11 @@ describe('team usage', () => {
     const mine = await usageAt(root, SEAT);
     const raw = (await usageAt(root, SEAT, '--json')).out;
     const line = mine.out.split('\n').find((text) => text.startsWith('openai  weekly'));
-    expect(line).toBe('openai  weekly  left 88%  used 12%  resets in 44m  read by another team, 1m ago  status line  fresh  pace not known  (no watch is recording for it)');
+    expect(line).toBe('openai  weekly  left 88%  used 12%  resets in 44m  read by another team, 1m ago  status line  fresh  (no watch is recording for it)');
     const entries = (JSON.parse(raw) as { labs: { accounts: { account: string; machine: Record<string, unknown> }[] }[] }).labs.flatMap((lab) => lab.accounts);
     const openai = entries.find((entry) => entry.account === 'openai');
     expect(openai?.machine.other).toBe(true);
+    expect(openai?.machine.pace).toBeNull();
     expect(openai?.machine.team).toBeUndefined();
     expect(openai?.machine.seat).toBeUndefined();
     for (const face of [mine.out, raw]) expect(face).not.toContain(theirProject);

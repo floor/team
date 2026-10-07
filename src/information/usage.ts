@@ -793,8 +793,9 @@ export type ReportMachine = {
   inside: boolean;
   reserve: number | null;
   /** The pace the newest reading's figure is being used at (§ 3-S3): null when there is none to
-   *  read. Carried by both views — a figure of the same reading as `left`/`used`, allowed and
-   *  withheld with them. */
+   *  read, and null in the restricted view when the newest reading is another team's — that pace
+   *  is that team's figure, withheld. The renderer omits the element on that line rather than
+   *  print `pace not known`, which would read as a failed computation; the full view prints it. */
   pace: number | null;
   /** True when the newest reading is another team's: the restricted view names no team for it. */
   other: boolean;
@@ -1099,7 +1100,7 @@ function subscriptionEntryOf(
     state: newest?.row.state ?? 'unknown',
     inside: newest?.row.inside ?? false,
     reserve: newest?.row.reserve ?? null,
-    pace: newest?.pace ?? null,
+    pace: other && !view.full ? null : newest?.pace ?? null,
     other,
     ...(newest !== null && newest.team.usage.watch !== 'recording' ? { watch: newest.team.usage.watch } : {}),
     ...(view.full && newest !== null ? { team: newest.team.usage.project ?? newest.team.root } : {}),
@@ -1224,7 +1225,12 @@ function subscriptionText(entry: ReportAccount & { kind: 'subscription' }, repor
   const from = m.source === 'status_line' ? 'status line' : m.source === 'check' ? 'check' : 'unknown source';
   const source = m.fallback ? `${from} (fallback)` : from;
   const state = m.inside && m.reserve !== null ? `${m.state}, inside reserve ${m.reserve}%` : m.state;
-  return `${entry.account}  ${m.window}  left ${m.left}%  used ${m.used}%  ${reset}  ${provenanceOf(m, report)}  ${source}  ${state}  ${paceWord(m.pace)}${watchOf(m, report)}`;
+  // The pace element is omitted on a restricted line whose newest reading is another team's — the
+  // one line whose pace is withheld (§ 3.3): nothing stands in its place, since `pace not known`
+  // would read as a failed computation where the figure is real and withheld. Every other line
+  // keeps its word, in either view.
+  const pace = m.other && report.view === 'restricted' ? '' : `  ${paceWord(m.pace)}`;
+  return `${entry.account}  ${m.window}  left ${m.left}%  used ${m.used}%  ${reset}  ${provenanceOf(m, report)}  ${source}  ${state}${pace}${watchOf(m, report)}`;
 }
 
 function spendText(entry: ReportAccount & { kind: 'spend' }, report: UsageReport): string {

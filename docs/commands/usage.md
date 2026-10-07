@@ -108,7 +108,10 @@ from and how the line closes:
 - A line with a figure ends it with the pace the figure is moving at — `pace 5.3%/h`, the used
   points per hour the window's last two readings measure, one decimal and signed — or with `pace
   not known` where there is no pair to measure. The rows carry the word too. A spend line, a
-  spend account's row, and a machine line with nothing counted for it carry no word at all.
+  spend account's row, and a machine line with nothing counted for it carry no word at all. A
+  restricted machine line whose newest figure is another team's carries none either: that pace is
+  that team's, withheld rather than unknown, and nothing stands in its place — the line passes
+  straight from its state to its watch clause.
 
 Pace is read from the pair the state keeps and nothing else: the reading before this one, its
 figure and the moment it moved (the point the watch writes beside a reading whenever one was in
@@ -193,6 +196,9 @@ it: no name, no root, no path, no message. Specifically, it never carries
   `another team: …`) — nor another team's **root**, which is a path this tool derived from the
   machine;
 - another team's **rows**: only the caller's own team's rows print under a machine line;
+- another team's **pace**: a machine line whose newest reading is another team's carries no pace
+  element at all — `null` in `--json`, absent from the text — so a withheld figure never reads as
+  a failed computation, while the caller's own rows keep their pace;
 - another team's **problems in their own words**: a store's own message becomes the fixed sentence
   `a store on this machine cannot be read: the owner reads the reason`, and a team's problem becomes
   one fixed sentence per kind, counted;
