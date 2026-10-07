@@ -243,17 +243,18 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   }
   const agent = agents.find((item) => item.name === name);
   const cli = declared?.cli ?? team.seats.find((seat) => seat.name === temporary?.like)?.cli ?? '';
-  // A non-owner on a screen no profile reads: no state ever frees it and the owner's `--abandon`
-  // is not this caller's, so the owner's refusal would leave the seat stuck for good. This caller
-  // takes the seat out and leaves the pane as it is instead — nothing typed, nothing closed, and
-  // the agent renamed out of the seat's name (below). The owner keeps the refusal, byte for byte,
-  // with the way out it names.
+  // A caller other than the owner, on a seat herdr reports idle or done that this flow cannot ask
+  // to leave: `--abandon`'s kind of power scoped to a caller who may not run it — the seat is
+  // taken out of the team, the pane is left as it is (nothing typed, nothing closed, and the agent
+  // renamed out of the seat's name below), where no state ever frees it otherwise.
   //
-  // The trigger is narrow on purpose: only a seat herdr itself calls quiet (idle or done — never
-  // a working one) whose pane text this run actually read. `screen.kind` cannot tell a failed read
-  // from a read that matched nothing — both come back `unknown` — so "the pane was read" is told
-  // by `screenText`'s presence instead. A working seat on an unrecognised screen and a pane
-  // nothing could read both keep the refusal the owner gets.
+  // herdr's own status is the gate, not the screen: idle or done says the seat is not mid-turn,
+  // and that signal still reads where a profile cannot — an unrecognised screen, an unreadable
+  // pane, a prompt the team never answers, unsent text. A seat herdr reports working, or one whose
+  // screen shows a running turn (`stateOf` keeps that working even when herdr's word lags), is the
+  // one thing a non-owner never takes out; every other status word keeps the old refusal too. A
+  // recognised free seat removes as before, and a box holding exactly the CLI's exit text keeps
+  // its clean stop. The owner keeps the refusal, byte for byte, with the way out it names.
   let leave = false;
   if (agent) {
     const screen = sources.screen(session, agent.pane, cli);
@@ -266,17 +267,19 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     const holdsExit = where === 'unsent' && profile !== null
       && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));
     const clearable = holdsExit && profile?.exitClear !== null;
-    leave = where === 'unknown' && caller.kind !== 'owner'
-      && (agent.status === 'idle' || agent.status === 'done')
-      && sources.screenText(session, agent.pane, cli) !== undefined;
+    leave = caller.kind !== 'owner' && where !== 'free' && where !== 'working' && !clearable
+      && (agent.status === 'idle' || agent.status === 'done');
     if (where !== 'free' && !abandon && !clearable && !leave) {
-      // The unknown screen is the one a seat can sit on for good: no state ever frees it, and
-      // only the owner may abandon it, so the refusal names that way out — and only the owner's
-      // run reaches it: every other caller took the leave above. A framed exit question already
-      // on screen is the same kind of leave: this run did not ask it, and the line names the close.
-      const way = where === 'unknown'
-        ? ` (team remove ${name} --abandon closes its workspace without typing)`
-        : '';
+      // A refusal here is the kept safety: herdr reports the seat working, its screen shows a
+      // running turn, or the caller is the owner, who keeps these refusals whole — a caller other
+      // than the owner meeting an idle or done seat never arrives, the leave took it above. The
+      // way out named is the caller's own. A framed exit question already on screen is the same
+      // kind of case: this run did not ask it, and the line names the close the caller has.
+      const way = where !== 'unknown'
+        ? ''
+        : caller.kind === 'owner'
+          ? ` (team remove ${name} --abandon closes its workspace without typing)`
+          : ' (run this again once herdr reports the seat idle or done)';
       const held = screen.kind === 'exit question'
         ? `sits at its own exit question; left as it is (team remove ${name} --abandon closes it)`
         : where === 'unsent' && holdsExit

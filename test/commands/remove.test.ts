@@ -590,9 +590,9 @@ describe('team remove', () => {
   });
 
   test('a working seat on an unknown screen is refused, not left', async () => {
-    // The leave is for a seat that is quiet on a screen nothing reads — herdr's own word says
-    // idle or done. A working seat is still doing something there, and a non-owner does not get
-    // to take it out on a classifier miss: the refusal stands, with the owner's way out named.
+    // The one thing a non-owner never takes out: herdr reports the seat mid-turn. The screen
+    // shape does not enter it — the status alone refuses — and the way out the line names is the
+    // caller's own, not the owner's `--abandon`.
     const made = world({ kind: 'unknown' }, 'working');
     made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'working', cwd: null });
     const renamed: [string, string, string][] = [];
@@ -600,18 +600,31 @@ describe('team remove', () => {
     recordLead();
     const io = testIo(dir, lead);
     expect(await runRemove(['worker'], io, made.sources)).toBe(1);
-    expect(io.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (team remove worker --abandon closes its workspace without typing)\n');
+    expect(io.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (run this again once herdr reports the seat idle or done)\n');
     expect(made.typed).toEqual([]);
     expect(made.closed).toEqual([]);
     expect(renamed).toEqual([]);
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
-  test('an unreadable pane on an unknown screen is refused, not left', async () => {
-    // `unknown` collapses two situations — a pane that could not be read, and one that was read
-    // and matched no profile. The leave reaches only the second: a read that failed tells nothing
-    // about what the pane holds. screenText's `undefined` is how this run tells the two apart,
-    // since both produce the same screen kind.
+  test('a working seat holding unsent text is refused too: the status alone is the gate', async () => {
+    const made = world({ kind: 'unsent' }, 'working');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'working', cwd: null });
+    const renamed: [string, string, string][] = [];
+    made.sources.renameAgent = (session, pane, name) => { renamed.push([session, pane, name]); return true; };
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker'], io, made.sources)).toBe(1);
+    expect(io.err).toBe('team remove: worker holds unsent text in its input box; left as it is\n');
+    expect(made.typed).toEqual([]);
+    expect(renamed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+  });
+
+  test('an unreadable pane on an idle seat is taken out, not refused', async () => {
+    // `unknown` collapses a failed read with a read that matched nothing, and herdr's word is the
+    // gate either way: idle says the seat is not mid-turn, so the delegate force-close reaches it
+    // — the case this path exists for.
     const made = world({ kind: 'unknown' }, 'idle');
     made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
     made.sources.screenText = () => undefined;
@@ -619,12 +632,41 @@ describe('team remove', () => {
     made.sources.renameAgent = (session, pane, name) => { renamed.push([session, pane, name]); return true; };
     recordLead();
     const io = testIo(dir, lead);
-    expect(await runRemove(['worker'], io, made.sources)).toBe(1);
-    expect(io.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (team remove worker --abandon closes its workspace without typing)\n');
+    expect(await runRemove(['worker'], io, made.sources)).toBe(0);
+    expect(io.out).toBe('removed worker (its pane w1:p1 was left running; nothing was typed; it now reads as worker-left)\n');
     expect(made.typed).toEqual([]);
     expect(made.closed).toEqual([]);
-    expect(renamed).toEqual([]);
-    expect(readFileSync(file, 'utf8')).toContain('name: worker');
+    expect(renamed).toEqual([['acme', 'w1:p1', 'worker-left']]);
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+  });
+
+  test('an idle seat holding unsent text is taken out, not refused', async () => {
+    // The idle seat whose box holds text no profile calls its exit text: herdr says idle, so a
+    // delegate cycles it — nothing typed, the pane left as it is.
+    const made = world({ kind: 'unsent' }, 'idle');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const renamed: [string, string, string][] = [];
+    made.sources.renameAgent = (session, pane, name) => { renamed.push([session, pane, name]); return true; };
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker'], io, made.sources)).toBe(0);
+    expect(io.out).toBe('removed worker (its pane w1:p1 was left running; nothing was typed; it now reads as worker-left)\n');
+    expect(made.typed).toEqual([]);
+    expect(made.keys).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(renamed).toEqual([['acme', 'w1:p1', 'worker-left']]);
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+  });
+
+  test('a done seat on an unknown screen is taken out: idle and done are both the gate', async () => {
+    const made = world({ kind: 'unknown' }, 'done');
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'done', cwd: null });
+    made.sources.renameAgent = (_session, _pane, name) => name === 'worker-left';
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker'], io, made.sources)).toBe(0);
+    expect(io.out).toBe('removed worker (its pane w1:p1 was left running; nothing was typed; it now reads as worker-left)\n');
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
   });
 
   test('a coordinator on an unknown screen leaves the pane and takes the seat out', async () => {
