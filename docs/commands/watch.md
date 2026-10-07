@@ -443,8 +443,6 @@ Needs a new approval: `watch.checks` changed.
 Ceilings this approval fixes: 4 seats at most, 2 temporary.
 Seats: 2 (claude-keeper, claude-beacon).
 approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
-
-Type the number of seats (2) to approve this file, and its commands and rules, to run: 2
 Approved. The record is in ~/.config/team/beacon-<hash>; signed with key fe21ef6293de; check the rest with `team doctor`.
 exit 0
 ```

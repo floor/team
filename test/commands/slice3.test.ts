@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Caller } from '../../src/caller.ts';
-import { runApprove } from '../../src/commands/approve.ts';
+import { runApprove, type Waiting } from '../../src/commands/approve.ts';
 import { loadConfig } from '../../src/commands/check.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
 import { rulesOf } from '../../src/launch/rules.ts';
@@ -14,7 +14,7 @@ import { validateTeamFile } from '../../src/file/validate.ts';
 import { paneStillRunning, runDown, type DownSources } from '../../src/commands/down.ts';
 import { runUp, type UpSources } from '../../src/commands/up.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
-import { installKey } from '../../src/store/keys.ts';
+import { installKey, keyFolder, recordedGeneration } from '../../src/store/keys.ts';
 import { readApproval, readLedger, storePath } from '../../src/store/store.ts';
 import { readScreen } from '../../src/watch/screen.ts';
 import { claudeBox, testIo } from '../helpers.ts';
@@ -53,7 +53,7 @@ const store = () => storePath('acme-web', root, home);
 const edit = (change: (text: string) => string) =>
   writeFileSync(join(root, '.agents/team.yaml'), change(readFileSync(join(root, '.agents/team.yaml'), 'utf8')));
 
-async function approve(argv: string[], caller: Caller, answer: string | null = '5') {
+async function approve(argv: string[], caller: Caller, answer: string | null = '5', waiting: Waiting = 'empty') {
   const io = testIo(root, caller);
   const asked: string[] = [];
   const code = await runApprove([...argv, ...FILE], io, {
@@ -61,6 +61,7 @@ async function approve(argv: string[], caller: Caller, answer: string | null = '
       asked.push(question);
       return answer;
     },
+    waiting: () => waiting,
     now: () => NOW,
     home,
   });
@@ -98,15 +99,178 @@ describe('team approve', () => {
     expect(existsSync(store())).toBe(false);
   });
 
-  test.each([['4'], ['yes'], [''], [null]])('writes nothing when the owner types %p', async (answer) => {
-    const run = await approve([], OWNER, answer);
+  test('approves with no question by default: nothing is asked, the summary prints, and the record is written', async () => {
+    const run = await approve([], OWNER);
+    expect(run.code).toBe(0);
+    expect(run.asked).toEqual([]);
+    expect(run.out).toContain('Seats: 5 (claude-coordinator-acme, codex-acme, deepseek-acme, deepseek-acme-2, grok-acme).\n');
+    expect(run.out).toContain('Ceilings this approval fixes: 6 seats at most, 2 temporary, openai 1, deepseek 3.\n');
+    expect(run.out).toContain('Approved. The record is in ');
+    expect(readApproval(store())?.file).toBe(EXAMPLE);
+  });
+
+  test('refuses input already waiting on the terminal before writing anything', async () => {
+    const run = await approve([], OWNER, '5', 'waiting');
+    expect(run.code).toBe(1);
+    expect(run.err).toBe('team approve: input was waiting on the terminal: run `team approve` on its own line\n');
+    expect(run.asked).toEqual([]);
+    expect(existsSync(store())).toBe(false);
+  });
+
+  test('a terminal that cannot be read refuses too: only an empty one lets the write through', async () => {
+    const run = await approve([], OWNER, '5', 'unreadable');
+    expect(run.code).toBe(1);
+    expect(run.err).toBe(
+      'team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written\n',
+    );
+    expect(run.asked).toEqual([]);
+    expect(existsSync(store())).toBe(false);
+  });
+
+  test('a waiting line does not change a refusal made earlier: a seat still gets the owner refusal', async () => {
+    const run = await approve([], COORDINATOR, '5', 'waiting');
+    expect(run.code).toBe(1);
+    expect(run.err).toBe(
+      'team approve: only the owner approves a team file, from a terminal outside herdr; this call is claude-coordinator-acme\n',
+    );
+    expect(existsSync(store())).toBe(false);
+  });
+
+  test.each([['4'], ['yes'], [''], [null]])('--confirm writes nothing when the owner types %p', async (answer) => {
+    const run = await approve(['--confirm'], OWNER, answer);
     expect(run.code).toBe(1);
     expect(run.err).toBe('team approve: not approved; nothing was written\n');
     expect(existsSync(store())).toBe(false);
   });
 
+  test('--confirm asks the seat-count question, and the right answer approves', async () => {
+    const run = await approve(['--confirm'], OWNER, ' 5\n');
+    expect(run.code).toBe(0);
+    expect(run.asked).toHaveLength(1);
+    expect(run.asked[0]).toContain('Type the number of seats (5)');
+    expect(readApproval(store())?.file).toBe(EXAMPLE);
+  });
+
+  describe('a first approval', () => {
+    // Every other test starts with the key already installed; here it is removed, so the run
+    // below is the first this machine would do — the case the review found: a refusal before
+    // any writing must leave no key, no record, no generation and no log behind.
+    beforeEach(() => rmSync(keyFolder(home), { recursive: true, force: true }));
+
+    const expectNothingWritten = () => {
+      expect(existsSync(keyFolder(home))).toBe(false);
+      expect(recordedGeneration(root, home)).toBeNull();
+      expect(existsSync(store())).toBe(false);
+      expect(existsSync(join(root, '.agents/team.log'))).toBe(false);
+    };
+
+    test('input waiting: no key folder, no record, no generation, no log', async () => {
+      const run = await approve([], OWNER, '5', 'waiting');
+      expect(run.code).toBe(1);
+      expect(run.err).toBe('team approve: input was waiting on the terminal: run `team approve` on its own line\n');
+      expectNothingWritten();
+    });
+
+    test('terminal unreadable: no key folder, no record, no generation, no log', async () => {
+      const run = await approve([], OWNER, '5', 'unreadable');
+      expect(run.code).toBe(1);
+      expect(run.err).toBe(
+        'team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written\n',
+      );
+      expectNothingWritten();
+    });
+
+    test('not the owner: no key folder, no record, no generation, no log', async () => {
+      const run = await approve([], COORDINATOR);
+      expect(run.code).toBe(1);
+      expect(run.err).toBe(
+        'team approve: only the owner approves a team file, from a terminal outside herdr; this call is claude-coordinator-acme\n',
+      );
+      expect(run.asked).toEqual([]);
+      expectNothingWritten();
+    });
+
+    test('a rejected --confirm answer: no key folder, no record, no generation, no log', async () => {
+      const run = await approve(['--confirm'], OWNER, '4');
+      expect(run.code).toBe(1);
+      expect(run.err).toBe('team approve: not approved; nothing was written\n');
+      expectNothingWritten();
+    });
+
+    test('the first approval that goes through creates all four', async () => {
+      const run = await approve([], OWNER);
+      expect(run.code).toBe(0);
+      expect(run.asked).toEqual([]);
+      expect(run.out).toContain('Approved. The record is in ');
+      expect(existsSync(join(keyFolder(home), 'key.json'))).toBe(true);
+      expect(recordedGeneration(root, home)?.generation).toBe(1);
+      expect(readApproval(store())?.file).toBe(EXAMPLE);
+      expect(existsSync(join(root, '.agents/team.log'))).toBe(true);
+      expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain('approve [owner] approved 5 seats');
+    });
+  });
+
+  describe('a key that cannot be read', () => {
+    // The key exists — as it does on the machine of an owner whose key file was torn, or written
+    // by something else — and must fail closed before anything is asked: a run that can never
+    // sign must not consume a deliberate answer, and the repair names itself.
+    beforeEach(() => {
+      rmSync(keyFolder(home), { recursive: true, force: true });
+      mkdirSync(keyFolder(home), { recursive: true });
+      writeFileSync(join(keyFolder(home), 'key.json'), '{');
+    });
+
+    const refusal = () =>
+      `team approve: ${join(keyFolder(home), 'key.json')}: the signing key is not whole JSON: restore it from a copy — a new key would orphan every record already signed\n`;
+
+    const expectNothingWritten = () => {
+      expect(readFileSync(join(keyFolder(home), 'key.json'), 'utf8')).toBe('{');
+      expect(recordedGeneration(root, home)).toBeNull();
+      expect(existsSync(store())).toBe(false);
+      expect(existsSync(join(root, '.agents/team.log'))).toBe(false);
+    };
+
+    // The run's seams, counted: the two refusals below must come before the question is asked
+    // and before the terminal is read.
+    const approveWithSpies = async (argv: string[]) => {
+      const io = testIo(root, OWNER);
+      const asked: string[] = [];
+      let probed = 0;
+      const code = await runApprove([...argv, ...FILE], io, {
+        ask: async (question) => {
+          asked.push(question);
+          return '5';
+        },
+        waiting: () => {
+          probed += 1;
+          return 'empty';
+        },
+        now: () => NOW,
+        home,
+      });
+      return { code, out: io.out, err: io.err, asked, probed: () => probed };
+    };
+
+    test('--confirm asks nothing and writes nothing', async () => {
+      const refused = await approveWithSpies(['--confirm']);
+      expect(refused.code).toBe(1);
+      expect(refused.err).toBe(refusal());
+      expect(refused.asked).toEqual([]);
+      expectNothingWritten();
+    });
+
+    test('the default path the same: the terminal is never read for a run that cannot sign', async () => {
+      const refused = await approveWithSpies([]);
+      expect(refused.code).toBe(1);
+      expect(refused.err).toBe(refusal());
+      expect(refused.probed()).toBe(0);
+      expect(refused.asked).toEqual([]);
+      expectNothingWritten();
+    });
+  });
+
   test('records the file, its ceilings and its seats once the owner types the number of seats', async () => {
-    const run = await approve([], OWNER, ' 5\n');
+    const run = await approve(['--confirm'], OWNER, ' 5\n');
     expect(run.code).toBe(0);
     expect(run.asked).toHaveLength(1);
     expect(run.asked[0]).toContain('Type the number of seats (5)');
@@ -153,14 +317,14 @@ describe('team approve', () => {
 
   test('refuses a store that sits where seats work', async () => {
     const io = testIo(root, OWNER);
-    const inProject = await runApprove(FILE, io, { ask: async () => '5', now: () => NOW, home: root });
+    const inProject = await runApprove(FILE, io, { ask: async () => '5', waiting: () => 'empty', now: () => NOW, home: root });
     expect(inProject).toBe(1);
     expect(io.err).toContain(`is inside ${root}, where seats work`);
 
     const trusted = join(base, 'worktrees/acme-web');
     mkdirSync(trusted, { recursive: true });
     const other = testIo(root, OWNER);
-    expect(await runApprove(FILE, other, { ask: async () => '5', now: () => NOW, home: trusted })).toBe(1);
+    expect(await runApprove(FILE, other, { ask: async () => '5', waiting: () => 'empty', now: () => NOW, home: trusted })).toBe(1);
     expect(other.err).toContain(`is inside ${trusted}, where seats work`);
   });
 
@@ -370,7 +534,8 @@ describe('team doctor', () => {
     version: "1.3"
     launch: cursor-agent`,
     ));
-    await approve([], OWNER);
+    // No approval call: this file stays unapproved, so the one thing `doctor` counts as missing
+    // is the approval itself and every warning below is about a model.
     const run = await doctor({
       version: (binary) => binary === 'claude'
         ? '2.1.288 (Claude Code)'

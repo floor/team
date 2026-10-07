@@ -47,16 +47,19 @@ beforeEach(() => {
 
 afterEach(() => rmSync(base, { recursive: true, force: true }));
 
-/** Approve `text`, recording what had been printed when the seat-count question was asked. */
+/** Approve `text` with `--confirm`, recording what had been printed when the seat-count
+ *  question was asked: the default path asks nothing, so the ordering this proves is
+ *  `--confirm`'s. */
 async function approve(text: string, args: string[] = []): Promise<{ code: number; out: string; atQuestion: string }> {
   writeFileSync(join(root, '.agents/team.yaml'), text);
   const io = testIo(root, OWNER);
   let atQuestion = '';
-  const code = await runApprove(args, io, {
+  const code = await runApprove([...args, '--confirm'], io, {
     ask: async () => {
       atQuestion = io.out;
       return '1';
     },
+    waiting: () => 'empty',
     now: () => NOW,
     home,
   });

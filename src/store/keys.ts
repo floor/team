@@ -83,6 +83,24 @@ export function keyState(home: string = homedir()): KeyState {
   }
 }
 
+/** The one sentence for a key file that exists and cannot be read: every unreadable case
+ *  names the one repair, and says why a fresh key is not it. */
+function unreadableRefusal(home: string, state: KeyState & { kind: 'unreadable' }): string {
+  return `${keyPath(home)}: ${state.why} — a new key would orphan every record already signed`;
+}
+
+/**
+ * What `keyOf` refuses for, as a read-only look that creates nothing: that sentence for a
+ * key file which exists and cannot be read, or null when there is a key or none yet.
+ * `approve` asks this before its question, so a broken key fails closed before anything is
+ * asked — a run that can never sign must not consume a deliberate answer.
+ */
+export function keyRefusal(home: string = homedir()): string | null {
+  const state = keyState(home);
+  if (state.kind !== 'unreadable') return null;
+  return unreadableRefusal(home, state);
+}
+
 /**
  * Puts a key file where `keyOf` looks — whole, written to a temporary file of
  * mode 600 in the same folder, then linked into place. The first writer wins:
@@ -117,9 +135,7 @@ export function installKey(home: string, stored: StoredKey): 'installed' | 'exis
 export function keyOf(home: string): KeyObject {
   const state = keyState(home);
   if (state.kind === 'key') return state.key;
-  if (state.kind === 'unreadable') {
-    throw new Error(`${keyPath(home)}: ${state.why} — a new key would orphan every record already signed`);
-  }
+  if (state.kind === 'unreadable') throw new Error(unreadableRefusal(home, state));
   const pair = generateKeyPairSync('ed25519');
   const stored: StoredKey = {
     format: KEY_FORMAT,

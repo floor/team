@@ -715,7 +715,7 @@ describe('the other commands that take --file: nothing written beside a foreign 
 
   test('approve: the owner gate holds before any write', async () => {
     await writesNothingBesideTheFlaggedFile(
-      (flaggedFile) => (io) => runApprove(['--file', flaggedFile], io, { ask: async () => null, now: () => new Date(0), home }),
+      (flaggedFile) => (io) => runApprove(['--file', flaggedFile], io, { ask: async () => null, waiting: () => 'empty', now: () => new Date(0), home }),
     );
   });
 

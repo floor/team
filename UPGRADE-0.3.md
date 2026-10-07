@@ -7,8 +7,9 @@ For a team that is running under 0.2.1:
    one.
 2. One edit of the team file: paste that block under `trust:`; correct `model:` and `version:` if step 1 named
    them.
-3. `team approve`, **run alone**: it asks you to type the number of seats and reads the answer from your
-   terminal. Pasted together with the next command, that command becomes the answer and nothing is approved.
+3. `team approve`, **run alone**: it prints the file back and records it, and with `--confirm` it asks you
+   to type the number of seats and reads the answer from your terminal. Pasted together with the next
+   command, the leftover input refuses the approval and nothing is written.
 4. `team up`.
 
 That is one edit, one approval, one `up`, and the team is in force again. Read-only commands (`status`,

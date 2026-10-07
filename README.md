@@ -244,7 +244,7 @@ check, and this build acts on what the commands below read.
 | Command | What it does | Who may run it |
 | --- | --- | --- |
 | `team init` | writes the skeleton `.agents/team.yaml` and adds it and its runtime files to `.git/info/exclude` | the owner |
-| `team approve` | reads the whole file back for a last look, then records it, its ceilings and its seats on this machine; `--show` prints it | the owner (`--show`: anyone) |
+| `team approve` | reads the whole file back for a last look, then records it, its ceilings and its seats on this machine; `--show` prints it; `--confirm` asks for the seat count before writing | the owner (`--show`: anyone) |
 | `team check <ref>` | checks one commit, a `a..b` range, or a PR body (`--pr <file>`, `-` reads stdin) against the signature rule; exit 1 when one is refused | anyone; read only |
 | `team doctor` | checks this machine for what the file needs: herdr, each CLI, login, launch line, model, watch heartbeat; `--login` checks only CLI sign-ins | anyone; read only |
 | `team status` | prints the file's seats against the running session, each difference with its repair; `--json` outputs a stable JSON document (`format: 1`) for scripts; exit 1 when they differ | anyone; read only |
@@ -275,8 +275,8 @@ drifted file, a command the entry does not list, or a prohibited flag is refused
 own words and exit id, and `--file` and `--session` are refused outright. Every delegated run
 writes one line to the file's log naming the pane and the command. `approve` is never delegated —
 adding, changing or removing the section, like every other owner section, is the owner's
-approval, and `team approve` prints the section's entries as `Delegate:` lines before the
-seat-count question.
+approval, and `team approve` prints the section's entries as `Delegate:` lines before anything is
+written.
 
 `team status --json` prints the facts `status` prints as one JSON document (`format: 1`) on stdout:
 `project`, `session`, `rows` (`name`, `state`, `model`, `pane`), `notes`, `differences` (`what`, `repair`), and `notice`.
@@ -318,7 +318,7 @@ with a signed one.
 mkdir hello && cd hello && git init
 team init                  # the owner: writes .agents/team.yaml, private to this clone
 $EDITOR .agents/team.yaml  # name your seats — the example above is a working file; any CLI fits any role
-team approve               # the owner: read the file it prints, then type the seat count
+team approve               # the owner: read the file it prints, then record it (--confirm asks first)
 team doctor                # what this machine still needs
 team up --dry-run          # every command it would run, and every refusal
 team up                    # the owner: starts the session and its seats
@@ -326,7 +326,8 @@ team up                    # the owner: starts the session and its seats
 
 `team init` writes a skeleton, one seat and lots of comments; it prints how the file stays private,
 and leaves your first commit as a commented `#   since:` line. `team approve` prints the whole file
-back and asks you to type how many seats it holds, so no file approves itself unnoticed. Then
+back before it records anything — a terminal with input already waiting is refused, so no file
+approves itself unnoticed, and `--confirm` asks you to type how many seats it holds first. Then
 `doctor` says what is missing on this machine, `up --dry-run` shows every command the launch would
 run — and `up` starts the team, from the owner's terminal outside herdr.
 
