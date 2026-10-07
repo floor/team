@@ -71,8 +71,8 @@ still plans.
 The owner, from a terminal outside herdr — or without one: a run whose stdin is not a terminal
 launches seats like any other, but never reads stdin and never prompts, so every dialog is left for
 the owner (below). `--dry-run` is open to anyone: it reaches nothing and
-changes nothing, prints the refusals it would hit as `! up would refuse: …` above the plan, and
-exits 0.
+changes nothing, prints the refusals it would hit as `! up would refuse: …` above the plan.
+A dry run exits as the real run would, and changes nothing.
 
 A pane of another session the approved file's `delegates` section names may run `up` when that
 entry's `commands` list names it. The ordinary rule above refuses such a caller first, and only
@@ -91,7 +91,7 @@ same words, the same exit.
 
 | Flag | Meaning |
 | --- | --- |
-| `--dry-run` | print the plan, and the refusals the real run would stop on, and exit 0 |
+| `--dry-run` | print the plan, and the refusals the real run would stop on. A dry run exits as the real run would, and changes nothing |
 | `--session <name>` | the herdr session to start, instead of `team.session`. The owner's alone: the delegate gate refuses it for a delegated run, before the session it names is used |
 | `--file <path>` | the team file, instead of `.agents/team.yaml`. The owner's alone: the delegate gate refuses it for a delegated run, before the file it names is read |
 | `--help`, `-h` | the usage, and exit 0 |
@@ -498,7 +498,7 @@ watch itself.
 
 ## Exit codes
 
-- `0` — every seat is ready and the watch is running; or `--dry-run` printed its plan.
+- `0` — every seat is ready and the watch is running; or `--dry-run` printed a plan the real run would have finished. A dry run exits as the real run would, and changes nothing.
 - `1` — the run was refused, or a seat was left out, or the server or the watch failed, or the watch was not started because it could not read this file.
 - `2` — the invocation or the team file can't be read.
 
@@ -665,7 +665,7 @@ $ team up --dry-run ; echo "exit $?"
   skip claude-beacon: already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
   skip gemini-qa: stopped in the file; start it with `team add gemini-qa`
 dry run: nothing was run
-exit 0
+exit 1
 ```
 
 The real run goes no further than the refusal — it never touches a team the file doesn't match:

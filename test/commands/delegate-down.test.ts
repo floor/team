@@ -140,7 +140,7 @@ describe('a file with no delegate', () => {
   test('a dry run keeps today\'s would-refuse line and plan, and the gate is never asked', async () => {
     writeFileSync(file, teamFile(null));
     const r = rig({ gate: neverAsked });
-    expect(await r.run(['--dry-run'])).toBe(0);
+    expect(await r.run(['--dry-run'])).toBe(1);
     expect(r.io.out).toContain(`! down would refuse: ${ORDINARY}\n`);
     expect(r.io.out).toContain('claude-coordinator-acme:p1 /exit');
   });
@@ -304,9 +304,9 @@ describe('a delegate\'s refused flags', () => {
     expect(r.audits).toEqual([]);
   });
 
-  test('--abandon on a dry run: the refusal, then the plan, exit 0', async () => {
+  test('--abandon on a dry run: the refusal, then the plan, exit 1', async () => {
     const r = rig({ gate: refusing('down.delegate-flag', flagText('abandon')) });
-    expect(await r.run(['--dry-run', '--abandon'])).toBe(0);
+    expect(await r.run(['--dry-run', '--abandon'])).toBe(1);
     const [first = '', ...rest] = r.io.out.split('\n');
     expect(first).toBe(`! down would refuse: ${flagText('abandon')}`);
     expect(r.io.out).toContain('/exit');
@@ -387,7 +387,7 @@ describe('a refused gate', () => {
     expect(real.typed).toEqual([]);
 
     const dry = rig({ gate: refusing('down.delegate', GATE_DOWN) });
-    expect(await dry.run(['--dry-run'])).toBe(0);
+    expect(await dry.run(['--dry-run'])).toBe(1);
     expect(dry.io.out).toContain(`! down would refuse: ${GATE_DOWN}\n`);
     expect(dry.io.out).toContain('/exit');
   });
@@ -398,7 +398,7 @@ describe('a refused gate', () => {
     expect(real.io.err).toBe(`team down: ${GATE_COMMAND}\n`);
 
     const dry = rig({ gate: refusing('down.delegate-command', GATE_COMMAND) });
-    expect(await dry.run(['--dry-run'])).toBe(0);
+    expect(await dry.run(['--dry-run'])).toBe(1);
     const [first = ''] = dry.io.out.split('\n');
     expect(first).toBe(`! down would refuse: ${GATE_COMMAND}`);
     // The caller is the approved pane, so the plan it shows is the delegate's: nobody is kept.

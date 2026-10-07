@@ -68,7 +68,7 @@ that proceeds is attributed in the log before its effects, as
 | `--until <end>` | what the temporary seat works for: `result:<path>` (a file it writes, relative to the project) or `merged:<branch>` (a branch merged into the base) |
 | `--worktree <task>` | the worktree the temporary seat is started in, instead of the seat's own `cwd` |
 | `--session <name>` | the herdr session, instead of `team.session`; the owner's alone |
-| `--dry-run` | print whether this seat would launch or be refused, and exit 0; nothing is written |
+| `--dry-run` | print whether this seat would launch or be refused. A dry run exits as the real run would, and changes nothing |
 | `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone |
 | `--help`, `-h` | the usage, and exit 0 |
 
@@ -114,7 +114,7 @@ there — its state names the workspace, and an unnamed pane is in it — runs n
 checked where that pane runs when the state records the folder it was started in, and otherwise is
 not checked at all, the note saying so, and a miss found there is never refused. A `--dry-run`
 prints a refusal in the plan instead — `  skip <name>: would refuse: …` above `dry run: nothing was
-run` — makes nothing and exits 0.
+run` — and makes nothing. A dry run exits as the real run would, and changes nothing.
 
 ## Refusals
 
@@ -170,7 +170,7 @@ session past `limits.seats`, past `limits.temporary` for a temporary seat, or pa
 
 ## Exit codes
 
-- `0` — the seat reached its idle prompt and is ready; or the temporary seat is; or `--dry-run` printed its plan, a would-be refusal included.
+- `0` — the seat reached its idle prompt and is ready; or the temporary seat is; or `--dry-run` printed a plan the real run would have finished. A dry run exits as the real run would, and changes nothing.
 - `1` — the run was refused, or the seat was left behind at some stage of its launch.
 - `2` — the invocation or the team file can't be read.
 
