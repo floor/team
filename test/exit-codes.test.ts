@@ -839,12 +839,12 @@ scene('approve.approved', async (place) => {
 // injected through the test's own `sources.gate`, each with the sentence the real gate gives;
 // what the scenes pin is the command's side, the text and the exit code of each id. The scene
 // registered without an injection runs the real gate, whose first read — no record under the
-// place's home — refuses before herdr is ever asked. The gate's own decisions, the sovereign
-// guard included, are test/delegated-approve.test.ts.
+// place's home — refuses before herdr is ever asked. The gate's own decisions, the
+// ordinary-change guard included, are test/delegated-approve.test.ts.
 const DELEGATED_APPROVE = `${TEAM}delegates:\n  - pane: hook/w2:p9\n    commands: [approve]\n`;
 const APPROVE_GATE_REFUSALS: [suffix: string, sentence: string, needle: string][] = [
   ['delegate-approved-copy', 'delegation needs a readable approved copy: run `team approve`', 'readable approved copy'],
-  ['delegate-sovereign', 'this change needs the owner: `trust` changed', 'needs the owner'],
+  ['delegate-not-ordinary', 'this change needs the owner: `trust` changed', 'needs the owner'],
   ['delegate-evidence', "delegation cannot verify its placement or seats: herdr doesn't answer", 'placement or seats'],
   ['delegate-placement', 'the approved delegate must be an external non-seat pane', 'non-seat pane'],
   ['delegate', 'only the owner or the approved delegate approves a team file; this call is other', 'approved delegate approves'],

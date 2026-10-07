@@ -31,11 +31,13 @@ delegates:
 - `commands` names at most one each of the five `up`, `down`, `add`, `remove` and `approve`.
   Entry order and command order are part of the value the owner approves: a reorder is a change
   like any other.
-- `approve` is granted like the rest, under the gate's guard: a delegated approval of a change
-  that moves a sovereign section — `delegates`, `budgets`, `limits`, identity or `trust` — is
-  refused, so a delegate can never approve a change to its own authority. A delegated approval
-  of an ordinary change — the roster, a launch line, a rule — passes, and the write records one
-  audit line naming the pane and what it sealed.
+- `approve` is granted like the rest, under the gate's guard, and the guard is an allowlist:
+  a delegated approval admits the roster and `rules`, and refuses, fail-closed, every other
+  owner section — `delegates`, `budgets`, `limits`, identity, `trust`, the workspace, the
+  operator and orchestrator — and any section added later, so a delegate can never approve a
+  change to its own authority. A delegated approval of an ordinary change — the roster, a
+  launch line, a rule — passes, and the write records one audit line naming the pane and what
+  it sealed.
 - A pane named in several approved team files is a delegate of each — the files do not see or
-  limit one another — and in every one of them the sovereign sections stay the owner's, never a
-  delegate's.
+  limit one another — and in every one of them the owner-only sections stay the owner's, never
+  a delegate's.

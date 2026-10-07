@@ -352,13 +352,13 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     }
     // The delegate branch, tried only when the file names a delegate at all: with no
     // `delegates` section the refusal above stays exactly today's, and the gate is never
-    // asked. The gate verifies the approval, the approved copy, the sovereign guard — an
-    // ordinary difference passes there; a change to `delegates`, `budgets`, `limits`,
-    // identity or `trust` is refused with "this change needs the owner" — the placement, the
-    // entry, `approve` in its commands, and the flags: `--file` is refused there (a delegate
-    // approves the default placed file only). A passed run rejoins the owner's path below and
-    // skips only the question's guards: `--confirm` is inert for a delegate, nothing is asked
-    // on any terminal, and the audit line is the record of what this approval sealed.
+    // asked. The gate verifies the approval, the approved copy, the ordinary-change guard —
+    // a roster or `rules` difference passes there; every other owner section is refused with
+    // "this change needs the owner" — the placement, the entry, `approve` in its commands,
+    // and the flags: `--file` is refused there (a delegate approves the default placed file
+    // only). A passed run rejoins the owner's path below and skips only the question's
+    // guards: `--confirm` is inert for a delegate, nothing is asked on any terminal, and the
+    // audit line is the record of what this approval sealed.
     const verdict = (sources.gate ?? delegateGate)({
       command: 'approve',
       team,
@@ -378,7 +378,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
       // exit: approve.delegate-evidence
       // exit: approve.delegate-flag
       // exit: approve.delegate-placement
-      // exit: approve.delegate-sovereign
+      // exit: approve.delegate-not-ordinary
       return 1;
     }
     delegatedPane = verdict.pane;

@@ -480,7 +480,7 @@ describe('the approval home', () => {
 describe('the exit ids', () => {
   test('lists every refusal of the five commands, the delegated approval\'s own guard included', () => {
     expect(DELEGATE_EXIT_IDS).toHaveLength(41);
-    expect(DELEGATE_EXIT_IDS).toContain('approve.delegate-sovereign');
+    expect(DELEGATE_EXIT_IDS).toContain('approve.delegate-not-ordinary');
     expect(DELEGATE_EXIT_IDS).not.toContain('approve.delegate-drift');
     expect(new Set(DELEGATE_EXIT_IDS).size).toBe(41);
   });

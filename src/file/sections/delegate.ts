@@ -125,8 +125,8 @@ function readPane(entry: YamlEntry | undefined, check: Check, line: number, sess
 
 /**
  * A non-empty ordered list of distinct lower-case `up`, `down`, `add`, `remove` and `approve`.
- * `approve` is grantable like the rest: a delegated approval of a change that moves a sovereign
- * section is refused by the gate, never here (src/delegate.ts).
+ * `approve` is grantable like the rest: a delegated approval of a change to any owner section
+ * but `rules` is refused by the gate's allowlist, never here (src/delegate.ts).
  */
 function readCommands(entry: YamlEntry | undefined, check: Check, line: number): DelegateCommand[] | null {
   if (!entry) {

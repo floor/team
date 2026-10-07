@@ -592,15 +592,15 @@
     {
       "code": 1,
       "command": "approve",
-      "id": "approve.delegate-placement",
-      "meaning": "the approved delegate must be an external non-seat pane",
+      "id": "approve.delegate-not-ordinary",
+      "meaning": "the change moves an owner section a delegate may not: it needs the owner",
       "trigger": "team approve"
     },
     {
       "code": 1,
       "command": "approve",
-      "id": "approve.delegate-sovereign",
-      "meaning": "the change moves a sovereign section: it needs the owner",
+      "id": "approve.delegate-placement",
+      "meaning": "the approved delegate must be an external non-seat pane",
       "trigger": "team approve"
     },
     {

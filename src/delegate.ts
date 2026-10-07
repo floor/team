@@ -53,21 +53,23 @@ export const ADD_DELEGATE_EDIT: { id: 'add.delegate-edit'; text: string } = {
 const PREFLIGHT = ['delegate-approval', 'delegate-approved-copy', 'delegate-evidence', 'delegate-placement'] as const;
 
 /**
- * The sovereign sections: the grant itself, the money, the ceilings, the signing material,
- * and the trusted-path set — widening any of them is its own escalation. A delegated
- * `approve` may move none of them. `rules` is an owner section and deliberately not here: a
- * delegate approves a rules change freely, and what it must never do is approve its own power.
+ * The sections a delegated `approve` may move: `rules` alone — instructions for the team,
+ * never power and never code. Every other owner section is the owner's, and the guard below
+ * tests membership in this list, so a section the parser grows later is refused by default
+ * rather than silently admitted. The list is deliberately written out and not derived from
+ * the section modules: an owner section added there must not widen a delegate's reach, and
+ * this line is where a widening would show.
  */
-export const SOVEREIGN_SECTIONS: readonly string[] = ['budgets', 'delegates', 'identity', 'limits', 'trust'];
+export const ORDINARY_SECTIONS: readonly string[] = ['rules'];
 
 /**
  * The refusals before the evidence walk, in gate order. Between the approved copy and the
  * evidence each command has one difference step: the drift refusal for the four, and the
- * sovereign guard for `approve`, which admits an ordinary difference where the others refuse
- * any.
+ * ordinary-change guard for `approve`, which admits the roster and `rules` where the others
+ * refuse any difference at all.
  */
 function preflightOf(command: DelegateCommand): readonly string[] {
-  const difference = command === 'approve' ? 'delegate-sovereign' : 'delegate-drift';
+  const difference = command === 'approve' ? 'delegate-not-ordinary' : 'delegate-drift';
   return [PREFLIGHT[0], PREFLIGHT[1], difference, PREFLIGHT[2], PREFLIGHT[3]];
 }
 
@@ -118,8 +120,8 @@ export function logDelegated(dir: string, pane: string, command: DelegateCommand
  *
  * An earlier refusal wins. Any approval difference refuses — a reorder of the delegates list
  * or of a command list included, both part of the canonical value — except under `approve`,
- * whose own step is the sovereign guard below: it admits an ordinary difference and refuses a
- * sovereign one.
+ * whose own step is the ordinary-change guard below: it admits an ordinary difference — the
+ * roster and `rules` — and refuses every other owner section.
  */
 export function delegateGate(input: {
   command: DelegateCommand;
@@ -147,15 +149,17 @@ export function delegateGate(input: {
   }
 
   // The difference step. A delegated approval admits an ordinary difference — the day's
-  // roster, launch-line and rules edits are exactly what it is for — and refuses, fail-closed,
-  // any change to a sovereign section: authority, money, the ceilings, identity, trust. The
-  // four other commands refuse any difference at all, drift included.
+  // roster and rules edits are exactly what it is for — and refuses, fail-closed, every other
+  // owner section: authority, money, the ceilings, identity, trust, the workspace's setup
+  // commands, and any section the parser grows later, since the test is membership in the
+  // ordinary list and never exclusion from a list of the known-bad. Seat differences are
+  // admitted here and held to the add/remove envelope by the steps below.
   if (command === 'approve') {
-    const sovereign = compare(approvedFingerprints(standing.record), fingerprints(team)).filter(
-      (difference) => difference.kind === 'section' && SOVEREIGN_SECTIONS.includes(difference.name),
+    const kept = compare(approvedFingerprints(standing.record), fingerprints(team)).filter(
+      (difference) => difference.kind === 'section' && !ORDINARY_SECTIONS.includes(difference.name),
     );
-    if (sovereign.length > 0) {
-      return refuse('delegate-sovereign', `this change needs the owner: ${sovereign.map(describe).join('; ')}`);
+    if (kept.length > 0) {
+      return refuse('delegate-not-ordinary', `this change needs the owner: ${kept.map(describe).join('; ')}`);
     }
   } else {
     const differences = approvalDifferencesOf(standing, team);
