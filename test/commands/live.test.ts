@@ -62,7 +62,7 @@ const store = () => storePath('acme-web', root, home);
 
 async function approve() {
   const io = testIo(root, { kind: 'owner' });
-  const code = await runApprove(FILE, io, { ask: async () => '5', now: () => NOW, home });
+  const code = await runApprove(FILE, io, { ask: async () => '5', waiting: () => false, now: () => NOW, home });
   expect(code).toBe(0);
 }
 
@@ -5189,7 +5189,7 @@ describe('scratch session', () => {
       const file = ['--file', join(project, '.agents/team.yaml')];
       const owner = testIo(project, { kind: 'owner' });
       try {
-        expect(await runApprove(file, owner, { ask: async () => '3', now: () => new Date(), home: scratchHome })).toBe(0);
+        expect(await runApprove(file, owner, { ask: async () => '3', waiting: () => false, now: () => new Date(), home: scratchHome })).toBe(0);
         const doctor = upReal.doctor ? { ...upReal.doctor, home: scratchHome } : undefined;
         const upCode = await runUp(file, owner, { ...upReal, home: scratchHome, doctor });
         expect(upCode).toBe(1);
@@ -5227,7 +5227,7 @@ describe('scratch session', () => {
           mkdirSync(agentsDir, { recursive: true });
           writeFileSync(join(agentsDir, 'team.yaml'), cheapFile());
           const file = ['--file', join(agentsDir, 'team.yaml')];
-          expect(await runApprove(file, owner, { ask: async () => '3', now: () => new Date(), home: scratchHome })).toBe(0);
+          expect(await runApprove(file, owner, { ask: async () => '3', waiting: () => false, now: () => new Date(), home: scratchHome })).toBe(0);
           const doctor = upReal.doctor ? { ...upReal.doctor, home: scratchHome } : undefined;
           const upCode = await runUp(file, owner, { ...upReal, home: scratchHome, doctor });
           expect(upCode).toBe(0);

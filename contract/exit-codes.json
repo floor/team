@@ -545,13 +545,20 @@
       "command": "approve",
       "id": "approve.answer",
       "meaning": "the answer was not the number of seats",
-      "trigger": "team approve"
+      "trigger": "team approve --confirm"
     },
     {
       "code": 1,
       "command": "approve",
       "id": "approve.check",
       "meaning": "an approved check cannot be resolved",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "id": "approve.input-waiting",
+      "meaning": "input was waiting on the terminal",
       "trigger": "team approve"
     },
     {

@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs';
+import { closeSync, constants, openSync, readSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -21,6 +21,9 @@ import { keyFingerprint, keyOf, keyState, recordedGeneration } from '../store/ke
 export type ApproveSources = {
   // The owner's answer to a question on the terminal, or null when there is none.
   ask(question: string): Promise<string | null>;
+  // Whether a line of input was already waiting on the terminal at the moment approve would
+  // write: the rest of a pasted block, which must not be left to approve by itself.
+  waiting(): boolean;
   now(): Date;
   home: string;
 };
@@ -36,11 +39,39 @@ export const realSources: ApproveSources = {
       terminal.close();
     }
   },
+  // Read the terminal's own input without blocking and without consuming anything when it is
+  // empty: `/dev/tty` is opened non-blocking, and one canonical-mode line is read — a waiting
+  // line answers the read, nothing waiting is EAGAIN. One read takes one line — the line a
+  // pasted block would have fed the question — and that line is dropped: the refusal this
+  // feeds writes nothing, so nothing could have used it, and no call in this runtime peeks
+  // without consuming. A line still being typed (no newline yet) is not readable in cooked
+  // mode and is not seen; a question could not have consumed it either. A process with no
+  // controlling terminal (stdin a tty of another device) cannot be checked this way: the open
+  // fails and this is false — and the walk has already refused every caller without a terminal.
+  // Proven on a real pty on both platforms, through test/commands/pty-run.py: macOS under a
+  // launchd-parented chain, and ubuntu-latest in CI, whose log carries both cases —
+  // `(pass) a line waiting on the pty: the guard refuses, exit 1, nothing written [80.17ms]`
+  // and `(pass) nothing waiting: the guard is silent and the run approves [79.47ms]`, with no
+  // stranger-path line, so the walk placed the caller as the owner and the refusal under test
+  // was this one.
+  waiting() {
+    try {
+      const fd = openSync('/dev/tty', constants.O_RDONLY | constants.O_NONBLOCK);
+      try {
+        const line = Buffer.alloc(4096);
+        return readSync(fd, line, 0, line.length, null) > 0;
+      } finally {
+        closeSync(fd);
+      }
+    } catch {
+      return false;
+    }
+  },
   now: () => new Date(),
   home: homedir(),
 };
 
-export const USAGE = 'Usage: team approve [--show] [--file <path>]\n';
+export const USAGE = 'Usage: team approve [--show] [--confirm] [--file <path>]\n';
 
 export const approve: Command = (argv, io) => runApprove(argv, io, realSources);
 export default approve;
@@ -77,7 +108,7 @@ function ceilingsLine(ceilings: Ceilings): string {
 }
 
 export async function runApprove(argv: string[], io: Io, sources: ApproveSources): Promise<number> {
-  const args = readArgs(argv, ['file'], ['show']);
+  const args = readArgs(argv, ['file'], ['show', 'confirm']);
   if (args.error || args.rest.length) {
     io.stderr(`team approve: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
     // exit: approve.invocation
@@ -207,7 +238,7 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   // exit: approve.show
   if (args.flags.has('show')) return 0;
 
-  // A key that cannot be read fails closed here, before the owner answers anything:
+  // A key that cannot be read fails closed here, before anything is asked or written:
   // a new key would orphan every record already signed, so the owner restores it.
   try {
     keyOf(sources.home);
@@ -226,12 +257,22 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     return 1;
   }
 
-  const answer = await sources.ask(
-    `\nType the number of seats (${seats}) to approve this file, and its commands and rules, to run: `,
-  );
-  if (answer === null || answer.trim() !== String(seats)) {
-    io.stderr('team approve: not approved; nothing was written\n');
-    // exit: approve.answer
+  // The default path asks nothing: the summary above is the last thing printed, and the
+  // record is written. Two things keep the question's protection: the owner check above
+  // (the input is a terminal) and this guard — input already waiting on that terminal is a
+  // pasted block's remainder, which must not be left to approve anything.
+  if (args.flags.has('confirm')) {
+    const answer = await sources.ask(
+      `\nType the number of seats (${seats}) to approve this file, and its commands and rules, to run: `,
+    );
+    if (answer === null || answer.trim() !== String(seats)) {
+      io.stderr('team approve: not approved; nothing was written\n');
+      // exit: approve.answer
+      return 1;
+    }
+  } else if (sources.waiting()) {
+    io.stderr('team approve: input was waiting on the terminal: run `team approve` on its own line\n');
+    // exit: approve.input-waiting
     return 1;
   }
 
