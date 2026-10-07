@@ -14,7 +14,7 @@ import { validateTeamFile } from '../../src/file/validate.ts';
 import { paneStillRunning, runDown, type DownSources } from '../../src/commands/down.ts';
 import { runUp, type UpSources } from '../../src/commands/up.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
-import { installKey } from '../../src/store/keys.ts';
+import { installKey, keyFolder, recordedGeneration } from '../../src/store/keys.ts';
 import { readApproval, readLedger, storePath } from '../../src/store/store.ts';
 import { readScreen } from '../../src/watch/screen.ts';
 import { claudeBox, testIo } from '../helpers.ts';
@@ -149,6 +149,65 @@ describe('team approve', () => {
     expect(run.asked).toHaveLength(1);
     expect(run.asked[0]).toContain('Type the number of seats (5)');
     expect(readApproval(store())?.file).toBe(EXAMPLE);
+  });
+
+  describe('a first approval', () => {
+    // Every other test starts with the key already installed; here it is removed, so the run
+    // below is the first this machine would do — the case the review found: a refusal before
+    // any writing must leave no key, no record, no generation and no log behind.
+    beforeEach(() => rmSync(keyFolder(home), { recursive: true, force: true }));
+
+    const expectNothingWritten = () => {
+      expect(existsSync(keyFolder(home))).toBe(false);
+      expect(recordedGeneration(root, home)).toBeNull();
+      expect(existsSync(store())).toBe(false);
+      expect(existsSync(join(root, '.agents/team.log'))).toBe(false);
+    };
+
+    test('input waiting: no key folder, no record, no generation, no log', async () => {
+      const run = await approve([], OWNER, '5', 'waiting');
+      expect(run.code).toBe(1);
+      expect(run.err).toBe('team approve: input was waiting on the terminal: run `team approve` on its own line\n');
+      expectNothingWritten();
+    });
+
+    test('terminal unreadable: no key folder, no record, no generation, no log', async () => {
+      const run = await approve([], OWNER, '5', 'unreadable');
+      expect(run.code).toBe(1);
+      expect(run.err).toBe(
+        'team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written\n',
+      );
+      expectNothingWritten();
+    });
+
+    test('not the owner: no key folder, no record, no generation, no log', async () => {
+      const run = await approve([], COORDINATOR);
+      expect(run.code).toBe(1);
+      expect(run.err).toBe(
+        'team approve: only the owner approves a team file, from a terminal outside herdr; this call is claude-coordinator-acme\n',
+      );
+      expect(run.asked).toEqual([]);
+      expectNothingWritten();
+    });
+
+    test('a rejected --confirm answer: no key folder, no record, no generation, no log', async () => {
+      const run = await approve(['--confirm'], OWNER, '4');
+      expect(run.code).toBe(1);
+      expect(run.err).toBe('team approve: not approved; nothing was written\n');
+      expectNothingWritten();
+    });
+
+    test('the first approval that goes through creates all four', async () => {
+      const run = await approve([], OWNER);
+      expect(run.code).toBe(0);
+      expect(run.asked).toEqual([]);
+      expect(run.out).toContain('Approved. The record is in ');
+      expect(existsSync(join(keyFolder(home), 'key.json'))).toBe(true);
+      expect(recordedGeneration(root, home)?.generation).toBe(1);
+      expect(readApproval(store())?.file).toBe(EXAMPLE);
+      expect(existsSync(join(root, '.agents/team.log'))).toBe(true);
+      expect(readFileSync(join(root, '.agents/team.log'), 'utf8')).toContain('approve [owner] approved 5 seats');
+    });
   });
 
   test('records the file, its ceilings and its seats once the owner types the number of seats', async () => {
