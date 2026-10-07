@@ -1,18 +1,15 @@
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { fromTeamFile, type CheckConfig } from '../check/config.ts';
-import { GitError } from '../check/git.ts';
-import { formatReport, runCheck } from '../check/run.ts';
-import { loadTeamFile } from '../file/load.ts';
-import type { Problem } from '../file/types.ts';
+// The old spelling of `team commits check` and `team pr check`, still read through 0.3.3 (design
+// note §2.3). The parse rule: a `team check` with no argument at all is the new team check —
+// reserved, and not built in this slice — so it refuses here exactly as it always has (`a <ref>
+// is required` and the usage, exit 2) and never runs the old form. Any argument is the old
+// spelling: one notice line per half on stderr, then the shared run (`runCommits`), so the old
+// name and the new ones run one code path and print one report.
+import { loadConfig, type LoadConfig } from '../check/load.ts';
 import type { Io } from '../io.ts';
-import { readLedger, storePath } from '../store/store.ts';
+import { runCommits } from './commits.ts';
 
-export type LoadConfig = (
-  cwd: string,
-  file?: string,
-) => { ok: true; config: CheckConfig; warnings: Problem[] } | { ok: false; errors: Problem[]; path?: string };
+export { loadConfig };
+export type { LoadConfig };
 
 export const USAGE = `Usage: team check <ref> [--pr <file>] [--since <ref>] [--file <path>]
 
@@ -58,76 +55,20 @@ function parse(argv: string[]): Arguments | string {
   return { ref, ...values };
 }
 
-/** The file's rules, with the ledger of this machine's store when the owner has approved a file here. */
-export function loadConfig(cwd: string, file?: string, home: string = homedir()): ReturnType<LoadConfig> {
-  const loaded = loadTeamFile(cwd, { file, home, checkOnly: true });
-  if (!loaded.ok) return loaded;
-  const store = storePath(loaded.team.project, loaded.root, home);
-  const ledgerFile = join(store, 'ledger.json');
-  try {
-    const ledger = readLedger(store);
-    return { ok: true, config: fromTeamFile(loaded.team, ledger), warnings: loaded.warnings };
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    return { ok: false, errors: [{ line: 0, message: `can't read ${ledgerFile}: ${detail}` }] };
-  }
-}
-
-function place(problem: Problem, path?: string): string {
-  const where = [path, problem.line > 0 ? `line ${problem.line}` : ''].filter(Boolean).join(', ');
-  return `${where ? `${where}: ` : ''}${problem.message}`;
-}
-
 export async function check(argv: string[], io: Io, load: LoadConfig = loadConfig): Promise<number> {
   const args = parse(argv);
   if (typeof args === 'string') {
+    // A refused invocation keeps the bytes it always had, and takes no notice: an error already
+    // says what to fix, and the bare form — the new team check's own — has nothing to accept yet.
     io.stderr(`team check: ${args}\n\n${USAGE}`);
     // exit: check.invocation
     return 2;
   }
-
-  const loaded = load(io.cwd, args.file);
-  if (!loaded.ok) {
-    for (const problem of loaded.errors) io.stderr(`team check: ${place(problem, loaded.path)}\n`);
-    // exit: check.not-a-repo
-    // exit: check.file
-    // exit: check.file-invalid
-    // exit: check.ledger
-    return 2;
-  }
-
-  for (const warning of loaded.warnings) io.stderr(`team check: warning: ${place(warning)}\n`);
-
-  let pullRequestBody: string | undefined;
+  io.stderr('team check: `team check` is now `team commits check`, and is still read through 0.3.3\n');
   if (args.pr !== undefined) {
-    try {
-      pullRequestBody = readFileSync(args.pr === '-' ? 0 : resolve(io.cwd, args.pr), 'utf8');
-    } catch (error) {
-      io.stderr(`team check: can't read the pull request body: ${(error as Error).message}\n`);
-      // exit: check.pr-body
-      return 2;
-    }
+    io.stderr('team check: `team check --pr` is now `team pr check`, and is still read through 0.3.3\n');
   }
-
-  try {
-    const report = runCheck(loaded.config, { cwd: io.cwd, ref: args.ref, since: args.since, pullRequestBody });
-    io.stdout(formatReport(report));
-    // exit: check.passed
-    // exit: check.refused
-    return report.ok ? 0 : 1;
-  } catch (error) {
-    // exit: check.threw
-    if (!(error instanceof GitError)) throw error;
-    io.stderr(`team check: ${error.message}\n`);
-    // exit: check.outside
-    // exit: check.no-commit
-    // exit: check.range
-    // exit: check.empty-range
-    // exit: check.since-missing
-    // exit: check.since-unreachable
-    // exit: check.not-a-ref
-    return 2;
-  }
+  return runCommits(io, load, { ref: args.ref, since: args.since, file: args.file, pr: args.pr });
 }
 
 export default check;

@@ -3,7 +3,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { check, loadConfig } from '../../src/commands/check.ts';
+import { loadConfig } from '../../src/commands/check.ts';
+import { commits } from '../../src/commands/commits.ts';
+import { pr } from '../../src/commands/pr.ts';
 import { createRepository, type Repository } from './repository.ts';
 
 /** This repository's own team file, the one CI checks with. */
@@ -14,7 +16,10 @@ const PANE = 'forbidden pattern \\bw[0-9A-Z]+:p[0-9]+\\b';
 const SESSION = 'forbidden pattern \\bfloor-[0-9a-f]{2}\\b';
 
 /** The notice this repository's own team file carries: it still spells the lead `coordinator:`. */
-const WARNING = 'team check: warning: line 7: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read\n';
+const WARNING = 'team commits check: warning: line 7: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read\n';
+
+/** The same notice, under the body check's own name. */
+const PR_WARNING = WARNING.replace('team commits check: ', 'team pr check: ');
 
 /** A signature of the file's coordinator seat, which passes the signature rule. */
 const SIGNATURE = 'Agent: Claude Opus 5.5 · coordinator';
@@ -68,7 +73,22 @@ async function run(argv: string[]) {
     env: {},
     stdinIsTTY: false,
   };
-  const code = await check(argv, io, (cwd, file) => loadConfig(cwd, file, home));
+  const code = await commits(['check', ...argv], io, (cwd, file) => loadConfig(cwd, file, home));
+  return { code, stdout, stderr };
+}
+
+/** Runs `team pr check` the same way. */
+async function runPr(argv: string[]) {
+  let stdout = '';
+  let stderr = '';
+  const io = {
+    stdout: (text: string) => void (stdout += text),
+    stderr: (text: string) => void (stderr += text),
+    cwd: repo.path,
+    env: {},
+    stdinIsTTY: false,
+  };
+  const code = await pr(['check', ...argv], io, (cwd, file) => loadConfig(cwd, file, home));
   return { code, stdout, stderr };
 }
 
@@ -86,7 +106,7 @@ describe('a pane id in this repository', () => {
         '    The watch announced w2A:p1 today,',
         `  line 4: ${PANE}`,
         '    and w29:p12 as well.',
-        'team check: 1 commit checked: 1 commit refused',
+        'team commits check: 1 commit checked: 1 commit refused',
         '',
       ].join('\n'),
       stderr: WARNING,
@@ -95,17 +115,19 @@ describe('a pane id in this repository', () => {
 
   test('is refused in a pull request body beside a passing commit', async () => {
     writeFileSync(join(repo.path, 'body.md'), `What this does.\n\nThe watch announced w2A:p1.\n\n${PR_SIGNATURE}\n`);
-    const result = await run([hash.misses, '--since', hash.old, '--pr', 'body.md', '--file', TEAM_FILE]);
+    const passing = await run([hash.misses, '--since', hash.old, '--file', TEAM_FILE]);
+    expect(passing).toEqual({ code: 0, stdout: 'team commits check: 1 commit checked: ok\n', stderr: WARNING });
+    const result = await runPr(['body.md', '--file', TEAM_FILE]);
     expect(result).toEqual({
       code: 1,
       stdout: [
         'pull request body',
         `  line 3: ${PANE}`,
         '    The watch announced w2A:p1.',
-        'team check: 1 commit checked, 1 pull request body checked: the pull request body refused',
+        'team pr check: 1 pull request body checked: the pull request body refused',
         '',
       ].join('\n'),
-      stderr: WARNING,
+      stderr: PR_WARNING,
     });
   });
 });
@@ -119,7 +141,7 @@ describe('an internal session name in this repository', () => {
         `${hash.session.slice(0, 10)} feat: a session name in the message`,
         `  line 3: ${SESSION}`,
         '    The run came from floor-3a.',
-        'team check: 1 commit checked: 1 commit refused',
+        'team commits check: 1 commit checked: 1 commit refused',
         '',
       ].join('\n'),
       stderr: WARNING,
@@ -128,17 +150,19 @@ describe('an internal session name in this repository', () => {
 
   test('is refused in a pull request body beside a passing commit', async () => {
     writeFileSync(join(repo.path, 'body.md'), `What this does.\n\nThe run came from floor-3a.\n\n${PR_SIGNATURE}\n`);
-    const result = await run([hash.misses, '--since', hash.old, '--pr', 'body.md', '--file', TEAM_FILE]);
+    const passing = await run([hash.misses, '--since', hash.old, '--file', TEAM_FILE]);
+    expect(passing).toEqual({ code: 0, stdout: 'team commits check: 1 commit checked: ok\n', stderr: WARNING });
+    const result = await runPr(['body.md', '--file', TEAM_FILE]);
     expect(result).toEqual({
       code: 1,
       stdout: [
         'pull request body',
         `  line 3: ${SESSION}`,
         '    The run came from floor-3a.',
-        'team check: 1 commit checked, 1 pull request body checked: the pull request body refused',
+        'team pr check: 1 pull request body checked: the pull request body refused',
         '',
       ].join('\n'),
-      stderr: WARNING,
+      stderr: PR_WARNING,
     });
   });
 });
@@ -146,6 +170,6 @@ describe('an internal session name in this repository', () => {
 describe('the near misses', () => {
   test('words, versions and the public names are not pane ids or session names', async () => {
     const result = await runOne('misses');
-    expect(result).toEqual({ code: 0, stdout: 'team check: 1 commit checked: ok\n', stderr: WARNING });
+    expect(result).toEqual({ code: 0, stdout: 'team commits check: 1 commit checked: ok\n', stderr: WARNING });
   });
 });

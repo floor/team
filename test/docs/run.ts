@@ -8,6 +8,8 @@ import { runAdd } from '../../src/commands/add.ts';
 import { runAnswer, type AnswerHost } from '../../src/commands/answer.ts';
 import { runApprove, type Waiting } from '../../src/commands/approve.ts';
 import { check, loadConfig } from '../../src/commands/check.ts';
+import { commits } from '../../src/commands/commits.ts';
+import { pr } from '../../src/commands/pr.ts';
 import { runDoctor } from '../../src/commands/doctor.ts';
 import { runDown } from '../../src/commands/down.ts';
 import { runInit } from '../../src/commands/init.ts';
@@ -181,6 +183,8 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
       });
     case 'check':
       return check(rest, io, (cwd, file) => loadConfig(cwd, file, fixture.home));
+    case 'commits':
+      return commits(rest, io, (cwd, file) => loadConfig(cwd, file, fixture.home));
     case 'doctor':
       return runDoctor(rest, io, world.doctorSources());
     case 'down':
@@ -190,6 +194,8 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
       return runInit(rest, io, fixture.home, undefined, { loggedIn: () => false });
     case 'remove':
       return runRemove(rest, io, world.removeSources());
+    case 'pr':
+      return pr(rest, io, (cwd, file) => loadConfig(cwd, file, fixture.home));
     case 'release':
       return runRelease(rest, io, world.releaseFetch(), world.releaseKeyReader());
     case 'status':

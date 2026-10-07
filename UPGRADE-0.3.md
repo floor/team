@@ -63,6 +63,7 @@ What else changes for you:
   it closes the workspace without input (`left out: trust (no terminal for owner)`).
 
 - **A dry run that reaches a refusal the real run would give before doing anything returns that refusal's status and exit id; a dry run that reaches its plan exits 0 and promises nothing about what happens after (the run lock, a launch, the watch).** Nothing is written. A refusal it reaches is a change in behaviour.
+- **`team check` is two commands now**: `team commits check <ref>` checks commits, and `team pr check <file>` checks a pull request's body alone, in a folder with no repository at all. Every old form is still read through 0.3.3, one notice line first; bare `team check` is reserved for the team's own check, which a later build brings.
 
 How to tell it is done: `team doctor` ends `nothing missing` (notes about a placeholder version `"0"` may
 remain), and `team status --json` shows each seat's `start_cwd` under `~/.config/team/lobby`. `team status`

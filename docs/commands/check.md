@@ -1,57 +1,59 @@
 # team check
 
-Checks a commit, or a range of commits, against the team file's rules: every commit must carry a
-seat's signature where the file says, no line of its message may match a forbidden pattern, and,
-with `--pr`, a pull request's body is held to the same rules. `check` is what a seat runs on its own
-branch before it reports, and what CI runs on every push.
+The old spelling of the two commands that took its halves: [`team commits check`](commits.md)
+checks a commit or a range, and [`team pr check`](pr.md) checks a pull request's body alone. A
+`team check` with any argument at all is still read through 0.3.3 — the call runs as it always
+has, with one notice line naming the new command first.
+
+A `team check` with **no argument at all** is reserved for the team's own check: a different
+command, and not built in this build. There is nothing to accept yet, so bare `team check`
+refuses exactly as it always has, and never runs the old commit check.
 
 ## Synopsis
 
     team check <ref> [--pr <file>] [--since <ref>] [--file <path>]
 
-## What it reads and writes
+## The old spelling, one notice line
 
-Reads the team file (or the one `--file` names), the ledger of this machine's store (every seat the
-team has had here, so a removed seat's commits still pass), the git history of `<ref>`, and, with
-`--pr`, the file holding the pull request's body. It writes nothing: no state file, no log line, no
-store.
+Any argument is the old spelling. The run is the one the new names run — the commits half, and
+with `--pr` the body half as well — and one line goes to standard error before the command's own
+bytes, naming the new command:
 
-## Who may run it
+    team check: `team check` is now `team commits check`, and is still read through 0.3.3
+    team check: `team check --pr` is now `team pr check`, and is still read through 0.3.3
 
-Anyone. It needs no herdr session, no terminal and no approval of its own; a seat runs it on its own
-branch and CI runs it on a push.
+A plain call prints the first line; a `--pr` call prints both, the commits one first. Every line
+under the notices names the new command (`team commits check: …`, `team pr check: …`), and the
+exit codes are the ones [`commits check`](commits.md) and [`pr check`](pr.md) have. A refused
+invocation — a missing or doubled `<ref>`, an unknown option — keeps the bytes it always had and
+takes no notice: an error already says what to fix.
 
-## Flags
+## Bare `team check`
 
-| Flag | Meaning |
-| --- | --- |
-| `<ref>` | one commit, or a range when it holds `..`, passed to git as given (`origin/main..HEAD`) |
-| `--pr <file>` | also check a pull request's body, read from `<file>`; `-` reads standard input |
-| `--since <ref>` | skip this commit and everything reachable from it, for this run; overrides `identity.since` |
-| `--file <path>` | the team file, instead of `.agents/team.yaml` |
-| `--help`, `-h` | the usage, and exit 0 |
+Not the old spelling, and not built yet either: the team's own check arrives in a later build.
+Until then it refuses exactly as it did before the rename, and runs nothing:
 
-## What it finds
+```console
+$ team check ; echo "exit $?"
+team check: a <ref> is required
 
-Every offending commit is printed with its hash and subject, then one block per finding:
+Usage: team check <ref> [--pr <file>] [--since <ref>] [--file <path>]
 
-    <sha> Tidy the logs
-      line 5: forbidden pattern ^Claude-Session:
-        Claude-Session: 8f21c4a9
+  <ref>            a range when it holds "..", passed to git as given
+                   (origin/main..HEAD); otherwise that one commit
+  --pr <file>      also check a pull request's body ("-" reads standard input)
+  --since <ref>    skip this commit and everything reachable from it, for this
+                   run; overrides identity.since
+  --file <path>    the team file, instead of .agents/team.yaml
 
-| Finding | Meaning |
-| --- | --- |
-| `no signature: expected "Agent: {display} · {role}" in the final trailer block` | the message carries no signature at all |
-| `the signature is not in the final trailer block` | a seat's signature is there, but not where the file's rule says |
-| `the signature shares its paragraph with prose ("…"), so git reads no trailer block: put it in a paragraph of its own, with trailers only` | the signature touches ordinary text, so git reads no trailer |
-| `a signature no seat of this team has had (the model, the version and the role must all match one seat)` | a signature-shaped line naming a model, version or role no seat has |
-| `forbidden pattern <source>` | the line matches one of the file's patterns, or one of the two defaults |
-
-The summary says what was read — `<n> commits checked`, `<n> by a human or a merge`, `<n> skipped
-(since <ref>)`, `1 pull request body checked` — and then `ok`, or `1 commit refused`, or `2 commits
-refused`, or `the pull request body refused`.
+Exits 0 when every commit passes, 1 when one is refused, 2 when the check
+can't run.
+exit 2
+```
 
 ## Refusals
+
+The invocation's own, in the old bytes:
 
 | Message | Exit |
 | --- | --- |
@@ -59,20 +61,15 @@ refused`, or `the pull request body refused`.
 | `team check: one <ref> at most` (with the usage) | 2 |
 | `team check: unknown option --<name>` (with the usage) | 2 |
 | `team check: --pr needs a value` (with the usage) | 2 |
-| `team check: <path>, line <n>: <message>` | 2 |
-| `team check: can't read the pull request body: <error>` | 2 |
-| `team check: not in a git repository` | 2 |
-| `team check: "<ref>" doesn't name a commit` | 2 |
-| `team check: the range "<ref>" can't be resolved` | 2 |
-| `team check: the range "<ref>" holds no commit` | 2 |
-| `team check: since "<ref>" doesn't name a commit here (a shallow clone doesn't hold the history it needs)` | 2 |
-| `team check: since "<ref>" is not reachable from "<ref>"` | 2 |
+
+Everything else leaves through the new commands and prints their names; their pages carry those
+tables.
 
 ## Exit codes
 
 - `0` — every commit checked passes, and so does the pull request body when one was given.
 - `1` — at least one commit, or the body, was refused.
-- `2` — the check can't run: a bad invocation, a team file that can't be read, a ref that names nothing.
+- `2` — the invocation can't be read; the run's own refusals are the new commands' 2s, on their pages.
 
 ## Examples
 
@@ -112,28 +109,6 @@ seats:
     launch: claude --model claude-opus-5-5
 ```
 
-A seat signs its commits in a trailer block of its own:
-
-```commit
-Sketch the layout
-
-Agent: Claude Opus 5.5 · implementer
-```
-
-The person named in `identity.humans` never signs:
-
-```commit email=jane@acme.example
-Review the copy
-```
-
-This one forgot, and this one signed but leaked a line the file forbids:
-
-```commit
-Add the metrics page
-
-The counters come from the tracker's webhook, not from a poll.
-```
-
 ```commit
 Tidy the logs
 
@@ -143,78 +118,35 @@ Claude-Session: 8f21c4a9
 Agent: Claude Opus 5.5 · implementer
 ```
 
+The old spelling runs the commits check, one notice line first:
+
+```console
+$ team check HEAD ; echo "exit $?"
+team check: `team check` is now `team commits check`, and is still read through 0.3.3
+team commits check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
+<sha> Tidy the logs
+  line 5: forbidden pattern ^Claude-Session:
+    Claude-Session: 8f21c4a9
+team commits check: 1 commit checked: 1 commit refused
+exit 1
+```
+
+With `--pr` both halves run, and both notices print — the commits one first:
+
 ```file file=pr.md
 The metrics page is ready for review.
 
 **Agent:** Claude Opus 5.5 · implementer
 ```
 
-The commit a person wrote needs no signature:
-
 ```console
-$ team check HEAD~2 ; echo "exit $?"
-team check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
-team check: 1 commit checked, 1 by a human or a merge: ok
-exit 0
-```
-
-The newest commit signs, but leaks the forbidden line:
-
-```console
-$ team check HEAD ; echo "exit $?"
-team check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
+$ team check HEAD --pr pr.md ; echo "exit $?"
+team check: `team check` is now `team commits check`, and is still read through 0.3.3
+team check: `team check --pr` is now `team pr check`, and is still read through 0.3.3
+team commits check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 <sha> Tidy the logs
   line 5: forbidden pattern ^Claude-Session:
     Claude-Session: 8f21c4a9
-team check: 1 commit checked: 1 commit refused
+team commits check: 1 commit checked, 1 pull request body checked: 1 commit refused
 exit 1
-```
-
-A range reads newest first and reports every commit with findings:
-
-```console
-$ team check HEAD~3..HEAD ; echo "exit $?"
-team check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
-<sha> Tidy the logs
-  line 5: forbidden pattern ^Claude-Session:
-    Claude-Session: 8f21c4a9
-<sha> Add the metrics page
-  no signature: expected "Agent: {display} · {role}" in the final trailer block
-team check: 3 commits checked, 1 by a human or a merge: 2 commits refused
-exit 1
-```
-
-`--since` leaves that commit and everything reachable from it out of the report:
-
-```console
-$ team check HEAD~3..HEAD --since HEAD~1 ; echo "exit $?"
-team check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
-<sha> Tidy the logs
-  line 5: forbidden pattern ^Claude-Session:
-    Claude-Session: 8f21c4a9
-team check: 1 commit checked, 2 skipped (since <sha>): 1 commit refused
-exit 1
-```
-
-A pull request's body is checked as well:
-
-```console
-$ team check HEAD~3..HEAD --pr pr.md ; echo "exit $?"
-team check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
-<sha> Tidy the logs
-  line 5: forbidden pattern ^Claude-Session:
-    Claude-Session: 8f21c4a9
-<sha> Add the metrics page
-  no signature: expected "Agent: {display} · {role}" in the final trailer block
-team check: 3 commits checked, 1 by a human or a merge, 1 pull request body checked: 2 commits refused
-exit 1
-```
-
-A ref that names nothing can't be checked:
-
-```console
-$ team check origin/main ; echo "exit $?"
-team check: warning: line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
-team check: "origin/main" doesn't name a commit
-exit 2
 ```

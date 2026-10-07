@@ -20,7 +20,8 @@ import { join } from 'node:path';
 import { approvalOf } from '../../src/approve/approval.ts';
 import { placeCaller, type Caller, type CallerSources } from '../../src/caller.ts';
 import { runApprove } from '../../src/commands/approve.ts';
-import { check, loadConfig } from '../../src/commands/check.ts';
+import { loadConfig } from '../../src/commands/check.ts';
+import { commits } from '../../src/commands/commits.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
 import { runInit } from '../../src/commands/init.ts';
 import { runRelease } from '../../src/commands/release.ts';
@@ -701,9 +702,9 @@ describe('the other commands that take --file: nothing written beside a foreign 
     await writesNothingBesideTheFlaggedFile((flaggedFile) => (io) => runDoctor(['--file', flaggedFile], io, sources));
   });
 
-  test('check reads it and writes nothing', async () => {
+  test('commits check reads it and writes nothing', async () => {
     await writesNothingBesideTheFlaggedFile(
-      (flaggedFile) => (io) => check(['HEAD', '--file', flaggedFile], io, (cwd, path) => loadConfig(cwd, path, home)),
+      (flaggedFile) => (io) => commits(['check', 'HEAD', '--file', flaggedFile], io, (cwd, path) => loadConfig(cwd, path, home)),
     );
   });
 

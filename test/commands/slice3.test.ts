@@ -341,7 +341,7 @@ describe('team approve', () => {
   });
 });
 
-describe('team check, after an approval', () => {
+describe('the check file loader, after an approval', () => {
   test('accepts the signature of a seat the team has had and the file no longer holds', async () => {
     await approve([], OWNER);
     const before = loadConfig(root, '.agents/team.yaml', home);

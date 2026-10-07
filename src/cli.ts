@@ -9,6 +9,7 @@ import { description, version } from './version.ts';
 export const commands: Record<string, () => Promise<{ default: Command; USAGE: string }>> = {
   approve: () => import('./commands/approve.ts'),
   check: () => import('./commands/check.ts'),
+  commits: () => import('./commands/commits.ts'),
   doctor: () => import('./commands/doctor.ts'),
   down: () => import('./commands/down.ts'),
   init: () => import('./commands/init.ts'),
@@ -18,6 +19,7 @@ export const commands: Record<string, () => Promise<{ default: Command; USAGE: s
   worktree: () => import('./commands/worktree.ts'),
   add: () => import('./commands/add.ts'),
   answer: () => import('./commands/answer.ts'),
+  pr: () => import('./commands/pr.ts'),
   remove: () => import('./commands/remove.ts'),
   release: () => import('./commands/release.ts'),
   usage: () => import('./commands/usage.ts'),
