@@ -45,7 +45,7 @@ const edit = (change: (text: string) => string) =>
 
 async function approve() {
   const io = testIo(root, OWNER);
-  return runApprove(FILE, io, { ask: async () => '7', waiting: () => false, now: () => NOW, home });
+  return runApprove(FILE, io, { ask: async () => '7', waiting: () => 'empty', now: () => NOW, home });
 }
 
 // Every CLI at its tested version, claude overridable to one past the range.

@@ -59,7 +59,7 @@ async function approve(text: string, args: string[] = []): Promise<{ code: numbe
       atQuestion = io.out;
       return '1';
     },
-    waiting: () => false,
+    waiting: () => 'empty',
     now: () => NOW,
     home,
   });

@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Caller } from '../../src/caller.ts';
-import { runApprove } from '../../src/commands/approve.ts';
+import { runApprove, type Waiting } from '../../src/commands/approve.ts';
 import { loadConfig } from '../../src/commands/check.ts';
 import { runDoctor, type DoctorSources } from '../../src/commands/doctor.ts';
 import { rulesOf } from '../../src/launch/rules.ts';
@@ -53,7 +53,7 @@ const store = () => storePath('acme-web', root, home);
 const edit = (change: (text: string) => string) =>
   writeFileSync(join(root, '.agents/team.yaml'), change(readFileSync(join(root, '.agents/team.yaml'), 'utf8')));
 
-async function approve(argv: string[], caller: Caller, answer: string | null = '5', waiting = false) {
+async function approve(argv: string[], caller: Caller, answer: string | null = '5', waiting: Waiting = 'empty') {
   const io = testIo(root, caller);
   const asked: string[] = [];
   const code = await runApprove([...argv, ...FILE], io, {
@@ -110,15 +110,25 @@ describe('team approve', () => {
   });
 
   test('refuses input already waiting on the terminal before writing anything', async () => {
-    const run = await approve([], OWNER, '5', true);
+    const run = await approve([], OWNER, '5', 'waiting');
     expect(run.code).toBe(1);
     expect(run.err).toBe('team approve: input was waiting on the terminal: run `team approve` on its own line\n');
     expect(run.asked).toEqual([]);
     expect(existsSync(store())).toBe(false);
   });
 
+  test('a terminal that cannot be read refuses too: only an empty one lets the write through', async () => {
+    const run = await approve([], OWNER, '5', 'unreadable');
+    expect(run.code).toBe(1);
+    expect(run.err).toBe(
+      'team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written\n',
+    );
+    expect(run.asked).toEqual([]);
+    expect(existsSync(store())).toBe(false);
+  });
+
   test('a waiting line does not change a refusal made earlier: a seat still gets the owner refusal', async () => {
-    const run = await approve([], COORDINATOR, '5', true);
+    const run = await approve([], COORDINATOR, '5', 'waiting');
     expect(run.code).toBe(1);
     expect(run.err).toBe(
       'team approve: only the owner approves a team file, from a terminal outside herdr; this call is claude-coordinator-acme\n',
@@ -189,14 +199,14 @@ describe('team approve', () => {
 
   test('refuses a store that sits where seats work', async () => {
     const io = testIo(root, OWNER);
-    const inProject = await runApprove(FILE, io, { ask: async () => '5', waiting: () => false, now: () => NOW, home: root });
+    const inProject = await runApprove(FILE, io, { ask: async () => '5', waiting: () => 'empty', now: () => NOW, home: root });
     expect(inProject).toBe(1);
     expect(io.err).toContain(`is inside ${root}, where seats work`);
 
     const trusted = join(base, 'worktrees/acme-web');
     mkdirSync(trusted, { recursive: true });
     const other = testIo(root, OWNER);
-    expect(await runApprove(FILE, other, { ask: async () => '5', waiting: () => false, now: () => NOW, home: trusted })).toBe(1);
+    expect(await runApprove(FILE, other, { ask: async () => '5', waiting: () => 'empty', now: () => NOW, home: trusted })).toBe(1);
     expect(other.err).toContain(`is inside ${trusted}, where seats work`);
   });
 

@@ -6,7 +6,7 @@ import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAdd } from '../../src/commands/add.ts';
 import { runAnswer, type AnswerHost } from '../../src/commands/answer.ts';
-import { runApprove } from '../../src/commands/approve.ts';
+import { runApprove, type Waiting } from '../../src/commands/approve.ts';
 import { check, loadConfig } from '../../src/commands/check.ts';
 import { runDoctor } from '../../src/commands/doctor.ts';
 import { runDown } from '../../src/commands/down.ts';
@@ -141,7 +141,7 @@ async function setup(page: Page): Promise<void> {
     const seats = page.team.seats.length;
     const code = await runApprove([], io, {
       ask: async () => page.spec.answer ?? String(seats),
-      waiting: () => false,
+      waiting: () => 'empty',
       now: () => new Date(page.spec.now),
       home: fixture.home,
     });
@@ -150,7 +150,7 @@ async function setup(page: Page): Promise<void> {
   page.ready = true;
 }
 
-async function command(page: Page, line: string, io: Io, answer?: string, blockWaiting = false): Promise<number> {
+async function command(page: Page, line: string, io: Io, answer?: string, waiting: Waiting = 'empty'): Promise<number> {
   const [first, ...argv] = words(line);
   if (first !== 'team') throw new Error(`a console line runs \`team …\`, not "${first ?? ''}"`);
   const name = argv[0];
@@ -171,9 +171,10 @@ async function command(page: Page, line: string, io: Io, answer?: string, blockW
           io.stdout(`${question}${typed}\n`);
           return typed;
         },
-        // A page that shows the refusal writes `waiting="1"` on its fence; every other page's
-        // terminal has nothing waiting.
-        waiting: () => blockWaiting,
+        // A page that shows an input refusal says which one on its fence — `waiting="1"` for a
+        // line queued on the terminal, `waiting="unreadable"` for a terminal the check cannot
+        // read; every other page's terminal is empty.
+        waiting: () => waiting,
         now: () => new Date(spec.now),
         home: fixture.home,
       });
@@ -304,8 +305,10 @@ async function consoleBlock(page: Page, block: Block, failures: Failure[]): Prom
         caller,
       };
       let code: number;
+      const waiting: Waiting =
+        block.attrs.waiting === '1' ? 'waiting' : block.attrs.waiting === 'unreadable' ? 'unreadable' : 'empty';
       try {
-        code = await command(page, step.command, io, block.attrs.answer, block.attrs.waiting === '1');
+        code = await command(page, step.command, io, block.attrs.answer, waiting);
       } catch (error) {
         failures.push({ page: page.name, line: step.line, message: (error as Error).message });
         continue;

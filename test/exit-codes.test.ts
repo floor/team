@@ -11,7 +11,7 @@ import { saveReadings, type Seen } from '../src/budgets/readings.ts';
 import type { Caller } from '../src/caller.ts';
 import { runAdd, type AddSources } from '../src/commands/add.ts';
 import { runAnswer, type AnswerHost } from '../src/commands/answer.ts';
-import { runApprove, type ApproveSources } from '../src/commands/approve.ts';
+import { runApprove, type ApproveSources, type Waiting } from '../src/commands/approve.ts';
 import { check, loadConfig, type LoadConfig } from '../src/commands/check.ts';
 import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
 import { runDown, type DownLaunch, type DownSources } from '../src/commands/down.ts';
@@ -355,7 +355,7 @@ function statusSources(live: Live | null, standing: Standing = { kind: 'none' })
   };
 }
 
-function approveSources(place: Place, answer: string | null, home = place.home, waiting = false): ApproveSources {
+function approveSources(place: Place, answer: string | null, home = place.home, waiting: Waiting = 'empty'): ApproveSources {
   return { ask: async () => answer, waiting: () => waiting, now: () => NOW, home };
 }
 
@@ -760,7 +760,14 @@ scene('approve.check', async (place) => {
 });
 scene('approve.input-waiting', async (place) => {
   write(place, TEAM);
-  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1', place.home, true)), 'was waiting on the terminal');
+  return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1', place.home, 'waiting')), 'was waiting on the terminal');
+});
+scene('approve.input-unreadable', async (place) => {
+  write(place, TEAM);
+  return show(
+    await approved(place, ['--file', place.file], owner, approveSources(place, '1', place.home, 'unreadable')),
+    'could not be read to check',
+  );
 });
 scene('approve.key', async (place) => {
   write(place, TEAM);

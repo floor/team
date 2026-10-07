@@ -1,4 +1,4 @@
-import { closeSync, constants, openSync, readSync, realpathSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readdirSync, readSync, readlinkSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -17,16 +17,108 @@ import { OVERRIDE_CHANGED, overrideFile } from '../profiles/overrides.ts';
 import { approvalStanding, LEGACY_LINE, readApproval, storePath, writeApproval, type Ceilings } from '../store/store.ts';
 import { keyFingerprint, keyOf, keyState, recordedGeneration } from '../store/keys.ts';
 
+// What a read of the terminal found: a canonical-mode line is queued (`waiting`), nothing is
+// (`empty`), or the terminal could not be read at all (`unreadable`). Only `empty` lets approve
+// write; the other two refuse — a check that could not look must never approve blind.
+export type Waiting = 'waiting' | 'empty' | 'unreadable';
+
 // What `approve` reads from outside the file, so tests can stand in for it.
 export type ApproveSources = {
   // The owner's answer to a question on the terminal, or null when there is none.
   ask(question: string): Promise<string | null>;
-  // Whether a line of input was already waiting on the terminal at the moment approve would
-  // write: the rest of a pasted block, which must not be left to approve by itself.
-  waiting(): boolean;
+  // What is queued on the terminal the answer would have come from — the command's own
+  // standard input. See probeWaiting for exactly what is read.
+  waiting(): Waiting;
   now(): Date;
   home: string;
 };
+
+const NONBLOCKING = constants.O_RDONLY | constants.O_NONBLOCK;
+
+/** One open, non-blocking read side of `path`, or null when it cannot be opened or is not the
+ *  device `fd` is attached to. The rdev check is what makes the answer about the caller's own
+ *  terminal: an entry that opens but is another device is refused, not read. */
+function openVerifiedDevice(path: string, fd: number): number | null {
+  let opened: number | null = null;
+  try {
+    opened = openSync(path, NONBLOCKING);
+    const device = fstatSync(opened);
+    const stdin = fstatSync(fd);
+    if (device.isCharacterDevice() && device.rdev === stdin.rdev) return opened;
+  } catch {
+    /* fall through to the close */
+  }
+  if (opened !== null) closeSync(opened);
+  return null;
+}
+
+/** An open, non-blocking read side of the device this process's standard input is attached to,
+ *  or null when no such device can be found and verified. */
+function openStdinDevice(): number | null {
+  // Linux names the device: /proc/self/fd/0 is a link to its node (`/dev/pts/3`).
+  try {
+    const link = readlinkSync('/proc/self/fd/0');
+    if (link.startsWith('/')) {
+      const found = openVerifiedDevice(link, 0);
+      if (found !== null) return found;
+    }
+  } catch {
+    /* no /proc: the scan below */
+  }
+  if (process.platform !== 'darwin') return null;
+  // macOS has neither /proc nor a link that names the device (/dev/fd/0 and /dev/stdin answer
+  // `fd/0`, not a path), so the device is found by its rdev — unique to one terminal — among
+  // /dev's ttys entries.
+  try {
+    fstatSync(0);
+  } catch {
+    return null;
+  }
+  for (const name of readdirSync('/dev')) {
+    if (!name.startsWith('ttys')) continue;
+    const found = openVerifiedDevice(`/dev/${name}`, 0);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+/**
+ * What is queued on the terminal this command's own standard input is attached to.
+ *
+ * The device, never a second open of fd 0: opening /dev/fd/0 or /dev/stdin duplicates fd 0's
+ * file description — the blocking flag included — so an O_NONBLOCK read of the duplicate still
+ * blocks (macOS run: empty terminal, 2 s alarm, the read never returned). Linux answers from
+ * /proc; macOS by the rdev scan above; the description this opens is fresh, so O_NONBLOCK
+ * applies to this read alone, and its rdev is verified against fd 0's before anything is read.
+ *
+ * One readSync of up to 4096 bytes asks for a canonical-mode line. A queued line is returned
+ * and consumed: no call in this runtime peeks without consuming, so a non-consuming check is
+ * not possible, and reading is acceptable only because the run this feeds refuses and writes
+ * nothing (runs: cooked, `9\n` queued → read returns `9\n`, a second read is EAGAIN — the line
+ * is gone; cooked, `9` queued with no Enter → EAGAIN, because cooked mode holds no partial
+ * line, so a half-typed line is invisible to this check and to any question alike; raw mode
+ * (`stty raw`), where the terminal hands keystrokes over at once, makes the same `9` readable
+ * → `waiting`). EAGAIN is `empty`. A 0-byte read — the terminal gone — and every other
+ * failure, a device that cannot be found or verified included, are `unreadable`: the caller
+ * refuses rather than approves without having looked. What this cannot see is input that
+ * arrives after the read and before the write; the docs say so in one sentence. The walk above
+ * has already refused every caller without a terminal.
+ */
+export function probeWaiting(): Waiting {
+  const fd = openStdinDevice();
+  if (fd === null) return 'unreadable';
+  try {
+    const line = Buffer.alloc(4096);
+    try {
+      return readSync(fd, line, 0, line.length, null) > 0 ? 'waiting' : 'unreadable';
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      return code === 'EAGAIN' || code === 'EWOULDBLOCK' ? 'empty' : 'unreadable';
+    }
+  } finally {
+    closeSync(fd);
+  }
+}
 
 export const realSources: ApproveSources = {
   async ask(question) {
@@ -39,34 +131,7 @@ export const realSources: ApproveSources = {
       terminal.close();
     }
   },
-  // Read the terminal's own input without blocking and without consuming anything when it is
-  // empty: `/dev/tty` is opened non-blocking, and one canonical-mode line is read — a waiting
-  // line answers the read, nothing waiting is EAGAIN. One read takes one line — the line a
-  // pasted block would have fed the question — and that line is dropped: the refusal this
-  // feeds writes nothing, so nothing could have used it, and no call in this runtime peeks
-  // without consuming. A line still being typed (no newline yet) is not readable in cooked
-  // mode and is not seen; a question could not have consumed it either. A process with no
-  // controlling terminal (stdin a tty of another device) cannot be checked this way: the open
-  // fails and this is false — and the walk has already refused every caller without a terminal.
-  // Proven on a real pty on both platforms, through test/commands/pty-run.py: macOS under a
-  // launchd-parented chain, and ubuntu-latest in CI, whose log carries both cases —
-  // `(pass) a line waiting on the pty: the guard refuses, exit 1, nothing written [80.17ms]`
-  // and `(pass) nothing waiting: the guard is silent and the run approves [79.47ms]`, with no
-  // stranger-path line, so the walk placed the caller as the owner and the refusal under test
-  // was this one.
-  waiting() {
-    try {
-      const fd = openSync('/dev/tty', constants.O_RDONLY | constants.O_NONBLOCK);
-      try {
-        const line = Buffer.alloc(4096);
-        return readSync(fd, line, 0, line.length, null) > 0;
-      } finally {
-        closeSync(fd);
-      }
-    } catch {
-      return false;
-    }
-  },
+  waiting: probeWaiting,
   now: () => new Date(),
   home: homedir(),
 };
@@ -260,7 +325,11 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   // The default path asks nothing: the summary above is the last thing printed, and the
   // record is written. Two things keep the question's protection: the owner check above
   // (the input is a terminal) and this guard — input already waiting on that terminal is a
-  // pasted block's remainder, which must not be left to approve anything.
+  // pasted block's remainder, which must not be left to approve anything. The guard is
+  // three-valued: only a check that found the terminal empty lets the write through. A line
+  // found waiting refuses, and so does a terminal the check could not read at all — an
+  // unreadable terminal must not become an approval either, and it is not the same fault as
+  // a paste, so it carries its own id.
   if (args.flags.has('confirm')) {
     const answer = await sources.ask(
       `\nType the number of seats (${seats}) to approve this file, and its commands and rules, to run: `,
@@ -270,10 +339,20 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
       // exit: approve.answer
       return 1;
     }
-  } else if (sources.waiting()) {
-    io.stderr('team approve: input was waiting on the terminal: run `team approve` on its own line\n');
-    // exit: approve.input-waiting
-    return 1;
+  } else {
+    const waiting = sources.waiting();
+    if (waiting === 'waiting') {
+      io.stderr('team approve: input was waiting on the terminal: run `team approve` on its own line\n');
+      // exit: approve.input-waiting
+      return 1;
+    }
+    if (waiting === 'unreadable') {
+      io.stderr(
+        'team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written\n',
+      );
+      // exit: approve.input-unreadable
+      return 1;
+    }
   }
 
   const now = sources.now();

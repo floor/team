@@ -86,7 +86,7 @@ describe('a threshold edit, and the approval', () => {
     const io = testIo(root, { kind: 'owner' });
     const code = await runApprove(['--file', '.agents/team.yaml'], io, {
       ask: async () => String(teamFile().seats.length),
-      waiting: () => false,
+      waiting: () => 'empty',
       now: () => new Date('2026-10-04T00:00:00Z'),
       home,
     });
