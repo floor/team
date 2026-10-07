@@ -217,9 +217,6 @@ export function projectUsage(root: string, options: ProjectUsageOptions): Projec
     // team, so no message a state read produced can cross teams (§ 2.1).
     const message = error instanceof Error ? error.message : String(error);
     stateProblem = { kind: 'state', tail: stateTailOf(message), text: shownNote(message, root, restricted) };
-    // The block's own reader still prints the note from `notes` until the S2 renderer replaces it,
-    // which prints the structured problem above; both carry the same one sentence.
-    notes.push(stateProblem.text);
   }
   if (team === null) {
     // Neither the file nor an approved copy of it can be read: no figures at all (`NO_FIGURES`),
@@ -929,6 +926,11 @@ export function reportOf(machine: MachineUsage, view: UsageView, now: number, mi
   const visible = (account: string) => view.full || mineAccounts.has(account);
 
   const labs: ReportLab[] = [];
+  /** The accounts some line of this report carries a figure for: the why-lines print only under
+   *  an account that reads `unknown` everywhere (`§ 2.3`'s example), never under one with figures
+   *  — an account whose newest counted reading is another team's says nothing about the team
+   *  whose own pattern cannot read it. */
+  const withFigure = new Set<string>();
   for (const lab of machine.labs) {
     if (!view.full && (mineEntry === null || !lab.carried.includes(mineEntry))) continue;
     const accounts: ReportAccount[] = [];
@@ -938,8 +940,17 @@ export function reportOf(machine: MachineUsage, view: UsageView, now: number, mi
         others += 1;
         continue;
       }
-      if (account.kind === 'spend') accounts.push(spendEntryOf(account, view, mineEntry, now));
-      else for (const line of account.lines) accounts.push(subscriptionEntryOf(account.account, line, view, mineEntry, now));
+      if (account.kind === 'spend') {
+        const entry = spendEntryOf(account, view, mineEntry, now);
+        if (entry.machine.state !== 'unknown') withFigure.add(account.account);
+        accounts.push(entry);
+      } else {
+        for (const line of account.lines) {
+          const entry = subscriptionEntryOf(account.account, line, view, mineEntry, now);
+          if (entry.machine.state !== 'unknown') withFigure.add(account.account);
+          accounts.push(entry);
+        }
+      }
     }
     accounts.sort(byLine);
     labs.push({ lab: lab.lab, accounts, ...(others > 0 ? { others } : {}) });
@@ -954,7 +965,10 @@ export function reportOf(machine: MachineUsage, view: UsageView, now: number, mi
     .filter((one) => visible(one.account));
   const byWord = (a: { account: string; why: UnknownWhy }, b: { account: string; why: UnknownWhy }): number =>
     a.why === b.why ? a.account.localeCompare(b.account) : a.why < b.why ? -1 : 1;
-  const unknown: ReportWhy[] = [...mineWhys.sort(byWord), ...otherWhys.sort(byWord)].map((one) => ({
+  const unknown: ReportWhy[] = [
+    ...mineWhys.filter((one) => !withFigure.has(one.account)).sort(byWord),
+    ...otherWhys.filter((one) => !withFigure.has(one.account)).sort(byWord),
+  ].map((one) => ({
     scope: scopeOf(one.team),
     account: one.account,
     why: WHY_WORDS[one.why],
@@ -1084,7 +1098,11 @@ function spendEntryOf(account: MachineAccount & { kind: 'spend' }, view: UsageVi
  * what the report carries, never here: one renderer, one shape.
  */
 export function reportText(report: UsageReport): string {
-  const lines = [`usage on this machine, ${report.counts.teams} teams, ${report.counts.labs} labs, ${report.counts.accounts} accounts`, ''];
+  const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const lines = [
+    `usage on this machine, ${count(report.counts.teams, 'team')}, ${count(report.counts.labs, 'lab')}, ${count(report.counts.accounts, 'account')}`,
+    '',
+  ];
   for (const lab of report.labs) {
     let at = 0;
     while (at < lab.accounts.length) {
