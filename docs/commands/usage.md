@@ -231,8 +231,10 @@ as the command prints it.
   `reserve`, `other`, and `watch` when the clause prints) and `teams`, one entry per row under the
   line — the team it belongs to as this caller reads it, and `row`, which is `status --json`'s own
   row object under `budgets`. A spend entry carries the money instead of a window (`amount`,
-  `currency`, `at`, `age`, `source`, `state`). A line's `seat` is present for the caller's own team
-  and left out for another's. `labs[].others`, when present, is the count of accounts in that lab
+  `currency`, `at`, `age`, `source`, `state`). A subscription line's `seat` is present for the
+  caller's own team's line and left out of another team's in the restricted view; the full view
+  carries every team's. A spend line has no seat — its reading is a check's, and a check belongs
+  to no seat. `labs[].others`, when present, is the count of accounts in that lab
   the caller's own file does not name, and it is present only when there is at least one.
 - `unknown` is the why-lines, each with the `scope` it printed under — the caller's own project's
   name, or `another`.
