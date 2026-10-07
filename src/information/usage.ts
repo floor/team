@@ -9,11 +9,47 @@ import { approvalCase, budgetsInForceOf, notInForce, teamInForceOf, watchInForce
 import { describe } from '../approve/fingerprint.ts';
 import { checkOf, countedFor, recall, recallSpend, screenOf, type Seen, type SpendReading } from '../budgets/readings.ts';
 import { budgetTable, reserveOf, sourcesOf, WINDOWS, type BudgetRow } from '../budgets/table.ts';
+import { walkCaller } from '../caller.ts';
 import { TEAM_FILE } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
 import { validateTeamFile, defaultBudgets } from '../file/validate.ts';
+import type { Io } from '../io.ts';
 import { readState, type State } from '../state.ts';
 import { approvalStanding, type Standing } from '../store/store.ts';
+
+/** The caller's view of the machine, decided once (design note § 2.1): whether every team's
+ *  names, roots and rows print, and which project is the caller's own. */
+export type UsageView = {
+  /** True only for the full view: every team named, every root carried, every team's rows shown. */
+  full: boolean;
+  /** The resolved project's root — the caller's own team, the one whose block prints in full —
+   *  or null outside any project. The stores are keyed by root (`store.ts:55-73`), so the root
+   *  is the identity `machineUsage` matches a store entry by; the name the report prints for it
+   *  is the one that team's own read produces. */
+  mine: string | null;
+};
+
+/**
+ * The one decision point for who reads which view (design note § 2.1). Placed by the walk alone —
+ * the process table, never the environment (`caller.ts:11-12`, `:73-92`) — and applied by one
+ * filter to every row, text or `--json`, so no other line decides a caller's view again.
+ *
+ * The interim rule, and the one line the full view turns on: only the owner **with a terminal**
+ * (`isOwner`'s case alone, `caller.ts:94-96`) reads the full view. The design note's § 2.1 would
+ * give `owner-no-tty` the full view too — it is the owner, and `mayLaunchSeats` admits it
+ * (`caller.ts:102-104`) — and this is a deliberate, fail-closed deviation while owner placement
+ * is forgeable: a confined process that double-forks out of the herdr tree walks to no herdr
+ * ancestor, resolves as the owner without a terminal, and the full view there would hand it
+ * every team's name and root in one read — the disclosure the restricted default exists to
+ * prevent. Until caller placement can tell a real detached owner from a detached process, every
+ * caller but the owner-with-a-terminal reads the restricted view; the day placement is
+ * trustworthy this comparison flips `owner-no-tty` to full and nothing else changes. The
+ * widening field (`usage: owner | seats`, S2b) is not read here or anywhere in S2: a seat's
+ * route to the full view is not built yet.
+ */
+export function viewFor(io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>, mine: string | null): UsageView {
+  return { full: walkCaller(io).kind === 'owner', mine };
+}
 
 /** The line a team's rows read when neither its file nor an approved copy of it can be read. */
 export const NO_FIGURES = 'no figures (the file could not be read)';
