@@ -541,13 +541,13 @@ seats:
     launch: claude --model claude-opus-5-5
 
   - role: reviewer
-    name: claude-qa
+    name: gemini-qa
     label: reviewer
-    cli: claude-code
-    vendor: anthropic
-    model: Claude Opus
-    version: "5.5"
-    launch: claude --model claude-opus-5-5
+    cli: antigravity
+    vendor: google
+    model: Gemini
+    version: "3"
+    launch: agy
     stopped: true
 ```
 
@@ -567,7 +567,7 @@ the watchdog pane this session has never had:
 $ team up --dry-run ; echo "exit $?"
   skip claude-keeper: already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)
   skip claude-beacon: already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
-  skip claude-qa: stopped in the file; start it with `team add claude-qa`
+  skip gemini-qa: stopped in the file; start it with `team add gemini-qa`
 + herdr --session beacon workspace create --cwd . --label watchdog --no-focus
 + herdr --session beacon pane run <pane of watchdog> 'team watch --session beacon'
     (a desktop notification follows when the watch exits)
@@ -583,7 +583,7 @@ claude-keeper: ready
   already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)
 claude-beacon: ready
   already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
-  skip claude-qa: stopped in the file; start it with `team add claude-qa`
+  skip gemini-qa: stopped in the file; start it with `team add gemini-qa`
 watch: started
 exit 0
 ```
@@ -605,7 +605,7 @@ refused, and that line names no herdr command (`session beacon is stopped`).
 $ team up ; echo "exit $?"
 claude-keeper: ready
 claude-beacon: ready
-  skip claude-qa: stopped in the file; start it with `team add claude-qa`
+  skip gemini-qa: stopped in the file; start it with `team add gemini-qa`
 exit 0
 ```
 
@@ -647,13 +647,13 @@ seats:
     launch: claude --model claude-opus-5-5
 
   - role: reviewer
-    name: claude-qa
+    name: gemini-qa
     label: reviewer
-    cli: claude-code
-    vendor: anthropic
-    model: Claude Opus
-    version: "5.5"
-    launch: claude --model claude-opus-5-5
+    cli: antigravity
+    vendor: google
+    model: Gemini
+    version: "3"
+    launch: agy
     stopped: true
 ```
 
@@ -663,7 +663,7 @@ $ team up --dry-run ; echo "exit $?"
 ! up would refuse: run `team approve`: `limits` changed
   skip claude-keeper: already ready; left as it is; a relaunch records its process: team down, then team up (to restart the whole team)
   skip claude-beacon: already ready; left as it is; a relaunch records its process: team remove claude-beacon --keep, then team add claude-beacon (or team down, then team up, for the whole team)
-  skip claude-qa: stopped in the file; start it with `team add claude-qa`
+  skip gemini-qa: stopped in the file; start it with `team add gemini-qa`
 dry run: nothing was run
 exit 0
 ```

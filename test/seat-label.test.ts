@@ -139,11 +139,11 @@ seats:
       'reviewer',
     ]);
     expect(team.seats.map((seat) => seat.label)).toEqual([
-      'claude opus 5.5',
+      'meridian 1',
       'gpt sol 6',
       'deepseek flash v4.1',
       'deepseek flash v4.1-2',
-      'grok 4.7',
+      'gemini 3',
     ]);
     expect(seatNameFindings(team, team.session)).toEqual([]);
   });

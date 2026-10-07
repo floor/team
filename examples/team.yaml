@@ -3,8 +3,8 @@
 
 format: 1
 project: beacon
-coordinator: claude-keeper    # dispatches work
-operator: claude-signal       # receives the watch's reports and nudges
+coordinator: codex-keeper     # dispatches work
+operator: codex-signal        # receives the watch's reports and nudges
 
 identity:
   signature:
@@ -31,22 +31,24 @@ machine:                      # checked before each seat is launched, and by the
 
 seats:
   - role: coordinator
-    name: claude-keeper
+    name: codex-keeper
     label: coordinator
-    cli: claude-code
-    vendor: anthropic
-    model: Claude Nova
+    cli: codex
+    vendor: openai
+    model: GPT Compass
     version: "2"
-    launch: claude
+    display: GPT-2 Compass
+    launch: codex -m gpt-compass-2
 
   - role: operator
-    name: claude-signal
+    name: codex-signal
     label: operator
-    cli: claude-code
-    vendor: anthropic
-    model: Claude Nova
+    cli: codex
+    vendor: openai
+    model: GPT Compass
     version: "2"
-    launch: claude
+    display: GPT-2 Compass
+    launch: codex -m gpt-compass-2
 
   - role: implementer
     name: codex-beacon
