@@ -44,9 +44,15 @@ describe('budgets', () => {
       'watch.quota_marks is now budgets.marks, and is still read',
     ]);
     expect(legacy.team.budgets.marks).toEqual([40, 80]);
-    const both = valid(`${minimal}watch:\n  quota_marks: [40, 80]\nbudgets:\n  marks: [50, 90]\n`);
+    // Both warnings, in file order: `budgets.marks` stands above `watch.quota_marks` here, so it
+    // prints first — without the sort the sections' run order (watch runs before budgets, which
+    // reads it) printed the other way round.
+    const both = valid(`${minimal}budgets:\n  marks: [50, 90]\nwatch:\n  quota_marks: [40, 80]\n`);
     expect(both.team.budgets.marks).toEqual([50, 90]);
-    expect(both.warnings.map((warning) => warning.message)).toContain('budgets.marks replaces watch.quota_marks');
+    expect(both.warnings.map((warning) => warning.message)).toEqual([
+      'budgets.marks replaces watch.quota_marks',
+      'watch.quota_marks is now budgets.marks, and is still read',
+    ]);
   });
 
   test('a subscription reserve and a spend floor', () => {
