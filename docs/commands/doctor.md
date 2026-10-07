@@ -295,6 +295,7 @@ and the approval a change needs:
 
 ```console machine="small-swap"
 $ team doctor ; echo "exit $?"
+warn  the file, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 warn  claude-beacon: its name repeats "beacon"; the session already carries it
 ok    the file is the one the owner approved (approval #1, 2026-10-04, key fe21ef6293de)
 ok    the check for openai reads weekly 40% used
@@ -305,7 +306,7 @@ ok    claude-code: logged in
 ok    the watch is running
 ok    the lobby ~/.config/team/lobby: will be created at the first launch
 warn  the machine check asks for 2.0 GB free swap, more than this machine has in total (1.0 GB): `team up` will refuse here; set `machine.swap_free_min` to a figure this machine can keep, then run `team approve`
-team doctor: nothing missing, 2 warnings
+team doctor: nothing missing, 3 warnings
 exit 0
 ```
 

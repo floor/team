@@ -414,6 +414,7 @@ note, with both figures and the repair; `--json` carries it in `notes` in the sa
 
 ```console machine="small-swap"
 $ team status ; echo "exit $?"
+team status: warning, line 3: `coordinator:` is now `leads: true` on the lead's seat, and is still read
 team beacon, session "beacon"
   claude-keeper  idle     Claude Opus 5.5  w2:p1
   claude-beacon  working  Claude Opus 5.5  w1:p1
