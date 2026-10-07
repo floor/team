@@ -491,6 +491,20 @@
       "provenance": "capture"
     },
     {
+      "file": "codex/0.157.0/terra-quiet-unknown-constructed.txt",
+      "cli": "codex",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "constructed"
+    },
+    {
+      "file": "codex/0.157.0/terra-recognised-constructed.txt",
+      "cli": "codex",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "constructed"
+    },
+    {
       "file": "codex/0.157.0/trust-folder-163.txt",
       "cli": "codex",
       "classify": "trust",
