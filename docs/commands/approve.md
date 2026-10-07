@@ -34,10 +34,15 @@ other caller is refused with `only the owner or the approved delegate approves a
 A delegate's approval is for ordinary changes: the roster, a launch line, a rule. It can never
 move the sections that are the owner's own authority — `delegates` before them all, and
 `budgets`, `limits`, identity and `trust` — and a change to any of them is refused, fail-closed,
-with `this change needs the owner: <what changed>`. The difference is judged against the approved
+with `this change needs the owner: <what changed>`. The ceiling counts: adding or taking out a
+seat on a file that declares no `limits` moves the default ceiling with it — `limits` changed —
+so that roster edit is the owner's, while the same edit on a file whose ceiling is declared
+leaves `limits` alone and is the delegate's. The difference is judged against the approved
 copy alone, before anything else is read, so a delegate can never widen its own grant, raise a
 ceiling, or add a folder the owner did not trust: the widened value is never signed, and the
-owner is the only caller who can approve it. `--show` may be run by anyone, in any terminal.
+owner is the only caller who can approve it. A delegated run that signs prints the same
+`Approved.` sentence and writes one audit line, below. `--show` may be run by anyone, in any
+terminal.
 
 ## Flags
 
