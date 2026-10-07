@@ -1731,15 +1731,21 @@ async function used(place: Place, argv: string[], caller: Caller = owner): Promi
   return { code: await runUsage(argv, io, { home: place.home, now: () => NOW }), out: io.out, err: io.err };
 }
 
-// The block is reached by a seat as well: `usage` gates no caller.
+// The machine's report is reached by a seat as well: `usage` gates no caller, and a seat reads
+// the restricted view of it. A folder with no team file is the same exit: the report prints and
+// the one note says there is no project block from here.
 scene('usage.block', async (place) => {
   write(place, TEAM);
-  return show(await used(place, [], other), 'team acme');
+  return show(await used(place, [], other), 'usage on this machine');
 });
-// No file at all — the bare folder is the outside case; a file that exists and does not load is
-// the same exit with the loader's own message as the note.
-scene('usage.outside', async (place) => show(await used(place, []), 'no team file is found from this folder'), false);
 scene('usage.invocation', async (place) => show(await used(place, ['extra']), 'unexpected'));
+// The one refusal beside the invocation: the stores folder itself cannot be read. It is a file
+// where the folder belongs, and the caller here is the owner, who alone reads its message.
+scene('usage.store', async (place) => {
+  mkdirSync(join(place.home, '.config'), { recursive: true });
+  writeFileSync(join(place.home, '.config', 'team'), 'not a folder\n');
+  return show(await used(place, []), 'the store folder');
+});
 
 async function worktree(place: Place, argv: string[], caller: Caller = owner, sources?: WorktreeSources): Promise<Ran> {
   const io = testIo(place.root, caller);

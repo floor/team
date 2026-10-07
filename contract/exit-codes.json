@@ -1713,14 +1713,7 @@
       "code": 0,
       "command": "usage",
       "id": "usage.block",
-      "meaning": "the project's block printed",
-      "trigger": "team usage"
-    },
-    {
-      "code": 0,
-      "command": "usage",
-      "id": "usage.outside",
-      "meaning": "no project block to show from this folder; the notes say why",
+      "meaning": "the machine's report printed",
       "trigger": "team usage"
     },
     {
@@ -1729,6 +1722,13 @@
       "id": "usage.invocation",
       "meaning": "the invocation can't be read",
       "trigger": "team usage extra"
+    },
+    {
+      "code": 2,
+      "command": "usage",
+      "id": "usage.store",
+      "meaning": "the store folder can't be read",
+      "trigger": "team usage"
     },
     {
       "code": 0,
