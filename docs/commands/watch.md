@@ -99,11 +99,14 @@ A report is printed when it starts, and again only after it has cleared: a seat 
 or a machine that stays full, is said once, not every pass.
 
 Two things go to `.agents/team.log` without being printed: the watch writes the machine's own
-readings once every ten minutes per watch — `readings: load 1.0/core, memory 69%, disk 200.0 GB
-free, swap used 7.0 GB of 8.2 GB (free 1.2 GB)`, `unread` where a figure couldn't be read — and
-`up` and `add` write one line per machine refusal, carrying the refusal and the readings it was
-decided on. At the watch's worst rate that is 144 readings lines a day plus refusals, ≈190 bytes
-a line and ≈28 KB a day: a 1 MB log holds ≈5 weeks of that, and three are kept, ≈4 months.
+readings once every ten minutes per watch — `readings: load 1.0/core, memory 69%, disk
+227700000000 B free, swap used 7300000000 B of 8600000000 B (free 1300000000 B)`, `unread` where
+a figure couldn't be read — and `up` and `add` write one line per machine refusal, carrying the
+refusal and the readings it was decided on. The readings are the byte figures the gate compared,
+in this fixed order — load, memory, disk, swap — so a later launch reads the figure that was
+compared, not prose about it; the rounded-GB sentence stays the refusal the owner reads. At the
+watch's worst rate that is 144 readings lines a day plus refusals, ≈170 bytes a line and ≈25 KB
+a day: a 1 MB log holds ≈40 days of that, and three are kept, ≈5 months.
 
 | Report | Made when |
 | --- | --- |

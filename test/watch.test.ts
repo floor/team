@@ -210,12 +210,16 @@ describe('the machine\'s figures', () => {
     expect(swapTotalProblem({ ...small, swapFree: null }, limits)).toBeNull();
   });
 
-  test('the readings as one sentence, in the log\'s fixed order', () => {
+  test('the readings as one sentence, in the log\'s fixed order, in the bytes the gate compared', () => {
     expect(readingsText({ loadPerCore: 1, memoryFree: 69, diskFree: 200e9, swapTotal: 8.2e9, swapFree: 1.2e9, swapUsed: 7e9 }))
-      .toBe('load 1.0/core, memory 69%, disk 200.0 GB free, swap used 7.0 GB of 8.2 GB (free 1.2 GB)');
+      .toBe('load 1.0/core, memory 69%, disk 200000000000 B free, swap used 7000000000 B of 8200000000 B (free 1200000000 B)');
     // The watch spelling: the disk figure no moment recorded, the rest from a reading taken.
     expect(readingsText({ loadPerCore: 0.7, memoryFree: 69, diskFree: null, swapTotal: 8.2e9, swapFree: 1.2e9, swapUsed: 6.9e9 }))
-      .toBe('load 0.7/core, memory 69%, disk unread, swap used 6.9 GB of 8.2 GB (free 1.2 GB)');
+      .toBe('load 0.7/core, memory 69%, disk unread, swap used 6900000000 B of 8200000000 B (free 1200000000 B)');
+    // Not a rounding of the bytes: a figure the gate compared byte for byte prints byte for byte,
+    // so a later launch parsing the newest line's swap figures reads the figure it compared.
+    expect(readingsText({ loadPerCore: 0.5, memoryFree: 68, diskFree: 199_999_999_999, swapTotal: 8_192_620_000, swapFree: 1_314_750_000, swapUsed: 6_877_870_000 }))
+      .toBe('load 0.5/core, memory 68%, disk 199999999999 B free, swap used 6877870000 B of 8192620000 B (free 1314750000 B)');
   });
   test('a figure that wasn\'t read prints unread, never a guessed number', () => {
     const none: Machine = { loadPerCore: null, memoryFree: null, diskFree: null, swapTotal: null, swapFree: null, swapUsed: null };
@@ -874,9 +878,9 @@ describe('team watch', () => {
     const lines = readFileSync(join(dir, '.agents', 'team.log'), 'utf8')
       .split('\n').filter((line) => line.includes('watch [watch] readings: '));
     expect(lines).toEqual([
-      '2026-10-03T14:00:00.000Z watch [watch] readings: load 1.0/core, memory 50%, disk 200.0 GB free, swap used 1.0 GB of 9.0 GB (free 8.0 GB)',
-      '2026-10-03T14:10:00.000Z watch [watch] readings: load 1.0/core, memory 50%, disk 200.0 GB free, swap used 1.0 GB of 9.0 GB (free 8.0 GB)',
-      '2026-10-03T14:20:00.000Z watch [watch] readings: load 1.0/core, memory 50%, disk 200.0 GB free, swap used 1.0 GB of 9.0 GB (free 8.0 GB)',
+      '2026-10-03T14:00:00.000Z watch [watch] readings: load 1.0/core, memory 50%, disk 200000000000 B free, swap used 1000000000 B of 9000000000 B (free 8000000000 B)',
+      '2026-10-03T14:10:00.000Z watch [watch] readings: load 1.0/core, memory 50%, disk 200000000000 B free, swap used 1000000000 B of 9000000000 B (free 8000000000 B)',
+      '2026-10-03T14:20:00.000Z watch [watch] readings: load 1.0/core, memory 50%, disk 200000000000 B free, swap used 1000000000 B of 9000000000 B (free 8000000000 B)',
     ]);
   });
 
@@ -884,7 +888,7 @@ describe('team watch', () => {
     const io = testIo(dir, { kind: 'owner' });
     expect(await runWatch(['--file', file], io, sources(1, { machine: () => ({ ...fine, memoryFree: null, swapFree: null }) }))).toBe(0);
     const log = readFileSync(join(dir, '.agents', 'team.log'), 'utf8');
-    expect(log).toContain('watch [watch] readings: load 1.0/core, memory unread, disk 200.0 GB free, swap unread');
+    expect(log).toContain('watch [watch] readings: load 1.0/core, memory unread, disk 200000000000 B free, swap unread');
   });
 
   test('the values in force are what runs: the pass, the announced line and the wait read them', async () => {

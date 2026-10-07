@@ -1730,7 +1730,7 @@ describe('team up, live', () => {
     const lines = readFileSync(join(root, '.agents', 'team.log'), 'utf8').split('\n')
       .filter((line) => line.includes('refused: free swap is '));
     expect(lines).toEqual([
-      '2026-10-03T14:02:00.000Z up [owner] refused: free swap is 1.2 GB, below 2.0 GB — readings: load 1.0/core, memory 69%, disk 200.0 GB free, swap used 7.0 GB of 8.2 GB (free 1.2 GB)',
+      '2026-10-03T14:02:00.000Z up [owner] refused: free swap is 1.2 GB, below 2.0 GB — readings: load 1.0/core, memory 69%, disk 200000000000 B free, swap used 7000000000 B of 8200000000 B (free 1200000000 B)',
     ]);
   });
 
@@ -1775,7 +1775,7 @@ describe('team up, live', () => {
       // The sentence byte for byte; the stamp is the run's own clock, so only its shape is pinned.
       const [stamp, ...rest] = line.split(' ');
       expect(stamp).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
-      expect(rest.join(' ')).toBe('up [owner] refused: swap grew by 2.0 GB in 10 minutes, above 1.0 GB — readings: load 1.0/core, memory 50%, disk 200.0 GB free, swap used 3.0 GB of 9.0 GB (free 8.0 GB)');
+      expect(rest.join(' ')).toBe('up [owner] refused: swap grew by 2.0 GB in 10 minutes, above 1.0 GB — readings: load 1.0/core, memory 50%, disk 200000000000 B free, swap used 3000000000 B of 9000000000 B (free 8000000000 B)');
     }
   });
 
