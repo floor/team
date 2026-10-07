@@ -895,15 +895,15 @@ describe('team watch', () => {
   });
 
   test.each([
-    ['never approved', (): ReturnType<WatchSources['standing']> => () => ({ kind: 'none' })],
-    ['legacy', (): ReturnType<WatchSources['standing']> => () => ({ kind: 'legacy' })],
-    ['refused', (): ReturnType<WatchSources['standing']> => () => ({
-      kind: 'refused',
+    ['never approved', () => ({ kind: 'none' as const })],
+    ['legacy', () => ({ kind: 'legacy' as const })],
+    ['refused', () => ({
+      kind: 'refused' as const,
       why: 'the record does not carry a valid signature: it was changed after approval, or written without the key: run `team approve` once',
     })],
-  ] as const)('types nothing while the record is %s', async (_name, standing) => {
+  ] satisfies Array<[string, WatchSources['standing']]>)('types nothing while the record is %s', async (_name, standing) => {
     const io = testIo(dir, { kind: 'owner' });
-    const code = await runWatch(['--file', file], io, sources(1, { standing: standing() }));
+    const code = await runWatch(['--file', file], io, sources(1, { standing }));
     expect(code).toBe(0);
     expect(typed).toEqual([]);
   });

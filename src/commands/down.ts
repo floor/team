@@ -56,7 +56,7 @@ export type DownSources = {
   /** Approval store home. The real command uses the owner's home. */
   home?: string;
   /** The approval standing. Tests hand in a record; the shipped command reads the store. */
-  standing?: () => Standing;
+  standing?(root: string): Standing;
   // Present on the shipped command. A dry run never calls it.
   launch?: DownLaunch;
   /** The delegate gate. Tests hand in a verdict; the shipped command asks the real one. */
@@ -563,7 +563,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   const home = sources.home ?? homedir();
   let acting = team;
   if (refusals.length === 0) {
-    const standing = sources.standing?.() ?? approvalStanding(root, home);
+    const standing = sources.standing?.(root) ?? approvalStanding(root, home);
     if (standing.kind !== 'verified') {
       io.stderr(`team down: ${notInForce(standing)}\n`);
       // exit: down.never-approved

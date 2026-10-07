@@ -23,6 +23,7 @@ import { reportedLiveAgent } from '../launch/agent.ts';
 import { boxHoldsText, settleScreen } from '../launch/deliver.ts';
 import { removeWorktree } from './worktree.ts';
 import { stateOf } from './down.ts';
+import type { DownSeat } from '../launch/plan.ts';
 import { profileFor } from '../profiles/index.ts';
 import { classifyWith, overridesInForceOf, quotaWith, type OverrideForce } from '../profiles/overrides.ts';
 import type { Standing } from '../store/store.ts';
@@ -505,7 +506,7 @@ async function closeEnded(input: {
   io: Io;
   told: Set<string>;
 }): Promise<void> {
-  const { team, root, dir, session, live, sources, say, told } = input;
+  const { team, root, dir, session, live, sources, say, io, told } = input;
   const endOf = sources.readEnd ?? readEnd;
   const state = readState(dir).sessions[session] ?? emptySession();
   for (const [name, recorded] of Object.entries(state.seats)) {
