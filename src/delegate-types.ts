@@ -1,11 +1,13 @@
 /**
- * A command an approved delegate pane may be allowed to run. `approve` is not one: approval is
- * the owner's, and a `commands` list naming it is a load error, never a delegation of it.
+ * A command an approved delegate pane may be allowed to run. `approve` is grantable like the
+ * rest, under the gate's sovereign guard: a delegated approval of a change that moves a
+ * sovereign section — `delegates`, `budgets`, `limits`, identity or `trust` — is refused, so a
+ * delegate can never approve a change to its own authority.
  */
-export type DelegateCommand = 'up' | 'down' | 'add' | 'remove';
+export type DelegateCommand = 'up' | 'down' | 'add' | 'remove' | 'approve';
 
-/** The four, in the order the documentation lists them. */
-export const DELEGATE_COMMANDS: readonly DelegateCommand[] = ['up', 'down', 'add', 'remove'];
+/** The five, in the order the documentation lists them. */
+export const DELEGATE_COMMANDS: readonly DelegateCommand[] = ['up', 'down', 'add', 'remove', 'approve'];
 
 /** One approved pane and the commands it may run. `pane` is `<herdr session>/<pane id>`. */
 export type Delegate = { pane: string; commands: DelegateCommand[] };

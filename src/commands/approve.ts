@@ -7,7 +7,8 @@ import { checkDrift, resolveChecks } from '../budgets/checks.ts';
 import { formatDiff } from '../approve/diff.ts';
 import { compare, describe, fingerprints } from '../approve/fingerprint.ts';
 import { readArgs } from '../args.ts';
-import { callerOf, describeCaller, isOwner } from '../caller.ts';
+import { callerOf, describeCaller, isOwner, type Caller } from '../caller.ts';
+import { delegateGate, logDelegated, type DelegateSources } from '../delegate.ts';
 import { loadTeamFile, placedProblems } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
@@ -31,6 +32,10 @@ export type ApproveSources = {
   waiting(): Waiting;
   now(): Date;
   home: string;
+  // The gate a non-owner caller is judged by, as every delegated command asks it. Left out,
+  // the real one; `delegate` carries a test's reads into it.
+  gate?: typeof delegateGate;
+  delegate?: DelegateSources;
 };
 
 const NONBLOCKING = constants.O_RDONLY | constants.O_NONBLOCK;
@@ -303,20 +308,87 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   // exit: approve.show
   if (args.flags.has('show')) return 0;
 
-  const caller = callerOf(io);
-  if (!isOwner(caller)) {
-    io.stderr(
-      `team approve: only the owner approves a team file, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`,
+  // The one write both approved callers perform: the signed record, the line that attributes
+  // it — the owner's own, or the delegate's audit line naming the pane and what the approval
+  // sealed — and the sentence. `pane` is the approved delegate's when this is a delegated
+  // approval, and absent for the owner's.
+  const writeApproved = (caller: Caller, pane?: string, changed?: string): number => {
+    const now = sources.now();
+    writeApproval(
+      store,
+      { approval: { ...approvalOf(team, root, now, resolved.checks), overrides: live.text }, file: text },
+      team.seats,
+      sources.home,
+      now,
     );
-    // exit: approve.not-owner
-    return 1;
+    if (pane === undefined) {
+      logLine(
+        dirname(path),
+        'approve',
+        describeCaller(caller),
+        `approved ${seats} seats; ceilings: ${ceilingsLine(ceilings)}`,
+        now,
+      );
+    } else {
+      logDelegated(dirname(path), pane, 'approve', now, changed);
+    }
+    io.stdout(`Approved. The record is in ${store}; signed with key ${keyFingerprint(keyOf(sources.home))}; check the rest with \`team doctor\`.\n`);
+    // exit: approve.approved
+    return 0;
+  };
+
+  const caller = callerOf(io);
+  // The approved delegate's pane, when this is a delegated approval: the gate passed it, and
+  // the run goes on through the same key guards and the same write the owner's run uses.
+  // Absent, this is the owner's run.
+  let delegatedPane: string | undefined;
+  if (!isOwner(caller)) {
+    if (!team.delegates) {
+      io.stderr(
+        `team approve: only the owner approves a team file, from a terminal outside herdr; this call is ${describeCaller(caller)}\n`,
+      );
+      // exit: approve.not-owner
+      return 1;
+    }
+    // The delegate branch, tried only when the file names a delegate at all: with no
+    // `delegates` section the refusal above stays exactly today's, and the gate is never
+    // asked. The gate verifies the approval, the approved copy, the sovereign guard — an
+    // ordinary difference passes there; a change to `delegates`, `budgets`, `limits`,
+    // identity or `trust` is refused with "this change needs the owner" — the placement, the
+    // entry, `approve` in its commands, and the flags: `--file` is refused there (a delegate
+    // approves the default placed file only). A passed run rejoins the owner's path below and
+    // skips only the question's guards: `--confirm` is inert for a delegate, nothing is asked
+    // on any terminal, and the audit line is the record of what this approval sealed.
+    const verdict = (sources.gate ?? delegateGate)({
+      command: 'approve',
+      team,
+      root,
+      dir: dirname(path),
+      flags: [...args.flags, ...Object.keys(args.values)],
+      io,
+      home: sources.home,
+      ...(sources.delegate ? { sources: sources.delegate } : {}),
+    });
+    if (verdict.kind === 'refused') {
+      io.stderr(`team approve: ${verdict.text}\n`);
+      // exit: approve.delegate
+      // exit: approve.delegate-approval
+      // exit: approve.delegate-approved-copy
+      // exit: approve.delegate-command
+      // exit: approve.delegate-evidence
+      // exit: approve.delegate-flag
+      // exit: approve.delegate-placement
+      // exit: approve.delegate-sovereign
+      return 1;
+    }
+    delegatedPane = verdict.pane;
   }
 
   // A key that already exists and cannot be read refuses here, before the terminal is read and
-  // before the question: a run that can never sign must not consume a deliberate answer, and
-  // the repair — restore the file from a copy — is the same whether the key broke a minute or
-  // a month ago. This look is read-only; the key that is missing is still made only once every
-  // refusal below has had its chance.
+  // before the question: a run that can never sign must not consume a deliberate answer — or,
+  // on a delegated run, write at all — and the repair, restoring the file from a copy, is the
+  // same whether the key broke a minute or a month ago. This look is read-only; the key that
+  // is missing is still made only once every refusal below has had its chance.
   const refusal = keyRefusal(sources.home);
   if (refusal !== null) {
     io.stderr(`team approve: ${refusal}\n`);
@@ -331,38 +403,42 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
   // three-valued: only a check that found the terminal empty lets the write through. A line
   // found waiting refuses, and so does a terminal the check could not read at all — an
   // unreadable terminal must not become an approval either, and it is not the same fault as
-  // a paste, so it carries its own id.
-  if (args.flags.has('confirm')) {
-    const answer = await sources.ask(
-      `\nType the number of seats (${seats}) to approve this file, and its commands and rules, to run: `,
-    );
-    if (answer === null || answer.trim() !== String(seats)) {
-      io.stderr('team approve: not approved; nothing was written\n');
-      // exit: approve.answer
-      return 1;
-    }
-  } else {
-    const waiting = sources.waiting();
-    if (waiting === 'waiting') {
-      io.stderr('team approve: input was waiting on the terminal: run `team approve` on its own line\n');
-      // exit: approve.input-waiting
-      return 1;
-    }
-    if (waiting === 'unreadable') {
-      io.stderr(
-        'team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written\n',
+  // a paste, so it carries its own id. A delegated run skips both guards: the question is the
+  // owner's, its terminal is not where a delegated approval is answered, and the audit line —
+  // not an answer — is its record.
+  if (delegatedPane === undefined) {
+    if (args.flags.has('confirm')) {
+      const answer = await sources.ask(
+        `\nType the number of seats (${seats}) to approve this file, and its commands and rules, to run: `,
       );
-      // exit: approve.input-unreadable
-      return 1;
+      if (answer === null || answer.trim() !== String(seats)) {
+        io.stderr('team approve: not approved; nothing was written\n');
+        // exit: approve.answer
+        return 1;
+      }
+    } else {
+      const waiting = sources.waiting();
+      if (waiting === 'waiting') {
+        io.stderr('team approve: input was waiting on the terminal: run `team approve` on its own line\n');
+        // exit: approve.input-waiting
+        return 1;
+      }
+      if (waiting === 'unreadable') {
+        io.stderr(
+          'team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written\n',
+        );
+        // exit: approve.input-unreadable
+        return 1;
+      }
     }
   }
 
   // The key is created only now, once every refusal above has had its chance: a not-owner, a
-  // broken key, a waiting line, an unreadable terminal or a rejected answer leaves no key
-  // folder behind, so on a first approval the refusals' "nothing was written" is true. The
-  // look above found a key or none; a key that turns unreadable in the window between that
-  // look and this write still fails closed here — a new key would orphan every record
-  // already signed, so the owner restores it.
+  // delegate the gate refused, a broken key, a waiting line, an unreadable terminal or a
+  // rejected answer leaves no key folder behind, so on a first approval the refusals' "nothing
+  // was written" is true. The look above found a key or none; a key that turns unreadable in
+  // the window between that look and this write still fails closed here — a new key would
+  // orphan every record already signed, so the owner restores it.
   try {
     keyOf(sources.home);
   } catch (error) {
@@ -371,22 +447,10 @@ export async function runApprove(argv: string[], io: Io, sources: ApproveSources
     return 1;
   }
 
-  const now = sources.now();
-  writeApproval(
-    store,
-    { approval: { ...approvalOf(team, root, now, resolved.checks), overrides: live.text }, file: text },
-    team.seats,
-    sources.home,
-    now,
-  );
-  logLine(
-    dirname(path),
-    'approve',
-    describeCaller(caller),
-    `approved ${seats} seats; ceilings: ${ceilingsLine(ceilings)}`,
-    now,
-  );
-  io.stdout(`Approved. The record is in ${store}; signed with key ${keyFingerprint(keyOf(sources.home))}; check the rest with \`team doctor\`.\n`);
-  // exit: approve.approved
-  return 0;
+  // What a delegated approval seals, for its audit line: the ordinary differences the guard
+  // admitted. The owner's line has never named the differences and does not start now.
+  const changed = delegatedPane === undefined || previous === null
+    ? undefined
+    : compare(approvedFingerprints(previous), fingerprints(team)).map(describe).join('; ');
+  return delegatedPane === undefined ? writeApproved(caller) : writeApproved(caller, delegatedPane, changed);
 }

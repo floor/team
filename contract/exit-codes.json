@@ -550,6 +550,62 @@
     {
       "code": 1,
       "command": "approve",
+      "id": "approve.delegate",
+      "meaning": "the caller is neither the owner nor the approved delegate",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "id": "approve.delegate-approval",
+      "meaning": "delegation needs a verified approval",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "id": "approve.delegate-approved-copy",
+      "meaning": "delegation needs a readable approved copy",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "id": "approve.delegate-command",
+      "meaning": "the approved delegate may not run `approve`",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "id": "approve.delegate-evidence",
+      "meaning": "delegation cannot verify its placement or seats",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "id": "approve.delegate-flag",
+      "meaning": "a flag of the owner's was passed to the approved delegate",
+      "trigger": "team approve --file <path>"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "id": "approve.delegate-placement",
+      "meaning": "the approved delegate must be an external non-seat pane",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
+      "id": "approve.delegate-sovereign",
+      "meaning": "the change moves a sovereign section: it needs the owner",
+      "trigger": "team approve"
+    },
+    {
+      "code": 1,
+      "command": "approve",
       "id": "approve.input-unreadable",
       "meaning": "the terminal could not be read to check for input waiting",
       "trigger": "team approve"

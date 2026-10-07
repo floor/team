@@ -84,6 +84,14 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `approve.show` | `approve` | 0 | the comparison was printed | `team approve --show` |
 | `approve.answer` | `approve` | 1 | the answer was not the number of seats | `team approve --confirm` |
 | `approve.check` | `approve` | 1 | an approved check cannot be resolved | `team approve` |
+| `approve.delegate` | `approve` | 1 | the caller is neither the owner nor the approved delegate | `team approve` |
+| `approve.delegate-approval` | `approve` | 1 | delegation needs a verified approval | `team approve` |
+| `approve.delegate-approved-copy` | `approve` | 1 | delegation needs a readable approved copy | `team approve` |
+| `approve.delegate-command` | `approve` | 1 | the approved delegate may not run `approve` | `team approve` |
+| `approve.delegate-evidence` | `approve` | 1 | delegation cannot verify its placement or seats | `team approve` |
+| `approve.delegate-flag` | `approve` | 1 | a flag of the owner's was passed to the approved delegate | `team approve --file <path>` |
+| `approve.delegate-placement` | `approve` | 1 | the approved delegate must be an external non-seat pane | `team approve` |
+| `approve.delegate-sovereign` | `approve` | 1 | the change moves a sovereign section: it needs the owner | `team approve` |
 | `approve.input-unreadable` | `approve` | 1 | the terminal could not be read to check for input waiting | `team approve` |
 | `approve.input-waiting` | `approve` | 1 | input was waiting on the terminal | `team approve` |
 | `approve.key` | `approve` | 1 | the signing key can't be read | `team approve` |
