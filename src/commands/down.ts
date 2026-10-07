@@ -223,6 +223,9 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // row is an ordinary question and gets nothing. A question the profile cannot confirm, or
   // one that stays after the key, is reported at once: the seat could not be stopped by asking.
   const sendExit = async (): Promise<ExitTyping> => {
+    if (!live()) return 'no-agent';
+    if (!resting()) return false;
+    if (kindOf() !== 'unsent' || !holds()) return false;
     if (!io.pressEnter()) return false;
     const confirm = profileFor(cli)?.exitConfirm ?? null;
     const deadline = io.now() + DRAW_WAIT_MS;
@@ -266,6 +269,8 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
     // The caller check first: a CLI gone at this key is `no-agent` whether or not the profile
     // carries a clearing key, and "not typed" is for a key-less profile the CLI is still on.
     if (!live()) return 'no-agent';
+    if (!resting()) return false;
+    if (kindOf() !== 'unsent') return false;
     if (key === null) return false;
     if (!io.sendKey(key)) return false;
     const after = await settle('unsent');
@@ -306,6 +311,8 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // The box holds something. The caller check precedes the clearing key, exactly as it precedes
   // every other key.
   if (!live()) return 'no-agent';
+  if (!resting()) return false;
+  if (kindOf() !== 'unsent') return false;
   const key = profileFor(cli)?.exitClear ?? null;
   if (key === null) {
     return holds()

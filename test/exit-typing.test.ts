@@ -886,3 +886,35 @@ describe('Codex Pinned Suites: live foreground_cwd binding for wrapped paths', (
   });
 });
 
+describe('per-key fresh witness contract in typeExit', () => {
+  const idle = fixture('claude-code-idle-ansi.txt');
+  const unsent = fixture('claude-code-unsent-ansi.txt');
+
+  test('resting status failure before typeText aborts', async () => {
+    const pane = paneOf('claude-code', 'claude', idle, unsent);
+    pane.io.status = () => 'working';
+    expect(await typeExit(pane.io, 'claude-code', '/exit')).toBe(false);
+    expect(pane.types).toEqual([]);
+    expect(pane.sent).toEqual([]);
+  });
+
+  test('non-idle screen before typeText aborts', async () => {
+    const pane = paneOf('claude-code', 'claude', fixture('claude-code-other-text-ansi.txt'), unsent);
+    expect(await typeExit(pane.io, 'claude-code', '/exit')).toBe(false);
+    expect(pane.types).toEqual([]);
+    expect(pane.sent).toEqual([]);
+  });
+
+  test('resting status failure before sendKey for exitClear aborts', async () => {
+    let call = 0;
+    const pane = leftoverPane('claude-code', 'claude', unsent, idle);
+    pane.io.status = () => {
+      call++;
+      return call === 1 ? 'idle' : 'working';
+    };
+    expect(await typeExit(pane.io, 'claude-code', '/exit')).toBe(false);
+    expect(pane.sent).toEqual([]);
+  });
+});
+
+
