@@ -1,12 +1,14 @@
 // `team usage` — S2: the machine's report, restricted for every caller but the owner at a
 // terminal. One resolution (`viewFor`), one filter (`reportOf`), one closed allow-list DTO both
-// renderers print. The suite holds the design's boundary as tests: the properties the restricted
-// text and `--json` keep (no other team's name, root, seat or read, no location this machine
-// derived, no path a state read produced), the full view's own shape, the anonymized note
-// families with their counts, the store-level refusal, and the five droppable allow-list entries
-// the brief lists — the team count, whose reading a machine line carries, the watch clause, the
-// anonymized note counts, and how fine an age is — each with its own test below. Read-only
-// throughout: nothing here writes, runs, reads a pane or opens a CLI session file.
+// renderers print — and the DTO holds copies, never the machine's own objects, so a field the
+// internals grow reaches neither face (its own test below). The suite holds the design's boundary
+// as tests: the properties the restricted text and `--json` keep (no other team's name, root,
+// seat or read, no location this machine derived, no path a state read produced), the full view's
+// own shape, the anonymized note families with their counts, the store-level refusal, and the
+// five droppable allow-list entries the brief lists — the team count, whose reading a machine
+// line carries, the watch clause, the anonymized note counts, and how fine an age is — each with
+// its own test below. Read-only throughout: nothing here writes, runs, reads a pane or opens a
+// CLI session file.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -18,9 +20,12 @@ import { runStatus } from '../src/commands/status.ts';
 import { NO_PROJECT, runUsage, USAGE } from '../src/commands/usage.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import {
+  machineUsage,
   NO_COPY,
   NOTHING_COUNTED,
   NOT_VERIFIED,
+  reportOf,
+  reportText,
   UNBOUND_ACCOUNT,
   UNBOUND_SHAPE,
   viewFor,
@@ -363,6 +368,66 @@ describe('team usage', () => {
       unknown: [{ scope: 'acme', account: 'anthropic', why: 'no pattern can read this account' }],
       notes: [],
     });
+  });
+
+  test('the report carries copies, not the machine’s own objects: a field the internals grow reaches neither face', async () => {
+    // The closed allow-list's own rule, pinned where it can break in silence: `reportOf` builds
+    // the one DTO both renderers print from, and the command `JSON.stringify`s it for `--json` —
+    // so a row (or the counts) carried by reference would print whatever field the internal type
+    // grows next, the restricted view's rows included. The marker below stands for that field:
+    // planted on every internal row, reading and count the report reads from, it must reach
+    // neither face. The spend account is in the fixture so the sweep covers a spend reading too.
+    const text = teamText().replace(
+      '  accounts:\n',
+      '  accounts:\n    deepseek: { kind: spend, floor: 5 USD, sources: [check], check: acme-quota }\n',
+    );
+    writeFileSync(file, text);
+    approve(text);
+    updateState(join(root, '.agents'), (state) => {
+      state.spend = { deepseek: { account: 'deepseek', amount: 12.4, currency: 'USD', at: '2026-10-04T08:56:00Z' } } as never;
+    });
+    withState();
+    const view = viewFor(testIo(root, SEAT), root);
+    expect(view.full).toBe(false);
+    const machine = machineUsage(home, NOW.getTime(), view);
+
+    const marker = 'ZAP-MARKER-2b5f';
+    const plant = (one: object): void => {
+      (one as Record<string, unknown>).zap = marker;
+    };
+    plant(machine.counts);
+    for (const lab of machine.labs) {
+      for (const account of lab.accounts) {
+        if (account.kind === 'spend') {
+          for (const one of account.spend.rows) plant(one.reading);
+          if (account.spend.newest !== null) plant(account.spend.newest.reading);
+        } else {
+          for (const line of account.lines) {
+            for (const one of line.rows) plant(one.row);
+            if (line.newest !== null) plant(line.newest.row);
+          }
+        }
+      }
+    }
+
+    const report = reportOf(machine, view, NOW.getTime(), []);
+    expect(JSON.stringify(report)).not.toContain(marker);
+    expect(reportText(report)).not.toContain(marker);
+
+    // And the key sets themselves, level by level — the report, the counts, a team row and a
+    // spend reading — so a key that does cross fails here by name, not only by plant.
+    expect(Object.keys(report)).toEqual(['format', 'at', 'view', 'mine', 'counts', 'labs', 'unknown', 'notes']);
+    expect(Object.keys(report.counts)).toEqual(['teams', 'labs', 'accounts']);
+    const teamRows = report.labs.flatMap((lab) => lab.accounts.flatMap((entry) => (entry.kind === 'subscription' ? entry.teams : [])));
+    const spendRows = report.labs.flatMap((lab) => lab.accounts.flatMap((entry) => (entry.kind === 'spend' ? entry.teams : [])));
+    expect(teamRows.length).toBeGreaterThan(0);
+    expect(spendRows.length).toBeGreaterThan(0);
+    for (const row of teamRows) {
+      expect(Object.keys(row.row)).toEqual(['account', 'window', 'left', 'used', 'resetsIn', 'seat', 'age', 'source', 'fallback', 'state', 'inside', 'reserve']);
+    }
+    for (const row of spendRows) {
+      expect(Object.keys(row.reading)).toEqual(['amount', 'currency', 'at', 'age', 'source', 'state']);
+    }
   });
 
   test("the owner's document is the same one with the names on: `team`, `root`, and the full view", async () => {

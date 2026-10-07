@@ -790,7 +790,25 @@ export type ReportSpendMachine = {
   team?: string;
 };
 
-export type ReportTeamRow = { team: string; root?: string; row: BudgetRow };
+/** A team row's figure, field by field: the report is `JSON.stringify`'d for the `--json` face,
+ *  so an internal row carried by reference would print whatever field `BudgetRow` grows next.
+ *  Each field here is copied in `reportRowOf`; a field absent here is absent from both faces. */
+export type ReportRow = {
+  account: string;
+  window: WindowName | null;
+  left: number | null;
+  used: number | null;
+  resetsIn: string | null;
+  seat: string | null;
+  age: string | null;
+  source: ReadingSource | null;
+  fallback: boolean;
+  state: BudgetState;
+  inside: boolean;
+  reserve: number | null;
+};
+
+export type ReportTeamRow = { team: string; root?: string; row: ReportRow };
 
 export type ReportSpendRow = {
   team: string;
@@ -1011,7 +1029,9 @@ export function reportOf(machine: MachineUsage, view: UsageView, now: number, mi
     at: new Date(now).toISOString(),
     view: view.full ? 'full' : 'restricted',
     mine: mineName,
-    counts: machine.counts,
+    // Copied, not carried: the report is stringified for the `--json` face, so a field the
+    // machine's counts grows later must not reach the DTO by reference (the `reportRowOf` rule).
+    counts: { teams: machine.counts.teams, labs: machine.counts.labs, accounts: machine.counts.accounts },
     labs,
     unknown,
     notes,
@@ -1055,9 +1075,30 @@ function subscriptionEntryOf(
   };
   const rows = view.full ? line.rows : line.rows.filter((one) => one.team === mineEntry);
   const teams: ReportTeamRow[] = rows
-    .map((one) => ({ team: view.full ? one.team.usage.project ?? one.team.root : one.team.usage.project ?? '', ...(view.full ? { root: one.team.root } : {}), row: one.row }))
+    .map((one) => ({ team: view.full ? one.team.usage.project ?? one.team.root : one.team.usage.project ?? '', ...(view.full ? { root: one.team.root } : {}), row: reportRowOf(one.row) }))
     .sort((a, b) => (a.team < b.team ? -1 : 1));
   return { account, kind: 'subscription', machine, teams };
+}
+
+/** The row's figure, copied field by field — `BudgetRow`'s own order, so the `--json` face stays
+ *  byte-identical. The report is `JSON.stringify`'d, so a row carried by reference would print
+ *  whatever field the internal type grows next; a field away from this list is away from both
+ *  faces. The spend row's `reading` (`spendEntryOf`) is the same rule for the same reason. */
+function reportRowOf(row: BudgetRow): ReportRow {
+  return {
+    account: row.account,
+    window: row.window,
+    left: row.left,
+    used: row.used,
+    resetsIn: row.resetsIn,
+    seat: row.seat,
+    age: row.age,
+    source: row.source,
+    fallback: row.fallback,
+    state: row.state,
+    inside: row.inside,
+    reserve: row.reserve,
+  };
 }
 
 function spendEntryOf(account: MachineAccount & { kind: 'spend' }, view: UsageView, mineEntry: TeamEntry | null, now: number): ReportAccount {
