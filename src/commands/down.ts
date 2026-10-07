@@ -606,13 +606,13 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   });
 
   if (dry) {
+    // A refusal leaves through the real run's return below, so the status and the exit id
+    // are that refusal's. The words stay the dry run's, and nothing is written.
     for (const refusal of refusals) io.stdout(`! down would refuse: ${refusal}\n`);
     io.stdout(formatPlan(plan));
-    // exit: down.dry-run
-    return 0;
   }
   if (refusals.length) {
-    for (const refusal of refusals) io.stderr(`team down: ${refusal}\n`);
+    if (!dry) for (const refusal of refusals) io.stderr(`team down: ${refusal}\n`);
     // exit: down.caller
     // exit: down.abandon
     // exit: down.no-pane
@@ -626,6 +626,10 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     // exit: down.delegate-command
     // exit: down.delegate-flag
     return 1;
+  }
+  if (dry) {
+    // exit: down.dry-run
+    return 0;
   }
   const launch = sources.launch;
   if (!launch) {

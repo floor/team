@@ -6,8 +6,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 
 | Id | Command | Code | Meaning | Example |
 | --- | --- | --- | --- | --- |
-| `add.dry-budget` | `add` | 0 | a dry run would refuse the budget | `team add worker --dry-run` |
-| `add.dry-run` | `add` | 0 | a dry run printed the plan | `team add worker --dry-run` |
+| `add.dry-run` | `add` | 0 | a dry run exits as the real run would, and changes nothing | `team add worker --dry-run` |
 | `add.ready` | `add` | 0 | the seat is ready | `team add worker` |
 | `add.agents` | `add` | 1 | the agents can't be read | `team add worker` |
 | `add.already-running` | `add` | 1 | the seat is already running | `team add worker` |
@@ -121,7 +120,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `doctor.file-invalid` | `doctor` | 2 | the team file can't be parsed | `team doctor --file team.yaml` |
 | `doctor.invocation` | `doctor` | 2 | the invocation can't be read | `team doctor extra` |
 | `doctor.not-a-repo` | `doctor` | 2 | not inside a git repository | `team doctor` |
-| `down.dry-run` | `down` | 0 | a dry run printed the plan | `team down --dry-run` |
+| `down.dry-run` | `down` | 0 | a dry run exits as the real run would, and changes nothing | `team down --dry-run` |
 | `down.idle` | `down` | 0 | there was nothing to stop | `team down` |
 | `down.stopped` | `down` | 0 | the seats that could be stopped were stopped | `team down` |
 | `down.abandon` | `down` | 1 | only the owner abandons a team | `team down --abandon` |
@@ -212,7 +211,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `team.command-threw` | `team` | 1 | a command threw | `team init` |
 | `team.no-command` | `team` | 2 | no command was given | `team` |
 | `team.unknown` | `team` | 2 | the command is unknown | `team nosuch` |
-| `up.dry-run` | `up` | 0 | a dry run printed the plan | `team up --dry-run` |
+| `up.dry-run` | `up` | 0 | a dry run exits as the real run would, and changes nothing | `team up --dry-run` |
 | `up.ready` | `up` | 0 | the launch finished | `team up` |
 | `up.agents` | `up` | 1 | the agents can't be read | `team up` |
 | `up.clear` | `up` | 1 | a stopped session this team records did not clear | `team up` |

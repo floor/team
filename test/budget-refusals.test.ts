@@ -490,7 +490,7 @@ describe('a spend floor refuses one seat', () => {
     expect(added.err).toBe(`team add: refused: ${tail}\n`);
 
     const addedDry = await add(['worker', '--dry-run'], world());
-    expect(addedDry.code).toBe(0);
+    expect(addedDry.code).toBe(1);
     expect(addedDry.out).toContain(`worker: would refuse: ${tail}\n`);
   });
 
@@ -552,7 +552,7 @@ describe('a spend floor refuses one seat', () => {
     expect(refused.labels).toEqual([]);
 
     const dry = await add(['worker', '--dry-run'], world());
-    expect(dry.code).toBe(0);
+    expect(dry.code).toBe(1);
     expect(dry.out).toContain(`worker: would refuse: ${SPEND_TAIL}\n`);
     expect(dry.labels).toEqual([]);
   });
@@ -741,7 +741,7 @@ describe('team add', () => {
     expect(refused.labels).toEqual([]);
 
     const dry = await add(['worker', '--dry-run'], world());
-    expect(dry.code).toBe(0);
+    expect(dry.code).toBe(1);
     expect(dry.out).toContain(`worker: would refuse: ${TAIL}\n`);
     expect(dry.out).toContain('dry run: nothing was run\n');
     expect(dry.labels).toEqual([]);

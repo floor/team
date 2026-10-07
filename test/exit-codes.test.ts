@@ -371,9 +371,33 @@ const agent = (name: string, status = 'idle'): HerdrAgent => ({
   name, agent: 'claude', pane: 'w1:p1', workspace: 'w1', status, cwd: null,
 });
 
+let compareDry = false;
+
 function show(value: Ran, needle: string): Ran {
-  expect(`${value.err}${value.out}`).toContain(needle);
+  if (!compareDry) expect(`${value.err}${value.out}`).toContain(needle);
   return value;
+}
+
+function projectBytes(place: Place): { state: string | null; log: string | null } {
+  const state = join(place.root, '.agents', 'team.state.json');
+  const log = join(place.root, '.agents', 'team.log');
+  return {
+    state: existsSync(state) ? readFileSync(state, 'utf8') : null,
+    log: existsSync(log) ? readFileSync(log, 'utf8') : null,
+  };
+}
+
+function dryArgv(argv: string[]): string[] {
+  if (!compareDry || argv.includes('--dry-run')) return argv;
+  return [...argv, '--dry-run'];
+}
+
+async function runCompared(place: Place, argv: string[], go: (args: string[]) => Promise<number>, io: ReturnType<typeof testIo>): Promise<Ran> {
+  const args = dryArgv(argv);
+  const before = compareDry ? projectBytes(place) : null;
+  const code = await go(args);
+  if (before) expect(projectBytes(place)).toEqual(before);
+  return { code, out: io.out, err: io.err };
 }
 
 async function entry(argv: string[], io: ReturnType<typeof testIo>): Promise<Ran> {
@@ -386,7 +410,7 @@ async function entry(argv: string[], io: ReturnType<typeof testIo>): Promise<Ran
 
 async function added(place: Place, argv: string[], caller: Caller, sources: AddSources): Promise<Ran> {
   const io = testIo(place.root, caller);
-  return { code: await runAdd(argv, io, sources), out: io.out, err: io.err };
+  return runCompared(place, argv, (args) => runAdd(args, io, sources), io);
 }
 
 async function approved(place: Place, argv: string[], caller: Caller, sources: ApproveSources, cwd = place.root): Promise<Ran> {
@@ -641,11 +665,6 @@ scene('add.ceiling', async (place) => {
   const approval = { ...standing.record.approval, ceilings: { ...standing.record.approval.ceilings, seats: 0 } };
   const capped = { ...standing, record: { ...standing.record, approval } };
   return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, { standing: () => capped })), 'allows 0 seats');
-});
-scene('add.dry-budget', async (place) => {
-  approve(place, BUDGET);
-  saveReadings(join(place.root, '.agents'), [spendReading()], NOW.getTime());
-  return show(await added(place, ['worker', '--dry-run', '--file', place.file], owner, addSources(place)), 'would refuse');
 });
 scene('add.dry-run', async (place) => {
   approve(place, TWO);
@@ -943,7 +962,7 @@ scene('doctor.missing', async (place) => {
 
 async function down(place: Place, argv: string[], caller: Caller, sources: RemoveSources): Promise<Ran> {
   const io = testIo(place.root, caller);
-  return { code: await runDown(argv, io, sources), out: io.out, err: io.err };
+  return runCompared(place, argv, (args) => runDown(args, io, sources), io);
 }
 
 scene('down.invocation', async (place) => show(await down(place, ['extra'], owner, downSources()), 'unexpected'));
@@ -1009,7 +1028,8 @@ scene('down.delegate', async (place) => {
   write(place, DELEGATED);
   const text = 'only the owner, the coordinator, the operator or the approved delegate stops the team; this call is other';
   const ran = await down(place, [], other, delegated('down.delegate', text));
-  expect(ran.err).toBe(`team down: ${text}\n`);
+  if (compareDry) expect(ran.out).toContain(`! down would refuse: ${text}\n`);
+  else expect(ran.err).toBe(`team down: ${text}\n`);
   return ran;
 });
 scene('down.delegate-approval', async (place) => {
@@ -1037,7 +1057,8 @@ scene('down.delegate-flag', async (place) => {
   const text = "--abandon is the owner's; the approved delegate cannot use it";
   const ran = await down(place, ['--abandon'], other, delegated('down.delegate-flag', text));
   // The gate's flag refusal is the run's only refusal: today's abandon line stays out of it.
-  expect(ran.err).toBe(`team down: ${text}\n`);
+  if (compareDry) expect(ran.out).toContain(`! down would refuse: ${text}\n`);
+  else expect(ran.err).toBe(`team down: ${text}\n`);
   return ran;
 });
 scene('down.delegate-placement', async (place) => {
@@ -1450,7 +1471,7 @@ scene('status.difference', async (place) => {
 
 async function up(place: Place, argv: string[], caller: Caller, sources: UpSources): Promise<Ran> {
   const io = testIo(place.root, caller);
-  return { code: await runUp(argv, io, sources), out: io.out, err: io.err };
+  return runCompared(place, argv, (args) => runUp(args, io, sources), io);
 }
 
 scene('up.invocation', async (place) => show(await up(place, ['extra'], owner, upSources(place)), 'unexpected'));
@@ -2182,6 +2203,69 @@ for (const row of contract.rows) {
       rmSync(place.base, { recursive: true, force: true });
     }
   });
+}
+
+// A refusal whose return sits above the dry-run return is one the dry run reaches. One
+// whose return sits below it happens after the plan, and a dry run never takes that status.
+function refusalIds(command: string): string[] {
+  const sites = analyze().sites.filter((site) => site.command === command);
+  const dry = sites.find((site) => site.ids.includes(`${command}.dry-run`));
+  if (!dry) throw new Error(`${command}: no dry-run site`);
+  return sites
+    .filter((site) => site.line < dry.line)
+    .flatMap((site) => site.ids)
+    .filter((id) => {
+      const row = contract.rows.find((item) => item.id === id);
+      return Boolean(row && row.code !== 0 && !defensive.has(id));
+    })
+    .sort();
+}
+
+function refusalCore(text: string): string {
+  const line = text.split('\n').map((item) => item.trim()).find(Boolean) ?? '';
+  return line
+    .replace(/^! (?:up|down|add) would refuse: /, '')
+    .replace(/^team add: refused: /, '')
+    .replace(/^[^:\n]+: would refuse: /, '')
+    .replace(/^team (?:up|down|add): /, '')
+    .replace(/\/(?:private\/)?tmp\/team-exit-\w+/g, '<place>')
+    .replace(/acme-[0-9a-f]{8,}/g, 'acme-<id>');
+}
+
+for (const command of ['up', 'down', 'add'] as const) {
+  test(`${command}: a refused dry run exits as the real run`, async () => {
+    const ids = refusalIds(command);
+    expect(ids.length).toBeGreaterThan(0);
+    const drySite = analyze().sites.find((site) => site.ids.includes(`${command}.dry-run`));
+    expect(drySite?.codes).toEqual([0]);
+    expect(drySite?.ids).toEqual([`${command}.dry-run`]);
+    for (const id of ids) {
+      const row = contract.rows.find((item) => item.id === id);
+      if (!row) throw new Error(id);
+      const run = scenes.get(id);
+      expect(run, id).toBeDefined();
+      const site = analyze().sites.find((item) => item.ids.includes(id));
+      expect(site?.line, id).toBeLessThan(drySite?.line ?? 0);
+      expect(site?.codes, id).toContain(row.code);
+      const dryPlace = layout(!bare.has(id));
+      const realPlace = layout(!bare.has(id));
+      try {
+        compareDry = true;
+        const dry = await run!(dryPlace);
+        compareDry = false;
+        const real = await run!(realPlace);
+        expect(dry.code, id).toBe(real.code);
+        expect(dry.code, id).toBe(row.code);
+        const shared = refusalCore(`${real.err}${real.out}`).slice(0, 80);
+        expect(shared.length, id).toBeGreaterThan(0);
+        expect(refusalCore(`${dry.err}${dry.out}`), id).toContain(shared);
+      } finally {
+        compareDry = false;
+        rmSync(dryPlace.base, { recursive: true, force: true });
+        rmSync(realPlace.base, { recursive: true, force: true });
+      }
+    }
+  }, 120_000);
 }
 
 test('every listed outcome has a run', () => {

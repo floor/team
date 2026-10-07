@@ -658,7 +658,8 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   });
   // Exit 1, including when every seat is ready: a team that comes up with no watch looks
   // finished, and that is how a watch that never read its file was missed. The owner has to
-  // see it. `--dry-run` still exits 0, as every dry run does, and prints the same line.
+  // see it. A dry run prints the same line. That exit is decided with the launch, after the
+  // plan, so a dry run does not take it.
   // One physical line, through the cleaned writer every other line of this command uses.
   // `plainLine` folds it. A real run writes it on stderr, where `watch: started` is: stdout
   // is the records alone. A dry run writes it on stdout, with the plan. The sentence does not
@@ -673,15 +674,14 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
 
   if (dry) {
     // The same cause can reach the list twice — the gate and `doctor` both read the
-    // approval — so a refusal is said once.
+    // approval — so a refusal is said once. A refusal leaves through the real run's
+    // return below, so the status and the exit id are that refusal's; the words stay these.
     for (const refusal of [...new Set(refusals)]) out.stdout(`! up would refuse: ${plainText(refusal)}\n`);
     out.stdout(plainText(formatPlan(buildPlan())));
     sayWatchMissed();
-    // exit: up.dry-run
-    return 0;
   }
   if (refusals.length) {
-    for (const refusal of [...new Set(refusals)]) out.stderr(`team up: ${plainText(refusal)}\n`);
+    if (!dry) for (const refusal of [...new Set(refusals)]) out.stderr(`team up: ${plainText(refusal)}\n`);
     // exit: up.not-owner
     // exit: up.delegate
     // exit: up.delegate-approval
@@ -701,6 +701,10 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
     // exit: up.unknown
     // exit: up.placement
     return 1;
+  }
+  if (dry) {
+    // exit: up.dry-run
+    return 0;
   }
   const launch = sources.launch;
   if (!launch) {

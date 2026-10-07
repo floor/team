@@ -383,7 +383,7 @@ describe('a record with a signed number past the safe range is refused, never a 
       doctor: doctorSources(),
       now: () => NOW,
     } satisfies Partial<UpSources> as UpSources);
-    expect(up).toBe(0);
+    expect(up).toBe(1);
     expect(upIo.out).toContain('! up would refuse: the approval record cannot be read');
     expect(upIo.out).toContain(named);
     expect(upIo.out).toContain('run `team approve` once');

@@ -863,7 +863,7 @@ describe('the sessions the check lets in', () => {
 
 // The dry runs fail the same way as the real runs: the refusal itself where the gate sits before
 // the plan (`add`, and any `--session` the caller may not aim), and the `! down would refuse:`
-// line over the plan where `down` prints a refusal the plan stage found, still exiting 0.
+// line over the plan where `down` prints a refusal the plan stage found, exiting as the real run.
 describe('a dry run of the no-pane refusal', () => {
   test('add --dry-run is refused: the gate sits before the dry run', async () => {
     const run = await byName('add').run(placed(SESSION, COORDINATOR, COORDINATOR_PANE), ['--dry-run'], { state: null });
@@ -871,10 +871,10 @@ describe('a dry run of the no-pane refusal', () => {
     expect(readFileSync(file, 'utf8')).toBe(run.before);
   });
 
-  test('down --dry-run prints the refusal as a would-refuse line and the plan, and exits 0', async () => {
+  test('down --dry-run prints the refusal as a would-refuse line and the plan, and exits 1', async () => {
     const run = await byName('down').run(placed(SESSION, COORDINATOR, COORDINATOR_PANE), ['--dry-run'], { state: null });
     expect({ code: run.code, out: run.out, err: run.err }).toEqual({
-      code: 0,
+      code: 1,
       // The state records nothing, so the plan is the session alone: no seat is left to skip.
       out:
         `! down would refuse: ${NO_PANE(COORDINATOR)}\n` +

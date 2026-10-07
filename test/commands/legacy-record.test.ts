@@ -132,7 +132,7 @@ describe('a legacy record, with the team\'s seats running', () => {
     expect(io.out).toBe('');
 
     const dry = testIo(root, OWNER);
-    expect(await runUp(['--dry-run', ...FILE], dry, { sessionRunning: () => true, agents: () => RUNNING.map((name) => agent(name)), home })).toBe(0);
+    expect(await runUp(['--dry-run', ...FILE], dry, { sessionRunning: () => true, agents: () => RUNNING.map((name) => agent(name)), home })).toBe(1);
     expect(dry.out).toContain(`! up would refuse: ${LINE}\n`);
   });
 

@@ -201,7 +201,7 @@ describe('an override is the owner\'s, by approval', () => {
       home,
       doctor: doctorSources(),
     } satisfies Partial<UpSources> as UpSources);
-    expect(upCode).toBe(0);
+    expect(upCode).toBe(1);
     expect(up.out).toContain('unknown key "composer"');
   });
 });
