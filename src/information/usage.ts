@@ -69,7 +69,11 @@ export type WatchRecording = 'recording' | 'not-recording' | 'not-known';
 export type UsageRow = { row: BudgetRow; changedAt: number | null };
 
 export type ProjectUsage = {
-  /** The project's name; null when neither its file nor an approved copy could be read. */
+  /** The project's name as this caller reads it. For a caller who is not the owner that is the
+   *  one validated copy in force's own `project` — never the live file's, whatever a rename wrote
+   *  there — and null when that copy cannot be read, so the block prints no project name and
+   *  `NO_COPY` names the reason; the live file's for the owner, as this command always read it.
+   *  Null, too, when neither its file nor an approved copy of it can be read. */
   project: string | null;
   rows: UsageRow[];
   /** The one line the block prints when nothing the file declares is counted, in the tool's own
@@ -108,11 +112,13 @@ export type ProjectUsageOptions = {
  * the design's first draft; that promise was corrected — the sentence above is the ruled one.
  * `restricted` says the caller is not the owner: it keeps the store's own words for a refused
  * approval out of what the block can print (`NOT_VERIFIED`), shows the project's own paths
- * relative to the project root (`shownNote`), and renders a stored reading — and builds the
- * declared rows — only from the one validated copy in force (`teamInForceOf`): the state's
- * strings are the state's, and only the ones that copy backs are shown by name, never one a live
- * edit added and never one the fingerprint shortcut let in when the copy cannot be read (`NO_COPY`
- * is the line that case reads).
+ * relative to the project root (`shownNote`), renders a stored reading — and builds the
+ * declared rows — only from the one validated copy in force (`teamInForceOf`), and takes the
+ * project name it prints — the header, the watch line, `--json`'s `mine` — from that same copy,
+ * never from the live file: the state's strings are the state's, and only the ones that copy
+ * backs are shown by name, never one a live edit added and never one the fingerprint shortcut let
+ * in when the copy cannot be read (`NO_COPY` is the line that case reads; the project name a live
+ * edit wrote is not shown either — the second lab's route).
  */
 export function projectUsage(root: string, options: ProjectUsageOptions): ProjectUsage {
   const { home, now, restricted } = options;
@@ -146,7 +152,12 @@ export function projectUsage(root: string, options: ProjectUsageOptions): Projec
   const bound = restricted ? boundReadings(readings, budgets, inForce, notes) : readings;
   const rows = budgetTable(budgets, bound, now).map((row) => ({ row, changedAt: countedMoment(budgets, bound, row, now) }));
   return {
-    project: team.project,
+    // The project name this caller reads. A caller who is not the owner reads the one validated
+    // copy in force's own name — a live `project:` edit is not approved, and the approval stays
+    // verified whatever it says, so the live value must not stand in — and no name at all when
+    // that copy cannot be read (`inForce` null, the standing verified; `NO_COPY` names the
+    // reason). The owner reads the live file's name, as this command always did.
+    project: restricted ? inForce?.project ?? null : team.project,
     rows,
     whyNotCounted: whyNotCountedOf(standing, team, budgets, restricted),
     spend,

@@ -308,32 +308,38 @@ exit 0
 ```
 
 The same command from a seat's pane, or from a folder with no project above it, reads the same
-project or prints the one note line. What a note says changes, and one thing besides: a stored
-reading — a reading in the state, rather than a figure a budget in force counts — is rendered only
-when the team in force binds it. Its account must be one that team names — a budget in force's
-account, or the account one of its seats' own `account:` or `vendor:` resolves to, the resolution
-the counting rule already makes — and its window and source must be ones this tool writes:
-`session`, `daily`, `weekly`; `check`, `status_line`. A reading that fails either is not rendered
-at all, and one fixed line says so, in the block as a `note:` line and in `--json` at the end of
-`notes`:
+project — the one in force, as the paragraphs below have it — or prints the one note line. What a
+note says changes, and one thing besides: a stored reading — a reading in the state, rather than a
+figure a budget in force counts — is rendered only when the team in force binds it. Its account
+must be one that team names — a budget in force's account, or the account one of its seats' own
+`account:` or `vendor:` resolves to, the resolution the counting rule already makes — and its
+window and source must be ones this tool writes: `session`, `daily`, `weekly`; `check`,
+`status_line`. A reading that fails either is not rendered at all, and one fixed line says so, in
+the block as a `note:` line and in `--json` at the end of `notes`:
 
     note: a stored reading names an account this team's file does not: not shown
     note: a stored reading carries a window or source this tool does not write: not shown
 
 The team in force is the approved copy once a verified approval is in force, never the live file: a
 name only the live file writes — a `vendor:` edited after approval, a seat it added — binds no
-stored reading, and the standing's own line already says the file differs. A copy that cannot be
-read binds nothing at all: the allow-list, and the declared rows themselves, come from that one
-copy, so while it cannot be read a caller who is not the owner reads no row and no stored reading
-by name — even when the live file still matches the approved fingerprint — and one `note:` line
-says so:
+stored reading, and the standing's own line already says the file differs. The project name
+follows the same rule: a caller who is not the owner reads the header, the watch line and
+`--json`'s `mine` from the copy in force — the name the owner approved, never one a live
+`project:` edit wrote, though such an edit leaves the approval verified, since `project` is not a
+section the approval fingerprints. A copy that cannot be read binds nothing at all: the
+allow-list, the declared rows themselves and the project name all come from that one copy, so
+while it cannot be read a caller who is not the owner reads no row, no stored reading and no
+project name — even when the live file still matches the approved fingerprint — the block's first
+line is then `no figures (the file could not be read)`, `mine` is null, and one `note:` line says
+why:
 
     note: the approved copy of the team file cannot be read: nothing is shown by name
 
 When nothing is approved, the file's own names are the only ones there are. A seat's name is not
 that wide: a reading whose seat the seats in force do not name still prints its figures, with no
 seat — `-` in the block, null in `--json`. Every figure a budget in force counts prints for every
-caller, and the owner reads every stored reading the state holds, exactly as `status` shows it.
+caller, the owner reads the live file's project as this command always did, and the owner reads
+every stored reading the state holds, exactly as `status` shows it.
 
 The owner reads the notes `status` would print — the loader's own
 message with the file's absolute path, the state's own reason. A caller who is not the owner reads

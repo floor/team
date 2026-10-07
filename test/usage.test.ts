@@ -762,26 +762,62 @@ describe('team usage', () => {
     expect(ownerRaw).toContain('ghost');
   });
 
-  test('an approved copy that cannot be read binds nothing, though the live file matches it', async () => {
+  test('the live project name does not stand in for the approved one', async () => {
+    // The second lab's (xAI) second finding, accepted: `teamInForceOf` merged `project` in from
+    // the LIVE file whatever the standing, and that field is not an owner section — so a rename
+    // is not drift and the approval stays verified — so a caller who is not the owner read a name
+    // nobody approved in the header, the watch line and `--json`'s `mine`. Both of the route's
+    // preconditions are pinned here: the edited file loads, and the standing is still verified.
+    const LIVE_PROJECT = 'a-project-nobody-approved';
+    const live = teamText().replace('project: acme', `project: ${LIVE_PROJECT}`);
+    expect(validateTeamFile(live, { home, root }).ok).toBe(true);
+    writeFileSync(file, live);
+    expect(approvalStanding(root, home).kind).toBe('verified');
+    withState();
+
+    // A caller who is not the owner reads the copy in force's project, and nothing else: the
+    // whole block is the approved file's, byte for byte, and `mine` is the approved name.
+    const mine = await usageAt(root, SEAT);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    expect(mine.code).toBe(0);
+    expect(mine.out).toBe(`${BLOCK}\n`);
+    expect((JSON.parse(raw) as { mine: string }).mine).toBe('acme');
+    for (const face of [mine.out, raw]) expect(face).not.toContain(LIVE_PROJECT);
+
+    // The owner reads the live name as today: the view this command had before the restricted
+    // path, and the name the file has now.
+    const owner = await usageAt(root, { kind: 'owner' });
+    const ownerRaw = (await usageAt(root, { kind: 'owner' }, '--json')).out;
+    expect(owner.code).toBe(0);
+    expect(owner.out).toBe(`${BLOCK.replaceAll('acme', LIVE_PROJECT)}\n`);
+    expect((JSON.parse(ownerRaw) as { mine: string }).mine).toBe(LIVE_PROJECT);
+  });
+
+  test('an approved copy that cannot be read hides the project too, though the live file carries one', async () => {
     // The fourth read's case, release-blocking, and the last of this boundary: the record's
-    // fingerprints are a valid approval's — the live file is byte for byte what the owner
-    // approved — but its stored `file:` is invalid, so the copy in force cannot be read. The
-    // fingerprint shortcut in `budgetsInForceOf` then took the LIVE file's budgets whenever they
-    // matched the record's, and `boundReadings` permitted their names: the reviewer approved a
-    // budget naming `/APPROVED-ACCOUNT`, stored a reading under that account, and `usage --json`
-    // as a seat printed it with no note. The ruling: the whole allow-list comes from ONE
-    // validated in-force copy, and a copy that cannot be read binds nothing.
+    // fingerprints are a valid approval's — the live file is what the owner approved, `project:`
+    // aside, and the live project here is a name nobody approved — but the stored `file:` is
+    // invalid, so the copy in force cannot be read. The fingerprint shortcut in
+    // `budgetsInForceOf` then took the LIVE file's budgets whenever they matched the record's,
+    // and `boundReadings` permitted their names: the reviewer approved a budget naming
+    // `/APPROVED-ACCOUNT`, stored a reading under that account, and `usage --json` as a seat
+    // printed it with no note. The ruling: the whole allow-list comes from ONE validated in-force
+    // copy, and a copy that cannot be read binds nothing. The second lab found the same absence
+    // must cover `project` too: nothing is shown by name, and the live name stands in for nothing.
     const name = '/APPROVED-ACCOUNT';
-    const text = teamText().replace('    openai:', `    ${name}:`);
+    const LIVE_PROJECT = 'a-project-nobody-approved';
+    const text = teamText().replace('    openai:', `    ${name}:`).replace('project: acme', `project: ${LIVE_PROJECT}`);
     const checked = validateTeamFile(text, { home, root });
     if (!checked.ok) throw new Error(`the fixture does not validate: ${JSON.stringify(checked.errors)}`);
     writeFileSync(file, text);
     // The record `team approve` would write, signed by the store's key, with one edit: the copy
-    // it stores is not a team file. The live file still matches the record's fingerprints — the
-    // shortcut's precondition, pinned here so a change of that precondition shows.
+    // it stores is not a team file. The store is found by the root's hash, so the record lives
+    // under the name the owner approved and the rename moved nothing. The live file still
+    // matches the record's fingerprints — the shortcut's precondition, pinned here so a change
+    // of that precondition shows.
     const invalid = 'not a team file: [';
     expect(validateTeamFile(invalid).ok).toBe(false);
-    writeApproval(storePath(checked.team.project, root, home), { approval: approvalOf(checked.team, root, NOW), file: invalid }, [], home);
+    writeApproval(storePath('acme', root, home), { approval: approvalOf(checked.team, root, NOW), file: invalid }, [], home);
     expect(approvalStanding(root, home).kind).toBe('verified');
     updateState(join(root, '.agents'), (state) => {
       state.budgets = {
@@ -791,32 +827,38 @@ describe('team usage', () => {
       state.sessions['acme-web'] = { ...emptySession() } as never;
     });
 
-    // A caller who is not the owner reads no name at all: no declared row, no stored reading,
-    // and the one fixed line where they would stand.
+    // A caller who is not the owner reads no name at all: no declared row, no stored reading, no
+    // project — the block's own no-figures line stands where the header would, `mine` is null,
+    // and the one fixed line where the rows would stand names the reason.
     const mine = await usageAt(root, SEAT);
     const raw = (await usageAt(root, SEAT, '--json')).out;
-    const doc = JSON.parse(raw) as { rows: unknown[]; notes: string[] };
+    const doc = JSON.parse(raw) as { rows: unknown[]; notes: string[]; mine: string | null };
     expect(mine.code).toBe(0);
     expect(mine.out).toBe([
-      'team acme',
-      'no watch is recording for acme',
+      'no figures (the file could not be read)',
       `note: ${NO_COPY}`,
     ].join('\n') + '\n');
     expect(doc.rows).toEqual([]);
     expect(doc.notes).toEqual([NO_COPY]);
+    expect(doc.mine).toBeNull();
     for (const face of [mine.out, raw]) {
       expect(face).not.toContain(name);
       expect(face).not.toContain('anthropic');
+      expect(face).not.toContain(LIVE_PROJECT);
+      expect(face).not.toContain('acme');
     }
 
     // The owner reads the live file's own names as today — exactly what `status` still shows —
-    // and no "not shown" line.
+    // the live project among them, and no "not shown" line.
     const owner = await usageAt(root, { kind: 'owner' });
     const ownerRaw = (await usageAt(root, { kind: 'owner' }, '--json')).out;
     expect(owner.code).toBe(0);
+    expect(owner.out).toContain(`team ${LIVE_PROJECT}`);
+    expect(owner.out).toContain(`no watch is recording for ${LIVE_PROJECT}`);
     expect(owner.out).toContain(`  ${name}  `);
     expect(owner.out).toContain('  anthropic  ');
     expect(ownerRaw).toContain(name);
+    expect((JSON.parse(ownerRaw) as { mine: string }).mine).toBe(LIVE_PROJECT);
     for (const face of [owner.out, ownerRaw]) expect(face).not.toContain('not shown');
   });
 

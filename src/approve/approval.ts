@@ -203,33 +203,41 @@ export function budgetsInForceOf(standing: Standing, team: TeamFile): TeamFile['
 }
 
 /**
- * The one team file in force: a verified standing's stored copy, validated, never the live file —
- * a quiet fingerprint is not a reason to skip that copy — with `project` taken from the live file.
- * That field is not an owner section, so a rename is not drift, and `{repo}` stays the name the
- * file has now. Null when the stored copy can't be read, whatever the fingerprints say: there is
+ * The one team file in force: a verified standing's stored copy, validated, whole — never the
+ * live file, and never a field of the live file merged in: a quiet fingerprint is not a reason to
+ * skip that copy. Null when the stored copy can't be read, whatever the fingerprints say: there is
  * no value to work from. A standing that isn't verified hands the live file back: nothing is
  * approved, and the file's own names are the only ones there are. Every reader that shows a name
- * in force reads it from this object — the two worktree subcommands and `usage`'s binding of a
- * stored reading — so a name only the live file writes is never taken for an approved one.
+ * in force reads it from this object — `usage`'s binding of a stored reading and the project name
+ * it prints — so a name only the live file writes is never taken for an approved one. `project`
+ * is part of that rule: it is not an owner section, so a rename leaves the approval verified, and
+ * a reader that shows the name the owner agreed to must take it from this object, never from the
+ * live file (the second lab's route, closed in `projectUsage`). The two worktree subcommands are
+ * the one exception, and say so themselves (`worktreeTeamInForceOf` below).
  */
 export function teamInForceOf(standing: Standing, team: TeamFile): TeamFile | null {
   if (standing.kind !== 'verified') return team;
   const copy = validateTeamFile(standing.record.file);
-  return copy.ok ? { ...copy.team, project: team.project } : null;
+  return copy.ok ? copy.team : null;
 }
 
 /**
  * The team file the two worktree subcommands read, and whether the live file has drifted from it.
- * `differs` is a separate question: the live file compared with the approved copy in both
- * directions, so a section or a seat that was added, removed or changed prints the note. Null when
- * the stored copy can't be read — there is no value to work from, and the command refuses. A
- * standing that isn't verified hands the live file back with `differs: false` — the caller's gate
- * refuses before it reads any of it.
+ * Every owner section is the copy in force's; `project` is the live file's — that field is not an
+ * owner section, so a rename is not drift, and `{repo}` stays the name the file has now (the merge
+ * lives here, not in `teamInForceOf`: only these subcommands read a name the owner has not
+ * approved, and their gate admits the owner, the orchestrator and the operator alone). `differs` is a
+ * separate question: the live file compared with the approved copy in both directions, so a
+ * section or a seat that was added, removed or changed prints the note. Null when the stored copy
+ * can't be read — there is no value to work from, and the command refuses. A standing that isn't
+ * verified hands the live file back with `differs: false` — the caller's gate refuses before it
+ * reads any of it.
  */
 export function worktreeTeamInForceOf(standing: Standing, team: TeamFile): { team: TeamFile; differs: boolean } | null {
   const inForce = teamInForceOf(standing, team);
   if (inForce === null) return null;
-  return { team: inForce, differs: standing.kind === 'verified' && ownerDrift(inForce, team) };
+  const merged = standing.kind === 'verified' ? { ...inForce, project: team.project } : inForce;
+  return { team: merged, differs: standing.kind === 'verified' && ownerDrift(inForce, team) };
 }
 
 /** An owner section or a seat added, removed or changed between the approved copy and the live file. */
