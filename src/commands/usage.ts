@@ -37,8 +37,14 @@ export default usage;
  * for a file that does not load or cannot be read, a fixed sentence naming this project's own path
  * relative to the root in place of the loader's own message (`noticeOf`, `errorNote`) — the
  * loader's bodies can name paths outside this project. The state's note keeps the state's own
- * reason with its path made relative (`shownNote`). No absolute path reaches the restricted view.
- * Placing the caller reads the process table (`caller.ts`), and nothing else. Exit
+ * reason with its path made relative (`shownNote`). A caller who is not the owner therefore reads
+ * no location the tool derived from this machine — no root, no home folder, no store, no state or
+ * file path — and nothing of another project; a name this team's own file writes (an account, a
+ * seat, a label, a role) is this team's own agreed data and prints as written, as `status` prints
+ * it, whatever it looks like. The after-review ruled that line after a real file named its account
+ * like an absolute path: the guarantee is about what the tool derives from the machine, never
+ * about what the owner wrote. Placing the caller reads the process table (`caller.ts`), and
+ * nothing else. Exit
  * 0 whatever the figures; the one refusal is the invocation.
  */
 export async function runUsage(argv: string[], io: Io, sources: UsageSources): Promise<number> {

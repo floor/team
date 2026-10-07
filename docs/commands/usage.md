@@ -308,5 +308,9 @@ a file that does not load as one fixed sentence per line — `.agents/team.yaml 
 a file that cannot be read as `.agents/team.yaml cannot be read: the owner reads the reason` (no
 pointer to `status` there: it throws on that file instead of printing anything), and the state's
 own reason with this project's own path relative to the project root — `.agents/team.state.json is
-not valid JSON; move it aside and run the command again`. No absolute path at all reaches a caller
-who is not the owner, in the block or in `--json`.
+not valid JSON; move it aside and run the command again`. What no caller who is not the owner
+reads is a location the tool derived from this machine — a root, the home folder, the store, the
+state's own path — or anything of another project, in the block or in `--json`. The file's own names
+are not derived: an account, a seat, a label or a role this team's file writes prints as written,
+exactly as `status` prints it, whatever it looks like. That is the rule's whole extent — the
+exception is the team's own agreed data, never a path the tool read off the machine.

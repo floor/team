@@ -6,7 +6,9 @@
 // nobody else, whatever the reason (`NOT_VERIFIED`); a file that does not load or cannot be read
 // is one fixed sentence per line for every caller who is not the owner, never the loader's body —
 // whose bodies can name paths outside this project — and every other note names this project's
-// own paths relative to the project root. No absolute path reaches such a caller (`expectNoAbsolute`).
+// own paths relative to the project root. Such a caller reads no location the tool derived from
+// this machine (`expectNoDerivedPath`); a name the team's own file writes prints as written, and
+// its own test pins that exception to exactly the one written name, so it can never widen.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -154,15 +156,26 @@ async function usageAt(cwd: string, caller?: Caller, ...argv: string[]) {
   return { code, out: io.out, err: io.err };
 }
 
-/** Nothing a caller who is not the owner reads may name a path outside this project: no string
- *  starting at the filesystem root or at the home folder, in the block or in `--json`. The
- *  fixture's own base is under `/tmp`, and its home under the base, so naming either catches a
- *  body that slipped through; the pattern catches any other leading-slash token at a boundary. */
-function expectNoAbsolute(faces: string[], why?: string): void {
+/** The tokens of a face that start at the filesystem root, run to whitespace or a delimiter: what
+ *  a path the tool derived from this machine looks like — a root, the home folder, the store, a
+ *  state or file path — and, just as well, what a name the team wrote in its own file may look
+ *  like. The tests here keep the two halves apart: `expectNoDerivedPath` refuses every such token
+ *  where only derived paths can stand, and the account-name test pins the other half to exactly
+ *  the one name the file wrote, so the exception can never widen into a hiding place. */
+function absoluteTokens(face: string): string[] {
+  return [...face.matchAll(/(?:^|[\s"'()[\]=:,])(\/[^\s"',;)\]]+)/g)].map((hit) => hit[1] as string);
+}
+
+/** No location the tool derived from this machine reaches a caller who is not the owner, in either
+ *  face: the fixture's own base and home are distinctive strings — the base is under `/tmp`, and
+ *  the root, the store and the state live under it — and no absolute-looking token stands in the
+ *  output at all, the block or the `--json` behind it. The team's own written names are the one
+ *  exception, and they are pinned by their own test, never by this one quietly allowing them. */
+function expectNoDerivedPath(faces: readonly string[], why?: string): void {
+  const derived = [base, root, home, storePath('acme', root, home), join(root, '.agents', 'team.state.json')];
   for (const face of faces) {
-    expect(face, why).not.toContain(base);
-    expect(face, why).not.toContain(home);
-    expect(face, why).not.toMatch(/(^|[\s"'()[\]=:,])\/[^\s"',;)\]]/);
+    for (const path of derived) expect(face, why).not.toContain(path);
+    expect(absoluteTokens(face), why).toEqual([]);
   }
 }
 
@@ -278,7 +291,7 @@ describe('team usage', () => {
     expect(mine.code).toBe(0);
     expect(mine.out).toContain(`note: .agents/team.state.json ${why}`);
     expect(mine.out).toContain('  anthropic  unknown\n');
-    expectNoAbsolute([mine.out, raw]);
+    expectNoDerivedPath([mine.out, raw]);
     expect((JSON.parse(raw) as { notes: string[] }).notes).toEqual([`.agents/team.state.json ${why}`]);
   });
 
@@ -402,7 +415,7 @@ describe('team usage', () => {
       expect(mine.out, one.at).not.toContain('another project root');
 
       const raw = (await usageAt(root, seat, '--json')).out;
-      expectNoAbsolute([mine.out, raw], one.at);
+      expectNoDerivedPath([mine.out, raw], one.at);
       expect((JSON.parse(raw) as { notes: string[] }).notes, one.at).toEqual([NOT_VERIFIED]);
 
       // The owner keeps the store's own words, byte for byte — the leak's own path included.
@@ -463,7 +476,7 @@ describe('team usage', () => {
     expect(mine.out).toBe('note: .agents/team.yaml does not load (line 1): run team status for the reason\n');
     const raw = (await usageAt(root, SEAT, '--json')).out;
     expect((JSON.parse(raw) as { notes: string[] }).notes).toEqual(['.agents/team.yaml does not load (line 1): run team status for the reason']);
-    expectNoAbsolute([mine.out, raw]);
+    expectNoDerivedPath([mine.out, raw]);
   });
 
   test('a file that exists and cannot be read prints the error for the owner, one fixed sentence for anyone else', async () => {
@@ -486,20 +499,20 @@ describe('team usage', () => {
     expect(mine.out).toBe('note: .agents/team.yaml cannot be read: the owner reads the reason\n');
     const raw = (await usageAt(root, SEAT, '--json')).out;
     expect((JSON.parse(raw) as { notes: string[] }).notes).toEqual(['.agents/team.yaml cannot be read: the owner reads the reason']);
-    expectNoAbsolute([mine.out, raw]);
+    expectNoDerivedPath([mine.out, raw]);
   });
 
-  test('no path outside this project reaches a caller who is not the owner, whatever breaks', async () => {
+  test('no location the tool derived reaches a caller who is not the owner, whatever breaks', async () => {
     // Every class the loader, its placement checks, the state and the resolution can hand this
-    // command, provoked one at a time. Each runs through both faces, and `expectNoAbsolute` sweeps
-    // the whole of each: not a figure or a row depends on who asks, and no note may name a path
-    // outside this project. Recorded runs of each case on this branch are quoted in the pull
-    // request's list.
+    // command, provoked one at a time. Each runs through both faces, and `expectNoDerivedPath`
+    // sweeps the whole of each: not a figure or a row depends on who asks, and no note may name a
+    // root, the home folder, the store or a state or file path of this machine. Recorded runs of
+    // each case on this branch are quoted in the pull request's list.
     const faces = async (cwd: string): Promise<string> => {
       const text = await usageAt(cwd, SEAT);
       const raw = (await usageAt(cwd, SEAT, '--json')).out;
       expect(text.code).toBe(0);
-      expectNoAbsolute([text.out, raw]);
+      expectNoDerivedPath([text.out, raw]);
       return text.out;
     };
 
@@ -550,6 +563,37 @@ describe('team usage', () => {
     const nowhere = join(base, 'nowhere');
     mkdirSync(nowhere);
     expect(await faces(nowhere)).toBe(`note: ${NO_PROJECT}\n`);
+  });
+
+  test('an account named like an absolute path prints as written, and is the only such string a seat reads', async () => {
+    // The after-review's case, under the ruling: a valid, approved file whose `budgets.accounts`
+    // key is an absolute path. Account names have no closed grammar at load — that is S2's
+    // question, not this slice's — so the name is this team's own agreed data: a seat reads it as
+    // written, exactly as `status` shows it. The exception is pinned, not silently wide: the name
+    // must be the ONLY absolute-looking string in either face, and nothing the tool derived may
+    // ride along with it.
+    const name = '/ABSOLUTE-ACCOUNT-LEAK';
+    const text = teamText().replace('    anthropic:', `    ${name}:`);
+    writeFileSync(file, text);
+    approve(text);
+
+    const mine = await usageAt(root, SEAT);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    expect(mine.code).toBe(0);
+    expect(mine.out).toContain(`  ${name}  unknown\n`);
+    expect((JSON.parse(raw) as { rows: { account: string }[] }).rows.map((row) => row.account)).toEqual([name, 'openai']);
+    expect(absoluteTokens(mine.out)).toEqual([name]);
+    expect(absoluteTokens(raw)).toEqual([name]);
+    for (const face of [mine.out, raw]) {
+      expect(face).not.toContain(base);
+      expect(face).not.toContain(home);
+    }
+
+    // And the owner reads the same name, exactly as `status` prints it: the exception is about
+    // who wrote the string, never about who is reading it.
+    const owner = await usageAt(root, { kind: 'owner' });
+    expect(owner.code).toBe(0);
+    expect(owner.out).toContain(`  ${name}  unknown\n`);
   });
 
   test('any caller may run it, and a subfolder of a checkout reads the same project', async () => {
