@@ -29,7 +29,7 @@ const example = validateTeamFile(readFileSync(new URL('../examples/team.yaml', i
 if (!example.ok) throw new Error(`examples/team.yaml is refused: ${JSON.stringify(example.errors)}`);
 const exampleTeam = example.team;
 
-const leadOf = (source: typeof team) => source.seats.find((seat) => seat.name === source.coordinator);
+const leadOf = (source: typeof team) => source.seats.find((seat) => seat.name === source.orchestrator);
 
 describe("the README's by-example file", () => {
   test('is accepted, carrying only the legacy key\'s notice', () => {

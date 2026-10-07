@@ -67,7 +67,7 @@ function readSeats(
   marks: LeadMark[],
 ): DraftSeat[] {
   if (!entry) {
-    check.fail(topLine, 'seats is required: at least the coordinator\'s and the operator\'s seat');
+    check.fail(topLine, 'seats is required: at least the orchestrator\'s and the operator\'s seat');
     return [];
   }
   if (entry.value.kind !== 'seq' || !entry.value.items.length) {

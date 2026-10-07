@@ -136,7 +136,7 @@ const marked = change(bare, '    launch: claude --model claude-opus-5-5\n', '   
 describe('the lead is a field, or the legacy key', () => {
   test('a marked file needs no key, and carries no notice', () => {
     const { team, warnings } = valid(marked);
-    expect(team.coordinator).toBe('lead');
+    expect(team.orchestrator).toBe('lead');
     expect(warnings).toEqual([]);
   });
 
@@ -153,7 +153,7 @@ describe('the lead is a field, or the legacy key', () => {
 
   test('the key alone still reads, with its own refusals', () => {
     const { team, warnings } = valid(minimal);
-    expect(team.coordinator).toBe('lead');
+    expect(team.orchestrator).toBe('lead');
     expect(warnings).toEqual([notice]);
     expect(errors(change(minimal, 'coordinator: lead', 'coordinator: boss'))).toEqual(['3: coordinator "boss" names no declared seat']);
   });
@@ -161,7 +161,7 @@ describe('the lead is a field, or the legacy key', () => {
   test('the key beside a mark on the same seat is the one team', () => {
     const both = change(minimal, '    launch: claude --model claude-opus-5-5\n', '    launch: claude --model claude-opus-5-5\n    leads: true\n');
     const { team, warnings } = valid(both);
-    expect(team.coordinator).toBe('lead');
+    expect(team.orchestrator).toBe('lead');
     expect(warnings).toEqual([notice]);
   });
 

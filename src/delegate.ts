@@ -148,9 +148,9 @@ export function delegateGate(input: {
 
 const NON_DELEGATE: Record<DelegateCommand, (caller: string) => string> = {
   up: (caller) => `only the owner or the approved delegate runs \`up\`; this call is ${caller}`,
-  down: (caller) => `only the owner, the coordinator, the operator or the approved delegate stops the team; this call is ${caller}`,
-  add: (caller) => `only the owner, the coordinator, the operator or the approved delegate runs it; this call is ${caller}`,
-  remove: (caller) => `only the owner, the coordinator, the operator or the approved delegate runs it; this call is ${caller}`,
+  down: (caller) => `only the owner, the orchestrator, the operator or the approved delegate stops the team; this call is ${caller}`,
+  add: (caller) => `only the owner, the orchestrator, the operator or the approved delegate runs it; this call is ${caller}`,
+  remove: (caller) => `only the owner, the orchestrator, the operator or the approved delegate runs it; this call is ${caller}`,
 };
 
 function nonDelegate(command: DelegateCommand, caller: string): string {

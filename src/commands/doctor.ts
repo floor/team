@@ -411,12 +411,12 @@ function trustFindings(team: TeamFile, dir: string, session: string, sources: Do
 }
 
 // The repair that relaunches one seat `up` leaves as it is: `up` never restarts a ready seat,
-// so a line that names `up` alone names a command that skips the seat. For a coordinator or
+// so a line that names `up` alone names a command that skips the seat. For an orchestrator or
 // an operator, `team remove <seat> --keep` is refused (the file can't have a stopped lead),
 // so only the whole-team sequence is offered. For every other seat — stop it, keep it in the
 // file, add it again: the add launches it fresh, which is what records the process, writes the
 // rules file and starts the seat in the machine lobby — or the whole team at once.
-export const relaunch = (team: Pick<TeamFile, 'coordinator' | 'operator'>, name: string): string =>
+export const relaunch = (team: Pick<TeamFile, 'orchestrator' | 'operator'>, name: string): string =>
   relaunchRepair(team, name, 'markdown');
 
 // A seat the state records from a launch that predates the process identity: neither the watch

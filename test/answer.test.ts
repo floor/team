@@ -1316,7 +1316,7 @@ describe('team answer', () => {
     const seatIo = testIo(root, { kind: 'seat', name: 'helper', pane: 'w1:p2' });
     expect(await runAnswer(['lead', 'trust'], seatIo, seat)).toBe(1);
     expect(seat.keys).toEqual([]);
-    expect(seatIo.err).toBe('lead: only the owner, or the coordinator from its own seat, can answer\n');
+    expect(seatIo.err).toBe('lead: only the owner, or the orchestrator from its own seat, can answer\n');
 
     const lost = testIo(root, { kind: 'unplaced', reason: 'its parent processes can\'t be read to the top' });
     expect(await runAnswer(['lead', 'trust'], lost, seat)).toBe(1);
@@ -1344,7 +1344,7 @@ describe('team answer', () => {
     const coordinator = testIo(root, { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'acme' });
     expect(await runAnswer(['lead', 'trust'], coordinator, host)).toBe(0);
     const log = readFileSync(join(dir, 'team.log'), 'utf8');
-    expect(log).toContain('answer [coordinator] lead: trust answered');
+    expect(log).toContain('answer [orchestrator] lead: trust answered');
     expect(log).not.toContain('answer [owner] lead: refused trust: caller');
   });
 

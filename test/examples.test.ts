@@ -18,7 +18,7 @@ describe('the fictional example file', () => {
     expect(warnings).toEqual([notice]);
     expect(team.project).toBe('beacon');
     expect(team.session).toBe('beacon');
-    expect(team.coordinator).toBe('codex-keeper');
+    expect(team.orchestrator).toBe('codex-keeper');
     expect(team.operator).toBe('codex-signal');
   });
 
@@ -44,7 +44,7 @@ describe('the fictional example file', () => {
   });
 
   test('the coordinator and the operator run the same CLI', () => {
-    expect(team.seats.find((seat) => seat.name === team.coordinator)).toMatchObject({
+    expect(team.seats.find((seat) => seat.name === team.orchestrator)).toMatchObject({
       cli: 'codex',
       vendor: 'openai',
       model: 'GPT Compass',

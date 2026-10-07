@@ -137,7 +137,7 @@ describe('a signed record', () => {
   test('a record signed by hand over a marked file verifies, with no difference', () => {
     // The suite's committed key signs the record here — written the shape `writeApproval`
     // stores, outside `writeApproval`. The file spells its lead with the mark, no key, and
-    // the approval's sections map carries the lead's `coordinator` bucket: the reader that
+    // the approval's sections map carries the lead's `orchestrator` bucket: the reader that
     // takes its lead from a field must land on the fingerprints the record signs.
     const fixture = JSON.parse(readFileSync(new URL('../fixtures/key.json', import.meta.url), 'utf8')) as StoredKey;
     expect(installKey(home, fixture)).toBe('installed');
@@ -148,7 +148,7 @@ describe('a signed record', () => {
     const loaded = team(marked);
     const at = new Date('2026-10-03T14:02:00Z');
     const approval = approvalOf(loaded.team, loaded.root, at);
-    expect(Object.hasOwn(approval.fingerprints.sections, 'coordinator')).toBe(true);
+    expect(Object.hasOwn(approval.fingerprints.sections, 'orchestrator')).toBe(true);
     const generation = bumpGeneration(approval.root, home, at);
     const store = storePath(loaded.team.project, loaded.root, home);
     mkdirSync(store, { recursive: true });

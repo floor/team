@@ -498,7 +498,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
         refusals.push(anotherPaneRefusal(rule.name, rule.recordedPane));
       } else {
         refusals.push(
-          `only the owner, the coordinator or the operator stops the team; this call is ${describeCaller(caller)}`,
+          `only the owner, the orchestrator or the operator stops the team; this call is ${describeCaller(caller)}`,
         );
       }
     } else if (said.kind === 'refused') {
@@ -506,7 +506,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     }
   }
   // A delegated run never abandons: `--abandon` is the gate's refusal, and the plan holds every
-  // seat, coordinator and operator included, exactly as the owner's own `down` does. A gate that
+  // seat, orchestrator and operator included, exactly as the owner's own `down` does. A gate that
   // has answered is the run's only refusal: today's abandon line stays out of the way of its own.
   const abandon = args.flags.has('abandon') && granted === undefined;
   if (abandon && !callerOwns(caller) && verdict === undefined) {
@@ -579,9 +579,9 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     seats,
     extra,
     watchPid: watch && sources.alive(watch.pid) ? watch.pid : null,
-    // A delegated run stops the whole team: no seat is kept back, the coordinator and the
+    // A delegated run stops the whole team: no seat is kept back, the orchestrator and the
     // operator included. The delegate sits outside the session, so it never stops itself.
-    keep: !branchRun && caller.kind === 'seat' ? [team.coordinator, team.operator] : [],
+    keep: !branchRun && caller.kind === 'seat' ? [team.orchestrator, team.operator] : [],
     abandon: abandon && callerOwns(caller),
     // A free seat is still asked. When that ask cannot be typed or confirmed, the owner's
     // `--abandon` closes it in this same run; every other run names that close and leaves it.

@@ -3,8 +3,12 @@ import { valueOf } from './section.ts';
 import { readLeadField } from './lead.ts';
 import type { DraftSeat } from './seats.ts';
 
-export const coordinator: Section = {
-  name: 'coordinator',
+export const orchestrator: Section = {
+  name: 'orchestrator',
+  // The one top-level key that still supplies this section: the file may spell the lead's name
+  // here, and `leads: true` on the lead's seat is the other spelling. Everything order- and
+  // digest-shaped reads `name`, so a record written under the key keeps its bucket's value.
+  key: 'coordinator',
   owner: true,
   after: ['seats'],
   validate(entry, ctx) {

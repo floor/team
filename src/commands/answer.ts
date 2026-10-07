@@ -234,21 +234,21 @@ function logWho(caller: Caller, team: TeamFile): string {
   // it would carry is the owner's, as everywhere else.
   if (caller.kind === 'owner' || caller.kind === 'owner-no-tty') return 'owner';
   if (caller.kind === 'unplaced') return 'unplaced';
-  return caller.name === team.coordinator ? 'coordinator' : 'seat';
+  return caller.name === team.orchestrator ? 'orchestrator' : 'seat';
 }
 
 function callerProblemOf(caller: Caller, team: TeamFile, seat: string, at?: SeatStanding): Refusal | null {
   if (caller.kind === 'owner') return null;
-  // The coordinator's seat, in the session judged and on its recorded pane; a seat of another
+  // The orchestrator's seat, in the session judged and on its recorded pane; a seat of another
   // session, or one merely renamed, falls through to the refusal below, unchanged.
-  const verdict = callerVerdict(caller, team.coordinator, at);
+  const verdict = callerVerdict(caller, team.orchestrator, at);
   if (verdict.kind === 'ok') return null;
   if (verdict.kind === 'no-pane') return { class: 'caller', message: `team answer: ${noPaneRefusal(verdict.name)}` };
   if (verdict.kind === 'another-pane') {
     return { class: 'caller', message: `team answer: ${anotherPaneRefusal(verdict.name, verdict.recordedPane)}` };
   }
   if (caller.kind === 'unplaced') return { class: 'caller', message: caller.reason };
-  return { class: 'caller', message: `${seat}: only the owner, or the coordinator from its own seat, can answer` };
+  return { class: 'caller', message: `${seat}: only the owner, or the orchestrator from its own seat, can answer` };
 }
 
 function expired(root: string, until: string, team: TeamFile, own: boolean): boolean {

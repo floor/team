@@ -24,7 +24,7 @@ line in `.agents/team.log`. The record is signed, and signing moves this project
 
 ## Who may run it
 
-The owner, from a terminal outside herdr: no seat approves a file, not even the coordinator's,
+The owner, from a terminal outside herdr: no seat approves a file, not even the orchestrator's,
 and no delegate: approval is the owner's alone, and a `delegates` entry whose commands name
 `approve` is refused when the file loads.
 `--show` may be run by anyone, in any terminal.
@@ -64,7 +64,7 @@ write follows directly. The seat ceiling defaults
 to the seats the file declares plus the
 temporary ones, so adding a seat widens it, and that shows up as `limits` changed too. What needs a
 new approval is a change to an owner section
-(`trust`, `limits`, `machine`, `rules`, `identity`, `workspace`, `coordinator`, `operator`,
+(`trust`, `limits`, `machine`, `rules`, `identity`, `workspace`, `orchestrator`, `operator`,
 `session`, `visibility`, `tools`, `budgets`, `watch` — its timings included, down to `watch.checks`,
 whose turn-offs are their own line — and `delegates`, its entries, their panes and their command
 lists included) or to a seat's own fields. A seat taken out does not.
@@ -264,7 +264,7 @@ approval #1 for this project; key fe21ef6293de.
 Approved. The record is in ~/.config/team/beacon-<hash>; signed with key fe21ef6293de; check the rest with `team doctor`.
 ```
 
-A seat can read the comparison — even the coordinator's — but a seat is not the owner, and nothing is
+A seat can read the comparison — even the orchestrator's — but a seat is not the owner, and nothing is
 written for it:
 
 ```console caller=claude-keeper

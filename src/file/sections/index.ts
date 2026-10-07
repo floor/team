@@ -7,7 +7,7 @@ import { machine } from './machine.ts';
 import { rules } from './rules.ts';
 import { identity } from './identity.ts';
 import { workspace } from './workspace.ts';
-import { coordinator } from './coordinator.ts';
+import { orchestrator } from './orchestrator.ts';
 import { operator } from './operator.ts';
 import { session } from './session.ts';
 import { visibility } from './visibility.ts';
@@ -37,7 +37,9 @@ export const SECTIONS: readonly Section[] = [
   rules,
   identity,
   workspace,
-  coordinator,
+  // The lead's section, canonical name `orchestrator`, declared key `coordinator`: the position,
+  // the `after` and the owner bucket stay where they were, under the canonical name.
+  orchestrator,
   operator,
   session,
   visibility,

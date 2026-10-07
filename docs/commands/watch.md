@@ -111,7 +111,7 @@ or a machine that stays full, is said once, not every pass.
 | `<seat> holds text in its input box that was never sent` | unsent text for `watch.unsent_after`; the watch never sends or clears text it cannot show it typed itself |
 | `<seat> has been idle since the watch started` | quiet for `watch.idle_first`, and never seen working (reported once; repeated every `watch.idle_repeat` when set) |
 | `<seat> has been idle for <n> minutes` | quiet for `watch.idle_first` since its last turn (reported once per idle period; repeated every `watch.idle_repeat` when set) |
-| `every agent is idle` | every seat that is not the coordinator, the operator or parked, quiet for `watch.team_idle` |
+| `every agent is idle` | every seat that is not the orchestrator, the operator or parked, quiet for `watch.team_idle` |
 | `<seat> runs <model> <version>; the file says <declared>: it signs with the wrong model` (`<declared>` is the seat's `display` spelling) | the running model or version is not the file's |
 | `<name> (<pane>) is running and is not in the file` | an agent in the session no seat claims, the watchdog pane aside |
 | `the file was never approved on this machine` | there is no approval record for this project |

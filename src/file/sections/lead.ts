@@ -55,22 +55,22 @@ function seatProblems(name: string, at: string, line: number, seats: DraftSeat[]
   else if (seat.stopped) check.fail(line, `${at} can't be a stopped seat`);
 }
 
-/** Whether a seat is declared as coordinator or operator in the team file. */
+/** Whether a seat is declared as the orchestrator or the operator in the team file. */
 export function isLeadSeat(
-  team: { coordinator: string; operator: string },
+  team: { orchestrator: string; operator: string },
   name: string,
 ): boolean {
-  return name === team.coordinator || name === team.operator;
+  return name === team.orchestrator || name === team.operator;
 }
 
 /**
  * The relaunch repair command for a seat `up` leaves as it is:
- * for a coordinator or operator, `remove --keep` is refused because leads cannot be stopped,
+ * for the orchestrator or the operator, `remove --keep` is refused because leads cannot be stopped,
  * so only `team down` then `team up` (to restart the whole team) is offered.
  * For ordinary seats, both the per-seat and whole-team sequence are offered.
  */
 export function relaunchRepair(
-  team: { coordinator: string; operator: string },
+  team: { orchestrator: string; operator: string },
   name: string,
   mode: 'markdown' | 'plain' = 'markdown',
 ): string {

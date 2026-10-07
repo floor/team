@@ -7,9 +7,11 @@ import { TEAM_FILE, findRoot } from '../file/load.ts';
 import { validateTeamFile } from '../file/validate.ts';
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
+import { profileFor } from '../profiles/index.ts';
 import { LOCK_FILE, LOG_FILE, STATE_FILE, writeAtomic } from '../state.ts';
 import { approvalStanding, LEGACY_LINE, type Standing } from '../store/store.ts';
 import { version } from '../version.ts';
+import { realSources as doctorSources, type DoctorSources } from './doctor.ts';
 
 // What git must never pick up: the file and the runtime files beside it.
 export const EXCLUDED = [TEAM_FILE, `.agents/${STATE_FILE}`, `.agents/${LOG_FILE}*`, `.agents/${LOCK_FILE}`, '.agents/seat-locks'];
@@ -26,8 +28,41 @@ function git(root: string, ...args: string[]): string | null {
   }
 }
 
-export function skeleton(project: string, head: string | null, teamVersion = version(), root?: string): string {
+/** The four shipped CLIs, in the order `init` tries them for the skeleton's seat (README's
+ *  table of the CLIs with launch profiles). */
+const PICKED_CLIS = ['claude-code', 'codex', 'cursor', 'antigravity'] as const;
+
+/** The vendor and model the skeleton names for each picked CLI: the vendor's own name, no lab
+ *  assumed for the lead's role. */
+const PICKED_SEATS: Record<(typeof PICKED_CLIS)[number], { vendor: string; model: string }> = {
+  'claude-code': { vendor: 'anthropic', model: 'Claude Opus' },
+  codex: { vendor: 'openai', model: 'GPT Sol' },
+  cursor: { vendor: 'meridian', model: 'Meridian' },
+  antigravity: { vendor: 'google', model: 'Gemini' },
+};
+
+/**
+ * The first shipped CLI this machine is signed in to, in the fixed order above. A login check
+ * that can't tell (`null`) is not a yes: it neither selects that CLI nor ends the walk, so a
+ * later signed-in CLI is still reached. `claude-code` when every check is false or unknown.
+ */
+export function firstLoggedInCli(sources: Pick<DoctorSources, 'loggedIn'>): string {
+  for (const cli of PICKED_CLIS) {
+    const profile = profileFor(cli);
+    if (profile && sources.loggedIn(profile) === true) return cli;
+  }
+  return 'claude-code';
+}
+
+/** One skeleton line: the value padded so its comment begins where the file's other comments do. */
+function padded(text: string, comment: string): string {
+  return `${text}${' '.repeat(Math.max(1, 30 - text.length))}${comment}`;
+}
+
+export function skeleton(project: string, head: string | null, teamVersion = version(), root?: string, cli = 'claude-code'): string {
   const rootPath = root ?? `/path/to/${project}`;
+  const picked = PICKED_SEATS[cli as (typeof PICKED_CLIS)[number]] ?? PICKED_SEATS['claude-code'];
+  const launch = profileFor(cli)?.binary ?? 'claude';
   return `# yaml-language-server: $schema=https://raw.githubusercontent.com/floor/team/v${teamVersion}/schema/team.schema.json
 # The team of ${project}. Private to this clone: see .git/info/exclude.
 # Nothing here runs until the owner has read it and run \`team approve\`.
@@ -35,8 +70,7 @@ format: 1
 project: ${project}
 # visibility: public          # public | private: whether forbidden_public applies
 # session: ${project}          # the herdr session; never "default"
-coordinator: coordinator      # the seat that dispatches work
-operator: coordinator         # the seat the watch reports to
+${padded('operator: orchestrator', '# the seat the watch reports to')}
 
 # identity:
 #   signature:
@@ -58,7 +92,7 @@ trust:
   - ~/.config/team/lobby
   - ${rootPath}
 # dialogs:
-#   trust: owner              # owner | coordinator
+#   trust: owner              # owner | orchestrator
 
 workspace:
   mode: shared                # worktree | shared
@@ -66,13 +100,14 @@ workspace:
   # base: main
 
 seats:
-  - role: coordinator
-    name: coordinator
-    cli: claude-code          # a placeholder: claude-code | codex | cursor | antigravity, any CLI fits any role
-    vendor: anthropic
-    model: Claude Opus        # the model's name without its version
-    version: "0"              # the release number alone, quoted
-    launch: claude            # the command and its model options; no approval flags
+  - role: orchestrator
+    name: orchestrator
+${padded(`    cli: ${cli}`, '# the first shipped CLI this machine is signed in to: claude-code | codex | cursor | antigravity; any CLI in any role')}
+    vendor: ${picked.vendor}
+${padded(`    model: ${picked.model}`, "# the model's name without its version")}
+${padded('    version: "0"', '# the release number alone, quoted')}
+${padded(`    launch: ${launch}`, '# the command and its model options; no approval flags')}
+${padded('    leads: true', '# the seat that leads: dispatches work')}
 `;
 }
 
@@ -99,8 +134,15 @@ export const USAGE = 'Usage: team init [--restore]\n';
 
 // `home` is where the user-level store is looked for; tests hand in a temporary one.
 // `readStanding` stands in for the store's one read, so a test can count it or swap the
-// record after the gate.
-export async function runInit(argv: string[], io: Io, home?: string, readStanding?: (root: string) => Standing): Promise<number> {
+// record after the gate. `sources` is the one machine read the skeleton needs: which CLI the
+// owner is signed in to — tests and the docs runner hand in a stub, so no real login is probed.
+export async function runInit(
+  argv: string[],
+  io: Io,
+  home?: string,
+  readStanding?: (root: string) => Standing,
+  sources: Pick<DoctorSources, 'loggedIn'> = doctorSources,
+): Promise<number> {
   const args = readArgs(argv, [], ['restore']);
   if (args.error || args.rest.length) {
     io.stderr(`team init: ${args.error ?? `unexpected "${args.rest[0]}"`}\n${USAGE}`);
@@ -159,7 +201,7 @@ export async function runInit(argv: string[], io: Io, home?: string, readStandin
     }
     text = copy;
   } else {
-    text = skeleton(basename(root), git(root, 'rev-parse', 'HEAD'), version(), root);
+    text = skeleton(basename(root), git(root, 'rev-parse', 'HEAD'), version(), root, firstLoggedInCli(sources));
     const check = validateTeamFile(text);
     // exit: init.skeleton
     if (!check.ok) throw new Error(`the skeleton doesn't validate: ${check.errors[0]?.message}`);

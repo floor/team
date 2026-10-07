@@ -132,7 +132,7 @@ here.
 | `<seat>: the agent in <pane> is named "x"` | `herdr --session <s> agent rename <pane> <seat>` |
 | `<seat> runs <model> <version>; the file says <declared>` (`<declared>` is the seat's `display` spelling) | restart it (`team remove <seat> --keep`, then `team add <seat>`), or correct the file and `team approve` |
 | `<seat> is marked stopped in the file and is running` | `team remove <seat> --keep`, or take `stopped: true` off the seat |
-| `<seat>: waiting for owner (<classification>)` | `the owner runs team up` (it offers to open the pane, skip the seat or stop cleanly), or `team answer <seat> trust` when the classification is `trust` and the policy is `dialogs.trust: coordinator` |
+| `<seat>: waiting for owner (<classification>)` | `the owner runs team up` (it offers to open the pane, skip the seat or stop cleanly), or `team answer <seat> trust` when the classification is `trust` and the policy is `dialogs.trust: orchestrator` |
 | `<seat>: trust sent; recovery required` | `the owner runs team up` |
 | `<seat>: its launch stopped at "<stage>"` | `the owner runs team up (it resumes the launch)` |
 | `<seat>: its rules were not delivered` | `team remove <seat> --keep`, then `team add <seat>` |
@@ -279,7 +279,7 @@ state:
       confirmed: true
 ```
 
-Only the implementer is up, so the coordinator's seat is a difference with its repair. The state
+Only the implementer is up, so the orchestrator's seat is a difference with its repair. The state
 also holds the watch's last readings for the `openai` account the file names: a check's `session`
 window, a `daily` one from the status line last seen 40 minutes ago, and a `weekly` one the check
 never reported — that one too comes from the status line, so its row marks it a fallback:
