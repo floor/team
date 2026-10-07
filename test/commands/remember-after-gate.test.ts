@@ -6,8 +6,11 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { approvalOf } from '../../src/approve/approval.ts';
 import type { Caller } from '../../src/caller.ts';
 import { runDown, type DownLaunch, type DownSources } from '../../src/commands/down.ts';
+import { loadTeamFile } from '../../src/file/load.ts';
+import { storePath, writeApproval } from '../../src/store/store.ts';
 import { runWatch, type WatchSources } from '../../src/commands/watch.ts';
 import { seatLockPath } from '../../src/launch/seat-lock.ts';
 import { emptySession, readState, STATE_FILE, updateState } from '../../src/state.ts';
@@ -21,17 +24,29 @@ const LEAD: Caller = { kind: 'seat', name: 'claude-coordinator-acme', pane: 'w1:
 
 let base: string;
 let root: string;
+let home: string;
 let dir: string;
 let file: string;
 
 beforeEach(() => {
   base = realpathSync(mkdtempSync(join(tmpdir(), 'team-remember-')));
   root = join(base, 'acme-web');
+  home = join(base, 'home');
   dir = join(root, '.agents');
   file = join(dir, 'team.yaml');
   mkdirSync(dir, { recursive: true });
+  mkdirSync(home);
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root, stdio: 'ignore' });
   writeFileSync(file, EXAMPLE);
+  const loaded = loadTeamFile(root, { home });
+  if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+  writeApproval(
+    storePath(loaded.team.project, loaded.root, home),
+    { approval: approvalOf(loaded.team, loaded.root, new Date(T0)), file: readFileSync(file, 'utf8') },
+    loaded.team.seats,
+    home,
+    new Date(T0),
+  );
 });
 
 afterEach(() => rmSync(base, { recursive: true, force: true }));
@@ -65,6 +80,7 @@ function downSources(now: () => Date, running: boolean): DownSources {
     status: () => 'idle',
     foreground: () => ['claude'],
     now,
+    home,
   };
 }
 

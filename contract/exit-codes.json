@@ -977,6 +977,13 @@
     {
       "code": 1,
       "command": "down",
+      "id": "down.approved-copy",
+      "meaning": "the approved copy of the team file cannot be read",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
       "id": "down.caller",
       "meaning": "the caller may not change the team",
       "trigger": "team down"
@@ -1054,6 +1061,20 @@
     {
       "code": 1,
       "command": "down",
+      "id": "down.legacy",
+      "meaning": "a legacy approval record stops nobody",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.never-approved",
+      "meaning": "a file that was never approved stops nobody",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
       "id": "down.no-launch",
       "meaning": "this call has no way to reach herdr",
       "trigger": "team down"
@@ -1063,6 +1084,13 @@
       "command": "down",
       "id": "down.no-pane",
       "meaning": "the state records no pane for the caller's seat",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.refused",
+      "meaning": "a refused approval record stops nobody",
       "trigger": "team down"
     },
     {

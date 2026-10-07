@@ -145,6 +145,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `down.stopped` | `down` | 0 | the seats that could be stopped were stopped | `team down` |
 | `down.abandon` | `down` | 1 | only the owner abandons a team | `team down --abandon` |
 | `down.another-pane` | `down` | 1 | the state records another pane for the caller's seat | `team down` |
+| `down.approved-copy` | `down` | 1 | the approved copy of the team file cannot be read | `team down` |
 | `down.caller` | `down` | 1 | the caller may not change the team | `team down` |
 | `down.delegate` | `down` | 1 | the caller is not the approved delegate of any entry | `team down, from a pane no delegate entry names` |
 | `down.delegate-approval` | `down` | 1 | delegation needs a verified approval | `team down, with no approval in force` |
@@ -156,8 +157,11 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `down.delegate-placement` | `down` | 1 | the approved delegate must be an external non-seat pane | `team down, with a delegate entry naming a seat's pane` |
 | `down.file-owner` | `down` | 1 | --file is the owner's | `team down --file .agents/team.yaml` |
 | `down.held` | `down` | 1 | a step was held | `team down` |
+| `down.legacy` | `down` | 1 | a legacy approval record stops nobody | `team down` |
+| `down.never-approved` | `down` | 1 | a file that was never approved stops nobody | `team down` |
 | `down.no-launch` | `down` | 1 | this call has no way to reach herdr | `team down` |
 | `down.no-pane` | `down` | 1 | the state records no pane for the caller's seat | `team down` |
+| `down.refused` | `down` | 1 | a refused approval record stops nobody | `team down` |
 | `down.run-lock` | `down` | 1 | another session-mutating run is holding the session | `team down` |
 | `down.session-owner` | `down` | 1 | --session is the owner's | `team down --session other` |
 | `down.agents` | `down` | 2 | the agents can't be read | `team down` |

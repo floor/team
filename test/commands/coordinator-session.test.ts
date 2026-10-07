@@ -284,6 +284,7 @@ function downSources(over: Partial<DownSources> = {}): DownSources {
     status: () => 'idle',
     foreground: () => [],
     now: () => new Date(0),
+    home,
     ...over,
   };
 }
@@ -1275,6 +1276,7 @@ function repairWorld(kase: RepairCase): { down: DownSources; up: UpSources; stop
     // A stopped pane falls back to its shell, so the stop's wait sees the seat leave.
     foreground: (_session, pane) => (panes.get(pane)?.live ? [panes.get(pane)?.cli ?? 'claude'] : []),
     now: () => new Date(0),
+    home,
     launch: {
       typeText: (_session, pane, text) => {
         const one = panes.get(pane);

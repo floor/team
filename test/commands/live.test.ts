@@ -2023,6 +2023,7 @@ describe('team up, one run at a time', () => {
         status: () => 'idle',
         foreground: () => [],
         now: () => NOW,
+        home,
         launch: {
           typeText: () => false, sendKey: () => false, pressEnter: () => false,
           agentPanes: () => null, closeWorkspace: () => false, stopSession: () => false,
@@ -4360,6 +4361,8 @@ describe('team up, delegated', () => {
 });
 
 describe('team down, live', () => {
+  beforeEach(() => approve());
+
   function seat(status = 'idle'): HerdrAgent {
     return agent('deepseek-acme', 'w3:p1', status);
   }
@@ -4430,6 +4433,7 @@ describe('team down, live', () => {
       foreground: () => ['claude', 'codex', 'agy', 'cursor-agent'],
       now: () => new Date(clock),
       sleep: launch.sleep,
+      home,
       launch,
       ...overrides,
     });
@@ -4874,6 +4878,7 @@ describe('team down, live', () => {
       ['  - role: implementer', '    name: gemini-acme', '    cli: antigravity', '    vendor: google',
         '    model: Gemini Flash', '    version: "3.8"', '    launch: agy'].join('\n') + '\n',
     ));
+    await approve();
     const exitTyped = readFileSync(new URL('../fixtures/antigravity/1.2.16/exit-typed.txt', import.meta.url), 'utf8');
     const run = harness(readScreen('antigravity', exitTyped));
     run.setBox(exitTyped);
@@ -5009,6 +5014,7 @@ describe('team down, live', () => {
         ['  - role: implementer', '    name: gemini-acme', '    cli: antigravity', '    vendor: google',
           '    model: Gemini Flash', '    version: "3.8"', '    launch: agy'].join('\n') + '\n',
       ));
+      await approve();
       const run = harness({ kind: 'idle' });
       const idle = readFileSync(new URL('../fixtures/antigravity/1.2.16/idle.txt', import.meta.url), 'utf8');
       let shown = idle;
@@ -5105,8 +5111,8 @@ describe('team down, live', () => {
     expect(run.typed).toEqual(['/exit']);
   });
 
-  // The file renamed the seat after `up` launched it: the state still records it, under the CLI
-  // it was launched with, and `down` stops it under its old name.
+  // The live file renamed the seat after the copy was approved. The stop list is that copy, so
+  // the seat is still stopped under the name and CLI the copy carries.
   function renamedSeat(cli?: string) {
     writeFileSync(join(root, '.agents/team.yaml'), EXAMPLE.replace('name: deepseek-acme', 'name: relay-acme'));
     const recorded = cli === undefined ? { stage: 'ready' } : { stage: 'ready', cli };
@@ -5157,21 +5163,16 @@ describe('team down, live', () => {
     expect(io.out).toContain('deepseek-acme: is blocked at a prompt');
   });
 
-  test('a seat whose state predates the CLI record is left running, with what to run', async () => {
+  test('a seat whose state predates the CLI record is stopped under the copy\'s CLI', async () => {
     renamedSeat();
     const run = harness({ kind: 'idle' });
     const io = testIo(root, { kind: 'owner' });
     const code = await runDown(FILE, io, run.sourcesOf());
     expect(code).toBe(0);
-    expect(run.typed).toEqual([]);
-    expect(run.entered).toEqual([]);
-    expect(run.closed).toEqual([]);
-    expect(run.stopped).toEqual([]);
-    expect(io.out).toContain(
-      "deepseek-acme: the state doesn't say which CLI it runs, so it can't be asked to exit; " +
-        'left running (`team down --abandon` closes it without typing)',
-    );
-    expect(io.out).toContain('session acme-web: not stopped, 1 agent left in it');
+    expect(run.typed).toEqual(['/exit']);
+    expect(run.entered).toEqual(['enter']);
+    expect(run.closed).toEqual(['w3']);
+    expect(io.out).toContain('deepseek-acme: stopped\n');
   });
 
   test('an agent neither the file nor the state records is left entirely alone', async () => {
@@ -5183,6 +5184,7 @@ describe('team down, live', () => {
     expect(run.entered).toEqual([]);
     expect(run.closed).toEqual([]);
     expect(run.stopped).toEqual([]);
+    expect(io.out).toContain('stranger: its record is not an approved seat; left running (the owner cleans it: team remove stranger --abandon)\n');
     expect(io.out).toContain('session acme-web: not stopped, 1 agent left in it');
   });
 

@@ -1146,8 +1146,8 @@ scene('down.agents', async (place) => {
   return show(await down(place, [], owner, downSources({ sessionRunning: () => true, agents: () => null })), "can't be read");
 });
 scene('down.dry-run', async (place) => {
-  write(place, TEAM);
-  return show(await down(place, ['--dry-run'], owner, downSources({ sessionRunning: () => true, agents: () => [] })), 'dry run: nothing was run');
+  approve(place, TEAM);
+  return show(await down(place, ['--dry-run'], owner, downSources({ sessionRunning: () => true, agents: () => [], home: place.home })), 'dry run: nothing was run');
 });
 scene('down.caller', async (place) => {
   write(place, TEAM);
@@ -1227,17 +1227,17 @@ scene('down.delegate-placement', async (place) => {
   return show(await down(place, [], other, delegated('down.delegate-placement', 'the approved delegate must be an external non-seat pane')), 'external non-seat pane');
 });
 scene('down.no-launch', async (place) => {
-  write(place, TEAM);
-  return show(await down(place, [], owner, downSources({ sessionRunning: () => true, agents: () => [] })), 'no way to reach herdr');
+  approve(place, TEAM);
+  return show(await down(place, [], owner, downSources({ sessionRunning: () => true, agents: () => [], home: place.home })), 'no way to reach herdr');
 });
 scene('down.stopped', async (place) => {
-  write(place, TEAM);
+  approve(place, TEAM);
   return show(await down(place, [], owner, downSources({
-    sessionRunning: () => true, agents: () => [], launch: downLaunch(),
+    sessionRunning: () => true, agents: () => [], launch: downLaunch(), home: place.home,
   })), 'stopped');
 });
 scene('down.run-lock', async (place) => {
-  write(place, TEAM);
+  approve(place, TEAM);
   // The session mutator lock another run holds, in the file every session mutator shares: this
   // test process's pid is alive, so the token is never judged stale. The session with nothing to
   // stop and a dry run both return before the lock; this scene is a real stop that meets it.
@@ -1245,16 +1245,52 @@ scene('down.run-lock', async (place) => {
   mkdirSync(join(dir, 'seat-locks', 'acme'), { recursive: true });
   writeFileSync(seatLockPath(dir, 'acme', '.run'), `${process.pid} 0a1b2c3d\n`);
   return show(await down(place, [], owner, downSources({
-    sessionRunning: () => true, agents: () => [], launch: downLaunch(),
+    sessionRunning: () => true, agents: () => [], launch: downLaunch(), home: place.home,
   })), 'another session-mutating run is holding');
 });
 scene('down.held', async (place) => {
-  write(place, TEAM);
+  approve(place, TEAM);
   return show(await down(place, [], owner, downSources({
     sessionRunning: () => true,
     agents: () => [agent('lead')],
     launch: downLaunch({ typeText: () => false }),
+    home: place.home,
   })), 'its exit was not typed');
+});
+scene('down.never-approved', async (place) => {
+  write(place, TEAM);
+  return show(await down(place, [], owner, downSources({
+    sessionRunning: () => true, agents: () => [agent('lead')], home: place.home,
+  })), 'never approved');
+});
+scene('down.legacy', async (place) => {
+  approve(place, TEAM);
+  editApproval(place, (record) => {
+    record.format = 1;
+    delete record.signature;
+    delete record.generation;
+  });
+  return show(await down(place, [], owner, downSources({
+    sessionRunning: () => true, agents: () => [agent('lead')], home: place.home,
+  })), 'approved before records were signed');
+});
+scene('down.refused', async (place) => {
+  approve(place, TEAM);
+  editApproval(place, (record) => {
+    record.file = `${String(record.file)}\n`;
+  });
+  return show(await down(place, [], owner, downSources({
+    sessionRunning: () => true, agents: () => [agent('lead')], home: place.home,
+  })), 'valid signature');
+});
+scene('down.approved-copy', async (place) => {
+  approve(place, TEAM);
+  const standing = approvalStanding(place.root, place.home);
+  if (standing.kind !== 'verified') throw new Error(standing.kind);
+  const broken = { ...standing, record: { ...standing.record, file: 'nope: [[[' } };
+  return show(await down(place, [], owner, downSources({
+    sessionRunning: () => true, agents: () => [agent('lead')], home: place.home, standing: () => broken,
+  })), 'cannot be read');
 });
 
 async function initial(
@@ -2288,6 +2324,29 @@ scene('answer.process', async (place) => {
   const host = answerHost(place, screen);
   host.processInfo = () => ({ shell: 400, foreground: [500] });
   return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, host), 'not the one team launched');
+});
+scene('answer.unverified', async (place) => {
+  const lobby = lobbyDir(place.home);
+  mkdirSync(lobby, { recursive: true });
+  approve(place, cursorTeam(lobby, 'coordinator', place.root));
+  updateState(dirname(place.file), (state) => {
+    state.sessions.acme = { seats: { extra: { stage: 'ready', pane: 'w9:p1' } }, worktrees: {} };
+  });
+  return show(await answered(place, ['extra', 'trust', '--file', place.file], owner, answerHost(place, '')), 'not an approved seat');
+});
+scene('answer.ambiguous', async (place) => {
+  const lobby = lobbyDir(place.home);
+  mkdirSync(lobby, { recursive: true });
+  approve(place, cursorTeam(lobby, 'coordinator', place.root));
+  updateState(dirname(place.file), (state) => {
+    state.sessions.acme = { seats: { lead: { stage: 'launched', pane: 'w1:p1' } }, worktrees: {} };
+  });
+  const host = answerHost(place, '');
+  host.agents = () => [
+    { name: 'lead', pane: 'w1:p1', workspace: 'w1' },
+    { name: 'lead', pane: 'w2:p1', workspace: 'w2' },
+  ];
+  return show(await answered(place, ['lead', 'trust', '--file', place.file], owner, host), 'more than one agent of this name');
 });
 scene('answer.state', async (place) => {
   const lobby = lobbyDir(place.home);
