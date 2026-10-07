@@ -6,7 +6,8 @@ printed and the write follows it; `--confirm` brings back the question for the n
 Every command that starts, moves or changes a team checks that record first, so an edit to the file
 needs a new approval before it can run. `--show` prints the same comparison and stops, writing
 nothing. It writes only from a real terminal, and refuses, before writing, when input is already
-waiting there — the rest of a pasted block, which must not be left to approve on its own.
+waiting on the terminal its own standard input is attached to — the rest of a pasted block, which
+must not be left to approve on its own — and when that terminal cannot be read to make the check.
 
 ## Synopsis
 
@@ -84,20 +85,31 @@ refuse a drifted file before the gate.
 | `team approve: the approval store <store> is inside <folder>, where seats work` | 1 |
 | `team approve: only the owner approves a team file, from a terminal outside herdr; this call is <caller>` | 1 |
 | `team approve: input was waiting on the terminal: run \`team approve\` on its own line` | 1 |
+| `team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written` | 1 |
 | `team approve: not approved; nothing was written` (`--confirm`) | 1 |
 
 A file that loads with warnings prints them on stderr as
 `team approve: warning, line <n>: <message>` and goes on. The last refusal is what `--confirm`'s
 answer gets when it is not the number of seats: a blank answer, a wrong one, and a closed terminal
-are all the same answer. The input-waiting refusal is the default path's: one line of terminal input
-already queued is taken as a pasted block and refuses the call, and the line waiting is consumed in
-the reading — which is why the refusal says to run the command by itself.
+are all the same answer.
+
+The two input refusals are the default path's. The check reads the terminal this call's own standard
+input is attached to — never `/dev/tty`, which is not that terminal when the command runs without a
+controlling one. It reads once, up to 4096 bytes: a terminal with nothing queued answers `EAGAIN`
+and the run goes on; a complete line waiting there is taken as a pasted block's remainder and
+refuses the call, and the read consumes that line — which is why the refusal says to run the
+command by itself. Cooked mode, the default, makes only complete lines (Enter included) visible, so
+a partial line typed without Enter is not seen; raw mode makes every byte already typed visible, and
+the read takes up to 4096 of them. A terminal that cannot be found or read at all refuses with the
+second message rather than approving blind. Either way the check looks at one moment: input that
+arrives after the check and before the write is not seen.
 
 ## Exit codes
 
 - `0` — approved, or `--show` printed the comparison and stopped before anything was written.
 - `1` — refused: a seat ran it, the store sits where seats work, input was waiting on the terminal,
-  or (`--confirm`) the answer was not the number of seats. Nothing is written.
+  the terminal could not be read to check for input waiting, or (`--confirm`) the answer was not the
+  number of seats. Nothing is written.
 - `2` — the invocation, the team file or the file's validation is bad.
 
 ## The signed record
@@ -392,6 +404,31 @@ Ceilings this approval fixes: 4 seats at most, 2 temporary.
 Seats: 2 (claude-keeper, claude-beacon).
 approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
 team approve: input was waiting on the terminal: run `team approve` on its own line
+exit 1
+```
+
+A terminal the check cannot read refuses as well, saying which failure it was, and writes nothing:
+
+```console waiting="unreadable"
+$ team approve ; echo "exit $?"
+./.agents/team.yaml: against the copy approved on 2026-10-04T09:00:00.000Z:
+
+  + 9:   - ~/Code/worktrees/beacon
+  + 23:   - role: implementer
+  + 24:     name: claude-beacon
+  + 25:     label: implementer
+  + 26:     cli: claude-code
+  + 27:     vendor: anthropic
+  + 28:     model: Claude Opus
+  + 29:     version: "5.5"
+  + 30:     launch: claude --model claude-opus-5-5
+
+Needs a new approval: `trust` changed; `limits` changed; seat claude-beacon is not in the approved file.
+Ceilings approved: 3 seats at most, 2 temporary.
+Ceilings this approval fixes: 4 seats at most, 2 temporary.
+Seats: 2 (claude-keeper, claude-beacon).
+approval #2 for this project; the last one was on 2026-10-04; key fe21ef6293de.
+team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written
 exit 1
 ```
 
