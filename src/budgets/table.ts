@@ -70,10 +70,15 @@ export function budgetLine(row: BudgetRow): string {
   const reset = row.resetsIn === null ? 'resets unknown' : `resets in ${row.resetsIn}`;
   const from = row.source === 'status_line' ? 'status line' : row.source === 'check' ? 'check' : 'unknown source';
   const source = row.fallback ? `${from} (fallback)` : from;
-  // A stale row with no known reset is the room last seen, not a reading aged out.
-  const when = row.state === 'stale' && row.resetsIn === null ? 'last seen' : row.source === 'check' ? 'read' : 'changed';
   const state = row.inside && row.reserve !== null ? `${row.state}, inside reserve ${row.reserve}%` : row.state;
-  return `${row.account}  ${row.window}  left ${row.left}%  used ${row.used}%  ${reset}  ${row.seat ?? '-'}  ${when} ${row.age} ago  ${source}  ${state}`;
+  return `${row.account}  ${row.window}  left ${row.left}%  used ${row.used}%  ${reset}  ${row.seat ?? '-'}  ${whenWord(row)} ${row.age} ago  ${source}  ${state}`;
+}
+
+/** The word a figure's moment takes in a line: a stale row with no known reset is the room last
+ *  seen, not a reading aged out. Exported so the machine view's own line for a seat's row writes
+ *  the same word this line does, and the two can never disagree. */
+export function whenWord(row: BudgetRow): 'last seen' | 'read' | 'changed' {
+  return row.state === 'stale' && row.resetsIn === null ? 'last seen' : row.source === 'check' ? 'read' : 'changed';
 }
 
 /** The sources the account's figures are read from, in order: a status line when the file is
@@ -138,7 +143,9 @@ function byAccount(a: BudgetRow, b: BudgetRow): number {
   return rank(a.window) - rank(b.window);
 }
 
-function span(ms: number): string {
+/** An age in the one form every line writes it: minutes, or hours and minutes. Exported so the
+ *  machine view's spend line writes an age the same way the budget lines do. */
+export function span(ms: number): string {
   const minutes = Math.max(0, Math.floor(ms / 60_000));
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
