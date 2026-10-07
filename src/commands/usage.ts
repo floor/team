@@ -2,7 +2,8 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { readArgs } from '../args.ts';
 import { budgetLine } from '../budgets/table.ts';
-import { loadTeamFile } from '../file/load.ts';
+import { isOwner, walkCaller } from '../caller.ts';
+import { loadTeamFile, TEAM_FILE } from '../file/load.ts';
 import type { LoadResult, Problem } from '../file/types.ts';
 import { NO_FIGURES, projectUsage, type ProjectUsage } from '../information/usage.ts';
 import type { Command, Io } from '../io.ts';
@@ -29,7 +30,26 @@ export default usage;
  * `team usage [--json]`: this project's block, resolved from the current folder the way
  * `currentTeam` resolves, but read-only — it writes nothing anywhere, not even the `last_valid`
  * copy `currentTeam` keeps, and it never answers from that copy when the file breaks. Any caller
- * may run it, from any folder. Exit 0 whatever the figures; the one refusal is the invocation.
+ * may run it, from any folder. The caller is placed once, the way `status` places it
+ * (`status.ts:133`): the owner at a terminal is the owner, and everyone else — a seat, an agent
+ * outside herdr, a run without a terminal — reads the restricted view, whose differences here are
+ * the fixed line for a refused approval (`NOT_VERIFIED`) in place of the store's own words, for a
+ * file that does not load or cannot be read a fixed sentence naming this project's own path
+ * relative to the root in place of the loader's own message (`noticeOf`, `errorNote`) — the
+ * loader's bodies can name paths outside this project — and one fixed line in place of a stored
+ * reading the approved team in force does not bind (`boundReadings`, `UNBOUND_ACCOUNT`,
+ * `UNBOUND_SHAPE`): the state is signed by nothing, so a reading prints only an account the file
+ * names, a window and a source this tool writes, and a seat the file's seats name — a seat it
+ * does not name prints as none. The state's note keeps the state's own reason with its path made
+ * relative (`shownNote`). A caller who is not the owner therefore reads
+ * no location the tool derived from this machine — no root, no home folder, no store, no state or
+ * file path — and nothing of another project; a name this team's own file writes (an account, a
+ * seat, a label, a role) is this team's own agreed data and prints as written, as `status` prints
+ * it, whatever it looks like. The after-review ruled that line after a real file named its account
+ * like an absolute path: the guarantee is about what the tool derives from the machine, never
+ * about what the owner wrote. Placing the caller reads the process table (`caller.ts`), and
+ * nothing else. Exit
+ * 0 whatever the figures; the one refusal is the invocation.
  */
 export async function runUsage(argv: string[], io: Io, sources: UsageSources): Promise<number> {
   const args = readArgs(argv, [], ['json']);
@@ -38,6 +58,7 @@ export async function runUsage(argv: string[], io: Io, sources: UsageSources): P
     // exit: usage.invocation
     return 2;
   }
+  const restricted = !isOwner(walkCaller(io));
   const now = sources.now();
   const json = args.flags.has('json');
   let loaded: LoadResult;
@@ -45,18 +66,19 @@ export async function runUsage(argv: string[], io: Io, sources: UsageSources): P
     loaded = loadTeamFile(io.cwd, { home: sources.home });
   } catch (error) {
     // A file that exists and cannot be read: the loader's own reason, as a note line, exit 0.
-    return outside(io, json, now, [error instanceof Error ? error.message : String(error)]);
+    return outside(io, json, now, [errorNote(error, restricted)]);
   }
   if (!loaded.ok) {
     // No file at all — no repository, or a repository with no team file: outside a project. A
     // file that exists and does not load is this team's own problem: the loader's own message,
-    // with the path, as note lines. Exit 0 either way.
+    // with the path, as note lines — or, for a caller who is not the owner, one fixed sentence per
+    // line, with no body (`noticeOf`). Exit 0 either way.
     const notes = !loaded.path || !existsSync(loaded.path)
       ? [NO_PROJECT]
-      : loaded.errors.map((problem) => noticeOf(loaded.path as string, problem));
+      : notesOf(loaded.path as string, loaded.errors, restricted);
     return outside(io, json, now, notes);
   }
-  const report = projectUsage(loaded.root, sources.home, now.getTime());
+  const report = projectUsage(loaded.root, { home: sources.home, now: now.getTime(), restricted });
   if (json) {
     // The reader's one line for a block whose file counts nothing heads the notes, so a script
     // reads it where the text's reader sees it: under the header, under the rows.
@@ -90,10 +112,34 @@ function render(report: ProjectUsage): string {
   return `${lines.join('\n')}\n`;
 }
 
-/** The loader's own message with the path: how the block reports a file that exists and does
- *  not load — never the bare `no team file here` text, which is a different case's sentence. */
-function noticeOf(path: string, problem: Problem): string {
+/** One note for a file that exists and does not load. The owner reads the loader's own message:
+ *  the path, the line when it has one, and the problem — never the bare `no team file here` text,
+ *  which is a different case's sentence. A caller who is not the owner reads a fixed sentence
+ *  instead — this project's own path relative to the root, the line, and where the reason is —
+ *  because the loader's bodies are the loader's own and can name paths outside this project
+ *  (`trust: must list the lobby <home>/…` when a migrated file omits it), and `team status`
+ *  prints every one of them with the bodies, as a run showed (stderr, exit 2). */
+function noticeOf(path: string, problem: Problem, restricted: boolean): string {
+  if (restricted) return `${TEAM_FILE} does not load${problem.line ? ` (line ${problem.line})` : ''}: run team status for the reason`;
   return `${path}${problem.line ? ` line ${problem.line}` : ''}: ${problem.message}`;
+}
+
+/** The notes for a file that exists and does not load: one per problem for the owner, and one per
+ *  distinct line for a caller who is not the owner — the fixed sentences carry nothing else, so
+ *  three problems on one line are one note. */
+function notesOf(path: string, errors: Problem[], restricted: boolean): string[] {
+  const notes = errors.map((problem) => noticeOf(path, problem, restricted));
+  return restricted ? [...new Set(notes)] : notes;
+}
+
+/** The note for a file that exists and cannot be read: the error's own message for the owner, one
+ *  fixed sentence for a caller who is not the owner, whose body is the error's own (an errno
+ *  error can name the path it failed on) and so does not pass through. The sentence names the
+ *  owner as the reader of the reason: `team status` is no pointer here — a run showed it throws on
+ *  this same fixture instead of printing anything. */
+function errorNote(error: unknown, restricted: boolean): string {
+  if (restricted) return `${TEAM_FILE} cannot be read: the owner reads the reason`;
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** The face of a run with no project block: the notes as `note:` lines, or the same reading as

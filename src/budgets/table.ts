@@ -23,7 +23,9 @@ export type BudgetRow = {
   reserve: number | null;
 };
 
-const WINDOWS: WindowName[] = ['session', 'daily', 'weekly'];
+/** The windows this tool writes, in the order a row's windows sort. Exported so a reader that
+ *  binds a stored reading against the tool's own vocabulary asks the same list. */
+export const WINDOWS: WindowName[] = ['session', 'daily', 'weekly'];
 
 /** Rows for the accounts the budgets in force name, and for any reading still in the state. */
 export function budgetTable(budgets: TeamFile['budgets'], list: readonly Seen[], now: number): BudgetRow[] {
