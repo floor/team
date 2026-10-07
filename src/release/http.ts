@@ -9,14 +9,16 @@
 
 /** One HTTP attempt: the status and the decoded, size-limited body, or why no response was read.
  *  Every kind that comes from a response carries its status — `http`, `too-large` (a body over
- *  the limit) and `undecodable` (a body that is not valid UTF-8, never repaired into a
- *  replacement character) — so the retry rule reads the status whatever the body; `timeout` and
- *  `transport` are the kinds with no response at all. */
+ *  the limit; it also carries `prefix`, the decoded head of that body, because a value a read
+ *  needs can sit near a document's head while the bulk of the body never is) and `undecodable`
+ *  (a body that is not valid UTF-8, never repaired into a replacement character) — so the retry
+ *  rule reads the status whatever the body; `timeout` and `transport` are the kinds with no
+ *  response at all. */
 export type Attempt =
   | { kind: 'http'; status: number; body: string }
   | { kind: 'timeout' }
   | { kind: 'transport' }
-  | { kind: 'too-large'; status: number }
+  | { kind: 'too-large'; status: number; prefix: string }
   | { kind: 'undecodable'; status: number };
 
 /** The one request shape beyond a bare GET: the Linear read's POST. Its headers are exactly what
@@ -33,6 +35,15 @@ export const BODY_LIMIT = 1024 * 1024;
 
 function why(error: unknown): Attempt {
   return { kind: error instanceof Error && error.name === 'TimeoutError' ? 'timeout' : 'transport' };
+}
+
+/** The decoded head of an over-limit body: the chunks read, in order, with no final flush — a
+ *  character split at the cut is dropped, never repaired. The head is a prefix, not a document. */
+function headOf(chunks: Uint8Array[]): string {
+  const decoder = new TextDecoder('utf-8');
+  let out = '';
+  for (const chunk of chunks) out += decoder.decode(chunk, { stream: true });
+  return out;
 }
 
 /** Node's `fetch` as the command's network: HTTPS, no headers of its own, no redirects followed. */
@@ -54,8 +65,11 @@ export const realFetch: Fetch = async (url, request) => {
       if (done) break;
       size += value.byteLength;
       if (size > BODY_LIMIT) {
+        // Over the limit: keep the body's decoded head, exactly up to the limit — the byte that
+        // crossed it and the rest of the body are not read.
+        chunks.push(value.subarray(0, BODY_LIMIT - (size - value.byteLength)));
         await reader.cancel();
-        return { kind: 'too-large', status: response.status };
+        return { kind: 'too-large', status: response.status, prefix: headOf(chunks) };
       }
       chunks.push(value);
     }

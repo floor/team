@@ -418,7 +418,7 @@ describe('the activity check', () => {
     const failed = await run(withAnswer(happyRecords(), URLS.activity, [json({}, 500), json({}, 500)]));
     expect(failed.result.activity).toEqual({ status: 'unknown', detail: 'public activity file could not be read' });
 
-    const tooLarge = await run(withAnswer(happyRecords(), URLS.activity, { kind: 'too-large', status: 200 }));
+    const tooLarge = await run(withAnswer(happyRecords(), URLS.activity, { kind: 'too-large', status: 200, prefix: '' }));
     expect(tooLarge.result.activity).toEqual({ status: 'unknown', detail: 'public activity file could not be read' });
   });
 
