@@ -362,8 +362,8 @@ function statusSources(live: Live | null, standing: Standing = { kind: 'none' })
   };
 }
 
-function approveSources(place: Place, answer: string | null, home = place.home, waiting: Waiting = 'empty'): ApproveSources {
-  return { ask: async () => answer, waiting: () => waiting, now: () => NOW, home };
+function approveSources(place: Place, answer: string | null, home = place.home, waiting: Waiting = 'empty', over: Partial<ApproveSources> = {}): ApproveSources {
+  return { ask: async () => answer, waiting: () => waiting, now: () => NOW, home, ...over };
 }
 
 function worktreeSources(place: Place): WorktreeSources {
@@ -832,6 +832,41 @@ scene('approve.answer', async (place) => {
 scene('approve.approved', async (place) => {
   write(place, TEAM);
   return show(await approved(place, ['--file', place.file], owner, approveSources(place, '1')), 'Approved.');
+});
+
+// The delegated runs. The file names a delegate — a pane outside the team's session — and the
+// caller is a pane the ordinary rule refuses. As with `add` and `down`, the verdicts are
+// injected through the test's own `sources.gate`, each with the sentence the real gate gives;
+// what the scenes pin is the command's side, the text and the exit code of each id. The scene
+// registered without an injection runs the real gate, whose first read — no record under the
+// place's home — refuses before herdr is ever asked. The gate's own decisions, the
+// ordinary-change guard included, are test/delegated-approve.test.ts.
+const DELEGATED_APPROVE = `${TEAM}delegates:\n  - pane: hook/w2:p9\n    commands: [approve]\n`;
+const APPROVE_GATE_REFUSALS: [suffix: string, sentence: string, needle: string][] = [
+  ['delegate-approved-copy', 'delegation needs a readable approved copy: run `team approve`', 'readable approved copy'],
+  ['delegate-not-ordinary', 'this change needs the owner: `trust` changed', 'needs the owner'],
+  ['delegate-evidence', "delegation cannot verify its placement or seats: herdr doesn't answer", 'placement or seats'],
+  ['delegate-placement', 'the approved delegate must be an external non-seat pane', 'non-seat pane'],
+  ['delegate', 'only the owner or the approved delegate approves a team file; this call is other', 'approved delegate approves'],
+  ['delegate-command', 'the approved delegate hook/w2:p9 may not run `approve`; its approved commands are up', 'may not run'],
+];
+for (const [suffix, sentence, needle] of APPROVE_GATE_REFUSALS) {
+  scene(`approve.${suffix}`, async (place) => {
+    write(place, DELEGATED_APPROVE);
+    return show(await approved(place, [], other, approveSources(place, null, place.home, 'empty', {
+      gate: () => ({ kind: 'refused' as const, id: `approve.${suffix}`, text: sentence }),
+    })), needle);
+  });
+}
+scene('approve.delegate-flag', async (place) => {
+  write(place, DELEGATED_APPROVE);
+  return show(await approved(place, ['--file', place.file], other, approveSources(place, null, place.home, 'empty', {
+    gate: () => ({ kind: 'refused' as const, id: 'approve.delegate-flag', text: "--file is the owner's; the approved delegate cannot use it" }),
+  })), 'cannot use it');
+});
+scene('approve.delegate-approval', async (place) => {
+  write(place, DELEGATED_APPROVE);
+  return show(await approved(place, [], other, approveSources(place, null)), 'delegation needs a verified approval');
 });
 
 async function checked(place: Place, argv: string[], caller: Caller, sources: CheckSources): Promise<Ran> {

@@ -43,7 +43,7 @@ export const delegates: Section = {
         },
       },
     },
-    $comment: 'the panes that may run these of up, down, add and remove. Omitted means no delegate',
+    $comment: 'the panes that may run these of up, down, add, remove and approve. Omitted means no delegate',
   },
 };
 
@@ -124,8 +124,9 @@ function readPane(entry: YamlEntry | undefined, check: Check, line: number, sess
 }
 
 /**
- * A non-empty ordered list of distinct lower-case `up`, `down`, `add` and `remove`. `approve` is
- * refused by name: approval is the owner's, and a delegate is never given it.
+ * A non-empty ordered list of distinct lower-case `up`, `down`, `add`, `remove` and `approve`.
+ * `approve` is grantable like the rest: a delegated approval of a change to any owner section
+ * but `rules` is refused by the gate's allowlist, never here (src/delegate.ts).
  */
 function readCommands(entry: YamlEntry | undefined, check: Check, line: number): DelegateCommand[] | null {
   if (!entry) {
@@ -145,10 +146,6 @@ function readCommands(entry: YamlEntry | undefined, check: Check, line: number):
   }
   const commands: DelegateCommand[] = [];
   for (const item of items) {
-    if (item.value === 'approve') {
-      check.fail(item.line, "a delegate: approve is the owner's; a delegate may not be given it");
-      continue;
-    }
     if (!(DELEGATE_COMMANDS as readonly string[]).includes(item.value)) {
       check.fail(item.line, `a delegate: commands must name ${NAMES}: "${item.value}" is not one`);
       continue;

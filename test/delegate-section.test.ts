@@ -98,22 +98,22 @@ describe('the delegates section', () => {
     );
   });
 
-  test('commands are a non-empty ordered list of distinct lower-case ones of the four', () => {
+  test('commands are a non-empty ordered list of distinct lower-case ones of the five', () => {
     expect(team(`delegates:\n${entry('main/w1:p1', 'down, up')}`).delegates).toEqual([
       { pane: 'main/w1:p1', commands: ['down', 'up'] },
     ]);
-    // `approve` is refused by name: approval stays the owner's.
-    expect(problems(`delegates:\n${entry('main/w1:p1', 'approve')}`).join('\n')).toContain(
-      "a delegate: approve is the owner's; a delegate may not be given it",
-    );
-    expect(problems(`delegates:\n${entry('main/w1:p1', 'up, approve')}`).join('\n')).toContain(
-      "a delegate: approve is the owner's",
-    );
-    for (const bad of ['[]', '[up, up]', '[Up]', '[approve]', '[trust]', '[answer]', '[Approve]', '[restart]', '[1]', '[up, ""]']) {
+    // `approve` is grantable like the rest; its guard is the gate's, not the loader's.
+    expect(team(`delegates:\n${entry('main/w1:p1', 'approve')}`).delegates).toEqual([
+      { pane: 'main/w1:p1', commands: ['approve'] },
+    ]);
+    expect(team(`delegates:\n${entry('main/w1:p1', 'up, approve')}`).delegates).toEqual([
+      { pane: 'main/w1:p1', commands: ['up', 'approve'] },
+    ]);
+    for (const bad of ['[]', '[up, up]', '[Up]', '[trust]', '[answer]', '[Approve]', '[restart]', '[1]', '[up, ""]']) {
       expect(problems(`delegates:\n${entry('main/w1:p1', bad)}`).length).toBeGreaterThan(0);
     }
     expect(problems(`delegates:\n  - pane: main/w1:p1\n    commands: up\n`).join('\n')).toContain(
-      'a delegate: commands must be a list of up, down, add, remove',
+      'a delegate: commands must be a list of up, down, add, remove, approve',
     );
     expect(problems(`delegates:\n${entry('main/w1:p1', '[]')}`).join('\n')).toContain(
       'a delegate: commands must name at least one',

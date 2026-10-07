@@ -5,9 +5,11 @@ the record this machine holds it to. By default it asks nothing — the summary 
 printed and the write follows it; `--confirm` brings back the question for the number of seats.
 Every command that starts, moves or changes a team checks that record first, so an edit to the file
 needs a new approval before it can run. `--show` prints the same comparison and stops, writing
-nothing. It writes only from a real terminal, and refuses, before writing, when input is already
-waiting on the terminal its own standard input is attached to — the rest of a pasted block, which
-must not be left to approve on its own — and when that terminal cannot be read to make the check.
+nothing. The owner's write comes only from a real terminal, and refuses, before writing, when
+input is already waiting on the terminal its own standard input is attached to — the rest of a
+pasted block, which must not be left to approve on its own — and when that terminal cannot be
+read to make the check. A delegate's write comes from the pane the file names, under the gate
+below: an ordinary change — the roster, a rule — passes it, any other owner section never does.
 
 ## Synopsis
 
@@ -24,10 +26,25 @@ line in `.agents/team.log`. The record is signed, and signing moves this project
 
 ## Who may run it
 
-The owner, from a terminal outside herdr: no seat approves a file, not even the orchestrator's,
-and no delegate: approval is the owner's alone, and a `delegates` entry whose commands name
-`approve` is refused when the file loads.
-`--show` may be run by anyone, in any terminal.
+The owner, from a terminal outside herdr, approves anything. The approved delegate may approve
+too: the pane a `delegates` entry names, with `approve` among its commands, placed exactly where
+the approved file puts it — the gate reads the pane, never the name a seat is given, and every
+other caller is refused with `only the owner or the approved delegate approves a team file`.
+
+A delegate's approval is for ordinary changes: the roster — seats and the launch lines that place
+them — and `rules`. The guard is an allowlist, and it is fail-closed: `rules` is the only owner
+section it admits, and every other one is refused by default — `delegates` first, and `budgets`,
+`limits`, identity, `trust`, the workspace whose `setup` runs commands, the operator and
+orchestrator sections, and any section a later version adds — with
+`this change needs the owner: <what changed>`. The ceiling counts: adding or taking out a
+seat on a file that declares no `limits` moves the default ceiling with it — `limits` changed —
+so that roster edit is the owner's, while the same edit on a file whose ceiling is declared
+leaves `limits` alone and is the delegate's. The difference is judged against the approved
+copy alone, before anything else is read, so a delegate can never widen its own grant, raise a
+ceiling, hand a seat the verdict over the team, point `setup` at a command, or add a folder the
+owner did not trust: the widened value is never signed, and the owner is the only caller who
+can approve it. A delegated run that signs prints the same `Approved.` sentence and writes one
+audit line, below. `--show` may be run by anyone, in any terminal.
 
 ## Flags
 
@@ -76,6 +93,24 @@ nothing was approved. A stored copy that no longer validates: `budgets` falls ba
 budget reports, no check runs) and the difference is reported until the next approve; `up` and `add`
 refuse a drifted file before the gate.
 
+## A delegated approval
+
+A delegated run prints the same summary, passes the same key guards and performs the same write as
+the owner's: the same record, the same signature, the same store. What it does not have is the
+question — `--confirm` is inert for a delegate, nothing is asked on any terminal, and the audit
+line, not an answer, is its record. `--file` is refused: a delegate approves the placed
+`.agents/team.yaml`, and nothing else. When the gate passes, the write appends one line to
+`.agents/team.log` naming the pane and what the approval sealed:
+
+    2026-10-07T12:00:00.000Z delegate [delegate] other/w1:p1 approve: `rules` changed
+
+The gate verifies the standing approval, the approved copy and the evidence — the state, `herdr`'s
+answers, the placement — before it lets a delegate run, and refuses with its own text when any of
+them fails: `delegation needs a verified approval: <what is not in force>`,
+`delegation needs a readable approved copy: run \`team approve\``, or `delegation cannot verify its
+placement or seats: <why>`. Every refusal writes nothing: the record, the log and the key are
+untouched.
+
 ## Refusals
 
 | Message | Exit |
@@ -83,7 +118,11 @@ refuse a drifted file before the gate.
 | `team approve: unexpected "x"` (with the usage) | 2 |
 | `team approve: line <n>: <message>` / `team approve: <message>` | 2 |
 | `team approve: the approval store <store> is inside <folder>, where seats work` | 1 |
-| `team approve: only the owner approves a team file, from a terminal outside herdr; this call is <caller>` | 1 |
+| `team approve: only the owner approves a team file, from a terminal outside herdr; this call is <caller>` (no `delegates` section) | 1 |
+| `team approve: only the owner or the approved delegate approves a team file; this call is <caller>` | 1 |
+| `team approve: this change needs the owner: <what changed>` (an owner section that is not `rules`) | 1 |
+| `team approve: --file is the owner's; the approved delegate cannot use it` | 1 |
+| `team approve: delegation needs a verified approval: <what is not in force>` / `delegation needs a readable approved copy: run \`team approve\`` / `delegation cannot verify its placement or seats: <why>` / `the approved delegate must be an external non-seat pane` / `the approved delegate <pane> may not run \`approve\`; its approved commands are <commands>` | 1 |
 | `team approve: input was waiting on the terminal: run \`team approve\` on its own line` | 1 |
 | `team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written` | 1 |
 | `team approve: not approved; nothing was written` (`--confirm`) | 1 |
@@ -109,7 +148,8 @@ arrives after the check and before the write is not seen.
 - `0` — approved, or `--show` printed the comparison and stopped before anything was written.
 - `1` — refused: a seat ran it, the store sits where seats work, input was waiting on the terminal,
   the terminal could not be read to check for input waiting, or (`--confirm`) the answer was not the
-  number of seats. Nothing is written.
+  number of seats. Also every delegated refusal: a caller that is not the approved pane, a change
+  that needs the owner, `--file`, or anything the gate could not verify. Nothing is written.
 - `2` — the invocation, the team file or the file's validation is bad.
 
 ## The signed record

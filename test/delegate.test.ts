@@ -144,6 +144,15 @@ describe('the audit line and the edit refusal', () => {
     logDelegated(dir, 'other/w1:p1', 'up', new Date('2026-10-06T12:00:00.000Z'));
     // A run of logDelegated on 2026-10-06 produced this line, the same bytes logLine writes.
     expect(readFileSync(join(dir, 'team.log'), 'utf8')).toBe('2026-10-06T12:00:00.000Z delegate [delegate] other/w1:p1 up\n');
+    // A detail — what a delegated approval sealed — is appended after the command; an empty
+    // one adds nothing, so the four commands' lines keep their bytes.
+    logDelegated(dir, 'other/w1:p1', 'approve', new Date('2026-10-06T12:01:00.000Z'), '`rules` changed');
+    logDelegated(dir, 'other/w1:p1', 'approve', new Date('2026-10-06T12:02:00.000Z'));
+    expect(readFileSync(join(dir, 'team.log'), 'utf8')).toBe(
+      '2026-10-06T12:00:00.000Z delegate [delegate] other/w1:p1 up\n'
+      + '2026-10-06T12:01:00.000Z delegate [delegate] other/w1:p1 approve: `rules` changed\n'
+      + '2026-10-06T12:02:00.000Z delegate [delegate] other/w1:p1 approve\n',
+    );
     expect(ADD_DELEGATE_EDIT).toEqual({
       id: 'add.delegate-edit',
       text: 'the approved delegate cannot change the file or the approval; the owner adds a missing or stopped seat',
@@ -314,8 +323,12 @@ describe('the team session that is not running', () => {
   const unlisted = (session: string) => (session === 'other' ? [agent('worker', 'w1:p1')] : null);
 
   test('a stopped or absent session has no seats to collide with: every command passes', () => {
+    // The scene grants the whole vocabulary — the base file grants the four operational
+    // commands — so the stopped-session path is walked for each of the five.
+    const granted = yaml.replace('commands: [up, down, add, remove]', 'commands: [up, down, add, remove, approve]');
+    const five = parsed(granted);
     for (const command of DELEGATE_COMMANDS) {
-      expect(gate({ command, agents: unlisted, sessionRunning: () => false })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+      expect(gate({ command, team: five, file: granted, agents: unlisted, sessionRunning: () => false })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
     }
   });
 
@@ -465,9 +478,10 @@ describe('the approval home', () => {
 });
 
 describe('the exit ids', () => {
-  test('lists every delegate refusal of the four commands, and none for approve', () => {
-    expect(DELEGATE_EXIT_IDS).toHaveLength(33);
-    expect(DELEGATE_EXIT_IDS.some((id) => id.startsWith('approve.'))).toBe(false);
-    expect(new Set(DELEGATE_EXIT_IDS).size).toBe(33);
+  test('lists every refusal of the five commands, the delegated approval\'s own guard included', () => {
+    expect(DELEGATE_EXIT_IDS).toHaveLength(41);
+    expect(DELEGATE_EXIT_IDS).toContain('approve.delegate-not-ordinary');
+    expect(DELEGATE_EXIT_IDS).not.toContain('approve.delegate-drift');
+    expect(new Set(DELEGATE_EXIT_IDS).size).toBe(41);
   });
 });
