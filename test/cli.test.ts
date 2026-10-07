@@ -38,7 +38,7 @@ test('an unknown command is an error', async () => {
 test('check is a command of this build', async () => {
   const run = io();
   expect(await main(['check', '--help'], run)).toBe(0);
-  expect(run.out).toStartWith('Usage: team check <ref>');
+  expect(run.out).toStartWith('Usage: team check [--session <name>] [--file <path>]');
   const help = io();
   await main(['--help'], help);
   expect(help.out).toContain('\n  check\n');
