@@ -85,6 +85,9 @@ Unchanged by this release:
 - The lobby recheck cannot see a rewrite in place inside one filesystem timestamp tick that
   changes no size — every number it reads would be the same.
 - The default machine check asks for 2 GB of free swap before a launch; under it, `up` refuses.
+- A refused `team approve` run by an agent on a machine that has no signing key yet still makes
+  the machine's signing key on its way to the refusal: the key folder and its key file are left
+  behind, no approval is written and nothing is signed; fixed in 0.3.3.
 
 ## [0.3.1] - 2026-10-06
 
