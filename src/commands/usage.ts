@@ -33,11 +33,15 @@ export default usage;
  * may run it, from any folder. The caller is placed once, the way `status` places it
  * (`status.ts:133`): the owner at a terminal is the owner, and everyone else — a seat, an agent
  * outside herdr, a run without a terminal — reads the restricted view, whose differences here are
- * the fixed line for a refused approval (`NOT_VERIFIED`) in place of the store's own words, and,
- * for a file that does not load or cannot be read, a fixed sentence naming this project's own path
+ * the fixed line for a refused approval (`NOT_VERIFIED`) in place of the store's own words, for a
+ * file that does not load or cannot be read a fixed sentence naming this project's own path
  * relative to the root in place of the loader's own message (`noticeOf`, `errorNote`) — the
- * loader's bodies can name paths outside this project. The state's note keeps the state's own
- * reason with its path made relative (`shownNote`). A caller who is not the owner therefore reads
+ * loader's bodies can name paths outside this project — and one fixed line in place of a stored
+ * reading the approved team in force does not bind (`boundReadings`, `UNBOUND_ACCOUNT`,
+ * `UNBOUND_SHAPE`): the state is signed by nothing, so a reading prints only an account the file
+ * names, a window and a source this tool writes, and a seat the file's seats name — a seat it
+ * does not name prints as none. The state's note keeps the state's own reason with its path made
+ * relative (`shownNote`). A caller who is not the owner therefore reads
  * no location the tool derived from this machine — no root, no home folder, no store, no state or
  * file path — and nothing of another project; a name this team's own file writes (an account, a
  * seat, a label, a role) is this team's own agreed data and prints as written, as `status` prints

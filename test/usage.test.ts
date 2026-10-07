@@ -19,7 +19,7 @@ import type { Caller } from '../src/caller.ts';
 import { runStatus } from '../src/commands/status.ts';
 import { NO_PROJECT, runUsage, USAGE } from '../src/commands/usage.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
-import { NOTHING_COUNTED, NOT_VERIFIED } from '../src/information/usage.ts';
+import { NOTHING_COUNTED, NOT_VERIFIED, UNBOUND_ACCOUNT, UNBOUND_SHAPE } from '../src/information/usage.ts';
 import { emptySession, updateState } from '../src/state.ts';
 import { approvalStanding, storePath, writeApproval } from '../src/store/store.ts';
 import { gitEnv, testIo } from './helpers.ts';
@@ -310,21 +310,36 @@ describe('team usage', () => {
     expect(doc.rows).toEqual([]);
     expect(doc.notes).toEqual([NOTHING_COUNTED]);
 
-    // A state that still holds readings prints their rows — they are readings, not accounts a
-    // budget in force names — and the sentence still prints, under them; the JSON says the same.
+    // A state that still holds readings prints their rows for the owner — they are readings, not
+    // accounts a budget in force names — and the sentence still prints, under them; the JSON says
+    // the same.
     withState();
-    const leftover = await usageAt(root);
+    const owner: Caller = { kind: 'owner' };
+    const leftover = await usageAt(root, owner);
     expect(leftover.code).toBe(0);
     expect(leftover.out).toBe(['team acme', ...LEFTOVER_ROWS, NOTHING_COUNTED, 'no watch is recording for acme'].join('\n') + '\n');
-    const held = JSON.parse((await usageAt(root, undefined, '--json')).out) as Record<string, unknown>;
+    const held = JSON.parse((await usageAt(root, owner, '--json')).out) as Record<string, unknown>;
     expect((held.rows as unknown[]).length).toBe(LEFTOVER_ROWS.length);
     expect(held.notes).toEqual([NOTHING_COUNTED]);
+
+    // A caller who is not the owner reads none of those rows: the state's account is not one the
+    // file names, so the reading is not rendered at all and one fixed line says so — under the
+    // same sentence, which keys on the file either way. The second read's rule on an ordinary
+    // state; the hostile-strings test below is its own.
+    const mine = await usageAt(root, SEAT);
+    expect(mine.code).toBe(0);
+    expect(mine.out).toBe(['team acme', NOTHING_COUNTED, 'no watch is recording for acme', `note: ${UNBOUND_ACCOUNT}`].join('\n') + '\n');
+    const heldMine = JSON.parse((await usageAt(root, SEAT, '--json')).out) as Record<string, unknown>;
+    expect(heldMine.rows).toEqual([]);
+    expect(heldMine.notes).toEqual([NOTHING_COUNTED, UNBOUND_ACCOUNT]);
   });
 
   test('a file whose accounts are not the approved ones prints the why-line, rows or no rows', async () => {
     // Never approved: the store holds no record for this project, so the file's accounts — which
     // it declares — are not in force, and the tool's own why-line for that standing prints. The
-    // rows the state still holds print above it: the line keys on the standing, not on them.
+    // rows the state still holds print above it for the owner — the line keys on the standing,
+    // not on them — and a caller who is not the owner reads neither those rows nor the accounts
+    // they are not approved for: the same why-line, with the dropped reading's own line under it.
     rmSync(storePath('acme', root, home), { recursive: true, force: true });
     const neverApproved = 'the file was never approved on this machine: run `team approve`';
     withoutReadings();
@@ -332,22 +347,26 @@ describe('team usage', () => {
     expect(bare.code).toBe(0);
     expect(bare.out).toBe(['team acme', neverApproved, 'no watch is recording for acme'].join('\n') + '\n');
     withState();
-    const none = await usageAt(root);
+    const owner: Caller = { kind: 'owner' };
+    const none = await usageAt(root, owner);
     expect(none.out).toBe(['team acme', ...LEFTOVER_ROWS, neverApproved, 'no watch is recording for acme'].join('\n') + '\n');
-    expect(JSON.parse((await usageAt(root, undefined, '--json')).out).notes).toEqual([neverApproved]);
+    expect(JSON.parse((await usageAt(root, owner, '--json')).out).notes).toEqual([neverApproved]);
+    const mine = await usageAt(root, SEAT);
+    expect(mine.out).toBe(['team acme', neverApproved, 'no watch is recording for acme', `note: ${UNBOUND_ACCOUNT}`].join('\n') + '\n');
 
     // Verified, but the copy the owner approved names no account: the budgets in force are the
     // approved copy's, so the file's own accounts count nothing and `status`'s line for a file
-    // that differs from the approved one prints — again under the readings' own rows.
+    // that differs from the approved one prints — again under the readings' own rows, for the
+    // owner.
     const text = withoutBudgets();
     writeFileSync(file, text);
     approve(text);
     writeFileSync(file, teamText());
     const differs = 'the file differs from the approved one: `budgets` changed';
-    const moved = await usageAt(root);
+    const moved = await usageAt(root, owner);
     expect(moved.code).toBe(0);
     expect(moved.out).toBe(['team acme', ...LEFTOVER_ROWS, differs, 'no watch is recording for acme'].join('\n') + '\n');
-    expect(JSON.parse((await usageAt(root, undefined, '--json')).out).notes).toEqual([differs]);
+    expect(JSON.parse((await usageAt(root, owner, '--json')).out).notes).toEqual([differs]);
   });
 
   test("a refused approval's own words are the owner's: one fixed sentence for a seat, every reason", async () => {
@@ -594,6 +613,163 @@ describe('team usage', () => {
     const owner = await usageAt(root, { kind: 'owner' });
     expect(owner.code).toBe(0);
     expect(owner.out).toContain(`  ${name}  unknown\n`);
+  });
+
+  test("a stored reading's own names are the state's: a seat reads only what the file binds", async () => {
+    // The second read's case, under the ruling: the state file is signed by nothing — it is a
+    // cache, not the approved copy — and `readState` validates no part of a stored reading, so
+    // its `account` and `seat` are strings whoever wrote the state chose. In an approved project
+    // with no budgets the reviewer wrote `account: /STATE-ACCOUNT-LEAK` and `seat:
+    // /STATE-SEAT-LEAK`, and `usage --json` as a seat printed both.
+    const text = withoutBudgets();
+    writeFileSync(file, text);
+    approve(text);
+    updateState(join(root, '.agents'), (state) => {
+      state.budgets = {
+        'leak/leak': {
+          account: '/STATE-ACCOUNT-LEAK',
+          window: 'session',
+          left: 40,
+          used: 60,
+          changedAt: '2026-10-04T08:58:00Z',
+          resetsAt: null,
+          seat: '/STATE-SEAT-LEAK',
+          source: 'status_line',
+          confirmed: true,
+        },
+      } as never;
+      state.sessions['acme-web'] = { ...emptySession() } as never;
+    });
+
+    // A caller who is not the owner reads no row and no name: the sentence for a file that
+    // counts nothing, the watch's line, and one fixed line for the reading that was dropped —
+    // `nothing in rows`, as the ruling has it, because the file names no account to bind it to.
+    const mine = await usageAt(root, SEAT);
+    expect(mine.code).toBe(0);
+    expect(mine.out).toBe([
+      'team acme',
+      NOTHING_COUNTED,
+      'no watch is recording for acme',
+      `note: ${UNBOUND_ACCOUNT}`,
+    ].join('\n') + '\n');
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    const doc = JSON.parse(raw) as { rows: unknown[]; notes: string[] };
+    expect(doc.rows).toEqual([]);
+    expect(doc.notes).toEqual([NOTHING_COUNTED, UNBOUND_ACCOUNT]);
+    for (const face of [mine.out, raw]) {
+      expect(face).not.toContain('STATE-ACCOUNT-LEAK');
+      expect(face).not.toContain('STATE-SEAT-LEAK');
+    }
+
+    // The owner reads everything, as today: the row, the account and the seat, in both faces.
+    const owner = await usageAt(root, { kind: 'owner' });
+    const ownerRaw = (await usageAt(root, { kind: 'owner' }, '--json')).out;
+    expect(owner.code).toBe(0);
+    expect(owner.out).toContain('/STATE-ACCOUNT-LEAK');
+    expect(owner.out).toContain('/STATE-SEAT-LEAK');
+    expect(ownerRaw).toContain('/STATE-ACCOUNT-LEAK');
+    expect(ownerRaw).toContain('/STATE-SEAT-LEAK');
+  });
+
+  test('hostile state: not one string of a stored reading reaches a caller who is not the owner', async () => {
+    // Every string field a `StoredReading` holds, each a name this test owns: account, window,
+    // source and seat on readings whose account the file names, and the two time fields as
+    // strings where times belong. Whatever route the state's words could take into a face, one
+    // of these would show it. The sweep at the end is over both faces of the non-owner's run,
+    // and the owner's own run proves the readings really are in the state.
+    const WINDOW_LEAK = '/STATE-WINDOW-LEAK';
+    const SOURCE_LEAK = '/STATE-SOURCE-LEAK';
+    const SEAT_LEAK = '/STATE-SEAT-LEAK';
+    const TIME_LEAK = '/STATE-TIME-LEAK';
+    withState();
+    updateState(join(root, '.agents'), (state) => {
+      state.budgets = {
+        // A window the tool does not write, with both time fields as strings for the sweep to
+        // cover (`table.ts` writes `session`, `daily`, `weekly`; a time is parsed before any
+        // face sees it — no face can carry one as written, the owner's included).
+        'openai/window-leak': {
+          account: 'openai',
+          window: WINDOW_LEAK,
+          left: 40,
+          used: 60,
+          changedAt: TIME_LEAK,
+          resetsAt: TIME_LEAK,
+          seat: null,
+          source: 'status_line',
+          confirmed: true,
+        },
+        // A source the tool does not write (`check`, `status_line` are the two).
+        'openai/source-leak': {
+          account: 'openai',
+          window: 'session',
+          left: 40,
+          used: 60,
+          changedAt: '2026-10-04T08:58:00Z',
+          resetsAt: null,
+          seat: null,
+          source: SOURCE_LEAK,
+          confirmed: true,
+        },
+        // A seat the file's seats do not name; its account and its shape are ones the file binds.
+        'openai/weekly': {
+          account: 'openai',
+          window: 'weekly',
+          left: 5,
+          used: 95,
+          changedAt: '2026-10-04T08:58:00Z',
+          resetsAt: '2026-10-04T09:44:00Z',
+          seat: SEAT_LEAK,
+          source: 'status_line',
+          confirmed: true,
+        },
+      } as never;
+    });
+
+    // A caller who is not the owner reads none of those strings. The bound reading prints its
+    // figures with no seat — a seat's name is narrower than an account's, it does not hide the
+    // figures behind it — and the other two are not rendered at all, one fixed line for both.
+    const mine = await usageAt(root, SEAT);
+    const raw = (await usageAt(root, SEAT, '--json')).out;
+    const doc = JSON.parse(raw) as { rows: { account: string; window: string | null; seat: string | null }[]; notes: string[] };
+    expect(mine.code).toBe(0);
+    expect(mine.out).toBe([
+      'team acme',
+      '  anthropic  unknown',
+      '  openai  weekly  left 5%  used 95%  resets in 44m  -  changed 2m ago  status line (fallback)  fresh, inside reserve 20%',
+      'no watch is recording for acme',
+      `note: ${UNBOUND_SHAPE}`,
+    ].join('\n') + '\n');
+    expect(doc.rows.map((row) => [row.account, row.window, row.seat])).toEqual([
+      ['anthropic', null, null],
+      ['openai', 'weekly', null],
+    ]);
+    expect(doc.notes).toEqual([UNBOUND_SHAPE]);
+    for (const face of [mine.out, raw]) {
+      for (const leak of [WINDOW_LEAK, SOURCE_LEAK, SEAT_LEAK, TIME_LEAK]) {
+        expect(face).not.toContain(leak);
+      }
+    }
+
+    // The owner reads them, exactly as the state holds them, where a face can carry them: the
+    // window and the seat render in the block, the seat in `--json` too. Two of the strings no
+    // face carries at all, the owner's included: a source string is partitioned on the two the
+    // tool writes before any row is built (`screenOf`, `checkOf`), so a reading from anywhere
+    // else counts for nothing and its row is blank, and a time string is parsed before any face
+    // sees it.
+    const owner = await usageAt(root, { kind: 'owner' });
+    const ownerRaw = (await usageAt(root, { kind: 'owner' }, '--json')).out;
+    const ownerRows = (JSON.parse(ownerRaw) as { rows: { window: string | null; source: string | null }[] }).rows;
+    expect(owner.code).toBe(0);
+    expect(owner.out).toContain(WINDOW_LEAK);
+    expect(owner.out).toContain(SEAT_LEAK);
+    expect(ownerRaw).toContain(WINDOW_LEAK);
+    expect(ownerRaw).toContain(SEAT_LEAK);
+    expect(ownerRows.find((row) => row.window === 'session')?.source).toBeNull();
+    for (const leak of [SOURCE_LEAK, TIME_LEAK]) {
+      expect(owner.out).not.toContain(leak);
+      expect(ownerRaw).not.toContain(leak);
+    }
+    for (const face of [owner.out, ownerRaw]) expect(face).not.toContain('not shown');
   });
 
   test('any caller may run it, and a subfolder of a checkout reads the same project', async () => {

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { approvalCase, budgetsInForceOf, notInForce, watchInForceOf } from '../approve/approval.ts';
 import { describe } from '../approve/fingerprint.ts';
 import { checkOf, countedFor, recall, recallSpend, screenOf, type Seen, type SpendReading } from '../budgets/readings.ts';
-import { budgetTable, reserveOf, sourcesOf, type BudgetRow } from '../budgets/table.ts';
+import { budgetTable, reserveOf, sourcesOf, WINDOWS, type BudgetRow } from '../budgets/table.ts';
 import { TEAM_FILE } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
 import { validateTeamFile } from '../file/validate.ts';
@@ -35,6 +35,22 @@ export const NOTHING_COUNTED = "not known: this team's file declares no account,
  *  `Standing` carries one opaque `why`, so the sentence replaces it as a whole. */
 export const NOT_VERIFIED = 'the approval on this machine does not verify for this project: the owner runs `team approve`';
 
+/** The line a block shows a caller who is not the owner in place of a stored reading that names
+ *  an account the approved team in force does not. The state file is signed by nothing — it is a
+ *  cache, not the approved copy — so an account string in it is the state's, not this team's, and
+ *  a caller who is not the owner reads a reading by that name only when the file backs it: it is
+ *  a budget in force's account, or the account a seat's own `account:`/`vendor:` resolves to (the
+ *  counting rule's own resolution, `gate.ts:31`). The reading is not rendered at all, and the
+ *  owner reads it as before — the after-review's second read found the leak this line closes:
+ *  `--json` as a seat printed a stored reading's `account: /…` and `seat: /…` verbatim. */
+export const UNBOUND_ACCOUNT = "a stored reading names an account this team's file does not: not shown";
+
+/** The same line for a stored reading whose window or source is not one this tool writes: the
+ *  three windows (`table.ts:28`) and the two sources (`readings.ts`). Nothing in the file can
+ *  back any other value — the file names no window and no source but these — so such a reading is
+ *  not rendered for a caller who is not the owner either, and says so in this line. */
+export const UNBOUND_SHAPE = 'a stored reading carries a window or source this tool does not write: not shown';
+
 /** Whether a watch is recording for a project, by the state's own record (design note § 1.4). */
 export type WatchRecording = 'recording' | 'not-recording' | 'not-known';
 
@@ -53,7 +69,9 @@ export type ProjectUsage = {
   /** The spend checks' readings, as the state holds them (§ 5). Read here, printed from S2 on. */
   spend: SpendReading[];
   watch: WatchRecording;
-  /** What the block prints as its `note:` lines: the state's own reason, path and all. */
+  /** What the block prints as its `note:` lines: the state's own reason, path and all — and, for
+   *  a caller who is not the owner, the fixed lines for stored readings the file does not bind
+   *  (`UNBOUND_ACCOUNT`, `UNBOUND_SHAPE`). */
   notes: string[];
 };
 
@@ -77,9 +95,11 @@ export type ProjectUsageOptions = {
  * CLI's session file or a lab's credential; it reads TeamCLI's own key only to verify the
  * agreement, as `status` does. The key read is `approvalStanding`'s, and it was promised away in
  * the design's first draft; that promise was corrected — the sentence above is the ruled one.
- * `restricted` says the caller is not the owner: it changes no reading, it keeps the store's own
- * words for a refused approval out of what the block can print (`NOT_VERIFIED`), and it shows the
- * project's own paths relative to the project root (`shownNote`).
+ * `restricted` says the caller is not the owner: it keeps the store's own words for a refused
+ * approval out of what the block can print (`NOT_VERIFIED`), shows the project's own paths
+ * relative to the project root (`shownNote`), and renders a stored reading only when the approved
+ * team in force binds it (`boundReadings`) — the state's strings are the state's, and only the
+ * ones the file itself backs are shown by name.
  */
 export function projectUsage(root: string, options: ProjectUsageOptions): ProjectUsage {
   const { home, now, restricted } = options;
@@ -101,7 +121,8 @@ export function projectUsage(root: string, options: ProjectUsageOptions): Projec
   }
   if (team === null) return { project: null, rows: [], whyNotCounted: null, spend: [], watch: 'not-known', notes };
   const budgets = budgetsInForceOf(standing, team);
-  const rows = budgetTable(budgets, readings, now).map((row) => ({ row, changedAt: countedMoment(budgets, readings, row, now) }));
+  const bound = restricted ? boundReadings(readings, budgets, team, notes) : readings;
+  const rows = budgetTable(budgets, bound, now).map((row) => ({ row, changedAt: countedMoment(budgets, bound, row, now) }));
   return {
     project: team.project,
     rows,
@@ -110,6 +131,48 @@ export function projectUsage(root: string, options: ProjectUsageOptions): Projec
     watch: recordedWatch(state, team, watchInForceOf(standing, team), now),
     notes,
   };
+}
+
+/**
+ * The readings a caller who is not the owner reads by name: the ones the approved team in force
+ * binds. The state file is signed by nothing — it is a cache, not the approved copy — and the
+ * one door a value from outside the program passes (`state.ts`'s `cleanClassification`) does not
+ * reach budget readings, so every string a stored reading carries is the state's, whatever it
+ * looks like. A reading is bound when its account is one the budgets in force name or the account
+ * a seat's own `account:`/`vendor:` resolves to (the counting rule's own resolution, `gate.ts:31`,
+ * over the same budgets); its window and source are ones this tool writes (`WINDOWS`, and the two
+ * `ReadingSource`s — no file can write any other value). A reading that fails those is not
+ * rendered at all, and one fixed line per kind says so; a seat's name is narrower than that — it
+ * does not hide the figures behind it — so a reading whose seat the file's seats do not name
+ * (the string `watch` writes, `watch/pass.ts:331`) prints with no seat (`-` in the block, null
+ * in `--json`). The owner reads every reading the state holds, as before.
+ */
+function boundReadings(
+  list: readonly Seen[],
+  budgets: TeamFile['budgets'],
+  team: TeamFile,
+  notes: string[],
+): Seen[] {
+  const accounts = new Set(Object.keys(budgets.accounts));
+  for (const seat of team.seats) accounts.add(seat.account ?? seat.vendor);
+  const seats = new Set(team.seats.map((seat) => seat.name));
+  const kept: Seen[] = [];
+  let account = false;
+  let shape = false;
+  for (const reading of list) {
+    if (!accounts.has(reading.account)) {
+      account = true;
+      continue;
+    }
+    if (!WINDOWS.includes(reading.window) || (reading.source !== 'status_line' && reading.source !== 'check')) {
+      shape = true;
+      continue;
+    }
+    kept.push(reading.seat !== null && !seats.has(reading.seat) ? { ...reading, seat: null } : reading);
+  }
+  if (account) notes.push(UNBOUND_ACCOUNT);
+  if (shape) notes.push(UNBOUND_SHAPE);
+  return kept;
 }
 
 /** The one line the block prints when nothing its file declares is counted, in the tool's own

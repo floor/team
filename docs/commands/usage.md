@@ -90,6 +90,12 @@ where a reader learns why figures can show with no budget behind them:
       openai  weekly  left 5%  used 95%  resets in 44m  claude-keeper  changed 2m ago  status line  fresh
     not known: this team's file declares no account, so nothing is counted
 
+Those leftover rows are the owner's reading. A caller who is not the owner reads no stored reading
+whose account its file does not name — the state file is signed by nothing, so only what the file
+itself backs is shown by name — and reads one fixed line where the rows would be; the closing
+paragraph has the rule. The sentence above is unaffected either way: it keys on the file, not on
+the readings.
+
 A file that declares accounts but is not the approved one counts none of them either: the budgets
 in force are the approved copy's — or, before any approval, the defaults', which name no account.
 The line is the tool's own why-line for that standing, in the words `team status` already prints
@@ -133,7 +139,8 @@ a non-owner can carry a path or a root that is not this project's own:
 `watch` is `recording`, `not-recording` or `not-known` — the three faces the block prints as
 nothing, one line, or the other line. `notes` holds the state's own reasons, as the block's
 `note:` lines — with the block's one line for a file that counts nothing first, so a script reads
-it where the text's reader sees it. `at` is the moment the reading was taken, and `mine` the
+it where the text's reader sees it — and, for a caller who is not the owner, the fixed lines for
+stored readings the file does not bind. `at` is the moment the reading was taken, and `mine` the
 project, or null outside any project — in which case `rows` is empty, `watch` is `not-known` and
 `notes` holds what the block's `note:` lines say.
 
@@ -300,8 +307,23 @@ exit 0
 ```
 
 The same command from a seat's pane, or from a folder with no project above it, reads the same
-project or prints the one note line: no figure, row, watch line or why-line changes with who runs
-it. What a note says changes. The owner reads the notes `status` would print — the loader's own
+project or prints the one note line. What a note says changes, and one thing besides: a stored
+reading — a reading in the state, rather than a figure a budget in force counts — is rendered only
+when the team's file binds it. Its account must be one the file names — a budget in force's
+account, or the account a seat's own `account:` or its `vendor:` resolves to, the resolution the
+counting rule already makes — and its window and source must be ones this tool writes: `session`,
+`daily`, `weekly`; `check`, `status_line`. A reading that fails either is not rendered at all, and
+one fixed line says so, in the block as a `note:` line and in `--json` at the end of `notes`:
+
+    note: a stored reading names an account this team's file does not: not shown
+    note: a stored reading carries a window or source this tool does not write: not shown
+
+A seat's name is not that wide: a reading whose seat the file's seats do not name still prints its
+figures, with no seat — `-` in the block, null in `--json`. Every figure a budget in force counts
+prints for every caller, and the owner reads every stored reading the state holds, exactly as
+`status` shows it.
+
+The owner reads the notes `status` would print — the loader's own
 message with the file's absolute path, the state's own reason. A caller who is not the owner reads
 a file that does not load as one fixed sentence per line — `.agents/team.yaml does not load
 (line 4): run team status for the reason`, where `team status` prints the loader's own message —
