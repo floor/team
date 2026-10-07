@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-10-07
+
+A release about reading a machine and reading a file: `team usage` reads every store this
+machine holds into one report, under one resolved view — the owner at a terminal reads the full
+one, every other caller the restricted one — and every line that carries a figure may carry its
+pace; a pane the approved file names as a delegate may approve the ordinary changes, a roster or
+a launch line or a rule, and can never approve a change to its own authority; and the credential
+warning's path exemption is the filesystem's own verdict, so a path-shaped word that is not a
+real directory warns.
+
+### Added
+
+- `team usage` reads the machine: every store this machine holds into one report, under one
+  resolved view. The full view is the owner at a terminal; every other caller reads the
+  restricted one, and a process with no terminal of its own is placed `owner-no-tty` and still
+  reads the restricted view, closing the no-terminal forgery. The text and `--json` render from
+  one document, so they cannot disagree, and nothing a read of another team produced crosses it:
+  no name, no root, no rows, no problems in their own words — each family one fixed sentence,
+  counted — no seat on another team's machine line, and no figure of an account the caller's own
+  file does not name. `usage.outside` is gone: a run outside every project is a note and exit 0,
+  and `usage.store` is the command's one refusal.
+- Every stored reading may keep the point before it — the figure it replaced and the moment it
+  last moved — and every `team usage` line that carries a figure may end with its pace:
+  `pace <n>%/h`, used points per hour, signed, one decimal, or `pace not known` where the state
+  holds no usable pair. A restricted line whose newest reading is another team's ends without
+  one: that pace is withheld, and nothing stands in its place.
+- `team approve` takes a delegate: a pane the approved file names in `delegates:` with `approve`
+  among its commands may approve the ordinary changes — a seat's line, a rule — under a
+  fail-closed allow-list judged before anything else is read. The `rules` section and the seat
+  differences pass; every other owner section is refused by name (`this change needs the owner:
+  <what changed>`), including any section a later version adds, so a delegate can never approve
+  a change to its own authority — `delegates`, `limits`, `trust`, `budgets`, the workspace whose
+  `setup` runs commands. An ordinary difference rejoins the owner's path — the same key guards,
+  the same signed record, the same store, `--confirm` inert and no terminal read — and leaves
+  one audit line in the log; the owner's run is untouched and approves anything.
+
+### Fixed
+
+- The credential warning's path exemption is the filesystem's verdict: an absolute-shaped word
+  is exempt only when `lstat` says it is a real directory — fail closed on an absent path, a
+  regular file, a symlink to a directory (`lstat`, never `stat`), or any error — so a credential
+  in path clothing warns again, and the runner's real project directory stays quiet.
+
 ## [0.3.3] - 2026-10-07
 
 A release about names and evidence: the bare `team check` reads the team itself and answers with
@@ -644,7 +687,8 @@ The first release: set up, change and watch a project's team of AI agents from o
   footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
   stays idle.
 
-[Unreleased]: https://github.com/floor/team/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/floor/team/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/floor/team/releases/tag/v0.3.4
 [0.3.3]: https://github.com/floor/team/releases/tag/v0.3.3
 [0.3.2]: https://github.com/floor/team/releases/tag/v0.3.2
 [0.3.1]: https://github.com/floor/team/releases/tag/v0.3.1
