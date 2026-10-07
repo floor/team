@@ -7,6 +7,7 @@
 // pending state — for a team file without `watch.checks`, which is every fixture here.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import type { Seen } from '../src/budgets/readings.ts';
 import type { TeamFile } from '../src/file/types.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
@@ -19,6 +20,7 @@ import { gb, recordSwap } from '../src/watch/machine.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { newMemory, pass } from '../src/watch/pass.ts';
 import { readScreen } from '../src/watch/screen.ts';
+import { withWas } from './helpers.ts';
 
 // --- The pass this branch replaces, verbatim, from src/watch/pass.ts at the merge of #45. ---
 
@@ -228,6 +230,7 @@ type Step = {
   team?: TeamFile;
   state?: SessionState;
   approval?: string[] | null;
+  readings?: Seen[];
 };
 
 /** Runs both implementations over one sequence and demands the same result, every step. */
@@ -239,12 +242,13 @@ function both(name: string, team: TeamFile, steps: Step[]): void {
     const state = step.state ?? emptySession();
     const machine = step.machine ?? fine;
     const was = oldPass(file, state, step.live, machine, step.at, before, step.approval);
-    const now = pass({ team: file, watch: file.watch, state, live: step.live, machine, now: step.at, memory: after, approval: step.approval });
+    const now = pass({ team: file, watch: file.watch, state, live: step.live, machine, now: step.at, memory: after, approval: step.approval, readings: step.readings });
     // `readings` is the one field the old pass had no idea of (#46, #50); every fixture here
-    // names no budget account, so it stays empty and the rest must be equal as before.
+    // names no budget account, so it stays empty and the rest must be equal as before. A step
+    // that hands the pass a cache gets it back as it handed it over.
     expect({ name, at: step.at, reports: now.reports, nudge: now.nudge, fallback: now.fallback })
       .toEqual({ name, at: step.at, reports: was.reports, nudge: was.nudge, fallback: was.fallback });
-    expect(now.readings).toEqual([]);
+    expect(now.readings).toEqual(step.readings ?? []);
     expect({ name, at: step.at, pending: after.pending, since: after.pendingSince })
       .toEqual({ name, at: step.at, pending: before.pending, since: before.pendingSince });
   }
@@ -572,5 +576,39 @@ describe('the modular core against the pass it replaced', () => {
       { live: live(), at: 2 * MIN },
       { live: typed, at: 3 * MIN },
     ]);
+  });
+
+  test('a cached reading carrying a point rides both implementations the same way', () => {
+    // § 5: this file's whole job is implementation-for-implementation equality, figure for
+    // figure. The same step runs twice — with a cache as `observe` leaves it, and with one
+    // carrying § 5's valid point — and both implementations report, nudge and remember the same
+    // either way, carrying the reading forward exactly as it was handed over.
+    const cached: Seen = {
+      account: 'openai', window: 'weekly', left: 80, used: 20,
+      changedAt: 0, resetsAt: null, seat: 'codex-acme',
+      source: 'status_line', confirmed: true,
+    };
+    const steps = (readings: Seen[]): Step[] => [{ live: live(), at: 0, readings }];
+    both('a cache of one plain reading', team(), steps([cached]));
+    both('a cache of one reading with a point', team(), steps([withWas(cached)]));
+    // Side by side over the pass's own result: the same reports, nudge and fallback, and the
+    // same reading record for record — the point is the one field that differs, and it is there.
+    const run = (readings: Seen[]) => pass({
+      team: team(), watch: team().watch, state: emptySession(), live: live(), machine: fine,
+      now: 0, memory: newMemory(), approval: null, readings,
+    });
+    const plain = run([cached]);
+    const pointed = run([withWas(cached)]);
+    expect(pointed.reports).toEqual(plain.reports);
+    expect(pointed.nudge).toEqual(plain.nudge);
+    expect(pointed.fallback).toEqual(plain.fallback);
+    const bare = (one: Seen) => Object.fromEntries(Object.entries(one).filter(([field]) => field !== 'was'));
+    expect(pointed.readings.map(bare)).toEqual(plain.readings.map(bare));
+    // Non-vacuity: the reading really was handed to the pass and came back, the pointed one's
+    // point is valid and distinct from the figure beside it, and the plain one carries none.
+    expect(plain.readings).toHaveLength(1);
+    expect(plain.readings.every((one) => !('was' in one))).toBe(true);
+    expect(pointed.readings.some((one) => 'was' in one)).toBe(true);
+    expect(withWas(cached).was).toEqual({ left: 87, at: -30 * MIN });
   });
 });

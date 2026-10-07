@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
+import type { Seen, StoredReading } from '../src/budgets/readings.ts';
 import type { Caller } from '../src/caller.ts';
 import type { Io } from '../src/io.ts';
 import { rulesText } from '../src/launch/rules.ts';
+import { updateState } from '../src/state.ts';
 
 /** The seven-rule message the Codex 0.160.0 and Cursor 2026.10.01 captures were typed with,
  *  as today's `rulesText` composes it: 17 lines and 1194 characters. Only the first own-rule
@@ -79,6 +81,37 @@ export function wordWrap(text: string, width: number): string[] {
     rows.push(row);
   }
   return rows;
+}
+
+/** § 5's point on a reading in memory: the figure seven points higher, half an hour before the
+ *  reading it belongs to moved — `93` where the figure is 100, so the point always stands
+ *  distinct from the figure beside it. */
+export function withWas(seen: Seen): Seen {
+  const left = seen.left === 100 ? 93 : Math.min(100, seen.left + 7);
+  return { ...seen, was: { left, at: seen.changedAt - 30 * 60_000 } };
+}
+
+/** The same point the way a state file holds it: the reading of § 5's shape, its `at` an ISO
+ *  string, as `store` writes it. */
+function storedWithWas(reading: StoredReading): StoredReading {
+  const left = reading.left === 100 ? 93 : Math.min(100, reading.left + 7);
+  return { ...reading, was: { left, at: new Date(Date.parse(reading.changedAt) - 30 * 60_000).toISOString() } };
+}
+
+/** § 5's state-file injector: every reading the state holds gains a valid point, through the
+ *  state's own door. Returns how many records it touched, so a scenario whose output must not
+ *  move can assert the injection actually happened rather than passing over an empty cache. */
+export function injectWas(dir: string): number {
+  let touched = 0;
+  updateState(dir, (state) => {
+    const budgets = state.budgets ?? {};
+    for (const [key, reading] of Object.entries(budgets)) {
+      budgets[key] = storedWithWas(reading);
+      touched += 1;
+    }
+    state.budgets = budgets;
+  });
+  return touched;
 }
 
 export function testIo(cwd: string, caller?: Caller): TestIo {
