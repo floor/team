@@ -79,7 +79,7 @@ function live(over: Over = {}, drop: string[] = []): Live {
   return { running: true, agents, workspaces: agents.map((one) => ({ id: one.workspace, label: one.name ?? '' })), screens };
 }
 
-const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
+const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapTotal: 9e9, swapFree: 8e9, swapUsed: 1e9 };
 
 const budgetReports = (result: PassResult) => result.reports.filter((report) => report.key.startsWith('budget:'));
 const shown = (result: PassResult) => budgetReports(result).map((report) => `${report.text} (${report.to})`);
