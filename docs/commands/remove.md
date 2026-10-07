@@ -4,7 +4,10 @@ Takes one seat out of the team: asks it to exit, waits for its pane to come back
 closes its workspace, and edits the file so the seat is not started again. `--keep` leaves the seat
 in the file as `stopped: true` instead of taking it out. A seat that is busy — working, blocked at a
 prompt, already showing its own exit question, showing a screen the profile does not recognise,
-or holding unsent text — is left as it is, unless its owner abandons it. Every other seat, and
+or holding unsent text — is left as it is, unless its owner abandons it. One busy-looking seat is
+not: a seat whose CLI has already left its pane — a screen the profile does not recognise, with
+the pane's own shell as its foreground process — has nothing to ask, so its workspace is closed,
+nothing is typed, and the removal proceeds with no `--abandon`. Every other seat, and
 the session, are left alone.
 
 ## Synopsis
@@ -15,7 +18,9 @@ the session, are left alone.
 
 Reads the team file, the session's state (`.agents/team.state.json`, for a temporary seat's record),
 herdr: whether the session runs, its agents, each pane's screen and status, and the pane's
-foreground processes, which is how it knows the CLI has really exited, and the approval store:
+foreground processes, which is how it knows the CLI has really exited — the one reading `down`
+shares: a screen the profile does not recognise has the pane's own shell read for by pid, which
+is what calls a seat whose CLI has already left — and the approval store:
 stopping a seat and editing the file are changes the owner approves first. Without an approval in
 force — never approved, a record from before records were signed, or one the verification refused —
 nothing is stopped and nothing is written, with the one-line repair every command prints.
@@ -72,7 +77,9 @@ included. A delegated run that proceeds is attributed in the log before its effe
     claude-beacon: stopped
     removed claude-beacon
 
-The seat's stop is the plan `down` prints for a seat, with its notes; the last line says what was
+The seat's stop is the plan `down` prints for a seat, with its notes — a seat whose CLI had
+already left its pane prints `<seat>: its CLI had already exited; closed` in that place, nothing
+typed; the last line says what was
 done with the file:
 
 | Last line | Meaning |
@@ -122,7 +129,7 @@ with the text named, in the refusal below.
 | `team remove: <seat> is working; left as it is` | 1 |
 | `team remove: <seat> is blocked at a prompt, which team never answers` | 1 |
 | `team remove: <seat> sits at its own exit question; left as it is (team remove <seat> --abandon closes it)` | 1 |
-| `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` (the owner) or `… left as it is (the owner can close it: team remove <seat> --abandon)` (a coordinator or the operator) | 1 |
+| `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` (the owner) or `… left as it is (the owner can close it: team remove <seat> --abandon)` (a coordinator or the operator) — not printed when the pane's foreground process is its own shell: the CLI has already left, and the seat is removed without being asked | 1 |
 | `team remove: <seat> holds unsent text in its input box; left as it is` | 1 |
 | `team remove: <seat> holds this CLI's exit text (<exit>) unsent in its input box; left as it is (the owner sends it or clears it in its pane)` | 1 |
 | ``team remove: no launch profile for `<cli>`; left as it is`` | 1 |

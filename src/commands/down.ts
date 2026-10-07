@@ -11,6 +11,7 @@ import {
   agentStatus,
   paneForeground,
   paneRead,
+  paneShellBack,
   sendKey,
   sessionDelete,
   sessionRunning,
@@ -47,6 +48,11 @@ export type DownSources = {
   status(session: string, pane: string): string | null;
   /** Foreground argv0 names, or null when the pane can't be read. */
   foreground(session: string, pane: string): string[] | null;
+  /** Whether the pane's foreground process is the pane's own shell — the pid reading, never
+   *  argv0 alone: a script's child shell shares the pane shell's argv0 and is not it. Said
+   *  only for a screen the profile does not recognise, to call a seat whose CLI has already
+   *  exited what it is. Absent keeps every such screen unknown, exactly as before. */
+  shellBack?(session: string, pane: string): boolean | null;
   now(): Date;
   sleep?(ms: number): Promise<void>;
   /** Approval store home. The real command uses the owner's home. */
@@ -121,6 +127,7 @@ export const realSources: DownSources = {
   screenText: (session, pane) => paneRead(pane, 200, aim(session)) ?? undefined,
   status: (session, pane) => agentStatus(pane, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
+  shellBack: (session, pane) => paneShellBack(pane, aim(session)),
   now: () => new Date(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   home: homedir(),
@@ -157,6 +164,16 @@ export function stateOf(status: string, screen: Screen): DownSeat['state'] {
   if (status === 'idle' || status === 'done') return 'free';
   if (status === 'working' || status === 'blocked') return status;
   return 'unknown';
+}
+
+/** The state reading `down` and `remove` share, one seat at a time: a screen the profile does
+ *  not recognise is "exited", not "unknown", when the pane's foreground process is its own
+ *  shell — the CLI has already left, so the seat is closed without being asked. The shell is
+ *  said by pid, never by argv0 alone (a script's child shell shares the pane shell's argv0);
+ *  a pane that cannot be read, or whose foreground is another program, keeps the unknown. */
+export function seatState(status: string, screen: Screen, shellBack: () => boolean | null): DownSeat['state'] {
+  const state = stateOf(status, screen);
+  return state === 'unknown' && shellBack() === true ? 'exited' : state;
 }
 
 /** What `typeExit` may do to one pane, so `down` and `remove` share the whole sequence and the
@@ -555,7 +572,9 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     const cli = cliFor(agent.name);
     const profile = profileFor(cli);
     const shown = sources.screen(session, agent.pane, cli);
-    const state = stateOf(agent.status, shown);
+    // `exited` needs the pane read only when the screen alone cannot say: the call is the
+    // reading's, never the plan's.
+    const state = seatState(agent.status, shown, () => sources.shellBack?.(session, agent.pane) ?? null);
     // An unsent box that holds exactly the profile's exit text — an earlier run typed it and
     // never confirmed it — is named as such either way: the profile's one clearing key decides
     // whether this run empties it and asks again (the plan's run step) or the owner does (its

@@ -273,6 +273,43 @@ describe('down --dry-run', () => {
     });
   });
 
+  test('a seat whose CLI had already exited is closed without being asked, whatever else the run carries', () => {
+    // No profile is needed for the close, no `--abandon` either: the reading that classified
+    // the seat said the CLI is gone, so the plan never reaches the profile lookup.
+    const gone = { ...seat('w1', 'exited'), cli: 'unknown' };
+    const plain = downPlan({ session: 's', seats: [gone], extra: 0, watchPid: null, keep: [] });
+    expect(plain.map((step) => step.do && 'do' in step.do ? step.do.do : step.kind)).toEqual(['close', 'stop']);
+    expect(plain[0]).toEqual({
+      kind: 'run',
+      argv: ['herdr', '--session', 's', 'workspace', 'close', 'w1'],
+      note: 'its CLI had already exited; nothing was typed',
+      do: { do: 'close', seat: 'w1', workspace: 'w1', line: 'its CLI had already exited; closed' },
+    });
+    // An abandoned run closes it the same way, with the same line — the exited close is the
+    // one close `--abandon` adds nothing to.
+    const abandoned = downPlan({
+      session: 's',
+      seats: [gone],
+      extra: 0,
+      watchPid: null,
+      keep: [],
+      abandon: true,
+      closeUnasked: true,
+      unasked: 'team down --abandon closes it',
+    });
+    expect(abandoned[0]).toEqual(plain[0]);
+    expect(formatPlan(plain)).toBe(
+      [
+        '+ herdr --session s workspace close w1',
+        '    (its CLI had already exited; nothing was typed)',
+        '+ herdr session stop s',
+        '    (stopped, then cleared: the session this run stopped, so a later `up` starts from the beginning)',
+        'dry run: nothing was run',
+        '',
+      ].join('\n'),
+    );
+  });
+
   test.each([
     ['working', 'w1: is working (`--wait` waits for it); left running'],
     ['blocked', 'w1: is blocked at a prompt, which `team` never answers; left running'],

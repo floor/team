@@ -46,6 +46,15 @@ describe('a pane back at its shell', () => {
     expect(shellBackOf(body('zsh-script.json'))).toBe(false);
   });
 
+  test('the pane the CLI left is back at its shell, captured right after a hand-typed /exit', () => {
+    // The capture this file's README names: the pane's own shell is the foreground process
+    // again, its pid `shell_pid`, the group the shell's — the reading that calls a seat
+    // whose CLI already exited what it is.
+    const parsed = body('zsh-after-exit.json');
+    expect(parsed.type).toBe('pane_process_info');
+    expect(shellBackOf(parsed)).toBe(true);
+  });
+
   test("an herdr that can't say reads null, never a guess", () => {
     expect(shellBackOf(null)).toBeNull();
     expect(shellBackOf({})).toBeNull();

@@ -607,6 +607,31 @@ describe('team remove', () => {
     expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
   });
 
+  test('a seat whose CLI had already exited is removed without --abandon, and nothing is typed', async () => {
+    // The same unknown screen, but the pane's own shell is the foreground process — the
+    // capture zsh-after-exit.json. The refusal the unknown screen earns is gone: the CLI is
+    // not there to be asked, so the workspace closes and the removal proceeds.
+    const made = world({ kind: 'unknown' }, 'idle');
+    made.sources.shellBack = () => true;
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(0);
+    expect(io.out).toContain('worker: its CLI had already exited; closed\n');
+    expect(io.out).toContain('removed worker\n');
+    expect(made.typed).toEqual([]);
+    expect(made.keys).toEqual([]);
+    expect(made.closed).toEqual(['w1']);
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+    // A pane that cannot be read keeps the refusal: only the pid reading says exited.
+    writeFileSync(file, FILE);
+    const unreadable = world({ kind: 'unknown' }, 'idle');
+    unreadable.sources.shellBack = () => null;
+    unreadable.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const refused = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], refused, unreadable.sources)).toBe(1);
+    expect(refused.err).toContain('shows a screen the profile does not recognise');
+  });
+
   test('a Cursor queue screen is working: the seat is left and nothing is typed', async () => {
     // The screen is a real queue fixture, read through the profile: a turn with
     // follow-ups waiting on it is working, so its pane never gets the exit text.

@@ -1054,7 +1054,9 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           break;
         }
         host.drop(op.seat);
-        finish(op.seat, 'stopped');
+        // `line` names a close that stopped nothing — today the one case is a seat whose CLI
+        // had already exited, whose workspace closes without anything being typed into it.
+        finish(op.seat, op.line ?? 'stopped');
         break;
       }
       case 'kill': {

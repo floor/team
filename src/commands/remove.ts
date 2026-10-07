@@ -16,11 +16,11 @@ import type { Command, Io } from '../io.ts';
 import { reportedLiveAgent } from '../launch/agent.ts';
 import { executePlan } from '../launch/execute.ts';
 import type { Host } from '../launch/execute.ts';
-import { downPlan, type DownSeat } from '../launch/plan.ts';
+import { downPlan, type DownSeat, type LeftState } from '../launch/plan.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock } from '../state.ts';
-import { paneStillRunning, realSources as downSources, stateOf, typeExit, type DownSources } from './down.ts';
+import { paneStillRunning, realSources as downSources, seatState, typeExit, type DownSources } from './down.ts';
 import { boxHoldsText } from '../launch/deliver.ts';
 import { removeRulesFile } from '../launch/rules-file.ts';
 import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
@@ -65,7 +65,7 @@ function delegateRefused(io: { stderr(text: string): void }, verdict: { text: st
   return 1;
 }
 
-const LEFT: Record<Exclude<DownSeat['state'], 'free'>, string> = {
+const LEFT: Record<LeftState, string> = {
   working: 'is working; left as it is',
   blocked: 'is blocked at a prompt, which team never answers',
   unknown: 'shows a screen the profile does not recognise; left as it is',
@@ -229,7 +229,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   const cli = declared?.cli ?? team.seats.find((seat) => seat.name === temporary?.like)?.cli ?? '';
   if (agent) {
     const screen = sources.screen(session, agent.pane, cli);
-    const where = stateOf(agent.status, screen);
+    const where = seatState(agent.status, screen, () => sources.shellBack?.(session, agent.pane) ?? null);
     // A box that holds exactly the profile's exit text — an earlier run typed it and never
     // confirmed it — is cleared with the profile's one key inside the stop, and the removal
     // then proceeds as on an empty box. The same box on a CLI with no key is named for the
@@ -238,7 +238,9 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     const holdsExit = where === 'unsent' && profile !== null
       && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));
     const clearable = holdsExit && profile?.exitClear !== null;
-    if (where !== 'free' && !abandon && !clearable) {
+    // An `exited` seat is not refused: its CLI is gone, nothing is asked, and the stop below
+    // closes its workspace. Every other not-free seat keeps its refusal.
+    if (where !== 'free' && where !== 'exited' && !abandon && !clearable) {
       // The unknown screen is the one a seat can sit on for good: no state ever frees it, and
       // only the owner may abandon it, so the refusal names that way out. The owner gets the
       // command itself; anyone else is told whose it is. A framed exit question already on
@@ -305,7 +307,7 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
 
     if (agent) {
       const screen = sources.screen(session, agent.pane, cli);
-      const where = stateOf(agent.status, screen);
+      const where = seatState(agent.status, screen, () => sources.shellBack?.(session, agent.pane) ?? null);
       const profile = profileFor(cli);
       const exitInBox = where === 'unsent' && profile !== null && profile.exitClear !== null
         && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));

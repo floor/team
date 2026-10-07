@@ -11,7 +11,7 @@ import { rulesOf } from '../../src/launch/rules.ts';
 import { rulesFileHash, rulesFilePath, rulesFilePathOf, writeRulesFile } from '../../src/launch/rules-file.ts';
 import { approvalStanding } from '../../src/store/store.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
-import { paneStillRunning, runDown, type DownSources } from '../../src/commands/down.ts';
+import { paneStillRunning, runDown, seatState, type DownSources } from '../../src/commands/down.ts';
 import { runUp, type UpSources } from '../../src/commands/up.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { installKey } from '../../src/store/keys.ts';
@@ -780,10 +780,88 @@ describe('team down', () => {
     expect(run).toMatchObject({ code: 0, out: 'session acme-web is not running: nothing to stop\n' });
   });
 
+  test('a seat the pane read says is back at its shell is closed without a key, and the session stops', async () => {
+    // The screen the profile does not recognise — the CLI's leftover transcript under a bare
+    // shell prompt — and the pane's foreground process the pane's own shell: the capture
+    // zsh-after-exit.json is this reading. Nothing is typed; the workspace closes; the line
+    // says the CLI had already exited.
+    const typed: string[] = [];
+    const closed: string[] = [];
+    let stopped = false;
+    let deleted = false;
+    // Herdr keeps listing a stopped session as running until it is cleared; the run reads it
+    // again before the clear, so the stand-in flips once the stop lands.
+    let running = true;
+    const run = await down([], OWNER, {
+      agents: () => [agent('deepseek-acme', 'idle')],
+      screen: () => ({ kind: 'unknown' }),
+      shellBack: () => true,
+      sessionRunning: () => running,
+      launch: {
+        typeText: (_session, _pane, text) => { typed.push(text); return true; },
+        sendKey: () => true,
+        pressEnter: () => true,
+        agentPanes: () => [],
+        closeWorkspace: (_session, workspace) => { closed.push(workspace); return true; },
+        stopSession: () => { stopped = true; running = false; return true; },
+        deleteSession: () => { deleted = true; return true; },
+        kill: () => true,
+        sleep: async () => {},
+        now: () => NOW,
+      },
+    });
+    expect(run.code).toBe(0);
+    expect(run.out).toContain('deepseek-acme: its CLI had already exited; closed\n');
+    expect(run.out).toContain('session acme-web: stopped and cleared\n');
+    expect(typed).toEqual([]);
+    expect(closed).toEqual(['deepseek-acme']);
+    expect(stopped && deleted).toBe(true);
+  });
+
+  test('a pane that cannot be read, or one with another program in front, keeps the unknown line', async () => {
+    for (const answer of [null, false] as const) {
+      const dry = await down(['--dry-run'], OWNER, {
+        agents: () => [agent('deepseek-acme', 'idle')],
+        screen: () => ({ kind: 'unknown' }),
+        shellBack: () => answer,
+      });
+      expect(dry.code).toBe(0);
+      expect(dry.out).toContain('deepseek-acme: shows a screen the profile does not recognise; left running\n');
+      expect(dry.out).toContain('  skip session acme-web: not stopped, 1 agent left in it\n');
+      expect(dry.out).not.toContain('workspace close deepseek-acme');
+    }
+  });
+
+  test('the pane is read for the shell only when the screen alone cannot say', async () => {
+    let asked = 0;
+    await down(['--dry-run'], OWNER, {
+      agents: () => [agent('deepseek-acme', 'idle')],
+      screen: () => ({ kind: 'idle' }),
+      shellBack: () => { asked++; return true; },
+    });
+    expect(asked).toBe(0);
+  });
+
   test('a pane back at its shell is not the seat any more', () => {
     expect(paneStillRunning(['claude'], ['claude'])).toBe(true);
     expect(paneStillRunning(['zsh'], ['claude'])).toBe(false);
     expect(paneStillRunning([], ['claude'])).toBe(false);
     expect(paneStillRunning(null, ['claude'])).toBe(true);
+  });
+
+  test('the state reading down and remove share calls a shell-back pane exited, nothing else', () => {
+    // The capture's reading: a screen the profile does not recognise, and the pane's own
+    // shell in front — `exited`. Every other state is the screen's own, unchanged.
+    expect(seatState('idle', { kind: 'unknown' }, () => true)).toBe('exited');
+    expect(seatState('idle', { kind: 'unknown' }, () => null)).toBe('unknown');
+    expect(seatState('idle', { kind: 'unknown' }, () => false)).toBe('unknown');
+    // A reading that cannot say, and a foreground that is another program, keep today's word.
+    expect(seatState('idle', { kind: 'idle' }, () => true)).toBe('free');
+    expect(seatState('idle', { kind: 'unsent' }, () => true)).toBe('unsent');
+    expect(seatState('idle', { kind: 'permission' }, () => true)).toBe('blocked');
+    // Herdr's own status is not asked when the screen is one it can name — and a stale
+    // "working" under an unrecognised screen is still the shell reading's to call.
+    expect(seatState('working', { kind: 'idle' }, () => true)).toBe('working');
+    expect(seatState('working', { kind: 'unknown' }, () => true)).toBe('exited');
   });
 });

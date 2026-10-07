@@ -71,7 +71,7 @@ export type Op =
       workspace?: string;
       unasked?: string;
     }
-  | { do: 'close'; seat: string; workspace: string }
+  | { do: 'close'; seat: string; workspace: string; line?: string }
   | { do: 'kill'; pid: number }
   | { do: 'stop'; session: string };
 
@@ -419,8 +419,9 @@ export interface DownSeat {
   cli: string;
   pane: string;
   workspace: string;
-  /** What the watch's reading says of the seat: only a free seat is stopped. */
-  state: 'free' | 'working' | 'blocked' | 'unknown' | 'unsent';
+  /** What the watch's reading says of the seat: only a free seat is stopped. `exited` is the
+   *  one state that closes without being asked: the CLI has already left the pane. */
+  state: 'free' | 'working' | 'blocked' | 'unknown' | 'unsent' | 'exited';
   /** The seat's box holds exactly the profile's exit text — left by an earlier run that never
    *  confirmed it — and the profile carries the key that empties the box. */
   exitInBox?: boolean;
@@ -446,7 +447,11 @@ export interface DownInput {
   unasked?: string;
 }
 
-const LEFT: Record<Exclude<DownSeat['state'], 'free'>, string> = {
+/** The states a not-free seat can be left running in. `exited` is not among them: its
+ *  workspace is closed, so no line of this map can name it. */
+export type LeftState = Exclude<DownSeat['state'], 'free' | 'exited'>;
+
+const LEFT: Record<LeftState, string> = {
   working: 'is working (`--wait` waits for it)',
   blocked: 'is blocked at a prompt, which `team` never answers',
   unknown: 'shows a screen the profile does not recognise',
@@ -466,6 +471,19 @@ export function downPlan(input: DownInput): Step[] {
         text: `${seat.name}: left running; only the owner stops the coordinator's or the operator's seat`,
       });
       left++;
+      continue;
+    }
+    if (seat.state === 'exited') {
+      // The CLI has already left the pane: its foreground process is the pane's own shell, so
+      // there is nothing to ask and no key is ever sent — the reading that classified the seat
+      // said so, not this plan. The workspace closes as `--abandon` closes every seat that
+      // cannot be asked, and the line says what happened instead of "stopped".
+      steps.push({
+        kind: 'run',
+        argv: herdr(session, 'workspace', 'close', seat.workspace),
+        note: 'its CLI had already exited; nothing was typed',
+        do: { do: 'close', seat: seat.name, workspace: seat.workspace, line: 'its CLI had already exited; closed' },
+      });
       continue;
     }
     const profile = profileFor(seat.cli);

@@ -3,9 +3,13 @@
 Stops the team: asks every running seat to exit, closes its workspace, stops the watch, and stops
 the herdr session. A seat is only asked when it is free — idle, with an empty input box — so a
 working, blocked or half-typed seat is left running and named. A seat already showing its own
-framed exit question is blocked the same way: this run sends no key to it. A box that holds
-exactly this CLI's exit text — an earlier run typed it and never confirmed it — is not half-typed
-text: when the profile carries the one key that empties a box, the text is cleared with it and the exit typed
+framed exit question is blocked the same way: this run sends no key to it. A seat whose CLI has
+already left its pane is not asked either: a screen the profile does not recognise, with the
+pane's own shell as its foreground process, is a CLI that is gone — its workspace is closed with
+nothing typed and no `--abandon` needed, and the line says its CLI had already exited. A box that
+holds exactly this CLI's exit text — an earlier run typed it and never confirmed it — is not
+half-typed text: when the profile carries the one key that empties a box, the text is cleared
+with it and the exit typed
 fresh, and when it does not, the seat is left running with the text named. `--dry-run` prints the
 plan and runs nothing.
 
@@ -21,7 +25,9 @@ launched with and the CLI the state records for it: what runs, not what the file
 Reads the team file, this machine's approval store, the session's state
 (`.agents/team.state.json`, for the watch's pid and the seats' recorded panes and CLIs), and herdr:
 whether the session is running, its agents, each pane's screen and status, and each pane's
-foreground processes. Writes `.agents/team.state.json` (the seats it stopped are dropped),
+foreground processes — a pane whose screen the profile does not recognise has its own shell read
+for by pid, which is what calls a seat whose CLI has already left. Writes
+`.agents/team.state.json` (the seats it stopped are dropped),
 `.agents/team.log`, and, through herdr: the exit in each pane, the workspaces it closes, the watch's
 process, the session it stops and the stopped session it clears — its own, just stopped. A
 temporary seat's rules file goes with it, out of the project state folder; a declared seat's stays
@@ -95,7 +101,11 @@ gate asked and answered, the refusal standing unless the gate placed the caller.
     watch: stopped
     session beacon: stopped and cleared
 
-A seat it stops prints `<seat>: stopped`; the watch prints `watch: stopped`; the session prints
+A seat it stops prints `<seat>: stopped`; a seat whose CLI had already left its pane prints
+`<seat>: its CLI had already exited; closed` — its workspace is closed the way `--abandon` closes
+every seat that cannot be asked, but no key is ever sent and no `--abandon` is passed, because
+the pane's own shell was its foreground process and there was nothing left to ask. The watch
+prints `watch: stopped`; the session prints
 `session <session>: stopped and cleared` — herdr keeps a stopped session listed until it is
 deleted, so `down` clears the one it has itself just stopped, retrying while herdr still reports
 it running, and the next `up` starts from the beginning. A clear that does not happen prints
@@ -122,7 +132,7 @@ clearing key runs first — and a dry run says so in a note under its typing ste
 | `<seat>: sits at its own exit question; left running (team down --abandon closes it)` | the pane already shows this CLI's framed exit question, left by an earlier stop: this run sends no key |
 | `<seat>: holds unsent text in its input box; left running` | half-typed text would be lost |
 | `<seat>: holds this CLI's exit text (<exit>) unsent in its input box; left running (the owner sends it or clears it in its pane)` | the box holds an earlier run's unconfirmed exit text, and the CLI has no key that empties a box |
-| `<seat>: shows a screen the profile does not recognise; left running` | nothing is typed into a screen it can't read |
+| `<seat>: shows a screen the profile does not recognise; left running` | nothing is typed into a screen it can't read — unless the pane's foreground process is its own shell, when the CLI has already left and the seat is closed as above |
 | `<seat>: the state doesn't say which CLI it runs, so it can't be asked to exit; left running (`team down --abandon` closes it without typing)` | the state predates the CLI record and the file no longer names the seat: nothing links its pane to a profile, so its owner closes it |
 | `<seat>: left running; only the owner stops the coordinator's or the operator's seat` | a seat's own call, and this is the coordinator or the operator |
 | `session default: herdr's default session is never stopped` | the default session is herdr's own |
