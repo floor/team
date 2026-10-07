@@ -171,7 +171,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `remove.another-pane` | `remove` | 1 | the state records another pane for the caller's seat | `team remove worker` |
 | `remove.busy` | `remove` | 1 | the seat is not free | `team remove worker` |
 | `remove.caller` | `remove` | 1 | the caller may not change the team | `team remove worker` |
-| `remove.coordinator` | `remove` | 1 | only the owner removes the coordinator's or the operator's seat | `team remove lead` |
+| `remove.coordinator` | `remove` | 1 | only the owner removes the orchestrator's or the operator's seat | `team remove lead` |
 | `remove.default-session` | `remove` | 1 | the session can't be "default" | `team remove worker --session default` |
 | `remove.delegate` | `remove` | 1 | the caller is not the approved delegate | `team remove worker` |
 | `remove.delegate-approval` | `remove` | 1 | delegation needs a verified approval | `team remove worker` |
@@ -242,6 +242,9 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `up.file-invalid` | `up` | 2 | the team file can't be parsed | `team up --file team.yaml` |
 | `up.invocation` | `up` | 2 | the invocation can't be read | `team up extra` |
 | `up.not-a-repo` | `up` | 2 | not inside a git repository | `team up` |
+| `usage.block` | `usage` | 0 | the project's block printed | `team usage` |
+| `usage.outside` | `usage` | 0 | no project block to show from this folder; the notes say why | `team usage` |
+| `usage.invocation` | `usage` | 2 | the invocation can't be read | `team usage extra` |
 | `watch.stopped` | `watch` | 0 | the watch ran and stopped | `team watch` |
 | `watch.already` | `watch` | 1 | a watch already runs | `team watch` |
 | `watch.file-owner` | `watch` | 1 | --file is the owner's | `team watch --file .agents/team.yaml` |

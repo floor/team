@@ -19,7 +19,7 @@ import { gitEnv, testIo } from '../helpers.ts';
 import type { Machine } from '../../src/watch/machine.ts';
 
 const NOW = new Date('2026-10-03T14:02:00Z');
-const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
+const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapTotal: 9e9, swapFree: 8e9, swapUsed: 1e9 };
 const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
 const PERMISSION = 'Do you want to proceed?\n1. Yes\n';
 
@@ -453,7 +453,7 @@ describe('team add', () => {
     expect(missing.err).toContain('no seat');
     const seat = testIo(project, { kind: 'seat', name: 'stranger', pane: 'w1:p1' });
     expect(await runAdd(['worker'], seat, sources(world()))).toBe(1);
-    expect(seat.err).toContain('only the owner, the coordinator or the operator');
+    expect(seat.err).toContain('only the owner, the orchestrator or the operator');
     expect(readFileSync(join(project, '.agents', 'team.yaml'), 'utf8')).toContain('stopped: true');
   });
 
@@ -468,7 +468,7 @@ describe('team add', () => {
     const before = logged();
     expect(await runAdd(['worker'], io, sources(world()))).toBe(1);
     expect(io.out).toBe('');
-    expect(io.err).toBe('team add: only the owner, the coordinator or the operator runs it; this call is stranger\n');
+    expect(io.err).toBe('team add: only the owner, the orchestrator or the operator runs it; this call is stranger\n');
     expect(logged()).toBe(before);
   });
 
@@ -902,7 +902,7 @@ describe('team add delegated', () => {
       delegateGate: () => { asked += 1; return passed; },
     }));
     expect(code).toBe(1);
-    expect(io.err).toBe('team add: only the owner, the coordinator or the operator runs it; this call is pilot\n');
+    expect(io.err).toBe('team add: only the owner, the orchestrator or the operator runs it; this call is pilot\n');
     expect(asked).toBe(0);
   });
 

@@ -3,12 +3,15 @@ import type { Caller } from '../src/caller.ts';
 import type { Io } from '../src/io.ts';
 import { rulesText } from '../src/launch/rules.ts';
 
-/** The seven-rule message the Codex 0.160.0 and Cursor 2026.10.01 captures were typed with:
- *  `rulesText` for a sample team file, 17 lines and 1193 characters (see the two fixtures
- *  READMEs). Its shape is what `team` composes for a seat; no real seat or person is in it. */
+/** The seven-rule message the Codex 0.160.0 and Cursor 2026.10.01 captures were typed with,
+ *  as today's `rulesText` composes it: 17 lines and 1194 characters. Only the first own-rule
+ *  line differs from what the captures hold — the lead's name, `orchestrator` now — while the
+ *  file's own rules keep the spelling those fixtures keep (17 lines, 1193 characters in the
+ *  two fixture READMEs). Its shape is what `team` composes for a seat; no real seat or person
+ *  is in it. */
 export const SAMPLE_RULES = rulesText(
   {
-    coordinator: 'coordinator',
+    orchestrator: 'coordinator',
     rules: [
       'Do not use tools or edit files.',
       'Do not change trust or configuration.',

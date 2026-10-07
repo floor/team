@@ -436,7 +436,7 @@ export interface DownInput {
   extra: number;
   /** The watch's pid, when its state records one that is alive. */
   watchPid: number | null;
-  /** The caller's own seat, and the coordinator's and operator's, when a seat calls. */
+  /** The caller's own seat, and the orchestrator's and operator's, when a seat calls. */
   keep: readonly string[];
   /** The owner is closing workspaces that are not free, without typing into them. */
   abandon?: boolean;
@@ -463,7 +463,7 @@ export function downPlan(input: DownInput): Step[] {
     if (input.keep.includes(seat.name)) {
       steps.push({
         kind: 'skip',
-        text: `${seat.name}: left running; only the owner stops the coordinator's or the operator's seat`,
+        text: `${seat.name}: left running; only the owner stops the orchestrator's or the operator's seat`,
       });
       left++;
       continue;

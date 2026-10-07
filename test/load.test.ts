@@ -138,7 +138,13 @@ describe('loading the file', () => {
 });
 
 // The git-project inputs of the tests above, run through this tree and through origin/main.
-// The fallback is the no-repository case only, so these stay identical.
+// The fallback is the no-repository case only, so these stay identical — save the lead's own
+// refusal, which the field replaced with the key: the two trees name it differently, and both
+// texts read as one marker here so the parity of everything else stays the assertion.
+const LEAD_REFUSAL = /^(coordinator is required|the file has no seat that leads: put `leads: true` on one seat)$/;
+// The seats-required refusal names the lead's seat too: main says `coordinator's`, this tree
+// says `orchestrator's` (the word moved in 0.3.3). One marker, as above.
+const SEATS_REFUSAL = /^seats is required: at least the (coordinator|orchestrator)'s and the operator's seat$/;
 test('a git project loads as the main tree loads it', async () => {
   const { pathToFileURL } = await import('node:url');
   const repo = execFileSync('git', ['rev-parse', '--show-toplevel'], {
@@ -173,7 +179,12 @@ test('a git project loads as the main tree loads it', async () => {
     const shape = (result: { ok: boolean; root?: string; path?: string; errors?: { message: string }[] }) =>
       result.ok
         ? { ok: true as const, root: result.root, path: result.path }
-        : { ok: false as const, path: result.path, errors: result.errors?.map((problem) => problem.message) };
+        : {
+            ok: false as const,
+            path: result.path,
+            errors: result.errors?.map((problem) =>
+              problem.message.replace(LEAD_REFUSAL, 'the lead is required').replace(SEATS_REFUSAL, 'the seats are required')),
+          };
     const same = (cwd: string, options?: { file?: string }) => {
       expect(shape(loadTeamFile(cwd, options))).toEqual(shape(main.loadTeamFile(cwd, options)));
     };

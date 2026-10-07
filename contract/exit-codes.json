@@ -1160,7 +1160,7 @@
       "code": 1,
       "command": "remove",
       "id": "remove.coordinator",
-      "meaning": "only the owner removes the coordinator's or the operator's seat",
+      "meaning": "only the owner removes the orchestrator's or the operator's seat",
       "trigger": "team remove lead"
     },
     {
@@ -1652,6 +1652,27 @@
       "id": "up.not-a-repo",
       "meaning": "not inside a git repository",
       "trigger": "team up"
+    },
+    {
+      "code": 0,
+      "command": "usage",
+      "id": "usage.block",
+      "meaning": "the project's block printed",
+      "trigger": "team usage"
+    },
+    {
+      "code": 0,
+      "command": "usage",
+      "id": "usage.outside",
+      "meaning": "no project block to show from this folder; the notes say why",
+      "trigger": "team usage"
+    },
+    {
+      "code": 2,
+      "command": "usage",
+      "id": "usage.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team usage extra"
     },
     {
       "code": 0,

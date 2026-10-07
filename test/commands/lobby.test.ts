@@ -2590,7 +2590,7 @@ describe('the upgrade from 0.2.1', () => {
 describe('rules text', () => {
   test('assert exact rules text for shared and worktree seats, byte-identical otherwise', () => {
     const baseInput: RulesInput = {
-      coordinator: 'lead',
+      orchestrator: 'lead',
       rules: ['Never break CI.'],
       signature: { commit: 'Agent: Claude Opus 5.5 · implementer', pullRequest: '**Agent:** Claude Opus 5.5 · implementer', commitPosition: 'trailer' },
       workspace: { mode: 'worktree', protected: ['.'], branch: '{kind}/{task}', cwd: root },
@@ -2614,7 +2614,7 @@ describe('rules text', () => {
     // Full exact output assertion for shared seat
     expect(sharedRules).toEqual([
       'End every commit message and every pull request body with your signature, given below.',
-      'Never stop at a question: tell the coordinator (lead) in one line and keep working.',
+      'Never stop at a question: tell the orchestrator (lead) in one line and keep working.',
       'Never run `team trust` or `team approve`, and never edit `trust:` in the team file.',
       'In a protected checkout, never switch the branch, reset or commit.',
       'Never break CI.',

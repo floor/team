@@ -21,6 +21,10 @@ import { claudeBox, testIo } from '../helpers.ts';
 import { emptySession, updateState } from '../../src/state.ts';
 
 const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8');
+/** The notice the example fixture carries: it still spells the lead `coordinator:`, on line 5. */
+const WARNING = 'team approve: warning, line 5: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read\n';
+/** The same notice as doctor prints it, among the file's own lines. */
+const FILE_WARNING = 'warn  the file, line 5: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read';
 const FILE = ['--file', '.agents/team.yaml'];
 const OWNER: Caller = { kind: 'owner' };
 const COORDINATOR: Caller = { kind: 'seat', name: 'claude-coordinator-acme', pane: 'w1:p1', session: 'acme-web' };
@@ -93,7 +97,7 @@ describe('team approve', () => {
     const run = await approve([], caller);
     expect(run.code).toBe(1);
     expect(run.err).toBe(
-      `team approve: only the owner approves a team file, from a terminal outside herdr; this call is ${described}\n`,
+      `${WARNING}team approve: only the owner approves a team file, from a terminal outside herdr; this call is ${described}\n`,
     );
     expect(run.asked).toEqual([]);
     expect(existsSync(store())).toBe(false);
@@ -112,7 +116,7 @@ describe('team approve', () => {
   test('refuses input already waiting on the terminal before writing anything', async () => {
     const run = await approve([], OWNER, '5', 'waiting');
     expect(run.code).toBe(1);
-    expect(run.err).toBe('team approve: input was waiting on the terminal: run `team approve` on its own line\n');
+    expect(run.err).toBe(`${WARNING}team approve: input was waiting on the terminal: run \`team approve\` on its own line\n`);
     expect(run.asked).toEqual([]);
     expect(existsSync(store())).toBe(false);
   });
@@ -121,7 +125,7 @@ describe('team approve', () => {
     const run = await approve([], OWNER, '5', 'unreadable');
     expect(run.code).toBe(1);
     expect(run.err).toBe(
-      'team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written\n',
+      `${WARNING}team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written\n`,
     );
     expect(run.asked).toEqual([]);
     expect(existsSync(store())).toBe(false);
@@ -131,7 +135,7 @@ describe('team approve', () => {
     const run = await approve([], COORDINATOR, '5', 'waiting');
     expect(run.code).toBe(1);
     expect(run.err).toBe(
-      'team approve: only the owner approves a team file, from a terminal outside herdr; this call is claude-coordinator-acme\n',
+      `${WARNING}team approve: only the owner approves a team file, from a terminal outside herdr; this call is claude-coordinator-acme\n`,
     );
     expect(existsSync(store())).toBe(false);
   });
@@ -139,7 +143,7 @@ describe('team approve', () => {
   test.each([['4'], ['yes'], [''], [null]])('--confirm writes nothing when the owner types %p', async (answer) => {
     const run = await approve(['--confirm'], OWNER, answer);
     expect(run.code).toBe(1);
-    expect(run.err).toBe('team approve: not approved; nothing was written\n');
+    expect(run.err).toBe(`${WARNING}team approve: not approved; nothing was written\n`);
     expect(existsSync(store())).toBe(false);
   });
 
@@ -167,7 +171,7 @@ describe('team approve', () => {
     test('input waiting: no key folder, no record, no generation, no log', async () => {
       const run = await approve([], OWNER, '5', 'waiting');
       expect(run.code).toBe(1);
-      expect(run.err).toBe('team approve: input was waiting on the terminal: run `team approve` on its own line\n');
+      expect(run.err).toBe(`${WARNING}team approve: input was waiting on the terminal: run \`team approve\` on its own line\n`);
       expectNothingWritten();
     });
 
@@ -175,7 +179,7 @@ describe('team approve', () => {
       const run = await approve([], OWNER, '5', 'unreadable');
       expect(run.code).toBe(1);
       expect(run.err).toBe(
-        'team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written\n',
+        `${WARNING}team approve: the terminal this call runs on could not be read to check for input waiting on it; nothing was written\n`,
       );
       expectNothingWritten();
     });
@@ -184,7 +188,7 @@ describe('team approve', () => {
       const run = await approve([], COORDINATOR);
       expect(run.code).toBe(1);
       expect(run.err).toBe(
-        'team approve: only the owner approves a team file, from a terminal outside herdr; this call is claude-coordinator-acme\n',
+        `${WARNING}team approve: only the owner approves a team file, from a terminal outside herdr; this call is claude-coordinator-acme\n`,
       );
       expect(run.asked).toEqual([]);
       expectNothingWritten();
@@ -193,7 +197,7 @@ describe('team approve', () => {
     test('a rejected --confirm answer: no key folder, no record, no generation, no log', async () => {
       const run = await approve(['--confirm'], OWNER, '4');
       expect(run.code).toBe(1);
-      expect(run.err).toBe('team approve: not approved; nothing was written\n');
+      expect(run.err).toBe(`${WARNING}team approve: not approved; nothing was written\n`);
       expectNothingWritten();
     });
 
@@ -254,7 +258,7 @@ describe('team approve', () => {
     test('--confirm asks nothing and writes nothing', async () => {
       const refused = await approveWithSpies(['--confirm']);
       expect(refused.code).toBe(1);
-      expect(refused.err).toBe(refusal());
+      expect(refused.err).toBe(`${WARNING}${refusal()}`);
       expect(refused.asked).toEqual([]);
       expectNothingWritten();
     });
@@ -262,7 +266,7 @@ describe('team approve', () => {
     test('the default path the same: the terminal is never read for a run that cannot sign', async () => {
       const refused = await approveWithSpies([]);
       expect(refused.code).toBe(1);
-      expect(refused.err).toBe(refusal());
+      expect(refused.err).toBe(`${WARNING}${refusal()}`);
       expect(refused.probed()).toBe(0);
       expect(refused.asked).toEqual([]);
       expectNothingWritten();
@@ -406,6 +410,7 @@ describe('team doctor', () => {
     expect(run.err).toBe('');
     expect(run.out).toBe(
       [
+        FILE_WARNING,
         'ok    the file is the one the owner approved (approval #1, 2026-10-03, key fe21ef6293de)',
         'ok    herdr 0.7.1',
         '--    session acme-web is not running',
@@ -423,7 +428,7 @@ describe('team doctor', () => {
         `  - ${join(base, 'worktrees', 'acme-web')}`,
         `~/.config/team/lobby is the machine lobby, where every seat starts now; ${root} is the project root, replacing "."; `
           + `${join(base, 'worktrees', 'acme-web')} is the folder workspace.path "../worktrees/{repo}/{task}" places worktrees in, replacing "../worktrees/acme-web/*"`,
-        'team doctor: nothing missing, 2 warnings',
+        'team doctor: nothing missing, 3 warnings',
         '',
       ].join('\n'),
     );
@@ -482,7 +487,7 @@ describe('team doctor', () => {
     expect(out.out).toContain('MISS  deepseek-acme: its launch line starts `team-deepseek`, which is not on the PATH\n');
     expect(out.out).toContain('MISS  deepseek-acme-2: its launch line starts `team-deepseek`, which is not on the PATH\n');
     expect(out.out).toContain(
-      'team doctor: 4 missing, 2 warnings: 4 of them block `up` and `add`\n',
+      'team doctor: 4 missing, 3 warnings: 4 of them block `up` and `add`\n',
     );
     expect(out.code).toBe(1);
   });
@@ -561,7 +566,7 @@ describe('team doctor', () => {
       'warn  deepseek-acme: the launch runs team-deepseek, not claude, and names no model: if the launcher chooses the model, say so with model_from: launcher\n',
     );
     expect(run.out).not.toContain('cursor-other: the launch names no model this version knows');
-    expect(run.out).toEndWith('team doctor: 1 missing, 3 warnings: 1 of them block `up` and `add`\n');
+    expect(run.out).toEndWith('team doctor: 1 missing, 4 warnings: 1 of them block `up` and `add`\n');
   });
 
   test("a launch whose model is not the file's warns", async () => {
@@ -586,7 +591,7 @@ describe('team doctor', () => {
     const none = await doctor({ sessionRunning: () => true });
     expect(none.out).toContain('MISS  no watch has run for session acme-web: start `team watch`\n');
     // The watch is the only missing thing and it blocks nothing: the line ends with the counts.
-    expect(none.out).toContain('team doctor: 1 missing, 2 warnings\n');
+    expect(none.out).toContain('team doctor: 1 missing, 3 warnings\n');
     expect(none.out).not.toContain('block `up` and `add`');
 
     const state = (heartbeat: string) =>
@@ -604,7 +609,7 @@ describe('team doctor', () => {
     expect(stale.out).toContain(
       "MISS  the watch's heartbeat is 12 min old (two intervals are 4 min): start `team watch`\n",
     );
-    expect(stale.out).toContain('team doctor: 1 missing, 2 warnings\n');
+    expect(stale.out).toContain('team doctor: 1 missing, 3 warnings\n');
     expect(stale.code).toBe(1);
   });
 
@@ -768,7 +773,7 @@ describe('team down', () => {
   test('a seat other than the coordinator or the operator stops nothing', async () => {
     const run = await down([], WORKER);
     expect(run.code).toBe(1);
-    expect(run.err).toContain('team down: only the owner, the coordinator or the operator stops the team; this call is deepseek-acme\n');
+    expect(run.err).toContain('team down: only the owner, the orchestrator or the operator stops the team; this call is deepseek-acme\n');
     expect(run.out).toBe('');
   });
 
@@ -804,13 +809,13 @@ describe('team down', () => {
     );
     const lead = await down(['--dry-run'], COORDINATOR);
     expect(lead.out).toStartWith(
-      "  skip claude-coordinator-acme: left running; only the owner stops the coordinator's or the operator's seat\n+ herdr --session acme-web pane run deepseek-acme:p1 /exit\n",
+      "  skip claude-coordinator-acme: left running; only the owner stops the orchestrator's or the operator's seat\n+ herdr --session acme-web pane run deepseek-acme:p1 /exit\n",
     );
     expect(lead.out).not.toContain('! down would refuse');
 
     const worker = await down(['--dry-run'], WORKER);
     expect(worker.out).toStartWith(
-      '! down would refuse: only the owner, the coordinator or the operator stops the team; this call is deepseek-acme\n',
+      '! down would refuse: only the owner, the orchestrator or the operator stops the team; this call is deepseek-acme\n',
     );
   });
 

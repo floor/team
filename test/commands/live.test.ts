@@ -19,7 +19,7 @@ import { readScreen, type Screen } from '../../src/watch/screen.ts';
 import { agyMismatchedFrame, claudeBox, testIo } from '../helpers.ts';
 
 const EXAMPLE = readFileSync(join(import.meta.dir, '../fixtures/example.yaml'), 'utf8').replace('parked: true', 'stopped: true');
-const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
+const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapTotal: 9e9, swapFree: 8e9, swapUsed: 1e9 };
 const FILE = ['--file', '.agents/team.yaml'];
 const NOW = new Date('2026-10-03T14:02:00Z');
 const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
@@ -1691,7 +1691,7 @@ describe('team up, live', () => {
       io,
       sources(
         {
-          machine: () => ({ loadPerCore: 9, memoryFree: 80, diskFree: 1e12, swapFree: 1e12, swapUsed: 0 }),
+          machine: () => ({ loadPerCore: 9, memoryFree: 80, diskFree: 1e12, swapTotal: 2e12, swapFree: 1e12, swapUsed: 0 }),
         },
         made,
       ),

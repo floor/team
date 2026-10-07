@@ -136,7 +136,8 @@ describe('the owner\'s doctor runs each approved check once', () => {
     expect(io.out).toContain('ok    the check for openai reads weekly 40% used');
     expect(io.out).toContain('ok    the check for deepseek reads 6.20 USD');
     expect(code).toBe(0);
-    expect(io.out).toContain('team doctor: nothing missing, 0 warnings');
+    // The file's own notice, for the legacy `coordinator:` spelling, is the one warning.
+    expect(io.out).toContain('team doctor: nothing missing, 1 warning');
   });
 
   test('a check edited after its approval is not run, and is reported as changed', async () => {
@@ -160,7 +161,7 @@ describe('the owner\'s doctor runs each approved check once', () => {
     expect(io.out).toContain('warn  the check for openai failed or timed out; that account reads unknown');
     expect(io.out).toContain('ok    the check for deepseek reads 6.20 USD');
     expect(code).toBe(0);
-    expect(io.out).toContain('team doctor: nothing missing, 1 warning');
+    expect(io.out).toContain('team doctor: nothing missing, 2 warnings');
   });
 
   test('output that breaks the contract reads unknown, as a warning', async () => {

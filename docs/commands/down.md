@@ -31,20 +31,20 @@ file that no longer validates is replaced by the last copy that did, with a noti
 
 ## Who may run it
 
-The owner, the coordinator's seat, the operator's seat, and the approved delegate (below). The
+The owner, the orchestrator's seat, the operator's seat, and the approved delegate (below). The
 seat is that name's, in a session
 this project's state records — the file's session, or one the state records the caller's pane in —
 on the pane the state records for that name in that session: a seat of another session, or a pane
-merely renamed to the coordinator's or the operator's name, is refused — and so is a seat the state
+merely renamed to the orchestrator's or the operator's name, is refused — and so is a seat the state
 records no pane for, or records on another pane than this call is on; those two refusals name the
 seat and the repair. What that proves is placement, and no more: the state file is in the project,
-and a process of the same user that writes its own pane there under the coordinator's name, and
+and a process of the same user that writes its own pane there under the orchestrator's name, and
 renames its pane, passes. The check guards a mistaken agent, not a hostile process running as the
 same user. `--file` and `--session` are the owner's alone, from a terminal outside herdr: a
 non-owner aiming either is refused before the flagged file or session is read at all.
 A seat's
 own call is refused by the `--abandon` flag, which only the owner may use. A seat that may stop the
-team never stops the coordinator's or the operator's seat — only the owner does.
+team never stops the orchestrator's or the operator's seat — only the owner does.
 
 ## The approved delegate
 
@@ -54,12 +54,12 @@ rule above is applied exactly as it is without a `delegates` section, and only w
 does the delegate gate read the live team file directly — never the remembered copy and never the
 last copy that validated, so a file that does not load carries no delegate and the rules above
 stand. A caller that rule accepts keeps its own authority whatever the section says: the owner's
-call never reaches the gate, and neither does the coordinator's or the operator's. A gate refusal
+call never reaches the gate, and neither does the orchestrator's or the operator's. A gate refusal
 takes the place of the rule above, in the gate's own words, wherever that rule would have refused:
 a real run exits 1, and a dry run prints `! down would refuse: <the gate's text>` and then the
 plan. A dry run exits as the real run would, and changes nothing.
 
-A delegated run stops the whole team — the coordinator's and the operator's seats included — and
+A delegated run stops the whole team — the orchestrator's and the operator's seats included — and
 never abandons. `--abandon`, `--session` and `--file` are the owner's: a delegate that passes one
 is refused with the gate's text, and the flagged path or session is never read. The run judges the
 file's own session, never one the caller's placement records, and it remembers nothing of the file
@@ -124,7 +124,7 @@ clearing key runs first — and a dry run says so in a note under its typing ste
 | `<seat>: holds this CLI's exit text (<exit>) unsent in its input box; left running (the owner sends it or clears it in its pane)` | the box holds an earlier run's unconfirmed exit text, and the CLI has no key that empties a box |
 | `<seat>: shows a screen the profile does not recognise; left running` | nothing is typed into a screen it can't read |
 | `<seat>: the state doesn't say which CLI it runs, so it can't be asked to exit; left running (`team down --abandon` closes it without typing)` | the state predates the CLI record and the file no longer names the seat: nothing links its pane to a profile, so its owner closes it |
-| `<seat>: left running; only the owner stops the coordinator's or the operator's seat` | a seat's own call, and this is the coordinator or the operator |
+| `<seat>: left running; only the owner stops the orchestrator's or the operator's seat` | a seat's own call, and this is the orchestrator or the operator |
 | `session default: herdr's default session is never stopped` | the default session is herdr's own |
 
 It prints `session <session> is not running: nothing to stop` and exits 0 when there is nothing to
@@ -138,7 +138,7 @@ stop at all.
 | `team down: line <n>: <message>` | 2 |
 | `team down: herdr doesn't answer; is it installed and running?` | 2 |
 | `team down: the agents of session <session> can't be read` | 2 |
-| `team down: only the owner, the coordinator or the operator stops the team; this call is <caller>` | 1 |
+| `team down: only the owner, the orchestrator or the operator stops the team; this call is <caller>` | 1 |
 | `team down: only the owner abandons a team, from a terminal outside herdr` | 1 |
 | `team down: --file is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
 | `team down: --session is the owner's, from a terminal outside herdr; this call is <caller>` | 1 |
@@ -221,19 +221,19 @@ dry run: nothing was run
 exit 0
 ```
 
-An implementer's seat is not the coordinator's: it cannot stop the team.
+An implementer's seat is not the orchestrator's: it cannot stop the team.
 
 ```console caller=claude-beacon
 $ team down ; echo "exit $?"
-team down: only the owner, the coordinator or the operator stops the team; this call is claude-beacon
+team down: only the owner, the orchestrator or the operator stops the team; this call is claude-beacon
 exit 1
 ```
 
-The coordinator's own call stops the team but never its own seat, so the session stays up:
+The orchestrator's own call stops the team but never its own seat, so the session stays up:
 
 ```console caller=claude-keeper
 $ team down --dry-run ; echo "exit $?"
-  skip claude-keeper: left running; only the owner stops the coordinator's or the operator's seat
+  skip claude-keeper: left running; only the owner stops the orchestrator's or the operator's seat
 + herdr --session beacon pane run w2:p1 /exit
   wait until claude-beacon's pane is back at its shell (30 s at most); on a time-out it is left as it is
 + herdr --session beacon workspace close w2

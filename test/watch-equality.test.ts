@@ -1,6 +1,8 @@
 // The modular watch core must report, nudge and remember exactly what the pass it replaced did.
 // `oldPass` below is src/watch/pass.ts as it stood before the checks were split into modules
-// (the merge of #45), copied in unchanged and used by this file alone. Every scenario runs both
+// (the merge of #45), copied in unchanged — except the one field read the lead's rename moved,
+// `team.coordinator` to `team.orchestrator`, the same value under the section's canonical name —
+// and used by this file alone. Every scenario runs both
 // implementations over the same fixtures, step for step, and demands equal PassResults and equal
 // pending state — for a team file without `watch.checks`, which is every fixture here.
 import { describe, expect, test } from 'bun:test';
@@ -91,7 +93,7 @@ function oldPass(
       continue;
     }
     known.add(agent.pane);
-    const lead = name === team.coordinator || name === team.operator;
+    const lead = name === team.orchestrator || name === team.operator;
     const screen = readScreen(cli, live.screens[agent.pane]);
     const quiet = agent.status === 'idle' || agent.status === 'done';
     const working = agent.status === 'working' || screen.kind === 'working';
@@ -282,9 +284,9 @@ const permission = 'Bash command\n\n  chmod +x run.sh\n\nDo you want to proceed?
 const question = 'Which branch should this start from?\n\n❯ 1. main\n  2. next\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n';
 const busy = `✶ Transfiguring… (9m 34s · ↓ 64.5k tokens)\n\n${RULE}\n❯ \n${RULE}\n${STATUS}\n`;
 
-const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
-const tight: Machine = { loadPerCore: 6.5, memoryFree: 10, diskFree: 5e9, swapFree: 0.3e9, swapUsed: 23e9 };
-const blind: Machine = { loadPerCore: null, memoryFree: null, diskFree: null, swapFree: null, swapUsed: null };
+const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapTotal: 9e9, swapFree: 8e9, swapUsed: 1e9 };
+const tight: Machine = { loadPerCore: 6.5, memoryFree: 10, diskFree: 5e9, swapTotal: 23.3e9, swapFree: 0.3e9, swapUsed: 23e9 };
+const blind: Machine = { loadPerCore: null, memoryFree: null, diskFree: null, swapTotal: null, swapFree: null, swapUsed: null };
 const MIN = 60_000;
 
 function agent(name: string | null, workspace: string, status: string, kind = 'claude'): HerdrAgent {

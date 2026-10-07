@@ -316,8 +316,10 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
   let toolState: Record<string, ToolState> = { ...spec.tools };
   const machine = (): Machine =>
     machineKind === 'calm'
-      ? { loadPerCore: 0.4, memoryFree: 62, diskFree: 120e9, swapFree: 8e9, swapUsed: 0 }
-      : { loadPerCore: 1.2, memoryFree: 8, diskFree: 120e9, swapFree: 8e9, swapUsed: 0 };
+      ? { loadPerCore: 0.4, memoryFree: 62, diskFree: 120e9, swapTotal: 16e9, swapFree: 8e9, swapUsed: 0 }
+      : machineKind === 'tight'
+        ? { loadPerCore: 1.2, memoryFree: 8, diskFree: 120e9, swapTotal: 16e9, swapFree: 8e9, swapUsed: 0 }
+        : { loadPerCore: 0.4, memoryFree: 62, diskFree: 120e9, swapTotal: 1e9, swapFree: 0.5e9, swapUsed: 0.5e9 };
 
   const action = {
     sessionState: () => (herdr === 'none' ? null : sessionState()),
@@ -485,6 +487,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
     sessionRunning: () => (herdr === 'none' ? null : herdr === 'running'),
     now,
     home,
+    machine,
   });
 
   const downSources = (): DownSources => ({
@@ -569,6 +572,7 @@ export function createWorld(input: { team: TeamFile | null; spec: Spec; root: st
         standing: standingSource(home),
         now,
         home,
+        machine,
       };
     },
     watchSources(): WatchSources {

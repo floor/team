@@ -13,6 +13,9 @@ const TEAM_FILE = fileURLToPath(new URL('../../.github/team.yaml', import.meta.u
 const PANE = 'forbidden pattern \\bw[0-9A-Z]+:p[0-9]+\\b';
 const SESSION = 'forbidden pattern \\bfloor-[0-9a-f]{2}\\b';
 
+/** The notice this repository's own team file carries: it still spells the lead `coordinator:`. */
+const WARNING = 'team check: warning: line 7: `coordinator:` is now `leads: true` on the lead\'s seat, and is still read\n';
+
 /** A signature of the file's coordinator seat, which passes the signature rule. */
 const SIGNATURE = 'Agent: Claude Opus 5.5 · coordinator';
 const PR_SIGNATURE = '**Agent:** Claude Opus 5.5 · coordinator';
@@ -86,7 +89,7 @@ describe('a pane id in this repository', () => {
         'team check: 1 commit checked: 1 commit refused',
         '',
       ].join('\n'),
-      stderr: '',
+      stderr: WARNING,
     });
   });
 
@@ -102,7 +105,7 @@ describe('a pane id in this repository', () => {
         'team check: 1 commit checked, 1 pull request body checked: the pull request body refused',
         '',
       ].join('\n'),
-      stderr: '',
+      stderr: WARNING,
     });
   });
 });
@@ -119,7 +122,7 @@ describe('an internal session name in this repository', () => {
         'team check: 1 commit checked: 1 commit refused',
         '',
       ].join('\n'),
-      stderr: '',
+      stderr: WARNING,
     });
   });
 
@@ -135,7 +138,7 @@ describe('an internal session name in this repository', () => {
         'team check: 1 commit checked, 1 pull request body checked: the pull request body refused',
         '',
       ].join('\n'),
-      stderr: '',
+      stderr: WARNING,
     });
   });
 });
@@ -143,6 +146,6 @@ describe('an internal session name in this repository', () => {
 describe('the near misses', () => {
   test('words, versions and the public names are not pane ids or session names', async () => {
     const result = await runOne('misses');
-    expect(result).toEqual({ code: 0, stdout: 'team check: 1 commit checked: ok\n', stderr: '' });
+    expect(result).toEqual({ code: 0, stdout: 'team check: 1 commit checked: ok\n', stderr: WARNING });
   });
 });

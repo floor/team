@@ -19,6 +19,7 @@ import { runInit } from '../src/commands/init.ts';
 import { runRemove, type RemoveSources } from '../src/commands/remove.ts';
 import { runStatus, type StatusSources } from '../src/commands/status.ts';
 import { runUp, type Launch, type UpSources } from '../src/commands/up.ts';
+import { runUsage } from '../src/commands/usage.ts';
 import { runWatch, type WatchSources } from '../src/commands/watch.ts';
 import { runWorktree, type WorktreeSources } from '../src/commands/worktree.ts';
 import { main, reportFailure, version } from '../src/cli.ts';
@@ -43,7 +44,7 @@ const NOW = new Date('2026-10-04T09:00:00Z');
 const owner = { kind: 'owner' } as const;
 const other = { kind: 'seat', name: 'other', pane: 'w9:p1' } as const;
 const leadSeat = { kind: 'seat', name: 'lead', pane: 'w1:p1', session: 'acme' } as const;
-const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapFree: 8e9, swapUsed: 1e9 };
+const fine: Machine = { loadPerCore: 1, memoryFree: 50, diskFree: 200e9, swapTotal: 9e9, swapFree: 8e9, swapUsed: 1e9 };
 const hot: Machine = { ...fine, loadPerCore: 9 };
 const quiet: Live = { running: false, agents: [], workspaces: [], screens: {} };
 const IDLE = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Opus 5.5\n`;
@@ -512,7 +513,7 @@ scene('add.file-owner', async (place) => {
 });
 scene('add.caller', async (place) => {
   write(place, TWO);
-  return show(await added(place, ['worker'], other, addSources(place)), 'only the owner, the coordinator or the operator');
+  return show(await added(place, ['worker'], other, addSources(place)), 'only the owner, the orchestrator or the operator');
 });
 scene('add.no-pane', async (place) => {
   write(place, TWO);
@@ -725,7 +726,7 @@ const ADD_GATE_REFUSALS: [suffix: string, sentence: string, needle: string][] = 
   ['delegate-drift', 'delegation needs the approved file: the file is not the approved one (seat worker changed): run `team approve`', 'not the approved one'],
   ['delegate-evidence', "delegation cannot verify its placement or seats: herdr doesn't answer", 'placement or seats'],
   ['delegate-placement', 'the approved delegate must be an external non-seat pane', 'non-seat pane'],
-  ['delegate', 'only the owner, the coordinator, the operator or the approved delegate runs it; this call is pilot', 'or the approved delegate runs it'],
+  ['delegate', 'only the owner, the orchestrator, the operator or the approved delegate runs it; this call is pilot', 'or the approved delegate runs it'],
   ['delegate-command', 'the approved delegate main/w1:p1 may not run `add`; its approved commands are remove', 'may not run'],
 ];
 for (const [suffix, sentence, needle] of ADD_GATE_REFUSALS) {
@@ -990,7 +991,7 @@ scene('down.dry-run', async (place) => {
 });
 scene('down.caller', async (place) => {
   write(place, TEAM);
-  return show(await down(place, [], other, downSources({ sessionRunning: () => true, agents: () => [] })), 'only the owner, the coordinator or the operator');
+  return show(await down(place, [], other, downSources({ sessionRunning: () => true, agents: () => [] })), 'only the owner, the orchestrator or the operator');
 });
 scene('down.file-owner', async (place) => {
   write(place, TWO);
@@ -1026,7 +1027,7 @@ const delegated = (id: string, text: string) => downSources({ sessionRunning: ()
 
 scene('down.delegate', async (place) => {
   write(place, DELEGATED);
-  const text = 'only the owner, the coordinator, the operator or the approved delegate stops the team; this call is other';
+  const text = 'only the owner, the orchestrator, the operator or the approved delegate stops the team; this call is other';
   const ran = await down(place, [], other, delegated('down.delegate', text));
   if (compareDry) expect(ran.out).toContain(`! down would refuse: ${text}\n`);
   else expect(ran.err).toBe(`team down: ${text}\n`);
@@ -1197,7 +1198,7 @@ scene('remove.file-owner', async (place) => {
 });
 scene('remove.caller', async (place) => {
   write(place, TWO);
-  return show(await removed(place, ['worker'], other, downSources({ home: place.home })), 'only the owner, the coordinator or the operator');
+  return show(await removed(place, ['worker'], other, downSources({ home: place.home })), 'only the owner, the orchestrator or the operator');
 });
 scene('remove.no-pane', async (place) => {
   write(place, TWO);
@@ -1230,7 +1231,7 @@ scene('remove.coordinator', async (place) => {
   updateState(join(place.root, '.agents'), (state) => {
     (state.sessions.acme ??= emptySession()).seats.lead = { stage: 'ready', pane: 'w1:p1' };
   });
-  return show(await removed(place, ['lead'], leadSeat, downSources({ home: place.home })), 'only the owner removes the coordinator');
+  return show(await removed(place, ['lead'], leadSeat, downSources({ home: place.home })), 'only the owner removes the orchestrator');
 });
 scene('remove.no-seat', async (place) => {
   write(place, TWO);
@@ -1358,7 +1359,7 @@ const REMOVE_GATE_REFUSALS: [suffix: string, sentence: string, needle: string][]
   ['delegate-drift', 'delegation needs the approved file: the file is not the approved one (seat worker changed): run `team approve`', 'not the approved one'],
   ['delegate-evidence', "delegation cannot verify its placement or seats: herdr doesn't answer", 'placement or seats'],
   ['delegate-placement', 'the approved delegate must be an external non-seat pane', 'non-seat pane'],
-  ['delegate', 'only the owner, the coordinator, the operator or the approved delegate runs it; this call is pilot', 'or the approved delegate runs it'],
+  ['delegate', 'only the owner, the orchestrator, the operator or the approved delegate runs it; this call is pilot', 'or the approved delegate runs it'],
   ['delegate-command', 'the approved delegate main/w1:p1 may not run `remove`; its approved commands are add', 'may not run'],
 ];
 for (const [suffix, sentence, needle] of REMOVE_GATE_REFUSALS) {
@@ -1673,6 +1674,21 @@ scene('watch.stopped', async (place) => {
   return show(await watched(place, [], owner), 'stopped');
 });
 
+async function used(place: Place, argv: string[], caller: Caller = owner): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runUsage(argv, io, { home: place.home, now: () => NOW }), out: io.out, err: io.err };
+}
+
+// The block is reached by a seat as well: `usage` gates no caller.
+scene('usage.block', async (place) => {
+  write(place, TEAM);
+  return show(await used(place, [], other), 'team acme');
+});
+// No file at all — the bare folder is the outside case; a file that exists and does not load is
+// the same exit with the loader's own message as the note.
+scene('usage.outside', async (place) => show(await used(place, []), 'no team file is found from this folder'), false);
+scene('usage.invocation', async (place) => show(await used(place, ['extra']), 'unexpected'));
+
 async function worktree(place: Place, argv: string[], caller: Caller = owner, sources?: WorktreeSources): Promise<Ran> {
   const io = testIo(place.root, caller);
   return { code: await runWorktree(argv, io, sources ?? worktreeSources(place)), out: io.out, err: io.err };
@@ -1695,7 +1711,7 @@ scene('worktree.file-owner', async (place) => {
 });
 scene('worktree.caller', async (place) => {
   approve(place, worktreeText());
-  return show(await worktree(place, ['new', 'task'], other), 'only the owner, the coordinator or the operator');
+  return show(await worktree(place, ['new', 'task'], other), 'only the owner, the orchestrator or the operator');
 });
 scene('worktree.no-pane', async (place) => {
   approve(place, worktreeText());

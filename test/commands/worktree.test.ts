@@ -133,7 +133,7 @@ describe('team worktree new', () => {
     expect((await run(['new', 'select-width', '--kind', 'fix'], lead)).code).toBe(0);
     const other = await run(['new', 'other-task', '--kind', 'fix'], { kind: 'seat', name: 'stranger', pane: 'w2:p1' });
     expect(other.code).toBe(1);
-    expect(other.err).toContain('only the owner, the coordinator or the operator');
+    expect(other.err).toContain('only the owner, the orchestrator or the operator');
   });
 
   test('--file is refused from a seat', async () => {
@@ -464,7 +464,7 @@ describe('team worktree and the approved copy', () => {
       .replace('\nseats:\n', '\nseats:\n  - role: coordinator\n    name: stranger\n    cli: claude-code\n    vendor: anthropic\n    model: Claude Opus\n    version: "5.5"\n    launch: claude --model claude-opus-5-5\n'));
     const promoted = await run(['new', 'select-width', '--kind', 'fix'], { kind: 'seat', name: 'stranger', pane: 'w2:p1' });
     expect(promoted.code).toBe(1);
-    expect(promoted.err).toBe('team worktree: only the owner, the coordinator or the operator runs it; this call is stranger\n');
+    expect(promoted.err).toBe('team worktree: only the owner, the orchestrator or the operator runs it; this call is stranger\n');
     expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(false);
 
     // The other way round: the approved copy's coordinator is still one after the file demotes her.
@@ -534,7 +534,7 @@ describe('team worktree and the approved copy', () => {
     edit(`${staff.replace('operator: clerk\n', 'operator: stranger\n')}${stranger}`);
     const io = await run(['new', 'select-width', '--kind', 'fix'], { kind: 'seat', name: 'stranger', pane: 'w2:p1' });
     expect(io.code).toBe(1);
-    expect(io.err).toBe('team worktree: only the owner, the coordinator or the operator runs it; this call is stranger\n');
+    expect(io.err).toBe('team worktree: only the owner, the orchestrator or the operator runs it; this call is stranger\n');
     expect(existsSync(join(base, 'worktrees', 'acme', 'select-width'))).toBe(false);
   });
 

@@ -12,6 +12,8 @@ export interface Ctx {
   top: Fields;
   /** The names of seats left out for their own problems, shared with the sections that name seats. */
   broken: Set<string>;
+  /** The seats the file marks with `leads: true`, in file order: the seats section sets this. */
+  leads: LeadMark[];
   /** Each section's value, set once the section has run. */
   values: Map<string, unknown>;
   /** Injected home for path validation. */
@@ -20,6 +22,13 @@ export interface Ctx {
   fs?: FsReader;
   /** The project root, when the caller knows it: trust containment is checked against it. */
   rootDir?: string;
+}
+
+/** A seat the file marks as its lead — `leads: true` — and the line the mark stands on. */
+export interface LeadMark {
+  /** The seat's name as the file writes it, before `count` is expanded. */
+  name: string;
+  line: number;
 }
 
 /** A section's value, once every section it names in `after` has run. */
@@ -34,8 +43,18 @@ export type JsonSchema = Record<string, unknown>;
 
 /** One top-level section of the team file, read and checked on its own. */
 export interface Section {
-  /** The top-level key; `watch.checks` names a line inside `watch`, not a key of its own. */
+  /**
+   * The section's name: the owner-section list and the approval digest, a difference line, the
+   * `after` references and the wave. `watch.checks` names a line inside `watch`, not a key of
+   * its own.
+   */
   name: string;
+  /**
+   * The top-level key the file may spell this section with, when it is not the canonical `name`:
+   * the old key a rename left accepted. It supplies the section's entry and the schema publishes
+   * it; everything order- and digest-shaped stays keyed by `name`.
+   */
+  key?: string;
   /** True when only the owner changes it: `team approve` fingerprints exactly these, in list order. */
   owner: boolean;
   /** The sections whose value this one reads; the validator runs it once those have run. */

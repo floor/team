@@ -30,13 +30,13 @@ seats the team has had, and, through herdr: the workspace, the launch, and the n
 
 ## Who may run it
 
-The owner, the coordinator's seat and the operator's seat. The seat is that name's, in a session
+The owner, the orchestrator's seat and the operator's seat. The seat is that name's, in a session
 this project's state records — the file's session, or one the state records the caller's pane in —
 on the pane the state records for that name in that session: a seat of another session, or a pane
-merely renamed to the coordinator's or the operator's name, is refused — and so is a seat the state
+merely renamed to the orchestrator's or the operator's name, is refused — and so is a seat the state
 records no pane for, or records on another pane than this call is on; those two refusals name the
 seat and the repair. What that proves is placement, and no more: the state file is in the project,
-and a process of the same user that writes its own pane there under the coordinator's name, and
+and a process of the same user that writes its own pane there under the orchestrator's name, and
 renames its pane, passes. The check guards a mistaken agent, not a hostile process running as the
 same user. `--file` and `--session` are the owner's alone, from a terminal outside herdr: a
 non-owner aiming either is refused before the flagged file or session is read at all. Everything `up`
@@ -123,8 +123,8 @@ run` — and makes nothing. A dry run exits as the real run would, and changes n
 | `team add: unknown option --x` / `team add: a seat name is required` / `team add: --like needs a value` (each with the usage) | 2 |
 | `team add: --like, --until and --worktree are for --temporary` | 2 |
 | `team add: line <n>: <message>` / `team add: <message>` | 2 |
-| `team add: only the owner, the coordinator or the operator runs it; this call is <caller>` | 1 |
-| `team add: only the owner, the coordinator, the operator or the approved delegate runs it; this call is <caller>` — the file names a delegate, and this call is not it | 1 |
+| `team add: only the owner, the orchestrator or the operator runs it; this call is <caller>` | 1 |
+| `team add: only the owner, the orchestrator, the operator or the approved delegate runs it; this call is <caller>` — the file names a delegate, and this call is not it | 1 |
 | ``team add: delegation needs a verified approval: <reason>`` / ``team add: delegation needs a readable approved copy: run `team approve` `` / ``team add: delegation needs the approved file: the file is not the approved one (<differences>): run `team approve` `` — the delegate gate, reading the same approval every other check reads | 1 |
 | ``team add: delegation cannot verify its placement or seats: <reason>`` | 1 |
 | `team add: the approved delegate must be an external non-seat pane` | 1 |
@@ -213,7 +213,7 @@ seats:
 agents: [claude-beacon]
 ```
 
-Only the implementer is up. A pane made by hand and renamed `claude-keeper` is not the coordinator:
+Only the implementer is up. A pane made by hand and renamed `claude-keeper` is not the orchestrator:
 the state records no pane for the seat, so nothing tells that shell apart from the seat, and every
 command that changes the team refuses it, naming the seat and the repair only the owner can make —
 the hand-started pane is closed, and `team up` starts the seat with a pane of its own:
@@ -224,7 +224,7 @@ team add: no pane is recorded for seat claude-keeper in this session: the owner 
 exit 1
 ```
 
-The coordinator's seat is in the file and nothing runs for it, which is
+The orchestrator's seat is in the file and nothing runs for it, which is
 `team status`'s `missing` and the repair it names:
 
 ```console
@@ -241,12 +241,12 @@ team add: claude-beacon is already running
 exit 1
 ```
 
-An implementer's seat is neither the coordinator's nor the operator's, so it adds nothing — not even
+An implementer's seat is neither the orchestrator's nor the operator's, so it adds nothing — not even
 itself:
 
 ```console caller=claude-beacon
 $ team add claude-keeper ; echo "exit $?"
-team add: only the owner, the coordinator or the operator runs it; this call is claude-beacon
+team add: only the owner, the orchestrator or the operator runs it; this call is claude-beacon
 exit 1
 ```
 

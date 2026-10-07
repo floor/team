@@ -20,7 +20,7 @@ test('the generated owner sections equal the hand-kept list, in order', () => {
     'rules',
     'identity',
     'workspace',
-    'coordinator',
+    'orchestrator',
     'operator',
     'session',
     'visibility',
@@ -79,6 +79,29 @@ describe('an approval written by main', () => {
     const checked = validateTeamFile(record().file);
     if (!checked.ok) throw new Error('unreachable: home() validated the same text');
     expect(approvalDifferences(checked.team, root, where)).toEqual([]);
+  });
+
+  // The record's sections map was written by a reader that called the lead's bucket
+  // `coordinator`; this reader compares `orchestrator`. The bucket the record lacks is
+  // refilled from the copy the record stores, so rewriting the file to the mark — the
+  // conversion a team will run once the key is gone — prints no line and needs no new
+  // approval.
+  test('a conversion to the mark prints no difference', () => {
+    const where = home();
+    const converted = record().file
+      .replace('coordinator: coordinator-seat\n', '')
+      .replace('    name: coordinator-seat\n', '    name: coordinator-seat\n    leads: true\n');
+    const checked = validateTeamFile(converted);
+    if (!checked.ok) throw new Error('the converted fixture does not validate; a behaviour change');
+    expect(checked.team.orchestrator).toBe('coordinator-seat');
+    expect(approvalDifferences(checked.team, root, where)).toEqual([]);
+  });
+
+  test('a lead move is the `orchestrator` difference', () => {
+    const where = home();
+    const checked = validateTeamFile(record().file.replace('coordinator: coordinator-seat', 'coordinator: operator-seat'));
+    if (!checked.ok) throw new Error('the moved fixture does not validate; a behaviour change');
+    expect(approvalDifferences(checked.team, root, where)).toEqual(['`orchestrator` changed']);
   });
 
   test('and the comparison is live: a watch edit still reads as a difference', () => {

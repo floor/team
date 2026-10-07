@@ -119,7 +119,7 @@ describe('the classes read apart', () => {
 });
 
 describe('who may change a running team', () => {
-  const team = { coordinator: 'claude-coordinator', operator: 'claude-operator' };
+  const team = { orchestrator: 'claude-coordinator', operator: 'claude-operator' };
   test('the owner, the coordinator and the operator', () => {
     expect(mayChangeTeam({ kind: 'owner' }, team)).toBe(true);
     expect(mayChangeTeam({ kind: 'seat', name: 'claude-coordinator', pane: 'w1:p1' }, team)).toBe(true);
@@ -137,7 +137,7 @@ describe('a caller is judged against the session and the pane it was placed in',
     expect(placeCaller(sources(seat))).toEqual({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1' });
   });
 
-  const team = { coordinator: 'codex-acme', operator: 'codex-acme' };
+  const team = { orchestrator: 'codex-acme', operator: 'codex-acme' };
   const where = { session: 'a', recordedPane: 'w2:p1' };
 
   test('a seat of another session is not the coordinator of this one', () => {

@@ -121,7 +121,7 @@ record. A ready seat the state records without its process identity, or with a s
 machine lobby, is left as it is too — only a relaunch repairs either — and its detail says so:
 `  already ready; left as it is; a relaunch records its process: team remove <seat> --keep, then
 team add <seat> (or team down, then team up, for the whole team)`, or the same words saying `a
-relaunch moves it into the lobby`. For a seat the file names as coordinator or operator, the detail
+relaunch moves it into the lobby`. For a seat the file names as orchestrator or operator, the detail
 offers only `team down, then team up (to restart the whole team)`.
 
 A command run in a folder that is not a git repository reads `.agents/team.yaml` in that folder,
@@ -274,7 +274,7 @@ is created for it — verifies the current screen with a fresh read, and enters 
 not a reason to launch again: nothing is created, the record kept, and the final record is
 `<seat>: left out: its waiting pane is gone`, with the team file's own repair under it on stderr —
 `team down` then `team up` (to restart the whole team) for a seat the file names as its
-coordinator or operator, `team remove <seat> --keep` then `team add <seat>` (or `team down` then
+orchestrator or operator, `team remove <seat> --keep` then `team add <seat>` (or `team down` then
 `team up` for the whole team) for any other. A pane that still exists but no longer holds the
 recorded process fails the same way, with `its waiting pane holds another process`. Neither
 `team down` nor `team remove` answers a prompt, and neither touches an agent it cannot name: a
@@ -297,13 +297,13 @@ closed from the record, and the run fails closed with `<seat>: left out: its wai
 process identity`, the team file's own repair under the record on stderr, beginning with the
 by-hand step first — answer or close its dialog in its pane for a pane the multiplexer lists under
 the seat's name, close that pane for any other — then run `team down` then
-`team up` (to restart the whole team) for a seat the file names as its coordinator or operator, or
+`team up` (to restart the whole team) for a seat the file names as its orchestrator or operator, or
 `team remove <seat> --keep` then `team add <seat>` (or `team down` then `team up` for the whole
 team) for any other, to establish one by a run. A stored classification is validated on the state's
 own read against the closed list above: anything else the file holds reads `unknown` in the record,
 the log line, the prompt, `team status` and `team doctor`.
 
-Under `dialogs.trust: coordinator`, a seat waiting at `trust` is also re-read on a tick: every
+Under `dialogs.trust: orchestrator`, a seat waiting at `trust` is also re-read on a tick: every
 prompt timeout and every return from `o` takes the lock and reads the state and the pane fresh,
 and follows what they show — a seat `team answer` made ready in the meantime, the
 `trust-sent-recovery` state it may have left behind (shown as
@@ -397,7 +397,7 @@ record it belongs to, as its meaning says.
 | `<seat>: waiting for owner (<classification>)` | the provisional record drawn while the seat's owner is asked, at a terminal (the pause, above); it is rewritten in place when the classification changes, and is not the seat's final record |
 | `<seat>: left out: skipped by owner` | the owner pressed `[s]`: the seat's workspace was closed without input and its launch state cleared, the `waiting` record with it |
 | `<seat>: left out: stopped cleanly` | the owner pressed `[q]` (or Ctrl-C) at this or an earlier seat, and this seat had no final record: a workspace this invocation created for it — not already ready or closed — was closed without input and its state cleared |
-| `<seat>: left out: its waiting pane is gone` / `<seat>: left out: its waiting pane holds another process` | a later `up` found the seat recorded waiting and its recorded pane no longer exists, or no longer holds the recorded process: nothing was created, nothing closed, the record kept; the repair under the record on stderr is the team file's own for this seat — `team down` then `team up` (to restart the whole team) for a coordinator or operator, `team remove <seat> --keep` then `team add <seat>` (or the whole team) for any other — and the owner answers or closes by hand first when the seat sits at a dialog, or its pane holds an agent `team` cannot name (above) |
+| `<seat>: left out: its waiting pane is gone` / `<seat>: left out: its waiting pane holds another process` | a later `up` found the seat recorded waiting and its recorded pane no longer exists, or no longer holds the recorded process: nothing was created, nothing closed, the record kept; the repair under the record on stderr is the team file's own for this seat — `team down` then `team up` (to restart the whole team) for an orchestrator or operator, `team remove <seat> --keep` then `team add <seat>` (or the whole team) for any other — and the owner answers or closes by hand first when the seat sits at a dialog, or its pane holds an agent `team` cannot name (above) |
 | `<seat>: left out: <reading>; its workspace did not close; left as it is` | the close of that workspace failed, with `<reading>` one of `trust`, `permission`, `question` or `vendor notice` — a run without a terminal closing it, or the pause's own close at the prompt: nothing claims it was closed, and the seat is left exactly as it was, its state kept — a later `up` resumes it |
 | `<seat>: left out: runs <model> <version>; the file says <model> <version>; left at launched, not named. Add <flag> <id> to its launch, or correct the file's model and version and run team approve` | the idle screen shows a different model than the file. The seat is not renamed and gets no rules; its pane stays open. The flag is that CLI's model flag, and the id is the one the profile maps to the file's model. When the profile knows no id, the line says `<id>` |
 | `<seat>: left out: its pane has been back at its shell for <n> s and shows no CLI prompt; left at launched` | herdr's process info says the pane's foreground program is back at its shell through three full polls on end, four readings, the screen matches no CLI shape, and the launch line's own echo is visible on the screen. A pane read before the line arrived, one whose echo scrolled away, one whose program is slow to draw, or a herdr that can't say (no shell process info), is waited out to the deadline — the end is never inferred from the screen's text, and a single reading can never reach the three polls. The workspace is kept, and the pane's last lines follow on stderr, under the record |

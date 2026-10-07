@@ -231,7 +231,7 @@ export function pass({
 
   for (const { name, cli, vendor, account, parked, stopped, seat } of seats) {
     const agent = live.agents.find((candidate) => candidate.name === name);
-    const lead = name === team.coordinator || name === team.operator;
+    const lead = name === team.orchestrator || name === team.operator;
     if (!agent) {
       delete memory.history[name];
       observations.push({

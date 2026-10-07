@@ -15,6 +15,7 @@ import { runRemove } from '../../src/commands/remove.ts';
 import { runRelease } from '../../src/commands/release.ts';
 import { runStatus } from '../../src/commands/status.ts';
 import { runUp } from '../../src/commands/up.ts';
+import { runUsage } from '../../src/commands/usage.ts';
 import { runWatch } from '../../src/commands/watch.ts';
 import { runWorktree } from '../../src/commands/worktree.ts';
 import type { Caller } from '../../src/caller.ts';
@@ -185,7 +186,8 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
     case 'down':
       return runDown(rest, io, world.downSources());
     case 'init':
-      return runInit(rest, io, fixture.home);
+      // No login is probed in a doc run: the skeleton's seat is claude-code's, deterministically.
+      return runInit(rest, io, fixture.home, undefined, { loggedIn: () => false });
     case 'remove':
       return runRemove(rest, io, world.removeSources());
     case 'release':
@@ -194,6 +196,8 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
       return runStatus(rest, io, world.statusSources());
     case 'up':
       return runUp(rest, io, world.upSources());
+    case 'usage':
+      return runUsage(rest, io, { home: fixture.home, now: () => new Date(spec.now) });
     case 'watch':
       return runWatch(rest, io, world.watchSources());
     case 'worktree':
@@ -251,7 +255,7 @@ function blockWorld(page: Page, block: Block): void {
   }
   if (block.attrs.machine) {
     const kind = block.attrs.machine;
-    if (kind !== 'calm' && kind !== 'tight') throw new Error(`machine="${kind}": it is calm or tight`);
+    if (kind !== 'calm' && kind !== 'tight' && kind !== 'small-swap') throw new Error(`machine="${kind}": it is calm, tight or small-swap`);
     world.setMachine(kind);
   }
   const tools = block.attrs.tools;
