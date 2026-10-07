@@ -321,11 +321,12 @@ export function modelFlagFinding(
   };
 }
 
-// The machine's own figures against the check in force, in the one case that can never pass
-// here: the check asks for more free swap than this machine has in total. `up` refuses on that
-// same comparison (`swapTotalProblem`), so the line is the refusal's own fact, told before it
-// happens. A check that merely fails right now is `up`'s refusal beside it and the watch's
-// finding; this report does not repeat that, and neither reading changes an exit.
+// The machine's own figures against the check in force, in the one case this reading cannot
+// meet: the check asks for more free swap than the machine has in total. `up` refuses on that
+// same comparison (`swapTotalProblem`), so the line tells the reading's own fact, in the reading's
+// own words — on macOS the total moves with pressure, and a later run reads one of its own. A
+// check that merely fails right now is `up`'s refusal beside it and the watch's finding; this
+// report does not repeat that, and neither reading changes an exit.
 export function machineFindings(team: TeamFile, root: string, sources: DoctorSources): Finding[] {
   const machine = sources.machine?.(root);
   if (!machine) return [];
