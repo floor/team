@@ -42,7 +42,9 @@ describe('a pane back at its shell', () => {
   });
 
   test('a program in front is not the shell, even when its argv0 is zsh', () => {
-    expect(shellBackOf(body('claude-plain.json'))).toBe(false);
+    // Two processes in front — caffeinate wrapping a live CLI — is a must-refuse, not a
+    // `false`: the reading only answers when the foreground is exactly one process.
+    expect(shellBackOf(body('claude-plain.json'))).toBeNull();
     expect(shellBackOf(body('zsh-script.json'))).toBe(false);
   });
 
@@ -66,5 +68,14 @@ describe('a pane back at its shell', () => {
     expect(
       shellBackOf({ process_info: { shell_pid: 1, foreground_processes: [{ pid: 2 }, { pid: null }] } }),
     ).toBeNull();
+  });
+
+  test('the shell beside anything else is not an exited pane, whatever the neighbour is', () => {
+    // The reviewer's input: the shell plus a second process must never read true, or a live
+    // CLI or helper beside a shell would close its workspace. One process, or none: `unknown`.
+    const shellPid = (processes: { pid?: unknown }[]) => ({ process_info: { shell_pid: 7, foreground_processes: processes } });
+    expect(shellBackOf(shellPid([{ pid: 7 }, { pid: 88 }]))).toBeNull();
+    expect(shellBackOf(shellPid([{ pid: 7 }, { pid: 7 }]))).toBeNull();
+    expect(shellBackOf(shellPid([{ pid: 88 }, { pid: 7 }]))).toBeNull();
   });
 });

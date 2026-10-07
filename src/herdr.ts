@@ -89,22 +89,24 @@ export function paneForegroundCwd(pane: string, session?: string): string | null
   }
 }
 
-// Whether a pane's foreground program is back to the shell, from a `pane process-info` result:
-// true when a foreground process is the pane's own shell process, false when none is, and null
-// when herdr can't say — no process info, no `shell_pid` (an older herdr), an empty or
-// unreadable list. Never read from argv0 alone: a `zsh script.sh` child shares the pane shell's
-// argv0 and is not the shell. Captured from herdr 0.7.1: a pane at its shell reports one
-// foreground process whose pid is `shell_pid`; a pane running a program reports the program's
-// pid, not the shell's.
+// Whether a pane's foreground is exactly its shell, from a `pane process-info` result: true
+// when the list holds exactly one well-formed foreground process and its pid is the pane's
+// `shell_pid`, false when that one process is some other program, and null when herdr can't
+// say — no process info, no `shell_pid` (an older herdr), or a list that is empty, longer
+// than one (the shell plus a live program), duplicated, or holds an entry without a readable
+// pid. Everything null leaves the seat `unknown`. Never read from argv0 alone: a
+// `zsh script.sh` child shares the pane shell's argv0 and is not the shell. Captured from
+// herdr 0.7.1: a pane at its shell reports one foreground process whose pid is `shell_pid`;
+// a pane running a program reports the program's pid, not the shell's.
 export function shellBackOf(result: unknown): boolean | null {
   const info = (result as { process_info?: { shell_pid?: unknown; foreground_processes?: { pid?: unknown }[] } } | null)
     ?.process_info;
   if (!info || typeof info.shell_pid !== 'number') return null;
   const list = info.foreground_processes;
-  if (!Array.isArray(list) || list.length === 0) return null;
-  const pids = list.map((proc) => (typeof proc?.pid === 'number' ? proc.pid : null));
-  if (pids.some((pid) => pid === null)) return null;
-  return pids.includes(info.shell_pid);
+  if (!Array.isArray(list) || list.length !== 1) return null;
+  const pid = list[0]?.pid;
+  if (typeof pid !== 'number') return null;
+  return pid === info.shell_pid;
 }
 
 export function paneShellBack(pane: string, session?: string): boolean | null {
