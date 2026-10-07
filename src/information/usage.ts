@@ -73,7 +73,10 @@ export type ProjectUsageOptions = {
  * holds, each row exactly as `status` builds it. The team file is read through
  * `validateTeamFile`; a file that cannot be read falls back to the copy its approval stored; when
  * neither can be read, `project` is null and there are no rows (`NO_FIGURES`). The state is read
- * once and never written, and nothing here opens a lock, a pane, a vendor file or a key.
+ * once and never written, and nothing here opens a lock, a pane or a vendor file; it never opens a
+ * CLI's session file or a lab's credential; it reads TeamCLI's own key only to verify the
+ * agreement, as `status` does. The key read is `approvalStanding`'s, and it was promised away in
+ * the design's first draft; that promise was corrected — the sentence above is the ruled one.
  * `restricted` says the caller is not the owner: it changes no reading, and it keeps the store's
  * own words for a refused approval out of what the block can print (`NOT_VERIFIED`).
  */

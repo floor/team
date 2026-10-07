@@ -3,9 +3,9 @@
 Shows one project's figures: the accounts and windows its budgets in force name, with what is left
 and used, when each figure was last read and from which source. It resolves the project from the
 current folder, the way every command does, and it only reads: it writes nothing anywhere — no
-`last_valid` copy, no log line, no lock, no state — it runs no check and launches no CLI, it reads
-no pane, and it opens no CLI's own session file or credential. Any caller may run it, from any
-folder.
+`last_valid` copy, no log line, no lock, no state — it runs no check and launches no CLI, and it
+reads no pane; it never opens a CLI's session file or a lab's credential; it reads TeamCLI's own
+key only to verify the agreement, as `status` does. Any caller may run it, from any folder.
 
 This page documents what this build prints: **one project's block** — no machine-wide view, and no
 spend rows. The rows it does print are the ones `status` prints, from the same table over the same
