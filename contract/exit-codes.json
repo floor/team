@@ -5,7 +5,7 @@
       "code": 0,
       "command": "add",
       "id": "add.dry-run",
-      "meaning": "a dry run exits as the real run would, and changes nothing",
+      "meaning": "a dry run that reaches a refusal the real run would give before doing anything returns that refusal's status and exit id; a dry run that reaches its plan exits 0 and promises nothing about what happens after (the run lock, a launch, the watch)",
       "trigger": "team add worker --dry-run"
     },
     {
@@ -803,7 +803,7 @@
       "code": 0,
       "command": "down",
       "id": "down.dry-run",
-      "meaning": "a dry run exits as the real run would, and changes nothing",
+      "meaning": "a dry run that reaches a refusal the real run would give before doing anything returns that refusal's status and exit id; a dry run that reaches its plan exits 0 and promises nothing about what happens after (the run lock, a launch, the watch)",
       "trigger": "team down --dry-run"
     },
     {
@@ -1440,7 +1440,7 @@
       "code": 0,
       "command": "up",
       "id": "up.dry-run",
-      "meaning": "a dry run exits as the real run would, and changes nothing",
+      "meaning": "a dry run that reaches a refusal the real run would give before doing anything returns that refusal's status and exit id; a dry run that reaches its plan exits 0 and promises nothing about what happens after (the run lock, a launch, the watch)",
       "trigger": "team up --dry-run"
     },
     {

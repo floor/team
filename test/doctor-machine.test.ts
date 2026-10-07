@@ -1,5 +1,5 @@
-// The one machine check that can never pass here: the check in force asks for more free swap than
-// the machine has in total. `doctor` reports it as one warning, `status` as one note, and neither
+// The one machine check a reading cannot pass: the check in force asks for more free swap than the
+// machine has in total. `doctor` reports it as one warning, `status` as one note, and neither
 // changes an exit: `up`'s own refusal is where it bites, and it is unaffected.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -19,9 +19,9 @@ const NOW = new Date('2026-10-04T09:00:00Z');
 
 // The file declares no `swap_free_min`, so the check in force is the 2GB default.
 const SENTENCE =
-  'the machine check asks for 2.0 GB free swap, more than this machine has in total (1.0 GB): `team up` will refuse here; set `machine.swap_free_min` to a figure this machine can keep, then run `team approve`';
+  'the machine check asks for 2.0 GB free swap; at this reading the machine has 1.0 GB in total, so `team up` would refuse now; set `machine.swap_free_min` to a figure this machine can keep, then run `team approve`';
 
-// A machine whose 1GB of swap in total can never hold the 2GB the check wants.
+// A machine reading whose 1GB of swap in total cannot hold the 2GB the check wants.
 const SMALL: Machine = { loadPerCore: 0.4, memoryFree: 62, diskFree: 120e9, swapTotal: 1e9, swapFree: 0.5e9, swapUsed: 0.5e9 };
 // The same machine with room in total and none of it free right now: the check can pass in
 // principle, `up` refuses today, and nothing new is said — that is `up`'s line and the watch's.
@@ -124,5 +124,27 @@ describe('the swap the check can never meet', () => {
     // The check that can pass in principle says nothing here either.
     const roomy = await status(statusSources(() => ROOMY));
     expect(roomy.out).toBe(plain.out);
+  });
+
+  test('a total that moves: the line is the reading it came from, and promises nothing', async () => {
+    // The after-review's case: on macOS `vm.swapusage`'s total moves with pressure, so one reading
+    // cannot promise what a later `team up` will meet. The same commands over the machine twice,
+    // with the total moved between the runs: the line is there for the reading the check cannot
+    // meet and gone for the next one, and its words are the reading's own (`would refuse now`) —
+    // never what a later run will do.
+    expect((await approve()).code).toBe(0);
+    let machine: Machine = SMALL;
+    const firstDoctor = await doctor(doctorSources(() => machine));
+    const firstStatus = await status(statusSources(() => machine));
+    machine = ROOMY;
+    const secondDoctor = await doctor(doctorSources(() => machine));
+    const secondStatus = await status(statusSources(() => machine));
+    const lineOf = (out: string) => out.split('\n').find((line) => line.includes('the machine check asks'));
+    expect(lineOf(firstDoctor.out)).toBe(`warn  ${SENTENCE}`);
+    expect(lineOf(secondDoctor.out)).toBeUndefined();
+    expect(firstStatus.out).toContain(`note: ${SENTENCE}\n`);
+    expect(secondStatus.out).not.toContain('the machine check asks');
+    expect(SENTENCE).toContain('would refuse now');
+    expect(SENTENCE).not.toContain('will');
   });
 });
