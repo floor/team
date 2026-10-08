@@ -19,6 +19,7 @@ import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
 import { runDown, type DownLaunch, type DownSources } from '../src/commands/down.ts';
 import { runInit } from '../src/commands/init.ts';
 import { plantMessage, runMessages, type MessagePayload } from '../src/commands/messages.ts';
+import { runIssues } from '../src/commands/issues.ts';
 import { pr } from '../src/commands/pr.ts';
 import { runRemove, type RemoveSources } from '../src/commands/remove.ts';
 import { runStatus, type StatusSources } from '../src/commands/status.ts';
@@ -2530,6 +2531,39 @@ scene('messages.signature', async (place) => {
 });
 scene('messages.invocation', async (place) => show(await messaged(place, ['extra']), 'unexpected'));
 scene('messages.not-a-repo', async (place) => show(await messaged(place), 'not inside a git repository'), false);
+
+const TASKS = `${TEAM}tasks:
+  source: file
+  path: .agents/tasks.yaml
+`;
+
+async function issued(place: Place, argv: string[] = []): Promise<Ran> {
+  const io = testIo(place.root);
+  return { code: await runIssues(argv, io, { home: place.home }), out: io.out, err: io.err };
+}
+
+scene('issues.none', async (place) => {
+  write(place, TASKS);
+  writeFileSync(join(place.root, '.agents', 'tasks.yaml'), '[]\n');
+  return show(await issued(place), 'nothing is waiting');
+});
+scene('issues.shown', async (place) => {
+  write(place, TASKS);
+  writeFileSync(join(place.root, '.agents', 'tasks.yaml'), '- id: m1\n  title: the task title\n');
+  return show(await issued(place), 'm1  the task title');
+});
+scene('issues.file', async (place) => show(await issued(place), 'no team file here'));
+scene('issues.missing', async (place) => {
+  write(place, TASKS);
+  return show(await issued(place), 'the task file is not there');
+});
+scene('issues.shape', async (place) => {
+  write(place, TASKS);
+  writeFileSync(join(place.root, '.agents', 'tasks.yaml'), '- id: m1\n');
+  return show(await issued(place), 'title is required');
+});
+scene('issues.invocation', async (place) => show(await issued(place, ['extra']), 'unexpected'));
+scene('issues.not-a-repo', async (place) => show(await issued(place), 'not inside a git repository'), false);
 
 const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed', 'answer.action', 'up.delegate-placement']);
 

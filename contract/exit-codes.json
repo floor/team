@@ -1235,6 +1235,55 @@
     },
     {
       "code": 0,
+      "command": "issues",
+      "id": "issues.none",
+      "meaning": "nothing is waiting",
+      "trigger": "team issues"
+    },
+    {
+      "code": 0,
+      "command": "issues",
+      "id": "issues.shown",
+      "meaning": "the task list was shown",
+      "trigger": "team issues"
+    },
+    {
+      "code": 1,
+      "command": "issues",
+      "id": "issues.file",
+      "meaning": "the team file can't be read, or it declares no task source",
+      "trigger": "team issues"
+    },
+    {
+      "code": 1,
+      "command": "issues",
+      "id": "issues.missing",
+      "meaning": "the task file is not there",
+      "trigger": "team issues"
+    },
+    {
+      "code": 1,
+      "command": "issues",
+      "id": "issues.shape",
+      "meaning": "a record is not a task, or the task file is not a list",
+      "trigger": "team issues"
+    },
+    {
+      "code": 2,
+      "command": "issues",
+      "id": "issues.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team issues extra"
+    },
+    {
+      "code": 2,
+      "command": "issues",
+      "id": "issues.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team issues"
+    },
+    {
+      "code": 0,
       "command": "messages",
       "id": "messages.none",
       "meaning": "nothing is waiting",
