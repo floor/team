@@ -57,9 +57,11 @@ unlinked. It never writes the tracker, the team file or a lease.
 
 The owner, in a foreground terminal outside herdr, one per clone. A call placed as a seat, in a
 pane, or under herdr at all is refused before the Keychain is read and before any bind — a pane
-is a pane whether or not a CLI runs in it. It refuses to start without a terminal, on a
-platform without the Keychain facility, when the team file declares no task source or one it does
-not serve, or when a broker is already answering on the socket.
+is a pane whether or not a CLI runs in it. The gate guards a mistaken or ordinary call, not a
+hostile process running as the same user; nothing here can tell the two apart, because nothing
+distinguishes them — the same user may do all of it by hand. It refuses to start without a
+terminal, on a platform without the Keychain facility, when the team file declares no
+task source or one it does not serve, or when a broker is already answering on the socket.
 
 ## Flags
 
