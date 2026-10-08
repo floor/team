@@ -600,6 +600,30 @@ describe('the per-field policy', () => {
     });
   });
 
+  test('id: bare governs a refusal\'s id too, and an id with no segment is omitted', async () => {
+    project();
+    record();
+    await serving(
+      async () =>
+        records(
+          [{ id: 'ACME-9', title: 'the task title' }],
+          [
+            { index: 2, id: 'https://linear.app/acme/issue/ACME-1', reason: 'title is required' },
+            { index: 3, id: 'ACME-2', reason: 'title is required' },
+            { index: 4, id: '///', reason: 'title is required' },
+          ],
+        ),
+      { transform: { id: 'bare' } },
+    );
+    // The id is the source's own reference, not a credential: the transform governs it on a
+    // refusal too. An already-bare id keeps its bytes; an id with no segment to cross is
+    // omitted, so the raw one never rides in a refusal.
+    const line = await send(`${encodeLine(leadSeat)}`);
+    expect(line).toBe(
+      '{"ok":true,"read":{"kind":"records","records":[{"id":"ACME-9","title":"the task title"}],"refusals":[{"index":2,"id":"ACME-1","reason":"title is required"},{"index":3,"id":"ACME-2","reason":"title is required"},{"index":4,"reason":"title is required"}]}}',
+    );
+  });
+
   test('id: bare lets a source URL cross as its last segment', async () => {
     project();
     record();

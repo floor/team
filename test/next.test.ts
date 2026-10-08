@@ -637,6 +637,21 @@ tasks:
     expect(await broker.running).toBe(0);
   });
 
+  test('with id: bare a refused node\'s raw URL id crosses as its segment', async () => {
+    ready(`${LINEAR}  policy:
+    transform:
+      id: bare
+`);
+    // The node carries a URL identifier and no title: the adapter refuses it with the raw id,
+    // and the broker's transform governs that id the way it governs a record's.
+    const tracker = world([{ identifier: 'https://linear.app/acme/issue/ACME-1' }]);
+    const broker = await command(tracker.fetch);
+    expect(await run()).toEqual({ code: 1, out: '', err: 'team next: ACME-1 is not a task: title is required\n' });
+    expect(leaseNames()).toEqual([]);
+    broker.finish();
+    expect(await broker.running).toBe(0);
+  });
+
   test('with no transform the source URL id refuses at the sentence and bytes of before', async () => {
     ready(LINEAR);
     const tracker = world([brokerNode({ identifier: 'https://linear.app/acme/issue/ACME-1' })]);

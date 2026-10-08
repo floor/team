@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { anotherPaneRefusal, callerVerdict, noPaneRefusal, standingOf, type Caller } from '../caller.ts';
 import type { TeamFile } from '../file/types.ts';
 import type { TaskRead, TaskRecord, TaskRefusal } from '../tasks/adapter.ts';
-import { applyPolicy, type TaskPolicy } from './policy.ts';
+import { applyPolicy, bareRefusalId, type TaskPolicy } from './policy.ts';
 import { MAX_ANSWER_BYTES, MAX_REQUEST_BYTES, brokerSocket, encodeLine, parseRequest, type BrokerAnswer, type BrokerRequest } from './protocol.ts';
 
 /** What one dispatch of the read produced: the adapter's read (with its notice, when the read
@@ -207,9 +207,10 @@ const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
  *  the same keys, the same key order — at the source position of the record it came from, and so
  *  is one whose final id repeats an already-accepted final id: the transform can merge two
  *  distinct source ids into one, and the seat's take must not meet two records under one id
- *  (both adapters enforce this rule on raw ids already). With nothing converted the adapter's
- *  refusal list passes through untouched, so a no-transform run answers byte for byte what it
- *  answered before (fix2 P2). */
+ *  (both adapters enforce this rule on raw ids already). The transform governs a refusal's id
+ *  too, by the same rule (the id is the source's own reference). With nothing converted and no
+ *  refusal's id transformed, the adapter's refusal list passes through untouched, so a
+ *  no-transform run answers byte for byte what it answered before (fix2 P2). */
 function filtered(read: TaskRead, policy?: TaskPolicy): TaskRead {
   if (read.kind !== 'records') return read;
   const taken = new Set(read.refusals.map((refusal) => refusal.index));
@@ -231,8 +232,19 @@ function filtered(read: TaskRead, policy?: TaskPolicy): TaskRead {
     accepted.add(crossed.id);
     records.push(crossed);
   });
-  if (converted.length === 0) return { kind: 'records', records, refusals: read.refusals };
-  return { kind: 'records', records, refusals: [...read.refusals, ...converted].sort((a, b) => a.index - b.index) };
+  const refusals = policy?.transform?.id === 'bare' ? read.refusals.map((refusal) => crossedRefusal(refusal)) : read.refusals;
+  if (converted.length === 0 && refusals === read.refusals) return { kind: 'records', records, refusals: read.refusals };
+  return { kind: 'records', records, refusals: [...refusals, ...converted].sort((a, b) => a.index - b.index) };
+}
+
+/** A refusal's id under the same policy: crossed by the transform, or omitted when the raw id
+ *  has no segment to cross — the raw one never rides in a refusal. A refusal with no id is
+ *  unchanged. */
+function crossedRefusal(refusal: TaskRefusal): TaskRefusal {
+  if (refusal.id === undefined) return refusal;
+  const id = bareRefusalId(refusal.id);
+  if (id === undefined) return { index: refusal.index, reason: refusal.reason };
+  return { index: refusal.index, id, reason: refusal.reason };
 }
 
 /** The source's 1-based position of its position-th accepted record: the accepted records and
