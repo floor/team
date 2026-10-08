@@ -2667,6 +2667,18 @@ scene('broker.busy', async (place) => {
     await first.handle.close();
   }
 });
+scene('broker.locked', async (place) => {
+  write(place, LINEAR);
+  // A start in flight holds the lock: a live pid — this process's own — is what the lock's
+  // holder read judges as a start still binding, so this start waits out the lock's deadline,
+  // refuses with its own sentence, and touches nothing: the lock stays, no socket is bound.
+  const lock = join(place.root, '.agents', 'broker.sock.lock');
+  writeFileSync(lock, `${process.pid}\n`);
+  const ran = await brokered(place, [], { keyReader: okKey });
+  expect(existsSync(lock)).toBe(true);
+  expect(existsSync(join(place.root, '.agents', 'broker.sock'))).toBe(false);
+  return show(ran, 'another start is binding');
+});
 scene('broker.bind', async (place) => {
   write(place, LINEAR);
   // A regular file at the socket path: never a broker, and the walk's lstat gate refuses the
