@@ -45,10 +45,19 @@ export function encodeSegment(value: string): string {
   return out;
 }
 
-type Reply = { kind: 'http'; status: number; body: string } | { kind: 'failed' };
+type Reply =
+  | { kind: 'http'; status: number; body: string }
+  | { kind: 'over-limit'; status: number; prefix: string }
+  | { kind: 'failed' };
 
+// An attempt as the reply a check reads: the whole response, an over-limit response as the decoded
+// head of its body (a value a check needs can sit near a document's head, and the compare's
+// `status` does), or a failure — a kind with no response, or the attempt cap reached.
 function replyOf(attempt: Attempt | null): Reply {
-  return attempt !== null && attempt.kind === 'http' ? attempt : { kind: 'failed' };
+  if (attempt === null) return { kind: 'failed' };
+  if (attempt.kind === 'http') return attempt;
+  if (attempt.kind === 'too-large') return { kind: 'over-limit', status: attempt.status, prefix: attempt.prefix };
+  return { kind: 'failed' };
 }
 
 /** The reads of one command, with the retry policy and the two caps. */
@@ -103,8 +112,8 @@ type ReadRecord =
   | { kind: 'json'; value: Record<string, unknown> };
 
 // A reply as the record a check reads: a 404 is missing; a success with a JSON object is the
-// record; anything else — another status, a redirect, invalid JSON, a failed or capped read —
-// is unknown.
+// record; anything else — another status, a redirect, invalid JSON, a failed or capped read, the
+// head of an over-limit body, which is a prefix and not a document — is unknown.
 function recordOf(reply: Reply): ReadRecord {
   if (reply.kind !== 'http') return { kind: 'unknown' };
   if (reply.status === 404) return { kind: 'missing' };
@@ -204,6 +213,101 @@ function targetOf(value: Record<string, unknown>): { sha: string; type: string }
   return { sha: object.sha, type: object.type };
 }
 
+/** The compare's `status` as one string, or null for anything unreadable. A compare body that
+ *  overran the fetch's limit is kept as its decoded head, and the status sits near that head —
+ *  before the commit and file lists, where a large compare's bulk is (measured 2026-10-07:
+ *  "status" at byte 14,398 of a 1,161,071-byte compare) — so an over-limit reply is read from
+ *  its head rather than failing a valid release check on the size of a diff nobody reads. */
+function compareStatus(reply: Reply): string | null {
+  if (reply.kind === 'http') {
+    if (reply.status < 200 || reply.status > 299) return null;
+    const value = jsonObject(reply.body);
+    const status = value === null ? undefined : value.status;
+    return typeof status === 'string' ? status : null;
+  }
+  if (reply.kind === 'over-limit' && reply.status >= 200 && reply.status <= 299) return statusInHead(reply.prefix);
+  return null;
+}
+
+/** The value of the top-level `status` string in the head of a compare document, or null. The
+ *  head is a prefix of a JSON object — the limit cut it — so it may end at any byte: this walks
+ *  the JSON grammar only as far as one top-level string value, strings with their escapes and
+ *  nesting included, and a head that ends first, or holds no top-level `status`, reads as null.
+ *  Only the top level counts: a `status` nested in an object — a commit's, say — is skipped with
+ *  that value. An escape is read as written, so an escaped key is not `status`, and an escaped
+ *  value cannot read as one of the four plain status words. */
+function statusInHead(head: string): string | null {
+  let i = 0;
+  const space = (): void => {
+    while (i < head.length && (head[i] === ' ' || head[i] === '\n' || head[i] === '\r' || head[i] === '\t')) i += 1;
+  };
+  // One past the string starting at i, or null when it never closes; i ends one past it too. A
+  // backslash skips the byte after it, so an escaped quote never closes the string.
+  const stringEnd = (): number | null => {
+    if (head[i] !== '"') return null;
+    for (i += 1; i < head.length; i += 1) {
+      if (head[i] === '\\') i += 1;
+      else if (head[i] === '"') {
+        i += 1;
+        return i;
+      }
+    }
+    return null;
+  };
+  // Whether the value starting at i was walked whole; i ends past it.
+  const value = (): boolean => {
+    const first = head[i];
+    if (first === '"') return stringEnd() !== null;
+    if (first === '{' || first === '[') {
+      const open: string[] = [first];
+      i += 1;
+      while (i < head.length) {
+        const c = head[i] as string;
+        if (c === '"') {
+          if (stringEnd() === null) return false;
+        } else if (c === '{' || c === '[') {
+          open.push(c);
+          i += 1;
+        } else if (c === '}' || c === ']') {
+          if ((open.pop() === '{') !== (c === '}')) return false;
+          i += 1;
+          if (open.length === 0) return true;
+        } else {
+          i += 1;
+        }
+      }
+      return false;
+    }
+    // A number or a literal (`true`, `false`, `null`): everything to the first delimiter.
+    const start = i;
+    while (i < head.length && !',}] \t\r\n'.includes(head[i] as string)) i += 1;
+    return i > start;
+  };
+  space();
+  if (head[i] !== '{') return null;
+  i += 1;
+  for (;;) {
+    space();
+    const keyStart = i;
+    const keyEnd = stringEnd();
+    if (keyEnd === null) return null; // '}' read whole: no top-level status
+    const key = head.slice(keyStart + 1, keyEnd - 1);
+    space();
+    if (head[i] !== ':') return null;
+    i += 1;
+    space();
+    const valueStart = i;
+    if (key === 'status') {
+      const end = stringEnd();
+      return end === null ? null : head.slice(valueStart + 1, end - 1);
+    }
+    if (!value()) return null;
+    space();
+    if (head[i] !== ',') return null; // '}' or a cut head: no status was read
+    i += 1;
+  }
+}
+
 async function tagCheck(reader: Reader, base: string, version: string, repo: Repo): Promise<Outcome> {
   const parts: Outcome[] = [];
   let commit: string | null = null;
@@ -250,11 +354,11 @@ async function tagCheck(reader: Reader, base: string, version: string, repo: Rep
   // The compare is required only when both its inputs are known: a resolved commit and the
   // default branch. Otherwise the repository read alone carries its outcome into the check.
   if (commit !== null && repo.kind === 'ok') {
-    const compared = recordOf(await reader.read(`${base}/compare/${encodeSegment(commit)}...${encodeSegment(repo.branch)}`));
-    if (compared.kind === 'missing') parts.push({ status: 'missing', detail: 'GitHub has no compare of the tag and the default branch' });
-    else if (compared.kind === 'unknown') parts.push({ status: 'unknown', detail: 'the compare could not be read' });
-    else {
-      const status = compared.value.status;
+    const reply = await reader.read(`${base}/compare/${encodeSegment(commit)}...${encodeSegment(repo.branch)}`);
+    if (reply.kind === 'http' && reply.status === 404) {
+      parts.push({ status: 'missing', detail: 'GitHub has no compare of the tag and the default branch' });
+    } else {
+      const status = compareStatus(reply);
       if (status === 'identical' || status === 'ahead') parts.push(pass);
       else if (status === 'behind' || status === 'diverged') {
         parts.push({ status: 'missing', detail: 'tag commit is not an ancestor of the default branch' });

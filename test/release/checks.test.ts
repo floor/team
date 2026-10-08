@@ -247,6 +247,71 @@ describe('the tag check', () => {
     expect(nonString.result.tag.status).toBe('unknown');
   });
 
+  test('an over-limit compare body reads its status from the head the fetch kept', async () => {
+    // A compare of a tag far behind main runs over a megabyte of commit and file lists, but the
+    // compare's own `status` sits near the head: measured 2026-10-07 on floor/team's 06e01b8...main
+    // compare, "status" at byte 14,398 of a 1,161,071-byte body (ahead_by 91). The fetch keeps the
+    // head of an over-limit body, so this row reads its status without ever reading the diff.
+    const head = '{"url":"https://api.github.com/repos/floor/team/compare/06e01b8...main",'
+      + '"html_url":"https://github.com/floor/team/compare/06e01b8...main","permalink_url":"x",'
+      + '"diff_url":"x.diff","patch_url":"x.patch",'
+      + '"base_commit":{"sha":"a","node_id":"n","commit":{"message":"a { brace ] and a \\"quote\\"","tree":{"sha":"t"}}},'
+      + '"merge_base_commit":{"sha":"a","commit":{"message":"older"}},'
+      + '"status":"ahead","ahead_by":91,"behind_by":0,"total_commits":91,"commits":[{"sha":"b"';
+    const { result } = await run(withAnswer(happy(), URLS.compare, { kind: 'too-large', status: 200, prefix: head }));
+    expect(result.tag).toEqual({ status: 'pass', detail: 'tag resolves to a commit on the default branch' });
+
+    const behind = await run(withAnswer(happy(), URLS.compare, {
+      kind: 'too-large', status: 200, prefix: '{"url":"x","status":"behind","ahead_by":0',
+    }));
+    expect(behind.result.tag).toEqual({ status: 'missing', detail: 'tag commit is not an ancestor of the default branch' });
+  });
+
+  test('only the top-level status is read: nested and escaped decoys are skipped', async () => {
+    // The head walker reads one top-level JSON string value: a commit message quoting
+    // "status":"sideways", a nested object's own status, a number and a literal before it — all
+    // walked past — and an escaped key is read as written, so it is never the compare's status.
+    const head = '{"ahead_by":0,"draft":false,"pre":null,'
+      + '"base_commit":{"status":"diverged","commit":{"message":"he said \\"status\\":\\"sideways\\""}},'
+      + '"status":"ahead","behind_by":0';
+    const { result } = await run(withAnswer(happy(), URLS.compare, { kind: 'too-large', status: 200, prefix: head }));
+    expect(result.tag.status).toBe('pass');
+
+    const escaped = await run(withAnswer(happy(), URLS.compare, {
+      kind: 'too-large', status: 200, prefix: '{"st\\u0061tus":"ahead","status":"diverged"',
+    }));
+    expect(escaped.result.tag.status).toBe('missing');
+  });
+
+  test('an over-limit head that holds no readable status is unknown', async () => {
+    const cases = [
+      '{"base_commit":{"sha":"a","commit":{"message":"cut', // cut inside a string
+      '{"status":"ahe', // cut inside the value
+      '{"url":"x"}', // the whole object, and no status in it
+      '{"base_commit":{"status":"ahead"}', // nested only, then cut
+      '{"a":[},"status":"ahead"', // malformed: the brackets do not match
+    ];
+    for (const prefix of cases) {
+      const { result } = await run(withAnswer(happy(), URLS.compare, { kind: 'too-large', status: 200, prefix }));
+      expect(result.tag).toEqual({ status: 'unknown', detail: 'the compare could not be read' });
+    }
+  });
+
+  test('a compare that is not a success, invalid, or over-limit with a failure status is unknown', async () => {
+    const invalid = await run(withAnswer(happy(), URLS.compare, { kind: 'http', status: 200, body: 'not json' }));
+    expect(invalid.result.tag).toEqual({ status: 'unknown', detail: 'the compare could not be read' });
+
+    const redirect = await run(withAnswer(happy(), URLS.compare, json({}, 302)));
+    expect(redirect.result.tag.status).toBe('unknown');
+
+    // A failure status's head is not trusted: the response was never a success to begin with.
+    const overLimitFailure = await run(withAnswer(happy(), URLS.compare, [
+      { kind: 'too-large', status: 503, prefix: '{"status":"ahead"' },
+      { kind: 'too-large', status: 503, prefix: '{"status":"ahead"' },
+    ]));
+    expect(overLimitFailure.result.tag.status).toBe('unknown');
+  });
+
   test('a repository 404 makes tag and changelog missing, and the compare is not requested', async () => {
     const { result, requested } = await run(withAnswer(happy(), URLS.repo, json({}, 404)));
     expect(result.tag).toEqual({ status: 'missing', detail: 'GitHub has no repository floor/material' });
@@ -402,7 +467,7 @@ describe('the network contract', () => {
   });
 
   test('a 400, a redirect and a body over the limit are not retried', async () => {
-    for (const failure of [json({}, 400), json({}, 302), { kind: 'too-large', status: 200 } as const]) {
+    for (const failure of [json({}, 400), json({}, 302), { kind: 'too-large', status: 200, prefix: '' } as const]) {
       const answers = happy();
       answers.set(URLS.npm, [failure, json(fixture('npm-version.json'))]);
       const { result, requested } = await run(answers);
@@ -414,13 +479,13 @@ describe('the network contract', () => {
   test('a retryable status with an oversized body is still retried: exactly two attempts, then unknown', async () => {
     for (const status of [408, 429, 503]) {
       const answers = happy();
-      answers.set(URLS.npm, [{ kind: 'too-large', status }, json(fixture('npm-version.json'))]);
+      answers.set(URLS.npm, [{ kind: 'too-large', status, prefix: '' }, json(fixture('npm-version.json'))]);
       const { result, requested } = await run(answers);
       expect(result.npm.status).toBe('pass');
       expect(requested.filter((url) => url === URLS.npm).length).toBe(2);
     }
     const twice = happy();
-    twice.set(URLS.npm, [{ kind: 'too-large', status: 503 }, { kind: 'too-large', status: 503 }]);
+    twice.set(URLS.npm, [{ kind: 'too-large', status: 503, prefix: '' }, { kind: 'too-large', status: 503, prefix: '' }]);
     const { result, requested } = await run(twice);
     expect(result.npm.status).toBe('unknown');
     expect(requested.filter((url) => url === URLS.npm).length).toBe(2);

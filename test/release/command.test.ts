@@ -382,9 +382,29 @@ describe('the production wiring', () => {
     expect(seen?.signal).toBeInstanceOf(AbortSignal);
   });
 
-  test('a body over one megabyte decoded is the size-limit failure, with the response status', async () => {
+  test('a body over one megabyte decoded is the size-limit failure, with the response status and the decoded head', async () => {
     globalThis.fetch = (() => Promise.resolve(new Response('x'.repeat(BODY_LIMIT + 1), { status: 200 }))) as unknown as typeof fetch;
-    expect(await realFetch('https://registry.npmjs.org/material/3.0.2')).toEqual({ kind: 'too-large', status: 200 });
+    expect(await realFetch('https://registry.npmjs.org/material/3.0.2')).toEqual({
+      kind: 'too-large',
+      status: 200,
+      prefix: 'x'.repeat(BODY_LIMIT),
+    });
+  });
+
+  test('the head kept stops at the limit, and a character the cut splits is dropped, not repaired', async () => {
+    // The body is one byte past the limit with the limit falling inside a two-byte character
+    // (é is 0xc3 0xa9): the head holds the first limit bytes and the split character is dropped,
+    // never read as a replacement character.
+    const head = 'x'.repeat(BODY_LIMIT - 1);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(head));
+        controller.enqueue(new Uint8Array([0xc3, 0xa9, 0x41]));
+        controller.close();
+      },
+    });
+    globalThis.fetch = (() => Promise.resolve(new Response(body, { status: 200 }))) as unknown as typeof fetch;
+    expect(await realFetch('https://registry.npmjs.org/material/3.0.2')).toEqual({ kind: 'too-large', status: 200, prefix: head });
   });
 
   test('a body that is not valid UTF-8 is the undecodable failure, with the response status', async () => {
