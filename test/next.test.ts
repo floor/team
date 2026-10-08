@@ -269,6 +269,41 @@ describe('team next', () => {
     expect((await run([], worker)).out).toBe('m2  another title\n');
   });
 
+  test('a repeated id is refused and renewal reprints the first record', async () => {
+    const block = 'm1  first version\n';
+    const repeat = 'team next: m1 is not a task: its id repeats an earlier record\n';
+    ready(WITH, '- id: m1\n  title: first version\n- id: m1\n  title: second version\n');
+    expect(await run()).toEqual({ code: 0, out: block, err: repeat });
+    const first = lease();
+    expect(leaseNames()).toEqual(['m1.json']);
+    now += 1000;
+    expect(await run()).toEqual({ code: 0, out: block, err: repeat });
+    const renewed = lease();
+    expect(leaseNames()).toEqual(['m1.json']);
+    expect(renewed.acquiredAt).toBe(first.acquiredAt);
+    expect(renewed.id).toBe(first.id);
+    expect(Date.parse(renewed.until)).toBe(Date.parse(first.until) + 1000);
+    const listed = testIo(root);
+    expect(await runIssues([], listed, { home })).toBe(1);
+    expect(listed.out).toBe(block);
+    expect(listed.err).toBe('team issues: m1 is not a task: its id repeats an earlier record\n');
+    expect(await run(['--release'])).toEqual({ code: 0, out: 'team next: released m1\n', err: '' });
+    expect(leaseNames()).toEqual([]);
+    expect(await run()).toEqual({ code: 0, out: block, err: repeat });
+    ready(WITH, '- id: m1\n  title: first version\n- id: m1\n');
+    expect(await run()).toEqual({
+      code: 0,
+      out: block,
+      err: 'team next: m1 is not a task: title is required\n',
+    });
+    ready(WITH, '- id: m1\n- id: m1\n  title: second version\n');
+    expect(await run()).toEqual({
+      code: 0,
+      out: 'm1  second version\n',
+      err: 'team next: m1 is not a task: title is required\n',
+    });
+  });
+
   test('a bad record does not block a good one', async () => {
     ready(WITH, '- id: m1\n- id: m2\n  title: another title\n');
     expect(await run()).toEqual({

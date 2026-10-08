@@ -39,10 +39,21 @@ function readTaskFile(input: TaskReadInput): TaskRead {
   if (node.kind !== 'seq') return { kind: 'not-a-list' };
   const records: TaskRecord[] = [];
   const refusals: TaskRefusal[] = [];
+  // Only an accepted id is remembered. A record refused for its own fault does not reserve
+  // the id, so a later valid record with that id is the first occurrence.
+  const accepted = new Set<string>();
   node.items.forEach((item, index) => {
     const read = readRecord(item, index + 1);
-    if ('reason' in read) refusals.push(read);
-    else records.push(read);
+    if ('reason' in read) {
+      refusals.push(read);
+      return;
+    }
+    if (accepted.has(read.id)) {
+      refusals.push({ index: index + 1, id: read.id, reason: 'its id repeats an earlier record' });
+      return;
+    }
+    accepted.add(read.id);
+    records.push(read);
   });
   return { kind: 'records', records, refusals };
 }
