@@ -49,9 +49,10 @@ one bounded read-only Linear query under `tasks.linear.project`, from this proce
 the `tasks.policy` before the answer is serialized: a field the policy leaves out is absent from
 the record, never blank.
 
-Binds the unix socket `.agents/broker.sock` in this clone. The socket file is the only file it
-writes, and it removes it when it stops; a file at that path that is not a socket is never
-unlinked. It never writes the tracker, the team file or a lease.
+Binds the unix socket `.agents/broker.sock` in this clone. The socket file and the start lock
+beside it are the only files it writes — the lock is released when the walk ends, and the socket
+file is removed when it stops; a file at that path that is not a socket is never unlinked. It
+never writes the tracker, the team file or a lease.
 
 ## Who may run it
 
@@ -78,10 +79,13 @@ removes the socket file, and exits 0.
 
 `team broker: cleared a stale socket file` when the start found a socket file that nothing was
 answering on — a broker killed, not stopped — and cleared it before binding. A file a live broker
-owns is answered, never cleared. A start that has bound the socket but is not yet answering on
-it — a start delayed for more than a moment — is the one case nothing here can tell from a killed
-broker: it is cleared, and that start fails with the bind sentence, or serves a socket nothing
-can reach. Two starts racing the same path are not serialized: one serves, the other stops.
+owns is answered, never cleared. Starts are serialized across processes by a lock beside the
+socket, `.agents/broker.sock.lock`: a start takes it before the first ask and holds it until its
+walk ends — for a serve, the moment the socket is listening. A second start waits on that lock
+and then asks the path as any start does: it finds a broker answering and stops with the refusal
+below, having cleared and bound nothing. A start that waits out the lock's deadline stops with
+its own refusal and touches nothing; a lock a killed start left behind is taken over, not
+waited on.
 
 `team broker: stopped` when the loop ended and the socket file was removed.
 
@@ -98,6 +102,7 @@ team broker: this platform has no such facility
 team broker: the run is not interactive
 team broker: the lookup failed
 team broker: a broker is already answering on .agents/broker.sock
+team broker: another start is binding .agents/broker.sock; try again
 team broker: the socket could not be bound
 team broker: the socket could not be bound: <code>
 ```
