@@ -17,7 +17,7 @@ import { createServer, connect, type Socket } from 'node:net';
 import { join } from 'node:path';
 import { anotherPaneRefusal, callerVerdict, noPaneRefusal, standingOf, type Caller } from '../caller.ts';
 import type { TeamFile } from '../file/types.ts';
-import type { TaskRead } from '../tasks/adapter.ts';
+import type { TaskRead, TaskRecord, TaskRefusal } from '../tasks/adapter.ts';
 import { applyPolicy, type TaskPolicy } from './policy.ts';
 import { MAX_ANSWER_BYTES, MAX_REQUEST_BYTES, brokerSocket, encodeLine, parseRequest, type BrokerAnswer, type BrokerRequest } from './protocol.ts';
 
@@ -197,10 +197,43 @@ function notASeat(seat: string): string {
   return `only a seat of this team pulls a task; this request names ${seat}`;
 }
 
-/** The policy, applied on this side of the boundary, before the answer is serialized. */
+/** The message id rule (`src/commands/messages.ts`), the same token a task id is. The adapter
+ *  judges the source's identifier by presence; the id that crosses — after the transform — must
+ *  be a task id, so it is judged here, before a record is accepted or a lease is written. */
+const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
+
+/** The policy, applied on this side of the boundary, before the answer is serialized. A record
+ *  whose final id is not a task id is refused in the adapter's own shape — the same sentence,
+ *  the same keys, the same key order — at the source position of the record it came from. With
+ *  nothing converted the adapter's refusal list passes through untouched, so a no-transform run
+ *  answers byte for byte what it answered before (fix2 P2). */
 function filtered(read: TaskRead, policy?: TaskPolicy): TaskRead {
   if (read.kind !== 'records') return read;
-  return { kind: 'records', records: read.records.map((record) => applyPolicy(record, policy)), refusals: read.refusals };
+  const taken = new Set(read.refusals.map((refusal) => refusal.index));
+  const records: TaskRecord[] = [];
+  const converted: TaskRefusal[] = [];
+  read.records.forEach((record, position) => {
+    const crossed = applyPolicy(record, policy);
+    if (!TASK_ID.test(crossed.id)) {
+      converted.push({ index: sourceIndex(position + 1, taken), reason: 'its id is not a task id' });
+      return;
+    }
+    records.push(crossed);
+  });
+  if (converted.length === 0) return { kind: 'records', records, refusals: read.refusals };
+  return { kind: 'records', records, refusals: [...read.refusals, ...converted].sort((a, b) => a.index - b.index) };
+}
+
+/** The source's 1-based position of its position-th accepted record: the accepted records and
+ *  the adapter's refused indexes are two halves of one partition of the source's positions. */
+function sourceIndex(position: number, taken: Set<number>): number {
+  let index = 0;
+  let left = position;
+  while (left > 0) {
+    index += 1;
+    if (!taken.has(index)) left -= 1;
+  }
+  return index;
 }
 
 function answer(socket: Socket, value: BrokerAnswer): void {

@@ -508,6 +508,54 @@ describe('the per-field policy', () => {
     expect(answer).toEqual({ ok: true, read: { kind: 'records', records: [{ id: 'ACME-1', title: 'a task' }], refusals: [] } });
   });
 
+  test('a record whose final id is not a task id is refused on the broker\'s side, at today\'s exact bytes', async () => {
+    project();
+    record();
+    await serving(async () => records([{ id: 'https://linear.app/acme/issue/ACME-1', title: 'a task' }]));
+    // The adapter carries the URL identifier; with no transform the broker refuses it — the same
+    // sentence, keys and key order the adapter's own refusal always had (fix2 P2 byte discipline).
+    const line = await send(`${encodeLine(leadSeat)}`);
+    expect(line).toBe('{"ok":true,"read":{"kind":"records","records":[],"refusals":[{"index":1,"reason":"its id is not a task id"}]}}');
+  });
+
+  test('a converted refusal takes the source position of its record, the list staying in order', async () => {
+    project();
+    record();
+    await serving(async () =>
+      records(
+        [
+          { id: 'ACME-1', title: 'one' },
+          { id: 'https://linear.app/acme/issue/ACME-2', title: 'two' },
+          { id: 'ACME-3', title: 'three' },
+        ],
+        [{ index: 4, id: 'ACME-4', reason: 'title is required' }],
+      ),
+    );
+    const line = await send(`${encodeLine(leadSeat)}`);
+    expect(JSON.parse(line)).toEqual({
+      ok: true,
+      read: {
+        kind: 'records',
+        records: [
+          { id: 'ACME-1', title: 'one' },
+          { id: 'ACME-3', title: 'three' },
+        ],
+        refusals: [
+          { index: 2, reason: 'its id is not a task id' },
+          { index: 4, id: 'ACME-4', reason: 'title is required' },
+        ],
+      },
+    });
+  });
+
+  test('id: bare lets a source URL cross as its last segment', async () => {
+    project();
+    record();
+    await serving(async () => records([{ id: 'https://linear.app/acme/issue/ACME-1', title: 'a task' }]), { transform: { id: 'bare' } });
+    const answer = parseAnswer(await send(`${encodeLine(leadSeat)}`));
+    expect(answer).toEqual({ ok: true, read: { kind: 'records', records: [{ id: 'ACME-1', title: 'a task' }], refusals: [] } });
+  });
+
   test('a failed read keeps its detail on the broker\'s terminal and tells the seat the one line', async () => {
     project();
     record();

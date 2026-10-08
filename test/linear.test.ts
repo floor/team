@@ -105,13 +105,15 @@ describe('the Linear read', () => {
     expect(missing.result).toEqual({ kind: 'refused', message: 'the tracker answer did not carry a page bound' });
   });
 
-  test('the record mapping carries the file adapter\'s validation, refused by index and id', async () => {
+  test('the record mapping carries the file adapter\'s validation, refused by index and id, and a source identifier passes on presence alone', async () => {
     const { result } = await read(
       answer(
         issues([
           node({ identifier: 'ACME-1' }),
           node({ identifier: 'ACME-2', title: '' }),
-          node({ identifier: 'not a task id\n' }),
+          // A source may name a task by its URL: the adapter carries it, and the broker judges
+          // the shape of the final id the policy leaves (fix2 P2).
+          node({ identifier: 'https://linear.app/acme/issue/ACME-9' }),
           node({ identifier: 'ACME-3', assignee: { displayName: '' } }),
           node({ identifier: 'ACME-4', priority: 0 }),
           node({ identifier: 'ACME-4' }),
@@ -122,12 +124,12 @@ describe('the Linear read', () => {
     if (result.kind !== 'served' || result.read.kind !== 'records') throw new Error('the read was not served');
     expect(result.read.records.map((record) => [record.id, record.priority, record.description])).toEqual([
       ['ACME-1', 1, 'the body'],
+      ['https://linear.app/acme/issue/ACME-9', 1, 'the body'],
       ['ACME-4', undefined, 'the body'],
       ['ACME-5', 1, undefined],
     ]);
     expect(result.read.refusals).toEqual([
       { index: 2, id: 'ACME-2', reason: 'title must be a single line' },
-      { index: 3, reason: 'its id is not a task id' },
       { index: 4, id: 'ACME-3', reason: 'assignee must be text' },
       { index: 6, id: 'ACME-4', reason: 'its id repeats an earlier record' },
     ]);

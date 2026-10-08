@@ -596,6 +596,30 @@ tasks:
     expect(leaseNames()).toEqual([]);
   });
 
+  test('a source URL id reaches the transform: the bare id answers and leases', async () => {
+    ready(`${LINEAR}  policy:
+    transform:
+      id: bare
+`);
+    const tracker = world([brokerNode({ identifier: 'https://linear.app/acme/issue/ACME-1' })]);
+    const broker = await command(tracker.fetch);
+    expect(await run()).toEqual({ code: 0, out: 'ACME-1  the task title\n', err: '' });
+    expect(lease('ACME-1')).toMatchObject({ id: 'ACME-1', seat: 'lead', pane: 'w1:p1' });
+    expect(broker.reads()).toBe(1);
+    broker.finish();
+    expect(await broker.running).toBe(0);
+  });
+
+  test('with no transform the source URL id refuses at the sentence and bytes of before', async () => {
+    ready(LINEAR);
+    const tracker = world([brokerNode({ identifier: 'https://linear.app/acme/issue/ACME-1' })]);
+    const broker = await command(tracker.fetch);
+    expect(await run()).toEqual({ code: 1, out: '', err: 'team next: record 1 is not a task: its id is not a task id\n' });
+    expect(leaseNames()).toEqual([]);
+    broker.finish();
+    expect(await broker.running).toBe(0);
+  });
+
   test('an answer this build does not know, and a broker that never answers, both claim nothing', async () => {
     ready(LINEAR);
     const garbage = await rawServer((socket) => socket.end('not json\n'));

@@ -48,9 +48,6 @@ export type LinearReadResult =
   | { kind: 'served'; read: TaskRead; notice?: string }
   | { kind: 'refused'; message: string };
 
-/** The message id rule (`src/commands/messages.ts`), the same token a task id is. */
-const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
-
 const UNREAD = 'the tracker could not be read';
 const NO_PROJECT = 'the tracker does not hold that project';
 const UNBOUNDED = 'the tracker answer did not carry a page bound';
@@ -129,13 +126,14 @@ function legalKey(key: string): boolean {
 }
 
 /** One issue node mapped to the typed record with the file adapter's validation style; a node
- *  the record cannot carry is refused, named by its index, never dropped. */
+ *  the record cannot carry is refused, named by its index, never dropped. The identifier is
+ *  judged by presence alone here: a source may name a task by its URL, and whether the id is a
+ *  task id is the broker's call, on the final id the policy leaves (fix2 P2, src/broker/server.ts). */
 function readNode(node: unknown, index: number): TaskRecord | TaskRefusal {
   if (!node || typeof node !== 'object' || Array.isArray(node)) return { index, reason: 'the tracker node is not a task' };
   const entries = node as Record<string, unknown>;
   const identifier = entries.identifier;
   if (typeof identifier !== 'string' || identifier === '') return { index, reason: 'id is required' };
-  if (!ID.test(identifier)) return { index, reason: 'its id is not a task id' };
   const title = line(entries.title);
   if (entries.title === undefined || entries.title === null) return { index, id: identifier, reason: 'title is required' };
   if (title === undefined || title.length > 200) return { index, id: identifier, reason: 'title must be a single line' };
