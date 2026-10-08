@@ -21,7 +21,9 @@ describe('Codex launch and captured screens', () => {
     expect(codex.loginCheck).toEqual(['login', 'status']);
     expect(codex.exit).toBe('/exit');
     expect(versionVerdict('codex-cli 0.157.0', codex.tested)).toBe('tested');
-    expect(versionVerdict('codex-cli 0.160.0', codex.tested)).toBe('newer');
+    expect(versionVerdict('codex-cli 0.160.0', codex.tested)).toBe('tested');
+    expect(versionVerdict('codex-cli 0.161.0', codex.tested)).toBe('tested');
+    expect(versionVerdict('codex-cli 0.162.0', codex.tested)).toBe('newer');
   });
   test.each([
     ['idle', 'idle'], ['unsent', 'unsent'], ['working', 'working'],

@@ -114,7 +114,7 @@
     },
     "codex": {
       "idle": {
-        "real": 4,
+        "real": 5,
         "constructed": 2,
         "undocumented": 0
       },
@@ -764,6 +764,12 @@
       "file": "codex/0.160.0/rules-short.txt",
       "cli": "codex",
       "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "codex/0.161.0/idle.txt",
+      "cli": "codex",
+      "kind": "idle",
       "provenance": "capture"
     },
     {

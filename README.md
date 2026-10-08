@@ -151,7 +151,7 @@ herdr workspace title. Left out of the file, it is the model and version in lowe
 label written in the file is kept. `team doctor` warns, and does not refuse the file, when a name
 or a label repeats the project or the session.
 
-The Codex profile is tested with CLI 0.157.0. Its status line is read for a weekly figure
+The Codex profile is tested with CLI 0.157.0 to 0.161.0. Its status line is read for a weekly figure
 (`weekly N% left`) when the pane is wide enough to show the number; a cut line is not a figure.
 It adds `-a never -s danger-full-access`
 for unattended execution, plus `--no-daemon --no-alt-screen` for the captured pane mode,
