@@ -98,6 +98,19 @@ describe('team messages', () => {
     expect(existsSync(messageKeyPath(home))).toBe(true);
   });
 
+  test('a body that fails to print leaves no receipt, and a retry shows it', async () => {
+    project();
+    const record = payload();
+    plantMessage(home, record.root, 'lead', 'm1', record);
+    const io = testIo(root, { kind: 'owner' });
+    io.stdout = () => { throw new Error('stdout failed'); };
+    await expect(runMessages([], io, { home, now: () => new Date('2026-10-04T09:00:00.000Z') })).rejects.toThrow('stdout failed');
+    expect(existsSync(receiptFile(record.root, 'lead', 'm1'))).toBe(false);
+    const again = await run();
+    expect(again).toEqual({ code: 0, out: `${BODY}\n`, err: '' });
+    expect(existsSync(receiptFile(record.root, 'lead', 'm1'))).toBe(true);
+  });
+
   test('a verifying record prints the body and writes the receipt in the same step', async () => {
     project();
     const record = payload();

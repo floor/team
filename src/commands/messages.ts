@@ -275,8 +275,10 @@ export async function runMessages(argv: string[], io: Io, sources: MessagesSourc
       failed = true;
       continue;
     }
-    writeReceipt(sources.home, root, result, sources.now().toISOString());
+    // The receipt means the body was shown. `io.stdout` returning is that boundary: a throw
+    // leaves no receipt, and the record stays unacked.
     io.stdout(result.body.endsWith('\n') ? result.body : `${result.body}\n`);
+    writeReceipt(sources.home, root, result, sources.now().toISOString());
   }
   if (failed) {
     // exit: messages.shape

@@ -30,7 +30,9 @@ The root is `findRoot`. The session is the team file's session. A copy under a n
 another seat's directory, or bound to another checkout or session, does not verify.
 
 Writes `.agents/messages/<seat>/<id>.read.json` for each record that verifies, signed with the
-message key under its own domain. A receipt that does not verify leaves the message waiting.
+message key under its own domain. The receipt is written only after `io.stdout` has returned the
+body: a write that throws leaves no receipt, and the record stays waiting. A receipt that does
+not verify leaves the message waiting.
 The second run, once every waiting record has a receipt, prints that nothing is waiting.
 
 `team init` lists `.agents/messages/` in `.git/info/exclude`, the same way it lists the team file.
