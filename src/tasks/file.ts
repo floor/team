@@ -105,7 +105,7 @@ function readRecord(node: YamlNode, index: number): TaskRecord | TaskRefusal {
 }
 
 function line(node: YamlNode): string | undefined {
-  if (node.kind !== 'scalar' || typeof node.value !== 'string' || node.value.includes('\n')) return undefined;
+  if (node.kind !== 'scalar' || typeof node.value !== 'string' || node.value.includes('\n') || node.value.includes('\r')) return undefined;
   return node.value;
 }
 
@@ -120,7 +120,7 @@ function optionalPriority(node: YamlNode | undefined): string | number | undefin
   if (!node) return undefined;
   if (node.kind !== 'scalar') return 'bad';
   if (typeof node.value === 'number' && Number.isFinite(node.value)) return node.value;
-  if (typeof node.value === 'string' && node.value !== '' && !node.value.includes('\n')) return node.value;
+  if (typeof node.value === 'string' && node.value !== '' && !node.value.includes('\n') && !node.value.includes('\r')) return node.value;
   return 'bad';
 }
 

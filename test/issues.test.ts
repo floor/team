@@ -209,6 +209,38 @@ describe('team issues', () => {
     });
   });
 
+  test('a single-line field refuses a carriage return, and a description keeps one', async () => {
+    project();
+    list('- id: m1\n  title: "first\\rsecond"\n');
+    expect(await run()).toEqual({
+      code: 1,
+      out: '',
+      err: 'team issues: m1 is not a task: title must be a single line\n',
+    });
+    list('- id: m1\n  title: "first\\nsecond"\n');
+    expect(await run()).toEqual({
+      code: 1,
+      out: '',
+      err: 'team issues: m1 is not a task: title must be a single line\n',
+    });
+    list('- id: m1\n  title: the task title\n');
+    expect(await run()).toEqual({ code: 0, out: 'm1  the task title\n', err: '' });
+    const fields: Array<[string, string]> = [
+      ['assignee: "a\\rb"', 'assignee must be text'],
+      ['milestone: "a\\rb"', 'milestone must be text'],
+      ['deadline: "a\\rb"', 'deadline must be text'],
+      ['priority: "a\\rb"', 'priority is not text or a number'],
+      ['repos: ["a\\rb"]', 'repos is not a list of names'],
+      ['needs: ["a\\rb"]', 'needs is not a list of names'],
+    ];
+    for (const [field, reason] of fields) {
+      list(`- id: m1\n  title: the task title\n  ${field}\n`);
+      expect(await run()).toEqual({ code: 1, out: '', err: `team issues: m1 is not a task: ${reason}\n` });
+    }
+    list('- id: m1\n  title: the task title\n  description: "first\\rsecond"\n');
+    expect(await run()).toEqual({ code: 0, out: 'm1  the task title\n  description: first\rsecond\n', err: '' });
+  });
+
   test('a description may contain newlines, and one trailing newline is not an extra line', async () => {
     project();
     const block = 'm1  the task title\n  description: first\n    second\n';
