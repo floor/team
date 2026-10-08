@@ -52,7 +52,8 @@ function text(entry: YamlEntry | undefined): string | undefined {
 
 /**
  * A task path is relative to the checkout and lexical `..` cannot leave it. When the root is
- * known, a symlink that resolves outside is the same refusal.
+ * known, a symlink that resolves outside is the same refusal. A name that only starts with `..`
+ * is inside.
  */
 export function taskPathStaysInside(path: string, root?: string): boolean {
   if (path.startsWith('~') || isAbsolute(path) || path.includes('\\') || path.includes('\0')) return false;
@@ -70,8 +71,13 @@ export function taskPathStaysInside(path: string, root?: string): boolean {
   if (!root) return true;
   const abs = resolve(root, segments.join('/'));
   const rel = relative(root, abs);
-  if (rel.startsWith('..') || isAbsolute(rel)) return false;
+  if (relativeEscapes(rel)) return false;
   return !symlinkLeaves(abs, root);
+}
+
+/** The relative result leaves the checkout when it is `..`, starts with `../`, or is absolute. */
+export function relativeEscapes(rel: string): boolean {
+  return rel === '..' || rel.startsWith('../') || isAbsolute(rel);
 }
 
 function symlinkLeaves(target: string, root: string): boolean {
@@ -86,7 +92,7 @@ function symlinkLeaves(target: string, root: string): boolean {
     try {
       if (lstatSync(cursor).isSymbolicLink()) {
         const fromRoot = relative(realRoot, realpathSync(cursor));
-        if (fromRoot.startsWith('..') || isAbsolute(fromRoot)) return true;
+        if (relativeEscapes(fromRoot)) return true;
       }
     } catch {
       // Absent. The parent that exists is checked on the next step.

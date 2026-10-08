@@ -1,8 +1,8 @@
 // The file adapter. It reads a YAML list the owner committed. It does not write, and it holds
 // no credential. The command calls it only through the adapter interface.
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
-import { isAbsolute, relative, resolve } from 'node:path';
-import { taskPathStaysInside } from '../file/sections/tasks.ts';
+import { relative, resolve } from 'node:path';
+import { relativeEscapes, taskPathStaysInside } from '../file/sections/tasks.ts';
 import { parseYaml, YamlError, type YamlNode } from '../yaml.ts';
 import type { TaskAdapter, TaskRead, TaskReadInput, TaskRecord, TaskRefusal } from './adapter.ts';
 
@@ -54,7 +54,7 @@ function isFileInside(full: string, root: string): boolean {
     const realRoot = realpathSync(root);
     const real = realpathSync(full);
     const fromRoot = relative(realRoot, real);
-    if (fromRoot.startsWith('..') || isAbsolute(fromRoot)) return false;
+    if (relativeEscapes(fromRoot)) return false;
     return lstatSync(real).isFile();
   } catch {
     return false;

@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvedFingerprints } from '../src/approve/approval.ts';
 import { fingerprints } from '../src/approve/fingerprint.ts';
 import { commands, main } from '../src/cli.ts';
 import { runIssues } from '../src/commands/issues.ts';
+import { taskPathStaysInside } from '../src/file/sections/tasks.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import { emptySession } from '../src/state.ts';
 import type { TaskAdapter } from '../src/tasks/adapter.ts';
@@ -206,6 +207,41 @@ describe('team issues', () => {
       out: '',
       err: 'team issues: record 1 is not a task: id is required\n',
     });
+  });
+
+  test('a name that starts with .. stays inside the checkout, and a real escape does not', async () => {
+    project();
+    mkdirSync(join(root, '..tasks'));
+    writeFileSync(join(root, '..tasks', 'tasks.yaml'), '- id: m1\n  title: the task title\n');
+    const direct = `${TEAM}tasks:\n  source: file\n  path: ..tasks/tasks.yaml\n`;
+    expect(validateTeamFile(direct, { root }).ok).toBe(true);
+    expect(taskPathStaysInside('..tasks/tasks.yaml', root)).toBe(true);
+    writeFileSync(join(root, '.agents', 'team.yaml'), direct);
+    expect(await run()).toEqual({ code: 0, out: 'm1  the task title\n', err: '' });
+
+    symlinkSync(join(root, '..tasks'), join(root, 'via'));
+    const via = `${TEAM}tasks:\n  source: file\n  path: via/tasks.yaml\n`;
+    expect(validateTeamFile(via, { root }).ok).toBe(true);
+    writeFileSync(join(root, '.agents', 'team.yaml'), via);
+    expect(await run()).toEqual({ code: 0, out: 'm1  the task title\n', err: '' });
+
+    for (const path of ['../outside.yaml', '/tmp/outside.yaml', 'foo\\bar.yaml', '~/x', 'a\0b']) {
+      expect(taskPathStaysInside(path, root)).toBe(false);
+      const result = validateTeamFile(`${TEAM}tasks:\n  source: file\n  path: ${path}\n`, { root });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.errors.map((error) => error.message)).toContain('tasks.path must stay inside the checkout');
+    }
+
+    const elsewhere = mkdtempSync(join(tmpdir(), 'team-issues-out-'));
+    writeFileSync(join(elsewhere, 'tasks.yaml'), '- id: m1\n  title: the task title\n');
+    symlinkSync(elsewhere, join(root, 'linked'));
+    const linked = `${TEAM}tasks:\n  source: file\n  path: linked/tasks.yaml\n`;
+    const outside = validateTeamFile(linked, { root });
+    expect(outside.ok).toBe(false);
+    if (!outside.ok) expect(outside.errors.map((error) => error.message)).toContain('tasks.path must stay inside the checkout');
+    writeFileSync(join(root, '.agents', 'team.yaml'), linked);
+    expect(await run()).toEqual({ code: 1, out: '', err: 'team issues: tasks.path must stay inside the checkout\n' });
+    rmSync(elsewhere, { recursive: true, force: true });
   });
 
   test('an old approval adopts an omitted tasks section, and adding one differs', () => {
