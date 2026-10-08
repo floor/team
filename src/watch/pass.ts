@@ -61,8 +61,9 @@ export type Memory = {
   // constant — can make an unsent box the watch's own, and it lives in this process: a restarted
   // watch has none, and text it did not type is left as its owner left it.
   ownNudge: { pane: string; text: string } | null;
-  // Message ids this process has already told the owner about. A restarted watch has none, so
-  // an old unacked record is said again; a receipt takes the record off the list.
+  // `${recipient}/${id}` this process has already told the owner about. Two seats can hold the
+  // same id. A restarted watch has none, so an old unacked record is said again; a receipt
+  // takes the record off the list.
   mailboxTold: Set<string>;
 };
 
@@ -476,9 +477,10 @@ export function pass({
       ring = { pane: record.pane, text: RING_TEXT, cli: record.cli, to: record.to, id: record.id };
       continue;
     }
-    if (!free && mailboxNote === null && now - record.at >= watch.nudgeWait * 1000 && !memory.mailboxTold.has(record.id)) {
+    const toldKey = `${record.to}/${record.id}`;
+    if (!free && mailboxNote === null && now - record.at >= watch.nudgeWait * 1000 && !memory.mailboxTold.has(toldKey)) {
       mailboxNote = `message ${record.id} for ${record.to} has been waiting ${minutes(now - record.at)} minutes`;
-      memory.mailboxTold.add(record.id);
+      memory.mailboxTold.add(toldKey);
     }
   }
   return { reports, nudge, fallback, ring, mailboxNote, readings };

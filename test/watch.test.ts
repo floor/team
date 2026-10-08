@@ -1748,6 +1748,22 @@ describe('team watch', () => {
     expect(existsSync(join(dir, '.agents', 'messages', 'claude-operator-acme', 'm1.json'))).toBe(true);
   });
 
+  test('two seats holding the same id each get one owner line', async () => {
+    const at = new Date(clock - 601_000).toISOString();
+    planted('claude-operator-acme', 'one body', at);
+    planted('deepseek-acme', 'another body', at);
+    const blocked = live({
+      'claude-operator-acme': { status: 'working', screen: busy },
+      'deepseek-acme': { status: 'working', screen: busy },
+    });
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(2, { home: join(dir, 'home'), live: () => blocked }));
+    expect(typed).toEqual([]);
+    // One note per pass, so the second seat is said on the next pass and its minute count has moved.
+    expect(io.out.split('message m1 for claude-operator-acme has been waiting').length - 1).toBe(1);
+    expect(io.out.split('message m1 for deepseek-acme has been waiting').length - 1).toBe(1);
+  });
+
   test('an old unacked record whose box is not free raises one owner line and types nothing', async () => {
     const body = 'the message body itself';
     planted('deepseek-acme', body, new Date(clock - 601_000).toISOString());
