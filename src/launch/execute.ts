@@ -712,15 +712,24 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         // beside the shell's own startup child, and 600 ms later listed the program alone; a
         // launch line whose relative path was missing listed the shell at once, and 400 ms later
         // still. A slow wrapper looks the same for longer: one drew its CLI on the
-        // fourth poll, so a stretch of one or two polls is not an end. The end is said only on
-        // what was read: the shell's own process is the pane's foreground program for three
-        // full polls on end — one reading starts the stretch and three more carry it past
-        // `pollMs` three times, and a single reading, the verdict's mutation, can never reach it
-        // — and the launch line's echo is still on the screen, so the line did run and a prompt
-        // below it is the CLI's absence, not the line's. A pane read before the line arrived,
-        // one whose echo scrolled away, or a herdr that can't say (no shell process info) is
-        // waited out to the deadline: the end is never inferred from the screen's text.
+        // fourth poll, so a stretch of one or two polls is not an end.
+        //
+        // The echo is NOT evidence the line ran: captured over 24 synthetic trials, a fresh
+        // pane's shell can leave the typed line unread for seconds while the tty's echo sits on
+        // the screen — 8.9 s to 10.3 s across 7 trials, and one capture had the pane's process
+        // appear 60 ms after the verdict was said. The end is said only on what was read: the
+        // shell's own process is the pane's foreground program, with the launch line's echo
+        // still up, across the stretch of `12 * pollMs` — one reading starts it and twelve more
+        // carry it past twelve poll intervals (24 s at the 2 s poll, 2.3x the longest silence
+        // measured) — and a single reading, the verdict's mutation, can never reach it. A pane
+        // read before the line arrived, one whose echo scrolled away, or a herdr that can't say
+        // (no shell process info) is waited out to the deadline: the end is never inferred from
+        // the screen's text.
         let shellBackSince: number | null = null;
+        // The whole time the shell has been seen back in this wait, for the report: unlike the
+        // stretch above it is never cleared, so a stretch broken by one unreadable poll does not
+        // restart the count the message states.
+        let shellBackFirst: number | null = null;
         for (;;) {
           const kind = host.classify(session, here.pane, op.cli);
           last = kind;
@@ -728,11 +737,12 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           const at = host.now();
           if (kind === 'unknown' && back === true) {
             shellBackSince ??= at;
-            if (at - shellBackSince >= 3 * pollMs) {
+            shellBackFirst ??= at;
+            if (at - shellBackSince >= 12 * pollMs) {
               const read = host.paneText?.(session, here.pane) ?? null;
               if (read !== null && echoIndex(plainPaneText(read).split('\n'), op.command) >= 0) {
                 endedRead = read;
-                endedFor = Math.round((at - shellBackSince) / 1000);
+                endedFor = Math.round((at - shellBackFirst) / 1000);
                 outcome = 'ended';
                 break;
               }
@@ -805,9 +815,10 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         const read = endedRead ?? host.paneText?.(session, here.pane) ?? null;
         if (outcome === 'ended') {
           // The report says only what was read: the shell has been the pane's foreground
-          // program for `endedFor` seconds and no CLI prompt is on the screen. The workspace is
-          // left open; the seat stays at launched, and a later `up` resumes it — the same
-          // reading covers a CLI that exited and one that never began.
+          // program for `endedFor` seconds — the whole time since it was first seen back in
+          // this wait — and no CLI prompt is on the screen. The workspace is left open; the
+          // seat stays at launched, and a later `up` resumes it — the same reading covers a CLI
+          // that exited and one that never began.
           final(
             op.seat,
             { kind: 'left out', reason: `its pane has been back at its shell for ${endedFor} s and shows no CLI prompt; left at launched` },
