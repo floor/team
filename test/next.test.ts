@@ -1,15 +1,21 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { connect, createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvedFingerprints } from '../src/approve/approval.ts';
 import { fingerprints } from '../src/approve/fingerprint.ts';
+import { DEADLINE, NOT_RUNNING, WRONG_ANSWER } from '../src/broker/client.ts';
+import { brokerSocket } from '../src/broker/protocol.ts';
+import { startBroker, type BrokerReadResult } from '../src/broker/server.ts';
 import { anotherPaneRefusal, noPaneRefusal, type Caller } from '../src/caller.ts';
 import { main } from '../src/cli.ts';
+import { runBroker } from '../src/commands/broker.ts';
 import { runIssues } from '../src/commands/issues.ts';
-import { runNext } from '../src/commands/next.ts';
+import { runNext, type NextSources } from '../src/commands/next.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
+import type { Fetch } from '../src/release/http.ts';
 import { emptySession, updateState } from '../src/state.ts';
 import type { TaskAdapter } from '../src/tasks/adapter.ts';
 import { LEASE_MS } from '../src/tasks/lease.ts';
@@ -453,5 +459,183 @@ describe('team next', () => {
     const page = readFileSync(join(import.meta.dir, '..', 'docs', 'commands', 'issues.md'), 'utf8');
     expect(page).not.toContain('`team next` and `team plan` are not commands.');
     expect(page).toContain('`team plan` is not a command.');
+  });
+});
+
+describe('team next over the broker', () => {
+  const PROJECT_ID = '01234567-89ab-cdef-0123-456789abcdef';
+  const KEY = 'test-key-not-real';
+
+  const LINEAR = `${TEAM}tasks:
+  source: linear
+  linear:
+    project: ${PROJECT_ID}
+    keychainService: team.linear.acme
+`;
+  const LINEAR_POLICY = `${LINEAR}  policy:
+    omit: [priority]
+`;
+  const WORKER_ONLY_LINEAR = `format: 1
+project: acme
+coordinator: worker
+operator: worker
+workspace:
+  mode: shared
+seats:
+  - role: coordinator
+    name: worker
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+tasks:
+  source: linear
+  linear:
+    project: ${PROJECT_ID}
+    keychainService: team.linear.acme
+`;
+
+  function teamFrom(text: string) {
+    const checked = validateTeamFile(text);
+    if (!checked.ok) throw new Error(`the fixture does not validate: ${checked.errors.map((error) => error.message).join('; ')}`);
+    return checked.team;
+  }
+
+  /** The answer map, the release world's shape: no test here opens a connection. */
+  function world(nodes: unknown[]): { fetch: Fetch; requests: number[] } {
+    const requests: number[] = [];
+    const value = { data: { project: { id: PROJECT_ID, issues: { nodes, pageInfo: { hasNextPage: false } } } } };
+    const fetch: Fetch = (url, request) => {
+      requests.push(0);
+      return Promise.resolve({ kind: 'http', status: 200, body: JSON.stringify(value) });
+    };
+    return { fetch, requests };
+  }
+
+  function brokerNode(change: Record<string, unknown> = {}): Record<string, unknown> {
+    return { identifier: 'm1', title: 'the task title', ...change };
+  }
+
+  async function waitFor(check: () => boolean): Promise<void> {
+    for (let tries = 0; tries < 200; tries++) {
+      if (check()) return;
+      await new Promise((tick) => setTimeout(tick, 10));
+    }
+    throw new Error('the condition never held');
+  }
+
+  /** The broker command in-process: the keychain and the tracker are seams, the stop is held. */
+  async function command(fetch: Fetch): Promise<{ running: Promise<number>; finish: () => void; err: string; reads: () => number }> {
+    const io = testIo(root);
+    let finish!: () => void;
+    let reads = 0;
+    const running = runBroker([], io, {
+      home,
+      keyReader: async () => {
+        reads += 1;
+        return { ok: true, key: KEY };
+      },
+      fetch,
+      stop: (end) => {
+        finish = end;
+        return () => {};
+      },
+    });
+    await waitFor(() => io.err.includes('answering on'));
+    return { running, finish, err: io.err, reads: () => reads };
+  }
+
+  /** A plain listener on the clone's socket path, closed with its connections (bun's node:net
+   *  server has no `closeAllConnections`). */
+  async function rawServer(handler: (socket: Socket) => void): Promise<() => Promise<void>> {
+    const sockets: Socket[] = [];
+    const server = createServer((socket) => {
+      sockets.push(socket);
+      handler(socket);
+    });
+    await new Promise<void>((done) => server.listen(brokerSocket(root), () => done()));
+    return async () => {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((done) => server.close(() => done()));
+    };
+  }
+
+  /** A broker serving one reader, for the refusals the command maps to its exits. */
+  async function serve(read: () => Promise<BrokerReadResult>, text = LINEAR): Promise<() => Promise<void>> {
+    const started = await startBroker({ root, team: teamFrom(text), read, stderr: () => {} });
+    if (started.kind !== 'serving') throw new Error(`the broker did not start: ${started.kind}`);
+    return () => started.handle.close();
+  }
+
+  async function runWith(sources: NextSources) {
+    const io = testIo(root, lead);
+    const code = await runNext([], io, { home, now: () => now, ...sources });
+    return { code, out: io.out, err: io.err };
+  }
+
+  test('with no broker running the take refuses and claims nothing', async () => {
+    ready(LINEAR);
+    expect(await run()).toEqual({ code: 1, out: '', err: `team next: ${NOT_RUNNING}\n` });
+    expect(leaseNames()).toEqual([]);
+  });
+
+  test('a served read prints the record, applies the file policy, and takes the local lease', async () => {
+    ready(LINEAR_POLICY);
+    const tracker = world([brokerNode({ priority: 1 })]);
+    const broker = await command(tracker.fetch);
+    expect(await run()).toEqual({ code: 0, out: 'm1  the task title\n', err: '' });
+    expect(lease()).toMatchObject({ id: 'm1', seat: 'lead', pane: 'w1:p1' });
+    expect(tracker.requests.length).toBe(1);
+    expect(broker.reads()).toBe(1);
+    broker.finish();
+    expect(await broker.running).toBe(0);
+    // The lease is local: --release works with the broker gone, and claims nothing from it.
+    expect(await run(['--release'])).toEqual({ code: 0, out: 'team next: released m1\n', err: '' });
+    expect(leaseNames()).toEqual([]);
+  });
+
+  test('an answer this build does not know, and a broker that never answers, both claim nothing', async () => {
+    ready(LINEAR);
+    const garbage = await rawServer((socket) => socket.end('not json\n'));
+    try {
+      expect(await run()).toEqual({ code: 1, out: '', err: `team next: ${WRONG_ANSWER}\n` });
+    } finally {
+      await garbage();
+    }
+    const silent = await rawServer(() => {});
+    try {
+      expect(await runWith({ deadlineMs: 200 })).toEqual({ code: 1, out: '', err: `team next: ${DEADLINE}\n` });
+    } finally {
+      await silent();
+    }
+    expect(leaseNames()).toEqual([]);
+  });
+
+  test('a failed read is the seat\'s read refusal, and a stale team is the caller\'s', async () => {
+    ready(LINEAR);
+    const failing = await serve(() => Promise.resolve({ kind: 'failed', message: 'the tracker could not be read' }));
+    try {
+      expect(await run()).toEqual({ code: 1, out: '', err: 'team next: the broker failed this read\n' });
+    } finally {
+      await failing();
+    }
+    // A broker left over from another team: its request check refuses the caller, and the seat
+    // maps that to its own caller exit — the answer says which side refused.
+    const stale = await serve(() => Promise.resolve({ kind: 'read', read: { kind: 'records', records: [], refusals: [] } }), WORKER_ONLY_LINEAR);
+    try {
+      expect(await run()).toEqual({ code: 1, out: '', err: 'team next: only a seat of this team pulls a task; this request names lead\n' });
+    } finally {
+      await stale();
+    }
+    expect(leaseNames()).toEqual([]);
+  });
+
+  test('a policy the validator refuses is the file refusal, before any broker is asked', async () => {
+    ready(`${LINEAR}  policy:
+    omit: [title]
+`);
+    expect(await run()).toEqual({ code: 1, out: '', err: 'team next: tasks.policy.omit must not name id or title, the record itself\n' });
+    expect(leaseNames()).toEqual([]);
   });
 });

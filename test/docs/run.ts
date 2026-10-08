@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { runAdd } from '../../src/commands/add.ts';
 import { runAnswer, type AnswerHost } from '../../src/commands/answer.ts';
 import { runApprove, type Waiting } from '../../src/commands/approve.ts';
+import { runBroker } from '../../src/commands/broker.ts';
 import { check, loadConfig } from '../../src/commands/check.ts';
 import { commits } from '../../src/commands/commits.ts';
 import { pr } from '../../src/commands/pr.ts';
@@ -169,6 +170,12 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
       return runAdd(rest, io, world.addSources());
     case 'answer':
       return runAnswer(rest, io, answerHost(fixture.home));
+    // The broker page's one runnable line is the file-source refusal, which precedes the
+    // credential read — no keychain, no socket, no peer on the page's fixture. The command's own
+    // refusals that need a broker source are shown as text on the page instead: their sentences
+    // differ by platform, and the docs suite runs on macOS and Linux.
+    case 'broker':
+      return runBroker(rest, io, { home: fixture.home });
     case 'approve':
       return runApprove(rest, io, {
         ask: async (question) => {

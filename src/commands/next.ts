@@ -1,9 +1,14 @@
-// `team next`: claim one record from the file the owner committed, with a lease in this clone.
-// The source is a file the owner committed. No command in this build contacts a tracker.
-// The broker is not built. Credential-withholding is not this slice. There is no tracker
-// credential here to withhold. `team plan` is not a command.
+// `team next`: claim one record from the team's one task source, with a lease in this clone.
+// The source is a file the owner committed, or a tracker the owner's broker reads. The broker
+// holds the only tracker credential: this command asks it over `.agents/broker.sock`, one
+// request line out and one answer line back, and never sees the key — the answer is the record
+// after the team file's task policy filtered it. With no broker running, a broker source
+// refuses and claims nothing. The lease stays local either way: a tracker-side claim is a write,
+// and this build does not write to a tracker. `team plan` is not a command.
 import { join } from 'node:path';
 import { readArgs } from '../args.ts';
+import { askBroker, DEADLINE, NOT_RUNNING, WRONG_ANSWER } from '../broker/client.ts';
+import type { BrokerRequest } from '../broker/protocol.ts';
 import {
   anotherPaneRefusal,
   callerVerdict,
@@ -15,7 +20,7 @@ import {
 import { findRoot, loadTeamFile, NOT_A_REPO } from '../file/load.ts';
 import type { TeamFile } from '../file/types.ts';
 import type { Command, Io } from '../io.ts';
-import type { TaskAdapter, TaskRecord } from '../tasks/adapter.ts';
+import type { TaskAdapter, TaskRecord, TaskRefusal } from '../tasks/adapter.ts';
 import { fileRegistry } from '../tasks/file.ts';
 import { formatRecords } from '../tasks/format.ts';
 import { claimLocal, releaseLocal } from '../tasks/lease.ts';
@@ -27,6 +32,9 @@ export type NextSources = {
   /** Injected the way a watch's sources are. The shipped registry is the file adapter alone. */
   registry?: Record<string, TaskAdapter>;
   now?: () => number;
+  /** The broker client's deadline, injected the way the release check injects its timeout: a
+   *  test shortens it instead of hanging. Production leaves it at the client's own. */
+  deadlineMs?: number;
 };
 
 export const next: Command = (argv, io) => runNext(argv, io);
@@ -50,6 +58,9 @@ export async function runNext(argv: string[], io: Io, sources: NextSources = {})
   if (!loaded.ok) return file(io, loaded.errors[0]?.message ?? 'the team file can\'t be read');
   const tasks = loaded.team.tasks;
   if (!tasks) return file(io, 'the team file declares no task source');
+  if (tasks.source === 'linear') {
+    return nextFromBroker(io, loaded, tasks, sources, args.flags.has('release'), args.flags.has('mine'));
+  }
   const registry = sources.registry ?? fileRegistry;
   const adapter = registry[tasks.source];
   if (!adapter) return file(io, 'tasks.source must be file');
@@ -71,24 +82,87 @@ export async function runNext(argv: string[], io: Io, sources: NextSources = {})
     io.stderr('team next: the task file is not a list\n');
     return shape();
   }
-  const pull = tasks.pull ?? 'self';
-  const fallback = tasks.fallback ?? 'file';
-  const mine = args.flags.has('mine');
+  const claimFn = adapter.claim;
+  const claim = claimFn
+    ? (record: TaskRecord) =>
+        claimFn({ root: loaded.root, path: tasks.path, record, seat: placed.seat, pane: placed.pane, now: at }).kind === 'held'
+    : undefined;
+  return take(io, loaded.root, read, placed, tasks.pull ?? 'self', tasks.fallback ?? 'file', args.flags.has('mine'), at, claim);
+}
+
+/**
+ * The broker source: the S2 seat gate first — the broker checks the same facts again, on the
+ * request — then one request line and one answer line. The seat sends its claimed (seat, pane)
+ * and nothing else; no token, because a token would live where a sibling of the same principal
+ * can read it. Every failure is a refusal that claims nothing.
+ */
+async function nextFromBroker(
+  io: Io,
+  loaded: { team: TeamFile; root: string },
+  tasks: Extract<NonNullable<TeamFile['tasks']>, { source: 'linear' }>,
+  sources: NextSources,
+  release: boolean,
+  mine: boolean,
+): Promise<number> {
+  const placed = place(loaded.team, loaded.root, io);
+  if (placed.kind === 'refused') return callerRefuse(io, placed.message);
+  const now = sources.now ?? Date.now;
+  const at = now();
+  if (release) {
+    // The tracker holds no claim: the lease is local, and `--release` unlinks it without
+    // reaching the broker at all.
+    const result = releaseLocal(loaded.root, placed.seat, placed.pane, at);
+    if (result.kind === 'released') return released(io, result.id);
+    return none(io, 'nothing is held');
+  }
+  const request: BrokerRequest = { op: 'read', seat: placed.seat, pane: placed.pane };
+  const options = sources.deadlineMs === undefined ? {} : { deadlineMs: sources.deadlineMs };
+  const outcome = await askBroker(loaded.root, request, options);
+  if (outcome.kind === 'unavailable') return broker(io, NOT_RUNNING);
+  if (outcome.kind === 'wrong') return broker(io, WRONG_ANSWER);
+  if (outcome.kind === 'deadline') return broker(io, DEADLINE);
+  if (outcome.kind === 'refused') {
+    if (outcome.at === 'caller') return callerRefuse(io, outcome.message);
+    return readFail(io, outcome.message);
+  }
+  // This build's broker answers records for a linear source; any other read kind is an answer
+  // the seat fails safe on, exactly like an unparseable line.
+  if (outcome.read.kind !== 'records') return broker(io, WRONG_ANSWER);
+  if (outcome.notice !== undefined) io.stderr(`team next: ${outcome.notice}\n`);
+  return take(io, loaded.root, outcome.read, placed, tasks.pull ?? 'self', tasks.fallback ?? 'file', mine, at, undefined);
+}
+
+/**
+ * The take itself, identical for both sources once a read exists: order the takeable records,
+ * claim one — through the adapter when it carries a tracker-side claim, through the local lease
+ * otherwise — and report. A notice about the read has already gone to stderr; a refusal in the
+ * read is named and the exit is the shape's.
+ */
+function take(
+  io: Io,
+  root: string,
+  read: { records: readonly TaskRecord[]; refusals: readonly TaskRefusal[] },
+  placed: { seat: string; pane: string },
+  pull: 'self' | 'any',
+  fallback: 'file' | 'id',
+  mine: boolean,
+  at: number,
+  claim: ((record: TaskRecord) => boolean) | undefined,
+): number {
   const known = new Map(read.records.map((record) => [record.id, record]));
   const candidates = order(takeable(read.records, placed.seat, pull, mine), fallback);
   let outcome: { kind: 'held'; record: TaskRecord } | { kind: 'none' } | { kind: 'kept' };
-  if (adapter.claim) {
+  if (claim) {
     let held: TaskRecord | undefined;
     for (const record of candidates) {
-      const result = adapter.claim({ root: loaded.root, path: tasks.path, record, seat: placed.seat, pane: placed.pane, now: at });
-      if (result.kind === 'held') {
+      if (claim(record)) {
         held = record;
         break;
       }
     }
     outcome = held ? { kind: 'held', record: held } : { kind: 'none' };
   } else {
-    outcome = claimLocal(loaded.root, { now: at, seat: placed.seat, pane: placed.pane, known, candidates });
+    outcome = claimLocal(root, { now: at, seat: placed.seat, pane: placed.pane, known, candidates });
   }
   for (const refusal of read.refusals) {
     const who = refusal.id ?? `record ${refusal.index}`;
@@ -149,9 +223,12 @@ function invocation(io: Io, message: string, usage: boolean): number {
   return 2;
 }
 
+/** The team file, or the tasks section's rules: the policy refusals leave through here too —
+ *  the exit-codes suite's other face of this same return. */
 function file(io: Io, message: string): number {
   io.stderr(`team next: ${message}\n`);
   // exit: next.file
+  // exit: next.policy
   return 1;
 }
 
@@ -169,6 +246,18 @@ function shape(): number {
 function callerRefuse(io: Io, message: string): number {
   io.stderr(`team next: ${message}\n`);
   // exit: next.caller
+  return 1;
+}
+
+function broker(io: Io, message: string): number {
+  io.stderr(`team next: ${message}\n`);
+  // exit: next.broker
+  return 1;
+}
+
+function readFail(io: Io, message: string): number {
+  io.stderr(`team next: ${message}\n`);
+  // exit: next.read
   return 1;
 }
 
