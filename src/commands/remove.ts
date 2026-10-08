@@ -270,20 +270,22 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     return 1;
   }
   const listed = agents.filter((item) => item.name === name);
-  // A name the approved copy does not carry. The owner keeps today's refusal, and so does a
-  // record with no single live agent. A caller who is not the owner, meeting one live agent
-  // herdr reports idle or done whose screen is not a running turn, takes the leave below
-  // instead: nothing typed, nothing closed. A temporary record stays the owner's. A working
-  // leftover stays out, and the line names that caller's way.
+  // A name the approved copy does not carry, and the live file does not declare. The owner
+  // keeps today's refusal, and so does a record with no single live agent, a temporary record,
+  // and a name the live file still declares. A caller who is not the owner, meeting one live
+  // agent herdr reports idle or done whose screen — read with the cli the record carries — is
+  // not a running turn, takes the leave below instead: nothing typed, nothing closed, and the
+  // file is not edited. With no recorded cli the screen reads unknown, and idle or done still
+  // leaves. A working leftover stays out, and the line names that caller's way.
   let leave = false;
   // Both busy refusals — a working leftover, and a seat this run will not take — print here,
   // so the exit marker has one site.
   let busy: string | undefined;
   if (!copySeat && !abandon) {
     const only = listed.length === 1 ? listed[0] : undefined;
-    if (!temporary && caller.kind !== 'owner' && only) {
+    if (!temporary && declared === undefined && caller.kind !== 'owner' && only) {
       const liveCwd = sources.foregroundCwd ? sources.foregroundCwd(session, only.pane) : null;
-      const screen = sources.screen(session, only.pane, '', liveCwd);
+      const screen = sources.screen(session, only.pane, recorded?.cli ?? '', liveCwd);
       const where = stateOf(only.status, screen);
       if (where === 'working' || only.status === 'working') {
         busy = `team remove: ${name} is working; left as it is (run this again once herdr reports the seat idle or done)\n`;
