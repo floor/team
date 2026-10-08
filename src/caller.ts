@@ -326,8 +326,10 @@ export function describeCaller(caller: Caller): string {
   if (caller.kind === 'owner-no-tty') return 'unplaced (it doesn\'t run on a terminal)';
   if (caller.kind === 'seat') return caller.name;
   if (caller.kind === 'pane') {
-    const where = caller.session === undefined ? caller.pane : `${caller.session}/${caller.pane}`;
-    return `it runs in pane ${where}, which no grant lists`;
+    // A sessioned pane was placed against a file, and the refusal may say no grant lists it.
+    // A sessionless pane was placed before any file was read, so it cannot say that.
+    if (caller.session === undefined) return `it runs in pane ${caller.pane}`;
+    return `it runs in pane ${caller.session}/${caller.pane}, which no grant lists`;
   }
   return `unplaced (${caller.reason})`;
 }
