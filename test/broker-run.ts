@@ -5,8 +5,9 @@
 // opens a network connection: the tracker is an answer map, the release world's shape. Five
 // proofs, in order: the broker with `team next` as the state-recorded seat (the policy-filtered
 // take, the local lease, the key in no file and no output); the authorization refusals over the
-// real socket; the real `team broker` child in a scratch pane refusing without a terminal,
-// fail-closed; the real child broker SIGKILLed — the socket file stays, the next start clears it
+// real socket; the real `team broker` child in a scratch pane refused at the owner gate before
+// the Keychain and before any bind — a pane is never the owner's terminal, fail-closed; the real
+// child broker SIGKILLed — the socket file stays, the next start clears it
 // and binds — then SIGTERMed to a clean stop; and `team next` in a pane as that pane's own
 // process, refused at the seat gate with nothing claimed (the agent-recording attempt is quoted
 // either way). The stale-socket pin is `test/broker.test.ts`'s: a clean close removes the file, a
@@ -199,7 +200,9 @@ function capture(child: ChildProcess): { child: ChildProcess; out: () => string;
 
 /** The child broker: the real `runBroker` with the released world's injected seams (a literal
  *  key, an answer map) — the one way a child can bind and be SIGKILLed without ever reading the
- *  Keychain. Written into the scratch dir, next to the clone, not into the repo. */
+ *  Keychain. The io hands in the owner's caller: the child runs under this harness's own seat,
+ *  and the start is the owner's. Written into the scratch dir, next to the clone, not into the
+ *  repo. */
 const CHILD = `import { runBroker } from ${JSON.stringify(pathToFileURL(join(import.meta.dir, '..', 'src', 'commands', 'broker.ts')).href)};
 const io = {
   cwd: process.argv[2],
@@ -208,6 +211,7 @@ const io = {
   stdoutIsTTY: false,
   stdout: (text) => process.stdout.write(text),
   stderr: (text) => process.stderr.write(text),
+  caller: { kind: 'owner' },
 };
 const code = await runBroker([], io, {
   home: process.argv[3],
@@ -285,7 +289,7 @@ try {
   // A call, not a read: the count must never be narrowed into a comparison's type error.
   const tracked = (): number => requests.length;
   let finish: (() => void) | undefined;
-  const brokerIo = testIo(root);
+  const brokerIo = testIo(root, { kind: 'owner' });
   const served = runBroker([], brokerIo, {
     home,
     keyReader: async (service) => {
@@ -368,15 +372,23 @@ try {
   if (brokerIo.out !== '') throw new Error('the broker wrote to stdout');
   if (existsSync(brokerSocket(root))) throw new Error('the clean close left the socket file');
 
-  // Proof 2: the real command in a pane, no terminal — the keychain gate refuses before any
-  // lookup, any request or any bind.
+  // Proof 2: the real command in a pane — a pane is never the owner's terminal, so the owner
+  // gate refuses before the Keychain, before any request and before any bind. Strictly earlier
+  // and stronger than the facility's own `the run is not interactive`, which a terminal-less
+  // owner still reads (pinned in test/broker.test.ts).
   herdr('pane', 'run', leadPane, `bash ${JSON.stringify(join(base, 'nofacility.sh'))}`);
   const nofacilityGlass = await readPane(leadPane, '--- nofacility done ---');
   const nofacilityAt = nofacilityGlass.indexOf('--- broker without a terminal ---');
   const nofacility = nofacilityAt < 0 ? nofacilityGlass : nofacilityGlass.slice(nofacilityAt);
   console.log('--- proof 2: `team broker` without a terminal, in a pane ---');
   console.log(nofacility);
-  if (!nofacility.includes('team broker: the run is not interactive') || !nofacility.includes('exit:1')) throw new Error('the no-terminal run did not refuse as pinned');
+  // The pane glass wraps at its own (narrow) width, mid-word included — this run wrapped
+  // "ter/minal" at 53 columns — so the sentence is pinned whitespace-free: the words, the
+  // backticks and the exit are still what is checked, and the keychain sentence's absence too.
+  const squeezed = nofacility.replace(/\s+/g, '');
+  const gateSentence = 'team broker: only the owner runs `broker`, from a terminal outside herdr; this call is '.replace(/\s+/g, '');
+  if (!squeezed.includes(gateSentence) || !nofacility.includes('exit:1')) throw new Error('the pane run did not refuse at the owner gate as pinned');
+  if (squeezed.includes('therunisnotinteractive')) throw new Error('the pane run was refused by the keychain, not the owner gate');
   if (existsSync(brokerSocket(root))) throw new Error('the refused run bound the socket');
 
   // Proof 4: the real child broker bound and SIGKILLed — the socket file stays — then started

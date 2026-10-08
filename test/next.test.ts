@@ -525,9 +525,10 @@ tasks:
     throw new Error('the condition never held');
   }
 
-  /** The broker command in-process: the keychain and the tracker are seams, the stop is held. */
+  /** The broker command in-process: the keychain and the tracker are seams, the stop is held.
+   *  The caller is the owner's: without one the walk would place this test run itself. */
   async function command(fetch: Fetch): Promise<{ running: Promise<number>; finish: () => void; err: string; reads: () => number }> {
-    const io = testIo(root);
+    const io = testIo(root, { kind: 'owner' });
     let finish!: () => void;
     let reads = 0;
     const running = runBroker([], io, {

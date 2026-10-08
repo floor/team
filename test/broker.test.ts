@@ -11,7 +11,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, sy
 import { createServer, connect, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { anotherPaneRefusal, noPaneRefusal } from '../src/caller.ts';
+import { anotherPaneRefusal, noPaneRefusal, type Caller } from '../src/caller.ts';
 import { runBroker, type BrokerSources } from '../src/commands/broker.ts';
 import { askBroker, BROKER_DEADLINE_MS, DEADLINE, NOT_RUNNING, WRONG_ANSWER, type BrokerOutcome } from '../src/broker/client.ts';
 import { applyPolicy, type TaskPolicy } from '../src/broker/policy.ts';
@@ -199,9 +199,11 @@ function node(change: Record<string, unknown> = {}): Record<string, unknown> {
 }
 
 /** The command's seams without the terminal: a literal key, the answer map, and a stop the test
- *  holds. Production's own wiring is never exercised here. */
+ *  holds. Production's own wiring is never exercised here. The caller is handed in: without one
+ *  the walk would place this very test run — a seat under herdr on a dev machine, an owner-no-tty
+ *  on CI — and the start is the owner's. */
 async function startCommand(seams: BrokerSources = {}): Promise<{ running: Promise<number>; io: ReturnType<typeof testIo>; finish: () => void }> {
-  const io = testIo(root);
+  const io = testIo(root, { kind: 'owner' });
   let finish!: () => void;
   const running = runBroker([], io, {
     home,
@@ -309,6 +311,35 @@ describe('the seat\'s client outcomes', () => {
 });
 
 describe('the start protocol', () => {
+  test('a call that is not the owner is refused before the keychain and before any bind', async () => {
+    // The gate is the first thing after the invocation: no team file, no Keychain — the key
+    // reader below must never be called — and no socket file. A pane run counts too: an agent
+    // creates panes, so a pane is never the owner's terminal, TTY or not.
+    project();
+    const path = brokerSocket(root);
+    const callers: [Caller, string][] = [
+      [{ kind: 'seat', name: 'worker', pane: 'w2:p1', session: 'acme' }, 'worker'],
+      [{ kind: 'pane', pane: 'w1:p1' }, 'it runs in pane w1:p1'],
+      [{ kind: 'unplaced', reason: 'AGENT_UNATTENDED is set' }, 'unplaced (AGENT_UNATTENDED is set)'],
+    ];
+    for (const [caller, describe] of callers) {
+      let keyReads = 0;
+      const io = testIo(root, caller);
+      const code = await runBroker([], io, {
+        home,
+        keyReader: async () => {
+          keyReads += 1;
+          return { ok: true, key: KEY };
+        },
+      });
+      expect(code).toBe(1);
+      expect(io.err).toBe(`team broker: only the owner runs \`broker\`, from a terminal outside herdr; this call is ${describe}\n`);
+      expect(io.out).toBe('');
+      expect(keyReads).toBe(0);
+      expect(existsSync(path)).toBe(false);
+    }
+  });
+
   test('a second broker refuses as busy, through the module and through the command', async () => {
     project();
     record();
@@ -346,7 +377,7 @@ describe('the start protocol', () => {
     project();
     const path = brokerSocket(root);
     writeFileSync(path, 'not a socket');
-    const io = testIo(root);
+    const io = testIo(root, { kind: 'owner' });
     const code = await runBroker([], io, { home, keyReader: async () => ({ ok: true, key: KEY }) });
     expect(code).toBe(1);
     expect(io.err).toBe('team broker: the socket could not be bound\n');
@@ -367,7 +398,7 @@ describe('the start protocol', () => {
     const target = join(root, '.agents', 'dead.sock');
     leaveStaleSocket(target);
     symlinkSync(target, path);
-    const io = testIo(root);
+    const io = testIo(root, { kind: 'owner' });
     const code = await runBroker([], io, { home, keyReader: async () => ({ ok: true, key: KEY }) });
     expect(code).toBe(1);
     expect(io.err).toBe('team broker: the socket could not be bound\n');
@@ -577,7 +608,9 @@ describe('the credential never crosses to the seat', () => {
     record();
     let fetched = false;
     const world = tracker(issuesAnswer([]));
-    const io = testIo(root);
+    // The owner's own run with no terminal: past the caller gate — the owner-no-tty caller is
+    // not a seat — and refused by the facility's own sentence, which stays reachable exactly here.
+    const io = testIo(root, { kind: 'owner-no-tty' });
     const code = await runBroker([], io, {
       home,
       keyReader: async () => ({ ok: false, reason: 'the run is not interactive' }),
@@ -595,18 +628,18 @@ describe('the credential never crosses to the seat', () => {
   test('the command refuses a file source, a missing source, and a bad invocation', async () => {
     project(FILE_SOURCE);
     record();
-    const io = testIo(root);
+    const io = testIo(root, { kind: 'owner' });
     expect(await runBroker([], io, { home, keyReader: async () => ({ ok: true, key: KEY }) })).toBe(1);
     expect(io.err).toBe('team broker: tasks.source must be linear; the broker serves a tracker source\n');
     project(LINEAR.replace(/tasks:\n  source: linear\n  linear:\n    project: .*\n    keychainService: .*\n/, ''));
     record();
-    const bare = testIo(root);
+    const bare = testIo(root, { kind: 'owner' });
     expect(await runBroker([], bare, { home, keyReader: async () => ({ ok: true, key: KEY }) })).toBe(1);
     expect(bare.err).toBe('team broker: the team file declares no task source\n');
-    const stray = testIo(base);
+    const stray = testIo(base, { kind: 'owner' });
     expect(await runBroker([], stray, { home })).toBe(2);
     expect(stray.err).toContain('not inside a git repository');
-    const extra = testIo(root);
+    const extra = testIo(root, { kind: 'owner' });
     expect(await runBroker(['extra'], extra, { home })).toBe(2);
     expect(extra.err.startsWith('team broker: unexpected "extra"\nUsage: team broker\n')).toBe(true);
   });

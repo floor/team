@@ -746,6 +746,13 @@
     {
       "code": 1,
       "command": "broker",
+      "id": "broker.not-owner",
+      "meaning": "only the owner runs broker",
+      "trigger": "team broker"
+    },
+    {
+      "code": 1,
+      "command": "broker",
       "id": "broker.policy",
       "meaning": "a task policy the validator refuses",
       "trigger": "team broker"

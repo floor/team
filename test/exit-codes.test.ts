@@ -2631,14 +2631,16 @@ scene('next.not-a-repo', async (place) => show(await nexted(place), 'not inside 
 const okKey: KeyReader = async () => ({ ok: true, key: 'test-key-not-real' });
 const keyRefusing = (reason: string): KeyReader => async () => ({ ok: false, reason });
 
-async function brokered(place: Place, argv: string[] = [], sources: BrokerSources = {}): Promise<Ran> {
-  const io = testIo(place.root, owner);
+async function brokered(place: Place, argv: string[] = [], sources: BrokerSources = {}, caller: Caller = owner): Promise<Ran> {
+  const io = testIo(place.root, caller);
   return { code: await runBroker(argv, io, { home: place.home, ...sources }), out: io.out, err: io.err };
 }
 
 scene('broker.invocation', async (place) => show(await brokered(place, ['extra'], { keyReader: okKey }), 'unexpected'));
 scene('broker.not-a-repo', async (place) => show(await brokered(place, [], { keyReader: okKey }), 'not inside a git repository'), false);
 scene('broker.file', async (place) => show(await brokered(place, [], { keyReader: okKey }), 'no team file'));
+scene('broker.not-owner', async (place) =>
+  show(await brokered(place, [], { keyReader: okKey }, { kind: 'seat', name: 'worker', pane: 'w2:p1', session: 'acme' }), 'only the owner runs `broker`'));
 scene('broker.policy', async (place) => {
   write(place, `${LINEAR}  policy:
     omit: [title]

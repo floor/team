@@ -112,6 +112,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `broker.busy` | `broker` | 1 | a broker is already answering on this clone's socket | `team broker` |
 | `broker.file` | `broker` | 1 | the team file can't be read or parsed | `team broker` |
 | `broker.keychain` | `broker` | 1 | the Keychain credential was refused | `team broker` |
+| `broker.not-owner` | `broker` | 1 | only the owner runs broker | `team broker` |
 | `broker.policy` | `broker` | 1 | a task policy the validator refuses | `team broker` |
 | `broker.source` | `broker` | 1 | the team file declares no task source, or one the broker does not serve | `team broker` |
 | `broker.invocation` | `broker` | 2 | the invocation can't be read | `team broker extra` |

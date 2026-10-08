@@ -1,7 +1,7 @@
 # team broker
 
 Runs the one process that holds the tracker credential and answers `team next` over a local
-socket. The owner starts it, in a terminal, one per clone. Ctrl-C stops it.
+socket. The owner starts it, in a terminal outside herdr, one per clone. Ctrl-C stops it.
 
 The credential lives with the broker process. `team next` asks the broker over a local socket;
 the seat never reads the key. The broker never puts its own credential, or the tracker's API
@@ -55,7 +55,9 @@ unlinked. It never writes the tracker, the team file or a lease.
 
 ## Who may run it
 
-The owner, in a foreground terminal, one per clone. It refuses to start without a terminal, on a
+The owner, in a foreground terminal outside herdr, one per clone. A call placed as a seat, in a
+pane, or under herdr at all is refused before the Keychain is read and before any bind — a pane
+is a pane whether or not a CLI runs in it. It refuses to start without a terminal, on a
 platform without the Keychain facility, when the team file declares no task source or one it does
 not serve, or when a broker is already answering on the socket.
 
@@ -83,6 +85,7 @@ Every line goes to stderr. Nothing is printed on stdout.
 ## Refusals
 
 ```text
+team broker: only the owner runs `broker`, from a terminal outside herdr; this call is <caller>
 team broker: the team file declares no task source
 team broker: tasks.source must be linear; the broker serves a tracker source
 team broker: tasks.policy.omit must not name id or title, the record itself
@@ -105,7 +108,7 @@ have answered on it. A path that cannot be bound is a line, never a crash.
 ## Exit codes
 
 - `0` — it served until it was stopped.
-- `1` — it refused to start, or the team file's policy is refused: no task source, a source the broker does not serve, the Keychain credential was refused, a broker is already answering, or the socket could not be bound.
+- `1` — it refused to start, or the team file's policy is refused: the caller is not the owner, no task source, a source the broker does not serve, the Keychain credential was refused, a broker is already answering, or the socket could not be bound.
 - `2` — the invocation can't be read, or this folder is not a git checkout.
 
 ## Examples
