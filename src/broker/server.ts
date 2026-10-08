@@ -14,9 +14,20 @@
 // functions reused verbatim, against the claimed (seat, pane) and the recorded state: integrity
 // against a mistaken agent, not authenticity against a hostile one (RFC 008 §5's same-principal
 // limit; the page says so).
-import { lstatSync, unlinkSync } from 'node:fs';
+//
+// The whole start section — the lstat gate, the probe, the clear, the bind, the listen — runs
+// under one lock beside the socket (`.agents/broker.sock.lock`, never at the socket path
+// itself), so two starts in two processes serialize instead of racing a path one of them is
+// still on its way to binding (the pin: a real owner held pre-listen, a second real start
+// spawned mid-hold — the owner serves, the second waits and reads it live). The lock file holds
+// its holder's pid and carries `withLock`'s discipline from `src/state.ts` — exclusive create,
+// a lock whose holder is dead taken over — written as an await loop because this section spans
+// awaits, where `withLock` busy-waits; `withLock` itself is untouched. A start whose wait
+// outlasts the deadline answers `locked`: refused, nothing cleared, nothing bound. The lock is
+// released when the listen lands and on every other way out of the section.
+import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer, connect, type Socket } from 'node:net';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { anotherPaneRefusal, callerVerdict, noPaneRefusal, standingOf, type Caller } from '../caller.ts';
 import type { TeamFile } from '../file/types.ts';
 import type { TaskRead, TaskRecord, TaskRefusal } from '../tasks/adapter.ts';
@@ -45,7 +56,8 @@ export type BrokerHandle = { close(): Promise<void> };
 export type StartBrokerResult =
   | { kind: 'serving'; cleared: boolean; handle: BrokerHandle }
   | { kind: 'busy' }
-  | { kind: 'bind-failed'; code?: string };
+  | { kind: 'bind-failed'; code?: string }
+  | { kind: 'locked' };
 
 /** A connection that opens and never sends a line is dropped after this. */
 const REQUEST_IDLE_MS = 5000;
@@ -66,8 +78,108 @@ const START_WALKS = 8;
  *  probed the first's fresh socket "stale" where macOS already read it live). */
 const STALE_CONFIRM_MS = 50;
 
+/** How long a start waits on the start lock's live holder before it refuses. It must outlast a
+ *  sibling start's whole section (the pin holds one for 1500ms and the waiter still wins the
+ *  lock), and it fails closed: past this, the pinned `locked` answer, nothing touched. */
+const LOCK_WAIT_MS = 2000;
+
+/** The wait's poll cadence, and the pause before re-reading a lock too young to hold its pid —
+ *  `withLock`'s own 50 and 20. */
+const LOCK_POLL_MS = 50;
+const LOCK_YOUNG_MS = 1000;
+
+/** `withLock`'s read of "the holder is still running" (it is not exported; the discipline is
+ *  mirrored here, not imported): a pid that answers signal 0, with EPERM — another user's live
+ *  process — counting alive. */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/** `withLock`'s takeover: the file is moved aside first, which only one of two starters can do,
+ *  and put back if the move revealed a fresh live holder another starter took in between. */
+function takeOverLock(path: string, holder: number): boolean {
+  const aside = `${path}.${process.pid}.stale`;
+  try {
+    renameSync(path, aside);
+  } catch {
+    return false;
+  }
+  const found = Number(readFileSync(aside, 'utf8').trim());
+  if (found !== holder && Number.isInteger(found) && found > 0 && alive(found)) {
+    try {
+      renameSync(aside, path);
+    } catch {}
+    return false;
+  }
+  unlinkSync(aside);
+  return true;
+}
+
+/** The start section's lock, `withLock`'s discipline awaited instead of busy-waited: exclusive
+ *  create with the holder's pid written, a live holder waited for until the deadline (answered
+ *  `timeout`, which the caller refuses), a dead or too-young-to-hold-pid lock taken over. The
+ *  file's directory is made the way `withLock` makes its own. */
+async function acquireStartLock(path: string): Promise<{ kind: 'held'; release: () => void } | { kind: 'timeout' }> {
+  mkdirSync(dirname(path), { recursive: true });
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      const fd = openSync(path, 'wx');
+      writeFileSync(fd, `${process.pid}\n`);
+      closeSync(fd);
+      return {
+        kind: 'held',
+        // `withLock`'s own release: the file this hold created, gone. A dead holder never
+        // reaches here — its lock is taken over by the next start — and a live hold is never
+        // taken over, so the unlink is this hold's file.
+        release: () => {
+          try {
+            unlinkSync(path);
+          } catch {}
+        },
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      let holder = NaN;
+      try {
+        holder = Number(readFileSync(path, 'utf8').trim());
+      } catch {
+        continue; // released between the two calls
+      }
+      if (Number.isInteger(holder) && holder > 0 && alive(holder)) {
+        if (Date.now() > deadline) return { kind: 'timeout' };
+        await new Promise((tick) => setTimeout(tick, LOCK_POLL_MS));
+        continue;
+      }
+      // A dead holder, or a lock file too young to hold its pid yet.
+      if (!Number.isInteger(holder) && Date.now() - statSync(path).mtimeMs < LOCK_YOUNG_MS) {
+        await new Promise((tick) => setTimeout(tick, 20));
+        continue;
+      }
+      takeOverLock(path, holder);
+    }
+  }
+}
+
 export async function startBroker(input: StartBrokerInput): Promise<StartBrokerResult> {
   const path = brokerSocket(input.root);
+  const lock = await acquireStartLock(`${path}.lock`);
+  if (lock.kind === 'timeout') return { kind: 'locked' };
+  try {
+    // The lock is held through the whole walk, and released — here, on every return and on a
+    // throw — the moment the section is over: for a serve, as the listen lands.
+    return await startWalk(input, path);
+  } finally {
+    lock.release();
+  }
+}
+
+async function startWalk(input: StartBrokerInput, path: string): Promise<StartBrokerResult> {
   // The entry the previous walk saw a stale answer on, awaiting a second sighting.
   let confirmed: { dev: number; ino: number } | undefined;
   for (let walk = 0; walk < START_WALKS; walk++) {

@@ -238,9 +238,12 @@ writeSync(1, JSON.stringify({
 type FixtureOutcome = { kind: 'serving' | 'busy' | 'bind-failed'; cleared: boolean; dev: number | undefined; ino: number | undefined };
 
 type FixtureChild = {
+  pid: number | undefined;
   said: string[];
   outcome: FixtureOutcome | undefined;
   failure: string | undefined;
+  /** Resolves on the child's `exit` — after it is reaped, its pid is gone. */
+  exited: Promise<void>;
   kill: () => void;
 };
 
@@ -250,7 +253,10 @@ function startFixture(delayMs: number): FixtureChild {
   const script = join(base, `start-${delayMs}.mjs`);
   writeFileSync(script, FIXTURE);
   const child = spawn(process.execPath, [script, root, String(delayMs), join(import.meta.dir, '..')], { stdio: ['ignore', 'pipe', 'pipe'] });
-  const fixture: FixtureChild = { said: [], outcome: undefined, failure: undefined, kill: () => child.kill('SIGKILL') };
+  let exitedDone: () => void = () => {};
+  const exited = new Promise<void>((done) => (exitedDone = done));
+  child.once('exit', () => exitedDone());
+  const fixture: FixtureChild = { pid: child.pid, said: [], outcome: undefined, failure: undefined, exited, kill: () => child.kill('SIGKILL') };
   let buffer = '';
   let err = '';
   child.stdout.setEncoding('utf8');
@@ -294,6 +300,31 @@ async function outcomeOf(fixture: FixtureChild, deadlineMs = 8000): Promise<Fixt
     await new Promise((tick) => setTimeout(tick, 25));
   }
   throw new Error(`the fixture never answered: ${fixture.said.join(' | ')}`);
+}
+
+/** Wait until the start lock names the fixture's own process — its start section has begun and
+ *  the lock is observably its own. */
+async function lockedBy(fixture: FixtureChild): Promise<void> {
+  const lockPath = `${brokerSocket(root)}.lock`;
+  await waitFor(() => {
+    try {
+      return Number(readFileSync(lockPath, 'utf8').trim()) === fixture.pid;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** The pid is gone, not merely signalled: a reaped process answers no signal at all. */
+async function gone(pid: number): Promise<void> {
+  await waitFor(() => {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  });
 }
 
 /** The answer map, the release world's shape: one recorded attempt, every request kept. */
@@ -515,11 +546,12 @@ describe('the start protocol', () => {
     // the owner says ready, while the owner is still on its way to binding. At the base head
     // the path is clean through the whole hold: the racer's walk reads no entry, binds first,
     // and the owner's listen fails EADDRINUSE — the start that began first is the one refused
-    // (rehearsed at the base head, macOS; on CI this pin's own push is the red proof — its
-    // ubuntu run is quoted in the report). The fix this pin holds: the owner takes the start
-    // lock before its walk, the racer waits on that lock and then reads the owner's socket
-    // live — busy — and the path carries the owner's very entry (dev+ino) through everything
-    // the racer did.
+    // (rehearsed at the base head, macOS: 3/3 rounds; the push of this pin alone was the red
+    // on CI — ubuntu run 37798070215 at head 982c4b0, `Expected: "serving"` / `Received:
+    // "bind-failed"`, 1548.59ms — the proof the fix flips). The fix this pin holds: the
+    // owner takes the start lock before its walk, the racer waits on that lock and then reads
+    // the owner's socket live — busy — and the path carries the owner's very entry (dev+ino)
+    // through everything the racer did.
     project();
     record();
     const path = brokerSocket(root);
@@ -540,11 +572,78 @@ describe('the start protocol', () => {
         expect(seen).toEqual({ dev: ownerOutcome.dev, ino: ownerOutcome.ino });
         expect(seen).toEqual({ dev: racerOutcome.dev, ino: racerOutcome.ino });
         expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
+        // The lock covers the start section, not the serve: the owner released it as its
+        // listen landed, and the racer released the very hold it waited for — none is left.
+        expect(existsSync(`${path}.lock`)).toBe(false);
       } finally {
         racer.kill();
       }
     } finally {
       owner.kill();
+    }
+  });
+
+  test('a start lock a killed start left behind is taken over', async () => {
+    // A start killed mid-section — the fixture SIGKILLed while it holds the lock and is still
+    // on its way to binding — leaves the lock file with its dead pid. The next start must not
+    // wedge on it: `withLock`'s discipline, the file moved aside and taken over, serves it.
+    // Nothing was there to clear (the killed section never bound), and the lock the next start
+    // took is released with it.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const killed = startFixture(60000);
+    try {
+      await readyOf(killed);
+      if (killed.pid === undefined) throw new Error('the fixture has no pid');
+      await lockedBy(killed);
+      killed.kill();
+      await killed.exited;
+      await gone(killed.pid);
+      expect(existsSync(lockPath)).toBe(true);
+      expect(Number(readFileSync(lockPath, 'utf8').trim())).toBe(killed.pid);
+      const started = await startBroker({ root, team: teamOf(), read: () => Promise.resolve(records([{ id: 'm1', title: 't' }])), stderr: () => {} });
+      if (started.kind !== 'serving') throw new Error(`the broker did not start: ${started.kind}`);
+      expect(started.cleared).toBe(false);
+      expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
+      expect(existsSync(lockPath)).toBe(false);
+      expect(existsSync(`${lockPath}.${process.pid}.stale`)).toBe(false);
+      await started.handle.close();
+      expect(existsSync(path)).toBe(false);
+    } finally {
+      killed.kill();
+      await killed.exited;
+    }
+  });
+
+  test('a start that waits out the lock deadline refuses with the one line and touches nothing', async () => {
+    // A live holder — a real start, held pre-listen for a minute — keeps the lock past every
+    // waiter's deadline. The module and the command both wait it out and then fail closed: the
+    // pinned line, exit 1, the socket path exactly as the holder left it (nothing yet: the
+    // holder is still on its way to binding), and the lock file still the holder's own bytes.
+    // Neither waiter clears, binds, or writes the lock.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const holder = startFixture(60000);
+    try {
+      await readyOf(holder);
+      if (holder.pid === undefined) throw new Error('the fixture has no pid');
+      await lockedBy(holder);
+      const viaModule = startBroker({ root, team: teamOf(), read: () => Promise.resolve(records([])), stderr: () => {} });
+      const io = testIo(root, { kind: 'owner' });
+      const viaCommand = runBroker([], io, { home, keyReader: async () => ({ ok: true, key: KEY }) });
+      const [moduleResult, commandCode] = await Promise.all([viaModule, viaCommand]);
+      expect(moduleResult).toEqual({ kind: 'locked' });
+      expect(commandCode).toBe(1);
+      expect(io.err).toContain('team broker: another start is binding .agents/broker.sock; try again\n');
+      expect(existsSync(path)).toBe(false);
+      expect(Number(readFileSync(lockPath, 'utf8').trim())).toBe(holder.pid);
+    } finally {
+      holder.kill();
+      await holder.exited;
     }
   });
 
@@ -568,6 +667,8 @@ describe('the start protocol', () => {
     expect(io.out).toBe('');
     // Fail closed: the walk refused the entry, and never unlinked the file.
     expect(readFileSync(path, 'utf8')).toBe('not a socket');
+    // The refusal was made under the start lock, and the lock left with it.
+    expect(existsSync(`${path}.lock`)).toBe(false);
   });
 
   test('the walk clears only a socket: a symlink to a dead broker is left where it is', async () => {
@@ -588,6 +689,8 @@ describe('the start protocol', () => {
     expect(io.out).toBe('');
     expect(lstatSync(path).isSymbolicLink()).toBe(true);
     expect(lstatSync(target).isSocket()).toBe(true);
+    // The refusal was made under the start lock, and the lock left with it.
+    expect(existsSync(`${path}.lock`)).toBe(false);
   });
 });
 

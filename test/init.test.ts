@@ -227,12 +227,14 @@ describe('team init', () => {
     writeFileSync(join(project, '.agents', 'team.log.1'), '');
     writeFileSync(join(project, '.agents', 'team.lock'), '1');
     writeFileSync(join(project, '.agents', 'broker.sock'), '');
+    writeFileSync(join(project, '.agents', 'broker.sock.lock'), '');
     expect(git(project, 'status', '--porcelain')).toBe('');
     expect(existsSync(join(project, '.gitignore'))).toBe(false);
     expect(readFileSync(join(project, '.git', 'info', 'exclude'), 'utf8')).toContain('.agents/team.yaml\n');
     expect(readFileSync(join(project, '.git', 'info', 'exclude'), 'utf8')).toContain('.agents/messages/\n');
     expect(readFileSync(join(project, '.git', 'info', 'exclude'), 'utf8')).toContain('.agents/leases/\n');
     expect(readFileSync(join(project, '.git', 'info', 'exclude'), 'utf8')).toContain('.agents/broker.sock\n');
+    expect(readFileSync(join(project, '.git', 'info', 'exclude'), 'utf8')).toContain('.agents/broker.sock.lock\n');
   });
 
   test('a linked worktree shares the exclusion', async () => {

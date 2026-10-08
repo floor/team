@@ -746,6 +746,13 @@
     {
       "code": 1,
       "command": "broker",
+      "id": "broker.locked",
+      "meaning": "another start is binding this clone's socket",
+      "trigger": "team broker"
+    },
+    {
+      "code": 1,
+      "command": "broker",
       "id": "broker.not-owner",
       "meaning": "only the owner runs broker",
       "trigger": "team broker"
