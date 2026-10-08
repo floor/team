@@ -23,6 +23,7 @@ one line to `.agents/team.log`:
     .agents/seat-locks
     .agents/messages/
     .agents/leases/
+    .agents/broker.sock
 
 The skeleton is validated before it is written. Its `trust:` block names the machine lobby and this checkout:
 
