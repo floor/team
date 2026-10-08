@@ -126,10 +126,9 @@ function optionalPriority(node: YamlNode | undefined): string | number | undefin
 
 function optionalDescription(node: YamlNode | undefined): string | undefined | 'bad' | 'long' {
   if (!node) return undefined;
-  const value = line(node);
-  if (value === undefined || value === '') return 'bad';
-  if (value.length > 4000) return 'long';
-  return value;
+  if (node.kind !== 'scalar' || typeof node.value !== 'string' || node.value === '') return 'bad';
+  if (node.value.length > 4000) return 'long';
+  return node.value;
 }
 
 function optionalIds(node: YamlNode | undefined): string[] | undefined | 'bad' {

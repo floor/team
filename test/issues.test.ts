@@ -209,6 +209,32 @@ describe('team issues', () => {
     });
   });
 
+  test('a description may contain newlines, and one trailing newline is not an extra line', async () => {
+    project();
+    const block = 'm1  the task title\n  description: first\n    second\n';
+    list('- id: m1\n  title: the task title\n  description: "first\\nsecond"\n');
+    expect(await run()).toEqual({ code: 0, out: block, err: '' });
+    // The value a `|` block denotes, including its closing newline.
+    list('- id: m1\n  title: the task title\n  description: "first\\nsecond\\n"\n');
+    expect(await run()).toEqual({ code: 0, out: block, err: '' });
+    list('- id: m1\n  title: the task title\n  description: "first\\n\\nsecond"\n');
+    expect(await run()).toEqual({ code: 0, out: 'm1  the task title\n  description: first\n\n    second\n', err: '' });
+    list(`- id: m1\n  title: the task title\n  description: "${'a'.repeat(3999)}\\n"\n`);
+    expect((await run()).code).toBe(0);
+    list(`- id: m1\n  title: the task title\n  description: "${'a'.repeat(4000)}\\n"\n`);
+    expect(await run()).toEqual({
+      code: 1,
+      out: '',
+      err: 'team issues: m1 is not a task: description is over 4000 characters\n',
+    });
+    list('- id: m1\n  title: the task title\n  description: ""\n');
+    expect(await run()).toEqual({
+      code: 1,
+      out: '',
+      err: 'team issues: m1 is not a task: description must be text\n',
+    });
+  });
+
   test('a name that starts with .. stays inside the checkout, and a real escape does not', async () => {
     project();
     mkdirSync(join(root, '..tasks'));

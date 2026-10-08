@@ -80,6 +80,15 @@ function refuse(io: Io, kind: 'file' | 'missing', message: string): number {
   return 1;
 }
 
+/** One trailing newline is the block-scalar ending, not a blank line to print. */
+function descriptionLines(value: string): string[] {
+  const shown = value.endsWith('\n') ? value.slice(0, -1) : value;
+  const parts = shown.split('\n');
+  const lines = [`  description: ${parts[0] ?? ''}`];
+  for (const part of parts.slice(1)) lines.push(part === '' ? '' : `    ${part}`);
+  return lines;
+}
+
 function format(records: readonly TaskRecord[]): string {
   const blocks = records.map((record) => {
     const lines = [`${record.id}  ${record.title}`];
@@ -90,7 +99,7 @@ function format(records: readonly TaskRecord[]): string {
     if (record.blockedBy && record.blockedBy.length) lines.push(`  blocked-by: ${record.blockedBy.join(', ')}`);
     if (record.repos && record.repos.length) lines.push(`  repos: ${record.repos.join(', ')}`);
     if (record.needs && record.needs.length) lines.push(`  needs: ${record.needs.join(', ')}`);
-    if (record.description !== undefined) lines.push(`  description: ${record.description}`);
+    if (record.description !== undefined) lines.push(...descriptionLines(record.description));
     return lines.join('\n');
   });
   return `${blocks.join('\n\n')}\n`;
