@@ -276,6 +276,9 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   // instead: nothing typed, nothing closed. A temporary record stays the owner's. A working
   // leftover stays out, and the line names that caller's way.
   let leave = false;
+  // Both busy refusals — a working leftover, and a seat this run will not take — print here,
+  // so the exit marker has one site.
+  let busy: string | undefined;
   if (!copySeat && !abandon) {
     const only = listed.length === 1 ? listed[0] : undefined;
     if (!temporary && caller.kind !== 'owner' && only) {
@@ -283,13 +286,12 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
       const screen = sources.screen(session, only.pane, '', liveCwd);
       const where = stateOf(only.status, screen);
       if (where === 'working' || only.status === 'working') {
-        io.stderr(`team remove: ${name} is working; left as it is (run this again once herdr reports the seat idle or done)\n`);
-        // exit: remove.busy
-        return 1;
+        busy = `team remove: ${name} is working; left as it is (run this again once herdr reports the seat idle or done)\n`;
+      } else if (only.status === 'idle' || only.status === 'done') {
+        leave = true;
       }
-      if (only.status === 'idle' || only.status === 'done') leave = true;
     }
-    if (!leave) {
+    if (!leave && busy === undefined) {
       io.stderr(`team remove: ${name}: its record is not an approved seat; left as it is (the owner cleans it: team remove ${name} --abandon)\n`);
       // exit: remove.unverified
       return 1;
@@ -316,7 +318,8 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   // its clean stop. The owner keeps the refusal, byte for byte, with the way out it names.
   // A leftover leave decided above is already set, and is not recomputed: a free screen on a
   // name the copy does not carry has no profile to stop, so it leaves rather than types.
-  if (agent && !leave) {
+  // A leftover already marked busy is not recomputed either: this block would drop its way line.
+  if (agent && !leave && busy === undefined) {
     const liveCwd = sources.foregroundCwd ? sources.foregroundCwd(session, agent.pane) : null;
     const screen = sources.screen(session, agent.pane, cli, liveCwd);
     const where = stateOf(agent.status, screen);
@@ -346,15 +349,17 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
         : where === 'unsent' && holdsExit
           ? `holds this CLI's exit text (${profile?.exit}) unsent in its input box; left as it is (the owner sends it or clears it in its pane)`
           : LEFT[where];
-      io.stderr(`team remove: ${name} ${held}${way}\n`);
-      // exit: remove.busy
-      return 1;
-    }
-    if (!profile && !abandon && !leave) {
+      busy = `team remove: ${name} ${held}${way}\n`;
+    } else if (!profile && !abandon && !leave) {
       io.stderr(`team remove: no launch profile for \`${cli}\`; left as it is\n`);
       // exit: remove.no-profile
       return 1;
     }
+  }
+  if (busy !== undefined) {
+    io.stderr(busy);
+    // exit: remove.busy
+    return 1;
   }
 
   // An edit that will not validate is refused before the seat is stopped. Stopping first would
