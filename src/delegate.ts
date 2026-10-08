@@ -399,10 +399,11 @@ type Found =
   | { kind: 'evidence'; reason: string };
 
 /**
- * The entry whose `<session>/<pane id>` is the caller's. The agent name is not compared: a
- * rename of the agent in the approved pane still matches, and a pane renamed to that agent's
- * name does not. The caller is placed in each entry's session, because a pane id only means
- * something inside the session that lists it.
+ * The entry whose `<session>/<pane id>` is the caller's. A seat matches on that pair, and so
+ * does an agentless pane the root vouched. The agent name is not compared: a rename of the
+ * agent in the approved pane still matches, and a pane renamed to that agent's name does not.
+ * The caller is placed in each entry's session, because a pane id only means something inside
+ * the session that lists it.
  */
 function findEntry(entries: readonly Delegate[], io: Pick<Io, 'env' | 'stdinIsTTY' | 'caller' | 'callerSources'>): Found {
   let shown: Caller | undefined;
@@ -413,7 +414,14 @@ function findEntry(entries: readonly Delegate[], io: Pick<Io, 'env' | 'stdinIsTT
     const reason = evidenceCaller(placed);
     if (reason !== null) return { kind: 'evidence', reason };
     if (placed.kind === 'seat' && placed.session === split.session && placed.pane === split.id) return { kind: 'match', entry };
-    if (shown === undefined || (shown.kind !== 'seat' && placed.kind === 'seat')) shown = placed;
+    if (placed.kind === 'pane' && placed.session === split.session && placed.pane === split.id) return { kind: 'match', entry };
+    // A seat is still what a refusal names when one was placed. A pane is what it names when
+    // nothing matched and no seat was placed; an unplaced caller stays the last resort.
+    if (
+      shown === undefined
+      || (shown.kind !== 'seat' && placed.kind === 'seat')
+      || (shown.kind === 'unplaced' && placed.kind === 'pane')
+    ) shown = placed;
   }
   return { kind: 'none', caller: shown ?? callerOf(io) };
 }

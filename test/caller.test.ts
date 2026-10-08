@@ -53,6 +53,47 @@ describe('the caller is placed by its parent processes', () => {
     expect(placeCaller(sources(plain))).toMatchObject({ kind: 'unplaced', reason: expect.stringMatching(/pane without an agent/) });
   });
 
+  test('an agentless pane whose root vouches is that pane, and the session is recorded only when asked', () => {
+    const shell: Process[] = [{ pid: 900, name: 'zsh' }, { pid: 10, name: 'herdr' }];
+    const vouched = sources(shell, {
+      agents: () => [],
+      env: { HERDR_PANE_ID: 'w9:p1' },
+      paneRootPid: (pane) => (pane === 'w9:p1' ? 900 : null),
+    });
+    expect(placeCaller(vouched, 'main')).toEqual({ kind: 'pane', pane: 'w9:p1', session: 'main' });
+    expect(placeCaller(vouched)).toEqual({ kind: 'pane', pane: 'w9:p1' });
+  });
+
+  test('a hint without a vouched pid, or with no hint, stays the agentless refusal', () => {
+    const shell: Process[] = [{ pid: 900, name: 'zsh' }, { pid: 10, name: 'herdr' }];
+    const unplaced = { kind: 'unplaced' as const, reason: 'it runs in a herdr pane without an agent' };
+    expect(placeCaller(sources(shell, {
+      agents: () => [],
+      env: { HERDR_PANE_ID: 'w9:p1' },
+      paneRootPid: () => null,
+    }))).toEqual(unplaced);
+    expect(placeCaller(sources(shell, {
+      agents: () => [],
+      env: { HERDR_PANE_ID: 'w9:p1' },
+      paneRootPid: () => 1,
+    }))).toEqual(unplaced);
+    expect(placeCaller(sources(shell, { agents: () => [], env: {} }))).toEqual(unplaced);
+  });
+
+  test('herdr silence and an unnamed agent still refuse, hint or not', () => {
+    const shell: Process[] = [{ pid: 900, name: 'zsh' }, { pid: 10, name: 'herdr' }];
+    expect(placeCaller(sources(shell, {
+      agents: () => null,
+      env: { HERDR_PANE_ID: 'w9:p1' },
+      paneRootPid: () => 900,
+    }))).toEqual({ kind: 'unplaced', reason: 'it runs under herdr, and herdr doesn\'t answer' });
+    const unnamed: Process[] = [{ pid: 300, name: 'claude' }, { pid: 10, name: 'herdr' }];
+    expect(placeCaller(sources(unnamed, { env: { HERDR_PANE_ID: 'w3:p1' } }))).toEqual({
+      kind: 'unplaced',
+      reason: 'it runs in pane w3:p1, whose agent has no herdr name',
+    });
+  });
+
   test('an agent whose pane has no herdr name can\'t be placed', () => {
     const unnamed: Process[] = [{ pid: 300, name: 'claude' }, { pid: 10, name: 'herdr' }];
     expect(placeCaller(sources(unnamed))).toMatchObject({ kind: 'unplaced', reason: expect.stringMatching(/no herdr name/) });
@@ -106,6 +147,8 @@ describe('the classes read apart', () => {
     expect(mayLaunchSeats({ kind: 'owner' })).toBe(true);
     expect(mayLaunchSeats({ kind: 'owner-no-tty' })).toBe(true);
     expect(mayLaunchSeats({ kind: 'unplaced', reason: 'x' })).toBe(false);
+    expect(isOwner({ kind: 'pane', pane: 'w9:p1', session: 'main' })).toBe(false);
+    expect(mayLaunchSeats({ kind: 'pane', pane: 'w9:p1', session: 'main' })).toBe(false);
   });
 
   test('the log bracket is owner for both; a refusal reads as main\'s unplaced line', () => {
@@ -115,6 +158,9 @@ describe('the classes read apart', () => {
     // as `unplaced` with this reason. `up` alone may now run for it; the refusal of every other
     // command must not change shape for a script that reads it.
     expect(describeCaller({ kind: 'owner-no-tty' })).toBe('unplaced (it doesn\'t run on a terminal)');
+    expect(describeCaller({ kind: 'pane', pane: 'w9:p1', session: 'main' })).toBe('it runs in pane main/w9:p1, which no grant lists');
+    expect(describeCaller({ kind: 'pane', pane: 'w9:p1' })).toBe('it runs in pane w9:p1, which no grant lists');
+    expect(callerLabel({ kind: 'pane', pane: 'w9:p1', session: 'main' })).toBe('main/w9:p1');
   });
 });
 
@@ -128,6 +174,8 @@ describe('who may change a running team', () => {
   test('no other seat, and no unplaced caller', () => {
     expect(mayChangeTeam({ kind: 'seat', name: 'codex-acme', pane: 'w2:p1' }, team)).toBe(false);
     expect(mayChangeTeam({ kind: 'unplaced', reason: 'x' }, team)).toBe(false);
+    expect(mayChangeTeam({ kind: 'pane', pane: 'w9:p1', session: 'main' }, team)).toBe(false);
+    expect(callerVerdict({ kind: 'pane', pane: 'w9:p1', session: 'main' }, 'claude-coordinator')).toEqual({ kind: 'refused' });
   });
 });
 

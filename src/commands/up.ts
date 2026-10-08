@@ -629,7 +629,9 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
       sources.home,
       processes,
       (pane) => sources.launch?.paneText(session, pane) ?? null,
-      caller.kind !== 'seat',
+      // A passed delegation is not the owner, pane or seat. Every other caller keeps today's
+      // reading: anyone but a seat.
+      delegated === null && caller.kind !== 'seat',
     );
     // A stopped seat, one without a profile, and one already ready are left out of the budget.
     // A seat resumed into a live workspace starts nowhere new, but its reading is still said.

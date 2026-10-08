@@ -20,6 +20,10 @@ export type Caller =
   // the caller's pane root was found in that session's agent list. Absent when no session was
   // asked about (the caller's own server answered) and on callers a test hands in.
   | { kind: 'seat'; name: string; pane: string; session?: string }
+  // An agentless herdr pane whose root process is among the caller's ancestors. The pane id
+  // comes from the hint; the pid is what places it. `session` is recorded when the placement
+  // was asked about one, and absent when none was.
+  | { kind: 'pane'; pane: string; session?: string }
   | { kind: 'unplaced'; reason: string };
 
 export type Process = { pid: number; name: string };
@@ -58,6 +62,17 @@ export function placeCaller(sources: CallerSources, session?: string): Caller {
           : { kind: 'seat', name: agent.name, pane: agent.pane, session };
       }
       return { kind: 'unplaced', reason: `it runs in pane ${agent.pane}, whose agent has no herdr name` };
+    }
+    // No agent vouched this caller. An agentless pane is placed only when the hint's pane
+    // root is among the ancestors: the variable names the pane, the pid decides. No hint, a
+    // root that is not an ancestor, or a read that fails stays the refusal below.
+    if (hint) {
+      const root = sources.paneRootPid(hint);
+      if (root !== null && pids.has(root)) {
+        return session === undefined
+          ? { kind: 'pane', pane: hint }
+          : { kind: 'pane', pane: hint, session };
+      }
     }
     return { kind: 'unplaced', reason: 'it runs in a herdr pane without an agent' };
   }
@@ -310,6 +325,10 @@ export function describeCaller(caller: Caller): string {
   // did before: the same sentence for the same caller, as main's tests pin them.
   if (caller.kind === 'owner-no-tty') return 'unplaced (it doesn\'t run on a terminal)';
   if (caller.kind === 'seat') return caller.name;
+  if (caller.kind === 'pane') {
+    const where = caller.session === undefined ? caller.pane : `${caller.session}/${caller.pane}`;
+    return `it runs in pane ${where}, which no grant lists`;
+  }
   return `unplaced (${caller.reason})`;
 }
 
@@ -317,6 +336,9 @@ export function describeCaller(caller: Caller): string {
  *  caller column names classes, and `(no terminal for owner)` on the record already says the rest. */
 export function callerLabel(caller: Caller): string {
   if (caller.kind === 'owner' || caller.kind === 'owner-no-tty') return 'owner';
+  // A passed run's log names the pane. The refusal, which says no grant lists it, stays in
+  // `describeCaller` and is not this bracket.
+  if (caller.kind === 'pane') return caller.session === undefined ? caller.pane : `${caller.session}/${caller.pane}`;
   return describeCaller(caller);
 }
 
