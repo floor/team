@@ -223,7 +223,14 @@ async function acquireStartLock(path: string): Promise<{ kind: 'held'; release: 
         release: () => {
           try {
             const current = lstatSync(path, { throwIfNoEntry: false });
-            if (current && current.dev === held.dev && current.ino === held.ino) unlinkSync(path);
+            if (!current || current.dev !== held.dev || current.ino !== held.ino) return;
+            // The entry's pid too: a filesystem can hand a freed inode straight back to the
+            // next create at the same name, and then dev+ino alone match a replacement — the
+            // ubuntu runner did exactly that (the regression pin's bytes there), while macOS
+            // did not. The bytes the entry names are this process's only for this hold's own
+            // entry; a replacement names its writer.
+            if (readPid(path) !== process.pid) return;
+            unlinkSync(path);
           } catch {}
         },
       };
