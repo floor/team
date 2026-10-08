@@ -182,6 +182,13 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `init.tracked` | `init` | 1 | the team file is tracked | `team init` |
 | `init.invocation` | `init` | 2 | the invocation can't be read | `team init extra` |
 | `init.not-a-repo` | `init` | 2 | not inside a git repository | `team init` |
+| `issues.none` | `issues` | 0 | nothing is waiting | `team issues` |
+| `issues.shown` | `issues` | 0 | the task list was shown | `team issues` |
+| `issues.file` | `issues` | 1 | the team file can't be read, or it declares no task source | `team issues` |
+| `issues.missing` | `issues` | 1 | the task file is not there | `team issues` |
+| `issues.shape` | `issues` | 1 | a record is not a task, or the task file is not a list | `team issues` |
+| `issues.invocation` | `issues` | 2 | the invocation can't be read | `team issues extra` |
+| `issues.not-a-repo` | `issues` | 2 | not inside a git repository | `team issues` |
 | `messages.none` | `messages` | 0 | nothing is waiting | `team messages` |
 | `messages.shown` | `messages` | 0 | a waiting message was shown and its receipt was written | `team messages` |
 | `messages.file` | `messages` | 1 | the team file can't be read | `team messages` |

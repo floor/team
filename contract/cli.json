@@ -439,6 +439,29 @@
         }
       ],
       "hidden": false,
+      "name": "issues",
+      "positionals": [],
+      "subcommands": [],
+      "usage": [
+        "team issues"
+      ]
+    },
+    {
+      "flags": [
+        {
+          "hidden": false,
+          "name": "--help",
+          "repeatable": false,
+          "takesValue": false
+        },
+        {
+          "hidden": true,
+          "name": "-h",
+          "repeatable": false,
+          "takesValue": false
+        }
+      ],
+      "hidden": false,
       "name": "messages",
       "positionals": [],
       "subcommands": [],

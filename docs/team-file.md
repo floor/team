@@ -9,6 +9,26 @@ Schema ships at `schema/team.schema.json`, and `team init` writes a
 [The file's format](../README.md#the-files-format) walks the whole format by example; this page
 documents the sections one by one.
 
+## `tasks`
+
+Names the team's one task source. It is an owner section: adding, changing or removing it is a
+change to the file the owner approves. Omitted, it reads as `null` and `team issues` refuses
+rather than inventing a path.
+
+```yaml
+tasks:
+  source: file
+  path: .agents/tasks.yaml
+```
+
+- `source` must be `file`. No other source is built. There is no tracker and no broker.
+- `path` is relative to the checkout and must stay inside it. An absolute path, a `~` path, or a
+  `..` that leaves the checkout is refused: `tasks.path must stay inside the checkout`.
+- Any other key, including `policy`, `cadence`, and `fallback`, is an unknown field.
+
+The file at `path` is a YAML list of task records. `team issues` reads it. Nothing in this build
+writes it.
+
 ## `delegates`
 
 Names panes outside the team's session that may run some operational commands as a delegate of

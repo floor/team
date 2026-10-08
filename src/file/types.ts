@@ -125,6 +125,11 @@ export type TeamFile = {
   /** The packages `team release check` verifies; empty when the file declares none. */
   releases: ReleaseDecl[];
   /**
+   * The one task source, or null when the file has no `tasks` section. An owner section:
+   * changing it needs a new approval. This slice is the file adapter only.
+   */
+  tasks: { source: 'file'; path: string } | null;
+  /**
    * The panes outside the team's session that may run named operational commands, or null when
    * the file has no `delegates` section. An owner section: changing it needs a new approval.
    */

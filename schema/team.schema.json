@@ -567,6 +567,25 @@
       },
       "$comment": "the packages `team release check` verifies; the validator also refuses a package named twice, a non-boolean trusted_publishing, half of the linear or activity pair, and a malformed project, service, file or marker"
     },
+    "tasks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "path"
+      ],
+      "properties": {
+        "source": {
+          "const": "file"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "$comment": "relative to the checkout, and it must stay inside it"
+        }
+      },
+      "$comment": "one file adapter. source other than file, and a path that leaves the checkout, are refused"
+    },
     "delegates": {
       "type": "array",
       "minItems": 1,

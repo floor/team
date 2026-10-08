@@ -28,9 +28,10 @@ test('the generated owner sections equal the hand-kept list, in order', () => {
     'budgets',
     'watch',
     'watch.checks',
-    // New sections are appended: `delegates` came after every owner section there was, so the
-    // digests of the sections before it, and the order a difference report prints them in,
-    // are the ones records were written with.
+    // `tasks` is the owner section added in front of `delegates`, so `delegates` stays last.
+    // The digests of the sections before `tasks`, and the order a difference report prints them
+    // in, are the ones records were written with.
+    'tasks',
     'delegates',
   ]);
 });

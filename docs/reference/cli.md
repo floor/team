@@ -266,6 +266,25 @@ Usage:
 
 None.
 
+## `issues`
+
+Hidden: no
+
+Usage:
+
+    team issues
+
+### Flags
+
+| Flag | Takes a value | Repeatable | Hidden |
+| --- | --- | --- | --- |
+| `--help` | no | no | no |
+| `-h` | no | no | yes |
+
+### Positionals
+
+None.
+
 ## `messages`
 
 Hidden: no
