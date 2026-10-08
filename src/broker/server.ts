@@ -19,11 +19,13 @@
 // under one lock beside the socket (`.agents/broker.sock.lock`, never at the socket path
 // itself), so two starts in two processes serialize instead of racing a path one of them is
 // still on its way to binding (the pin: a real owner held pre-listen, a second real start
-// spawned mid-hold — the owner serves, the second waits and reads it live). The lock file holds
-// its holder's pid and carries `withLock`'s discipline from `src/state.ts` — exclusive create,
-// a lock whose holder is dead taken over, one start at a time through a claim beside the lock —
-// written as an await loop because this section spans awaits, where `withLock` busy-waits;
-// `withLock` itself is untouched. A start whose wait
+// spawned mid-hold — the owner serves, the second waits and reads it live). The serialization
+// is between starts that leave the paths alone — a same-principal process that removes the
+// lock or the socket path can still split two starts, which the page states. The lock file
+// holds its holder's pid and carries `withLock`'s discipline from `src/state.ts` — exclusive
+// create, a lock whose holder is dead taken over, one start at a time through a claim beside
+// the lock — written as an await loop because this section spans awaits, where `withLock`
+// busy-waits; `withLock` itself is untouched. A start whose wait
 // outlasts the deadline answers `locked`: refused, nothing cleared, nothing bound. The lock is
 // released when the listen lands and on every other way out of the section.
 import { closeSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';

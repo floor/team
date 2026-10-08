@@ -85,7 +85,10 @@ walk ends — for a serve, the moment the socket is listening. A second start wa
 and then asks the path as any start does: it finds a broker answering and stops with the refusal
 below, having cleared and bound nothing. A start that waits out the lock's deadline stops with
 its own refusal and touches nothing; a lock a killed start left behind is taken over, not
-waited on.
+waited on. The serialization is between starts that leave the paths alone: a same-principal
+process that removes the lock path or the socket path while a start runs can still split two
+starts — one left serving on a socket nothing reaches, the other owning the path — and the
+lock holds exactly the paths it names.
 
 `team broker: stopped` when the loop ended and the socket file was removed.
 
