@@ -2,7 +2,9 @@
 // recorded state, dispatch the read, apply the policy, answer one line. The start protocol has
 // three answers, pinned by the recon's probe under bun and node: a connect that succeeds means a
 // broker already answers (refuse, the caller's exit is nonzero); ECONNREFUSED means a socket
-// file left by an unclean death (unlink it, then bind); ENOENT means no file (bind). A clean
+// file left by an unclean death (unlink it, then bind); ENOENT means no file (bind). One lstat
+// stands before all three: a path that is not a socket is refused up front — never probed,
+// never unlinked (the ubuntu CI read that made this a pinned fork: run 37778336251). A clean
 // close removes the file — the runtime owns that, pinned under bun 1.4.2 and node v26.8.1
 // (afterBind true, afterClose false) — and a path that cannot bind is a refusal with a code,
 // never a crash (a regular file at the path fails under both runtimes: EADDRINUSE under bun,
@@ -10,7 +12,7 @@
 // functions reused verbatim, against the claimed (seat, pane) and the recorded state: integrity
 // against a mistaken agent, not authenticity against a hostile one (RFC 008 §5's same-principal
 // limit; the page says so).
-import { unlinkSync } from 'node:fs';
+import { lstatSync, unlinkSync } from 'node:fs';
 import { createServer, connect, type Socket } from 'node:net';
 import { join } from 'node:path';
 import { anotherPaneRefusal, callerVerdict, noPaneRefusal, standingOf, type Caller } from '../caller.ts';
@@ -54,12 +56,23 @@ const FAILED_READ = 'the broker failed this read';
 
 export async function startBroker(input: StartBrokerInput): Promise<StartBrokerResult> {
   const path = brokerSocket(input.root);
+  // The entry, judged by lstat and not by an errno: only a socket belongs to the walk below, and
+  // a path holding anything else is refused here, with the pinned bind sentence, untouched —
+  // never probed, never unlinked, never bound over. CI's ubuntu runner is why this gate is
+  // first (run 37778336251: a regular file answered ECONNREFUSED — Linux's answer where macOS
+  // reads ENOTSOCK, myself: bun 1.4.2 + node v26.8.1 — the stale branch then cleared the file
+  // and bound, the broker served, and both pinning tests timed out on a refusal that never
+  // came). A symlink is "anything else" too: nothing here follows a path someone else planted.
+  const entry = lstatSync(path, { throwIfNoEntry: false });
+  if (entry && !entry.isSocket()) return { kind: 'bind-failed' };
   const probe = await probeSocket(path);
   if (probe === 'live') return { kind: 'busy' };
   let cleared = false;
-  if (probe === 'stale') {
-    // The file names a socket nothing listens on: an unclean death left it (SIGKILL leaves the
-    // file, a clean close does not — both pinned). Clear it, then bind.
+  if (probe === 'stale' && isSocketFile(path)) {
+    // The path names a socket nothing listens on: an unclean death left it (SIGKILL leaves the
+    // file, a clean close does not — both pinned). Clear it, then bind. The re-check above is
+    // the gate of the same name; it fails only if the entry changed between the gate and here,
+    // and then the bind below answers.
     try {
       unlinkSync(path);
       cleared = true;
@@ -88,6 +101,16 @@ export async function startBroker(input: StartBrokerInput): Promise<StartBrokerR
       }),
   };
   return { kind: 'serving', cleared, handle };
+}
+
+/** The only shape the start walk may clear: a socket file. lstat, never stat — a symlink is left
+ *  where it is too, and nothing here follows a path someone else could have planted. */
+function isSocketFile(path: string): boolean {
+  try {
+    return lstatSync(path).isSocket();
+  } catch {
+    return false;
+  }
 }
 
 type Probe = 'live' | 'stale' | 'none';

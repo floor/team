@@ -7,7 +7,7 @@
 // afterBind true, afterClose false on both).
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, connect, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -169,11 +169,11 @@ async function waitFor(check: () => boolean): Promise<void> {
 /** A socket file with no listener behind it, left the way an unclean death leaves one: a child
  *  binds it and SIGKILLs itself. The recon pinned this under bun and node: the file stays, and a
  *  connect to it answers ECONNREFUSED. */
-function leaveStaleSocket(): void {
+function leaveStaleSocket(at: string = brokerSocket(root)): void {
   const script = join(base, 'stale.mjs');
   writeFileSync(script, "import net from 'node:net';\nconst server = net.createServer();\nserver.listen(process.argv[2], () => process.kill(process.pid, 'SIGKILL'));\n");
   try {
-    execFileSync(process.execPath, [script, brokerSocket(root)], { stdio: 'ignore' });
+    execFileSync(process.execPath, [script, at], { stdio: 'ignore' });
   } catch (error) {
     if ((error as { signal?: string }).signal !== 'SIGKILL') throw error;
   }
@@ -335,21 +335,45 @@ describe('the start protocol', () => {
   });
 
   test('a path that cannot bind is a line and exit 1, not a crash, and the file stays', async () => {
-    // A regular file where the socket belongs: the probe reads it as no socket, and the bind
-    // fails under both runtimes (probe run under bun 1.4.2: EADDRINUSE; node v26.8.1: EINVAL).
-    // The probe also showed an over-long path fails under node only — bun binds it, 207 bytes —
-    // so neither path length nor an error code is pinned here; the failing file is the pin.
+    // A regular file where the socket belongs: the lstat gate refuses the entry before any
+    // probe, with the pinned bare sentence and the file untouched. The errno story is why the
+    // gate has no errno: macOS reads the file ENOTSOCK (myself: bun 1.4.2 + node v26.8.1),
+    // where CI's ubuntu runner answered ECONNREFUSED — the walk's "stale" answer, which cleared
+    // the file and bound; this test and the scene timed out there (run 37778336251). Either
+    // read refuses the same way now. (The probe also showed an over-long path fails under node
+    // only — bun binds it, 207 bytes — so no path length or error code is pinned here; the
+    // failing file is the pin.)
     project();
     const path = brokerSocket(root);
     writeFileSync(path, 'not a socket');
     const io = testIo(root);
     const code = await runBroker([], io, { home, keyReader: async () => ({ ok: true, key: KEY }) });
     expect(code).toBe(1);
-    expect(io.err.startsWith('team broker: the socket could not be bound')).toBe(true);
+    expect(io.err).toBe('team broker: the socket could not be bound\n');
     expect(io.err).not.toContain('at Object');
     expect(io.out).toBe('');
-    // Fail closed: the probe read no socket, and the refusal never unlinks the file.
+    // Fail closed: the walk refused the entry, and never unlinked the file.
     expect(readFileSync(path, 'utf8')).toBe('not a socket');
+  });
+
+  test('the walk clears only a socket: a symlink to a dead broker is left where it is', async () => {
+    // The non-socket fork proved without an errno: connect would answer ECONNREFUSED (the link
+    // resolves to a dead socket — a SIGKILLed child left it) and pre-gate the walk cleared the
+    // link and served (probed: pre-fix head 8f9ddb2, outcome serving, cleared true, the path a
+    // socket). The lstat gate refuses first: exit 1, the bare sentence, link and target both
+    // where they were.
+    project();
+    const path = brokerSocket(root);
+    const target = join(root, '.agents', 'dead.sock');
+    leaveStaleSocket(target);
+    symlinkSync(target, path);
+    const io = testIo(root);
+    const code = await runBroker([], io, { home, keyReader: async () => ({ ok: true, key: KEY }) });
+    expect(code).toBe(1);
+    expect(io.err).toBe('team broker: the socket could not be bound\n');
+    expect(io.out).toBe('');
+    expect(lstatSync(path).isSymbolicLink()).toBe(true);
+    expect(lstatSync(target).isSocket()).toBe(true);
   });
 });
 

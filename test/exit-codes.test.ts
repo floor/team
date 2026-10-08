@@ -2667,9 +2667,11 @@ scene('broker.busy', async (place) => {
 });
 scene('broker.bind', async (place) => {
   write(place, LINEAR);
-  // A regular file at the socket path: it is not a socket, so the probe reads no broker and the
-  // bind fails under both runtimes (EADDRINUSE under bun, EINVAL under node) — a refusal with a
-  // line, never a crash, and the file is not destroyed.
+  // A regular file at the socket path: never a broker, and the walk's lstat gate refuses the
+  // entry before any probe — the pinned bare sentence, exit 1, the file untouched. The gate
+  // exists because the read diverges: ENOTSOCK on macOS under both runtimes; CI's ubuntu
+  // runner answered ECONNREFUSED (run 37778336251), the walk cleared the file and this scene
+  // timed out on a refusal that never came.
   const socket = join(place.root, '.agents', 'broker.sock');
   writeFileSync(socket, 'not a socket\n');
   const ran = await brokered(place, [], { keyReader: okKey });

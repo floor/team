@@ -97,9 +97,10 @@ team broker: the socket could not be bound: <code>
 A team file the validator refuses prints its own sentence after `team broker: `.
 
 On start the broker asks the socket path three ways: something answering there is a live broker
-(the refusal above); a leftover file that answers `ECONNREFUSED` is a broker that was killed, and
-it is cleared and the socket bound; nothing there, and the socket is bound. A path that cannot be
-bound is a line, never a crash.
+(the refusal above); a leftover socket file that answers `ECONNREFUSED` is a broker that was
+killed, and it is cleared and the socket bound; nothing there, and the socket is bound. A path
+that is not a socket is refused before any ask — never cleared, never bound over, whatever would
+have answered on it. A path that cannot be bound is a line, never a crash.
 
 ## Exit codes
 
