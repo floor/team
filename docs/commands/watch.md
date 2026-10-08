@@ -84,7 +84,7 @@ is read.
 | --- | --- |
 | `--session <name>` | the herdr session to watch, instead of `team.session` |
 | `--file <path>` | the team file, instead of `.agents/team.yaml`; the owner's alone |
-| `--no-nudge` | the owner's. Never type into the operator's pane; the reports still go to the log, and a report for the owner is still a desktop notification |
+| `--no-nudge` | the owner's. Type nothing into any pane: no report nudge and no message ring. The reports still go to the log, and a report for the owner is still a desktop notification |
 | `--no-notify` | the owner's. No desktop notification for a report addressed to the operator. A report addressed to the owner is still notified, still written to the log, and still visible in `team status` |
 | `--help`, `-h` | the usage, and exit 0 |
 
@@ -157,6 +157,7 @@ A report that is the operator's to act on is also what the nudge stands for. The
 | `nudged the operator: Team watch: reports are waiting in .agents/team.log` | the nudge was typed and sent |
 | `nudged the operator (its own unsent line was already in its box): <nudge>` | the box still held the line this same watch process had typed, its Enter never sent; that line is sent instead of typed again |
 | `nudge not typed (--no-nudge): <nudge>` | `--no-nudge`, with reports waiting |
+| `ring not typed (--no-nudge): Team: run team messages` | `--no-nudge`, with a message waiting and no report nudge to type; nothing is typed and the record stays |
 | `a nudge was typed and not sent: the operator's box does not hold it` | the pane had not drawn the typed line, or held something else, when the bounded wait for it ended; nothing is sent, and the reports wait for the next pass |
 | `the operator could not be nudged for <n> minutes; <k> report(s) wait: <reports>` | the operator was busy for `watch.nudge_wait`; this one is a desktop notification too |
 | `rang <seat>: Team: run team messages` | a message was already waiting and that seat's box was an empty idle prompt; the line was typed and sent, and the body was not |
@@ -170,7 +171,7 @@ A report that is the operator's to act on is also what the nudge stands for. The
 | `worktree <task> was not removed` | its removal failed; it is tried again on the next pass |
 | `the watch of "<session>" stopped` | the last line, on Ctrl-C or a stop signal |
 
-A message already waiting under `.agents/messages/<seat>/` is not a report. When that seat's box is an empty idle prompt, and this pass is not already typing the report nudge, the watch types `Team: run team messages` and not the body. The report nudge wins the pane: a pass that types it does not also type the ring. A message older than `nudge_wait` whose box is not free raises one owner line naming the id and the recipient, types nothing, and leaves the record where it is. Nothing in this build writes that record. A report still leaves as the nudge.
+A message already waiting under `.agents/messages/<seat>/` is not a report. When that seat's box is an empty idle prompt, and this pass is not already typing the report nudge, the watch types `Team: run team messages` and not the body. `--no-nudge` types neither line. The report nudge wins the pane: a pass that types it does not also type the ring. A message older than `nudge_wait` whose box is not free raises one owner line naming the id and the recipient, types nothing, and leaves the record where it is. Nothing in this build writes that record. A report still leaves as the nudge.
 
 ## Budgets
 

@@ -1695,6 +1695,20 @@ describe('team watch', () => {
     return payload;
   }
 
+  test('--no-nudge types no ring and presses no Enter; the record stays', async () => {
+    // The older `--no-nudge` test already has a report waiting, so the nudge branch runs and the
+    // ring branch does not. This pass has no report: the ring would be the only typed line.
+    const body = 'the message body itself';
+    planted('claude-operator-acme', body, '2026-10-03T13:00:00.000Z');
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file, '--no-nudge'], io, sources(1, { home: join(dir, 'home'), live: () => live() }));
+    expect(typed).toEqual([]);
+    expect(io.out).toContain(`ring not typed (--no-nudge): ${RING_TEXT}`);
+    expect(io.out).not.toContain(body);
+    expect(existsSync(join(dir, '.agents', 'messages', 'claude-operator-acme', 'm1.json'))).toBe(true);
+    expect(existsSync(join(dir, '.agents', 'messages', 'claude-operator-acme', 'm1.read.json'))).toBe(false);
+  });
+
   test('an unacked record rings the idle seat with the wake line and not the body', async () => {
     const body = 'the message body itself';
     planted('claude-operator-acme', body, '2026-10-03T13:00:00.000Z');

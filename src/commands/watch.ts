@@ -331,7 +331,8 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);
           else await deliver(result.nudge, team, session, sources, memory, say, tell, told);
         } else if (result.ring) {
-          await deliver({
+          if (args.flags.has('no-nudge')) say(`ring not typed (--no-nudge): ${result.ring.text}`, false);
+          else await deliver({
             pane: result.ring.pane,
             text: result.ring.text,
             pending: [],
