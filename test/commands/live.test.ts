@@ -5793,4 +5793,44 @@ describe('team up, a ready seat whose model drifted', () => {
     expect(made.closes).toEqual([]);
     expect(io.out).toContain('codex-acme: left out: its pane could not be read; nothing closed\n');
   });
+
+  // Text against the input row: the model line still names Terra, and the classifier reads unknown.
+  const unknownFrame = () => terra().replace('\n\n› Ask Codex to do anything', '\ntranscript touching the input\n› Ask Codex to do anything');
+
+  test('a screen this version does not classify is left ready', async () => {
+    const ran = await dry(unknownFrame());
+    expect(ran.code).toBe(0);
+    expect(ran.out).toContain('skip codex-acme: already ready; left as it is');
+    expect(ran.out).not.toContain('workspace close');
+  });
+
+  test('a screen that becomes unclassified before the close is not closed', async () => {
+    readyState();
+    await approve();
+    const made = world();
+    made.session = 'running';
+    made.launch.processInfo = (_session, pane) => {
+      if (pane === 'w91:p1') return { shell: 420, foreground: [420, 421] };
+      if (pane === 'w92:p1') return { shell: 410, foreground: [410, 411] };
+      return { shell: 700, foreground: [700, 701] };
+    };
+    let seen = 0;
+    made.launch.paneText = (_session, pane) => {
+      if (pane !== 'w92:p1') return IDLE;
+      seen += 1;
+      return seen === 1 ? terra() : unknownFrame();
+    };
+    made.launch.agents = () => [lead(), codex()];
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(
+      FILE,
+      io,
+      sources({ sessionState: () => 'running', agents: () => [lead(), codex()], doctor: doctor() }, made),
+    );
+    expect(code).toBe(1);
+    expect(made.closes).toEqual([]);
+    expect(made.renames).toEqual([]);
+    expect(made.runs.some((step) => step.command.includes('codex'))).toBe(false);
+    expect(io.out).toContain('codex-acme: left out: its screen is not idle or done; nothing closed\n');
+  });
 });

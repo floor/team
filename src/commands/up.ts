@@ -282,9 +282,9 @@ function modelDrift(
   const way = driftWay(owner, seat.name);
   // Herdr's word and the screen: either one saying the seat is mid-turn keeps the pane.
   if (listed.status === 'working' || kind === 'working') return { kind: 'hold', detail: `its model drifted; left as it is (${way})` };
-  // Idle or done, including a box that holds unsent text, and a screen this version does not
-  // classify, as long as it named a model. A dialog is not closed from here.
-  if ((listed.status === 'idle' || listed.status === 'done') && (kind === 'idle' || kind === 'unsent' || kind === 'unknown')) {
+  // Idle or done, including a box that holds unsent text. A dialog is not closed from here,
+  // and neither is a screen this version does not classify.
+  if ((listed.status === 'idle' || listed.status === 'done') && (kind === 'idle' || kind === 'unsent')) {
     return { kind: 'cycle', way };
   }
   return { kind: 'skip' };

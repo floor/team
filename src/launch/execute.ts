@@ -1055,7 +1055,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
             refuse(`its model drifted; left as it is (${op.drift.way})`, true);
             break;
           }
-          if (!((status === 'idle' || status === 'done') && (kind === 'idle' || kind === 'unsent' || kind === 'unknown'))) {
+          if (!((status === 'idle' || status === 'done') && (kind === 'idle' || kind === 'unsent'))) {
             refuse('its screen is not idle or done; nothing closed', true);
             break;
           }

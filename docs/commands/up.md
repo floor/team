@@ -143,7 +143,7 @@ again`. A seat herdr reports working, or whose screen shows a running turn, is n
 record stays `<seat>: ready` and the detail names the caller's own way, `  its model drifted;
 left as it is (team remove <seat> --abandon)` for the owner, and `  its model drifted; left as
 it is (run this again once herdr reports the seat idle or done)` for a delegate. A dialog on
-that screen is left ready as well, with today's line. A seat the file names as orchestrator or
+that screen, or a screen this version does not classify, is left ready as well, with today's line. A seat the file names as orchestrator or
 operator is never cycled this way; it keeps the whole-team line above.
 
 A command run in a folder that is not a git repository reads `.agents/team.yaml` in that folder,
@@ -183,7 +183,7 @@ left as it is, the seat is out of the run, and `up` exits 1 with one record:
 | `<seat>: left out: its model drifted; left as it is (team remove <seat> --abandon)` | the owner, and by the close the seat is working — herdr says so, or the screen shows a running turn. Nothing is closed |
 | `<seat>: left out: its model drifted; left as it is (run this again once herdr reports the seat idle or done)` | a delegate, and by the close the seat is working. Nothing is closed |
 | `<seat>: left out: the process in its pane is not the one team launched; nothing closed` | a drifted seat's process changed between the plan and the close |
-| `<seat>: left out: its screen is not idle or done; nothing closed` | a drifted seat's screen is a dialog, or herdr no longer reports it idle or done, and it is not the working row above |
+| `<seat>: left out: its screen is not idle or done; nothing closed` | a drifted seat's screen is a dialog, or a screen this version does not classify, or herdr no longer reports it idle or done, and it is not the working row above |
 | `<seat>: left out: herdr no longer shows this seat on its recorded pane; nothing closed; run team status` | the agent list no longer names the seat on the recorded pane, or that pane's workspace is no longer the recorded one |
 | `<seat>: left out: its workspace holds other panes; nothing closed (close its pane there, then run team up)` | herdr's pane listing for the recorded workspace holds more than the seat's recorded pane |
 | `<seat>: left out: the process in its pane is working; nothing closed (stop it there, or run team remove <seat>)` | a process team did not launch holds the pane and its screen reads `working` |
