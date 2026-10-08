@@ -366,11 +366,15 @@ describe('the start protocol', () => {
   });
 
   test('two concurrent starts against one stale socket leave one serving and one busy', async () => {
-    // The clear decision follows the identity of the entry the probe saw (dev+ino from the
-    // gate's lstat). Base: both starts probed the same stale file and both cleared and bound —
-    // two live handles on one path (rehearsed 20/20 rounds). Now the first to resume clears and
-    // binds; the second finds the entry changed, walks again, and reads the live answer — the
-    // pair rehearsed 20/20 rounds as exactly this one.
+    // Base: both starts probed the same stale file and both cleared and bound — two live handles
+    // on one path (rehearsed 20/20 rounds). The clear then followed the identity of the entry
+    // the probe saw (dev+ino from the gate's lstat), which held on macOS but not on CI's ubuntu
+    // runner (run 37787613018: both served — one start's walk read the other's fresh socket as
+    // stale, a connect refused for a beat before its listen took effect). A stale answer is now
+    // confirmed only when the same entry answers stale again after a turn, so a fresh sibling
+    // socket is never cleared: the first to resume clears and binds, the other reads it live.
+    // Which call resumes first is the runtime's to say; the pin is the pair — exactly one
+    // serving, the loser busy — so it reads the same whether or not the order ever flips.
     project();
     record();
     leaveStaleSocket();
@@ -378,9 +382,9 @@ describe('the start protocol', () => {
     const start = () =>
       startBroker({ root, team: teamOf(), read: () => Promise.resolve(records([{ id: 'm1', title: 't' }])), stderr: () => {} });
     const outcomes = await Promise.all([start(), start()]);
-    expect(outcomes.map((outcome) => outcome.kind)).toEqual(['serving', 'busy']);
-    const started = outcomes[0];
-    if (started?.kind !== 'serving') throw new Error('the first start did not serve');
+    expect([...outcomes.map((outcome) => outcome.kind)].sort()).toEqual(['busy', 'serving']);
+    const started = outcomes.find((outcome) => outcome.kind === 'serving');
+    if (started?.kind !== 'serving') throw new Error('neither start served');
     expect(started.cleared).toBe(true);
     expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
     await started.handle.close();

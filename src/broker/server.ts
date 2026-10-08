@@ -2,8 +2,9 @@
 // recorded state, dispatch the read, apply the policy, answer one line. The start protocol has
 // three answers, pinned by the recon's probe under bun and node: a connect that succeeds means a
 // broker already answers (refuse, the caller's exit is nonzero); ECONNREFUSED means a socket
-// file left by an unclean death (unlink it — only when it is still the very entry the probe saw
-// — then bind); ENOENT means no file (bind). One lstat stands before all three: a path that is
+// file left by an unclean death (unlink it — only when it is still the very entry the probe saw,
+// and only once that entry has answered stale twice with a turn between — then bind); ENOENT
+// means no file (bind). One lstat stands before all three: a path that is
 // not a socket is refused up front — never probed, never unlinked (the ubuntu CI read that made
 // this a pinned fork: run 37778336251). A clean
 // close removes the file — the runtime owns that, pinned under bun 1.4.2 and node v26.8.1
@@ -59,8 +60,16 @@ const FAILED_READ = 'the broker failed this read';
  *  bound ends on the pinned bare bind sentence instead of looping. */
 const START_WALKS = 8;
 
+/** A stale answer is confirmed only when the same entry answers stale again after this turn:
+ *  a fresh sibling socket answers ECONNREFUSED for a moment before its owner's listen takes
+ *  effect (CI's ubuntu runner, run 37787613018: two concurrent starts both served — the second
+ *  probed the first's fresh socket "stale" where macOS already read it live). */
+const STALE_CONFIRM_MS = 50;
+
 export async function startBroker(input: StartBrokerInput): Promise<StartBrokerResult> {
   const path = brokerSocket(input.root);
+  // The entry the previous walk saw a stale answer on, awaiting a second sighting.
+  let confirmed: { dev: number; ino: number } | undefined;
   for (let walk = 0; walk < START_WALKS; walk++) {
     // The entry, judged by lstat and not by an errno: only a socket belongs to the walk below,
     // and a path holding anything else is refused here, with the pinned bind sentence, untouched
@@ -75,17 +84,25 @@ export async function startBroker(input: StartBrokerInput): Promise<StartBrokerR
     if (probe === 'live') return { kind: 'busy' };
     let cleared = false;
     if (probe === 'stale') {
-      // The path named a socket nothing listens on: an unclean death left it (SIGKILL leaves
-      // the file, a clean close does not — both pinned). Only that very entry is cleared: the
+      // The path named a socket nothing listens on. Only that very entry may be cleared: the
       // identity captured at the gate above (dev+ino, lstat and never stat — nothing here
-      // follows a path someone else could have planted) must still be the entry here. Between
-      // the probe and this point a sibling start may have cleared the stale file and bound its
-      // own socket; clearing by type alone removed that fresh socket and bound over it, two
-      // live handles on one path (two concurrent starts, pinned: exactly one serving). A
-      // changed entry is never unlinked — the walk reads it instead, and its own three answers
-      // decide.
+      // follows a path someone else could have planted) must still be the entry here, and it
+      // must have answered stale on the previous walk too, with a loop turn in between. An
+      // unclean death leaves the file (SIGKILL leaves it, a clean close does not — both
+      // pinned) and keeps answering stale; a sibling start's fresh socket answers stale only
+      // until its listen lands, so it is never cleared on one sighting. A changed entry is
+      // never unlinked — the walk reads it instead, and its own three answers decide.
       const current = lstatSync(path, { throwIfNoEntry: false });
-      if (!entry || !current || current.dev !== entry.dev || current.ino !== entry.ino) continue;
+      if (!entry || !current || current.dev !== entry.dev || current.ino !== entry.ino) {
+        confirmed = undefined;
+        continue;
+      }
+      if (!confirmed || confirmed.dev !== entry.dev || confirmed.ino !== entry.ino) {
+        confirmed = { dev: entry.dev, ino: entry.ino };
+        await new Promise<void>((done) => setTimeout(done, STALE_CONFIRM_MS));
+        continue;
+      }
+      confirmed = undefined;
       try {
         unlinkSync(path);
         cleared = true;
@@ -94,6 +111,8 @@ export async function startBroker(input: StartBrokerInput): Promise<StartBrokerR
         // over an entry that is not the one the probe saw.
         continue;
       }
+    } else {
+      confirmed = undefined;
     }
     const sockets = new Set<Socket>();
     const server = createServer((socket) => {
