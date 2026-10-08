@@ -62,6 +62,7 @@ import { emptySession, readState, updateState, type SeatState } from '../state.t
 import { seatBudget } from '../budgets/gate.ts';
 import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from './doctor.ts';
+import { leftoverName } from './remove.ts';
 import { launchLimit, readMachine, readingsText, type Machine, type SwapSample } from '../watch/machine.ts';
 import { readScreen } from '../watch/screen.ts';
 import { seatStart } from '../worktree/place.ts';
@@ -495,9 +496,16 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
           .map((seat) => seat.pane)
           .filter((pane) => pane !== undefined),
       );
+      // A force-close — a non-owner's `remove` — leaves its seat's pane running and renames the
+      // agent out of the seat's name (`<name>-left`, then `-left-2`, `-left-3`, …: remove.ts's
+      // `leftName`). That base may no longer be a seat the file declares, so the family is read
+      // off the name's shape alone (`leftoverName`, beside the mint), never off this file: a
+      // leftover is skipped the way the two pane sets above are, left running and un-managed,
+      // and every other unrecorded name still refuses below.
       const unknown = agents.filter(
         (agent) =>
           !(agent.name && Object.hasOwn(recorded, agent.name)) &&
+          !(agent.name && leftoverName(agent.name)) &&
           !waitingPanes.has(agent.pane) &&
           !launchedPanes.has(agent.pane),
       );
