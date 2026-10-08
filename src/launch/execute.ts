@@ -1,7 +1,7 @@
 import type { HerdrAgent, PaneProcesses } from '../herdr.ts';
 import { refusalReport, type Refusal } from './deliver.ts';
 import { profileFor, versionVerdict } from '../profiles/profile.ts';
-import { modelDiffers, seatModel, type Running } from '../status/statusline.ts';
+import { canShowModel, modelDiffers, seatModel, type Running } from '../status/statusline.ts';
 import { launchedIdentity, seatProcessVerdict, type LaunchedIdentity } from './identity.ts';
 import { IDLE_POLL_MS, type Step } from './plan.ts';
 import {
@@ -296,7 +296,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
   // launched again; it is ready when it reaches its prompt, and the detail says why it was
   // launched. Any other end of that seat keeps its own record, and the close is what the plan
   // and the state already show.
-  const relaunched = new Map<string, 'gone' | 'replaced'>();
+  const relaunched = new Map<string, 'gone' | 'replaced' | 'drift'>();
   const finishReady = (seat: string) => {
     ready.add(seat);
     const verdict = relaunched.get(seat);
@@ -304,6 +304,8 @@ export async function executePlan(steps: readonly Step[], session: string, host:
       final(seat, { kind: 'ready' }, '  its pane held no CLI; closed without input and launched again\n');
     } else if (verdict === 'replaced') {
       final(seat, { kind: 'ready' }, '  its pane held a process team did not launch; closed without input and launched again\n');
+    } else if (verdict === 'drift') {
+      final(seat, { kind: 'ready' }, '  its model drifted; closed without input and launched again\n');
     } else final(seat, { kind: 'ready' });
   };
   // The identity read after the idle prompt, to carry into every later record of the seat.
@@ -994,8 +996,10 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         // only what is provably still the seat's stale pane: herdr must name this seat on the
         // recorded pane, that pane's workspace must be the recorded one, the process reading
         // must still be gone or replaced against the record, and a replaced pane's screen must
-        // not read working. Anything else: nothing closed, nothing launched for this seat, its
-        // state left as it is, and the seat out of this run.
+        // not read working. A drift close asks the opposite of the process: it must still be
+        // the one team launched, the model must still differ, and the seat must still be free.
+        // Anything else: nothing closed, nothing launched for this seat, its state left as it
+        // is, and the seat out of this run.
         const listed = host.agentList ? host.agentList(session)?.find((agent) => agent.name === op.seat) : null;
         if (!listed || listed.pane !== op.pane || listed.workspace !== op.workspace) {
           held = true;
@@ -1017,18 +1021,54 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           break;
         }
         const verdict = seatProcessVerdict(op.launched, host.processInfo?.(session, op.pane));
-        if (verdict === 'same') {
+        if (op.drift) {
+          // The process must still be the one team launched: a drift close is not the
+          // stale-pane repair. Then the model must still differ, and the seat must still
+          // be free. A match is the seat's again and is not an error. Anything unreadable
+          // closes nothing.
+          const refuse = (reason: string, error: boolean) => {
+            if (error) held = true;
+            dropped.add(op.seat);
+            final(op.seat, { kind: 'left out', reason });
+          };
+          if (verdict === 'unknown') {
+            refuse('its pane could not be read; nothing closed', true);
+            break;
+          }
+          if (verdict !== 'same') {
+            refuse('the process in its pane is not the one team launched; nothing closed', true);
+            break;
+          }
+          const text = host.paneText?.(session, op.pane) ?? null;
+          const running = text === null || text === '' ? null : seatModel({ cli: op.cli, model: op.drift.model }, text);
+          if (text === null || text === '' || running === null || !canShowModel({ cli: op.cli, model: op.drift.model, version: op.drift.version })) {
+            refuse('its pane could not be read; nothing closed', true);
+            break;
+          }
+          if (!modelDiffers(running, op.drift)) {
+            refuse('its model matches the file again; left as it is', false);
+            break;
+          }
+          const kind = host.classify(session, op.pane, op.cli);
+          const status = listed.status;
+          if (status === 'working' || kind === 'working') {
+            refuse(`its model drifted; left as it is (${op.drift.way})`, true);
+            break;
+          }
+          if (!((status === 'idle' || status === 'done') && (kind === 'idle' || kind === 'unsent'))) {
+            refuse('its screen is not idle or done; nothing closed', true);
+            break;
+          }
+        } else if (verdict === 'same') {
           dropped.add(op.seat);
           final(op.seat, { kind: 'left out', reason: "its pane is the seat's again; left as it is" });
           break;
-        }
-        if (verdict === 'unknown') {
+        } else if (verdict === 'unknown') {
           held = true;
           dropped.add(op.seat);
           final(op.seat, { kind: 'left out', reason: 'its pane could not be read; nothing closed' });
           break;
-        }
-        if (verdict === 'replaced') {
+        } else if (verdict === 'replaced') {
           const kind = host.classify(session, op.pane, op.cli);
           if (kind === 'unknown') {
             held = true;
@@ -1056,7 +1096,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           break;
         }
         host.drop(op.seat);
-        relaunched.set(op.seat, verdict);
+        relaunched.set(op.seat, op.drift || verdict === 'same' ? 'drift' : verdict);
         break;
       }
       case 'close': {
