@@ -4566,6 +4566,84 @@ describe('team down, live', () => {
     expect(io.out).toContain('deepseek-acme: no live agent in its pane; its exit was not typed (team down --abandon closes it)\n');
   });
 
+  test('a seat whose CLI exited — its shell back in front — is closed by one run, and the session stops', async () => {
+    // The bare-shell case: the pane's own shell process is back in front (`shellBack`) and no
+    // `claude` process is in its foreground list. The screen draws nothing a profile recognises,
+    // which is exactly why the screen alone can never tell this from a live CLI. One run closes
+    // the workspace, stops and clears the session, and types nothing — no `--abandon`.
+    const run = harness({ kind: 'unknown' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ foreground: () => ['zsh'], shellBack: () => true }));
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.keys).toEqual([]);
+    expect(run.entered).toEqual([]);
+    expect(run.closed).toEqual(['w3']);
+    expect(run.stopped).toEqual(['acme-web']);
+    expect(run.deleted).toEqual(['acme-web']);
+    expect(io.out).toContain('deepseek-acme: its CLI had exited; its workspace was closed\n');
+    expect(io.out).toContain('session acme-web: stopped and cleared\n');
+    expect(io.out).not.toContain('does not recognise');
+    expect(io.err).toBe('');
+  });
+
+  test('a stale idle capture over a pane at its shell is closed too: the process reading outranks the screen', async () => {
+    // An idle-looking capture cannot make a pane whose shell is back read as a live seat, just
+    // as an unrecognised capture cannot make it read as one. The foreground list holds no CLI.
+    const run = harness({ kind: 'idle' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ foreground: () => ['zsh'], shellBack: () => true }));
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.closed).toEqual(['w3']);
+    expect(io.out).toContain('deepseek-acme: its CLI had exited; its workspace was closed\n');
+  });
+
+  test('a live CLI on an unreadable screen keeps the refusal, byte for byte, even when the shell reading comes back', async () => {
+    // Both facts are required: no CLI process in the foreground list *and* the pane's own shell
+    // in front. A CLI still listed is never closed, whatever the shell pid reading says.
+    const run = harness({ kind: 'unknown' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ foreground: () => ['claude'], shellBack: () => true }));
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(run.stopped).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: shows a screen the profile does not recognise; left running\n');
+    expect(io.out).toContain('session acme-web: not stopped, 1 agent left in it\n');
+  });
+
+  test('an unreadable foreground list keeps today\'s refusal', async () => {
+    const run = harness({ kind: 'unknown' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ foreground: () => null, shellBack: () => true }));
+    expect(code).toBe(0);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: shows a screen the profile does not recognise; left running\n');
+  });
+
+  test('without the shell-back reading a pane at its shell keeps today\'s refusal', async () => {
+    // The reading is optional on the sources: absent, every classification is the screen's,
+    // exactly as before this change.
+    const run = harness({ kind: 'unknown' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(FILE, io, run.sourcesOf({ foreground: () => ['zsh'] }));
+    expect(code).toBe(0);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('deepseek-acme: shows a screen the profile does not recognise; left running\n');
+  });
+
+  test('the dry run of a bare-shell close names the close and types nothing', async () => {
+    const run = harness({ kind: 'unknown' });
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runDown(['--dry-run', ...FILE], io, run.sourcesOf({ foreground: () => ['zsh'], shellBack: () => true }));
+    expect(code).toBe(0);
+    expect(run.typed).toEqual([]);
+    expect(run.closed).toEqual([]);
+    expect(io.out).toContain('+ herdr --session acme-web workspace close w3');
+    expect(io.out).toContain('its CLI had exited; closed without typing');
+  });
+
   test('types the exit only when the screen is idle, then closes the workspace', async () => {
     const run = harness({ kind: 'idle' });
     const io = testIo(root, { kind: 'owner' });
@@ -4878,14 +4956,15 @@ describe('team down, live', () => {
       run.setBox(claudeBox('exi'));
       return true;
     };
-    // The caller check before the clearing key is the fourth read of the foreground — opening
-    // check, after the typing, after the draw wait, then this one.
+    // The caller check before the clearing key is the fifth read of the foreground — the plan's
+    // own opening classification, the opening check, after the typing, after the draw wait,
+    // then this one.
     let looks = 0;
     const io = testIo(root, { kind: 'owner' });
     const code = await runDown(FILE, io, run.sourcesOf({
       foreground: () => {
         looks += 1;
-        if (looks === 4) run.setBox(claudeBox('/exit'));
+        if (looks === 5) run.setBox(claudeBox('/exit'));
         return ['claude'];
       },
     }));
@@ -4925,13 +5004,13 @@ describe('team down, live', () => {
       return false;
     };
     // The pane finishes the draw at the caller check before the clearing key, as in the test
-    // above: the fourth read of the foreground.
+    // above: the fifth read of the foreground.
     let looks = 0;
     const io = testIo(root, { kind: 'owner' });
     const code = await runDown(FILE, io, run.sourcesOf({
       foreground: () => {
         looks += 1;
-        if (looks === 4) run.setBox(claudeBox('/exit'));
+        if (looks === 5) run.setBox(claudeBox('/exit'));
         return ['claude'];
       },
     }));

@@ -84,7 +84,14 @@ export type Op =
       workspace?: string;
       unasked?: string;
     }
-  | { do: 'close'; seat: string; workspace: string }
+  | {
+      do: 'close';
+      seat: string;
+      workspace: string;
+      /** What the seat's line says instead of `stopped`. The bare-shell close names what it
+       *  saw in the pane. */
+      said?: string;
+    }
   | { do: 'kill'; pid: number }
   | { do: 'stop'; session: string };
 
@@ -462,8 +469,10 @@ export interface DownSeat {
   cli: string;
   pane: string;
   workspace: string;
-  /** What the watch's reading says of the seat: only a free seat is stopped. */
-  state: 'free' | 'working' | 'blocked' | 'unknown' | 'unsent';
+  /** What the watch's reading says of the seat: only a free seat is stopped.
+   *  `exited` comes from the process reading alone — the pane's own shell is back in front and
+   *  no CLI process is in its foreground list — never from an unrecognised screen. */
+  state: 'free' | 'working' | 'blocked' | 'unknown' | 'unsent' | 'exited';
   /** The seat's box holds exactly the profile's exit text — left by an earlier run that never
    *  confirmed it — and the profile carries the key that empties the box. */
   exitInBox?: boolean;
@@ -494,6 +503,9 @@ const LEFT: Record<Exclude<DownSeat['state'], 'free'>, string> = {
   blocked: 'is blocked at a prompt, which `team` never answers',
   unknown: 'shows a screen the profile does not recognise',
   unsent: 'holds unsent text in its input box',
+  // Unreachable: `downPlan` closes an exited seat before any line that reads this map. It is
+  // here because the type names a clause for every state.
+  exited: 'its CLI had exited',
 };
 
 /** Every step of `team down`, in order. Nothing here runs anything. */
@@ -540,6 +552,20 @@ export function downPlan(input: DownInput): Step[] {
       continue;
     }
     if (seat.state !== 'free') {
+      // The CLI process is gone and the pane's own shell is back in front: there is nothing in
+      // this pane to ask and nothing a key could reach. It is closed in this same ordinary run —
+      // no `--abandon`, which a delegate cannot pass — and the seat's line names what was seen.
+      // Not counted among `left`: the seat is no longer in the session, so the session stop
+      // below follows in this same run.
+      if (seat.state === 'exited') {
+        steps.push({
+          kind: 'run',
+          argv: herdr(session, 'workspace', 'close', seat.workspace),
+          note: 'its CLI had exited; closed without typing',
+          do: { do: 'close', seat: seat.name, workspace: seat.workspace, said: 'its CLI had exited; its workspace was closed' },
+        });
+        continue;
+      }
       if (input.abandon) {
         steps.push({
           kind: 'run',

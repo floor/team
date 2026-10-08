@@ -4,7 +4,10 @@ Takes one seat out of the team: asks it to exit, waits for its pane to come back
 closes its workspace, and edits the file so the seat is not started again. `--keep` leaves the seat
 in the file as `stopped: true` instead of taking it out. A seat that is busy — working, blocked at a
 prompt, already showing its own exit question, showing a screen the profile does not recognise,
-or holding unsent text — is left as it is, unless its owner abandons it. One exception: a caller
+or holding unsent text — is left as it is, unless its owner abandons it. A pane whose CLI has
+already exited — its own shell back in front of it, and no CLI process in its foreground list —
+is not such a seat: it is removed like a free seat, nothing typed, and its line says the CLI had
+exited. One exception: a caller
 other than the owner, when herdr reports such a seat idle or done, takes the seat out of the team
 and leaves its pane running, with nothing typed into it (below). The same leave reaches a record
 the approved copy does not carry and the live file does not declare, when that record is not
@@ -90,8 +93,9 @@ included. A delegated run that proceeds is attributed in the log before its effe
     claude-beacon: stopped
     removed claude-beacon
 
-The seat's stop is the plan `down` prints for a seat, with its notes; the last line says what was
-done with the file:
+The seat's stop is the plan `down` prints for a seat, with its notes; a seat whose CLI has already
+exited prints `<seat>: its CLI had exited; its workspace was closed` instead of `<seat>: stopped`,
+with nothing typed into its pane. The last line says what was done with the file:
 
 | Last line | Meaning |
 | --- | --- |
@@ -160,7 +164,7 @@ with the text named, in the refusal below.
 | `team remove: <seat> is working; left as it is` | 1 |
 | `team remove: <seat> is blocked at a prompt, which team never answers` | 1 |
 | `team remove: <seat> sits at its own exit question; left as it is (team remove <seat> --abandon closes it)` | 1 |
-| `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` — the owner's; a caller other than the owner meeting a seat herdr reports idle or done takes the seat out instead (above), and meets this line with `(run this again once herdr reports the seat idle or done)` where herdr reports the seat anything but idle or done | 1 |
+| `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` — the owner's; a caller other than the owner meeting a seat herdr reports idle or done takes the seat out instead (above), and meets this line with `(run this again once herdr reports the seat idle or done)` where herdr reports the seat anything but idle or done; a pane whose CLI has already exited is not this case — the seat is removed like a free one, nothing typed | 1 |
 | `team remove: <seat> holds unsent text in its input box; left as it is` | 1 |
 | `team remove: <seat> holds this CLI's exit text (<exit>) unsent in its input box; left as it is (the owner sends it or clears it in its pane)` | 1 |
 | ``team remove: no launch profile for `<cli>`; left as it is`` | 1 |
@@ -172,7 +176,10 @@ with the text named, in the refusal below.
 `--abandon` answers the seat-state refusals above — a seat that is working, blocked at a prompt,
 sitting at its own exit question, on a screen the profile does not recognise, holding unsent
 text, or holding this CLI's exit text unsent: the seat is not asked anything, its workspace is
-closed as it is, and its pane's text is lost. A caller other than the owner has its own answer to
+closed as it is, and its pane's text is lost. A pane whose CLI has already exited is not one of
+those states — its own shell is back in front and no CLI process is in its foreground list — so
+the seat is closed by the ordinary run, nothing typed, and its line says the CLI had exited. A
+caller other than the owner has its own answer to
 those states, where herdr reports the seat idle or done: the leave above — the seat out of the
 team, the pane left running, nothing typed.
 

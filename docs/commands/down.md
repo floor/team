@@ -4,7 +4,9 @@ Stops the team: asks every running seat the approved copy names to exit, closes 
 stops the herdr session. The stop list is that copy. A name it does not carry is left running, and
 this run does not stop the watch: its pid is only in the state. A seat is only asked when it is
 free — idle, with an empty input box — so a working, blocked or half-typed seat is left running
-and named. A seat already showing its own framed exit question is blocked the same way: this run
+and named. A pane whose CLI has exited — its own shell back in front of it, and no CLI process in
+its foreground list — is not asked: it is closed, and its line says the CLI had exited. A seat
+already showing its own framed exit question is blocked the same way: this run
 sends no key to it. A box that holds exactly this CLI's exit text — an earlier run typed it and
 never confirmed it — is not half-typed text: when the profile carries the one key that empties a
 box, the text is cleared with it and the exit typed fresh, and when it does not, the seat is left
@@ -99,7 +101,10 @@ gate asked and answered, the refusal standing unless the gate placed the caller.
     claude-keeper: stopped
     session beacon: stopped and cleared
 
-A seat it stops prints `<seat>: stopped`. A watch the state records, and whose pid is alive, prints
+A seat it stops prints `<seat>: stopped`. A seat whose CLI has already exited prints `<seat>: its
+CLI had exited; its workspace was closed` — closed with nothing typed, and the session stop
+follows as for any stopped seat; a dry run shows the close under the note `its CLI had exited;
+closed without typing`. A watch the state records, and whose pid is alive, prints
 `watch: its pid is only in the state; left running` — this run does not kill it. The session prints
 `session <session>: stopped and cleared` — herdr keeps a stopped session listed until it is
 deleted, so `down` clears the one it has itself just stopped, retrying while herdr still reports
@@ -127,7 +132,7 @@ clearing key runs first — and a dry run says so in a note under its typing ste
 | `<seat>: sits at its own exit question; left running (team down --abandon closes it)` | the pane already shows this CLI's framed exit question, left by an earlier stop: this run sends no key |
 | `<seat>: holds unsent text in its input box; left running` | half-typed text would be lost |
 | `<seat>: holds this CLI's exit text (<exit>) unsent in its input box; left running (the owner sends it or clears it in its pane)` | the box holds an earlier run's unconfirmed exit text, and the CLI has no key that empties a box |
-| `<seat>: shows a screen the profile does not recognise; left running` | nothing is typed into a screen it can't read |
+| `<seat>: shows a screen the profile does not recognise; left running` | nothing is typed into a screen it can't read; this line stands while the CLI is still the pane's foreground — a pane whose CLI has exited is closed instead (above) |
 | `<seat>: the state doesn't say which CLI it runs, so it can't be asked to exit; left running (`team down --abandon` closes it without typing)` | the state predates the CLI record and the file no longer names the seat: nothing links its pane to a profile, so its owner closes it |
 | `<seat>: left running; only the owner stops the orchestrator's or the operator's seat` | a seat's own call, and this is the orchestrator or the operator |
 | `session default: herdr's default session is never stopped` | the default session is herdr's own |
