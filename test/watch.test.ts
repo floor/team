@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verifiedOf } from '../src/approve/approval.ts';
 import { loadReadings, loadSpendReadings, saveReadings, type Seen } from '../src/budgets/readings.ts';
 import { runStatus } from '../src/commands/status.ts';
+import { plantMessage, type MessagePayload } from '../src/commands/messages.ts';
 import { runWatch } from '../src/commands/watch.ts';
+import { findRoot } from '../src/file/load.ts';
 import type { WatchSources } from '../src/commands/watch.ts';
 import { validateTeamFile } from '../src/file/validate.ts';
 import type { TeamFile } from '../src/file/types.ts';
@@ -15,7 +17,7 @@ import { emptySession, readState, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
 import { parseLoadavg, parseMeminfo, parseMemoryPressure, parseSwapUsage, readMachine, readingsText, swapTotalProblem } from '../src/watch/machine.ts';
 import type { Machine } from '../src/watch/machine.ts';
-import { newMemory, NUDGE_TEXT, pass } from '../src/watch/pass.ts';
+import { newMemory, NUDGE_TEXT, pass, RING_TEXT } from '../src/watch/pass.ts';
 import { readScreen } from '../src/watch/screen.ts';
 import { agyMismatchedFrame, claudeBox, injectWas, testIo, wordWrap } from './helpers.ts';
 
@@ -260,7 +262,7 @@ describe('a pass of the watch', () => {
   test('a working team reports nothing', () => {
     expect(pass({
       team: team(), watch: team().watch, state: emptySession(), live: live(), machine: fine, now: 0, memory: newMemory(),
-    })).toEqual({ reports: [], nudge: null, fallback: null, readings: [] });
+    })).toEqual({ reports: [], nudge: null, fallback: null, ring: null, mailboxNote: null, readings: [] });
   });
 
   test('an idle seat is reported after idle_first, and again every idle_repeat', () => {
@@ -1681,6 +1683,91 @@ describe('team watch', () => {
     expect(Object.keys(plainBudgets)).toHaveLength(1);
     expect(Object.values(plainBudgets).every((one) => !('was' in one))).toBe(true);
     expect(Object.values(pointedBudgets).every((one) => 'was' in one)).toBe(true);
+  });
+
+  function planted(seat: string, body: string, at: string): MessagePayload {
+    const root = findRoot(dir);
+    if (!root) throw new Error('the watch fixture is not a git checkout');
+    const payload: MessagePayload = {
+      kind: 'message', id: 'm1', to: seat, root, session: 'acme-web', at, body, from: 'harness',
+    };
+    plantMessage(join(dir, 'home'), root, seat, payload.id, payload);
+    return payload;
+  }
+
+  test('an unacked record rings the idle seat with the wake line and not the body', async () => {
+    const body = 'the message body itself';
+    planted('claude-operator-acme', body, '2026-10-03T13:00:00.000Z');
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, { home: join(dir, 'home'), live: () => live() }));
+    expect(typed).toEqual([`w0:p1 ${RING_TEXT}`, 'w0:p1 <enter>']);
+    expect(typed.join('\n')).not.toContain(body);
+    expect(io.out).toContain(`rang claude-operator-acme: ${RING_TEXT}`);
+    expect(existsSync(join(dir, '.agents', 'messages', 'claude-operator-acme', 'm1.json'))).toBe(true);
+    expect(existsSync(join(dir, '.agents', 'messages', 'claude-operator-acme', 'm1.read.json'))).toBe(false);
+  });
+
+  test('a report nudge is the one typed line when a message is also waiting', async () => {
+    const body = 'the message body itself';
+    planted('claude-operator-acme', body, '2026-10-03T13:00:00.000Z');
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, { home: join(dir, 'home') }));
+    expect(typed).toEqual([`w0:p1 ${NUDGE_TEXT}`, 'w0:p1 <enter>']);
+    expect(io.out).not.toContain(RING_TEXT);
+    expect(existsSync(join(dir, '.agents', 'messages', 'claude-operator-acme', 'm1.json'))).toBe(true);
+  });
+
+  test('a cursor box holding unsent text is not typed into and the record stays', async () => {
+    const cursorUnsent = readFileSync(new URL('./fixtures/cursor/2026.10.01/unsent.txt', import.meta.url), 'utf8');
+    writeFileSync(file, cursorOperator);
+    const body = 'the message body itself';
+    planted('claude-operator-acme', body, '2026-10-03T13:59:00.000Z');
+    const held = live({ 'claude-operator-acme': { status: 'idle', screen: cursorUnsent } });
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, {
+      home: join(dir, 'home'),
+      live: () => held,
+      screen: () => cursorUnsent,
+    }));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain(body);
+    expect(existsSync(join(dir, '.agents', 'messages', 'claude-operator-acme', 'm1.json'))).toBe(true);
+  });
+
+  test('an old unacked record whose box is not free raises one owner line and types nothing', async () => {
+    const body = 'the message body itself';
+    planted('deepseek-acme', body, new Date(clock - 601_000).toISOString());
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(2, { home: join(dir, 'home'), live: () => live() }));
+    expect(typed).toEqual([]);
+    expect(io.out).toContain('message m1 for deepseek-acme has been waiting 10 minutes');
+    expect(io.out.split('message m1 for deepseek-acme').length - 1).toBe(1);
+    expect(io.out).not.toContain(body);
+    expect(existsSync(join(dir, '.agents', 'messages', 'deepseek-acme', 'm1.json'))).toBe(true);
+  });
+
+  test('a restarted watch does not send a box that already holds the wake line', async () => {
+    const body = 'the message body itself';
+    planted('claude-operator-acme', body, '2026-10-03T13:59:00.000Z');
+    const held = claudeBox(RING_TEXT);
+    const sceneHeld = live({ 'claude-operator-acme': { status: 'idle', screen: held } });
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, {
+      home: join(dir, 'home'),
+      live: () => sceneHeld,
+      screen: () => held,
+    }));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain('<enter>');
+    expect(io.out).not.toContain(`rang claude-operator-acme`);
+  });
+
+  test('a record is not rung when the watch is not given a home', async () => {
+    planted('claude-operator-acme', 'the message body itself', '2026-10-03T13:00:00.000Z');
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file], io, sources(1, { live: () => live() }));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain(RING_TEXT);
   });
 
   test('a file that never validated, and a bad option', async () => {

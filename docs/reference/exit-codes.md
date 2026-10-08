@@ -182,6 +182,18 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `init.tracked` | `init` | 1 | the team file is tracked | `team init` |
 | `init.invocation` | `init` | 2 | the invocation can't be read | `team init extra` |
 | `init.not-a-repo` | `init` | 2 | not inside a git repository | `team init` |
+| `messages.none` | `messages` | 0 | nothing is waiting | `team messages` |
+| `messages.shown` | `messages` | 0 | a waiting message was shown and its receipt was written | `team messages` |
+| `messages.file` | `messages` | 1 | the team file can't be read | `team messages` |
+| `messages.id` | `messages` | 1 | the filename is not the record's id | `team messages` |
+| `messages.key` | `messages` | 1 | the message key is missing or unreadable | `team messages` |
+| `messages.root` | `messages` | 1 | the record is bound to another checkout | `team messages` |
+| `messages.seat` | `messages` | 1 | the record is addressed to another seat | `team messages` |
+| `messages.session` | `messages` | 1 | the record is bound to another session | `team messages` |
+| `messages.shape` | `messages` | 1 | the record is not a message | `team messages` |
+| `messages.signature` | `messages` | 1 | the signature is not the message key's | `team messages` |
+| `messages.invocation` | `messages` | 2 | the invocation can't be read | `team messages extra` |
+| `messages.not-a-repo` | `messages` | 2 | not inside a git repository | `team messages` |
 | `pr.passed` | `pr` | 0 | the pull request body passed | `team pr check body.md` |
 | `pr.refused` | `pr` | 1 | the pull request body was refused | `team pr check body.md` |
 | `pr.body` | `pr` | 2 | the pull request body can't be read | `team pr check missing.md` |

@@ -159,6 +159,8 @@ A report that is the operator's to act on is also what the nudge stands for. The
 | `nudge not typed (--no-nudge): <nudge>` | `--no-nudge`, with reports waiting |
 | `a nudge was typed and not sent: the operator's box does not hold it` | the pane had not drawn the typed line, or held something else, when the bounded wait for it ended; nothing is sent, and the reports wait for the next pass |
 | `the operator could not be nudged for <n> minutes; <k> report(s) wait: <reports>` | the operator was busy for `watch.nudge_wait`; this one is a desktop notification too |
+| `rang <seat>: Team: run team messages` | a message was already waiting and that seat's box was an empty idle prompt; the line was typed and sent, and the body was not |
+| `message <id> for <seat> has been waiting <n> minutes` | that message is older than `nudge_wait` and the seat's box was not free; said once, to the owner, and nothing is typed |
 | `herdr doesn't answer; the watch keeps trying` | the pass is skipped and the watch goes on |
 | `<account>: its check is unreadable` | the check command failed, timed out, or printed something other than one to three lines for a subscription or one line for a spend account; its output is never logged |
 | `the check for <account> is unapproved; that account reads unknown` | the check's file changed since the approval, or was never approved: it is not run |
@@ -167,6 +169,8 @@ A report that is the operator's to act on is also what the nudge stands for. The
 | `<name>: its record is not an approved seat; left as it is (the owner cleans it: team remove <name> --abandon)` | a temporary seat whose end is proved and whose pane is free is left running |
 | `worktree <task> was not removed` | its removal failed; it is tried again on the next pass |
 | `the watch of "<session>" stopped` | the last line, on Ctrl-C or a stop signal |
+
+A message already waiting under `.agents/messages/<seat>/` is not a report. When that seat's box is an empty idle prompt, and this pass is not already typing the report nudge, the watch types `Team: run team messages` and not the body. The report nudge wins the pane: a pass that types it does not also type the ring. A message older than `nudge_wait` whose box is not free raises one owner line naming the id and the recipient, types nothing, and leaves the record where it is. Nothing in this build writes that record. A report still leaves as the nudge.
 
 ## Budgets
 

@@ -266,6 +266,25 @@ Usage:
 
 None.
 
+## `messages`
+
+Hidden: no
+
+Usage:
+
+    team messages
+
+### Flags
+
+| Flag | Takes a value | Repeatable | Hidden |
+| --- | --- | --- | --- |
+| `--help` | no | no | no |
+| `-h` | no | no | yes |
+
+### Positionals
+
+None.
+
 ## `pr`
 
 Hidden: no

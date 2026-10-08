@@ -1235,6 +1235,90 @@
     },
     {
       "code": 0,
+      "command": "messages",
+      "id": "messages.none",
+      "meaning": "nothing is waiting",
+      "trigger": "team messages"
+    },
+    {
+      "code": 0,
+      "command": "messages",
+      "id": "messages.shown",
+      "meaning": "a waiting message was shown and its receipt was written",
+      "trigger": "team messages"
+    },
+    {
+      "code": 1,
+      "command": "messages",
+      "id": "messages.file",
+      "meaning": "the team file can't be read",
+      "trigger": "team messages"
+    },
+    {
+      "code": 1,
+      "command": "messages",
+      "id": "messages.id",
+      "meaning": "the filename is not the record's id",
+      "trigger": "team messages"
+    },
+    {
+      "code": 1,
+      "command": "messages",
+      "id": "messages.key",
+      "meaning": "the message key is missing or unreadable",
+      "trigger": "team messages"
+    },
+    {
+      "code": 1,
+      "command": "messages",
+      "id": "messages.root",
+      "meaning": "the record is bound to another checkout",
+      "trigger": "team messages"
+    },
+    {
+      "code": 1,
+      "command": "messages",
+      "id": "messages.seat",
+      "meaning": "the record is addressed to another seat",
+      "trigger": "team messages"
+    },
+    {
+      "code": 1,
+      "command": "messages",
+      "id": "messages.session",
+      "meaning": "the record is bound to another session",
+      "trigger": "team messages"
+    },
+    {
+      "code": 1,
+      "command": "messages",
+      "id": "messages.shape",
+      "meaning": "the record is not a message",
+      "trigger": "team messages"
+    },
+    {
+      "code": 1,
+      "command": "messages",
+      "id": "messages.signature",
+      "meaning": "the signature is not the message key's",
+      "trigger": "team messages"
+    },
+    {
+      "code": 2,
+      "command": "messages",
+      "id": "messages.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team messages extra"
+    },
+    {
+      "code": 2,
+      "command": "messages",
+      "id": "messages.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team messages"
+    },
+    {
+      "code": 0,
       "command": "pr",
       "id": "pr.passed",
       "meaning": "the pull request body passed",

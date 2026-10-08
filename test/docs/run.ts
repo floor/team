@@ -17,6 +17,7 @@ import { runRemove } from '../../src/commands/remove.ts';
 import { runRelease } from '../../src/commands/release.ts';
 import { runStatus } from '../../src/commands/status.ts';
 import { runUp } from '../../src/commands/up.ts';
+import { runMessages } from '../../src/commands/messages.ts';
 import { runUsage } from '../../src/commands/usage.ts';
 import { runWatch } from '../../src/commands/watch.ts';
 import { runWorktree } from '../../src/commands/worktree.ts';
@@ -189,6 +190,8 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
       return runDoctor(rest, io, world.doctorSources());
     case 'down':
       return runDown(rest, io, world.downSources());
+    case 'messages':
+      return runMessages(rest, io, { home: fixture.home, now: () => new Date(spec.now) });
     case 'init':
       // No login is probed in a doc run: the skeleton's seat is claude-code's, deterministically.
       return runInit(rest, io, fixture.home, undefined, { loggedIn: () => false });

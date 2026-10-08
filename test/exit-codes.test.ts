@@ -18,6 +18,7 @@ import { commits } from '../src/commands/commits.ts';
 import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
 import { runDown, type DownLaunch, type DownSources } from '../src/commands/down.ts';
 import { runInit } from '../src/commands/init.ts';
+import { plantMessage, runMessages, type MessagePayload } from '../src/commands/messages.ts';
 import { pr } from '../src/commands/pr.ts';
 import { runRemove, type RemoveSources } from '../src/commands/remove.ts';
 import { runStatus, type StatusSources } from '../src/commands/status.ts';
@@ -28,7 +29,7 @@ import { runWorktree, type WorktreeSources } from '../src/commands/worktree.ts';
 import { main, reportFailure, version } from '../src/cli.ts';
 import { delegateGate, type DelegateSources } from '../src/delegate.ts';
 import { listFolder } from '../src/file/landing.ts';
-import { loadTeamFile } from '../src/file/load.ts';
+import { findRoot, loadTeamFile } from '../src/file/load.ts';
 import { defaultFs, lobbyDir } from '../src/lobby/gate.ts';
 import type { HerdrAgent } from '../src/herdr.ts';
 import { seatLockPath } from '../src/launch/seat-lock.ts';
@@ -36,6 +37,7 @@ import type { Key, Terminal } from '../src/launch/terminal.ts';
 import { overridesPath } from '../src/profiles/overrides.ts';
 import { emptySession, updateState } from '../src/state.ts';
 import type { Live } from '../src/status/compare.ts';
+import { keyOf, MESSAGE_DOMAIN, messageKeyOf, signDomain } from '../src/store/keys.ts';
 import { approvalStanding, storePath, writeApproval, type Standing } from '../src/store/store.ts';
 import type { Machine } from '../src/watch/machine.ts';
 import { analyze, loadContract, problems, render, type ExitRow } from '../scripts/exit-codes.ts';
@@ -2454,6 +2456,81 @@ scene('answer.ready', async (place) => {
 // own session are refused by the file's own load (`sections/delegate.ts` reads the shape, the
 // session and the duplicates before `up` ever calls the gate). The gate's own tests hold the
 // recorded-seat verdict, so no scene here reaches it.
+function messageRecord(place: Place, over: Partial<MessagePayload> = {}): MessagePayload {
+  const root = findRoot(place.root);
+  if (!root) throw new Error('the scene is not a checkout');
+  return {
+    kind: 'message', id: 'm1', to: 'lead', root, session: 'acme',
+    at: NOW.toISOString(), body: 'hello', from: 'harness', ...over,
+  };
+}
+
+async function messaged(place: Place, argv: string[] = []): Promise<Ran> {
+  const io = testIo(place.root, owner);
+  return { code: await runMessages(argv, io, { home: place.home, now: () => NOW }), out: io.out, err: io.err };
+}
+
+scene('messages.none', async (place) => {
+  write(place, TEAM);
+  return show(await messaged(place), 'nothing is waiting');
+});
+scene('messages.shown', async (place) => {
+  write(place, TEAM);
+  const record = messageRecord(place);
+  plantMessage(place.home, record.root, 'lead', 'm1', record);
+  return show(await messaged(place), 'hello');
+});
+scene('messages.file', async (place) => show(await messaged(place), 'no team file here'));
+scene('messages.id', async (place) => {
+  write(place, TEAM);
+  const record = messageRecord(place);
+  plantMessage(place.home, record.root, 'lead', 'm2', record);
+  return show(await messaged(place), 'the filename is the id');
+});
+scene('messages.key', async (place) => {
+  write(place, TEAM);
+  const root = findRoot(place.root);
+  if (!root) throw new Error('the scene is not a checkout');
+  mkdirSync(join(root, '.agents', 'messages', 'lead'), { recursive: true });
+  writeFileSync(join(root, '.agents', 'messages', 'lead', 'm1.json'), '{}\n');
+  return show(await messaged(place), 'no message key');
+});
+scene('messages.root', async (place) => {
+  write(place, TEAM);
+  const record = messageRecord(place, { root: '/tmp/elsewhere' });
+  plantMessage(place.home, findRoot(place.root) as string, 'lead', 'm1', record);
+  return show(await messaged(place), 'another checkout');
+});
+scene('messages.seat', async (place) => {
+  write(place, TEAM);
+  const record = messageRecord(place);
+  plantMessage(place.home, record.root, 'worker', 'm1', record);
+  return show(await messaged(place), 'addressed to lead');
+});
+scene('messages.session', async (place) => {
+  write(place, TEAM);
+  const record = messageRecord(place, { session: 'other' });
+  plantMessage(place.home, record.root, 'lead', 'm1', record);
+  return show(await messaged(place), 'session "other"');
+});
+scene('messages.shape', async (place) => {
+  write(place, TEAM);
+  messageKeyOf(place.home);
+  const root = findRoot(place.root);
+  if (!root) throw new Error('the scene is not a checkout');
+  mkdirSync(join(root, '.agents', 'messages', 'lead'), { recursive: true });
+  writeFileSync(join(root, '.agents', 'messages', 'lead', 'm1.json'), '{}\n');
+  return show(await messaged(place), 'not a message');
+});
+scene('messages.signature', async (place) => {
+  write(place, TEAM);
+  const record = messageRecord(place);
+  plantMessage(place.home, record.root, 'lead', 'm1', record, signDomain(MESSAGE_DOMAIN, record, keyOf(place.home)));
+  return show(await messaged(place), 'not the message key\'s');
+});
+scene('messages.invocation', async (place) => show(await messaged(place, ['extra']), 'unexpected'));
+scene('messages.not-a-repo', async (place) => show(await messaged(place), 'not inside a git repository'), false);
+
 const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed', 'answer.action', 'up.delegate-placement']);
 
 const contract = loadContract();
