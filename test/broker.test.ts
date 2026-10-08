@@ -1022,6 +1022,55 @@ describe('the start protocol', () => {
     expect(breaches).toEqual([]);
   }, 120_000);
 
+  test('the dead-lock burst, sized: six starts released together onto a dead start\'s lock, one serves and every other busy', async () => {
+    // The sized twin of the corpse burst above, on the dead-lock shape alone — sized from a
+    // measurement, not picked: the race it guards is the takeover reading an already-gone lock
+    // path (a NaN read, ENOENT), judging it like aged junk, and unlinking a rival's fresh
+    // atomic lock that landed the freed name between the read and the unlink — two starts
+    // walk, and the loser's bind fails. The window is microseconds inside one function, so no
+    // deterministic pin exists and no shipped seam is worth its review surface; the durable
+    // artifact is this repetition. Measured on the frozen bytes (`src/broker/server.ts`
+    // `46bbb778…`), 300 rounds a shape: six starts 5/300 (p̂ 1.667%), nine 1/300 (0.333%),
+    // twelve 5/300 (1.667%) → the pre-registered pick is cheapest cost = ceil(ln 0.01 /
+    // ln(1 − p̂)) × measured per-round wall: six starts at 275 rounds, where a nine-start pin
+    // would need 1380 rounds and twelve starts the same 275 at twice the per-round wall.
+    // (59/60)^275 ≈ 0.98% miss — ≈99% to catch the race on the old bytes. Never resize this
+    // pin after seeing a result: a pin-only head whose CI misses is re-run, both runs quoted.
+    // Every round's tuple must be exactly one serving that cleared nothing plus five busy
+    // that cleared nothing — a `bind-failed` at any seat, a second serving, a cleared loser,
+    // is the breach this pin names. The timeout is the pin's own: 275 rounds of six real
+    // processes outrun the runner's five-second default by orders.
+    project();
+    record();
+    const breaches: string[] = [];
+    const kids: FixtureChild[] = [];
+    try {
+      for (let round = 0; round < 275; round++) {
+        const roundRoot = join(base, `lockburst-${round}`);
+        mkdirSync(join(roundRoot, '.agents'), { recursive: true });
+        writeFileSync(join(roundRoot, '.agents', 'team.yaml'), LINEAR);
+        const at = brokerSocket(roundRoot);
+        const dead = spawnSync(process.execPath, ['-e', '']);
+        if (dead.pid === undefined) throw new Error('the dead-pid fixture has no pid');
+        writeFileSync(`${at}.lock`, `${dead.pid}\n`);
+        const go = join(base, `lockgo-${round}`);
+        const roundKids = Array.from({ length: 6 }, () => burstFixture(roundRoot, go));
+        kids.push(...roundKids);
+        await Promise.all(roundKids.map((kid) => readyOf(kid)));
+        writeFileSync(go, 'go\n');
+        const outcomes = await Promise.all(roundKids.map((kid) => outcomeOf(kid)));
+        const serving = outcomes.filter((outcome) => outcome.kind === 'serving' && !outcome.cleared);
+        const busy = outcomes.filter((outcome) => outcome.kind === 'busy' && !outcome.cleared);
+        if (serving.length !== 1 || busy.length !== 5) {
+          breaches.push(`round ${round}: [${outcomes.map((outcome) => `${outcome.kind}${outcome.cleared ? '+cleared' : ''}`).join(' ')}]`);
+        }
+      }
+    } finally {
+      for (const kid of kids) kid.kill();
+    }
+    expect(breaches).toEqual([]);
+  }, 600_000);
+
   test('a start that waits out the lock deadline refuses with the one line and touches nothing', async () => {
     // A live holder — a real start, held pre-listen for a minute — keeps the lock past every
     // waiter's deadline. The module and the command both wait it out and then fail closed: the
