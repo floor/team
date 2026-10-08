@@ -6,7 +6,7 @@
 // a clean close removes the file, a kill leaves it (probe run under bun 1.4.2 and node v26.8.1:
 // afterBind true, afterClose false on both).
 import { afterEach, describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, connect, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -177,6 +177,123 @@ function leaveStaleSocket(at: string = brokerSocket(root)): void {
   } catch (error) {
     if ((error as { signal?: string }).signal !== 'SIGKILL') throw error;
   }
+}
+
+/** The fixture child the start-serialization pin runs: the real start path in a real process,
+ *  with its listen call deliberately held back a fixed number of milliseconds. The hold sits
+ *  inside a patched `net.Server.prototype.listen`, a busy-wait before the real call — measured
+ *  before it was written into a pin (mine: node v26.8.1 and bun 1.4.2, one observer process
+ *  polling the path every 100ms while the holder ran an 800ms hold: "0ms patched listen
+ *  entered, exists=false / 800ms the delay is over, exists=false / 801ms the listen call
+ *  returned, exists=true" — identical timelines, the path clean for the whole hold, so a
+ *  second start arriving in the window reads no entry and binds first). The hold is before the
+ *  listen call on purpose: there is no JS-holdable window after it — the syscall lands with
+ *  the file created and the callback within the same beat even with the loop blocked (the same
+ *  probe), and a genuinely bound-not-listening socket answers ECONNREFUSED on macOS exactly as
+ *  on Linux (mine: a python bind, 3s before listen, connects refused throughout). What a
+ *  serialized start must prevent is a second start taking a path this one is still on its way
+ *  to; a second start arriving after the file exists reads a live socket and is refused busy
+ *  either way.
+ *  It prints `ready` with a raw write — out before the hold can block the loop — then one JSON
+ *  line with the outcome. A serving child stays alive; anything else runs out of work and
+ *  exits on its own. */
+const FIXTURE = `import { lstatSync, readFileSync, writeSync } from 'node:fs';
+import { join } from 'node:path';
+import net from 'node:net';
+import { pathToFileURL } from 'node:url';
+
+const [root, delay, repo] = process.argv.slice(2);
+const real = net.Server.prototype.listen;
+net.Server.prototype.listen = function (...args) {
+  const end = Date.now() + Number(delay);
+  while (Date.now() < end) {}
+  return real.apply(this, args);
+};
+const at = (p) => pathToFileURL(join(repo, p)).href;
+const { validateTeamFile } = await import(at('src/file/validate.ts'));
+const { startBroker } = await import(at('src/broker/server.ts'));
+const { brokerSocket } = await import(at('src/broker/protocol.ts'));
+const checked = validateTeamFile(readFileSync(join(root, '.agents', 'team.yaml'), 'utf8'));
+if (!checked.ok) {
+  writeSync(2, 'the fixture team file does not validate\\n');
+  process.exit(2);
+}
+writeSync(1, 'ready\\n');
+const result = await startBroker({
+  root,
+  team: checked.team,
+  read: async () => ({ kind: 'read', read: { kind: 'records', records: [{ id: 'm1', title: 't' }], refusals: [] } }),
+  stderr: (text) => writeSync(2, text),
+});
+let entry;
+try { entry = lstatSync(brokerSocket(root)); } catch {}
+writeSync(1, JSON.stringify({
+  kind: result.kind,
+  cleared: result.kind === 'serving' ? result.cleared : false,
+  dev: entry?.dev,
+  ino: entry?.ino,
+}) + '\\n');
+`;
+
+type FixtureOutcome = { kind: 'serving' | 'busy' | 'bind-failed'; cleared: boolean; dev: number | undefined; ino: number | undefined };
+
+type FixtureChild = {
+  said: string[];
+  outcome: FixtureOutcome | undefined;
+  failure: string | undefined;
+  kill: () => void;
+};
+
+/** One fixture child, spawned with its hold; its stdout is read line by line, its stderr kept
+ *  for the failure message. `kill` leaves the corpse exactly as any SIGKILL does. */
+function startFixture(delayMs: number): FixtureChild {
+  const script = join(base, `start-${delayMs}.mjs`);
+  writeFileSync(script, FIXTURE);
+  const child = spawn(process.execPath, [script, root, String(delayMs), join(import.meta.dir, '..')], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const fixture: FixtureChild = { said: [], outcome: undefined, failure: undefined, kill: () => child.kill('SIGKILL') };
+  let buffer = '';
+  let err = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    buffer += chunk;
+    let at: number;
+    while ((at = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, at);
+      buffer = buffer.slice(at + 1);
+      fixture.said.push(line);
+      if (line.startsWith('{')) fixture.outcome = JSON.parse(line) as FixtureOutcome;
+      else if (line !== 'ready') fixture.failure = `the fixture said: ${line}`;
+    }
+  });
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk: string) => (err += chunk));
+  child.once('close', (code, signal) => {
+    fixture.failure ??= `the fixture exited before an outcome (${code ?? signal})${err ? `: ${err.trim()}` : ''}`;
+  });
+  return fixture;
+}
+
+/** A fixture's `ready`, with the deadline failing the pin on what the child has said so far
+ *  instead of hanging the suite. */
+async function readyOf(fixture: FixtureChild, deadlineMs = 8000): Promise<void> {
+  const until = Date.now() + deadlineMs;
+  while (Date.now() < until) {
+    if (fixture.said.includes('ready')) return;
+    if (fixture.failure) throw new Error(fixture.failure);
+    await new Promise((tick) => setTimeout(tick, 25));
+  }
+  throw new Error(`the fixture never said ready: ${fixture.said.join(' | ')}`);
+}
+
+/** A fixture's outcome line, with the same deadline and the same failure message. */
+async function outcomeOf(fixture: FixtureChild, deadlineMs = 8000): Promise<FixtureOutcome> {
+  const until = Date.now() + deadlineMs;
+  while (Date.now() < until) {
+    if (fixture.outcome) return fixture.outcome;
+    if (fixture.failure) throw new Error(fixture.failure);
+    await new Promise((tick) => setTimeout(tick, 25));
+  }
+  throw new Error(`the fixture never answered: ${fixture.said.join(' | ')}`);
 }
 
 /** The answer map, the release world's shape: one recorded attempt, every request kept. */
@@ -389,6 +506,46 @@ describe('the start protocol', () => {
     expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
     await started.handle.close();
     expect(existsSync(path)).toBe(false);
+  });
+
+  test('a second start cannot take the path from a start that is still starting', async () => {
+    // The window the walk alone cannot close: a start is not instantaneous, and this owner —
+    // the real start path in a real process — has its listen call deliberately held back a
+    // fixed 1500ms by the fixture. The second start is a real start too, spawned the moment
+    // the owner says ready, while the owner is still on its way to binding. At the base head
+    // the path is clean through the whole hold: the racer's walk reads no entry, binds first,
+    // and the owner's listen fails EADDRINUSE — the start that began first is the one refused
+    // (rehearsed at the base head, macOS; on CI this pin's own push is the red proof — its
+    // ubuntu run is quoted in the report). The fix this pin holds: the owner takes the start
+    // lock before its walk, the racer waits on that lock and then reads the owner's socket
+    // live — busy — and the path carries the owner's very entry (dev+ino) through everything
+    // the racer did.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const owner = startFixture(1500);
+    try {
+      await readyOf(owner);
+      const racer = startFixture(0);
+      try {
+        const ownerOutcome = await outcomeOf(owner);
+        const racerOutcome = await outcomeOf(racer);
+        expect(ownerOutcome.kind).toBe('serving');
+        expect(racerOutcome.kind).toBe('busy');
+        expect(ownerOutcome.cleared).toBe(false);
+        expect(racerOutcome.cleared).toBe(false);
+        const entry = lstatSync(path);
+        expect(entry.isSocket()).toBe(true);
+        const seen: Pick<FixtureOutcome, 'dev' | 'ino'> = { dev: entry.dev, ino: entry.ino };
+        expect(seen).toEqual({ dev: ownerOutcome.dev, ino: ownerOutcome.ino });
+        expect(seen).toEqual({ dev: racerOutcome.dev, ino: racerOutcome.ino });
+        expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
+      } finally {
+        racer.kill();
+      }
+    } finally {
+      owner.kill();
+    }
   });
 
   test('a path that cannot bind is a line and exit 1, not a crash, and the file stays', async () => {
