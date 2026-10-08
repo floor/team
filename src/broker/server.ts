@@ -128,6 +128,18 @@ function young(path: string): boolean {
   }
 }
 
+/** Whether a path still holds the very entry a judgement read: the same dev+ino, and the pid
+ *  bytes still naming what they named then — `NaN` when the judgement read absence or junk.
+ *  A replacement is a different inode; one that reuses the freed inode names its own writer.
+ *  The unlinks in `takeOver` are gated on this: an unlink acts only on the entry its actor
+ *  read. */
+function stillJudged(path: string, dev: number, ino: number, seen: number): boolean {
+  const now = lstatSync(path, { throwIfNoEntry: false });
+  if (now === undefined || now.dev !== dev || now.ino !== ino) return false;
+  const pid = readPid(path);
+  return Number.isNaN(seen) ? Number.isNaN(pid) : pid === seen;
+}
+
 /** The temps a killed create leaves: `<path>.<pid>.new`, beside the lock and beside its claim.
  *  Each names its writer, so the next start clears the dead ones and never touches a live
  *  pid's — a live pid's temp is a create in flight. The released protocol never reads any of
@@ -203,28 +215,52 @@ function createOwned(path: string): { dev: number; ino: number } {
  *  recovered the way its locks are: a claim naming a dead pid, or an empty one aged out, is
  *  cleared by the next start — the eviction is idempotent, its follow-up the same create race
  *  — and the claim names its holder's pid, so an evicted-and-replaced claim is never mistaken
- *  for the one this start just wrote. */
+ *  for the one this start just wrote.
+ *
+ *  The round's invariant, on every unlink under this discipline: an unlink acts only on the
+ *  entry its actor has established — existence taken first (an absent path is nothing to
+ *  clear), identity checked (dev+ino, and the bytes still naming the pid that was read: a
+ *  replacement is a different inode, and one that reuses the freed inode names its own
+ *  writer) — and judging implies holding (the lock is removed only by a start whose claim is
+ *  still its own at the moment of removal; a claim is released only against its create's own
+ *  entry and pid). Refused by it: a stale eviction removing a rival's fresh claim, and a
+ *  straddling judge removing the fresh lock a rival's removal-and-create landed — the two
+ *  judges a stolen claim allows. The residual is one syscall pair wide — a compare→unlink gap
+ *  sized for a rival's eviction and full create to fit inside — which name-based `unlink`
+ *  cannot close; every wider straddle is refused, not raced. */
 async function takeOver(path: string): Promise<void> {
   const claim = `${path}.takeover`;
   for (let tries = 0; tries < 8; tries++) {
+    let claimed: { dev: number; ino: number };
     try {
       // The claim rides the same atomic create as the lock: a live taker paused in its own
       // create never becomes an aged-out empty claim for a rival to evict.
-      createOwned(claim);
+      claimed = createOwned(claim);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      const taker = readPid(claim);
-      if (!Number.isNaN(taker) && alive(taker)) {
-        await new Promise((tick) => setTimeout(tick, 20)); // a live claim-holder is mid-section
-        return;
+      // The eviction reads existence first and unlinks only the entry it read: a NaN read of
+      // an already-gone path is no dead taker to clear — the name is simply free, and the
+      // create race below arbitrates it.
+      const judged = lstatSync(claim, { throwIfNoEntry: false });
+      if (judged !== undefined) {
+        const taker = readPid(claim);
+        if (!Number.isNaN(taker) && alive(taker)) {
+          await new Promise((tick) => setTimeout(tick, 20)); // a live claim-holder is mid-section
+          return;
+        }
+        if (Number.isNaN(taker) && young(claim)) {
+          await new Promise((tick) => setTimeout(tick, 20)); // its pid is still landing
+          return;
+        }
+        // A dead taker, or an empty claim aged out — and only while the name still holds the
+        // entry judged above: an eviction race can free the name and a rival's fresh claim
+        // land before this unlink, and a stale evictor must not remove a live claimant.
+        if (stillJudged(claim, judged.dev, judged.ino, taker)) {
+          try {
+            unlinkSync(claim);
+          } catch {}
+        }
       }
-      if (Number.isNaN(taker) && young(claim)) {
-        await new Promise((tick) => setTimeout(tick, 20)); // its pid is still landing
-        return;
-      }
-      try {
-        unlinkSync(claim); // a dead taker, or an empty claim aged out
-      } catch {}
       continue;
     }
     // The claim is this start's — checked, never assumed: an eviction race can put a rival's
@@ -244,19 +280,33 @@ async function takeOver(path: string): Promise<void> {
     // victim was the rival's fresh live lock, and two starts walked. A live holder is never
     // removed (the check below), a writer whose pid is still on its way keeps its entry, and
     // an absent path is nothing to clear: the claim drops and the create race arbitrates.
-    if (lstatSync(path, { throwIfNoEntry: false }) !== undefined) {
+    const judged = lstatSync(path, { throwIfNoEntry: false });
+    if (judged !== undefined) {
       const holder = readPid(path);
       const live = !Number.isNaN(holder) && alive(holder);
       const landing = Number.isNaN(holder) && young(path);
       if (!live && !landing) {
-        try {
-          unlinkSync(path);
-        } catch {}
+        // Judging implies holding, and the entry judged is the entry removed or none: the
+        // claim is re-read as this start's own at the decision point — a claim since evicted
+        // and replaced authorizes nothing — and the lock name must still hold the entry read
+        // above, so a judge whose read went stale across a rival's removal-and-fresh-create
+        // refuses rather than removing the fresh live lock.
+        if (readPid(claim) === process.pid && stillJudged(path, judged.dev, judged.ino, holder)) {
+          try {
+            unlinkSync(path);
+          } catch {}
+        }
       }
     }
-    try {
-      unlinkSync(claim);
-    } catch {}
+    // The claim is released the way the lock is released: only the entry this start's own
+    // create made — the fd's identity, and the bytes still naming this process — a successor's
+    // claim a release race may find on the name is never the releaser's.
+    const held = lstatSync(claim, { throwIfNoEntry: false });
+    if (held !== undefined && held.dev === claimed.dev && held.ino === claimed.ino && readPid(claim) === process.pid) {
+      try {
+        unlinkSync(claim);
+      } catch {}
+    }
     return;
   }
 }
