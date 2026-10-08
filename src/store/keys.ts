@@ -246,3 +246,104 @@ export function verifyPayload(payload: Json, signature: string, key: KeyObject):
     return false;
   }
 }
+
+// The message key is a second file beside `key.json`. The approval key never signs a message,
+// and this key never signs an approval: each signature carries its own domain tag, and each
+// file holds its own pair. Created the first time a message or a receipt is signed
+// (`messageKeyOf`), never by `keyOf` and never by a read that does not sign.
+export const MESSAGE_DOMAIN = 'team-message-v1\n';
+export const RECEIPT_DOMAIN = 'team-receipt-v1\n';
+
+export function messageKeyPath(home: string = homedir()): string {
+  return join(keyFolder(home), 'messages.json');
+}
+
+function domainBytes(domain: string, payload: Json): Buffer {
+  return Buffer.concat([Buffer.from(domain, 'utf8'), Buffer.from(canonical(payload), 'utf8')]);
+}
+
+/** A signature over `domain` plus the canonical payload. The approval helpers stay on `team-approval-v1`. */
+export function signDomain(domain: string, payload: Json, key: KeyObject): string {
+  return cryptoSign(null, domainBytes(domain, payload), key).toString('hex');
+}
+
+/** False for a signature that is not hex, not present, or not this key's over this domain. */
+export function verifyDomain(domain: string, payload: Json, signature: string, key: KeyObject): boolean {
+  const bytes = domainBytes(domain, payload);
+  const raw = Buffer.from(signature, 'hex');
+  if (raw.length * 2 !== signature.length) return false;
+  try {
+    return cryptoVerify(null, bytes, createPublicKey(key), raw);
+  } catch {
+    return false;
+  }
+}
+
+function readKeyFile(path: string, label: string): KeyState {
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return { kind: 'missing' };
+    return { kind: 'unreadable', why: `the ${label} cannot be read (${code ?? 'unreadable'}): restore it from a copy` };
+  }
+  let stored: StoredKey;
+  try {
+    stored = JSON.parse(text) as StoredKey;
+  } catch {
+    return { kind: 'unreadable', why: `the ${label} is not whole JSON: restore it from a copy` };
+  }
+  if (stored === null || typeof stored !== 'object' || stored.format !== KEY_FORMAT || stored.algorithm !== 'ed25519' || typeof stored.private !== 'string') {
+    return { kind: 'unreadable', why: `the ${label} file is not a team key: restore it from a copy` };
+  }
+  try {
+    return { kind: 'key', key: createPrivateKey(stored.private) };
+  } catch {
+    return { kind: 'unreadable', why: `the ${label} does not parse as a key: restore it from a copy` };
+  }
+}
+
+/** The message key as a file, creating nothing. `missing` when `messages.json` is not there yet. */
+export function messageKeyState(home: string = homedir()): KeyState {
+  return readKeyFile(messageKeyPath(home), 'message key');
+}
+
+function installMessageKey(home: string, stored: StoredKey): 'installed' | 'exists' {
+  mkdirSync(keyFolder(home), { recursive: true, mode: 0o700 });
+  const path = messageKeyPath(home);
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 });
+  try {
+    linkSync(temporary, path);
+    return 'installed';
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    return 'exists';
+  } finally {
+    unlinkSync(temporary);
+  }
+}
+
+/**
+ * The message key, an Ed25519 pair in `messages.json` beside the approval key. Created the
+ * first time a message or a receipt is signed. A reader that only verifies uses
+ * `messageKeyState` and does not call this. An unreadable file is never replaced.
+ */
+export function messageKeyOf(home: string): KeyObject {
+  const state = messageKeyState(home);
+  if (state.kind === 'key') return state.key;
+  if (state.kind === 'unreadable') {
+    throw new Error(`${messageKeyPath(home)}: ${state.why} — a new key would orphan every message already signed`);
+  }
+  const pair = generateKeyPairSync('ed25519');
+  const stored: StoredKey = {
+    format: KEY_FORMAT,
+    algorithm: 'ed25519',
+    private: pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+  };
+  if (installMessageKey(home, stored) === 'installed') return createPrivateKey(stored.private);
+  const winner = messageKeyState(home);
+  if (winner.kind === 'key') return winner.key;
+  throw new Error(`${messageKeyPath(home)}: ${winner.kind === 'unreadable' ? winner.why : 'the message key disappeared'} — a new key would orphan every message already signed`);
+}

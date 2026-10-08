@@ -15,7 +15,8 @@ import type { Live } from '../status/compare.ts';
 import { readMachine, readingsText } from '../watch/machine.ts';
 import type { Machine } from '../watch/machine.ts';
 import { notify } from '../watch/notify.ts';
-import { newMemory, ownUnsent, pass } from '../watch/pass.ts';
+import { listUnacked } from './messages.ts';
+import { newMemory, ownUnsent, pass, type MailboxWaiting } from '../watch/pass.ts';
 import { readScreen } from '../watch/screen.ts';
 import { judgeTemporary, judgeWorktree } from '../watch/close.ts';
 import { readEnd, type EndView } from '../watch/end.ts';
@@ -314,6 +315,9 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
           readScreen: (cli, pane) => classifyWith(cli, pane, overrides.profiles),
           readings: stored, foreground, processes,
           nudgeOperator: approvedOperator(standing),
+          // A record is bound to the file's session. A watch of another session neither rings
+          // nor raises the owner line; the file's own watch still does both.
+          mailbox: !foreign && sources.home ? mailboxWaiting(root, team, live, sources.home) : [],
         });
         // The pass folds its figures where the state is held: two watches of the project fold one
         // after the other, not over each other. A watch on a foreign session still folds, for its
@@ -328,8 +332,18 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
         if (result.nudge) {
           if (args.flags.has('no-nudge')) say(`nudge not typed (--no-nudge): ${result.nudge.text}`, false);
           else await deliver(result.nudge, team, session, sources, memory, say, tell, told);
+        } else if (result.ring) {
+          if (args.flags.has('no-nudge')) say(`ring not typed (--no-nudge): ${result.ring.text}`, false);
+          else await deliver({
+            pane: result.ring.pane,
+            text: result.ring.text,
+            pending: [],
+            cli: result.ring.cli,
+            ring: { to: result.ring.to },
+          }, team, session, sources, memory, say, tell, told);
         }
         if (result.fallback) tell(result.fallback, true);
+        if (result.mailboxNote) tell(result.mailboxNote, true);
         await closeEnded({ team, root, dir, session, live, sources, say, io, told });
       }
       beat();
@@ -374,8 +388,25 @@ function spendOf(outcomes: readonly CheckOutcome[]): SpendReading[] {
 // prompt may have appeared since. An empty idle prompt is typed into; a box still holding the
 // line this same process typed itself and never sent is sent instead of typed into; anything
 // else — another person's or agent's text, or the same text found after a restart — stays.
+function mailboxWaiting(root: string, team: TeamFile, live: Live, home: string): MailboxWaiting[] {
+  return listUnacked(root, team.session, home).map((record) => {
+    const named = live.agents.filter((agent) => agent.name === record.to);
+    const agent = named.length === 1 ? named[0] : undefined;
+    const seat = team.seats.find((item) => item.name === record.to);
+    return {
+      id: record.id,
+      to: record.to,
+      at: Date.parse(record.at),
+      pane: agent?.pane ?? null,
+      status: agent?.status ?? null,
+      cli: seat?.cli ?? '',
+      screen: agent ? live.screens[agent.pane] : undefined,
+    };
+  });
+}
+
 async function deliver(
-  nudge: { pane: string; text: string; pending: string[]; cli?: string }, team: TeamFile, session: string, sources: WatchSources,
+  nudge: { pane: string; text: string; pending: string[]; cli?: string; ring?: { to: string } }, team: TeamFile, session: string, sources: WatchSources,
   memory: ReturnType<typeof newMemory>, say: (text: string, desktop: boolean) => void,
   tell: (text: string, notify: boolean) => void, told: Set<string>,
 ): Promise<void> {
@@ -385,9 +416,10 @@ async function deliver(
   const status = sources.status(nudge.pane, session);
   const keep = () => {
     // The nudge's text carries no report, so the reports it was raised for go back to pending:
-    // the fallback notification and the next passes need them.
+    // the fallback notification and the next passes need them. A ring carries none, and must
+    // not start the report clock.
     memory.pending.push(...nudge.pending);
-    memory.pendingSince ??= sources.now().getTime();
+    if (nudge.pending.length > 0) memory.pendingSince ??= sources.now().getTime();
   };
   const names = profileFor(cli)?.processNames ?? [];
   const live = () => reportedLiveAgent(sources.foreground(nudge.pane, session), names);
@@ -479,9 +511,11 @@ async function deliver(
   if (sources.pressEnter(nudge.pane, session)) {
     // Sent: the line has left the box, so nothing here can claim it any more.
     memory.ownNudge = null;
-    say(mine
-      ? `nudged the operator (its own unsent line was already in its box): ${nudge.text}`
-      : `nudged the operator: ${nudge.text}`, false);
+    say(nudge.ring
+      ? `rang ${nudge.ring.to}: ${nudge.text}`
+      : mine
+        ? `nudged the operator (its own unsent line was already in its box): ${nudge.text}`
+        : `nudged the operator: ${nudge.text}`, false);
   } else keep();
 }
 

@@ -159,7 +159,7 @@ describe('the classes read apart', () => {
     // command must not change shape for a script that reads it.
     expect(describeCaller({ kind: 'owner-no-tty' })).toBe('unplaced (it doesn\'t run on a terminal)');
     expect(describeCaller({ kind: 'pane', pane: 'w9:p1', session: 'main' })).toBe('it runs in pane main/w9:p1, which no grant lists');
-    expect(describeCaller({ kind: 'pane', pane: 'w9:p1' })).toBe('it runs in pane w9:p1, which no grant lists');
+    expect(describeCaller({ kind: 'pane', pane: 'w9:p1' })).toBe('it runs in pane w9:p1');
     expect(callerLabel({ kind: 'pane', pane: 'w9:p1', session: 'main' })).toBe('main/w9:p1');
   });
 });

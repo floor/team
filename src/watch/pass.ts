@@ -61,10 +61,14 @@ export type Memory = {
   // constant — can make an unsent box the watch's own, and it lives in this process: a restarted
   // watch has none, and text it did not type is left as its owner left it.
   ownNudge: { pane: string; text: string } | null;
+  // `${recipient}/${id}` this process has already told the owner about. Two seats can hold the
+  // same id. A restarted watch has none, so an old unacked record is said again; a receipt
+  // takes the record off the list.
+  mailboxTold: Set<string>;
 };
 
 export function newMemory(): Memory {
-  return { history: {}, slots: {}, active: new Set(), pending: [], pendingSince: null, ownNudge: null };
+  return { history: {}, slots: {}, active: new Set(), pending: [], pendingSince: null, ownNudge: null, mailboxTold: new Set() };
 }
 
 /** Whether a box, already read as unsent, holds this watch's own line: this process recorded
@@ -82,6 +86,21 @@ export type { Report } from './check.ts';
 // reports go to the log and to the desktop notification; the line only says where they are.
 export const NUDGE_TEXT = 'Team watch: reports are waiting in .agents/team.log';
 
+// The one line the watch types into a seat's pane when a message is waiting. Fixed, and not the
+// body: the body is what `team messages` prints after it verifies.
+export const RING_TEXT = 'Team: run team messages';
+
+/** One unacked message the watch has already verified, joined to the seat's pane when it has one. */
+export type MailboxWaiting = {
+  id: string;
+  to: string;
+  at: number;
+  pane: string | null;
+  status: string | null;
+  cli: string;
+  screen: string | undefined;
+};
+
 export type PassResult = {
   reports: Report[];
   // The one line to type into the operator's pane, when the operator is free. `pending` holds the
@@ -89,6 +108,10 @@ export type PassResult = {
   nudge: { pane: string; text: string; pending: string[] } | null;
   // What to notify instead, when a nudge has waited too long.
   fallback: string | null;
+  // The one line to type when a message is waiting and this pass is not already typing a nudge.
+  ring: { pane: string; text: string; cli: string; to: string; id: string } | null;
+  // One owner line when an unacked message is older than `nudge_wait` and its box is not free.
+  mailboxNote: string | null;
   // The readings that count, to be saved: the project's, with this pass's figures folded in (§ 4.4).
   readings: Seen[];
 };
@@ -169,6 +192,8 @@ export type PassInput = {
   quotaFor?: (cli: string) => readonly QuotaPattern[];
   /** The operator the nudge may type to. Omitted, the pass uses `team`. Null, it types nothing. */
   nudgeOperator?: { name: string; cli: string } | null;
+  /** Unacked messages already verified. Omitted, the pass rings nothing. */
+  mailbox?: readonly MailboxWaiting[];
 };
 
 // One pass of the watch. Pure: it reads what it is handed and changes only `memory`.
@@ -190,6 +215,7 @@ export function pass({
   readScreen: read = readScreen,
   quotaFor: patternsOf = shippedQuota,
   nudgeOperator,
+  mailbox = [],
 }: PassInput): PassResult {
   const reports: Report[] = [];
   const current = new Set<string>();
@@ -436,5 +462,26 @@ export function pass({
       memory.pendingSince = null;
     }
   }
-  return { reports, nudge, fallback, readings };
+  // A report nudge is the one typed line of this pass. A ring is typed only when this pass is
+  // not already typing that nudge. The record stays either way: the receipt is what clears it.
+  let ring: PassResult['ring'] = null;
+  let mailboxNote: string | null = null;
+  const ordered = [...mailbox].sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
+  for (const record of ordered) {
+    const screen = record.pane ? read(record.cli, record.screen) : null;
+    const mine = record.pane !== null && screen?.kind === 'unsent'
+      && ownUnsent(memory, record.pane, RING_TEXT, record.cli, record.screen);
+    const free = record.pane !== null && (record.status === 'idle' || record.status === 'done')
+      && (screen?.kind === 'idle' || mine);
+    if (nudge === null && free && ring === null && record.pane !== null) {
+      ring = { pane: record.pane, text: RING_TEXT, cli: record.cli, to: record.to, id: record.id };
+      continue;
+    }
+    const toldKey = `${record.to}/${record.id}`;
+    if (!free && mailboxNote === null && now - record.at >= watch.nudgeWait * 1000 && !memory.mailboxTold.has(toldKey)) {
+      mailboxNote = `message ${record.id} for ${record.to} has been waiting ${minutes(now - record.at)} minutes`;
+      memory.mailboxTold.add(toldKey);
+    }
+  }
+  return { reports, nudge, fallback, ring, mailboxNote, readings };
 }
