@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { basename, dirname } from 'node:path';
 import { approvalDifferencesOf, notInForce } from '../approve/approval.ts';
 import { readArgs } from '../args.ts';
-import { anotherPaneRefusal, callerOf, callerVerdict, fileOwnerRefusal, isOwner, judgeCallerIn, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller, type SeatStanding } from '../caller.ts';
+import { anotherPaneRefusal, callerOf, callerVerdict, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller, type SeatStanding } from '../caller.ts';
 import { trustPolicy } from '../file/dialogs.ts';
 import { canonicalLanding, folderOf, listFolder } from '../file/landing.ts';
 import { loadTeamFile } from '../file/load.ts';
@@ -243,6 +243,7 @@ function logWho(caller: Caller, team: TeamFile): string {
   // it would carry is the owner's, as everywhere else.
   if (caller.kind === 'owner' || caller.kind === 'owner-no-tty') return 'owner';
   if (caller.kind === 'unplaced') return 'unplaced';
+  if (caller.kind === 'pane') return caller.session === undefined ? caller.pane : `${caller.session}/${caller.pane}`;
   return caller.name === team.orchestrator ? 'orchestrator' : 'seat';
 }
 
@@ -257,6 +258,7 @@ function callerProblemOf(caller: Caller, team: TeamFile, seat: string, at?: Seat
     return { class: 'caller', message: `team answer: ${anotherPaneRefusal(verdict.name, verdict.recordedPane)}` };
   }
   if (caller.kind === 'unplaced') return { class: 'caller', message: caller.reason };
+  if (caller.kind === 'pane') return { class: 'caller', message: describeCaller(caller) };
   return { class: 'caller', message: `${seat}: only the owner, or the orchestrator from its own seat, can answer` };
 }
 

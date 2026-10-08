@@ -41,3 +41,12 @@ delegates:
 - A pane named in several approved team files is a delegate of each — the files do not see or
   limit one another — and in every one of them the owner-only sections stay the owner's, never
   a delegate's.
+- A pane's own shell reaches that pane's grant when the pane's root process is among the
+  caller's ancestors. `HERDR_PANE_ID` only names which pane to read; the pid is what places
+  the caller. No such variable, a root that is not an ancestor, or a pane-root read that
+  fails places nobody, as before. A command the grant does not list is still refused, and a
+  pane no grant lists is refused by name: `it runs in pane <session>/<pane id>, which no grant lists`.
+- Delegate placement is an accident guard, not a security boundary. The pane ancestry and
+  herdr's pid vouch are forgeable by a hostile process of the same user, which this tool does
+  not resist: it guards a mistaken agent, not a hostile one. Nothing in the grants or in
+  `trust:` is changed by that.

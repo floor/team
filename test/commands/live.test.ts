@@ -4324,6 +4324,41 @@ describe('team up, delegated', () => {
     },
   ] as const;
 
+  test('a pane the grant names dry-runs up', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    const io = testIo(root, { kind: 'pane', pane: 'w1:p1', session: 'main' });
+    io.stdinIsTTY = true;
+    const code = await runUp(['--dry-run'], io, sources({
+      sessionState: () => 'absent',
+      delegateGate: gateReading(false),
+      machine: () => fine,
+    }, made));
+    expect(code).toBe(0);
+    expect(io.out).not.toContain('unplaced');
+    expect(io.out).not.toContain('would refuse');
+    expect(io.out).toContain('dry run: nothing was run\n');
+    expect(made.starts).toBe(0);
+  });
+
+  test('a pane no grant lists is refused by name', async () => {
+    delegateFile();
+    await approve();
+    const made = world();
+    const io = testIo(root, { kind: 'pane', pane: 'w9:p1', session: 'main' });
+    io.stdinIsTTY = true;
+    const code = await runUp(['--dry-run'], io, sources({
+      sessionState: () => 'absent',
+      delegateGate: gateReading(false),
+      machine: () => fine,
+    }, made));
+    expect(code).toBe(1);
+    expect(io.out).toContain('! up would refuse: only the owner or the approved delegate runs `up`; this call is it runs in pane main/w9:p1, which no grant lists\n');
+    expect(made.starts).toBe(0);
+    expect(made.creates).toEqual([]);
+  });
+
   for (const state of STATES) {
     test(`a delegated up with the session ${state.name}: the gate's answer, then the run's`, async () => {
       delegateFile();

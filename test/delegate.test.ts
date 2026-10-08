@@ -186,6 +186,37 @@ describe('a matching pane passes, and only that pane', () => {
     expect(renamed.text).toContain('this call is worker');
   });
 
+  test('an agentless pane the grant names passes, and one it does not is named', () => {
+    const shell: Process[] = [{ pid: 900, name: 'zsh' }, { pid: 10, name: 'herdr' }];
+    const of = (pane: string) => (): CallerSources => ({
+      ancestors: () => shell,
+      agents: () => [],
+      paneRootPid: (id) => (id === pane ? 900 : null),
+      env: { HERDR_PANE_ID: pane },
+      stdinIsTTY: true,
+    });
+    const granted = of('w1:p1');
+    expect(gate({ callerSources: granted, command: 'up' })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+    expect(gate({ callerSources: granted, command: 'down' })).toEqual({ kind: 'passed', pane: 'other/w1:p1' });
+    expect(refused({ callerSources: granted, command: 'approve' })).toEqual({
+      id: 'approve.delegate-command',
+      text: 'the approved delegate other/w1:p1 may not run `approve`; its approved commands are up, down, add, remove',
+    });
+    expect(refused({ callerSources: of('w9:p1') })).toEqual({
+      id: 'up.delegate',
+      text: 'only the owner or the approved delegate runs `up`; this call is it runs in pane other/w9:p1, which no grant lists',
+    });
+    expect(refused({
+      callerSources: () => ({
+        ancestors: () => shell,
+        agents: () => [],
+        paneRootPid: () => null,
+        env: { HERDR_PANE_ID: 'w1:p1' },
+        stdinIsTTY: true,
+      }),
+    }).text).toBe('only the owner or the approved delegate runs `up`; this call is unplaced (it runs in a herdr pane without an agent)');
+  });
+
   test('the owner, a caller without a terminal, and an agent outside herdr are not the pane', () => {
     expect(refused({ ancestors: terminal }).text).toBe('only the owner or the approved delegate runs `up`; this call is owner');
     expect(refused({ ancestors: terminal, stdinIsTTY: false }).text).toContain('this call is unplaced (it doesn\'t run on a terminal)');
