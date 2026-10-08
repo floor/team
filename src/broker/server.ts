@@ -22,15 +22,17 @@
 // spawned mid-hold — the owner serves, the second waits and reads it live). The serialization
 // is between starts that leave the paths alone — a same-principal process that removes the
 // lock or the socket path can still split two starts, which the page states. The lock file
-// holds its holder's pid and carries `withLock`'s discipline from `src/state.ts` — exclusive
-// create, a lock whose holder is dead taken over, one start at a time through a claim beside
-// the lock — written as an await loop because this section spans awaits, where `withLock`
+// holds its holder's pid and carries `withLock`'s discipline from `src/state.ts` — an
+// exclusive create that publishes the entry whole (a private temp naming its writer, linked
+// into the shared name, so no reader ever sees the name without its pid), a lock whose holder
+// is dead taken over, one start at a time through a claim beside the lock — written as an
+// await loop because this section spans awaits, where `withLock`
 // busy-waits; `withLock` itself is untouched. A start whose wait
 // outlasts the deadline answers `locked`: refused, nothing cleared, nothing bound. The lock is
 // released when the listen lands and on every other way out of the section.
-import { closeSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer, connect, type Socket } from 'node:net';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { anotherPaneRefusal, callerVerdict, noPaneRefusal, standingOf, type Caller } from '../caller.ts';
 import type { TeamFile } from '../file/types.ts';
 import type { TaskRead, TaskRecord, TaskRefusal } from '../tasks/adapter.ts';
@@ -126,6 +128,63 @@ function young(path: string): boolean {
   }
 }
 
+/** The temps a killed create leaves: `<path>.<pid>.new`, beside the lock and beside its claim.
+ *  Each names its writer, so the next start clears the dead ones and never touches a live
+ *  pid's — a live pid's temp is a create in flight. The released protocol never reads any of
+ *  them: the sweep is hygiene, not recovery. A start whose temp was wrongly swept would fail
+ *  its link with the same EEXIST a rival's win answers, so the race direction is safe. */
+function sweepTemps(lockPath: string): void {
+  let names: string[];
+  try {
+    names = readdirSync(dirname(lockPath));
+  } catch {
+    return;
+  }
+  const prefix = `${basename(lockPath)}.`;
+  for (const name of names) {
+    if (!name.startsWith(prefix) || !name.endsWith('.new')) continue;
+    const pid = Number(name.slice(prefix.length, -'.new'.length).split('.').pop());
+    if (!Number.isInteger(pid) || pid <= 0 || alive(pid)) continue;
+    try {
+      unlinkSync(join(dirname(lockPath), name));
+    } catch {}
+  }
+}
+
+/** The one exclusive create the lock and its takeover claim both run — the entry's name and
+ *  its content published in one step, never one before the other. The write goes to a private
+ *  temp that names its writer (`<path>.<pid>.new`), then `link` gives the shared name: it can
+ *  appear only already carrying this process's pid, and only one create can win it — every
+ *  other answers EEXIST exactly as a plain exclusive create did, so both callers' waiter
+ *  branches are unchanged. A plain `openSync(path,'wx')` cannot close its own gap — the name
+ *  is visible from the create's return, the pid a beat behind — and that gap was the finding:
+ *  a live writer paused in it was aged out as if dead, its entry evicted while the writer was
+ *  still to resume, its pid then published into an unlinked file. There is no such gap here to
+ *  stand in. Measured under bun 1.4.2 before it was written into the source: after link the
+ *  shared name carries the temp's bytes (`content-after-link "4242\n"`), the temp fd's
+ *  dev+ino equal the name's (`identity-match= true`), and a second link answers EEXIST. The
+ *  temp is removed by this call's own finally; one left by a kill is swept by the next start
+ *  (`sweepTemps`), and a temp under this process's own pid — which only this live process can
+ *  have named — is cleared before the create. */
+function createOwned(path: string): { dev: number; ino: number } {
+  const tmp = `${path}.${process.pid}.new`;
+  try {
+    unlinkSync(tmp); // this process's own stale temp, if any: no other writer names it
+  } catch {}
+  const fd = openSync(tmp, 'wx');
+  try {
+    writeFileSync(fd, `${process.pid}\n`);
+    const held = fstatSync(fd);
+    linkSync(tmp, path); // EEXIST = a rival holds the name: the plain create's own answer
+    return { dev: held.dev, ino: held.ino };
+  } finally {
+    closeSync(fd);
+    try {
+      unlinkSync(tmp);
+    } catch {}
+  }
+}
+
 /** The dead lock's removal, one start at a time: every takeover runs through a claim file
  *  beside the lock (`<lock>.takeover`), so exactly one start is removing the dead entry while
  *  the others wait — and the removal is the whole of the takeover. The lock path is never
@@ -137,7 +196,8 @@ function young(path: string): boolean {
  *  breached 10/30 rounds, corpse + dead pid 13/60, and an aside-judging variant of this fix
  *  48/300 — every breach a `bind-failed` start that never waited). Here the claim's holder
  *  re-reads the entry and removes it only when it still names no live holder and is not still
- *  young — the create→write gap stays the young window's charge — then drops the claim, and
+ *  young — this build's own creates publish whole, so an entry still in that gap is a foreign
+ *  or older writer's, and the window stays its charge — then drops the claim, and
  *  every start re-races the exclusive create, which arbitrates cleanly: one wins the create
  *  and holds, every other reads the winner live and takes the wait. A crashed claim-holder is
  *  recovered the way its locks are: a claim naming a dead pid, or an empty one aged out, is
@@ -148,9 +208,9 @@ async function takeOver(path: string): Promise<void> {
   const claim = `${path}.takeover`;
   for (let tries = 0; tries < 8; tries++) {
     try {
-      const fd = openSync(claim, 'wx');
-      writeFileSync(fd, `${process.pid}\n`);
-      closeSync(fd);
+      // The claim rides the same atomic create as the lock: a live taker paused in its own
+      // create never becomes an aged-out empty claim for a rival to evict.
+      createOwned(claim);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       const taker = readPid(claim);
@@ -192,31 +252,31 @@ async function takeOver(path: string): Promise<void> {
   }
 }
 
-/** The start section's lock, `withLock`'s discipline awaited instead of busy-waited: exclusive
- *  create with the holder's pid written, a live holder waited for until the deadline (answered
- *  `timeout`, which the caller refuses), a dead holder's lock taken over at once — one start at
- *  a time, through the claim above — and a lock that names nothing — mid-create, emptied,
- *  junk — waited on while it is young, then taken over once it has aged past `LOCK_YOUNG_MS`.
+/** The start section's lock, `withLock`'s discipline awaited instead of busy-waited: an
+ *  exclusive create whose entry appears already holding its pid (`createOwned`), a live holder
+ *  waited for until the deadline (answered `timeout`, which the caller refuses), a dead
+ *  holder's lock taken over at once — one start at a time, through the claim above — and a
+ *  lock that names nothing — a foreign or older writer's empty file, junk — waited on while it
+ *  is young, then taken over once it has aged past `LOCK_YOUNG_MS`; this build's own creates
+ *  cannot leave such an entry, so the sweep below clears the temps a killed create did leave.
  *  The file's directory is made the way `withLock` makes its own. */
 async function acquireStartLock(path: string): Promise<{ kind: 'held'; release: () => void } | { kind: 'timeout' }> {
   mkdirSync(dirname(path), { recursive: true });
+  sweepTemps(path);
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (;;) {
     // The deadline governs the whole wait, every branch of it: past it the answer is the
     // pinned `locked`, nothing cleared, nothing bound.
     if (Date.now() > deadline) return { kind: 'timeout' };
     try {
-      const fd = openSync(path, 'wx');
-      writeFileSync(fd, `${process.pid}\n`);
-      // The entry this create made, named by the fd itself: the release below unlinks the file
-      // at the path only while the path still holds this very entry. The shape that forces it:
+      // The entry this create made, named by the fd itself at its creation (`createOwned`,
+      // whose fstat is of the fd — the entry itself): the release below unlinks the file at
+      // the path only while the path still holds this very entry. The shape that forces it:
       // the entry removed and a second start's lock created in the free name while this holder
       // is still mid-section — an unconditional unlink at release would kill the replacement,
       // alive and still starting. A replacement is a different inode and is skipped: a lock
-      // this hold did not create is not this hold's to remove. fstat, not lstat — the fd is the
-      // entry itself.
-      const held = fstatSync(fd);
-      closeSync(fd);
+      // this hold did not create is not this hold's to remove.
+      const held = createOwned(path);
       return {
         kind: 'held',
         // `withLock`'s own release, identity-bound: the file this hold created, gone. A dead
