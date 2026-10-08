@@ -92,6 +92,16 @@ function leftName(name: string, taken: Set<string>): string {
   return candidate;
 }
 
+/** Whether `name` is one the mint above can produce: `<base>-left`, or `<base>-left-<n>` with
+ *  n ≥ 2 (`leftName` counts collisions from 2 up). Name-shaped on purpose: the base may no
+ *  longer be a seat the file declares — the leftover outlives its seat — so the reads that meet
+ *  these names outside the file can go on nothing else. */
+export function leftoverName(name: string): boolean {
+  const match = /^(.+)-left(?:-(\d+))?$/.exec(name);
+  if (match === null) return false;
+  return match[2] === undefined || Number(match[2]) >= 2;
+}
+
 /** The file edit `remove` would write, or null when that edit is valid or changes nothing. */
 function editProblems(path: string, name: string, keep: boolean): Problem[] | null {
   const text = readFileSync(path, 'utf8');

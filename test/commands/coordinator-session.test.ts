@@ -1048,6 +1048,83 @@ describe('up over the v0.2.1 state', () => {
   });
 });
 
+// The panes a force-close leaves behind. A non-owner's `remove` leaves its seat's pane running
+// and renames the agent out of the seat's name — `<name>-left`, then `-left-2`, `-left-3`, … —
+// and the base may no longer be a seat the file declares. The gate above must skip that family
+// (it is nobody's unrecorded seat) while every other name still refuses, byte for byte.
+describe('up and the panes a force-close leaves behind', () => {
+  // The recorded world every run below shares: the state above, plus the watch record the
+  // session needs — alive in the fakes, so `up` leaves it alone (the v0.2.1 run's own shape) and
+  // the gate is the only thing a walked-past run can still refuse on. `extras` is what the case
+  // under test adds beyond the three recorded agents.
+  const WATCHED = {
+    ...STATE,
+    sessions: {
+      [SESSION]: { ...STATE.sessions[SESSION], watch: { pid: 4242, heartbeat: '2026-10-04T09:00:00.000Z' } },
+    },
+  };
+
+  async function upOver(extras: HerdrAgent[]): Promise<{
+    code: number;
+    io: TestIo;
+    counts: Record<'starts' | 'creates' | 'runs' | 'renames' | 'closes', number>;
+  }> {
+    writeFileSync(stateFile, `${JSON.stringify(WATCHED, null, 2)}\n`);
+    const { counts, launch } = upHost();
+    const io = testIo(dir, { kind: 'owner' });
+    const code = await runUp(
+      ['--file', '.agents/team.yaml'],
+      io,
+      upSources({
+        agents: () => [
+          runningAgent(COORDINATOR, COORDINATOR_PANE),
+          runningAgent(OPERATOR, 'w4:p1'),
+          runningAgent(SEAT, 'w3:p1'),
+          ...extras,
+        ],
+        alive: (pid) => pid === 4242,
+        launch,
+      }),
+    );
+    return { code, io, counts };
+  }
+
+  test('a leftover agent (and its `-left-3` collision shape) is skipped: up goes on', async () => {
+    const { code, io, counts } = await upOver([
+      runningAgent('reviewer-x-left', 'w9:p1'),
+      runningAgent('reviewer-x-left-3', 'w9:p2'),
+    ]);
+    expect(code).toBe(0);
+    expect(io.out).toBe(
+      `${COORDINATOR}: ready\n` +
+        `${OPERATOR}: ready\n` +
+        `${SEAT}: ready\n`,
+    );
+    expect(io.err).not.toContain("doesn't record");
+    expect(counts).toEqual({ starts: 0, creates: 0, runs: 0, renames: 0, closes: 0 });
+    expect(readFileSync(stateFile, 'utf8')).toBe(`${JSON.stringify(WATCHED, null, 2)}\n`);
+  });
+
+  test('an unrecorded agent outside the family still refuses, byte for byte', async () => {
+    const { code, io, counts } = await upOver([runningAgent('reviewer-x', 'w9:p1')]);
+    expect(code).toBe(1);
+    expect(io.err).toBe(
+      `team up: session ${SESSION} has 1 agent this file's state doesn't record: \`up\` never touches a running team\n`,
+    );
+    expect(counts).toEqual({ starts: 0, creates: 0, runs: 0, renames: 0, closes: 0 });
+    expect(readFileSync(file, 'utf8')).toBe(fileText);
+    expect(readFileSync(stateFile, 'utf8')).toBe(`${JSON.stringify(WATCHED, null, 2)}\n`);
+  });
+
+  test('a `-left-1` name is not one the mint produces: refused the same way', async () => {
+    const { code, io } = await upOver([runningAgent('reviewer-x-left-1', 'w9:p1')]);
+    expect(code).toBe(1);
+    expect(io.err).toBe(
+      `team up: session ${SESSION} has 1 agent this file's state doesn't record: \`up\` never touches a running team\n`,
+    );
+  });
+});
+
 // remove stops a seat and edits the file: without an approval in force it does neither, in the
 // words every command uses for the case.
 describe('remove needs an approval in force', () => {
