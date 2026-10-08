@@ -1106,7 +1106,7 @@ export async function executePlan(steps: readonly Step[], session: string, host:
           break;
         }
         host.drop(op.seat);
-        finish(op.seat, 'stopped');
+        finish(op.seat, op.said ?? 'stopped');
         break;
       }
       case 'kill': {

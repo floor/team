@@ -14,6 +14,7 @@ import {
   paneForeground,
   paneForegroundCwd,
   paneRead,
+  paneShellBack,
   sendKey,
   sessionDelete,
   sessionRunning,
@@ -49,6 +50,10 @@ export type DownSources = {
   status(session: string, pane: string): string | null;
   /** Foreground argv0 names, or null when the pane can't be read. */
   foreground(session: string, pane: string): string[] | null;
+  /** Whether the pane's own shell process is back in front — the pid-based reading, never
+   *  argv0 alone (`herdr.ts`, `shellBackOf`). Optional: a caller without it classifies by the
+   *  screen exactly as before. */
+  shellBack?(session: string, pane: string): boolean | null;
   /** Foreground live working directory, or null when the pane can't be read. */
   foregroundCwd?(session: string, pane: string): string | null;
   now(): Date;
@@ -130,6 +135,7 @@ export const realSources: DownSources = {
   screenText: (session, pane) => paneRead(pane, 200, aim(session)) ?? undefined,
   status: (session, pane) => agentStatus(pane, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
+  shellBack: (session, pane) => paneShellBack(pane, aim(session)),
   foregroundCwd: (session, pane) => paneForegroundCwd(pane, aim(session)),
   now: () => new Date(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -152,6 +158,26 @@ export default down;
 export function paneStillRunning(foreground: readonly string[] | null, processNames: readonly string[]): boolean {
   if (!foreground) return true;
   return foreground.some((name) => processNames.includes(name));
+}
+
+/**
+ * The seat's state with the one process reading that tells "its CLI exited" from "its screen is
+ * unreadable": the pane's own shell process is back in front (`shellBack`, from pids — never
+ * argv0 alone) and the pane's readable foreground list holds no process of the CLI. Both are
+ * positive facts, so nothing an unrecognised live screen shows can reach this branch: an
+ * unreadable foreground list keeps `paneStillRunning` true, a missing shell-back reading and a
+ * CLI still in the list both fall through, and with no profile there are no process names to
+ * look for. Everything else is `stateOf`, byte for byte.
+ */
+export function stateOfPane(
+  status: string,
+  screen: Screen,
+  pane: { foreground: readonly string[] | null; shellBack: boolean | null; processNames: readonly string[] },
+): DownSeat['state'] {
+  if (pane.shellBack === true && pane.processNames.length > 0 && !paneStillRunning(pane.foreground, pane.processNames)) {
+    return 'exited';
+  }
+  return stateOf(status, screen);
 }
 
 export function stateOf(status: string, screen: Screen): DownSeat['state'] {
@@ -592,7 +618,15 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
       const waiting = agents.some((agent) => {
         if (!agent.name) return false;
         const liveCwd = sources.foregroundCwd ? sources.foregroundCwd(session, agent.pane) : null;
-        return stateOf(agent.status, sources.screen(session, agent.pane, cliFor(agent.name), liveCwd)) === 'working';
+        const cli = cliFor(agent.name);
+        // The same reading the plan classifies with: a seat whose CLI exited is not working,
+        // even when herdr's status word still says it is, so nothing waits for it.
+        const state = stateOfPane(agent.status, sources.screen(session, agent.pane, cli, liveCwd), {
+          foreground: sources.foreground(session, agent.pane),
+          shellBack: sources.shellBack ? sources.shellBack(session, agent.pane) : null,
+          processNames: profileFor(cli)?.processNames ?? [],
+        });
+        return state === 'working';
       });
       if (!waiting) break;
       const before = sources.now().getTime();
@@ -634,7 +668,14 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     const profile = profileFor(cli);
     const liveCwd = sources.foregroundCwd ? sources.foregroundCwd(session, agent.pane) : null;
     const shown = sources.screen(session, agent.pane, cli, liveCwd);
-    const state = stateOf(agent.status, shown);
+    // The process reading decides "its CLI exited" before the screen is consulted: a bare shell
+    // draws nothing the profiles recognise, so the screen alone can never tell it from a live
+    // CLI whose screen this profile can't read.
+    const state = stateOfPane(agent.status, shown, {
+      foreground: sources.foreground(session, agent.pane),
+      shellBack: sources.shellBack ? sources.shellBack(session, agent.pane) : null,
+      processNames: profile?.processNames ?? [],
+    });
     // An unsent box that holds exactly the profile's exit text — an earlier run typed it and
     // never confirmed it — is named as such either way: the profile's one clearing key decides
     // whether this run empties it and asks again (the plan's run step) or the owner does (its

@@ -253,6 +253,39 @@ describe('a delegated down', () => {
     expect(r.audits).toEqual([{ dir: join(root, '.agents'), pane: PANE, command: 'down', now: NOW }]);
   });
 
+  test('seats whose CLI exited are closed without typing: the delegate needs no --abandon', async () => {
+    // The bug this fix closes: the panes are bare shells, the gate passes the caller and the
+    // ordinary run closes every seat — nothing typed, `--abandon` never asked for — and the
+    // session follows its last seat down.
+    const r = rig({
+      gate: () => PASSED,
+      screen: () => ({ kind: 'unknown' }),
+      foreground: () => ['zsh'],
+      shellBack: () => true,
+    });
+    expect(await r.run()).toBe(0);
+    expect(r.io.err).toBe('');
+    expect(r.typed).toEqual([]);
+    expect(r.keys).toEqual([]);
+    for (const name of RUNNING) expect(r.io.out).toContain(`${name}: its CLI had exited; its workspace was closed\n`);
+    // The rig answers `sessionRunning` with a constant `true`, so the clear retry ends where it
+    // must; the line proves this run stopped the session itself.
+    expect(r.io.out).toContain('session acme-web: stopped; it did not clear\n');
+    expect(r.io.out).not.toContain('does not recognise');
+    expect(r.audits).toEqual([{ dir: join(root, '.agents'), pane: PANE, command: 'down', now: NOW }]);
+  });
+
+  test('a live CLI on an unreadable screen keeps the delegate\'s refusal, byte for byte', async () => {
+    // Nothing the gate lets through widens: with the CLI still in the foreground list, the same
+    // delegated run keeps today's line for every seat and leaves the session up.
+    const r = rig({ gate: () => PASSED, screen: () => ({ kind: 'unknown' }) });
+    expect(await r.run()).toBe(0);
+    expect(r.io.err).toBe('');
+    expect(r.typed).toEqual([]);
+    for (const name of RUNNING) expect(r.io.out).toContain(`${name}: shows a screen the profile does not recognise; left running\n`);
+    expect(r.io.out).toContain('session acme-web: not stopped, 3 agents left in it\n');
+  });
+
   test('an already-idle down stops nothing, asks nothing and writes no audit line', async () => {
     // It returns before any caller check, as today: the gate is not a caller check that happens
     // first, and a delegate's idle run is the same "nothing to stop" every caller gets.

@@ -286,6 +286,49 @@ describe('down --dry-run', () => {
     ]);
   });
 
+  test('a seat whose CLI exited is closed without typing, and the session follows it down', () => {
+    const plan = downPlan({ session: 'acme-web', seats: [seat('w1', 'exited')], extra: 0, watchPid: null, keep: [] });
+    expect(plan).toEqual([
+      {
+        kind: 'run',
+        argv: ['herdr', '--session', 'acme-web', 'workspace', 'close', 'w1'],
+        note: 'its CLI had exited; closed without typing',
+        do: { do: 'close', seat: 'w1', workspace: 'w1', said: 'its CLI had exited; its workspace was closed' },
+      },
+      {
+        kind: 'run',
+        argv: ['herdr', 'session', 'stop', 'acme-web'],
+        note: 'stopped, then cleared: the session this run stopped, so a later `up` starts from the beginning',
+        do: { do: 'stop', session: 'acme-web' },
+      },
+    ]);
+  });
+
+  test('--abandon on an exited seat takes the same close, not the abandon line', () => {
+    const plan = downPlan({
+      session: 'acme-web',
+      seats: [seat('w1', 'exited')],
+      extra: 0,
+      watchPid: null,
+      keep: [],
+      abandon: true,
+      closeUnasked: true,
+      unasked: 'team down --abandon closes it',
+    });
+    expect(plan[0]).toMatchObject({
+      note: 'its CLI had exited; closed without typing',
+      do: { do: 'close', said: 'its CLI had exited; its workspace was closed' },
+    });
+  });
+
+  test("a seat's call leaves an exited coordinator's seat alone, and the session with it", () => {
+    const plan = downPlan({ session: 'acme-web', seats: [seat('lead', 'exited')], extra: 0, watchPid: null, keep: ['lead'] });
+    expect(plan).toEqual([
+      { kind: 'skip', text: "lead: left running; only the owner stops the orchestrator's or the operator's seat" },
+      { kind: 'skip', text: 'session acme-web: not stopped, 1 agent left in it' },
+    ]);
+  });
+
   test("a seat's call leaves the coordinator, the operator and the session", () => {
     const plan = downPlan({
       session: 's',

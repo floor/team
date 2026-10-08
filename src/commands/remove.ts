@@ -20,7 +20,7 @@ import { downPlan, type DownSeat } from '../launch/plan.ts';
 import { logLine } from '../log.ts';
 import { profileFor } from '../profiles/index.ts';
 import { emptySession, readState, updateState, withLock } from '../state.ts';
-import { paneStillRunning, realSources as downSources, stateOf, typeExit, type DownSources } from './down.ts';
+import { paneStillRunning, realSources as downSources, stateOf, stateOfPane, typeExit, type DownSources } from './down.ts';
 import { boxHoldsText } from '../launch/deliver.ts';
 import { removeRulesFile } from '../launch/rules-file.ts';
 import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
@@ -76,6 +76,9 @@ const LEFT: Record<Exclude<DownSeat['state'], 'free'>, string> = {
   blocked: 'is blocked at a prompt, which team never answers',
   unknown: 'shows a screen the profile does not recognise; left as it is',
   unsent: 'holds unsent text in its input box; left as it is',
+  // Unreachable: an exited seat is closed, never refused, so no line reads this entry. It is
+  // here because the type names a clause for every state.
+  exited: 'its CLI had exited; closed without typing',
 };
 
 export const remove: Command = (argv, io) => runRemove(argv, io, realSources);
@@ -324,18 +327,26 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   if (agent && !leave && busy === undefined) {
     const liveCwd = sources.foregroundCwd ? sources.foregroundCwd(session, agent.pane) : null;
     const screen = sources.screen(session, agent.pane, cli, liveCwd);
-    const where = stateOf(agent.status, screen);
     // A box that holds exactly the profile's exit text — an earlier run typed it and never
     // confirmed it — is cleared with the profile's one key inside the stop, and the removal
     // then proceeds as on an empty box. The same box on a CLI with no key is named for the
     // owner instead of refused with the generic unsent line.
     const profile = profileFor(cli);
+    // The process reading decides "its CLI exited" before the screen is consulted (`down.ts`,
+    // `stateOfPane`): the pane's own shell back in front, and no CLI process in its readable
+    // foreground list. Such a seat is closed as a free one is — there is nothing in that pane
+    // to ask and no key could reach it — by the owner and by an allowed caller alike.
+    const where = stateOfPane(agent.status, screen, {
+      foreground: sources.foreground(session, agent.pane),
+      shellBack: sources.shellBack ? sources.shellBack(session, agent.pane) : null,
+      processNames: profile?.processNames ?? [],
+    });
     const holdsExit = where === 'unsent' && profile !== null
       && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli), { cwd: liveCwd ?? undefined, home: sources.home });
     const clearable = holdsExit && profile?.exitClear !== null;
-    leave = caller.kind !== 'owner' && where !== 'free' && where !== 'working' && !clearable
+    leave = caller.kind !== 'owner' && where !== 'free' && where !== 'exited' && where !== 'working' && !clearable
       && (agent.status === 'idle' || agent.status === 'done');
-    if (where !== 'free' && !abandon && !clearable && !leave) {
+    if (where !== 'free' && where !== 'exited' && !abandon && !clearable && !leave) {
       // A refusal here is the kept safety: herdr reports the seat working, its screen shows a
       // running turn, or the caller is the owner, who keeps these refusals whole — a caller other
       // than the owner meeting an idle or done seat never arrives, the leave took it above. The
@@ -396,8 +407,14 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     if (agent && !leave) {
       const liveCwd = sources.foregroundCwd ? sources.foregroundCwd(session, agent.pane) : null;
       const screen = sources.screen(session, agent.pane, cli, liveCwd);
-      const where = stateOf(agent.status, screen);
       const profile = profileFor(cli);
+      // The same process reading as the block above: an exited seat reaches `downPlan` as
+      // `exited` and is closed without a key — by the owner and by an allowed caller alike.
+      const where = stateOfPane(agent.status, screen, {
+        foreground: sources.foreground(session, agent.pane),
+        shellBack: sources.shellBack ? sources.shellBack(session, agent.pane) : null,
+        processNames: profile?.processNames ?? [],
+      });
       const exitInBox = where === 'unsent' && profile !== null && profile.exitClear !== null
         && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli), { cwd: liveCwd ?? undefined, home: sources.home });
       const stopped = await stopRunning({

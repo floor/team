@@ -167,6 +167,58 @@ describe('team remove', () => {
     expect(readFileSync(file, 'utf8')).toContain('name: worker');
   });
 
+  test('an owner sees a seat whose CLI exited closed and removed, not refused', async () => {
+    // The bare-shell case for `remove`: the pane's own shell is back in front and no `claude`
+    // process is in its readable foreground list, so the owner's ordinary run — no `--abandon` —
+    // closes the workspace, says why on the seat's line, and takes the seat out of the file.
+    const made = world({ kind: 'unknown' }, 'idle');
+    made.running.push(false);
+    made.sources.shellBack = () => true;
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(0);
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual(['w1']);
+    expect(io.out).toContain('worker: its CLI had exited; its workspace was closed\n');
+    expect(io.out).toContain('removed worker\n');
+    expect(io.err).toBe('');
+    expect(readFileSync(file, 'utf8')).not.toContain('name: worker');
+  });
+
+  test('an allowed seat finds an exited pane closed as a free one is, not left', async () => {
+    // An exited seat needs nothing typed and no key; closing it is the same authority the same
+    // caller already has on a free seat, so the leave path is not taken for it.
+    const made = world({ kind: 'unknown' }, 'idle');
+    made.running.push(false);
+    made.sources.shellBack = () => true;
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    recordLead();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['worker'], io, made.sources)).toBe(0);
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual(['w1']);
+    expect(io.out).toContain('worker: its CLI had exited; its workspace was closed\n');
+    expect(io.out).toContain('removed worker\n');
+  });
+
+  test('a live CLI or an unreadable list keeps the owner refusal, byte for byte', async () => {
+    // A CLI still listed is never closed, whatever the shell pid reading says — both facts are
+    // required — and an unreadable foreground list is not an exited seat either.
+    for (const foreground of [() => ['claude'], () => null] as const) {
+      writeFileSync(file, FILE);
+      const made = world({ kind: 'unknown' }, 'idle');
+      made.sources.foreground = foreground;
+      made.sources.shellBack = () => true;
+      made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+      const io = testIo(dir, owner);
+      expect(await runRemove(['worker', '--file', file], io, made.sources)).toBe(1);
+      expect(io.err).toBe('team remove: worker shows a screen the profile does not recognise; left as it is (team remove worker --abandon closes its workspace without typing)\n');
+      expect(made.typed).toEqual([]);
+      expect(made.closed).toEqual([]);
+      expect(readFileSync(file, 'utf8')).toContain('name: worker');
+    }
+  });
+
   test('a seat already at the framed exit question is not asked, and only ordinary abandon closes it', async () => {
     const raw = readFileSync(new URL('../fixtures/exit-typing/claude-code-shell-question-ansi.txt', import.meta.url), 'utf8');
     const screen = readScreen('claude-code', raw);
