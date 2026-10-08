@@ -1368,6 +1368,69 @@
     },
     {
       "code": 0,
+      "command": "next",
+      "id": "next.none",
+      "meaning": "nothing to take or to release",
+      "trigger": "team next"
+    },
+    {
+      "code": 0,
+      "command": "next",
+      "id": "next.released",
+      "meaning": "the caller's lease was released",
+      "trigger": "team next --release"
+    },
+    {
+      "code": 0,
+      "command": "next",
+      "id": "next.taken",
+      "meaning": "a record was claimed, or the caller's live lease was renewed",
+      "trigger": "team next"
+    },
+    {
+      "code": 1,
+      "command": "next",
+      "id": "next.caller",
+      "meaning": "the caller is not a seat of this team on its recorded pane",
+      "trigger": "team next"
+    },
+    {
+      "code": 1,
+      "command": "next",
+      "id": "next.file",
+      "meaning": "the team file can't be read, or it declares no task source",
+      "trigger": "team next"
+    },
+    {
+      "code": 1,
+      "command": "next",
+      "id": "next.missing",
+      "meaning": "the task file is not there",
+      "trigger": "team next"
+    },
+    {
+      "code": 1,
+      "command": "next",
+      "id": "next.shape",
+      "meaning": "nothing was taken, and a record is not a task or the task file is not a list",
+      "trigger": "team next"
+    },
+    {
+      "code": 2,
+      "command": "next",
+      "id": "next.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team next extra"
+    },
+    {
+      "code": 2,
+      "command": "next",
+      "id": "next.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team next"
+    },
+    {
+      "code": 0,
       "command": "pr",
       "id": "pr.passed",
       "meaning": "the pull request body passed",

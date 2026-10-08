@@ -128,7 +128,7 @@ export type TeamFile = {
    * The one task source, or null when the file has no `tasks` section. An owner section:
    * changing it needs a new approval. This slice is the file adapter only.
    */
-  tasks: { source: 'file'; path: string } | null;
+  tasks: { source: 'file'; path: string; pull?: 'self' | 'any'; fallback?: 'file' | 'id' } | null;
   /**
    * The panes outside the team's session that may run named operational commands, or null when
    * the file has no `delegates` section. An owner section: changing it needs a new approval.

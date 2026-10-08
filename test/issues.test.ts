@@ -144,14 +144,11 @@ describe('team issues', () => {
     });
   });
 
-  test('team next and team plan stay unknown commands', async () => {
+  test('team plan stays an unknown command', async () => {
     expect(commands.issues).toBeDefined();
-    expect('next' in commands).toBe(false);
+    expect(commands.next).toBeDefined();
     expect('plan' in commands).toBe(false);
     project();
-    const next = testIo(root);
-    expect(await main(['next'], next)).toBe(2);
-    expect(next.err.startsWith('team: unknown command "next"\n')).toBe(true);
     const plan = testIo(root);
     expect(await main(['plan'], plan)).toBe(2);
     expect(plan.err.startsWith('team: unknown command "plan"\n')).toBe(true);

@@ -478,6 +478,41 @@
           "takesValue": false
         },
         {
+          "hidden": false,
+          "name": "--mine",
+          "repeatable": false,
+          "takesValue": false
+        },
+        {
+          "hidden": false,
+          "name": "--release",
+          "repeatable": false,
+          "takesValue": false
+        },
+        {
+          "hidden": true,
+          "name": "-h",
+          "repeatable": false,
+          "takesValue": false
+        }
+      ],
+      "hidden": false,
+      "name": "next",
+      "positionals": [],
+      "subcommands": [],
+      "usage": [
+        "team next [--mine | --release]"
+      ]
+    },
+    {
+      "flags": [
+        {
+          "hidden": false,
+          "name": "--help",
+          "repeatable": false,
+          "takesValue": false
+        },
+        {
           "hidden": true,
           "name": "-h",
           "repeatable": false,

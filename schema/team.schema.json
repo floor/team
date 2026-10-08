@@ -582,9 +582,21 @@
           "type": "string",
           "minLength": 1,
           "$comment": "relative to the checkout, and it must stay inside it"
+        },
+        "pull": {
+          "enum": [
+            "self",
+            "any"
+          ]
+        },
+        "fallback": {
+          "enum": [
+            "file",
+            "id"
+          ]
         }
       },
-      "$comment": "one file adapter. source other than file, and a path that leaves the checkout, are refused"
+      "$comment": "one file adapter. pull is self or any; fallback is file or id. source other than file, and a path that leaves the checkout, are refused"
     },
     "delegates": {
       "type": "array",

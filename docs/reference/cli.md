@@ -304,6 +304,27 @@ Usage:
 
 None.
 
+## `next`
+
+Hidden: no
+
+Usage:
+
+    team next [--mine | --release]
+
+### Flags
+
+| Flag | Takes a value | Repeatable | Hidden |
+| --- | --- | --- | --- |
+| `--help` | no | no | no |
+| `--mine` | no | no | no |
+| `--release` | no | no | no |
+| `-h` | no | no | yes |
+
+### Positionals
+
+None.
+
 ## `pr`
 
 Hidden: no
