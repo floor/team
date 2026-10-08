@@ -7,7 +7,7 @@
 // afterBind true, afterClose false on both).
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer, connect, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -268,6 +268,56 @@ const result = await startBroker({
 writeSync(1, JSON.stringify({ kind: result.kind, cleared: result.kind === 'serving' ? result.cleared : false, ms: Date.now() - started }) + '\\n');
 `;
 
+/** The gap fixture: the real start path in a real process, with the writer itself held inside
+ *  its own create. The hold rides a redefined `process.pid` getter, installed after the imports
+ *  and before `ready`: in `server.ts` the first read of `process.pid` after arming is the pid
+ *  written into the lock or the claim, so the getter's busy-wait lands exactly in the
+ *  create→write gap — the interval the finding is about. The seam is measured, never assumed:
+ *  patching a named `node:fs` import from the child could not work (bun 1.4.2 binds named
+ *  imports to the function itself; a probe router process recorded `openHits= 0 writeHits= 0`
+ *  through a patched default import), while the getter fires on the first read and every later
+ *  read answers the real pid (probe: `getter-installed ok`, `paused`, `read-again=true`). The
+ *  hold is 1500ms: past `LOCK_YOUNG_MS` (1000), so an aged empty entry can be taken over while
+ *  the writer is still alive — the finding's exact shape — and under `LOCK_WAIT_MS` (2000), so
+ *  the writer resumes into its own section and answers, rather than timing out on its own
+ *  artificial hold. It says `ready`, then `paused` with a raw write — out before the busy-wait
+ *  can block the loop — then one JSON line with the outcome. */
+const GAP_FIXTURE = `import { readFileSync, writeSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const [root, gap, repo] = process.argv.slice(2);
+const at = (p) => pathToFileURL(join(repo, p)).href;
+const { validateTeamFile } = await import(at('src/file/validate.ts'));
+const { startBroker } = await import(at('src/broker/server.ts'));
+const checked = validateTeamFile(readFileSync(join(root, '.agents', 'team.yaml'), 'utf8'));
+if (!checked.ok) {
+  writeSync(2, 'the fixture team file does not validate\\n');
+  process.exit(2);
+}
+const real = process.pid;
+let armed = true;
+Object.defineProperty(process, 'pid', {
+  get() {
+    if (armed) {
+      armed = false;
+      writeSync(1, 'paused\\n');
+      const end = Date.now() + Number(gap);
+      while (Date.now() < end) {}
+    }
+    return real;
+  },
+});
+writeSync(1, 'ready\\n');
+const result = await startBroker({
+  root,
+  team: checked.team,
+  read: async () => ({ kind: 'read', read: { kind: 'records', records: [{ id: 'm1', title: 't' }], refusals: [] } }),
+  stderr: (text) => writeSync(2, text),
+});
+writeSync(1, JSON.stringify({ kind: result.kind, cleared: result.kind === 'serving' ? result.cleared : false }) + '\\n');
+`;
+
 type FixtureChild = {
   pid: number | undefined;
   said: string[];
@@ -297,7 +347,7 @@ function spawnFixture(script: string, args: string[]): FixtureChild {
       buffer = buffer.slice(at + 1);
       fixture.said.push(line);
       if (line.startsWith('{')) fixture.outcome = JSON.parse(line) as FixtureOutcome;
-      else if (line !== 'ready') fixture.failure = `the fixture said: ${line}`;
+      else if (line !== 'ready' && line !== 'paused') fixture.failure = `the fixture said: ${line}`;
     }
   });
   child.stderr.setEncoding('utf8');
@@ -319,6 +369,47 @@ function burstFixture(roundRoot: string, go: string): FixtureChild {
   const script = join(base, 'burst.mjs');
   writeFileSync(script, BURST_FIXTURE);
   return spawnFixture(script, [roundRoot, go, join(import.meta.dir, '..')]);
+}
+
+/** One gap child: a real start whose writer holds inside its own create for `gapMs`. */
+function gapFixture(gapMs: number): FixtureChild {
+  const script = join(base, `gap-${gapMs}.mjs`);
+  writeFileSync(script, GAP_FIXTURE);
+  return spawnFixture(script, [root, String(gapMs), join(import.meta.dir, '..')]);
+}
+
+/** While a writer holds inside its create, watch one path: every sighting of the file present
+ *  with no positive pid in it is counted, first and last with the elapsed since the watch began.
+ *  A path that is absent is not a sighting — absence is the one state both protocols agree on,
+ *  the pre-create and the post-release state. The counters are the pin's byte: a create that
+ *  publishes ownership atomically never shows the shared name without its writer, while the
+ *  base head's `openSync(path,'wx')`-then-write state exists — empty — for the whole hold. */
+function watchNoPid(path: string): { stop: () => Promise<void>; empty: { count: number; firstMs: number; lastMs: number } } {
+  const empty = { count: 0, firstMs: 0, lastMs: 0 };
+  const t0 = Date.now();
+  let stopped = false;
+  const done = (async () => {
+    while (!stopped) {
+      try {
+        const value = Number(readFileSync(path, 'utf8').trim());
+        if (!(Number.isInteger(value) && value > 0)) {
+          const at = Date.now() - t0;
+          if (empty.count === 0) empty.firstMs = at;
+          empty.lastMs = at;
+          empty.count += 1;
+        }
+      } catch {}
+      await new Promise((tick) => setTimeout(tick, 5));
+    }
+  })();
+  return { stop: async () => { stopped = true; await done; }, empty };
+}
+
+/** The private temps an atomic create keeps only while it runs: any `.new` name under the
+ *  clone's `.agents` at rest is residue the released protocol must not leave — the one a
+ *  killed create left behind is swept by the next start. */
+function newResidue(): string[] {
+  return readdirSync(join(root, '.agents')).filter((name) => name.endsWith('.new')).sort();
 }
 
 /** A fixture's `ready`, with the deadline failing the pin on what the child has said so far
@@ -765,6 +856,123 @@ describe('the start protocol', () => {
     expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
     await started.handle.close();
     expect(existsSync(lockPath)).toBe(false);
+  });
+
+  test('a live writer paused in the lock\'s create is never evicted', async () => {
+    // The finding, against real processes: a writer alive and inside its own create — the
+    // fixture's pid getter holds the real start path for 1500ms, a watched window an order of
+    // magnitude past LOCK_YOUNG_MS — is not dead, and a second real start arriving mid-hold
+    // must not serve through it. At the base head the lock's name exists at the create's
+    // `openSync(path,'wx')` return and stays empty for the whole hold; the second start waits
+    // out the young window, `takeOver` ages the entry out and unlinks it while the writer is
+    // still to resume — the writer then publishes its pid into an unlinked file (the review's
+    // own bytes: `writer:["opened"]`, `starter:["ready","prelisten","out:serving"]`,
+    // `writerAlive:true`, `lock:false`). The pin judges the protocol's state, not the
+    // schedule: whatever anyone answers, the shared name must never exist without a pid in it
+    // — an entry is published whole — and at rest no start serves through the other: the
+    // second serves, the writer resumes into its own section and answers busy, and no lock, no
+    // claim, no private temp is left. The outcome pair is the same on both heads; the empty
+    // sighting is the discriminator.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const writer = gapFixture(1500);
+    const watcher = watchNoPid(lockPath);
+    try {
+      await readyOf(writer);
+      await waitFor(() => writer.said.includes('paused')); // the writer is in its create's gap
+      const second = startFixture(0);
+      try {
+        const secondOutcome = await outcomeOf(second, 15000);
+        const writerOutcome = await outcomeOf(writer, 15000);
+        await watcher.stop();
+        expect(watcher.empty).toEqual({ count: 0, firstMs: 0, lastMs: 0 });
+        expect(secondOutcome.kind).toBe('serving');
+        expect(secondOutcome.cleared).toBe(false);
+        expect(writerOutcome.kind).toBe('busy');
+        expect(existsSync(lockPath)).toBe(false);
+        expect(existsSync(`${lockPath}.takeover`)).toBe(false);
+        expect(newResidue()).toEqual([]);
+      } finally {
+        second.kill();
+      }
+    } finally {
+      writer.kill();
+      await watcher.stop();
+    }
+  }, 15000);
+
+  test('a live writer paused in the takeover claim\'s create is never evicted', async () => {
+    // The claim's own create→write gap, the same finding one file over: a start arriving at a
+    // dead pid's lock enters `takeOver`, and its claim — `.agents/broker.sock.lock.takeover` —
+    // is created empty, its pid one beat behind; the fixture holds exactly there for 1500ms.
+    // A second real start on the same dead lock reads the claim empty and young, waits, then —
+    // at the base head — ages it out and unlinks it while its writer is alive, takes the lock
+    // over and serves; the writer resumes, finds its claim gone, and backs off on the pid check
+    // (`readPid(claim) !== process.pid`): a live claim-holder evicted mid-create is the same
+    // defect the lock's own gap was. The same watch applies — the claim must never exist
+    // without its pid — and the same resting shape: the second serves (nothing to clear; the
+    // dead start left no socket), the writer answers busy, and lock, claim and temps all end
+    // absent.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const claimPath = `${lockPath}.takeover`;
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    if (dead.pid === undefined) throw new Error('the dead-pid fixture has no pid');
+    writeFileSync(lockPath, `${dead.pid}\n`); // a dead start's lock: the takeover path at once
+    const writer = gapFixture(1500);
+    const watcher = watchNoPid(claimPath);
+    try {
+      await readyOf(writer);
+      await waitFor(() => writer.said.includes('paused')); // inside the claim's create
+      const second = startFixture(0);
+      try {
+        const secondOutcome = await outcomeOf(second, 15000);
+        const writerOutcome = await outcomeOf(writer, 15000);
+        await watcher.stop();
+        expect(watcher.empty).toEqual({ count: 0, firstMs: 0, lastMs: 0 });
+        expect(secondOutcome.kind).toBe('serving');
+        expect(secondOutcome.cleared).toBe(false);
+        expect(writerOutcome.kind).toBe('busy');
+        expect(existsSync(lockPath)).toBe(false);
+        expect(existsSync(claimPath)).toBe(false);
+        expect(newResidue()).toEqual([]);
+      } finally {
+        second.kill();
+      }
+    } finally {
+      writer.kill();
+      await watcher.stop();
+    }
+  }, 15000);
+
+  test('a killed create\'s private temp is cleared by the next start, a live one kept', async () => {
+    // The one residue an atomic create can leave: a start killed between its private temp's
+    // create and its removal leaves `<lock>.<pid>.new` — and, for the claim, the same pattern
+    // one segment further. The temp names its writer, so the next start clears the dead ones
+    // and never touches a live pid's: a live pid's temp is a create in flight. Neither is ever
+    // read by the protocol — the sweep is hygiene — and a start whose temp was wrongly swept
+    // would fail its link with the same EEXIST a rival's win answers, so the race direction is
+    // safe.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    if (dead.pid === undefined) throw new Error('the dead-pid fixture has no pid');
+    const deadTemp = `${lockPath}.${dead.pid}.new`;
+    const liveTemp = `${lockPath}.takeover.${process.pid}.new`;
+    writeFileSync(deadTemp, 'x\n');
+    writeFileSync(liveTemp, 'x\n');
+    const started = await startBroker({ root, team: teamOf(), read: () => Promise.resolve(records([{ id: 'm1', title: 't' }])), stderr: () => {} });
+    if (started.kind !== 'serving') throw new Error(`the broker did not start: ${started.kind}`);
+    expect(existsSync(deadTemp)).toBe(false);
+    expect(existsSync(liveTemp)).toBe(true);
+    unlinkSync(liveTemp);
+    await started.handle.close();
   });
 
   test('starts released together onto a dead start\'s lock serialize: one serves, every other busy', async () => {
