@@ -148,7 +148,7 @@ with the text named, in the refusal below.
 | `team remove: <seat> is working; left as it is` | 1 |
 | `team remove: <seat> is blocked at a prompt, which team never answers` | 1 |
 | `team remove: <seat> sits at its own exit question; left as it is (team remove <seat> --abandon closes it)` | 1 |
-| `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` — the owner's; a caller other than the owner meeting a seat herdr reports idle or done takes the seat out instead (above), and meets this line with `(run this again once herdr reports the seat idle or done)` where herdr reports the seat working | 1 |
+| `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` — the owner's; a caller other than the owner meeting a seat herdr reports idle or done takes the seat out instead (above), and meets this line with `(run this again once herdr reports the seat idle or done)` where herdr reports the seat anything but idle or done | 1 |
 | `team remove: <seat> holds unsent text in its input box; left as it is` | 1 |
 | `team remove: <seat> holds this CLI's exit text (<exit>) unsent in its input box; left as it is (the owner sends it or clears it in its pane)` | 1 |
 | ``team remove: no launch profile for `<cli>`; left as it is`` | 1 |
