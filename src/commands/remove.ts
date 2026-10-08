@@ -269,12 +269,32 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
     // exit: remove.keep-temporary
     return 1;
   }
-  if (!copySeat && !abandon) {
-    io.stderr(`team remove: ${name}: its record is not an approved seat; left as it is (the owner cleans it: team remove ${name} --abandon)\n`);
-    // exit: remove.unverified
-    return 1;
-  }
   const listed = agents.filter((item) => item.name === name);
+  // A name the approved copy does not carry. The owner keeps today's refusal, and so does a
+  // record with no single live agent. A caller who is not the owner, meeting one live agent
+  // herdr reports idle or done whose screen is not a running turn, takes the leave below
+  // instead: nothing typed, nothing closed. A temporary record stays the owner's. A working
+  // leftover stays out, and the line names that caller's way.
+  let leave = false;
+  if (!copySeat && !abandon) {
+    const only = listed.length === 1 ? listed[0] : undefined;
+    if (!temporary && caller.kind !== 'owner' && only) {
+      const liveCwd = sources.foregroundCwd ? sources.foregroundCwd(session, only.pane) : null;
+      const screen = sources.screen(session, only.pane, '', liveCwd);
+      const where = stateOf(only.status, screen);
+      if (where === 'working' || only.status === 'working') {
+        io.stderr(`team remove: ${name} is working; left as it is (run this again once herdr reports the seat idle or done)\n`);
+        // exit: remove.busy
+        return 1;
+      }
+      if (only.status === 'idle' || only.status === 'done') leave = true;
+    }
+    if (!leave) {
+      io.stderr(`team remove: ${name}: its record is not an approved seat; left as it is (the owner cleans it: team remove ${name} --abandon)\n`);
+      // exit: remove.unverified
+      return 1;
+    }
+  }
   if (listed.length > 1) {
     io.stderr(`team remove: ${name}: herdr lists more than one agent of this name; left as it is\n`);
     // exit: remove.ambiguous
@@ -294,8 +314,9 @@ export async function runRemove(argv: string[], io: Io, sources: RemoveSources =
   // one thing a non-owner never takes out; every other status word keeps the old refusal too. A
   // recognised free seat removes as before, and a box holding exactly the CLI's exit text keeps
   // its clean stop. The owner keeps the refusal, byte for byte, with the way out it names.
-  let leave = false;
-  if (agent) {
+  // A leftover leave decided above is already set, and is not recomputed: a free screen on a
+  // name the copy does not carry has no profile to stop, so it leaves rather than types.
+  if (agent && !leave) {
     const liveCwd = sources.foregroundCwd ? sources.foregroundCwd(session, agent.pane) : null;
     const screen = sources.screen(session, agent.pane, cli, liveCwd);
     const where = stateOf(agent.status, screen);

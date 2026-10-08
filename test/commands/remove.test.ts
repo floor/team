@@ -842,6 +842,88 @@ describe('team remove', () => {
     expect(kept.err).toContain('nothing to keep');
   });
 
+  // A record the file does not hold, and the approved copy does not either. Not temporary.
+  function strayRecord(name = 'stray'): void {
+    updateState(join(dir, '.agents'), (state) => {
+      const session = (state.sessions.acme ??= emptySession());
+      session.seats.lead = { stage: 'ready', pane: lead.pane };
+      session.seats[name] = { stage: 'ready', pane: name === 'lead' ? lead.pane : 'w9:p1' };
+    });
+  }
+
+  test('an idle leftover is left running by a non-owner: the record drops, nothing is typed', async () => {
+    strayRecord();
+    const made = world({ kind: 'idle' }, 'idle');
+    made.agents.push({ name: 'stray', agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null });
+    const renamed: [string, string, string][] = [];
+    made.sources.renameAgent = (session, pane, to) => { renamed.push([session, pane, to]); return true; };
+    const before = readFileSync(file, 'utf8');
+    const io = testIo(dir, lead);
+    expect(await runRemove(['stray'], io, made.sources)).toBe(0);
+    expect(io.out).toBe('removed stray (its pane w9:p1 was left running; nothing was typed; it now reads as stray-left)\n');
+    expect(made.typed).toEqual([]);
+    expect(made.keys).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(renamed).toEqual([['acme', 'w9:p1', 'stray-left']]);
+    expect(readFileSync(file, 'utf8')).toBe(before);
+    expect(readState(join(dir, '.agents')).sessions.acme?.seats.stray).toBeUndefined();
+    expect(readState(join(dir, '.agents')).sessions.acme?.seats.lead).toBeDefined();
+  });
+
+  test('a working leftover stays out, and the line names the non-owner\'s way', async () => {
+    strayRecord();
+    const made = world({ kind: 'idle' }, 'working');
+    made.agents.push({ name: 'stray', agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'working', cwd: null });
+    const io = testIo(dir, lead);
+    expect(await runRemove(['stray'], io, made.sources)).toBe(1);
+    expect(io.err).toBe('team remove: stray is working; left as it is (run this again once herdr reports the seat idle or done)\n');
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(readState(join(dir, '.agents')).sessions.acme?.seats.stray).toBeDefined();
+  });
+
+  test('a leftover whose screen shows a running turn stays out too', async () => {
+    strayRecord();
+    const made = world({ kind: 'working' }, 'idle');
+    made.agents.push({ name: 'stray', agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null });
+    const io = testIo(dir, lead);
+    expect(await runRemove(['stray'], io, made.sources)).toBe(1);
+    expect(io.err).toBe('team remove: stray is working; left as it is (run this again once herdr reports the seat idle or done)\n');
+    expect(made.closed).toEqual([]);
+  });
+
+  test('a leftover with no live agent keeps today\'s refusal', async () => {
+    strayRecord();
+    const made = world();
+    const io = testIo(dir, lead);
+    expect(await runRemove(['stray'], io, made.sources)).toBe(1);
+    expect(io.err).toBe('team remove: stray: its record is not an approved seat; left as it is (the owner cleans it: team remove stray --abandon)\n');
+    expect(readState(join(dir, '.agents')).sessions.acme?.seats.stray).toBeDefined();
+  });
+
+  test('the owner meeting an idle leftover keeps today\'s refusal', async () => {
+    strayRecord();
+    const made = world({ kind: 'idle' }, 'idle');
+    made.agents.push({ name: 'stray', agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['stray', '--file', file], io, made.sources)).toBe(1);
+    expect(io.err).toBe('team remove: stray: its record is not an approved seat; left as it is (the owner cleans it: team remove stray --abandon)\n');
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(readState(join(dir, '.agents')).sessions.acme?.seats.stray).toBeDefined();
+  });
+
+  test('a leftover named as the orchestrator stays the owner\'s', async () => {
+    strayRecord('lead');
+    const made = world({ kind: 'idle' }, 'idle');
+    made.agents.push({ name: 'lead', agent: 'claude', pane: 'w0:p1', workspace: 'w0', status: 'idle', cwd: null });
+    const io = testIo(dir, lead);
+    expect(await runRemove(['lead'], io, made.sources)).toBe(1);
+    expect(io.err).toBe('team remove: only the owner removes the orchestrator\'s or the operator\'s seat; this call is lead\n');
+    expect(made.typed).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toContain('name: lead');
+  });
+
   test('a name the approved copy carries keeps its rules file when the state still marks it temporary', async () => {
     updateState(join(dir, '.agents'), (state) => {
       const session = (state.sessions.acme ??= emptySession());
@@ -979,6 +1061,31 @@ describe('team remove delegated', () => {
     expect(readFileSync(file, 'utf8')).toContain('name: lead');
     expect(readFileSync(join(store, 'approval.json'), 'utf8')).toBe(record);
     // The audit line is the log's first line: the run is attributed before its effects.
+    expect(readFileSync(join(dir, '.agents', 'team.log'), 'utf8').startsWith(
+      '1970-01-01T00:00:00.000Z delegate [delegate] main/w1:p1 remove\n',
+    )).toBe(true);
+  });
+
+  test('a delegated removal of an idle leftover leaves the pane and logs the audit line', async () => {
+    const store = approveFile(FILE + DELEGATES);
+    updateState(join(dir, '.agents'), (state) => {
+      (state.sessions.acme ??= emptySession()).seats.stray = { stage: 'ready', pane: 'w9:p1' };
+    });
+    const made = world({ kind: 'idle' }, 'idle');
+    made.agents.push({ name: 'stray', agent: 'claude', pane: 'w9:p1', workspace: 'w9', status: 'idle', cwd: null });
+    const renamed: [string, string, string][] = [];
+    made.sources.renameAgent = (session, pane, to) => { renamed.push([session, pane, to]); return true; };
+    const record = readFileSync(join(store, 'approval.json'), 'utf8');
+    const before = readFileSync(file, 'utf8');
+    const io = testIo(dir, pilot);
+    expect(await runRemove(['stray'], io, { ...made.sources, delegateGate: () => passed })).toBe(0);
+    expect(io.out).toBe('removed stray (its pane w9:p1 was left running; nothing was typed; it now reads as stray-left)\n');
+    expect(made.typed).toEqual([]);
+    expect(made.closed).toEqual([]);
+    expect(renamed).toEqual([['acme', 'w9:p1', 'stray-left']]);
+    expect(readFileSync(file, 'utf8')).toBe(before);
+    expect(readFileSync(join(store, 'approval.json'), 'utf8')).toBe(record);
+    expect(readState(join(dir, '.agents')).sessions.acme?.seats.stray).toBeUndefined();
     expect(readFileSync(join(dir, '.agents', 'team.log'), 'utf8').startsWith(
       '1970-01-01T00:00:00.000Z delegate [delegate] main/w1:p1 remove\n',
     )).toBe(true);

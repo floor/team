@@ -6,11 +6,15 @@ in the file as `stopped: true` instead of taking it out. A seat that is busy —
 prompt, already showing its own exit question, showing a screen the profile does not recognise,
 or holding unsent text — is left as it is, unless its owner abandons it. One exception: a caller
 other than the owner, when herdr reports such a seat idle or done, takes the seat out of the team
-and leaves its pane running, with nothing typed into it (below). herdr's status is the gate there,
-not the screen — the states no profile can read are where a stuck seat hides — so a seat herdr
-reports working, or one whose screen shows a running turn, is never taken out; a seat the profile
-reads as free is stopped and taken out as always, and a box holding exactly this CLI's exit text
-is cleared inside that stop. Every other seat, and the session, are left alone.
+and leaves its pane running, with nothing typed into it (below). The same leave reaches a record
+the approved copy does not carry, when that record is not temporary and one live agent of its name
+is idle or done and the screen is not a running turn: the record drops, the pane is left running,
+nothing is typed, and the file is not edited, because the name is not in it. A leftover herdr
+reports working, or whose screen shows a running turn, stays out for that caller. herdr's status
+is the gate there, not the screen — the states no profile can read are where a stuck seat hides —
+so a seat herdr reports working, or one whose screen shows a running turn, is never taken out; a
+seat the profile reads as free is stopped and taken out as always, and a box holding exactly this
+CLI's exit text is cleared inside that stop. Every other seat, and the session, are left alone.
 
 ## Synopsis
 
@@ -31,7 +35,9 @@ the exit typed into the pane, the wait for its shell, and the workspace closed �
 of a caller other than the owner (below), no typing and no close at all, and the
 pane's agent renamed out of the seat's name, best effort. A name the approved copy carries is
 a declared seat, even when the state still marks it temporary, and its rules file stays. A name
-the copy does not carry is left as it is; the owner's `--abandon` removes it, and a temporary
+the copy does not carry is left as it is for the owner, for a temporary record, and when no
+single live agent of that name is idle or done; a caller other than the owner leaves an ordinary
+leftover on that idle or done trigger, and the file is not edited. The owner's `--abandon` removes it, and a temporary
 seat's rules file goes with it, out of the project state folder; a seat left in the file as stopped
 keeps its file for the next `up`. A file edit that
 would not validate is refused before the seat is stopped, so a broken file never costs a live seat.
@@ -93,7 +99,9 @@ done with the file:
 A caller other than the owner, meeting a seat herdr reports idle or done that is not free, takes
 the seat out without asking it to leave: nothing is typed, the workspace is left open, the seat's
 state record goes, and the pane's agent is renamed — best effort, one call — to `<name>-left`, or
-`-left-2` and so on when that name is held, so it no longer answers the seat's name. The last
+`-left-2` and so on when that name is held, so it no longer answers the seat's name. The same
+line is the leftover's: a record the approved copy does not carry, not temporary, one live agent,
+herdr idle or done, the screen not a running turn. The file is left as it is. The last
 line names the pane:
 
     removed <name> (its pane <pane> was left running; nothing was typed; it now reads as <name>-left)
@@ -142,7 +150,8 @@ with the text named, in the refusal below.
 | `team remove: a temporary seat is not in the file; there is nothing to keep` | 1 |
 | `team remove: herdr doesn't answer; nothing was changed` | 1 |
 | `team remove: session <session> runs, and its agents can't be read; nothing was changed` | 1 |
-| `team remove: <name>: its record is not an approved seat; left as it is (the owner cleans it: team remove <name> --abandon)` | 1 |
+| `team remove: <name>: its record is not an approved seat; left as it is (the owner cleans it: team remove <name> --abandon)` — the owner, a temporary record, a record with no single live agent, or a live agent herdr does not report idle or done and whose screen is not a running turn | 1 |
+| `team remove: <name> is working; left as it is (run this again once herdr reports the seat idle or done)` — a caller other than the owner, and the leftover is working: herdr says so, or the screen shows a running turn | 1 |
 | `team remove: <name>: herdr lists more than one agent of this name; left as it is` | 1 |
 | `team remove: the approved copy of the team file cannot be read` | 1 |
 | `team remove: <seat> is working; left as it is` | 1 |
@@ -167,8 +176,8 @@ team, the pane left running, nothing typed.
 ## Exit codes
 
 - `0` — the seat was stopped or was not running, or the leave above (a caller other than the
-  owner, a seat herdr reports idle or done) took it out with its pane left running; and the file
-  was edited.
+  owner, a seat herdr reports idle or done, or an ordinary leftover on that same trigger) took it
+  out with its pane left running; and the file was edited, or, for that leftover, left as it is.
 - `1` — the run was refused, or the seat was left behind with the file untouched.
 - `2` — the invocation, the team file or the state can't be read, or the edit would not validate.
 
