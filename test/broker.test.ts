@@ -378,6 +378,197 @@ function gapFixture(gapMs: number): FixtureChild {
   return spawnFixture(script, [root, String(gapMs), join(import.meta.dir, '..')]);
 }
 
+/** The claim-burst fixture: the burst fixture plus the instrumented claim lane — `unlinkSync`
+ *  wrapped so every unlink of a `*.lock` / `*.lock.takeover` path whose bytes named a live pid
+ *  other than the unlinker is logged, one buffered `EVENTS` line at the outcome, never a write
+ *  mid-race (the delta-2 lab's `UNLINK_LIVE` form, the finding's own instrument). The wrap
+ *  rides the first route that proves itself (`A1`/`A2`: a `bun:test`
+ *  `mock.module('node:fs', …)` registered before the server import, as a copy or a prototype;
+ *  `M`: the namespace object; `R`: the require object): a route is taken only after a canary
+ *  import's own call fires the wrap — bun 1.4.2 binds a named import to the function itself,
+ *  so a patch that never fires must never be believed. The `touched` counter is the wire's
+ *  positive control: the winning start's takeover unlinks the dead lock every round, so
+ *  `touched ≥ rounds` proves the wrap sits in the server's call path and an events=0 is a
+ *  measured zero, not a dead wire. */
+const CLAIM_BURST_FIXTURE = `import { createRequire } from 'node:module';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, writeSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const [mode, root, go, repo] = process.argv.slice(2);
+const DETECT = mode === 'selftest' || process.env.DS_DETECT === '1';
+const ROUTE = process.env.DS_ROUTE || 'A1';
+const PARENT = Number(process.env.DS_PARENT || '0');
+const events = [];
+let touched = 0;
+let wireErr = null;
+
+function alive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return !!e && e.code === 'EPERM'; } }
+function wrap(orig) {
+  return function (p) {
+    try {
+      const s = String(p);
+      if (/\\.lock$|\\.lock\\.takeover$/.test(s)) {
+        touched += 1;
+        let data = null;
+        try { data = readFileSync(s, 'utf8'); } catch {}
+        const pid = data === null ? NaN : Number.parseInt(data.trim(), 10);
+        if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid)) {
+          events.push({ path: s, pid, me: process.pid, bytes: data });
+        }
+      }
+    } catch {}
+    return orig.apply(this, arguments);
+  };
+}
+const canarySrc = "import { unlinkSync } from 'node:fs';\\nexport function go(p) { unlinkSync(p); }\\n";
+async function install() {
+  const det = mkdtempSync(join(tmpdir(), 'team-claim-det-'));
+  const canary = join(det, 'canary-' + ROUTE + '.mjs');
+  writeFileSync(canary, canarySrc);
+  if (ROUTE === 'A1' || ROUTE === 'A2') {
+    const { mock } = await import('bun:test');
+    const fs = await import('node:fs');
+    const m = ROUTE === 'A1' ? Object.assign({}, fs) : Object.create(fs);
+    m.unlinkSync = wrap(fs.unlinkSync);
+    mock.module('node:fs', () => m);
+  } else if (ROUTE === 'M') {
+    const fs = await import('node:fs');
+    fs.unlinkSync = wrap(fs.unlinkSync);
+  } else if (ROUTE === 'R') {
+    const req = createRequire(import.meta.url);
+    const rfs = req('node:fs');
+    rfs.unlinkSync = wrap(rfs.unlinkSync);
+  } else {
+    throw new Error('unknown route ' + ROUTE);
+  }
+  return canary;
+}
+if (DETECT) {
+  try {
+    const canary = await install();
+    const m = await import(pathToFileURL(canary).href);
+    const dummy = join(dirname(canary), 'selftest.lock');
+    writeFileSync(dummy, String(PARENT));
+    const before = events.length;
+    m.go(dummy);
+    const fires = events.length - before;
+    if (mode === 'selftest') {
+      writeSync(1, JSON.stringify({ selftest: fires > 0 ? 'ok' : 'fail', route: ROUTE, fires, touched }) + '\\n');
+      process.exit(fires > 0 ? 0 : 4);
+    }
+    writeSync(1, JSON.stringify({ event: 'DET', route: ROUTE, fires, errs: wireErr }) + '\\n');
+    if (fires === 0) { writeSync(1, JSON.stringify({ event: 'DET-BROKEN', route: ROUTE }) + '\\n'); }
+  } catch (e) {
+    wireErr = String((e && e.message) || e);
+    if (mode === 'selftest') {
+      writeSync(1, JSON.stringify({ selftest: 'fail', route: ROUTE, fires: 0, errs: wireErr }) + '\\n');
+      process.exit(4);
+    }
+    writeSync(1, JSON.stringify({ event: 'DET-BROKEN', route: ROUTE, errs: wireErr }) + '\\n');
+  }
+}
+if (mode === 'selftest') {
+  writeSync(1, JSON.stringify({ selftest: 'fail', route: ROUTE, fires: 0, errs: 'no wrap fired' }) + '\\n');
+  process.exit(4);
+}
+events.length = 0; // the canary's own unlink is the wire's test, not a round event
+touched = 0;
+const at = (p) => pathToFileURL(join(repo, p)).href;
+const { validateTeamFile } = await import(at('src/file/validate.ts'));
+const srv = await import(at('src/broker/server.ts'));
+const checked = validateTeamFile(readFileSync(join(root, '.agents', 'team.yaml'), 'utf8'));
+if (!checked.ok) { writeSync(2, 'the fixture team file does not validate\\n'); process.exit(2); }
+writeSync(1, 'ready\\n');
+while (!existsSync(go)) await new Promise((tick) => setTimeout(tick, 1));
+const t0 = Date.now();
+const result = await srv.startBroker({
+  root,
+  team: checked.team,
+  read: async () => ({ kind: 'read', read: { kind: 'records', records: [{ id: 'm1', title: 't' }], refusals: [] } }),
+  stderr: (text) => writeSync(2, text),
+});
+const ms = Date.now() - t0;
+if (events.length > 0 || touched > 0) {
+  writeSync(1, JSON.stringify({ event: 'EVENTS', list: events, touched }) + '\\n');
+}
+writeSync(1, JSON.stringify({ kind: result.kind, cleared: result.kind === 'serving' ? result.cleared : false, ms, pid: process.pid }) + '\\n');
+`;
+
+type ClaimEvent = { path: string; pid: number; me: number; bytes: string };
+type ClaimChild = FixtureChild & {
+  claim: () => { list: ClaimEvent[]; touched: number };
+  detBroken: () => boolean;
+  selftest: () => string | undefined;
+};
+
+/** One claim-burst child; `extraEnv` carries the detector route and the parent pid the
+ *  selftest's planted lock names as its live writer. The detector's own lines are not the
+ *  fixture's answers: only a line that is neither `ready` nor JSON fails it, and only a line
+ *  with a `kind` is its outcome. */
+function spawnClaimKid(args: string[], extraEnv: Record<string, string>): ClaimChild {
+  const script = join(base, 'claim-burst.mjs');
+  writeFileSync(script, CLAIM_BURST_FIXTURE);
+  const proc = spawn(process.execPath, [script, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...extraEnv } });
+  let list: ClaimEvent[] = [];
+  let touched = 0;
+  let broken = false;
+  let selftestLine: string | undefined;
+  const fixture: ClaimChild = {
+    pid: proc.pid,
+    said: [],
+    outcome: undefined,
+    failure: undefined,
+    exited: new Promise<void>((done) => proc.once('exit', () => done())),
+    kill: () => proc.kill('SIGKILL'),
+    claim: () => ({ list, touched }),
+    detBroken: () => broken,
+    selftest: () => selftestLine,
+  };
+  let buffer = '';
+  let err = '';
+  proc.stdout.setEncoding('utf8');
+  proc.stdout.on('data', (chunk: string) => {
+    buffer += chunk;
+    let at: number;
+    while ((at = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, at);
+      buffer = buffer.slice(at + 1);
+      fixture.said.push(line);
+      if (!line.startsWith('{')) {
+        if (line !== 'ready') fixture.failure = `the fixture said: ${line}`;
+        continue;
+      }
+      const parsed = JSON.parse(line) as { event?: string; selftest?: string; list?: ClaimEvent[]; touched?: number; kind?: string; cleared?: boolean };
+      if (parsed.event === 'EVENTS') { list = parsed.list ?? []; touched = parsed.touched ?? 0; }
+      else if (parsed.event === 'DET-BROKEN') broken = true;
+      else if (parsed.selftest !== undefined) selftestLine = line;
+      else if (parsed.kind !== undefined) fixture.outcome = parsed as FixtureOutcome;
+    }
+  });
+  proc.stderr.setEncoding('utf8');
+  proc.stderr.on('data', (chunk: string) => (err += chunk));
+  proc.once('close', (code, signal) => {
+    fixture.failure ??= `the fixture exited before an outcome (${code ?? signal})${err ? `: ${err.trim()}` : ''}`;
+  });
+  return fixture;
+}
+
+/** The detector's selftest for one route: a child that installs the wrap, fires it through a
+ *  canary import's own call, and answers `ok` only when the event was logged. */
+async function claimSelftest(candidate: string): Promise<{ ok: boolean; line: string }> {
+  const kid = spawnClaimKid(['selftest', 'x', 'x', join(import.meta.dir, '..')], { DS_ROUTE: candidate, DS_PARENT: String(process.pid) });
+  const until = Date.now() + 10_000;
+  while (Date.now() < until) {
+    const verdict = kid.selftest();
+    if (verdict !== undefined) { kid.kill(); return { ok: verdict.includes('"ok"'), line: verdict }; }
+    await new Promise((tick) => setTimeout(tick, 20));
+  }
+  kid.kill();
+  return { ok: false, line: 'no selftest line' };
+}
+
 /** While a writer holds inside its create, watch one path: every sighting of the file present
  *  with no positive pid in it is counted, first and last with the elapsed since the watch began.
  *  A path that is absent is not a sighting — absence is the one state both protocols agree on,
@@ -1069,6 +1260,91 @@ describe('the start protocol', () => {
       for (const kid of kids) kid.kill();
     }
     expect(breaches).toEqual([]);
+  }, 600_000);
+
+  test('the claim lane, sized and instrumented: six starts released together onto a dead start\'s lock never unlink a live lock or claim', async () => {
+    // The pin for the claim path's own residual, carrying the delta-2 lab's finding instrument:
+    // a wrap of `node:fs`'s `unlinkSync` that logs, one buffered line at the child's outcome,
+    // every unlink of a `*.lock` / `*.lock.takeover` path whose bytes named a live pid other
+    // than the unlinker (the lab's `UNLINK_LIVE` form: `…broker.sock.lock.takeover pid=16164
+    // me=16167 bytes="16164"`, 2/150 six-way rounds on the frozen bytes). The seam: the
+    // takeover's claim eviction read the claim, judged it dead, and unlinked it unanchored — a
+    // rival's fresh claim landing in the read→unlink gap loses its claim, the stolen claimant
+    // judges the lock without holding it, and two straddling judges can rebuild the
+    // two-holders walk the dead-lock burst above pins down. Sizing, measured before this pin
+    // was written — the same six-start dead-lock round with the wrap installed, on an export of
+    // the unfixed `src/broker/server.ts` `6e0b54e0…`: 300 rounds → 3 events (1.00%/round;
+    // rounds 156, 163, 206, every one a `.takeover` lane; ≈0.23 s/round). Pooled with the
+    // lab's 2/150 on the same shape, p̂ = 5/450 = 1.111% → the pre-registered pick
+    // ceil(ln 0.01 / ln(1 − p̂)) = 413 rounds ((89/90)^413 ≈ 0.99% miss at p̂; at the pooled
+    // one-sided 90% exact-binomial lower bound, 1.768%, (1 − p_L)^413 ≈ 0.06% miss). Never
+    // resize this pin after seeing a result: a pin-only head whose CI misses is re-run, both
+    // runs quoted. Every round must still be exactly one serving that cleared nothing plus
+    // five busy that cleared nothing — and the wire must have seen zero unlinks of a live lock
+    // or claim, with its control: the winner's takeover unlinks the dead lock every round, so
+    // `touched ≥ rounds` carries the zero. The detector rides the first route that proves
+    // itself on this runner (a canary import's own call must fire the wrap before any round is
+    // scored); where no route arms, the tuples are pinned and the unlink event is unasserted,
+    // loudly. The timeout is the pin's own: 413 rounds of six real processes.
+    project();
+    record();
+    const routes = ['A1', 'A2', 'M', 'R'];
+    let route: string | undefined;
+    const selftestLog: string[] = [];
+    for (const candidate of routes) {
+      const verdict = await claimSelftest(candidate);
+      selftestLog.push(`${candidate}: ${verdict.line}`);
+      if (verdict.ok) { route = candidate; break; }
+    }
+    const breaches: string[] = [];
+    const kids: ClaimChild[] = [];
+    let events = 0;
+    let touched = 0;
+    let broken = 0;
+    try {
+      for (let round = 0; round < 413; round++) {
+        const roundRoot = join(base, `claimburst-${round}`);
+        mkdirSync(join(roundRoot, '.agents'), { recursive: true });
+        writeFileSync(join(roundRoot, '.agents', 'team.yaml'), LINEAR);
+        const at = brokerSocket(roundRoot);
+        const dead = spawnSync(process.execPath, ['-e', '']);
+        if (dead.pid === undefined) throw new Error('the dead-pid fixture has no pid');
+        writeFileSync(`${at}.lock`, `${dead.pid}\n`);
+        const go = join(base, `claimgo-${round}`);
+        const roundKids = Array.from({ length: 6 }, () =>
+          spawnClaimKid(['run', roundRoot, go, join(import.meta.dir, '..')], route ? { DS_DETECT: '1', DS_ROUTE: route, DS_PARENT: String(process.pid) } : {}),
+        );
+        kids.push(...roundKids);
+        await Promise.all(roundKids.map((kid) => readyOf(kid)));
+        writeFileSync(go, 'go\n');
+        const outcomes = await Promise.all(roundKids.map((kid) => outcomeOf(kid)));
+        const serving = outcomes.filter((outcome) => outcome.kind === 'serving' && !outcome.cleared);
+        const busy = outcomes.filter((outcome) => outcome.kind === 'busy' && !outcome.cleared);
+        if (serving.length !== 1 || busy.length !== 5) {
+          breaches.push(`round ${round}: [${outcomes.map((outcome) => `${outcome.kind}${outcome.cleared ? '+cleared' : ''}`).join(' ')}]`);
+        }
+        for (const kid of roundKids) {
+          const seen = kid.claim();
+          events += seen.list.length;
+          touched += seen.touched;
+          if (kid.detBroken()) broken += 1;
+          for (const item of seen.list) {
+            breaches.push(`round ${round}: UNLINK_LIVE ${item.path.replace(base, '…')} pid=${item.pid} me=${item.me} bytes="${String(item.bytes).trim()}"`);
+          }
+        }
+      }
+    } finally {
+      for (const kid of kids) kid.kill();
+    }
+    if (route === undefined) {
+      console.log(`the claim-lane pin: no detector route fired here (${selftestLog.join(' | ')}) — the tuples are pinned, the unlink event is unasserted on this runner`);
+      expect(breaches).toEqual([]);
+      return;
+    }
+    expect(broken).toBe(0);
+    expect(touched).toBeGreaterThanOrEqual(413);
+    expect(breaches).toEqual([]);
+    expect(events).toBe(0);
   }, 600_000);
 
   test('a start that waits out the lock deadline refuses with the one line and touches nothing', async () => {
