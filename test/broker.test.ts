@@ -628,9 +628,9 @@ describe('the start protocol', () => {
   test('a start lock a killed start left behind is taken over', async () => {
     // A start killed mid-section — the fixture SIGKILLed while it holds the lock and is still
     // on its way to binding — leaves the lock file with its dead pid. The next start must not
-    // wedge on it: `withLock`'s discipline, the file moved aside and taken over, serves it.
-    // Nothing was there to clear (the killed section never bound), and the lock the next start
-    // took is released with it.
+    // wedge on it: `withLock`'s discipline, the dead file taken over under a takeover claim,
+    // serves it. Nothing was there to clear (the killed section never bound), and the lock the
+    // next start took is released with it.
     project();
     record();
     const path = brokerSocket(root);
@@ -651,6 +651,7 @@ describe('the start protocol', () => {
       expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
       expect(existsSync(lockPath)).toBe(false);
       expect(existsSync(`${lockPath}.${process.pid}.stale`)).toBe(false);
+      expect(existsSync(`${lockPath}.takeover`)).toBe(false);
       await started.handle.close();
       expect(existsSync(path)).toBe(false);
     } finally {
@@ -682,6 +683,36 @@ describe('the start protocol', () => {
     const waited = Date.now() - t0;
     if (started.kind !== 'serving') throw new Error(`the broker did not start: ${started.kind}`);
     expect(waited).toBeGreaterThanOrEqual(900);
+    expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
+    await started.handle.close();
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  test('an interrupted writer\'s empty lock is waited on, then taken over', async () => {
+    // The create→write gap with a real writer killed inside it (the review's C2 shape): a
+    // child exclusive-creates the lock and SIGKILLs itself before writing its pid. The empty
+    // file is now a dead writer's, and the second start is a real start: it must not take the
+    // file over inside the young window — nothing has had a chance to write, and the oldest a
+    // fresh entry can be is microseconds — and with no writer coming, the empty file is taken
+    // over once it has aged past LOCK_YOUNG_MS (1000) and serves.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const writer = join(base, 'interrupted.mjs');
+    writeFileSync(writer, "import { openSync } from 'node:fs';\nopenSync(process.argv[2], 'wx');\nprocess.kill(process.pid, 'SIGKILL');\n");
+    try {
+      execFileSync(process.execPath, [writer, lockPath], { stdio: 'ignore' });
+    } catch (error) {
+      if ((error as { signal?: string }).signal !== 'SIGKILL') throw error;
+    }
+    expect(existsSync(lockPath)).toBe(true);
+    expect(readFileSync(lockPath, 'utf8')).toBe('');
+    const t0 = Date.now();
+    const started = await startBroker({ root, team: teamOf(), read: () => Promise.resolve(records([{ id: 'm1', title: 't' }])), stderr: () => {} });
+    const waited = Date.now() - t0;
+    if (started.kind !== 'serving') throw new Error(`the broker did not start: ${started.kind}`);
+    expect(waited).toBeGreaterThanOrEqual(950);
     expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
     await started.handle.close();
     expect(existsSync(lockPath)).toBe(false);

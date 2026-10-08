@@ -21,11 +21,12 @@
 // still on its way to binding (the pin: a real owner held pre-listen, a second real start
 // spawned mid-hold — the owner serves, the second waits and reads it live). The lock file holds
 // its holder's pid and carries `withLock`'s discipline from `src/state.ts` — exclusive create,
-// a lock whose holder is dead taken over — written as an await loop because this section spans
-// awaits, where `withLock` busy-waits; `withLock` itself is untouched. A start whose wait
+// a lock whose holder is dead taken over, one start at a time through a claim beside the lock —
+// written as an await loop because this section spans awaits, where `withLock` busy-waits;
+// `withLock` itself is untouched. A start whose wait
 // outlasts the deadline answers `locked`: refused, nothing cleared, nothing bound. The lock is
 // released when the listen lands and on every other way out of the section.
-import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer, connect, type Socket } from 'node:net';
 import { dirname, join } from 'node:path';
 import { anotherPaneRefusal, callerVerdict, noPaneRefusal, standingOf, type Caller } from '../caller.ts';
@@ -100,34 +101,108 @@ function alive(pid: number): boolean {
   }
 }
 
-/** `withLock`'s takeover: the file is moved aside first, which only one of two starters can do,
- *  and put back if the move revealed a fresh live holder another starter took in between. */
-function takeOverLock(path: string, holder: number): boolean {
-  const aside = `${path}.${process.pid}.stale`;
+/** A lock read that may land in a writer's create→write gap, or on junk: the pid only when the
+ *  bytes are a positive integer, NaN otherwise — never 0, which is what an empty file parses
+ *  to and which must stay unknown here (it names no holder; the loop below reads a positive
+ *  integer as the only thing that can). */
+function readPid(path: string): number {
   try {
-    renameSync(path, aside);
+    const value = Number(readFileSync(path, 'utf8').trim());
+    return Number.isInteger(value) && value > 0 ? value : NaN;
+  } catch {
+    return NaN;
+  }
+}
+
+/** Whether a file is young enough that its writer could still be coming. One that is not there
+ *  any more is not. */
+function young(path: string): boolean {
+  try {
+    return Date.now() - statSync(path).mtimeMs < LOCK_YOUNG_MS;
   } catch {
     return false;
   }
-  const found = Number(readFileSync(aside, 'utf8').trim());
-  if (found !== holder && Number.isInteger(found) && found > 0 && alive(found)) {
+}
+
+/** The dead lock's removal, one start at a time: every takeover runs through a claim file
+ *  beside the lock (`<lock>.takeover`), so exactly one start is removing the dead entry while
+ *  the others wait — and the removal is the whole of the takeover. The lock path is never
+ *  moved aside to be judged: that dance freed the path for a rival's exclusive create while
+ *  the judgement ran, and against a burst of starts a rival's freshly written lock could be
+ *  the very entry such a judgement landed on — the free window carried a second walker, and
+ *  neither the restore-by-name nor a put-back that lost the name race closed it (measured on
+ *  my own export of the head that introduced the discipline: six starts on a dead pid's lock
+ *  breached 10/30 rounds, corpse + dead pid 13/60, and an aside-judging variant of this fix
+ *  48/300 — every breach a `bind-failed` start that never waited). Here the claim's holder
+ *  re-reads the entry and removes it only when it still names no live holder and is not still
+ *  young — the create→write gap stays the young window's charge — then drops the claim, and
+ *  every start re-races the exclusive create, which arbitrates cleanly: one wins the create
+ *  and holds, every other reads the winner live and takes the wait. A crashed claim-holder is
+ *  recovered the way its locks are: a claim naming a dead pid, or an empty one aged out, is
+ *  cleared by the next start — the eviction is idempotent, its follow-up the same create race
+ *  — and the claim names its holder's pid, so an evicted-and-replaced claim is never mistaken
+ *  for the one this start just wrote. */
+async function takeOver(path: string): Promise<void> {
+  const claim = `${path}.takeover`;
+  for (let tries = 0; tries < 8; tries++) {
     try {
-      renameSync(aside, path);
+      const fd = openSync(claim, 'wx');
+      writeFileSync(fd, `${process.pid}\n`);
+      closeSync(fd);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      const taker = readPid(claim);
+      if (!Number.isNaN(taker) && alive(taker)) {
+        await new Promise((tick) => setTimeout(tick, 20)); // a live claim-holder is mid-section
+        return;
+      }
+      if (Number.isNaN(taker) && young(claim)) {
+        await new Promise((tick) => setTimeout(tick, 20)); // its pid is still landing
+        return;
+      }
+      try {
+        unlinkSync(claim); // a dead taker, or an empty claim aged out
+      } catch {}
+      continue;
+    }
+    // The claim is this start's — checked, never assumed: an eviction race can put a rival's
+    // fresh claim on the name between the create and here, and a start whose claim is gone
+    // must not touch the lock on its say-so.
+    if (readPid(claim) !== process.pid) {
+      await new Promise((tick) => setTimeout(tick, 20));
+      return;
+    }
+    // A live holder is never removed — unreachable in order, since the caller read a dead or
+    // aged entry and a create can land only behind an absent one — and a writer whose pid is
+    // still on its way keeps its entry, the young window's charge both times.
+    const holder = readPid(path);
+    const live = !Number.isNaN(holder) && alive(holder);
+    const landing = Number.isNaN(holder) && young(path);
+    if (!live && !landing) {
+      try {
+        unlinkSync(path);
+      } catch {}
+    }
+    try {
+      unlinkSync(claim);
     } catch {}
-    return false;
+    return;
   }
-  unlinkSync(aside);
-  return true;
 }
 
 /** The start section's lock, `withLock`'s discipline awaited instead of busy-waited: exclusive
  *  create with the holder's pid written, a live holder waited for until the deadline (answered
- *  `timeout`, which the caller refuses), a dead or too-young-to-hold-pid lock taken over. The
- *  file's directory is made the way `withLock` makes its own. */
+ *  `timeout`, which the caller refuses), a dead holder's lock taken over at once — one start at
+ *  a time, through the claim above — and a lock that names nothing — mid-create, emptied,
+ *  junk — waited on while it is young, then taken over once it has aged past `LOCK_YOUNG_MS`.
+ *  The file's directory is made the way `withLock` makes its own. */
 async function acquireStartLock(path: string): Promise<{ kind: 'held'; release: () => void } | { kind: 'timeout' }> {
   mkdirSync(dirname(path), { recursive: true });
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (;;) {
+    // The deadline governs the whole wait, every branch of it: past it the answer is the
+    // pinned `locked`, nothing cleared, nothing bound.
+    if (Date.now() > deadline) return { kind: 'timeout' };
     try {
       const fd = openSync(path, 'wx');
       writeFileSync(fd, `${process.pid}\n`);
@@ -145,23 +220,25 @@ async function acquireStartLock(path: string): Promise<{ kind: 'held'; release: 
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      let holder = NaN;
-      try {
-        holder = Number(readFileSync(path, 'utf8').trim());
-      } catch {
-        continue; // released between the two calls
-      }
-      if (Number.isInteger(holder) && holder > 0 && alive(holder)) {
-        if (Date.now() > deadline) return { kind: 'timeout' };
+      const holder = readPid(path);
+      if (!Number.isNaN(holder) && alive(holder)) {
         await new Promise((tick) => setTimeout(tick, LOCK_POLL_MS));
         continue;
       }
-      // A dead holder, or a lock file too young to hold its pid yet.
-      if (!Number.isInteger(holder) && Date.now() - statSync(path).mtimeMs < LOCK_YOUNG_MS) {
+      // No live holder: a dead pid, a file too young to name its writer yet, or one already
+      // released. Only the first two are worth taking over — a gone file just gets the create
+      // retried.
+      let age: number;
+      try {
+        age = Date.now() - statSync(path).mtimeMs;
+      } catch {
+        continue; // released between the create and the read
+      }
+      if (Number.isNaN(holder) && age < LOCK_YOUNG_MS) {
         await new Promise((tick) => setTimeout(tick, 20));
         continue;
       }
-      takeOverLock(path, holder);
+      await takeOver(path);
     }
   }
 }
