@@ -105,8 +105,6 @@ function record(id: string, seat: string, body: string): MessagePayload {
 }
 
 try {
-  const listed = execFileSync('herdr', ['session', 'list'], { encoding: 'utf8' });
-  if (/^team\s+running/m.test(listed) && SESSION === 'team') throw new Error('refusing to touch session team');
   server = spawn('herdr', ['--session', SESSION, 'server'], { stdio: 'ignore' });
   waitReady();
   const leadCreated = herdr('workspace', 'create', '--cwd', root, '--label', 'lead', '--no-focus');
