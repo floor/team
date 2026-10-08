@@ -111,17 +111,37 @@ describe('team issues', () => {
     expect(listed.out).toBe('m1  the task title\n  blocked-by: m0\n\nm2  another title\n');
   });
 
-  test('a source other than file is refused and the task file is not read', async () => {
+  test('a broker source is refused by name, and the task file is not read', async () => {
+    // A linear source without its block: the validator names both halves it needs.
     const text = WITH.replace('source: file', 'source: linear');
     const checked = validateTeamFile(text);
     expect(checked.ok).toBe(false);
-    if (!checked.ok) expect(checked.errors.map((error) => error.message)).toContain('tasks.source must be file');
+    if (!checked.ok) {
+      const messages = checked.errors.map((error) => error.message);
+      expect(messages).toContain('tasks.linear.project is required');
+      expect(messages).toContain('tasks.linear.keychainService is required');
+    }
     project(text);
     list('- id: m1\n  title: the task title\n');
     const ran = await run();
     expect(ran.code).toBe(1);
-    expect(ran.err).toBe('team issues: tasks.source must be file\n');
+    expect(ran.err).toBe('team issues: tasks.linear.project is required\n');
     expect(ran.out).toBe('');
+
+    // A full broker source validates — and this command still lists no broker source: the read
+    // lives behind the socket, the seat gate and the policy, none of which this command has.
+    const linear = `${TEAM}tasks:
+  source: linear
+  linear:
+    project: 01234567-89ab-cdef-0123-456789abcdef
+    keychainService: team.linear.acme
+`;
+    project(linear);
+    list('- id: m1\n  title: the task title\n');
+    const broker = await run();
+    expect(broker.code).toBe(1);
+    expect(broker.err).toBe('team issues: team issues lists the file the owner committed; a broker source is read by team next\n');
+    expect(broker.out).toBe('');
   });
 
   test('an empty list, a missing file, and a file with no task source', async () => {

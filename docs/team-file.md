@@ -21,18 +21,49 @@ tasks:
   path: .agents/tasks.yaml
 ```
 
-- `source` must be `file`. No other source is built. There is no tracker and no broker.
-- `path` is relative to the checkout and must stay inside it. An absolute path, a `~` path, or a
-  `..` that leaves the checkout is refused: `tasks.path must stay inside the checkout`.
+or, for a tracker behind the owner's broker:
+
+```yaml
+tasks:
+  source: linear
+  linear:
+    project: 01234567-89ab-cdef-0123-456789abcdef
+    keychainService: team.linear.acme
+  policy:
+    omit: [description]
+    transform:
+      id: bare
+```
+
+- `source` is `file` or `linear`. A file source is the list the owner committed; a broker source
+  is a tracker the owner's broker reads — the credential stays with the broker (`team broker`),
+  and `team next` asks it over `.agents/broker.sock`. `team issues` lists a file source only.
+- `path` is required for `source: file` and refused for `source: linear`. It is relative to the
+  checkout and must stay inside it. An absolute path, a `~` path, or a `..` that leaves the
+  checkout is refused: `tasks.path must stay inside the checkout`. The linear block is refused the
+  other way: `tasks.linear is for source: linear`.
+- `linear` is required for `source: linear`, with exactly `project` and `keychainService`. A
+  missing half is `tasks.linear.project is required` or `tasks.linear.keychainService is
+  required`.
+- `policy` is for `source: linear` — for `source: file` it is refused with `tasks.policy is for a
+  broker source; source: file has no broker`. It says which record fields cross the broker's
+  boundary: `allow` names the set, `omit` removes from the default, the two are not used together
+  (`tasks.policy: allow and omit are not used together`), and `id` and `title` are the record
+  itself — `allow` must name both, `omit` must name neither. A name that is not a task field is
+  `tasks.policy.allow lists "foo", not a task field` (likewise `omit`). With no `policy` the nine
+  typed fields cross and `description` does not. `transform` has one defined value, `id: bare`:
+  an id that arrives as its source URL crosses as its last `/`-separated segment. Anything else is
+  `tasks.policy.transform: only id: bare is defined in this build`.
 - `pull` is optional: `self` or `any`. Omitted, `team next` treats it as `self` and the parsed
   section does not gain the key. Any other value is `tasks.pull must be self or any`.
 - `fallback` is optional: `file` or `id`. It orders records that have no priority. Omitted, those
   records keep file order. It does not reorder a record that has a priority. Any other value is
   `tasks.fallback must be file or id`.
-- Any other key, including `policy` and `cadence`, is an unknown field.
+- Any other key, including `cadence`, is an unknown field.
 
 The file at `path` is a YAML list of task records. `team issues` reads it. `team next` claims one
-record from it. Nothing in this build writes it.
+record from it, and claims one from a broker source's read the same way — the lease stays local
+either way. Nothing in this build writes the file or the tracker.
 
 ## `delegates`
 

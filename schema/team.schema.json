@@ -571,17 +571,60 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "source",
-        "path"
+        "source"
       ],
+      "if": {
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "source": {
+            "const": "linear"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "linear"
+        ]
+      },
+      "else": {
+        "required": [
+          "path"
+        ]
+      },
       "properties": {
         "source": {
-          "const": "file"
+          "enum": [
+            "file",
+            "linear"
+          ]
         },
         "path": {
           "type": "string",
           "minLength": 1,
-          "$comment": "relative to the checkout, and it must stay inside it"
+          "$comment": "for source: file, relative to the checkout, and it must stay inside it"
+        },
+        "linear": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project",
+            "keychainService"
+          ],
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "$comment": "the tracker project the read is bounded to"
+            },
+            "keychainService": {
+              "type": "string",
+              "minLength": 1,
+              "$comment": "the macOS Keychain service naming the key; read by the broker only"
+            }
+          },
+          "$comment": "the tracker the broker reads; required for source: linear, refused for source: file"
         },
         "pull": {
           "enum": [
@@ -594,9 +637,60 @@
             "file",
             "id"
           ]
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allow": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "id",
+                  "title",
+                  "priority",
+                  "assignee",
+                  "milestone",
+                  "deadline",
+                  "blocked-by",
+                  "repos",
+                  "needs",
+                  "description"
+                ]
+              }
+            },
+            "omit": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "id",
+                  "title",
+                  "priority",
+                  "assignee",
+                  "milestone",
+                  "deadline",
+                  "blocked-by",
+                  "repos",
+                  "needs",
+                  "description"
+                ]
+              }
+            },
+            "transform": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "const": "bare"
+                }
+              },
+              "$comment": "one transform is defined in this build: id: bare"
+            }
+          },
+          "$comment": "which record fields cross the broker boundary: allow names the set, omit removes from the default; the two are not used together, and id and title are the record itself — allow must name both, omit must name neither. refused for source: file"
         }
       },
-      "$comment": "one file adapter. pull is self or any; fallback is file or id. source other than file, and a path that leaves the checkout, are refused"
+      "$comment": "one task source. source file needs path; source linear needs the linear block. pull is self or any; fallback is file or id. a path that leaves the checkout, a linear block or policy with source file, and a policy that omits id or title are refused"
     },
     "delegates": {
       "type": "array",

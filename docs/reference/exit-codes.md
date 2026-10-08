@@ -107,6 +107,16 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `approve.overrides` | `approve` | 2 | the overrides file can't be parsed | `team approve` |
 | `approve.placed` | `approve` | 2 | a path would trust the project's parent | `team approve` |
 | `approve.revalidate` | `approve` | 2 | the file does not validate | `team approve` |
+| `broker.stopped` | `broker` | 0 | the broker served until it was stopped | `team broker` |
+| `broker.bind` | `broker` | 1 | the socket could not be bound | `team broker` |
+| `broker.busy` | `broker` | 1 | a broker is already answering on this clone's socket | `team broker` |
+| `broker.file` | `broker` | 1 | the team file can't be read or parsed | `team broker` |
+| `broker.keychain` | `broker` | 1 | the Keychain credential was refused | `team broker` |
+| `broker.not-owner` | `broker` | 1 | only the owner runs broker | `team broker` |
+| `broker.policy` | `broker` | 1 | a task policy the validator refuses | `team broker` |
+| `broker.source` | `broker` | 1 | the team file declares no task source, or one the broker does not serve | `team broker` |
+| `broker.invocation` | `broker` | 2 | the invocation can't be read | `team broker extra` |
+| `broker.not-a-repo` | `broker` | 2 | not inside a git repository | `team broker` |
 | `check.ok` | `check` | 0 | nothing needs acting on | `team check` |
 | `check.file-owner` | `check` | 1 | --file is the owner's | `team check --file .agents/team.yaml` |
 | `check.findings` | `check` | 1 | something needs acting on | `team check` |
@@ -184,7 +194,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `init.not-a-repo` | `init` | 2 | not inside a git repository | `team init` |
 | `issues.none` | `issues` | 0 | nothing is waiting | `team issues` |
 | `issues.shown` | `issues` | 0 | the task list was shown | `team issues` |
-| `issues.file` | `issues` | 1 | the team file can't be read, or it declares no task source | `team issues` |
+| `issues.file` | `issues` | 1 | the team file can't be read, it declares no task source, or its source is a broker's | `team issues` |
 | `issues.missing` | `issues` | 1 | the task file is not there | `team issues` |
 | `issues.shape` | `issues` | 1 | a record is not a task, or the task file is not a list | `team issues` |
 | `issues.invocation` | `issues` | 2 | the invocation can't be read | `team issues extra` |
@@ -204,9 +214,12 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `next.none` | `next` | 0 | nothing to take or to release | `team next` |
 | `next.released` | `next` | 0 | the caller's lease was released | `team next --release` |
 | `next.taken` | `next` | 0 | a record was claimed, or the caller's live lease was renewed | `team next` |
+| `next.broker` | `next` | 1 | no broker is running, or its answer was not one this build knows | `team next` |
 | `next.caller` | `next` | 1 | the caller is not a seat of this team on its recorded pane | `team next` |
 | `next.file` | `next` | 1 | the team file can't be read, or it declares no task source | `team next` |
 | `next.missing` | `next` | 1 | the task file is not there | `team next` |
+| `next.policy` | `next` | 1 | a task policy the validator refuses | `team next` |
+| `next.read` | `next` | 1 | the broker failed the read | `team next` |
 | `next.shape` | `next` | 1 | nothing was taken, and a record is not a task or the task file is not a list | `team next` |
 | `next.invocation` | `next` | 2 | the invocation can't be read | `team next extra` |
 | `next.not-a-repo` | `next` | 2 | not inside a git repository | `team next` |

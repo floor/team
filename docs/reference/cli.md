@@ -102,6 +102,25 @@ Usage:
 
 None.
 
+## `broker`
+
+Hidden: no
+
+Usage:
+
+    team broker
+
+### Flags
+
+| Flag | Takes a value | Repeatable | Hidden |
+| --- | --- | --- | --- |
+| `--help` | no | no | no |
+| `-h` | no | no | yes |
+
+### Positionals
+
+None.
+
 ## `check`
 
 Hidden: no

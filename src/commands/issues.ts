@@ -1,7 +1,7 @@
 // `team issues`: list the typed records of the one task source the team file names.
-// The source is a file the owner committed. No command in this build contacts a tracker.
-// The broker is not built. Credential-withholding is not this slice. There is no tracker
-// credential here to withhold. A listing is not a claim and not the intake rule.
+// The source is a file the owner committed. A broker source is read by `team next`, never from
+// here: this command connects to no broker, holds no tracker credential, and has no seat gate —
+// and it keeps holding none of those. A listing is not a claim and not the intake rule.
 import { readArgs } from '../args.ts';
 import { findRoot, loadTeamFile, NOT_A_REPO } from '../file/load.ts';
 import type { Command, Io } from '../io.ts';
@@ -39,6 +39,11 @@ export async function runIssues(argv: string[], io: Io, sources: IssuesSources =
     return refuse(io, 'file', message);
   }
   if (!loaded.team.tasks) return refuse(io, 'file', 'the team file declares no task source');
+  if (loaded.team.tasks.source === 'linear') {
+    // A broker source is not listed here: the read lives behind the socket, the seat gate and
+    // the policy, which this command has none of. No socket connection is attempted.
+    return refuse(io, 'file', 'team issues lists the file the owner committed; a broker source is read by team next');
+  }
   const registry = sources.registry ?? fileRegistry;
   const adapter = registry[loaded.team.tasks.source];
   if (!adapter) return refuse(io, 'file', 'tasks.source must be file');

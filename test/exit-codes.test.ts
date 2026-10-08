@@ -7,12 +7,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'bun:test';
 import { approvalOf } from '../src/approve/approval.ts';
+import { startBroker } from '../src/broker/server.ts';
 import { saveReadings, type Seen } from '../src/budgets/readings.ts';
 import type { Caller } from '../src/caller.ts';
 import type { CheckSources } from '../src/check/team.ts';
 import { runAdd, type AddSources } from '../src/commands/add.ts';
 import { runAnswer, type AnswerHost } from '../src/commands/answer.ts';
 import { runApprove, type ApproveSources, type Waiting } from '../src/commands/approve.ts';
+import { runBroker, type BrokerSources } from '../src/commands/broker.ts';
 import { check, loadConfig, type LoadConfig } from '../src/commands/check.ts';
 import { commits } from '../src/commands/commits.ts';
 import { runDoctor, type DoctorSources } from '../src/commands/doctor.ts';
@@ -44,6 +46,7 @@ import { approvalStanding, storePath, writeApproval, type Standing } from '../sr
 import type { Machine } from '../src/watch/machine.ts';
 import { analyze, loadContract, problems, render, type ExitRow } from '../scripts/exit-codes.ts';
 import { runRelease } from '../src/commands/release.ts';
+import type { KeyReader } from '../src/release/keychain.ts';
 import { fakeFetch, fixture, happy, json, URLS, type Answers } from './release/world.ts';
 import { claudeBox, gitEnv, testIo } from './helpers.ts';
 
@@ -2538,6 +2541,13 @@ const TASKS = `${TEAM}tasks:
   path: .agents/tasks.yaml
 `;
 
+const LINEAR = `${TEAM}tasks:
+  source: linear
+  linear:
+    project: 01234567-89ab-cdef-0123-456789abcdef
+    keychainService: team.linear.acme
+`;
+
 async function issued(place: Place, argv: string[] = []): Promise<Ran> {
   const io = testIo(place.root);
   return { code: await runIssues(argv, io, { home: place.home }), out: io.out, err: io.err };
@@ -2614,6 +2624,104 @@ scene('next.shape', async (place) => {
 });
 scene('next.invocation', async (place) => show(await nexted(place, ['extra']), 'unexpected'));
 scene('next.not-a-repo', async (place) => show(await nexted(place), 'not inside a git repository'), false);
+
+// The broker's own rows. One credential read is stood in everywhere: the shipped wiring reads
+// the owner's Keychain, which no scene may ever run. The socket is real — unix sockets under a
+// temporary directory, no network — and each scene closes what it opened.
+const okKey: KeyReader = async () => ({ ok: true, key: 'test-key-not-real' });
+const keyRefusing = (reason: string): KeyReader => async () => ({ ok: false, reason });
+
+async function brokered(place: Place, argv: string[] = [], sources: BrokerSources = {}, caller: Caller = owner): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runBroker(argv, io, { home: place.home, ...sources }), out: io.out, err: io.err };
+}
+
+scene('broker.invocation', async (place) => show(await brokered(place, ['extra'], { keyReader: okKey }), 'unexpected'));
+scene('broker.not-a-repo', async (place) => show(await brokered(place, [], { keyReader: okKey }), 'not inside a git repository'), false);
+scene('broker.file', async (place) => show(await brokered(place, [], { keyReader: okKey }), 'no team file'));
+scene('broker.not-owner', async (place) =>
+  show(await brokered(place, [], { keyReader: okKey }, { kind: 'seat', name: 'worker', pane: 'w2:p1', session: 'acme' }), 'only the owner runs `broker`'));
+scene('broker.policy', async (place) => {
+  write(place, `${LINEAR}  policy:
+    omit: [title]
+`);
+  return show(await brokered(place, [], { keyReader: okKey }), 'tasks.policy.omit must not name id or title, the record itself');
+});
+scene('broker.source', async (place) => {
+  write(place, TASKS);
+  return show(await brokered(place, [], { keyReader: okKey }), 'tasks.source must be linear; the broker serves a tracker source');
+});
+scene('broker.keychain', async (place) => {
+  write(place, LINEAR);
+  return show(await brokered(place, [], { keyReader: keyRefusing('this platform has no such facility') }), 'no such facility');
+});
+scene('broker.busy', async (place) => {
+  write(place, LINEAR);
+  const loaded = loadTeamFile(place.root, { home: place.home });
+  if (!loaded.ok) throw new Error('the fixture does not validate');
+  const first = await startBroker({ root: loaded.root, team: loaded.team, read: async () => ({ kind: 'failed', message: 'unused' }), stderr: () => {} });
+  if (first.kind !== 'serving') throw new Error(first.kind);
+  try {
+    return show(await brokered(place, [], { keyReader: okKey }), 'already answering');
+  } finally {
+    await first.handle.close();
+  }
+});
+scene('broker.bind', async (place) => {
+  write(place, LINEAR);
+  // A regular file at the socket path: never a broker, and the walk's lstat gate refuses the
+  // entry before any probe — the pinned bare sentence, exit 1, the file untouched. The gate
+  // exists because the read diverges: ENOTSOCK on macOS under both runtimes; CI's ubuntu
+  // runner answered ECONNREFUSED (run 37778336251), the walk cleared the file and this scene
+  // timed out on a refusal that never came.
+  const socket = join(place.root, '.agents', 'broker.sock');
+  writeFileSync(socket, 'not a socket\n');
+  const ran = await brokered(place, [], { keyReader: okKey });
+  expect(existsSync(socket)).toBe(true);
+  return show(ran, 'could not be bound');
+});
+scene('broker.stopped', async (place) => {
+  write(place, LINEAR);
+  // The stop seam arms when the serve loop is reached; the scene ends it on the next tick, once
+  // the arm's own undo exists, and the clean close removes the socket file.
+  const stop = (end: () => void): (() => void) => {
+    setTimeout(end, 0);
+    return () => {};
+  };
+  const ran = await brokered(place, [], { keyReader: okKey, stop });
+  expect(existsSync(join(place.root, '.agents', 'broker.sock'))).toBe(false);
+  return show(ran, 'team broker: stopped');
+});
+scene('next.broker', async (place) => {
+  write(place, LINEAR);
+  recordLead(place);
+  return show(await nexted(place), 'the broker is not running');
+});
+scene('next.read', async (place) => {
+  write(place, LINEAR);
+  recordLead(place);
+  const loaded = loadTeamFile(place.root, { home: place.home });
+  if (!loaded.ok) throw new Error('the fixture does not validate');
+  const serving = await startBroker({
+    root: loaded.root,
+    team: loaded.team,
+    read: async () => ({ kind: 'failed', message: 'the tracker could not be read' }),
+    stderr: () => {},
+  });
+  if (serving.kind !== 'serving') throw new Error(serving.kind);
+  try {
+    return show(await nexted(place), 'the broker failed this read');
+  } finally {
+    await serving.handle.close();
+  }
+});
+scene('next.policy', async (place) => {
+  write(place, `${LINEAR}  policy:
+    omit: [title]
+`);
+  recordLead(place);
+  return show(await nexted(place), 'tasks.policy.omit must not name id or title, the record itself');
+});
 
 const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed', 'answer.action', 'up.delegate-placement']);
 

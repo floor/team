@@ -710,6 +710,76 @@
     },
     {
       "code": 0,
+      "command": "broker",
+      "id": "broker.stopped",
+      "meaning": "the broker served until it was stopped",
+      "trigger": "team broker"
+    },
+    {
+      "code": 1,
+      "command": "broker",
+      "id": "broker.bind",
+      "meaning": "the socket could not be bound",
+      "trigger": "team broker"
+    },
+    {
+      "code": 1,
+      "command": "broker",
+      "id": "broker.busy",
+      "meaning": "a broker is already answering on this clone's socket",
+      "trigger": "team broker"
+    },
+    {
+      "code": 1,
+      "command": "broker",
+      "id": "broker.file",
+      "meaning": "the team file can't be read or parsed",
+      "trigger": "team broker"
+    },
+    {
+      "code": 1,
+      "command": "broker",
+      "id": "broker.keychain",
+      "meaning": "the Keychain credential was refused",
+      "trigger": "team broker"
+    },
+    {
+      "code": 1,
+      "command": "broker",
+      "id": "broker.not-owner",
+      "meaning": "only the owner runs broker",
+      "trigger": "team broker"
+    },
+    {
+      "code": 1,
+      "command": "broker",
+      "id": "broker.policy",
+      "meaning": "a task policy the validator refuses",
+      "trigger": "team broker"
+    },
+    {
+      "code": 1,
+      "command": "broker",
+      "id": "broker.source",
+      "meaning": "the team file declares no task source, or one the broker does not serve",
+      "trigger": "team broker"
+    },
+    {
+      "code": 2,
+      "command": "broker",
+      "id": "broker.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team broker extra"
+    },
+    {
+      "code": 2,
+      "command": "broker",
+      "id": "broker.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team broker"
+    },
+    {
+      "code": 0,
       "command": "check",
       "id": "check.ok",
       "meaning": "nothing needs acting on",
@@ -1251,7 +1321,7 @@
       "code": 1,
       "command": "issues",
       "id": "issues.file",
-      "meaning": "the team file can't be read, or it declares no task source",
+      "meaning": "the team file can't be read, it declares no task source, or its source is a broker's",
       "trigger": "team issues"
     },
     {
@@ -1390,6 +1460,13 @@
     {
       "code": 1,
       "command": "next",
+      "id": "next.broker",
+      "meaning": "no broker is running, or its answer was not one this build knows",
+      "trigger": "team next"
+    },
+    {
+      "code": 1,
+      "command": "next",
       "id": "next.caller",
       "meaning": "the caller is not a seat of this team on its recorded pane",
       "trigger": "team next"
@@ -1406,6 +1483,20 @@
       "command": "next",
       "id": "next.missing",
       "meaning": "the task file is not there",
+      "trigger": "team next"
+    },
+    {
+      "code": 1,
+      "command": "next",
+      "id": "next.policy",
+      "meaning": "a task policy the validator refuses",
+      "trigger": "team next"
+    },
+    {
+      "code": 1,
+      "command": "next",
+      "id": "next.read",
+      "meaning": "the broker failed the read",
       "trigger": "team next"
     },
     {

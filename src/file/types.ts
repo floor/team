@@ -1,5 +1,6 @@
 export type Problem = { line: number; message: string };
 
+import type { TaskPolicy } from '../broker/policy.ts';
 import type { Delegates } from '../delegate-types.ts';
 import type { ReleaseDecl } from './sections/releases.ts';
 
@@ -126,9 +127,20 @@ export type TeamFile = {
   releases: ReleaseDecl[];
   /**
    * The one task source, or null when the file has no `tasks` section. An owner section:
-   * changing it needs a new approval. This slice is the file adapter only.
+   * changing it needs a new approval. `file` is the list the owner committed; `linear` is read
+   * by the broker with the owner's Keychain credential — the `linear` block names the project
+   * and the Keychain service, and `policy` names which fields cross the broker's boundary.
    */
-  tasks: { source: 'file'; path: string; pull?: 'self' | 'any'; fallback?: 'file' | 'id' } | null;
+  tasks:
+    | { source: 'file'; path: string; pull?: 'self' | 'any'; fallback?: 'file' | 'id' }
+    | {
+        source: 'linear';
+        linear: { project: string; keychainService: string };
+        pull?: 'self' | 'any';
+        fallback?: 'file' | 'id';
+        policy?: TaskPolicy;
+      }
+    | null;
   /**
    * The panes outside the team's session that may run named operational commands, or null when
    * the file has no `delegates` section. An owner section: changing it needs a new approval.
