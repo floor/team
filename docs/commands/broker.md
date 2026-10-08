@@ -49,10 +49,14 @@ one bounded read-only Linear query under `tasks.linear.project`, from this proce
 the `tasks.policy` before the answer is serialized: a field the policy leaves out is absent from
 the record, never blank.
 
-Binds the unix socket `.agents/broker.sock` in this clone. The socket file and the start lock
-beside it are the only files it writes — the lock is released when the walk ends, and the socket
-file is removed when it stops; a file at that path that is not a socket is never unlinked. It
-never writes the tracker, the team file or a lease.
+Binds the unix socket `.agents/broker.sock` in this clone. The socket file, the start lock
+beside it, and the takeover claim beside that (`.agents/broker.sock.lock.takeover`, which
+removes a dead start's lock; a killed claim-holder can leave it, and the next start clears it)
+are the files it writes — the lock and the claim each created through a private temp that names
+its writer (`.agents/broker.sock.lock.<pid>.new`, the claim's one segment further), removed as
+the create ends, and a temp a kill left behind cleared by the next start. The lock is released
+when the walk ends, and the socket file is removed when it stops; a file at that path that is
+not a socket is never unlinked. It never writes the tracker, the team file or a lease.
 
 ## Who may run it
 
