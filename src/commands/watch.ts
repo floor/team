@@ -315,7 +315,9 @@ export async function runWatch(argv: string[], io: Io, sources: WatchSources): P
           readScreen: (cli, pane) => classifyWith(cli, pane, overrides.profiles),
           readings: stored, foreground, processes,
           nudgeOperator: approvedOperator(standing),
-          mailbox: sources.home ? mailboxWaiting(root, team, live, sources.home) : [],
+          // A record is bound to the file's session. A watch of another session neither rings
+          // nor raises the owner line; the file's own watch still does both.
+          mailbox: !foreign && sources.home ? mailboxWaiting(root, team, live, sources.home) : [],
         });
         // The pass folds its figures where the state is held: two watches of the project fold one
         // after the other, not over each other. A watch on a foreign session still folds, for its

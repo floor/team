@@ -1748,6 +1748,20 @@ describe('team watch', () => {
     expect(existsSync(join(dir, '.agents', 'messages', 'claude-operator-acme', 'm1.json'))).toBe(true);
   });
 
+  test('a watch of another session types nothing and raises no owner line', async () => {
+    planted('claude-operator-acme', 'the message body itself', '2026-10-03T13:50:00.000Z');
+    planted('deepseek-acme', 'an old body', new Date(clock - 601_000).toISOString());
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file, '--session', 'other'], io, sources(1, { home: join(dir, 'home'), live: () => live() }));
+    expect(typed).toEqual([]);
+    expect(io.out).not.toContain(RING_TEXT);
+    expect(io.out).not.toContain('has been waiting');
+    expect(existsSync(join(dir, '.agents', 'messages', 'claude-operator-acme', 'm1.json'))).toBe(true);
+    expect(existsSync(join(dir, '.agents', 'messages', 'deepseek-acme', 'm1.json'))).toBe(true);
+    expect(existsSync(join(dir, '.agents', 'messages', 'claude-operator-acme', 'm1.read.json'))).toBe(false);
+    expect(existsSync(join(dir, '.agents', 'messages', 'deepseek-acme', 'm1.read.json'))).toBe(false);
+  });
+
   test('two seats holding the same id each get one owner line', async () => {
     const at = new Date(clock - 601_000).toISOString();
     planted('claude-operator-acme', 'one body', at);
