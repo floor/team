@@ -204,20 +204,31 @@ const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
 
 /** The policy, applied on this side of the boundary, before the answer is serialized. A record
  *  whose final id is not a task id is refused in the adapter's own shape — the same sentence,
- *  the same keys, the same key order — at the source position of the record it came from. With
- *  nothing converted the adapter's refusal list passes through untouched, so a no-transform run
- *  answers byte for byte what it answered before (fix2 P2). */
+ *  the same keys, the same key order — at the source position of the record it came from, and so
+ *  is one whose final id repeats an already-accepted final id: the transform can merge two
+ *  distinct source ids into one, and the seat's take must not meet two records under one id
+ *  (both adapters enforce this rule on raw ids already). With nothing converted the adapter's
+ *  refusal list passes through untouched, so a no-transform run answers byte for byte what it
+ *  answered before (fix2 P2). */
 function filtered(read: TaskRead, policy?: TaskPolicy): TaskRead {
   if (read.kind !== 'records') return read;
   const taken = new Set(read.refusals.map((refusal) => refusal.index));
   const records: TaskRecord[] = [];
   const converted: TaskRefusal[] = [];
+  // Only an accepted final id is remembered, the adapter's own rule: a record refused for its
+  // own fault reserves nothing.
+  const accepted = new Set<string>();
   read.records.forEach((record, position) => {
     const crossed = applyPolicy(record, policy);
     if (!TASK_ID.test(crossed.id)) {
       converted.push({ index: sourceIndex(position + 1, taken), reason: 'its id is not a task id' });
       return;
     }
+    if (accepted.has(crossed.id)) {
+      converted.push({ index: sourceIndex(position + 1, taken), id: crossed.id, reason: 'its id repeats an earlier record' });
+      return;
+    }
+    accepted.add(crossed.id);
     records.push(crossed);
   });
   if (converted.length === 0) return { kind: 'records', records, refusals: read.refusals };

@@ -610,6 +610,33 @@ tasks:
     expect(await broker.running).toBe(0);
   });
 
+  test('a repeated final id is refused and a renewal reprints the same record', async () => {
+    ready(`${LINEAR}  policy:
+    transform:
+      id: bare
+`);
+    const tracker = world([
+      brokerNode({ identifier: 'https://linear.app/acme/issue/ACME-1', title: 'first version' }),
+      brokerNode({ identifier: 'ACME-1', title: 'second version' }),
+    ]);
+    const broker = await command(tracker.fetch);
+    // The transform made the two source ids one final id: the second is refused, the first is
+    // taken, and the renewal against the same answer reprints the record the claim printed.
+    const refusal = 'team next: ACME-1 is not a task: its id repeats an earlier record\n';
+    expect(await run()).toEqual({ code: 0, out: 'ACME-1  first version\n', err: refusal });
+    const first = lease('ACME-1');
+    expect(first).toMatchObject({ id: 'ACME-1', seat: 'lead', pane: 'w1:p1' });
+    now += 1000;
+    expect(await run()).toEqual({ code: 0, out: 'ACME-1  first version\n', err: refusal });
+    expect(leaseNames()).toEqual(['ACME-1.json']);
+    const renewed = lease('ACME-1');
+    expect(renewed.acquiredAt).toBe(first.acquiredAt);
+    expect(Date.parse(renewed.until)).toBe(Date.parse(first.until) + 1000);
+    expect(tracker.requests.length).toBe(2);
+    broker.finish();
+    expect(await broker.running).toBe(0);
+  });
+
   test('with no transform the source URL id refuses at the sentence and bytes of before', async () => {
     ready(LINEAR);
     const tracker = world([brokerNode({ identifier: 'https://linear.app/acme/issue/ACME-1' })]);

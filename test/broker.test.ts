@@ -548,6 +548,58 @@ describe('the per-field policy', () => {
     });
   });
 
+  test('a record whose final id repeats an earlier one is refused, at the adapter\'s sentence and keys', async () => {
+    project();
+    record();
+    await serving(
+      async () =>
+        records([
+          { id: 'https://linear.app/acme/issue/ACME-1', title: 'first version' },
+          { id: 'ACME-1', title: 'second version' },
+        ]),
+      { transform: { id: 'bare' } },
+    );
+    // The transform made the two source ids one final id. The second is refused the way the
+    // adapter refuses a raw repeat — its sentence, its keys, its key order — and only the first
+    // crosses, so a take and a renewal meet one record under one id.
+    const line = await send(`${encodeLine(leadSeat)}`);
+    expect(line).toBe(
+      '{"ok":true,"read":{"kind":"records","records":[{"id":"ACME-1","title":"first version"}],"refusals":[{"index":2,"id":"ACME-1","reason":"its id repeats an earlier record"}]}}',
+    );
+  });
+
+  test('a repeated final id takes the source position of its record, the list staying in order', async () => {
+    project();
+    record();
+    await serving(
+      async () =>
+        records(
+          [
+            { id: 'ACME-1', title: 'one' },
+            { id: 'https://linear.app/acme/issue/ACME-2', title: 'two' },
+            { id: 'ACME-1', title: 'one again' },
+          ],
+          [{ index: 2, id: 'ACME-9', reason: 'title is required' }],
+        ),
+      { transform: { id: 'bare' } },
+    );
+    const line = await send(`${encodeLine(leadSeat)}`);
+    expect(JSON.parse(line)).toEqual({
+      ok: true,
+      read: {
+        kind: 'records',
+        records: [
+          { id: 'ACME-1', title: 'one' },
+          { id: 'ACME-2', title: 'two' },
+        ],
+        refusals: [
+          { index: 2, id: 'ACME-9', reason: 'title is required' },
+          { index: 4, id: 'ACME-1', reason: 'its id repeats an earlier record' },
+        ],
+      },
+    });
+  });
+
   test('id: bare lets a source URL cross as its last segment', async () => {
     project();
     record();
