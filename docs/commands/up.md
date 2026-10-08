@@ -130,6 +130,22 @@ team add <seat> (or team down, then team up, for the whole team)`, or the same w
 relaunch moves it into the lobby`. For a seat the file names as orchestrator or operator, the detail
 offers only `team down, then team up (to restart the whole team)`.
 
+A ready seat whose recorded process is still in its pane, and that pane is still named as the
+seat, is read once while the plan is built. The model is taken the way `status` takes it. When
+it matches the file, or the screen names no model this version can read, the seat is left ready
+exactly as above — an unreadable model is a note, never a cycle, the same convention as
+`<seat>: its screen doesn't show a model this version knows; not checked` on a launch. When it
+differs, and herdr reports the seat idle or done, `up` closes that workspace without input and
+launches the seat fresh at the file's line. Nothing is typed, the seat is not renamed, and it
+keeps its name. A box that holds unsent text does not stop the close. The record stays
+`<seat>: ready`, and the detail says `  its model drifted; closed without input and launched
+again`. A seat herdr reports working, or whose screen shows a running turn, is not closed: the
+record stays `<seat>: ready` and the detail names the caller's own way, `  its model drifted;
+left as it is (team remove <seat> --abandon)` for the owner, and `  its model drifted; left as
+it is (run this again once herdr reports the seat idle or done)` for a delegate. A dialog on
+that screen is left ready as well, with today's line. A seat the file names as orchestrator or
+operator is never cycled this way; it keeps the whole-team line above.
+
 A command run in a folder that is not a git repository reads `.agents/team.yaml` in that folder,
 and nowhere above it. A link at `.agents` or at `team.yaml` is not followed. When `--file` names a
 file a watch started in the project folder would not read, `up` starts no watch and prints this
@@ -152,13 +168,22 @@ that is provably still the seat's stale one: the agent list must name this seat 
 pane, that pane's workspace as herdr reports it now must be the recorded workspace, that workspace
 must hold no other panes (named or not), the process reading must still say the pane runs no CLI or
 another process, and a pane held by another process must not read `working` or `unsent` — a process
-that is working or holds unsent text is never closed by `up`, whoever started it.
+that is working or holds unsent text is never closed by `up`, whoever started it. A close for a
+drifted model asks one thing more of that re-read: the process must still be the one `team`
+launched, the screen must still name a different model, and the seat must still be idle or done
+with no running turn on its screen. A model that now matches the file closes nothing and is not
+an error.
 When any of that does not hold, nothing is closed, nothing is launched for that seat, its state is
 left as it is, the seat is out of the run, and `up` exits 1 with one record:
 
 | Record | When |
 | --- | --- |
 | `<seat>: left out: its pane is the seat's again; left as it is` | the pane now holds the recorded process — its owner restarted the CLI between the plan and the close. Not an error: the seat is skipped as ready and the exit code is unaffected |
+| `<seat>: left out: its model matches the file again; left as it is` | a drifted seat's screen now names the file's model. Not an error: the seat is skipped as ready and the exit code is unaffected |
+| `<seat>: left out: its model drifted; left as it is (team remove <seat> --abandon)` | the owner, and by the close the seat is working — herdr says so, or the screen shows a running turn. Nothing is closed |
+| `<seat>: left out: its model drifted; left as it is (run this again once herdr reports the seat idle or done)` | a delegate, and by the close the seat is working. Nothing is closed |
+| `<seat>: left out: the process in its pane is not the one team launched; nothing closed` | a drifted seat's process changed between the plan and the close |
+| `<seat>: left out: its screen is not idle or done; nothing closed` | a drifted seat's screen is a dialog, or herdr no longer reports it idle or done, and it is not the working row above |
 | `<seat>: left out: herdr no longer shows this seat on its recorded pane; nothing closed; run team status` | the agent list no longer names the seat on the recorded pane, or that pane's workspace is no longer the recorded one |
 | `<seat>: left out: its workspace holds other panes; nothing closed (close its pane there, then run team up)` | herdr's pane listing for the recorded workspace holds more than the seat's recorded pane |
 | `<seat>: left out: the process in its pane is working; nothing closed (stop it there, or run team remove <seat>)` | a process team did not launch holds the pane and its screen reads `working` |

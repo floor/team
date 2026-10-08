@@ -51,7 +51,18 @@ export type Op =
   | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
   | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; path: string; line: string; seconds: number; pane?: string; notice?: string }
   | { do: 'ready'; seat: string; rules: 'option' | 'message'; notice?: string }
-  | { do: 'repair'; seat: string; cli: string; pane: string; workspace: string; launched: LaunchedIdentity }
+  | {
+      do: 'repair';
+      seat: string;
+      cli: string;
+      pane: string;
+      workspace: string;
+      launched: LaunchedIdentity;
+      /** The pane still holds the process team launched, and its model differs from the file.
+       *  The close re-reads that difference. `way` is the caller's own way out when the seat
+       *  is working and nothing is closed. */
+      drift?: { model: string; version: string; way: string };
+    }
   | { do: 'watch'; label: string; command: string }
   | {
       do: 'type';
@@ -139,7 +150,13 @@ export interface UpSeat {
     launched: LaunchedIdentity;
     /** The CLI the seat starts with, for the classifier that guards a replaced pane. */
     cli: string;
+    /** The pane still holds the launched process and the model on its screen is not the file's.
+     *  The close re-reads the screen; `way` is what the refusal names for this caller. */
+    drift?: { way: string };
   };
+  /** A ready seat whose model drifted and that this `up` will not close: herdr reports it
+   *  working, or its screen shows a running turn. The record stays ready. */
+  driftHold?: string;
   /**
    * Set when the seat's own launch line can't run where the seat starts — the program is not
    * there, or a relative path in it resolves from neither the start folder nor the root. The
@@ -231,6 +248,21 @@ export function upPlan(input: UpInput): Step[] {
       continue;
     }
     if (seat.stage === 'ready') {
+      // A drifted seat this run will not close keeps the ready record. The detail names the
+      // caller's own way; the skip words are that line, not the ordinary "left as it is".
+      if (seat.driftHold) {
+        steps.push({
+          kind: 'skip',
+          text: `${seat.name}: ${seat.driftHold}`,
+          do: {
+            do: 'record',
+            seat: seat.name,
+            record: { kind: 'ready' },
+            detail: `  ${seat.driftHold}\n`,
+          },
+        });
+        continue;
+      }
       steps.push({
         kind: 'skip',
         text: `${seat.name}: already ready; left as it is${seat.restartNote ? `; ${seat.restartNote}` : ''}`,
@@ -288,10 +320,15 @@ export function upPlan(input: UpInput): Step[] {
       // the seat, so it is closed with no key and no text, and everything after this step
       // launches the seat from the beginning, in a workspace of its own.
       if (seat.repair) {
+        const drift = seat.repair.drift && seat.model !== undefined && seat.version !== undefined
+          ? { model: seat.model, version: seat.version, way: seat.repair.drift.way }
+          : undefined;
         steps.push({
           kind: 'run',
           argv: herdr(session, 'workspace', 'close', seat.repair.workspace),
-          note: 'closed without input: its pane no longer holds the process team launched',
+          note: drift
+            ? 'closed without input: its model drifted from the file'
+            : 'closed without input: its pane no longer holds the process team launched',
           do: {
             do: 'repair',
             seat: seat.name,
@@ -299,6 +336,7 @@ export function upPlan(input: UpInput): Step[] {
             pane: seat.repair.pane,
             workspace: seat.repair.workspace,
             launched: seat.repair.launched,
+            ...(drift ? { drift } : {}),
           },
         });
       }

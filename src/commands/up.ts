@@ -9,7 +9,7 @@ import { delegateGate, logDelegated } from '../delegate.ts';
 import { loadTeamFile } from '../file/load.ts';
 import { migrationText } from '../file/migrate.ts';
 import { isLegacyTrust, isMigratedTrust } from '../file/paths.ts';
-import { relaunchRepair } from '../file/sections/lead.ts';
+import { isLeadSeat, relaunchRepair } from '../file/sections/lead.ts';
 import type { Seat, TeamFile } from '../file/types.ts';
 import {
   agentList,
@@ -64,6 +64,7 @@ import { loadReadings, loadSpendReadings } from '../budgets/readings.ts';
 import { blocksLaunch, doctorFindings, realSources as doctorSources, type DoctorSources } from './doctor.ts';
 import { leftoverName } from './remove.ts';
 import { launchLimit, readMachine, readingsText, type Machine, type SwapSample } from '../watch/machine.ts';
+import { canShowModel, modelDiffers, seatModel } from '../status/statusline.ts';
 import { readScreen } from '../watch/screen.ts';
 import { seatStart } from '../worktree/place.ts';
 
@@ -247,6 +248,48 @@ function overCeiling(ceilings: Ceilings, running: readonly Running[], seat: Seat
   return null;
 }
 
+/** What a caller is told when a drifted seat is working and this `up` will not close it. */
+function driftWay(owner: boolean, name: string): string {
+  return owner
+    ? `team remove ${name} --abandon`
+    : 'run this again once herdr reports the seat idle or done';
+}
+
+// A ready seat whose process is still the one team launched. `skip` is today's ready line.
+// `hold` is a drift this run will not close (a running turn). `cycle` closes without input
+// and launches the file's line. A lead is never cycled. A screen that names no model is
+// never cycled: unread is not a difference.
+function modelDrift(
+  team: TeamFile,
+  seat: Seat,
+  recorded: SeatState,
+  agents: readonly HerdrAgent[],
+  processes: Readonly<Record<string, PaneProcesses | null>>,
+  screenOf: (pane: string) => string | null,
+  owner: boolean,
+): { kind: 'skip' } | { kind: 'hold'; detail: string } | { kind: 'cycle'; way: string } {
+  if (isLeadSeat(team, seat.name)) return { kind: 'skip' };
+  if (!recorded.launched || !recorded.pane || !recorded.workspace || !seat.version) return { kind: 'skip' };
+  if (seatProcessVerdict(recorded.launched, processes[seat.name] ?? null) !== 'same') return { kind: 'skip' };
+  const listed = agents.find((agent) => agent.pane === recorded.pane);
+  if (!listed || listed.name !== seat.name) return { kind: 'skip' };
+  if (!canShowModel(seat)) return { kind: 'skip' };
+  const text = screenOf(recorded.pane);
+  if (text == null || text === '') return { kind: 'skip' };
+  const running = seatModel(seat, text);
+  if (!running || !modelDiffers(running, { model: seat.model, version: seat.version })) return { kind: 'skip' };
+  const kind = readScreen(seat.cli, text).kind;
+  const way = driftWay(owner, seat.name);
+  // Herdr's word and the screen: either one saying the seat is mid-turn keeps the pane.
+  if (listed.status === 'working' || kind === 'working') return { kind: 'hold', detail: `its model drifted; left as it is (${way})` };
+  // Idle or done, including a box that holds unsent text, and a screen this version does not
+  // classify, as long as it named a model. A dialog is not closed from here.
+  if ((listed.status === 'idle' || listed.status === 'done') && (kind === 'idle' || kind === 'unsent' || kind === 'unknown')) {
+    return { kind: 'cycle', way };
+  }
+  return { kind: 'skip' };
+}
+
 function seatPlan(
   standing: Standing,
   team: TeamFile,
@@ -258,6 +301,8 @@ function seatPlan(
   root: string,
   home: string,
   processes: Readonly<Record<string, PaneProcesses | null>> = {},
+  screenOf: (pane: string) => string | null = () => null,
+  owner = true,
 ): UpSeat {
   const planned: UpSeat = {
     name: seat.name,
@@ -311,7 +356,23 @@ function seatPlan(
   const named = agents.find((agent) => agent.name === seat.name);
   const onPane = recorded.pane ? agents.some((agent) => agent.pane === recorded.pane) : false;
   if (recorded.stage === 'ready') {
-    if (named || onPane) return { ...planned, stage: 'ready', ...restartNote(team, seat.name, recorded, home) };
+    if (named || onPane) {
+      const drift = modelDrift(team, seat, recorded, agents, processes, screenOf, owner);
+      if (drift.kind === 'cycle' && recorded.pane && recorded.workspace && recorded.launched) {
+        return {
+          ...planned,
+          repair: {
+            pane: recorded.pane,
+            workspace: recorded.workspace,
+            launched: recorded.launched,
+            cli: seat.cli,
+            drift: { way: drift.way },
+          },
+        };
+      }
+      if (drift.kind === 'hold') return { ...planned, stage: 'ready', driftHold: drift.detail };
+      return { ...planned, stage: 'ready', ...restartNote(team, seat.name, recorded, home) };
+    }
     return planned;
   }
   const workspaceLive =
@@ -556,7 +617,20 @@ export async function runUp(argv: string[], io: Io, sources: UpSources): Promise
   const seats: UpSeat[] = [];
   const refused = new Set<string>();
   for (const seat of team.seats) {
-    const planned = seatPlan(standing, team, seat, recorded?.seats[seat.name], agents ?? [], workspaces, state === 'running', root, sources.home, processes);
+    const planned = seatPlan(
+      standing,
+      team,
+      seat,
+      recorded?.seats[seat.name],
+      agents ?? [],
+      workspaces,
+      state === 'running',
+      root,
+      sources.home,
+      processes,
+      (pane) => sources.launch?.paneText(session, pane) ?? null,
+      caller.kind !== 'seat',
+    );
     // A stopped seat, one without a profile, and one already ready are left out of the budget.
     // A seat resumed into a live workspace starts nowhere new, but its reading is still said.
     if (planned.stopped || !profileFor(seat.cli) || planned.stage === 'ready') {

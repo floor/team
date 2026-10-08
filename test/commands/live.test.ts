@@ -5479,3 +5479,318 @@ describe('scratch session', () => {
     );
   }
 });
+
+// A ready seat whose screen names a different model from the file. On the base, `up` skips it
+// as already ready. The file's model for codex-acme is GPT Sol 6; the 0.161.0 idle capture
+// names GPT Terra 5.6.
+describe('team up, a ready seat whose model drifted', () => {
+  const terra = () => readFileSync(join(import.meta.dir, '../fixtures/codex/0.161.0/idle.txt'), 'utf8');
+
+  function driftYaml(): string {
+    return EXAMPLE
+      .replace(
+        '    count: 2                   # deepseek-acme, deepseek-acme-2\n',
+        '    stopped: true\n    count: 2\n',
+      )
+      .replace(
+        '    launch: codex -m gpt-6-sol -c model_reasoning_effort=high\n    stopped: true\n',
+        '    launch: codex -m gpt-6-sol -c model_reasoning_effort=high\n',
+      );
+  }
+
+  function readyState(): void {
+    writeFileSync(join(root, '.agents/team.yaml'), makeExample(base, root, driftYaml()));
+    writeFileSync(
+      join(root, '.agents/team.state.json'),
+      JSON.stringify({
+        format: 1,
+        sessions: {
+          'acme-web': {
+            seats: {
+              'claude-coordinator-acme': { stage: 'ready', pane: 'w91:p1', workspace: 'w91', launched: { shell: 420, cli: [421] } },
+              'codex-acme': { stage: 'ready', pane: 'w92:p1', workspace: 'w92', launched: { shell: 410, cli: [411] } },
+            },
+            worktrees: {},
+          },
+        },
+      }),
+    );
+  }
+
+  const codex = (status = 'idle') => agent('codex-acme', 'w92:p1', status, 'codex');
+  const lead = () => agent('claude-coordinator-acme', 'w91:p1', 'idle');
+
+  test('a different model is not left ready', async () => {
+    readyState();
+    await approve();
+    const made = world();
+    made.session = 'running';
+    made.launch.processInfo = (_session, pane) => {
+      if (pane === 'w91:p1') return { shell: 420, foreground: [420, 421] };
+      if (pane === 'w92:p1') return { shell: 410, foreground: [410, 411] };
+      return { shell: 700, foreground: [700, 701] };
+    };
+    made.launch.paneText = (_session, pane) => (pane === 'w92:p1' ? terra() : IDLE);
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(
+      ['--dry-run', ...FILE],
+      io,
+      sources({ sessionState: () => 'running', agents: () => [lead(), codex()], doctor: doctor() }, made),
+    );
+    expect(code).toBe(0);
+    expect(io.out).toContain('workspace close w92');
+    expect(io.out).toContain('closed without input: its model drifted from the file');
+    expect(io.out).not.toContain('codex-acme: already ready; left as it is');
+    expect(io.out).toContain('skip claude-coordinator-acme: already ready; left as it is');
+  });
+
+  function dry(text: string, status = 'idle'): Promise<{ code: number; out: string }> {
+    readyState();
+    return approve().then(async () => {
+      const made = world();
+      made.session = 'running';
+      made.launch.processInfo = (_session, pane) => {
+        if (pane === 'w91:p1') return { shell: 420, foreground: [420, 421] };
+        if (pane === 'w92:p1') return { shell: 410, foreground: [410, 411] };
+        return { shell: 700, foreground: [700, 701] };
+      };
+      made.launch.paneText = (_session, pane) => (pane === 'w92:p1' ? text : IDLE);
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runUp(
+        ['--dry-run', ...FILE],
+        io,
+        sources({ sessionState: () => 'running', agents: () => [lead(), codex(status)], doctor: doctor() }, made),
+      );
+      return { code, out: io.out };
+    });
+  }
+
+  test('a matching model is left ready', async () => {
+    const ran = await dry(fileModel(terra()));
+    expect(ran.code).toBe(0);
+    expect(ran.out).toContain('skip codex-acme: already ready; left as it is');
+    expect(ran.out).not.toContain('workspace close w92');
+  });
+
+  test('an unreadable screen is left ready', async () => {
+    const ran = await dry('');
+    expect(ran.code).toBe(0);
+    expect(ran.out).toContain('skip codex-acme: already ready; left as it is');
+    expect(ran.out).not.toContain('workspace close w92');
+  });
+
+  test('a working seat is left ready and names the owner\'s way', async () => {
+    const screen = terra().replace('To get started', 'esc to interrupt\n\n  To get started');
+    const ran = await dry(screen);
+    expect(ran.code).toBe(0);
+    expect(ran.out).toContain('skip codex-acme: its model drifted; left as it is (team remove codex-acme --abandon)');
+    expect(ran.out).not.toContain('workspace close w92');
+  });
+
+  test('herdr reporting working leaves the seat ready', async () => {
+    const ran = await dry(terra(), 'working');
+    expect(ran.code).toBe(0);
+    expect(ran.out).toContain('skip codex-acme: its model drifted; left as it is (team remove codex-acme --abandon)');
+    expect(ran.out).not.toContain('workspace close w92');
+  });
+
+  test('a lead whose model drifted keeps today\'s line', async () => {
+    const sonnet = `${'─'.repeat(40)}\n❯ \n${'─'.repeat(40)}\n  main · Sonnet 4.5\n`;
+    readyState();
+    await approve();
+    const made = world();
+    made.session = 'running';
+    made.launch.processInfo = (_session, pane) => {
+      if (pane === 'w91:p1') return { shell: 420, foreground: [420, 421] };
+      if (pane === 'w92:p1') return { shell: 410, foreground: [410, 411] };
+      return { shell: 700, foreground: [700, 701] };
+    };
+    made.launch.paneText = (_session, pane) => (pane === 'w91:p1' ? sonnet : fileModel(terra()));
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(
+      ['--dry-run', ...FILE],
+      io,
+      sources({ sessionState: () => 'running', agents: () => [lead(), codex()], doctor: doctor() }, made),
+    );
+    expect(code).toBe(0);
+    expect(io.out).toContain('skip claude-coordinator-acme: already ready; left as it is');
+    expect(io.out).not.toContain('workspace close w91');
+    expect(io.out).not.toContain('workspace close w92');
+  });
+
+  test('a delegate is told to run up again once the seat is idle or done', async () => {
+    writeFileSync(
+      join(root, '.agents/team.yaml'),
+      `${makeExample(base, root, driftYaml())}\ndelegates:\n  - pane: main/w1:p1\n    commands: [up]\n`,
+    );
+    writeFileSync(
+      join(root, '.agents/team.state.json'),
+      JSON.stringify({
+        format: 1,
+        sessions: {
+          'acme-web': {
+            seats: {
+              'codex-acme': { stage: 'ready', pane: 'w92:p1', workspace: 'w92', launched: { shell: 410, cli: [411] } },
+              'claude-coordinator-acme': { stage: 'ready', pane: 'w91:p1', workspace: 'w91', launched: { shell: 420, cli: [421] } },
+            },
+            worktrees: {},
+          },
+        },
+      }),
+    );
+    await approve();
+    const made = world();
+    made.session = 'running';
+    made.launch.processInfo = (_session, pane) =>
+      pane === 'w92:p1' ? { shell: 410, foreground: [410, 411] } : { shell: 420, foreground: [420, 421] };
+    made.launch.paneText = (_session, pane) => (pane === 'w92:p1' ? terra() : IDLE);
+    const io = testIo(root, { kind: 'seat', name: 'work', pane: 'w1:p1', session: 'main' });
+    const code = await runUp(
+      ['--dry-run', ...FILE],
+      io,
+      sources({
+        sessionState: () => 'running',
+        agents: () => [lead(), codex('working')],
+        doctor: doctor(),
+        delegateGate: () => ({ kind: 'passed', pane: 'main/w1:p1' }),
+      }, made),
+    );
+    expect(code).toBe(0);
+    expect(io.out).toContain('skip codex-acme: its model drifted; left as it is (run this again once herdr reports the seat idle or done)');
+    expect(io.out).not.toContain('workspace close w92');
+  });
+
+  test('an idle seat holding unsent text is closed without input and launched again', async () => {
+    readyState();
+    await approve();
+    const unsent = terra().replace('› Ask Codex to do anything', '› hello');
+    const captured = readFileSync(join(import.meta.dir, '../fixtures/codex/0.157.0/idle.txt'), 'utf8');
+    const matched = fileModel(captured);
+    const made = world(() => matched);
+    made.session = 'running';
+    made.launch.processInfo = (_session, pane) =>
+      pane === 'w92:p1' || pane === 'w91:p1'
+        ? (pane === 'w91:p1' ? { shell: 420, foreground: [420, 421] } : { shell: 410, foreground: [410, 411] })
+        : { shell: 700, foreground: [700, 701] };
+    let codexPane = '';
+    let pasted = false;
+    let typed = '';
+    const boxed = () => {
+      const [first = '', ...rest] = wrappedRows(typed);
+      return matched.replace('› Ask Codex to do anything', [`› ${first}`, ...rest.map((line) => `  ${line}`)].join('\n'));
+    };
+    let status = 'idle';
+    made.launch.agentStatus = () => status;
+    made.launch.agents = () => {
+      if (made.closes.includes('w92')) {
+        return (made.launch.agentPanes('acme-web') ?? []).map((pane) => ({
+          name: null, agent: 'codex', pane, workspace: pane.split(':')[0] ?? pane, status: 'idle', cwd: null,
+        }));
+      }
+      return [lead(), codex()];
+    };
+    const read = made.launch.paneText;
+    made.launch.paneText = (session, pane) => {
+      if (pane === 'w92:p1') return unsent;
+      if (pane === 'w91:p1') return IDLE;
+      if (pane === codexPane) return pasted ? boxed() : matched;
+      return read(session, pane);
+    };
+    made.launch.typeText = (_session, pane, text) => { codexPane = pane; typed = text; pasted = true; return true; };
+    made.launch.pressEnter = () => { status = 'working'; pasted = false; return true; };
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(
+      FILE,
+      io,
+      sources({ sessionState: () => 'running', agents: () => [lead(), codex()], doctor: doctor() }, made),
+    );
+    expect(code).toBe(0);
+    expect(made.closes).toEqual(['w92']);
+    expect(io.out).toContain('codex-acme: ready\n');
+    expect(io.err).toContain('  its model drifted; closed without input and launched again\n');
+    expect(io.out).toContain('claude-coordinator-acme: ready\n');
+    expect(io.err).toContain('  already ready; left as it is\n');
+    const seat = readState(join(root, '.agents')).sessions['acme-web']?.seats['codex-acme'];
+    expect(seat).toMatchObject({ stage: 'ready', pane: 'w1:p1' });
+    expect(seat?.pane).not.toBe('w92:p1');
+  });
+
+  test('a model that matches again before the close is left as it is', async () => {
+    readyState();
+    await approve();
+    const made = world();
+    made.session = 'running';
+    made.launch.processInfo = (_session, pane) => {
+      if (pane === 'w91:p1') return { shell: 420, foreground: [420, 421] };
+      if (pane === 'w92:p1') return { shell: 410, foreground: [410, 411] };
+      return { shell: 700, foreground: [700, 701] };
+    };
+    let seen = 0;
+    made.launch.paneText = (_session, pane) => {
+      if (pane !== 'w92:p1') return IDLE;
+      seen += 1;
+      return seen === 1 ? terra() : fileModel(terra());
+    };
+    made.launch.agents = () => [lead(), codex()];
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(
+      FILE,
+      io,
+      sources({ sessionState: () => 'running', agents: () => [lead(), codex()], doctor: doctor() }, made),
+    );
+    expect(code).toBe(0);
+    expect(made.closes).toEqual([]);
+    expect(io.out).toContain('codex-acme: left out: its model matches the file again; left as it is\n');
+  });
+
+  test('a seat that is working at the close is not closed', async () => {
+    readyState();
+    await approve();
+    const made = world();
+    made.session = 'running';
+    made.launch.processInfo = (_session, pane) => {
+      if (pane === 'w91:p1') return { shell: 420, foreground: [420, 421] };
+      if (pane === 'w92:p1') return { shell: 410, foreground: [410, 411] };
+      return { shell: 700, foreground: [700, 701] };
+    };
+    made.launch.paneText = (_session, pane) => (pane === 'w92:p1' ? terra() : IDLE);
+    made.launch.agents = () => [lead(), codex('working')];
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(
+      FILE,
+      io,
+      sources({ sessionState: () => 'running', agents: () => [lead(), codex()], doctor: doctor() }, made),
+    );
+    expect(code).toBe(1);
+    expect(made.closes).toEqual([]);
+    expect(io.out).toContain('codex-acme: left out: its model drifted; left as it is (team remove codex-acme --abandon)\n');
+  });
+
+  test('an unreadable screen at the close closes nothing', async () => {
+    readyState();
+    await approve();
+    const made = world();
+    made.session = 'running';
+    made.launch.processInfo = (_session, pane) => {
+      if (pane === 'w91:p1') return { shell: 420, foreground: [420, 421] };
+      if (pane === 'w92:p1') return { shell: 410, foreground: [410, 411] };
+      return { shell: 700, foreground: [700, 701] };
+    };
+    let seen = 0;
+    made.launch.paneText = (_session, pane) => {
+      if (pane !== 'w92:p1') return IDLE;
+      seen += 1;
+      return seen === 1 ? terra() : null;
+    };
+    made.launch.agents = () => [lead(), codex()];
+    const io = testIo(root, { kind: 'owner' });
+    const code = await runUp(
+      FILE,
+      io,
+      sources({ sessionState: () => 'running', agents: () => [lead(), codex()], doctor: doctor() }, made),
+    );
+    expect(code).toBe(1);
+    expect(made.closes).toEqual([]);
+    expect(io.out).toContain('codex-acme: left out: its pane could not be read; nothing closed\n');
+  });
+});
