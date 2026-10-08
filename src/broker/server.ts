@@ -234,16 +234,25 @@ async function takeOver(path: string): Promise<void> {
       await new Promise((tick) => setTimeout(tick, 20));
       return;
     }
-    // A live holder is never removed — unreachable in order, since the caller read a dead or
-    // aged entry and a create can land only behind an absent one — and a writer whose pid is
-    // still on its way keeps its entry, the young window's charge both times.
-    const holder = readPid(path);
-    const live = !Number.isNaN(holder) && alive(holder);
-    const landing = Number.isNaN(holder) && young(path);
-    if (!live && !landing) {
-      try {
-        unlinkSync(path);
-      } catch {}
+    // The judgement is anchored on the entry's existence, taken before the content is read:
+    // while this claim is held, a present entry can be neither removed — the other takers are
+    // claim-serialized and a release unlinks only its own identity- and pid-bound entry — nor
+    // replaced, a rival's create answering EEXIST against it, so an entry present here is
+    // exactly the one read and judged below. Taken after the read it would leave a sliver:
+    // `young` is false for a path already gone, so a NaN read of absence fell into the unlink,
+    // and a rival's create could land the freed name between that read and the unlink — the
+    // victim was the rival's fresh live lock, and two starts walked. A live holder is never
+    // removed (the check below), a writer whose pid is still on its way keeps its entry, and
+    // an absent path is nothing to clear: the claim drops and the create race arbitrates.
+    if (lstatSync(path, { throwIfNoEntry: false }) !== undefined) {
+      const holder = readPid(path);
+      const live = !Number.isNaN(holder) && alive(holder);
+      const landing = Number.isNaN(holder) && young(path);
+      if (!live && !landing) {
+        try {
+          unlinkSync(path);
+        } catch {}
+      }
     }
     try {
       unlinkSync(claim);
