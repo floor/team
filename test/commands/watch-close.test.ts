@@ -159,4 +159,20 @@ describe('the watch closes what its authority allows', () => {
     }));
     expect(removed).toEqual(['done']);
   });
+
+  // The real removal, not a stand-in. A stand-in never reaches the call, so it hid a close
+  // that named `io` without having it: the watch threw before the record could be dropped.
+  test('a merged worktree whose folder is already gone is removed by the real worktree removal', async () => {
+    updateState(join(dir, '.agents'), (state) => {
+      const session = (state.sessions.acme ??= emptySession());
+      session.worktrees.done = { path: 'work/done', branch: 'fix/done', own_commits: true, setup: 'ok' };
+    });
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file, '--no-nudge'], io, sources({
+      readEnd: () => ({ kind: 'merged', verdict: 'merged', detail: 'its own commits are in the base', ownNow: 0 }),
+    }));
+    expect(readState(join(dir, '.agents')).sessions.acme?.worktrees.done).toBeUndefined();
+    expect(io.out).toContain('removed the record of done; its folder was already gone');
+    expect(io.out).not.toContain('worktree done was not removed');
+  });
 });
