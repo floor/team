@@ -28,7 +28,27 @@ export type TaskRead =
 
 export type TaskReadInput = { root: string; path: string };
 
+export type TaskClaimInput = {
+  root: string;
+  path: string;
+  record: TaskRecord;
+  seat: string;
+  pane: string;
+  now: number;
+};
+
+/** `held` prints the record and writes no local lease. `busy` is skipped, the way a live lease is. */
+export type TaskClaimResult = { kind: 'held' } | { kind: 'busy' };
+
+export type TaskReleaseInput = { root: string; seat: string; pane: string; now: number };
+
+export type TaskReleaseResult = { kind: 'released'; id: string } | { kind: 'none' };
+
 export interface TaskAdapter {
   name: string;
   read(input: TaskReadInput): TaskRead;
+  /** Absent on the file adapter: the local lease runs. A tracker claim does not also write one. */
+  claim?(input: TaskClaimInput): TaskClaimResult;
+  /** Absent on the file adapter: the local lease file is released. */
+  release?(input: TaskReleaseInput): TaskReleaseResult;
 }

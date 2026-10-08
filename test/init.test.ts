@@ -230,6 +230,7 @@ describe('team init', () => {
     expect(existsSync(join(project, '.gitignore'))).toBe(false);
     expect(readFileSync(join(project, '.git', 'info', 'exclude'), 'utf8')).toContain('.agents/team.yaml\n');
     expect(readFileSync(join(project, '.git', 'info', 'exclude'), 'utf8')).toContain('.agents/messages/\n');
+    expect(readFileSync(join(project, '.git', 'info', 'exclude'), 'utf8')).toContain('.agents/leases/\n');
   });
 
   test('a linked worktree shares the exclusion', async () => {

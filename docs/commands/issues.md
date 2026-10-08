@@ -10,7 +10,7 @@ When a broker is built, a broker under the same OS principal as the seat is inte
 authenticity. This command does not isolate anything.
 `title` and `description` are the owner's text. They are not scrubbed.
 The list is file order. A priority is shown and does not reorder.
-A listing is not a claim and not the intake rule. `team next` and `team plan` are not commands.
+A listing is not a claim and not the intake rule. `team plan` is not a command.
 `repos` and `needs` are shown when the file has them. They are not a grant, and they are not checked.
 The watch's ring is unchanged: `Team: run team messages`.
 

@@ -248,7 +248,14 @@ function piecesOf(line: string, rel: string): Piece[] {
   const raw: Piece[] = [];
   for (const chunk of chunks) {
     const parts = chunk.text.split(/\s+/).filter((part) => part.length > 0);
-    if (parts.length > 2) throw new Error(`${rel}: cannot read "${chunk.text}" in ${line}`);
+    if (parts.length > 2) {
+      // `team next [--mine | --release]` names two flags in one bracket. A pipe is the join, not a word.
+      if (!parts.every((part) => part === '|' || part.startsWith('--'))) throw new Error(`${rel}: cannot read "${chunk.text}" in ${line}`);
+      for (const part of parts) {
+        if (part !== '|') raw.push(piece(part, chunk.optional, rel, line));
+      }
+      continue;
+    }
     for (const part of parts) raw.push(piece(part, chunk.optional, rel, line));
   }
 

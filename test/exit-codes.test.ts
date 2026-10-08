@@ -20,6 +20,7 @@ import { runDown, type DownLaunch, type DownSources } from '../src/commands/down
 import { runInit } from '../src/commands/init.ts';
 import { plantMessage, runMessages, type MessagePayload } from '../src/commands/messages.ts';
 import { runIssues } from '../src/commands/issues.ts';
+import { runNext } from '../src/commands/next.ts';
 import { pr } from '../src/commands/pr.ts';
 import { runRemove, type RemoveSources } from '../src/commands/remove.ts';
 import { runStatus, type StatusSources } from '../src/commands/status.ts';
@@ -2564,6 +2565,55 @@ scene('issues.shape', async (place) => {
 });
 scene('issues.invocation', async (place) => show(await issued(place, ['extra']), 'unexpected'));
 scene('issues.not-a-repo', async (place) => show(await issued(place), 'not inside a git repository'), false);
+
+async function nexted(place: Place, argv: string[] = [], caller: Caller = leadSeat): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runNext(argv, io, { home: place.home }), out: io.out, err: io.err };
+}
+
+function recordLead(place: Place, pane = 'w1:p1'): void {
+  updateState(join(place.root, '.agents'), (state) => {
+    (state.sessions.acme ??= emptySession()).seats.lead = { stage: 'ready', pane };
+  });
+}
+
+scene('next.none', async (place) => {
+  write(place, TASKS);
+  writeFileSync(join(place.root, '.agents', 'tasks.yaml'), '[]\n');
+  recordLead(place);
+  return show(await nexted(place), 'nothing is takeable');
+});
+scene('next.released', async (place) => {
+  write(place, TASKS);
+  writeFileSync(join(place.root, '.agents', 'tasks.yaml'), '- id: m1\n  title: the task title\n');
+  recordLead(place);
+  await nexted(place);
+  return show(await nexted(place, ['--release']), 'released m1');
+});
+scene('next.taken', async (place) => {
+  write(place, TASKS);
+  writeFileSync(join(place.root, '.agents', 'tasks.yaml'), '- id: m1\n  title: the task title\n');
+  recordLead(place);
+  return show(await nexted(place), 'm1  the task title');
+});
+scene('next.caller', async (place) => {
+  write(place, TASKS);
+  return show(await nexted(place, [], owner), 'this call is owner');
+});
+scene('next.file', async (place) => show(await nexted(place), 'no team file'));
+scene('next.missing', async (place) => {
+  write(place, TASKS);
+  recordLead(place);
+  return show(await nexted(place), 'the task file is not there');
+});
+scene('next.shape', async (place) => {
+  write(place, TASKS);
+  writeFileSync(join(place.root, '.agents', 'tasks.yaml'), '- id: m1\n');
+  recordLead(place);
+  return show(await nexted(place), 'title is required');
+});
+scene('next.invocation', async (place) => show(await nexted(place, ['extra']), 'unexpected'));
+scene('next.not-a-repo', async (place) => show(await nexted(place), 'not inside a git repository'), false);
 
 const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed', 'answer.action', 'up.delegate-placement']);
 

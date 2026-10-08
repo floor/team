@@ -201,6 +201,15 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `messages.signature` | `messages` | 1 | the signature is not the message key's | `team messages` |
 | `messages.invocation` | `messages` | 2 | the invocation can't be read | `team messages extra` |
 | `messages.not-a-repo` | `messages` | 2 | not inside a git repository | `team messages` |
+| `next.none` | `next` | 0 | nothing to take or to release | `team next` |
+| `next.released` | `next` | 0 | the caller's lease was released | `team next --release` |
+| `next.taken` | `next` | 0 | a record was claimed, or the caller's live lease was renewed | `team next` |
+| `next.caller` | `next` | 1 | the caller is not a seat of this team on its recorded pane | `team next` |
+| `next.file` | `next` | 1 | the team file can't be read, or it declares no task source | `team next` |
+| `next.missing` | `next` | 1 | the task file is not there | `team next` |
+| `next.shape` | `next` | 1 | nothing was taken, and a record is not a task or the task file is not a list | `team next` |
+| `next.invocation` | `next` | 2 | the invocation can't be read | `team next extra` |
+| `next.not-a-repo` | `next` | 2 | not inside a git repository | `team next` |
 | `pr.passed` | `pr` | 0 | the pull request body passed | `team pr check body.md` |
 | `pr.refused` | `pr` | 1 | the pull request body was refused | `team pr check body.md` |
 | `pr.body` | `pr` | 2 | the pull request body can't be read | `team pr check missing.md` |
