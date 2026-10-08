@@ -7,7 +7,7 @@
 // afterBind true, afterClose false on both).
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer, connect, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -624,6 +624,55 @@ describe('the start protocol', () => {
       owner.kill();
     }
   });
+
+  test('a start\'s release leaves a lock a second start holds', async () => {
+    // The release-identity shape, deterministic: A is a real start held pre-listen by the
+    // fixture's listen hold (1500ms). Once A holds the lock, the same-principal removal the
+    // finding's own step uses drops that entry, and B — a real start, held the same way —
+    // creates its own lock in the free name. A's walk then lands and A's release runs while B
+    // is alive and still mid-section: the release must unlink only the entry A created, so B's
+    // lock survives A's exit — bytes and inode both. A release that unlinks the path
+    // unconditionally removes a live replacement's lock; this pin is red until the release is
+    // identity-bound. B's own walk, arriving after A bound, answers the pinned bind sentence;
+    // B's release then removes its own lock.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const a = startFixture(1500);
+    try {
+      await readyOf(a);
+      if (a.pid === undefined) throw new Error('the fixture has no pid');
+      // The lock naming A itself, not mere existence: the file exists a beat before its pid
+      // lands, and this pin needs A's section begun — the lock observably A's own.
+      await lockedBy(a);
+      expect(Number(readFileSync(lockPath, 'utf8').trim())).toBe(a.pid);
+      unlinkSync(lockPath);
+      const b = startFixture(1500);
+      try {
+        await readyOf(b);
+        if (b.pid === undefined) throw new Error('the fixture has no pid');
+        await lockedBy(b);
+        expect(Number(readFileSync(lockPath, 'utf8').trim())).toBe(b.pid);
+        const bEntry = lstatSync(lockPath);
+        expect((await outcomeOf(a)).kind).toBe('serving');
+        // A has left its section: B is alive, mid-section, and the lock at the path is still
+        // B's entry.
+        expect(existsSync(lockPath)).toBe(true);
+        if (existsSync(lockPath)) {
+          expect(Number(readFileSync(lockPath, 'utf8').trim())).toBe(b.pid);
+          expect(lstatSync(lockPath).ino).toBe(bEntry.ino);
+          expect(lstatSync(lockPath).dev).toBe(bEntry.dev);
+        }
+        expect((await outcomeOf(b)).kind).toBe('bind-failed');
+      } finally {
+        b.kill();
+      }
+    } finally {
+      a.kill();
+    }
+    expect(existsSync(lockPath)).toBe(false); // B's own release removed its own entry
+  }, 15000);
 
   test('a start lock a killed start left behind is taken over', async () => {
     // A start killed mid-section — the fixture SIGKILLed while it holds the lock and is still

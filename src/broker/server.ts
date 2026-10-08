@@ -26,7 +26,7 @@
 // `withLock` itself is untouched. A start whose wait
 // outlasts the deadline answers `locked`: refused, nothing cleared, nothing bound. The lock is
 // released when the listen lands and on every other way out of the section.
-import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer, connect, type Socket } from 'node:net';
 import { dirname, join } from 'node:path';
 import { anotherPaneRefusal, callerVerdict, noPaneRefusal, standingOf, type Caller } from '../caller.ts';
@@ -206,15 +206,24 @@ async function acquireStartLock(path: string): Promise<{ kind: 'held'; release: 
     try {
       const fd = openSync(path, 'wx');
       writeFileSync(fd, `${process.pid}\n`);
+      // The entry this create made, named by the fd itself: the release below unlinks the file
+      // at the path only while the path still holds this very entry. The shape that forces it:
+      // the entry removed and a second start's lock created in the free name while this holder
+      // is still mid-section — an unconditional unlink at release would kill the replacement,
+      // alive and still starting. A replacement is a different inode and is skipped: a lock
+      // this hold did not create is not this hold's to remove. fstat, not lstat — the fd is the
+      // entry itself.
+      const held = fstatSync(fd);
       closeSync(fd);
       return {
         kind: 'held',
-        // `withLock`'s own release: the file this hold created, gone. A dead holder never
-        // reaches here — its lock is taken over by the next start — and a live hold is never
-        // taken over, so the unlink is this hold's file.
+        // `withLock`'s own release, identity-bound: the file this hold created, gone. A dead
+        // holder never reaches here — its lock is taken over by the next start — and a live
+        // hold is never taken over, so in ordinary operation the entry at the path is this one.
         release: () => {
           try {
-            unlinkSync(path);
+            const current = lstatSync(path, { throwIfNoEntry: false });
+            if (current && current.dev === held.dev && current.ino === held.ino) unlinkSync(path);
           } catch {}
         },
       };
