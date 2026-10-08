@@ -365,6 +365,28 @@ describe('the start protocol', () => {
     expect(existsSync(path)).toBe(false);
   });
 
+  test('two concurrent starts against one stale socket leave one serving and one busy', async () => {
+    // The clear decision follows the identity of the entry the probe saw (dev+ino from the
+    // gate's lstat). Base: both starts probed the same stale file and both cleared and bound —
+    // two live handles on one path (rehearsed 20/20 rounds). Now the first to resume clears and
+    // binds; the second finds the entry changed, walks again, and reads the live answer — the
+    // pair rehearsed 20/20 rounds as exactly this one.
+    project();
+    record();
+    leaveStaleSocket();
+    const path = brokerSocket(root);
+    const start = () =>
+      startBroker({ root, team: teamOf(), read: () => Promise.resolve(records([{ id: 'm1', title: 't' }])), stderr: () => {} });
+    const outcomes = await Promise.all([start(), start()]);
+    expect(outcomes.map((outcome) => outcome.kind)).toEqual(['serving', 'busy']);
+    const started = outcomes[0];
+    if (started?.kind !== 'serving') throw new Error('the first start did not serve');
+    expect(started.cleared).toBe(true);
+    expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
+    await started.handle.close();
+    expect(existsSync(path)).toBe(false);
+  });
+
   test('a path that cannot bind is a line and exit 1, not a crash, and the file stays', async () => {
     // A regular file where the socket belongs: the lstat gate refuses the entry before any
     // probe, with the pinned bare sentence and the file untouched. The errno story is why the

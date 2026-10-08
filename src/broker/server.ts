@@ -2,9 +2,10 @@
 // recorded state, dispatch the read, apply the policy, answer one line. The start protocol has
 // three answers, pinned by the recon's probe under bun and node: a connect that succeeds means a
 // broker already answers (refuse, the caller's exit is nonzero); ECONNREFUSED means a socket
-// file left by an unclean death (unlink it, then bind); ENOENT means no file (bind). One lstat
-// stands before all three: a path that is not a socket is refused up front — never probed,
-// never unlinked (the ubuntu CI read that made this a pinned fork: run 37778336251). A clean
+// file left by an unclean death (unlink it — only when it is still the very entry the probe saw
+// — then bind); ENOENT means no file (bind). One lstat stands before all three: a path that is
+// not a socket is refused up front — never probed, never unlinked (the ubuntu CI read that made
+// this a pinned fork: run 37778336251). A clean
 // close removes the file — the runtime owns that, pinned under bun 1.4.2 and node v26.8.1
 // (afterBind true, afterClose false) — and a path that cannot bind is a refusal with a code,
 // never a crash (a regular file at the path fails under both runtimes: EADDRINUSE under bun,
@@ -54,63 +55,69 @@ const UNKNOWN_REQUEST = 'the request is not one this broker knows';
 /** What the seat hears when a read failed; the detail stays on the broker's terminal. */
 const FAILED_READ = 'the broker failed this read';
 
+/** A start that keeps losing the clear race re-walks the three answers this many times; the
+ *  bound ends on the pinned bare bind sentence instead of looping. */
+const START_WALKS = 8;
+
 export async function startBroker(input: StartBrokerInput): Promise<StartBrokerResult> {
   const path = brokerSocket(input.root);
-  // The entry, judged by lstat and not by an errno: only a socket belongs to the walk below, and
-  // a path holding anything else is refused here, with the pinned bind sentence, untouched —
-  // never probed, never unlinked, never bound over. CI's ubuntu runner is why this gate is
-  // first (run 37778336251: a regular file answered ECONNREFUSED — Linux's answer where macOS
-  // reads ENOTSOCK, myself: bun 1.4.2 + node v26.8.1 — the stale branch then cleared the file
-  // and bound, the broker served, and both pinning tests timed out on a refusal that never
-  // came). A symlink is "anything else" too: nothing here follows a path someone else planted.
-  const entry = lstatSync(path, { throwIfNoEntry: false });
-  if (entry && !entry.isSocket()) return { kind: 'bind-failed' };
-  const probe = await probeSocket(path);
-  if (probe === 'live') return { kind: 'busy' };
-  let cleared = false;
-  if (probe === 'stale' && isSocketFile(path)) {
-    // The path names a socket nothing listens on: an unclean death left it (SIGKILL leaves the
-    // file, a clean close does not — both pinned). Clear it, then bind. The re-check above is
-    // the gate of the same name; it fails only if the entry changed between the gate and here,
-    // and then the bind below answers.
-    try {
-      unlinkSync(path);
-      cleared = true;
-    } catch {
-      // The bind below answers with its own code.
+  for (let walk = 0; walk < START_WALKS; walk++) {
+    // The entry, judged by lstat and not by an errno: only a socket belongs to the walk below,
+    // and a path holding anything else is refused here, with the pinned bind sentence, untouched
+    // — never probed, never unlinked, never bound over. CI's ubuntu runner is why this gate is
+    // first (run 37778336251: a regular file answered ECONNREFUSED — Linux's answer where macOS
+    // reads ENOTSOCK, myself: bun 1.4.2 + node v26.8.1 — the stale branch then cleared the file
+    // and bound, the broker served, and both pinning tests timed out on a refusal that never
+    // came). A symlink is "anything else" too: nothing here follows a path someone else planted.
+    const entry = lstatSync(path, { throwIfNoEntry: false });
+    if (entry && !entry.isSocket()) return { kind: 'bind-failed' };
+    const probe = await probeSocket(path);
+    if (probe === 'live') return { kind: 'busy' };
+    let cleared = false;
+    if (probe === 'stale') {
+      // The path named a socket nothing listens on: an unclean death left it (SIGKILL leaves
+      // the file, a clean close does not — both pinned). Only that very entry is cleared: the
+      // identity captured at the gate above (dev+ino, lstat and never stat — nothing here
+      // follows a path someone else could have planted) must still be the entry here. Between
+      // the probe and this point a sibling start may have cleared the stale file and bound its
+      // own socket; clearing by type alone removed that fresh socket and bound over it, two
+      // live handles on one path (two concurrent starts, pinned: exactly one serving). A
+      // changed entry is never unlinked — the walk reads it instead, and its own three answers
+      // decide.
+      const current = lstatSync(path, { throwIfNoEntry: false });
+      if (!entry || !current || current.dev !== entry.dev || current.ino !== entry.ino) continue;
+      try {
+        unlinkSync(path);
+        cleared = true;
+      } catch {
+        // Gone under us between the identity check and the unlink: walk again rather than bind
+        // over an entry that is not the one the probe saw.
+        continue;
+      }
     }
+    const sockets = new Set<Socket>();
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.once('close', () => sockets.delete(socket));
+      serve(socket, input);
+    });
+    const failure = await new Promise<{ code?: string } | null>((done) => {
+      server.once('error', (error) => done({ code: (error as NodeJS.ErrnoException).code }));
+      server.listen(path, () => done(null));
+    });
+    if (failure) return { kind: 'bind-failed', code: failure.code };
+    // A later server-level error must not take the broker down silently.
+    server.on('error', (error) => input.stderr(`team broker: ${error.message}\n`));
+    const handle: BrokerHandle = {
+      close: () =>
+        new Promise<void>((done) => {
+          for (const socket of sockets) socket.destroy();
+          server.close(() => done());
+        }),
+    };
+    return { kind: 'serving', cleared, handle };
   }
-  const sockets = new Set<Socket>();
-  const server = createServer((socket) => {
-    sockets.add(socket);
-    socket.once('close', () => sockets.delete(socket));
-    serve(socket, input);
-  });
-  const failure = await new Promise<{ code?: string } | null>((done) => {
-    server.once('error', (error) => done({ code: (error as NodeJS.ErrnoException).code }));
-    server.listen(path, () => done(null));
-  });
-  if (failure) return { kind: 'bind-failed', code: failure.code };
-  // A later server-level error must not take the broker down silently.
-  server.on('error', (error) => input.stderr(`team broker: ${error.message}\n`));
-  const handle: BrokerHandle = {
-    close: () =>
-      new Promise<void>((done) => {
-        for (const socket of sockets) socket.destroy();
-        server.close(() => done());
-      }),
-  };
-  return { kind: 'serving', cleared, handle };
-}
-
-/** The only shape the start walk may clear: a socket file. lstat, never stat — a symlink is left
- *  where it is too, and nothing here follows a path someone else could have planted. */
-function isSocketFile(path: string): boolean {
-  try {
-    return lstatSync(path).isSocket();
-  } catch {
-    return false;
-  }
+  return { kind: 'bind-failed' };
 }
 
 type Probe = 'live' | 'stale' | 'none';
