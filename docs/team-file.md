@@ -24,10 +24,15 @@ tasks:
 - `source` must be `file`. No other source is built. There is no tracker and no broker.
 - `path` is relative to the checkout and must stay inside it. An absolute path, a `~` path, or a
   `..` that leaves the checkout is refused: `tasks.path must stay inside the checkout`.
-- Any other key, including `policy`, `cadence`, and `fallback`, is an unknown field.
+- `pull` is optional: `self` or `any`. Omitted, `team next` treats it as `self` and the parsed
+  section does not gain the key. Any other value is `tasks.pull must be self or any`.
+- `fallback` is optional: `file` or `id`. It orders records that have no priority. Omitted, those
+  records keep file order. It does not reorder a record that has a priority. Any other value is
+  `tasks.fallback must be file or id`.
+- Any other key, including `policy` and `cadence`, is an unknown field.
 
-The file at `path` is a YAML list of task records. `team issues` reads it. Nothing in this build
-writes it.
+The file at `path` is a YAML list of task records. `team issues` reads it. `team next` claims one
+record from it. Nothing in this build writes it.
 
 ## `delegates`
 

@@ -23,14 +23,16 @@ export const tasks: Section = {
     properties: {
       source: { const: 'file' },
       path: { type: 'string', minLength: 1, $comment: 'relative to the checkout, and it must stay inside it' },
+      pull: { enum: ['self', 'any'] },
+      fallback: { enum: ['file', 'id'] },
     },
-    $comment: 'one file adapter. source other than file, and a path that leaves the checkout, are refused',
+    $comment: 'one file adapter. pull is self or any; fallback is file or id. source other than file, and a path that leaves the checkout, are refused',
   },
 };
 
 function readTasks(entry: YamlEntry | undefined, ctx: Ctx): TeamFile['tasks'] {
   if (!entry) return null;
-  const fields = ctx.check.fields(entry.value, 'tasks', ['source', 'path']);
+  const fields = ctx.check.fields(entry.value, 'tasks', ['source', 'path', 'pull', 'fallback']);
   if (entry.value.kind !== 'map') return null;
   const source = text(fields.get('source'));
   if (source !== 'file') {
@@ -39,10 +41,25 @@ function readTasks(entry: YamlEntry | undefined, ctx: Ctx): TeamFile['tasks'] {
   const path = text(fields.get('path'));
   if (!path || !taskPathStaysInside(path, ctx.rootDir)) {
     ctx.check.fail(fields.get('path')?.value.line ?? entry.value.line, 'tasks.path must stay inside the checkout');
-    return null;
   }
-  if (source !== 'file') return null;
-  return { source: 'file', path };
+  const pull = choice(fields.get('pull'), ['self', 'any'] as const, 'tasks.pull must be self or any', ctx);
+  const fallback = choice(fields.get('fallback'), ['file', 'id'] as const, 'tasks.fallback must be file or id', ctx);
+  if (source !== 'file' || !path || !taskPathStaysInside(path, ctx.rootDir)) return null;
+  if (fields.get('pull') && pull === undefined) return null;
+  if (fields.get('fallback') && fallback === undefined) return null;
+  const tasks: NonNullable<TeamFile['tasks']> = { source: 'file', path };
+  if (pull) tasks.pull = pull;
+  if (fallback) tasks.fallback = fallback;
+  return tasks;
+}
+
+/** An omitted key stays omitted. A present key must be one of `allowed`. */
+function choice<T extends string>(entry: YamlEntry | undefined, allowed: readonly T[], message: string, ctx: Ctx): T | undefined {
+  if (!entry) return undefined;
+  const value = text(entry);
+  if (value !== undefined && (allowed as readonly string[]).includes(value)) return value as T;
+  ctx.check.fail(entry.value.line, message);
+  return undefined;
 }
 
 function text(entry: YamlEntry | undefined): string | undefined {
