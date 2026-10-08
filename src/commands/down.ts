@@ -10,6 +10,7 @@ import {
   agentList,
   agentStatus,
   paneForeground,
+  paneForegroundCwd,
   paneRead,
   sendKey,
   sessionDelete,
@@ -32,7 +33,7 @@ import { approvalStanding } from '../store/store.ts';
 import { profileFor } from '../profiles/index.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
-import { readScreen, type Screen } from '../watch/screen.ts';
+import { readScreen, type Screen, type ScreenOptions } from '../watch/screen.ts';
 
 // What `down` reads from outside the file, so tests can stand in for it.
 export type DownSources = {
@@ -40,13 +41,15 @@ export type DownSources = {
   agents(session: string): HerdrAgent[] | null;
   alive(pid: number): boolean;
   /** Herdr's status is not enough: a permission prompt is reported as idle. */
-  screen(session: string, pane: string, cli: string): Screen;
+  screen(session: string, pane: string, cli: string, cwd?: string | null): Screen;
   /** The pane's raw text, for reading the input box back before any Enter. */
   screenText(session: string, pane: string, cli: string): string | undefined;
   /** Herdr's own status for the pane. The Enter waits for idle or done. */
   status(session: string, pane: string): string | null;
   /** Foreground argv0 names, or null when the pane can't be read. */
   foreground(session: string, pane: string): string[] | null;
+  /** Foreground live working directory, or null when the pane can't be read. */
+  foregroundCwd?(session: string, pane: string): string | null;
   now(): Date;
   sleep?(ms: number): Promise<void>;
   /** Approval store home. The real command uses the owner's home. */
@@ -115,12 +118,16 @@ export const realSources: DownSources = {
       return false;
     }
   },
-  screen(session, pane, cli) {
-    return readScreen(cli, paneRead(pane, 200, aim(session)) ?? undefined);
+  screen(session, pane, cli, cwd) {
+    return readScreen(cli, paneRead(pane, 200, aim(session)) ?? undefined, {
+      cwd: cwd ?? undefined,
+      home: homedir(),
+    });
   },
   screenText: (session, pane) => paneRead(pane, 200, aim(session)) ?? undefined,
   status: (session, pane) => agentStatus(pane, aim(session)),
   foreground: (session, pane) => paneForeground(pane, aim(session)),
+  foregroundCwd: (session, pane) => paneForegroundCwd(pane, aim(session)),
   now: () => new Date(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   home: homedir(),
@@ -168,6 +175,8 @@ export type ExitIo = {
   screen(): string | undefined;
   status(): string | null;
   foreground(): string[] | null;
+  foregroundCwd?(): string | null;
+  home?: string;
   sleep(ms: number): Promise<void>;
   now(): number;
 };
@@ -192,15 +201,20 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
     const status = io.status();
     return status === 'idle' || status === 'done';
   };
+  const screenOpts = (): ScreenOptions => ({
+    cwd: io.foregroundCwd ? io.foregroundCwd() : undefined,
+    home: io.home,
+  });
   // One reading of the pane, as text: the kind and the box both come from it, so they cannot
   // disagree. A screen that is not the CLI's composer — a dialog over it, a shell after it —
   // never reaches a key.
-  const kindOf = () => readScreen(cli, io.screen()).kind;
+  const kindOf = () => readScreen(cli, io.screen(), screenOpts()).kind;
+  const holds = () => boxHoldsText(cli, text, io.screen(), screenOpts());
   // The reading that decides a key, waiting out the pane's late drawing — the one wait the exit
   // typing, the watch's nudge and delivery share (settleScreen in launch/deliver.ts).
   const settle = (undrawn: Screen['kind']): Promise<Screen['kind']> => settleScreen(undrawn, kindOf, io);
   const otherRow = (): string => {
-    const other = boxHoldsOther(cli, text, io.screen());
+    const other = boxHoldsOther(cli, text, io.screen(), screenOpts());
     if (other === null) return '';
     return ` (first row that differs: ${other === '' ? 'a blank row' : other})`;
   };
@@ -209,7 +223,16 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // row is an ordinary question and gets nothing. A question the profile cannot confirm, or
   // one that stays after the key, is reported at once: the seat could not be stopped by asking.
   const sendExit = async (): Promise<ExitTyping> => {
-    if (!io.pressEnter()) return false;
+    if (!live()) return 'no-agent';
+    if (!resting()) {
+      return { left: 'its exit was not confirmed; the exit text was typed and not sent; left running' };
+    }
+    if (kindOf() !== 'unsent' || !holds()) {
+      return { left: 'its exit was not confirmed; the exit text was typed and not sent; left running' };
+    }
+    if (!io.pressEnter()) {
+      return { left: 'its exit was not confirmed; the exit text was typed and not sent; left running' };
+    }
     const confirm = profileFor(cli)?.exitConfirm ?? null;
     const deadline = io.now() + DRAW_WAIT_MS;
     let confirmed = false;
@@ -247,11 +270,13 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // or the refusal that sent the seat here says so in its own line.
   const start = kindOf();
   if (start !== 'idle') {
-    if (start !== 'unsent' || !boxHoldsText(cli, text, io.screen())) return false;
+    if (start !== 'unsent' || !holds()) return false;
     const key = profileFor(cli)?.exitClear ?? null;
     // The caller check first: a CLI gone at this key is `no-agent` whether or not the profile
     // carries a clearing key, and "not typed" is for a key-less profile the CLI is still on.
     if (!live()) return 'no-agent';
+    if (!resting()) return false;
+    if (kindOf() !== 'unsent') return false;
     if (key === null) return false;
     if (!io.sendKey(key)) return false;
     const after = await settle('unsent');
@@ -268,7 +293,7 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // An idle screen right after the typing is the text not rendered yet, not an empty box; the
   // wait settles that before the comparison. Only a box that reads back as exactly the typed
   // text gets the Enter.
-  if (boxHoldsText(cli, text, io.screen())) return sendExit();
+  if (holds()) return sendExit();
   const kind = await settle('idle');
   // The wait is a window the pane's state can change in — the CLI can go, a turn can start —
   // so the caller check is taken again here, before the Enter this reading leads to.
@@ -285,7 +310,7 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
     if (!dialog) return false;
     return { left: `its exit was not confirmed; the screen was reading ${kind} before the Enter; left running` };
   }
-  if (boxHoldsText(cli, text, io.screen())) return sendExit();
+  if (holds()) return sendExit();
   if (kind === 'idle') {
     return { left: 'its exit was not confirmed; the pane never drew the typed text; its box is empty; left running' };
   }
@@ -293,13 +318,14 @@ export async function typeExit(io: ExitIo, cli: string, text: string): Promise<E
   // every other key.
   if (!live()) return 'no-agent';
   if (!resting()) return false;
+  if (kindOf() !== 'unsent') return false;
   const key = profileFor(cli)?.exitClear ?? null;
   if (key === null) {
-    return boxHoldsText(cli, text, io.screen())
+    return holds()
       ? { left: 'its exit was not confirmed; the text was left in its box; the owner clears it in its pane' }
       : { left: `its exit was not confirmed; its box was left holding other text${otherRow()}; the owner clears it in its pane` };
   }
-  if (!boxHoldsText(cli, text, io.screen())) {
+  if (!holds()) {
     return { left: `its exit was not confirmed; its box holds text that is not only the exit text${otherRow()}; nothing more was sent; left running` };
   }
   if (!io.sendKey(key)) {
@@ -549,7 +575,8 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     while (sleep && sources.now().getTime() < deadline) {
       const waiting = agents.some((agent) => {
         if (!agent.name) return false;
-        return stateOf(agent.status, sources.screen(session, agent.pane, cliFor(agent.name))) === 'working';
+        const liveCwd = sources.foregroundCwd ? sources.foregroundCwd(session, agent.pane) : null;
+        return stateOf(agent.status, sources.screen(session, agent.pane, cliFor(agent.name), liveCwd)) === 'working';
       });
       if (!waiting) break;
       const before = sources.now().getTime();
@@ -570,14 +597,15 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     }
     const cli = cliFor(agent.name);
     const profile = profileFor(cli);
-    const shown = sources.screen(session, agent.pane, cli);
+    const liveCwd = sources.foregroundCwd ? sources.foregroundCwd(session, agent.pane) : null;
+    const shown = sources.screen(session, agent.pane, cli, liveCwd);
     const state = stateOf(agent.status, shown);
     // An unsent box that holds exactly the profile's exit text — an earlier run typed it and
     // never confirmed it — is named as such either way: the profile's one clearing key decides
     // whether this run empties it and asks again (the plan's run step) or the owner does (its
     // skip line). Anything else unsent keeps the ordinary unsent line.
     const exitInBox = state === 'unsent' && profile !== null
-      && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli));
+      && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli), { cwd: liveCwd ?? undefined, home: sources.home });
     seats.push({
       name: agent.name,
       cli,
@@ -676,6 +704,8 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
           screen: () => sources.screenText(sessionName, pane, cli),
           status: () => sources.status(sessionName, pane),
           foreground: () => sources.foreground(sessionName, pane),
+          foregroundCwd: () => (sources.foregroundCwd ? sources.foregroundCwd(sessionName, pane) : null),
+          home: sources.home,
           sleep: sources.sleep ?? launch.sleep,
           now: () => sources.now().getTime(),
         }, cli, text);

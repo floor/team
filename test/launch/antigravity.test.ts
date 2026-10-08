@@ -51,6 +51,33 @@ describe('Antigravity launch and captured screens', () => {
     expect(readScreen('antigravity', screen).kind).toBe('permission');
   });
 
+  test('working screen witnesses recognise thinking preview, tool execution, and active command execution', () => {
+    // Thinking preview with spinner
+    const thinking = fixture('idle').replace('─────────────────────────────────────────────────────\n>', '⣟  The request involves running a sleep 4 command...\n─────────────────────────────────────────────────────\n>');
+    expect(readScreen('antigravity', thinking).kind).toBe('working');
+
+    // Tool execution with spinner and running command
+    const toolRun = fixture('idle').replace('─────────────────────────────────────────────────────\n>', '○ Thought for 3.5s\n● Running (sleep 4)\n⢿  Running command...\n─────────────────────────────────────────────────────\n>');
+    expect(readScreen('antigravity', toolRun).kind).toBe('working');
+
+    // Active tool execution without spinner
+    const activeTool = fixture('idle').replace('─────────────────────────────────────────────────────\n>', '● Running (sleep 4)\n─────────────────────────────────────────────────────\n>');
+    expect(readScreen('antigravity', activeTool).kind).toBe('working');
+
+    // Token streaming with Generating indicator
+    const streaming = fixture('idle').replace('─────────────────────────────────────────────────────\n>', '⣻  Generating...\n─────────────────────────────────────────────────────\n>');
+    expect(readScreen('antigravity', streaming).kind).toBe('working');
+  });
+
+  test('the exit screen with slash-menu and esc to cancel footer reads unsent, not working', () => {
+    // Right after typing /exit, the screen carries the slash completion popup with the esc footer.
+    // Because esc to cancel is chrome and omitted from working rules, it correctly evaluates as unsent.
+    const exitScreen = fixture('exit-typed');
+    expect(exitScreen).toContain('esc to cancel');
+    expect(readScreen('antigravity', exitScreen).kind).toBe('unsent');
+    expect(boxHoldsText('antigravity', '/exit', exitScreen)).toBe(true);
+  });
+
   test('unknown, shell and unobserved dialogs never count as idle', () => {
     for (const screen of [
       undefined,

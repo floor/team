@@ -117,7 +117,15 @@ screen:
         patterns:
           - '^>\s*$'
   working:
-    - any: ['\bGenerating\.\.\.']
+    - any:
+        # Generation indicator
+        - '\bGenerating\.\.\.'
+        # Whole braille block with optional leading spaces (thinking preview & tool spinners)
+        - '^\s*[⠀-⣿]'
+        # Command execution (supports leading spinner or bare prompt)
+        - '\bRunning command\.\.\.'
+        # Active tool execution
+        - '^\s*●\s+Running\b'
   composer:
     mode: two-rules-footer-below
     ignore_case: true

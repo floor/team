@@ -28,6 +28,28 @@ const FLOOR_PHRASES = ['do you want to', 'esc to cancel', 'enter confirm', 'ente
 
 export type ReadClock = { now(): number; budgetMs: number };
 
+export type ScreenOptions = {
+  cwd?: string | null;
+  home?: string;
+  clock?: ReadClock;
+};
+
+function screenClock(options?: ScreenOptions | ReadClock): ReadClock | undefined {
+  if (!options) return undefined;
+  if ('now' in options || 'budgetMs' in options) return options as ReadClock;
+  return options.clock;
+}
+
+function screenExpectedCwd(options?: ScreenOptions | ReadClock): string | null | undefined {
+  if (!options || 'now' in options || 'budgetMs' in options) return undefined;
+  return options.cwd;
+}
+
+function screenHome(options?: ScreenOptions | ReadClock): string | undefined {
+  if (!options || 'now' in options || 'budgetMs' in options) return undefined;
+  return options.home;
+}
+
 /**
  * The furthest the `  →` input row may sit above the status row. Measured over every Cursor
  * fixture that draws a composer — the idle, startup, unsent, working, thinking, queue and typed
@@ -83,6 +105,8 @@ function statusIndex(
   lines: string[],
   allowOneTrailing: boolean,
   tick: () => boolean,
+  expectedCwd?: string | null,
+  home?: string,
 ): number | 'stop' {
   for (let i = lines.length - 1; i >= 0; i--) {
     if (tick()) return 'stop';
@@ -93,7 +117,18 @@ function statusIndex(
     }
     const trailing = lines.slice(i + 1).filter((line) => line.trim());
     if (allowOneTrailing) {
-      if (trailing.length > 0 && (trailing.length > 1 || composer.prompt.test(trailing[0] ?? ''))) return -1;
+      if (trailing.length === 0) return i;
+      if (trailing.some((line) => composer.prompt.test(line))) return -1;
+      if (trailing.length === 1) return i;
+      // Multiple trailing lines: whole-line grammar matching foreground_cwd
+      if (expectedCwd) {
+        let joined = trailing.map((l) => l.trim()).join('');
+        if (home && (joined === '~' || joined.startsWith('~/'))) {
+          joined = home.replace(/\/+$/, '') + joined.slice(1);
+        }
+        if (joined === expectedCwd) return i;
+      }
+      return -1;
     } else if (trailing.length > 0) return -1;
     return i;
   }
@@ -105,10 +140,10 @@ function statusIndex(
  * window shows none. A dialog, a transcript line, the input box — anything the seat printed or
  * typed — is never the row. The caller still has to know the screen is a composer screen.
  */
-export function statusRowOf(data: ScreenData, lines: string[]): string | null {
+export function statusRowOf(data: ScreenData, lines: string[], options?: ScreenOptions): string | null {
   const composer = data.composer;
   if (composer.mode !== 'status-last' && composer.mode !== 'status-then-one') return null;
-  const at = statusIndex(composer, lines, composer.mode === 'status-then-one', () => false);
+  const at = statusIndex(composer, lines, composer.mode === 'status-then-one', () => false, options?.cwd, options?.home);
   return at === 'stop' || at < 0 ? null : (lines[at] ?? null);
 }
 
@@ -282,8 +317,11 @@ function kindOfStage(name: StageName): Screen['kind'] {
 }
 
 /** `lines` is already the window: the last 20 lines, each trimmed at the end. */
-export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClock): Screen {
+export function classifyLines(data: ScreenData, lines: string[], clockOrOptions?: ScreenOptions | ReadClock): Screen {
   try {
+    const clock = screenClock(clockOrOptions);
+    const expectedCwd = screenExpectedCwd(clockOrOptions);
+    const home = screenHome(clockOrOptions);
     const now = clock?.now ?? Date.now;
     const budget = clock?.budgetMs ?? BUDGET_MS;
     const start = now();
@@ -335,7 +373,7 @@ export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClo
       return { kind: composed.kind };
     }
 
-    const composed = compose(data, plain, lines, tick);
+    const composed = compose(data, plain, lines, tick, expectedCwd, home);
     if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
     if (composed.kind !== 'idle' && composed.kind !== 'unsent') return { kind: composed.kind };
     const marked = floorHits(plain, composed.from, composed.input, data.chrome, tick);
@@ -350,8 +388,11 @@ export function classifyLines(data: ScreenData, lines: string[], clock?: ReadClo
  * The composer alone, for a turn that is still running. The dialog stages and
  * floor must not be overridden by composer readings returning idle or unsent.
  */
-export function composeLines(data: ScreenData, lines: string[], clock?: ReadClock): Screen {
+export function composeLines(data: ScreenData, lines: string[], clockOrOptions?: ScreenOptions | ReadClock): Screen {
   try {
+    const clock = screenClock(clockOrOptions);
+    const expectedCwd = screenExpectedCwd(clockOrOptions);
+    const home = screenHome(clockOrOptions);
     const now = clock?.now ?? Date.now;
     const budget = clock?.budgetMs ?? BUDGET_MS;
     const start = now();
@@ -419,7 +460,7 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
       }
     }
 
-    const composed = compose(data, plain, lines, tick);
+    const composed = compose(data, plain, lines, tick, expectedCwd, home);
     if (composed.kind === 'stop' || composed.kind === 'unknown') return { kind: 'unknown' };
     if (composed.kind !== 'idle' && composed.kind !== 'unsent') return { kind: composed.kind };
     const marked = floorHits(plain, composed.from, composed.input, data.chrome, tick);
@@ -438,10 +479,10 @@ export function composeLines(data: ScreenData, lines: string[], clock?: ReadCloc
  * its one input row, the popup rows below it being its filter's to exclude. The caller compares
  * the box to the text it typed; nothing here decides that.
  */
-export function composerBox(data: ScreenData, lines: string[]): Box | null {
+export function composerBox(data: ScreenData, lines: string[], options?: ScreenOptions): Box | null {
   if (!data.composer || data.profile?.composer) return null;
   const plain = plainLines(lines);
-  const hit = compose(data, plain, lines, () => false);
+  const hit = compose(data, plain, lines, () => false, options?.cwd, options?.home);
   if (hit.kind === 'stop' || hit.kind === 'unknown') return null;
   if (hit.kind !== 'unsent') return null;
   const input = plain[hit.input] ?? '';
@@ -728,11 +769,18 @@ function matches(data: ScreenData, lines: string[], at: number, pattern: LinePat
 }
 
 /** `plain` is the window's plain form; `styled` the window itself, for the input line's dim question. */
-function compose(data: ScreenData, plain: string[], styled: string[], tick: () => boolean): Hit {
+function compose(
+  data: ScreenData,
+  plain: string[],
+  styled: string[],
+  tick: () => boolean,
+  expectedCwd?: string | null,
+  home?: string,
+): Hit {
   const composer = data.composer;
   if (composer.mode === 'box-to-rule') return boxToRule(plain, styled, composer, tick);
-  if (composer.mode === 'status-last') return statusLast(data, plain, styled, composer, tick, false);
-  if (composer.mode === 'status-then-one') return statusThenOne(data, plain, styled, composer, tick);
+  if (composer.mode === 'status-last') return statusLast(data, plain, styled, composer, tick, false, expectedCwd, home);
+  if (composer.mode === 'status-then-one') return statusThenOne(data, plain, styled, composer, tick, expectedCwd, home);
   return twoRules(plain, styled, composer, tick);
 }
 
@@ -825,8 +873,10 @@ function statusLast(
   composer: Extract<ScreenData['composer'], { mode: 'status-last' | 'status-then-one' }>,
   tick: () => boolean,
   allowOneTrailing: boolean,
+  expectedCwd?: string | null,
+  home?: string,
 ): Hit {
-  const status = statusIndex(composer, lines, allowOneTrailing, tick);
+  const status = statusIndex(composer, lines, allowOneTrailing, tick, expectedCwd, home);
   if (status === 'stop') return { kind: 'stop' };
   if (status < 0) return { kind: 'unknown' };
   // The input row is the lowest prompt row above the status line, and the box's top frame is
@@ -924,8 +974,16 @@ function statusLast(
   return { kind: placeholder(stripTyped(lines[input] ?? '', composer), composer, lines[input] ?? '', styled[input]) ? 'idle' : 'unsent', from: input, input, rows };
 }
 
-function statusThenOne(data: ScreenData, lines: string[], styled: string[], composer: Extract<ScreenData['composer'], { mode: 'status-then-one' }>, tick: () => boolean): Hit {
-  const found = statusLast(data, lines, styled, composer, tick, true);
+function statusThenOne(
+  data: ScreenData,
+  lines: string[],
+  styled: string[],
+  composer: Extract<ScreenData['composer'], { mode: 'status-then-one' }>,
+  tick: () => boolean,
+  expectedCwd?: string | null,
+  home?: string,
+): Hit {
+  const found = statusLast(data, lines, styled, composer, tick, true, expectedCwd, home);
   if (found.kind !== 'unknown') return found;
   // No status line: the fallback rules decide. Anything they don't name is unknown. A line
   // carrying the grammar but not in its place is text like any other here: it fails the read

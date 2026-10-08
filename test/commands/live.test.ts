@@ -4897,6 +4897,55 @@ describe('team down, live', () => {
     expect(io.out).toContain(`${seat}: shows a screen the profile does not recognise; left running\n`);
   });
 
+  test('a cursor seat with wrapped workspace path needs matching foregroundCwd to stop', async () => {
+    writeFileSync(join(root, '.agents/team.yaml'), CURSOR_DS);
+    const wrappedPane = [
+      '  Cursor Agent',
+      '  v2026.10.01-14929f9',
+      '  Tip: Use /plan to plan execution and reach the',
+      '  right outcome faster.',
+      '',
+      '',
+      '',
+      '  → Plan, search, build anything',
+      '',
+      '',
+      '  Grok 4.7 256K High                  Run Everything',
+      '  ~/live/',
+      '  dir',
+    ].join('\n');
+
+    // Case 1: foregroundCwd returns null -> skips fail-closed
+    {
+      const run = harness({ kind: 'idle' });
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runDown(FILE, io, run.sourcesOf({
+        foregroundCwd: () => null,
+        screen: (_session, _pane, cli, cwd) => readScreen(cli, wrappedPane, { cwd: cwd ?? undefined, home: '/Users/jvial' }),
+        screenText: () => wrappedPane,
+        agents: () => [{ ...agent('deepseek-acme', 'w3:p1', 'idle'), agent: 'cursor' }],
+      }));
+      expect(code).toBe(0);
+      expect(run.typed).toEqual([]);
+      expect(io.out).toContain('deepseek-acme: shows a screen the profile does not recognise; left running\n');
+    }
+
+    // Case 2: foregroundCwd returns differing start directory -> skips fail-closed
+    {
+      const run = harness({ kind: 'idle' });
+      const io = testIo(root, { kind: 'owner' });
+      const code = await runDown(FILE, io, run.sourcesOf({
+        foregroundCwd: () => '/Users/jvial/start/dir',
+        screen: (_session, _pane, cli, cwd) => readScreen(cli, wrappedPane, { cwd: cwd ?? undefined, home: '/Users/jvial' }),
+        screenText: () => wrappedPane,
+        agents: () => [{ ...agent('deepseek-acme', 'w3:p1', 'idle'), agent: 'cursor' }],
+      }));
+      expect(code).toBe(0);
+      expect(run.typed).toEqual([]);
+      expect(io.out).toContain('deepseek-acme: shows a screen the profile does not recognise; left running\n');
+    }
+  });
+
   test.each(['close-short', 'close-long', 'open-short'] as const)(
     'an Antigravity box whose two rules differ in width gets no exit Enter (%s)',
     async (shape) => {

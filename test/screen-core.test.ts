@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Screen } from '../src/watch/screen.ts';
-import { classify, classifyComposer, readScreen } from '../src/watch/screen.ts';
+import { classify, classifyComposer, readScreen, screenData } from '../src/watch/screen.ts';
 import { DialectError, compilePattern } from '../src/watch/dialect.ts';
-import { classifyLines } from '../src/watch/screen-core.ts';
+import { classifyLines, statusRowOf } from '../src/watch/screen-core.ts';
 import { loadScreen } from '../src/watch/screen-file.ts';
 import { YamlError } from '../src/yaml.ts';
 
@@ -1211,5 +1211,66 @@ ${steps}`;
     refuses(block(`        - one_of: '2. Stay'`), '"one_of" must name at least one alternative');
     refuses(block(`        - one_of:
             - '2. Stay'`), 'an alternative is a list of the rows it draws');
+  });
+});
+
+describe('status-then-one status row trailing path matching', () => {
+  const home = '/Users/jvial';
+  const liveDir = '/Users/jvial/.config/team/lobby';
+  const data = screenData('cursor');
+  if (!data) throw new Error('missing cursor data');
+
+  test('multiple trailing lines matching foreground_cwd with ~ expanded are recognized', () => {
+    const lines = [
+      '  Cursor Agent',
+      '  v2026.10.01',
+      '',
+      '  → Plan, search, build anything',
+      '',
+      '  Grok 4.7 256K High                  Run Everything',
+      '  ~/.config/team/',
+      '  lobby',
+    ];
+    expect(classifyLines(data, lines, { cwd: liveDir, home }).kind).toBe('idle');
+    expect(statusRowOf(data, lines, { cwd: liveDir, home })).toBe('  Grok 4.7 256K High                  Run Everything');
+
+    // Without options or with null cwd, fails closed to unknown
+    expect(classifyLines(data, lines).kind).toBe('unknown');
+    expect(classifyLines(data, lines, { cwd: null, home }).kind).toBe('unknown');
+    expect(statusRowOf(data, lines)).toBeNull();
+
+    // With differing cwd, fails closed to unknown
+    expect(classifyLines(data, lines, { cwd: '/Users/jvial/other', home }).kind).toBe('unknown');
+    expect(statusRowOf(data, lines, { cwd: '/Users/jvial/other', home })).toBeNull();
+  });
+
+  test('single prompt row in trailing lines rejects status row (reviewer-claude probe)', () => {
+    const lines = [
+      '  Cursor Agent',
+      '',
+      '  → Plan, search, build anything',
+      '',
+      '  Grok 4.7 256K High                  Run Everything',
+      '  → rm -rf build && deploy',
+    ];
+    // Must read unknown (never idle), both with and without cwd options
+    expect(classifyLines(data, lines, { cwd: liveDir, home }).kind).toBe('unknown');
+    expect(statusRowOf(data, lines, { cwd: liveDir, home })).toBeNull();
+    expect(classifyLines(data, lines).kind).toBe('unknown');
+    expect(statusRowOf(data, lines)).toBeNull();
+  });
+
+  test('prompt row in trailing lines rejects status row', () => {
+    const lines = [
+      '  Cursor Agent',
+      '',
+      '  → Plan, search, build anything',
+      '',
+      '  Grok 4.7 256K High                  Run Everything',
+      '  ~/.config/team/',
+      '  → malicious command',
+    ];
+    expect(classifyLines(data, lines, { cwd: liveDir, home }).kind).toBe('unknown');
+    expect(statusRowOf(data, lines, { cwd: liveDir, home })).toBeNull();
   });
 });
