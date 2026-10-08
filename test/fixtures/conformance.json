@@ -645,6 +645,13 @@
       "provenance": "capture"
     },
     {
+      "file": "codex/0.161.0/idle.txt",
+      "cli": "codex",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
       "file": "cursor/2026.10.01/bordered-after-exit.txt",
       "cli": "cursor",
       "classify": "unknown",
