@@ -53,6 +53,14 @@ export function applyPolicy(record: TaskRecord, policy?: TaskPolicy): TaskRecord
  *  `/`-separated segment, so the tracker's host never rides into the record. An id already
  *  bare is unchanged. */
 function bareId(id: string): string {
+  return bareRefusalId(id) ?? id;
+}
+
+/** The refusal side of the same rule: what a refusal's `id` crosses as. The id is the source's
+ *  own reference, not a credential, so the transform governs the refusal's id too (the broker
+ *  calls this where the read is filtered). An id with no segment to cross answers undefined —
+ *  the caller omits the id rather than sending the raw one. */
+export function bareRefusalId(id: string): string | undefined {
   const segments = id.split('/').filter((segment) => segment !== '');
-  return segments.at(-1) ?? id;
+  return segments.at(-1);
 }

@@ -2,9 +2,11 @@
 // recorded state, dispatch the read, apply the policy, answer one line. The start protocol has
 // three answers, pinned by the recon's probe under bun and node: a connect that succeeds means a
 // broker already answers (refuse, the caller's exit is nonzero); ECONNREFUSED means a socket
-// file left by an unclean death (unlink it, then bind); ENOENT means no file (bind). One lstat
-// stands before all three: a path that is not a socket is refused up front — never probed,
-// never unlinked (the ubuntu CI read that made this a pinned fork: run 37778336251). A clean
+// file left by an unclean death (unlink it — only when it is still the very entry the probe saw,
+// and only once that entry has answered stale twice with a turn between — then bind); ENOENT
+// means no file (bind). One lstat stands before all three: a path that is
+// not a socket is refused up front — never probed, never unlinked (the ubuntu CI read that made
+// this a pinned fork: run 37778336251). A clean
 // close removes the file — the runtime owns that, pinned under bun 1.4.2 and node v26.8.1
 // (afterBind true, afterClose false) — and a path that cannot bind is a refusal with a code,
 // never a crash (a regular file at the path fails under both runtimes: EADDRINUSE under bun,
@@ -18,7 +20,7 @@ import { join } from 'node:path';
 import { anotherPaneRefusal, callerVerdict, noPaneRefusal, standingOf, type Caller } from '../caller.ts';
 import type { TeamFile } from '../file/types.ts';
 import type { TaskRead, TaskRecord, TaskRefusal } from '../tasks/adapter.ts';
-import { applyPolicy, type TaskPolicy } from './policy.ts';
+import { applyPolicy, bareRefusalId, type TaskPolicy } from './policy.ts';
 import { MAX_ANSWER_BYTES, MAX_REQUEST_BYTES, brokerSocket, encodeLine, parseRequest, type BrokerAnswer, type BrokerRequest } from './protocol.ts';
 
 /** What one dispatch of the read produced: the adapter's read (with its notice, when the read
@@ -54,63 +56,87 @@ const UNKNOWN_REQUEST = 'the request is not one this broker knows';
 /** What the seat hears when a read failed; the detail stays on the broker's terminal. */
 const FAILED_READ = 'the broker failed this read';
 
+/** A start that keeps losing the clear race re-walks the three answers this many times; the
+ *  bound ends on the pinned bare bind sentence instead of looping. */
+const START_WALKS = 8;
+
+/** A stale answer is confirmed only when the same entry answers stale again after this turn:
+ *  a fresh sibling socket answers ECONNREFUSED for a moment before its owner's listen takes
+ *  effect (CI's ubuntu runner, run 37787613018: two concurrent starts both served — the second
+ *  probed the first's fresh socket "stale" where macOS already read it live). */
+const STALE_CONFIRM_MS = 50;
+
 export async function startBroker(input: StartBrokerInput): Promise<StartBrokerResult> {
   const path = brokerSocket(input.root);
-  // The entry, judged by lstat and not by an errno: only a socket belongs to the walk below, and
-  // a path holding anything else is refused here, with the pinned bind sentence, untouched —
-  // never probed, never unlinked, never bound over. CI's ubuntu runner is why this gate is
-  // first (run 37778336251: a regular file answered ECONNREFUSED — Linux's answer where macOS
-  // reads ENOTSOCK, myself: bun 1.4.2 + node v26.8.1 — the stale branch then cleared the file
-  // and bound, the broker served, and both pinning tests timed out on a refusal that never
-  // came). A symlink is "anything else" too: nothing here follows a path someone else planted.
-  const entry = lstatSync(path, { throwIfNoEntry: false });
-  if (entry && !entry.isSocket()) return { kind: 'bind-failed' };
-  const probe = await probeSocket(path);
-  if (probe === 'live') return { kind: 'busy' };
-  let cleared = false;
-  if (probe === 'stale' && isSocketFile(path)) {
-    // The path names a socket nothing listens on: an unclean death left it (SIGKILL leaves the
-    // file, a clean close does not — both pinned). Clear it, then bind. The re-check above is
-    // the gate of the same name; it fails only if the entry changed between the gate and here,
-    // and then the bind below answers.
-    try {
-      unlinkSync(path);
-      cleared = true;
-    } catch {
-      // The bind below answers with its own code.
+  // The entry the previous walk saw a stale answer on, awaiting a second sighting.
+  let confirmed: { dev: number; ino: number } | undefined;
+  for (let walk = 0; walk < START_WALKS; walk++) {
+    // The entry, judged by lstat and not by an errno: only a socket belongs to the walk below,
+    // and a path holding anything else is refused here, with the pinned bind sentence, untouched
+    // — never probed, never unlinked, never bound over. CI's ubuntu runner is why this gate is
+    // first (run 37778336251: a regular file answered ECONNREFUSED — Linux's answer where macOS
+    // reads ENOTSOCK, myself: bun 1.4.2 + node v26.8.1 — the stale branch then cleared the file
+    // and bound, the broker served, and both pinning tests timed out on a refusal that never
+    // came). A symlink is "anything else" too: nothing here follows a path someone else planted.
+    const entry = lstatSync(path, { throwIfNoEntry: false });
+    if (entry && !entry.isSocket()) return { kind: 'bind-failed' };
+    const probe = await probeSocket(path);
+    if (probe === 'live') return { kind: 'busy' };
+    let cleared = false;
+    if (probe === 'stale') {
+      // The path named a socket nothing listens on. Only that very entry may be cleared: the
+      // identity captured at the gate above (dev+ino, lstat and never stat — nothing here
+      // follows a path someone else could have planted) must still be the entry here, and it
+      // must have answered stale on the previous walk too, with a loop turn in between. An
+      // unclean death leaves the file (SIGKILL leaves it, a clean close does not — both
+      // pinned) and keeps answering stale; a sibling start's fresh socket answers stale only
+      // until its listen lands, so it is never cleared on one sighting. A changed entry is
+      // never unlinked — the walk reads it instead, and its own three answers decide.
+      const current = lstatSync(path, { throwIfNoEntry: false });
+      if (!entry || !current || current.dev !== entry.dev || current.ino !== entry.ino) {
+        confirmed = undefined;
+        continue;
+      }
+      if (!confirmed || confirmed.dev !== entry.dev || confirmed.ino !== entry.ino) {
+        confirmed = { dev: entry.dev, ino: entry.ino };
+        await new Promise<void>((done) => setTimeout(done, STALE_CONFIRM_MS));
+        continue;
+      }
+      confirmed = undefined;
+      try {
+        unlinkSync(path);
+        cleared = true;
+      } catch {
+        // Gone under us between the identity check and the unlink: walk again rather than bind
+        // over an entry that is not the one the probe saw.
+        continue;
+      }
+    } else {
+      confirmed = undefined;
     }
+    const sockets = new Set<Socket>();
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.once('close', () => sockets.delete(socket));
+      serve(socket, input);
+    });
+    const failure = await new Promise<{ code?: string } | null>((done) => {
+      server.once('error', (error) => done({ code: (error as NodeJS.ErrnoException).code }));
+      server.listen(path, () => done(null));
+    });
+    if (failure) return { kind: 'bind-failed', code: failure.code };
+    // A later server-level error must not take the broker down silently.
+    server.on('error', (error) => input.stderr(`team broker: ${error.message}\n`));
+    const handle: BrokerHandle = {
+      close: () =>
+        new Promise<void>((done) => {
+          for (const socket of sockets) socket.destroy();
+          server.close(() => done());
+        }),
+    };
+    return { kind: 'serving', cleared, handle };
   }
-  const sockets = new Set<Socket>();
-  const server = createServer((socket) => {
-    sockets.add(socket);
-    socket.once('close', () => sockets.delete(socket));
-    serve(socket, input);
-  });
-  const failure = await new Promise<{ code?: string } | null>((done) => {
-    server.once('error', (error) => done({ code: (error as NodeJS.ErrnoException).code }));
-    server.listen(path, () => done(null));
-  });
-  if (failure) return { kind: 'bind-failed', code: failure.code };
-  // A later server-level error must not take the broker down silently.
-  server.on('error', (error) => input.stderr(`team broker: ${error.message}\n`));
-  const handle: BrokerHandle = {
-    close: () =>
-      new Promise<void>((done) => {
-        for (const socket of sockets) socket.destroy();
-        server.close(() => done());
-      }),
-  };
-  return { kind: 'serving', cleared, handle };
-}
-
-/** The only shape the start walk may clear: a socket file. lstat, never stat — a symlink is left
- *  where it is too, and nothing here follows a path someone else could have planted. */
-function isSocketFile(path: string): boolean {
-  try {
-    return lstatSync(path).isSocket();
-  } catch {
-    return false;
-  }
+  return { kind: 'bind-failed' };
 }
 
 type Probe = 'live' | 'stale' | 'none';
@@ -204,24 +230,47 @@ const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
 
 /** The policy, applied on this side of the boundary, before the answer is serialized. A record
  *  whose final id is not a task id is refused in the adapter's own shape — the same sentence,
- *  the same keys, the same key order — at the source position of the record it came from. With
- *  nothing converted the adapter's refusal list passes through untouched, so a no-transform run
- *  answers byte for byte what it answered before (fix2 P2). */
+ *  the same keys, the same key order — at the source position of the record it came from, and so
+ *  is one whose final id repeats an already-accepted final id: the transform can merge two
+ *  distinct source ids into one, and the seat's take must not meet two records under one id
+ *  (both adapters enforce this rule on raw ids already). The transform governs a refusal's id
+ *  too, by the same rule (the id is the source's own reference). With nothing converted and no
+ *  refusal's id transformed, the adapter's refusal list passes through untouched, so a
+ *  no-transform run answers byte for byte what it answered before (fix2 P2). */
 function filtered(read: TaskRead, policy?: TaskPolicy): TaskRead {
   if (read.kind !== 'records') return read;
   const taken = new Set(read.refusals.map((refusal) => refusal.index));
   const records: TaskRecord[] = [];
   const converted: TaskRefusal[] = [];
+  // Only an accepted final id is remembered, the adapter's own rule: a record refused for its
+  // own fault reserves nothing.
+  const accepted = new Set<string>();
   read.records.forEach((record, position) => {
     const crossed = applyPolicy(record, policy);
     if (!TASK_ID.test(crossed.id)) {
       converted.push({ index: sourceIndex(position + 1, taken), reason: 'its id is not a task id' });
       return;
     }
+    if (accepted.has(crossed.id)) {
+      converted.push({ index: sourceIndex(position + 1, taken), id: crossed.id, reason: 'its id repeats an earlier record' });
+      return;
+    }
+    accepted.add(crossed.id);
     records.push(crossed);
   });
-  if (converted.length === 0) return { kind: 'records', records, refusals: read.refusals };
-  return { kind: 'records', records, refusals: [...read.refusals, ...converted].sort((a, b) => a.index - b.index) };
+  const refusals = policy?.transform?.id === 'bare' ? read.refusals.map((refusal) => crossedRefusal(refusal)) : read.refusals;
+  if (converted.length === 0 && refusals === read.refusals) return { kind: 'records', records, refusals: read.refusals };
+  return { kind: 'records', records, refusals: [...refusals, ...converted].sort((a, b) => a.index - b.index) };
+}
+
+/** A refusal's id under the same policy: crossed by the transform, or omitted when the raw id
+ *  has no segment to cross — the raw one never rides in a refusal. A refusal with no id is
+ *  unchanged. */
+function crossedRefusal(refusal: TaskRefusal): TaskRefusal {
+  if (refusal.id === undefined) return refusal;
+  const id = bareRefusalId(refusal.id);
+  if (id === undefined) return { index: refusal.index, reason: refusal.reason };
+  return { index: refusal.index, id, reason: refusal.reason };
 }
 
 /** The source's 1-based position of its position-th accepted record: the accepted records and

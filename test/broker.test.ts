@@ -365,6 +365,32 @@ describe('the start protocol', () => {
     expect(existsSync(path)).toBe(false);
   });
 
+  test('two concurrent starts against one stale socket leave one serving and one busy', async () => {
+    // Base: both starts probed the same stale file and both cleared and bound — two live handles
+    // on one path (rehearsed 20/20 rounds). The clear then followed the identity of the entry
+    // the probe saw (dev+ino from the gate's lstat), which held on macOS but not on CI's ubuntu
+    // runner (run 37787613018: both served — one start's walk read the other's fresh socket as
+    // stale, a connect refused for a beat before its listen took effect). A stale answer is now
+    // confirmed only when the same entry answers stale again after a turn, so a fresh sibling
+    // socket is never cleared: the first to resume clears and binds, the other reads it live.
+    // Which call resumes first is the runtime's to say; the pin is the pair — exactly one
+    // serving, the loser busy — so it reads the same whether or not the order ever flips.
+    project();
+    record();
+    leaveStaleSocket();
+    const path = brokerSocket(root);
+    const start = () =>
+      startBroker({ root, team: teamOf(), read: () => Promise.resolve(records([{ id: 'm1', title: 't' }])), stderr: () => {} });
+    const outcomes = await Promise.all([start(), start()]);
+    expect([...outcomes.map((outcome) => outcome.kind)].sort()).toEqual(['busy', 'serving']);
+    const started = outcomes.find((outcome) => outcome.kind === 'serving');
+    if (started?.kind !== 'serving') throw new Error('neither start served');
+    expect(started.cleared).toBe(true);
+    expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
+    await started.handle.close();
+    expect(existsSync(path)).toBe(false);
+  });
+
   test('a path that cannot bind is a line and exit 1, not a crash, and the file stays', async () => {
     // A regular file where the socket belongs: the lstat gate refuses the entry before any
     // probe, with the pinned bare sentence and the file untouched. The errno story is why the
@@ -546,6 +572,82 @@ describe('the per-field policy', () => {
         ],
       },
     });
+  });
+
+  test('a record whose final id repeats an earlier one is refused, at the adapter\'s sentence and keys', async () => {
+    project();
+    record();
+    await serving(
+      async () =>
+        records([
+          { id: 'https://linear.app/acme/issue/ACME-1', title: 'first version' },
+          { id: 'ACME-1', title: 'second version' },
+        ]),
+      { transform: { id: 'bare' } },
+    );
+    // The transform made the two source ids one final id. The second is refused the way the
+    // adapter refuses a raw repeat — its sentence, its keys, its key order — and only the first
+    // crosses, so a take and a renewal meet one record under one id.
+    const line = await send(`${encodeLine(leadSeat)}`);
+    expect(line).toBe(
+      '{"ok":true,"read":{"kind":"records","records":[{"id":"ACME-1","title":"first version"}],"refusals":[{"index":2,"id":"ACME-1","reason":"its id repeats an earlier record"}]}}',
+    );
+  });
+
+  test('a repeated final id takes the source position of its record, the list staying in order', async () => {
+    project();
+    record();
+    await serving(
+      async () =>
+        records(
+          [
+            { id: 'ACME-1', title: 'one' },
+            { id: 'https://linear.app/acme/issue/ACME-2', title: 'two' },
+            { id: 'ACME-1', title: 'one again' },
+          ],
+          [{ index: 2, id: 'ACME-9', reason: 'title is required' }],
+        ),
+      { transform: { id: 'bare' } },
+    );
+    const line = await send(`${encodeLine(leadSeat)}`);
+    expect(JSON.parse(line)).toEqual({
+      ok: true,
+      read: {
+        kind: 'records',
+        records: [
+          { id: 'ACME-1', title: 'one' },
+          { id: 'ACME-2', title: 'two' },
+        ],
+        refusals: [
+          { index: 2, id: 'ACME-9', reason: 'title is required' },
+          { index: 4, id: 'ACME-1', reason: 'its id repeats an earlier record' },
+        ],
+      },
+    });
+  });
+
+  test('id: bare governs a refusal\'s id too, and an id with no segment is omitted', async () => {
+    project();
+    record();
+    await serving(
+      async () =>
+        records(
+          [{ id: 'ACME-9', title: 'the task title' }],
+          [
+            { index: 2, id: 'https://linear.app/acme/issue/ACME-1', reason: 'title is required' },
+            { index: 3, id: 'ACME-2', reason: 'title is required' },
+            { index: 4, id: '///', reason: 'title is required' },
+          ],
+        ),
+      { transform: { id: 'bare' } },
+    );
+    // The id is the source's own reference, not a credential: the transform governs it on a
+    // refusal too. An already-bare id keeps its bytes; an id with no segment to cross is
+    // omitted, so the raw one never rides in a refusal.
+    const line = await send(`${encodeLine(leadSeat)}`);
+    expect(line).toBe(
+      '{"ok":true,"read":{"kind":"records","records":[{"id":"ACME-9","title":"the task title"}],"refusals":[{"index":2,"id":"ACME-1","reason":"title is required"},{"index":3,"id":"ACME-2","reason":"title is required"},{"index":4,"reason":"title is required"}]}}',
+    );
   });
 
   test('id: bare lets a source URL cross as its last segment', async () => {

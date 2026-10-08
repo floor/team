@@ -78,7 +78,10 @@ removes the socket file, and exits 0.
 
 `team broker: cleared a stale socket file` when the start found a socket file that nothing was
 answering on — a broker killed, not stopped — and cleared it before binding. A file a live broker
-owns is answered, never cleared.
+owns is answered, never cleared. A start that has bound the socket but is not yet answering on
+it — a start delayed for more than a moment — is the one case nothing here can tell from a killed
+broker: it is cleared, and that start fails with the bind sentence, or serves a socket nothing
+can reach. Two starts racing the same path are not serialized: one serves, the other stops.
 
 `team broker: stopped` when the loop ended and the socket file was removed.
 
