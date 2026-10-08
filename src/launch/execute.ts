@@ -466,22 +466,9 @@ export async function executePlan(steps: readonly Step[], session: string, host:
         return 'settled';
       }
       if (dialog.mode === 'close-no-terminal') {
-        // A pane mid-work is nobody's dialog: it keeps everything it has.
-        if (kind === 'working') return leftOut(op.seat, 'its pane is working; left as it is');
-        if (!op.workspace) return leftOut(op.seat, `${classification}; its workspace did not close; left as it is`);
-        // The same reads the stop pass makes, directly before this close: the workspace herdr
-        // returns for the pane, holding that pane and no other seat's, and the process still the
-        // recorded one. A close that cannot be proven leaves everything as it is.
-        const target = closeTarget(waitingReads(op.pane), { seat: op.seat, pane: op.pane, workspace: op.workspace, repairLine: op.repairLine, launched: op.launched });
-        if ('problem' in target) return leftOut(op.seat, target.problem.reason, target.problem.detail);
-        if (!host.closeWorkspace(session, target.workspace)) {
-          return leftOut(op.seat, `${classification}; its workspace did not close; left as it is`);
-        }
-        host.drop(op.seat);
-        dropped.add(op.seat);
-        closed.add(op.seat);
-        final(op.seat, { kind: 'left out', reason: `${classification} (no terminal for owner)` }, '  its workspace was closed without input\n');
-        return 'settled';
+        // A resumed wait is not closed from a run with no terminal. The workspace stays, and
+        // the record stays. A fresh launch that meets a dialog still closes, above.
+        return leftOut(op.seat, 'a run with no terminal does not close a waiting seat; left as it is');
       }
     } finally {
       // §1: the lock is never held while the owner's key is waited for, nor across a poll. The
@@ -634,6 +621,20 @@ export async function executePlan(steps: readonly Step[], session: string, host:
       case 'idle': {
         host.progress?.(op.seat, 'waiting for its prompt');
         if (op.notice) hold(op.seat, `${op.seat}: ${op.notice}\n`);
+        if (op.waiting && op.resumeGap) {
+          dropped.add(op.seat);
+          final(
+            op.seat,
+            {
+              kind: 'left out',
+              reason: op.resumeGap === 'many'
+                ? 'herdr lists more than one agent of this name; left as it is'
+                : 'its waiting pane is gone',
+            },
+            op.resumeGap === 'none' ? `  its record still names it; ${op.repairLine}, clears it\n` : '',
+          );
+          break;
+        }
         const here = place(op.seat, op.pane, op.workspace);
         if (!here) {
           dropped.add(op.seat);

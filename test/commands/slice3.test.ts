@@ -754,6 +754,7 @@ describe('team up', () => {
 });
 
 async function down(argv: string[], caller: Caller, overrides: Partial<DownSources> = {}) {
+  await approve([], OWNER);
   const io = testIo(root, caller);
   const code = await runDown([...argv, ...(caller.kind === 'owner' ? FILE : [])], io, {
     sessionRunning: () => true,
@@ -764,6 +765,7 @@ async function down(argv: string[], caller: Caller, overrides: Partial<DownSourc
     status: () => 'idle',
     foreground: () => ['claude'],
     now: () => NOW,
+    home,
     ...overrides,
   });
   return { code, out: io.out, err: io.err };
@@ -840,16 +842,14 @@ describe('team down', () => {
     });
     expect(run.out).toStartWith(
       [
-        '+ herdr --session acme-web pane run deepseek-acme-tmp-1:p1 /exit',
-        "  wait until deepseek-acme-tmp-1's pane is back at its shell (30 s at most); on a time-out it is left as it is",
-        '+ herdr --session acme-web workspace close deepseek-acme-tmp-1',
+        'deepseek-acme-tmp-1: its record is not an approved seat; left running (the owner cleans it: team remove deepseek-acme-tmp-1 --abandon)',
+        'stranger: its record is not an approved seat; left running (the owner cleans it: team remove stranger --abandon)',
+        'watch: its pid is only in the state; left running',
         '  skip codex-acme: is blocked at a prompt, which `team` never answers; left running',
-        '+ kill 4242',
-        '    (the watch)',
-        '  skip session acme-web: not stopped, 3 agents left in it',
+        '  skip session acme-web: not stopped, 4 agents left in it',
       ].join('\n'),
     );
-    expect(run.out).not.toContain('stranger');
+    expect(run.out).not.toContain('+ kill');
   });
 
   test('an idle status at a permission prompt is blocked, and unsent text stays unsent', async () => {
@@ -941,8 +941,8 @@ describe('team down', () => {
       },
     });
     expect(run.code).toBe(0);
-    expect(run.out).toContain('deepseek-acme-tmp-1: stopped\n');
-    expect(existsSync(rulesFile)).toBe(false);
+    expect(run.out).toContain('deepseek-acme-tmp-1: its record is not an approved seat; left running (the owner cleans it: team remove deepseek-acme-tmp-1 --abandon)\n');
+    expect(existsSync(rulesFile)).toBe(true);
   });
 
   test('a session herdr reports stopped before down acts is only reported, not stopped or cleared', async () => {

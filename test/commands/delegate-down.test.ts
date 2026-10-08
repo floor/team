@@ -10,7 +10,10 @@ import { join } from 'node:path';
 import type { Caller } from '../../src/caller.ts';
 import { runDown, type DownSources } from '../../src/commands/down.ts';
 import type { DelegateVerdict } from '../../src/delegate.ts';
+import { approvalOf } from '../../src/approve/approval.ts';
 import { currentTeam } from '../../src/file/current.ts';
+import { loadTeamFile } from '../../src/file/load.ts';
+import { storePath, writeApproval } from '../../src/store/store.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
 import { emptySession, updateState } from '../../src/state.ts';
 import { claudeBox, testIo } from '../helpers.ts';
@@ -68,7 +71,20 @@ const agent = (name: string, status = 'idle'): HerdrAgent => ({
 
 const RUNNING = ['claude-coordinator-acme', 'deepseek-acme', 'deepseek-acme-2'];
 
+function approveCurrent(): void {
+  const loaded = loadTeamFile(root, { home });
+  if (!loaded.ok) return;
+  writeApproval(
+    storePath(loaded.team.project, loaded.root, home),
+    { approval: approvalOf(loaded.team, loaded.root, NOW), file: readFileSync(file, 'utf8') },
+    loaded.team.seats,
+    home,
+    NOW,
+  );
+}
+
 function rig(overrides: Partial<DownSources> = {}, caller: Caller = CALLER) {
+  approveCurrent();
   // The verdict function a test hands in is wrapped, never substituted: every run's gate call
   // is recorded, whatever verdict it returns — and a gate that throws still throws.
   const { gate: verdict = refusing('down.delegate', GATE_DOWN), ...rest } = overrides;

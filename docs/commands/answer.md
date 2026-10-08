@@ -6,7 +6,7 @@ Presses the one recorded key of a folder-trust dialog, and only that key. Every 
 
     team answer <seat> trust [--session <name>] [--file <path>] [--json]
 
-`<seat>` names one configured live seat. `trust` is the only dialog word. No option takes a key, a text, or another dialog.
+`<seat>` names one seat of the approved copy. `trust` is the only dialog word. No option takes a key, a text, or another dialog. The pane is herdr's one agent of that name; a pane recorded in the state selects nothing. A name the copy does not carry is left as it is. Two agents of the name send nothing.
 
 ## What it reads and writes
 
@@ -58,7 +58,7 @@ Every refusal line is `<seat>: <reason>` except an unplaced caller's, which is i
 | --- | --- |
 | caller | `only the owner, or the orchestrator from its own seat, can answer`; the unplaced caller's reason; `--session is the owner's…`; `no pane is recorded for seat <name>…`; `the state records pane <pane> for seat <name>…`; `the file was never approved on this machine: run \`team approve\``; `approved before records were signed: run \`team approve\` once`; the approval verification's own reason; `the file is not the approved one (<section> changed; …)`; `the approved copy of the team file cannot be read` |
 | policy | `use team up and [o]` |
-| state | `another command holds it`; `it is not a live seat`; `the owner has the pane open`; `it is not waiting at a trust dialog`; `its recovery state could not be recorded`; the process refusal's own reason with `(it is still recorded as a recovery)` appended, when the rollback itself did not take |
+| state | `another command holds it`; `it is not a live seat`; `its record is not an approved seat; left as it is (the owner cleans it: team remove <seat> --abandon)`; `herdr lists more than one agent of this name; left as it is`; `the owner has the pane open`; `it is not waiting at a trust dialog`; `its recovery state could not be recorded`; the process refusal's own reason with `(it is still recorded as a recovery)` appended, when the rollback itself did not take |
 | version | `this version has no trust answer` |
 | screen | `the pane is not the trust dialog` |
 | label | `the trust choice is not the recorded one` |
@@ -74,6 +74,7 @@ Every refusal line is `<seat>: <reason>` except an unplaced caller's, which is i
 | --- | --- | --- |
 | 0 | `answer.ready` | the trust dialog was answered and the seat is ready |
 | 1 | `answer.action` | the recorded key is not one this version sends |
+| 1 | `answer.ambiguous` | herdr lists more than one agent of this name |
 | 1 | `answer.caller` | the caller may not answer a trust dialog |
 | 1 | `answer.file-owner` | `--file` is the owner's |
 | 1 | `answer.folder` | the dialog's folder is not the lobby's exact trust entry |
@@ -85,6 +86,7 @@ Every refusal line is `<seat>: <reason>` except an unplaced caller's, which is i
 | 1 | `answer.screen` | the pane is not the trust dialog |
 | 1 | `answer.session-owner` | `--session` is the owner's |
 | 1 | `answer.state` | the seat is not waiting at a trust dialog |
+| 1 | `answer.unverified` | the name is not a seat of the approved copy |
 | 1 | `answer.version` | this version has no trust answer |
 | 2 | `answer.configuration` | the team file cannot be read |
 | 2 | `answer.usage` | the invocation is not a seat and trust |

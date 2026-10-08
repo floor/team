@@ -319,6 +319,7 @@ function table() {
         status: () => 'idle',
         foreground: (_session, pane) => (panes.get(pane)?.agent ? ['claude'] : ['zsh']),
         sleep: launch.sleep,
+        home,
         launch,
       };
     },
@@ -410,8 +411,16 @@ async function prove(seat: string, pane: 'unnamed' | 'dialog', both = false): Pr
   const first = testIo(root, { kind: 'owner-no-tty' });
   const refused = await runUp(FILE, first, made.up());
   exitOf(refused, 1, first, 'the refusal run');
-  expect(first.out).toContain(`${seat}: left out: its waiting record has no process identity\n`);
-  expect(first.err).toContain(`  ${step(pane)}, then run ${repair(seat)}, to establish one by a run\n`);
+  expect(first.out).toContain(
+    pane === 'unnamed'
+      ? `${seat}: left out: its waiting pane is gone\n`
+      : `${seat}: left out: its waiting record has no process identity\n`,
+  );
+  expect(first.err).toContain(
+    pane === 'unnamed'
+      ? `  its record still names it; ${repair(seat)}, clears it\n`
+      : `  ${step(pane)}, then run ${repair(seat)}, to establish one by a run\n`,
+  );
   if (LEAD.has(seat)) expect(first.err).not.toContain('remove');
 
   // 2. The same sequence without its first step: the words alone leave everything as it is,
@@ -428,7 +437,11 @@ async function prove(seat: string, pane: 'unnamed' | 'dialog', both = false): Pr
     expect(made.stopped).toEqual([]);
     const stuck = testIo(root, { kind: 'owner-no-tty' });
     exitOf(await runUp(FILE, stuck, made.up()), 1, stuck, 'the up without its first step');
-    expect(stuck.out).toContain(`${seat}: left out: its waiting record has no process identity\n`);
+    expect(stuck.out).toContain(
+      pane === 'unnamed'
+        ? `${seat}: left out: its waiting pane is gone\n`
+        : `${seat}: left out: its waiting record has no process identity\n`,
+    );
     expect(stateOf(seat)?.waiting).toEqual({ state: 'waiting-owner', classification: 'trust' });
   } else {
     const remove = testIo(root, { kind: 'owner' });

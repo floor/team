@@ -22,7 +22,6 @@ import { type Profile } from '../profiles/profile.ts';
 import { extractFolder, isEligible, keyOf, labelMatches, versionMatches, type TrustRecord } from '../profiles/trust-answer.ts';
 import { emptySession, readState, updateState, type SeatState } from '../state.ts';
 import { approvalStanding, type Standing } from '../store/store.ts';
-import { readEnd } from '../watch/end.ts';
 import { readScreen } from '../watch/screen.ts';
 
 export const USAGE = 'Usage: team answer <seat> trust [--session <name>] [--file <path>] [--json]\n';
@@ -154,18 +153,28 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
   try {
     const state = readState(dir).sessions[session] ?? emptySession();
     const recorded = state.seats[seatName];
-    const configured = team.seats.find((seat) => seat.name === seatName);
-    const temporary = recorded?.temporary;
-    if (!configured && !temporary) return refused({ class: 'state', message: `${seatName}: it is not a live seat` });
-    if (temporary && expired(root, temporary.until, team, temporary.own_commits === true)) {
-      return refused({ class: 'state', message: `${seatName}: it is not a live seat` });
+    // The seat is the approved copy's, and the pane is herdr's one agent of that name.
+    // A recorded pane selects nothing: the state can name another pane, and a name the
+    // copy does not carry is left for the owner.
+    const configured = approved.team.seats.find((seat) => seat.name === seatName);
+    if (!configured) {
+      if (!recorded) return refused({ class: 'state', message: `${seatName}: it is not a live seat` });
+      return refused({
+        class: 'state',
+        message: `${seatName}: its record is not an approved seat; left as it is (the owner cleans it: team remove ${seatName} --abandon)`,
+      });
     }
     const agents = host.agents(session);
-    const agent = agents?.find((item) => item.name === seatName)
-      ?? (recorded?.pane ? agents?.find((item) => item.pane === recorded.pane) : undefined);
-    if (!agents || !agent) return refused({ class: 'state', message: `${seatName}: it is not a live seat` });
-    const pane = recorded?.pane ?? agent.pane;
-    const workspace = agent.workspace ?? recorded?.workspace;
+    const named = agents?.filter((item) => item.name === seatName) ?? [];
+    const agent = named.length === 1 ? named[0] : undefined;
+    if (!agent) {
+      if (named.length > 1) {
+        return refused({ class: 'state', message: `${seatName}: herdr lists more than one agent of this name; left as it is` });
+      }
+      return refused({ class: 'state', message: `${seatName}: it is not a live seat` });
+    }
+    const pane = agent.pane;
+    const workspace = agent.workspace;
     const waiting = recorded?.waiting;
     if (waiting?.manual === true) return refused({ class: 'state', message: `${seatName}: the owner has the pane open` });
     if (waiting?.state === 'trust-sent-recovery') {
@@ -175,7 +184,7 @@ export async function runAnswer(argv: string[], io: Io, host: AnswerHost): Promi
       return refused({ class: 'state', message: `${seatName}: it is not waiting at a trust dialog` });
     }
 
-    const cli = configured?.cli ?? team.seats.find((seat) => seat.name === temporary?.like)?.cli ?? '';
+    const cli = configured.cli;
     const profile = profileFor(cli);
     const checked = inspect(seatName, host, session, pane, profile, approved.team.trust, root, recorded?.launched);
     if ('class' in checked) return refused(checked);
@@ -249,12 +258,6 @@ function callerProblemOf(caller: Caller, team: TeamFile, seat: string, at?: Seat
   }
   if (caller.kind === 'unplaced') return { class: 'caller', message: caller.reason };
   return { class: 'caller', message: `${seat}: only the owner, or the orchestrator from its own seat, can answer` };
-}
-
-function expired(root: string, until: string, team: TeamFile, own: boolean): boolean {
-  const end = readEnd(root, until, team.workspace.base, own);
-  if (end.kind === 'result') return end.exists;
-  return end.verdict === 'merged';
 }
 
 function checkProcess(
@@ -420,6 +423,8 @@ function refuse(
   // exit: answer.policy
   // exit: answer.session-owner
   // exit: answer.state
+  // exit: answer.unverified
+  // exit: answer.ambiguous
   // exit: answer.version
   // exit: answer.screen
   // exit: answer.label

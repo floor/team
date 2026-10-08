@@ -274,11 +274,13 @@ watchdog: a session that existed before, a ready seat and the watchdog are kept.
 and every later configured, non-stopped seat with no final record get, in file order,
 `<seat>: left out: stopped cleanly`; earlier final records stay. The run exits 1.
 
-A later `up` on a seat the state records waiting reuses its recorded pane and workspace — nothing
-is created for it — verifies the current screen with a fresh read, and enters the same pause,
-**before** the ordinary unnamed or wrong-name handling. A recorded pane that no longer exists is
-not a reason to launch again: nothing is created, the record kept, and the final record is
-`<seat>: left out: its waiting pane is gone`, with the team file's own repair under it on stderr —
+A later `up` on a seat the state records waiting reuses herdr's one agent of that seat's name —
+its pane and workspace, nothing created for it — verifies the current screen with a fresh read,
+and enters the same pause, **before** the ordinary unnamed or wrong-name handling. The pane the
+state records selects nothing. No agent of that name, or more than one, is not a reason to launch
+again: nothing is created, the record kept, and the final record is
+`<seat>: left out: its waiting pane is gone` or
+`<seat>: left out: herdr lists more than one agent of this name; left as it is`, with the team file's own repair under it on stderr —
 `team down` then `team up` (to restart the whole team) for a seat the file names as its
 orchestrator or operator, `team remove <seat> --keep` then `team add <seat>` (or `team down` then
 `team up` for the whole team) for any other. A pane that still exists but no longer holds the
@@ -316,9 +318,11 @@ and follows what they show — a seat `team answer` made ready in the meantime, 
 `<seat>: waiting for owner (trust sent; recovery required)`, with the same keys), or the screen's
 own reading. `up` never invokes `team answer` and never sends a trust key.
 
-An owner whose stdin is not a terminal never prompts: for each seat that meets a dialog it closes
-the workspace without input, prints `<seat>: left out: <classification> (no terminal for owner)`
-and exits 1. That close makes the stop pass's own reads — the agent list, the workspace's panes and
+An owner whose stdin is not a terminal never prompts: for each seat that meets a dialog on a fresh
+launch it closes the workspace without input, prints `<seat>: left out: <classification> (no terminal for owner)`
+and exits 1. A seat already recorded waiting is not closed by that run:
+`<seat>: left out: a run with no terminal does not close a waiting seat; left as it is`, and its
+workspace stays. The fresh launch's close makes the stop pass's own reads — the agent list, the workspace's panes and
 the pane's process, directly before it, with nothing between the last read and it — and closes only
 the workspace the multiplexer returns for the verified pane, holding no other agent pane; a pane
 whose process is not the one the dialog was found with is left as it is (`left as it is: its

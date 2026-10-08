@@ -417,6 +417,13 @@
     {
       "code": 1,
       "command": "answer",
+      "id": "answer.ambiguous",
+      "meaning": "herdr lists more than one agent of this name",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
       "id": "answer.another-pane",
       "meaning": "the state records another pane for the caller's seat",
       "trigger": "team answer lead trust"
@@ -496,6 +503,13 @@
       "command": "answer",
       "id": "answer.state",
       "meaning": "the seat is not waiting at a trust dialog",
+      "trigger": "team answer lead trust"
+    },
+    {
+      "code": 1,
+      "command": "answer",
+      "id": "answer.unverified",
+      "meaning": "the name is not a seat of the approved copy",
       "trigger": "team answer lead trust"
     },
     {
@@ -963,6 +977,13 @@
     {
       "code": 1,
       "command": "down",
+      "id": "down.approved-copy",
+      "meaning": "the approved copy of the team file cannot be read",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
       "id": "down.caller",
       "meaning": "the caller may not change the team",
       "trigger": "team down"
@@ -1040,6 +1061,20 @@
     {
       "code": 1,
       "command": "down",
+      "id": "down.legacy",
+      "meaning": "a legacy approval record stops nobody",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.never-approved",
+      "meaning": "a file that was never approved stops nobody",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
       "id": "down.no-launch",
       "meaning": "this call has no way to reach herdr",
       "trigger": "team down"
@@ -1049,6 +1084,13 @@
       "command": "down",
       "id": "down.no-pane",
       "meaning": "the state records no pane for the caller's seat",
+      "trigger": "team down"
+    },
+    {
+      "code": 1,
+      "command": "down",
+      "id": "down.refused",
+      "meaning": "a refused approval record stops nobody",
       "trigger": "team down"
     },
     {
@@ -1320,9 +1362,23 @@
     {
       "code": 1,
       "command": "remove",
+      "id": "remove.ambiguous",
+      "meaning": "herdr lists more than one agent of this name",
+      "trigger": "team remove lead"
+    },
+    {
+      "code": 1,
+      "command": "remove",
       "id": "remove.another-pane",
       "meaning": "the state records another pane for the caller's seat",
       "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.approved-copy",
+      "meaning": "the approved copy of the team file cannot be read",
+      "trigger": "team remove lead"
     },
     {
       "code": 1,
@@ -1484,6 +1540,13 @@
       "id": "remove.stop-failed",
       "meaning": "the seat could not be stopped",
       "trigger": "team remove worker"
+    },
+    {
+      "code": 1,
+      "command": "remove",
+      "id": "remove.unverified",
+      "meaning": "a name the approved copy does not carry is left as it is",
+      "trigger": "team remove extra"
     },
     {
       "code": 2,

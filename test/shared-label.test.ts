@@ -209,11 +209,23 @@ describe('down and remove with one label on two seats', () => {
       { name: 'coordinator', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null },
       { name: 'implementer', agent: 'claude', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null },
     ];
+    execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
+    const home = join(root, 'home');
+    mkdirSync(home);
+    const loaded = loadTeamFile(root);
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+    writeApproval(
+      storePath(loaded.team.project, loaded.root, home),
+      { approval: approvalOf(loaded.team, loaded.root), file: SHARED },
+      loaded.team.seats,
+      home,
+    );
     const sources: DownSources = {
       sessionRunning: () => true,
       agents: () => agents,
       alive: () => false,
       now: () => new Date(0),
+      home,
       screen: () => ({ kind: 'idle' }),
       screenText: (_session, pane) => boxes.get(pane),
       status: () => 'idle',

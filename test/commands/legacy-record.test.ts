@@ -1,6 +1,6 @@
 // A record written before records were signed, with the team's seats running: only the
 // commands that need an approval in force refuse, each with the one-line repair; the watch
-// keeps watching, `status` keeps reporting, `down` keeps working, `remove` refuses too (it
+// keeps watching, `status` keeps reporting, `down` stops nobody, `remove` refuses too (it
 // stops a seat and edits the file), and no running seat is stopped or disturbed. A record
 // the verification refused is heard the same way, in its own words.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -245,7 +245,25 @@ describe('a legacy record, with the team\'s seats running', () => {
     expect(io.out).toContain('the watch of "acme-web" stopped');
   });
 
-  test('down keeps working: it stops free seats and says nothing about the record', async () => {
+  test('down stops nobody while the file was never approved', async () => {
+    const io = testIo(root, OWNER);
+    const code = await runDown(['--dry-run', ...FILE], io, {
+      sessionRunning: () => true,
+      agents: () => [agent('claude-coordinator-acme'), agent('deepseek-acme')],
+      alive: () => true,
+      screen: () => ({ kind: 'idle' }),
+      screenText: () => undefined,
+      status: () => 'idle',
+      foreground: () => ['claude'],
+      now: () => NOW,
+      home,
+    });
+    expect(code).toBe(1);
+    expect(io.err).toBe('team down: the file was never approved on this machine: run `team approve`\n');
+    expect(io.out).toBe('');
+  });
+
+  test('down stops nobody while the record is legacy', async () => {
     legacy();
     const io = testIo(root, OWNER);
     const code = await runDown(['--dry-run', ...FILE], io, {
@@ -257,11 +275,11 @@ describe('a legacy record, with the team\'s seats running', () => {
       status: () => 'idle',
       foreground: () => ['claude'],
       now: () => NOW,
+      home,
     });
-    expect(code).toBe(0);
-    expect(io.out).toContain('+ herdr --session acme-web pane run claude-coordinator-acme:p1 /exit');
-    expect(io.out).toContain('  skip deepseek-acme-2: is working (`--wait` waits for it); left running');
-    expect(`${io.out}${io.err}`).not.toContain('approve');
+    expect(code).toBe(1);
+    expect(io.err).toBe(`team down: ${LINE}\n`);
+    expect(io.out).toBe('');
   });
 
   test('remove refuses while the record is legacy, and the file is not amended', async () => {
@@ -293,6 +311,26 @@ describe('a legacy record, with the team\'s seats running', () => {
 
 describe('a record the verification refused, through the same commands', () => {
   const WHY = 'the record does not carry a valid signature: it was changed after approval, or written without the key: run `team approve` once';
+
+  test('down stops nobody, and names the refused record', async () => {
+    signed();
+    tamper();
+    const io = testIo(root, OWNER);
+    const code = await runDown(['--dry-run', ...FILE], io, {
+      sessionRunning: () => true,
+      agents: () => [agent('claude-coordinator-acme'), agent('deepseek-acme')],
+      alive: () => true,
+      screen: () => ({ kind: 'idle' }),
+      screenText: () => undefined,
+      status: () => 'idle',
+      foreground: () => ['claude'],
+      now: () => NOW,
+      home,
+    });
+    expect(code).toBe(1);
+    expect(io.err).toBe(`team down: ${WHY}\n`);
+    expect(io.out).toBe('');
+  });
 
   test('up and status say the case in its own words', async () => {
     signed();

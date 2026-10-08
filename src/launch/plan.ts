@@ -45,6 +45,8 @@ export type Op =
       /** A seat recorded waiting: its idle step re-reads the screen and enters the owner's
        *  prompt (`pause.ts`) — it is never launched or closed from here (§5). */
       waiting?: { record: WaitingRecord; launched?: LaunchedIdentity };
+      /** A waiting seat herdr does not name exactly once: left out, nothing launched. */
+      resumeGap?: 'none' | 'many';
     }
   | { do: 'rename'; seat: string; label: string; seconds: number; rules: 'option' | 'message'; pane?: string }
   | { do: 'deliver'; seat: string; label: string; cli: string; rules: string; path: string; line: string; seconds: number; pane?: string; notice?: string }
@@ -120,6 +122,8 @@ export interface UpSeat {
    */
   waiting?: WaitingRecord;
   waitingLaunched?: LaunchedIdentity;
+  /** Set when a waiting seat has no single herdr agent of its name: the resume is left out. */
+  resumeGap?: 'none' | 'many';
   /** The seat works in worktrees: it waits in the lobby until a brief names its worktree. */
   lobby?: boolean;
   /**
@@ -345,6 +349,7 @@ export function upPlan(input: UpInput): Step[] {
           ...(seat.model !== undefined && seat.version !== undefined ? { model: seat.model, version: seat.version } : {}),
           ...(said ? { notice: said } : {}),
           ...(waiting ? { waiting: { record: waiting, ...(seat.waitingLaunched ? { launched: seat.waitingLaunched } : {}) } } : {}),
+          ...(seat.resumeGap ? { resumeGap: seat.resumeGap } : {}),
         },
       });
     }

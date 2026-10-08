@@ -101,7 +101,7 @@ function sources(over: Partial<WatchSources> = {}): WatchSources {
 }
 
 describe('the watch closes what its authority allows', () => {
-  test('a temporary seat whose result exists, and that has worked and is free, is closed', async () => {
+  test('a temporary seat whose result exists, and that has worked and is free, is left', async () => {
     writeFileSync(join(dir, 'done.md'), 'done\n');
     updateState(join(dir, '.agents'), (state) => {
       const session = (state.sessions.acme ??= emptySession());
@@ -116,8 +116,8 @@ describe('the watch closes what its authority allows', () => {
       live: () => scene([tmp]),
       stopSeat: async (_session, seat) => { stopped.push(seat.name); return true; },
     }));
-    expect(stopped).toEqual(['worker-tmp-1']);
-    expect(io.out).toContain('closed worker-tmp-1');
+    expect(stopped).toEqual([]);
+    expect(io.out).toContain('worker-tmp-1: its record is not an approved seat; left as it is (the owner cleans it: team remove worker-tmp-1 --abandon)');
     expect(readFileSync(file, 'utf8')).not.toContain('tmp');
   });
 
@@ -158,5 +158,21 @@ describe('the watch closes what its authority allows', () => {
       removeWorktree: (task) => { removed.push(task); return 0; },
     }));
     expect(removed).toEqual(['done']);
+  });
+
+  // The real removal, not a stand-in. A stand-in never reaches the call, so it hid a close
+  // that named `io` without having it: the watch threw before the record could be dropped.
+  test('a merged worktree whose folder is already gone is removed by the real worktree removal', async () => {
+    updateState(join(dir, '.agents'), (state) => {
+      const session = (state.sessions.acme ??= emptySession());
+      session.worktrees.done = { path: 'work/done', branch: 'fix/done', own_commits: true, setup: 'ok' };
+    });
+    const io = testIo(dir, { kind: 'owner' });
+    await runWatch(['--file', file, '--no-nudge'], io, sources({
+      readEnd: () => ({ kind: 'merged', verdict: 'merged', detail: 'its own commits are in the base', ownNow: 0 }),
+    }));
+    expect(readState(join(dir, '.agents')).sessions.acme?.worktrees.done).toBeUndefined();
+    expect(io.out).toContain('removed the record of done; its folder was already gone');
+    expect(io.out).not.toContain('worktree done was not removed');
   });
 });

@@ -3,13 +3,13 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { approvalDifferences, approvalOf, verifiedOf } from '../../src/approve/approval.ts';
+import { approvalDifferences, approvalOf } from '../../src/approve/approval.ts';
 import { runRemove, type RemoveSources } from '../../src/commands/remove.ts';
 import { delegateGate } from '../../src/delegate.ts';
 import { loadTeamFile } from '../../src/file/load.ts';
 import { validateTeamFile } from '../../src/file/validate.ts';
-import { storePath, writeApproval } from '../../src/store/store.ts';
-import { rulesFileHash, rulesFilePath, writeRulesFile } from '../../src/launch/rules-file.ts';
+import { approvalStanding, storePath, writeApproval } from '../../src/store/store.ts';
+import { rulesFileHash, rulesFilePathOf, writeRulesFile } from '../../src/launch/rules-file.ts';
 import { seatLockPath } from '../../src/launch/seat-lock.ts';
 import type { DownLaunch } from '../../src/commands/down.ts';
 import type { HerdrAgent } from '../../src/herdr.ts';
@@ -101,6 +101,17 @@ function world(screen: Screen = { kind: 'idle' }, status = 'idle'): {
 // The state `team up` writes for the coordinator's seat: the caller check judges a seat on the
 // pane the state records for it, so a coordinator caller needs this record to stand as one.
 // Without it the check fails closed — that refusal has its own tests in coordinator-session.
+function approveCurrent(): void {
+  const loaded = loadTeamFile(dir);
+  if (!loaded.ok) throw new Error(JSON.stringify(loaded.errors));
+  writeApproval(
+    storePath(loaded.team.project, loaded.root, home),
+    { approval: approvalOf(loaded.team, loaded.root), file: readFileSync(file, 'utf8') },
+    loaded.team.seats,
+    home,
+  );
+}
+
 function recordLead(pane = lead.pane): void {
   updateState(join(dir, '.agents'), (state) => {
     (state.sessions.acme ??= emptySession()).seats.lead = { stage: 'ready', pane };
@@ -229,6 +240,7 @@ describe('team remove', () => {
     display: GPT-6 Sol
     launch: codex -m gpt-6-sol -c model_reasoning_effort=high`,
     ));
+    approveCurrent();
     const made = world();
     let screen: Screen = { kind: 'idle' };
     made.sources.screen = () => screen;
@@ -327,6 +339,7 @@ describe('team remove', () => {
     launch: agy
   # stays above lead`,
     ));
+    approveCurrent();
     const raw = readFileSync(new URL('../fixtures/antigravity/1.2.16/exit-typed.txt', import.meta.url), 'utf8');
     const made = world(readScreen('antigravity', raw));
     made.sources.screenText = () => raw;
@@ -393,6 +406,7 @@ describe('team remove', () => {
     display: GPT-6 Sol
     launch: codex -m gpt-6-sol -c model_reasoning_effort=high`,
     ));
+    approveCurrent();
     const made = world();
     let shown = codexIdle;
     let gone = false;
@@ -459,6 +473,7 @@ describe('team remove', () => {
     version: "4.7"
     launch: cursor-agent`,
     ));
+    approveCurrent();
     const pane = idle.replace(placeholder, shape);
     const made = world();
     let gone = false;
@@ -800,19 +815,23 @@ describe('team remove', () => {
       session.seats['worker-tmp-1'] = { stage: 'ready', temporary: { like: 'worker', until: 'result:done.md' } };
     });
     const made = world();
-    made.sources.home = dir;
-    // The writer and the remover both build the path themselves, from the approval in force:
-    // a verified record for this folder is planted, and both resolve the same checked folder.
-    const parsed = validateTeamFile(FILE);
-    if (!parsed.ok) throw new Error('fixture');
-    const standing = verifiedOf(parsed.team, FILE, dir);
-    made.sources.standing = () => standing;
-    const rulesFile = rulesFilePath('acme', dir, dir, 'worker-tmp-1') as string;
-    writeRulesFile(standing, 'worker-tmp-1', dir, dir, 'Rules.\n', rulesFileHash('Rules.\n'));
+    // The writer and the remover both build the path from the approval this fixture already holds.
+    const standing = approvalStanding(dir, home);
+    const rulesFile = rulesFilePathOf(standing, 'worker-tmp-1', dir, home) as string;
+    expect(writeRulesFile(standing, 'worker-tmp-1', dir, home, 'Rules.\n', rulesFileHash('Rules.\n'))).toEqual({ ok: true });
     made.agents.push({ name: 'worker-tmp-1', agent: 'claude', pane: 'w2:p1', workspace: 'w2', status: 'idle', cwd: null });
-    expect(await runRemove(['worker-tmp-1', '--file', file], testIo(dir, owner), made.sources)).toBe(0);
-    expect(existsSync(rulesFile)).toBe(false);
+    const left = testIo(dir, owner);
+    expect(await runRemove(['worker-tmp-1', '--file', file], left, made.sources)).toBe(1);
+    expect(left.err).toContain('worker-tmp-1: its record is not an approved seat; left as it is (the owner cleans it: team remove worker-tmp-1 --abandon)');
+    expect(made.typed).toEqual([]);
+    expect(existsSync(rulesFile)).toBe(true);
     expect(readFileSync(file, 'utf8')).not.toContain('tmp');
+    expect(readState(join(dir, '.agents')).sessions.acme?.seats['worker-tmp-1']).toBeDefined();
+    const abandoned = testIo(dir, owner);
+    expect(await runRemove(['worker-tmp-1', '--abandon', '--file', file], abandoned, made.sources)).toBe(0);
+    expect(abandoned.out).toContain('removed temporary worker-tmp-1');
+    expect(made.typed).toEqual([]);
+    expect(existsSync(rulesFile)).toBe(false);
     expect(readState(join(dir, '.agents')).sessions.acme?.seats['worker-tmp-1']).toBeUndefined();
     updateState(join(dir, '.agents'), (state) => {
       const session = (state.sessions.acme ??= emptySession());
@@ -821,6 +840,23 @@ describe('team remove', () => {
     const kept = testIo(dir, owner);
     expect(await runRemove(['worker-tmp-1', '--keep', '--file', file], kept, world().sources)).toBe(1);
     expect(kept.err).toContain('nothing to keep');
+  });
+
+  test('a name the approved copy carries keeps its rules file when the state still marks it temporary', async () => {
+    updateState(join(dir, '.agents'), (state) => {
+      const session = (state.sessions.acme ??= emptySession());
+      session.seats.worker = { stage: 'ready', temporary: { like: 'lead', until: 'result:done.md' } };
+    });
+    const made = world();
+    const standing = approvalStanding(dir, home);
+    const rulesFile = rulesFilePathOf(standing, 'worker', dir, home) as string;
+    expect(writeRulesFile(standing, 'worker', dir, home, 'Rules.\n', rulesFileHash('Rules.\n'))).toEqual({ ok: true });
+    made.agents.push({ name: 'worker', agent: 'claude', pane: 'w1:p1', workspace: 'w1', status: 'idle', cwd: null });
+    const io = testIo(dir, owner);
+    expect(await runRemove(['worker', '--abandon', '--file', file], io, made.sources)).toBe(0);
+    expect(io.out).toContain('removed worker');
+    expect(io.out).not.toContain('removed temporary');
+    expect(existsSync(rulesFile)).toBe(true);
   });
 
   test('a caller who may not change the team changes nothing', async () => {

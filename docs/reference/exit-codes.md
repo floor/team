@@ -65,6 +65,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `add.temporary-unexpected` | `add` | 2 | an unexpected argument was passed to --temporary | `team add extra --temporary` |
 | `answer.ready` | `answer` | 0 | the trust dialog was answered and the seat is ready | `team answer lead trust` |
 | `answer.action` | `answer` | 1 | the recorded key was not sent | `team answer lead trust` |
+| `answer.ambiguous` | `answer` | 1 | herdr lists more than one agent of this name | `team answer lead trust` |
 | `answer.another-pane` | `answer` | 1 | the state records another pane for the caller's seat | `team answer lead trust` |
 | `answer.caller` | `answer` | 1 | the caller may not answer a trust dialog | `team answer lead trust` |
 | `answer.file-owner` | `answer` | 1 | --file is the owner's | `team answer lead trust --file .agents/team.yaml` |
@@ -77,6 +78,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `answer.screen` | `answer` | 1 | the pane is not the trust dialog | `team answer lead trust` |
 | `answer.session-owner` | `answer` | 1 | --session is the owner's | `team answer lead trust --session other` |
 | `answer.state` | `answer` | 1 | the seat is not waiting at a trust dialog | `team answer lead trust` |
+| `answer.unverified` | `answer` | 1 | the name is not a seat of the approved copy | `team answer lead trust` |
 | `answer.version` | `answer` | 1 | this version has no trust answer | `team answer lead trust` |
 | `answer.configuration` | `answer` | 2 | the team file cannot be read | `team answer lead trust --file missing.yaml` |
 | `answer.usage` | `answer` | 2 | the invocation is not a seat and trust | `team answer` |
@@ -143,6 +145,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `down.stopped` | `down` | 0 | the seats that could be stopped were stopped | `team down` |
 | `down.abandon` | `down` | 1 | only the owner abandons a team | `team down --abandon` |
 | `down.another-pane` | `down` | 1 | the state records another pane for the caller's seat | `team down` |
+| `down.approved-copy` | `down` | 1 | the approved copy of the team file cannot be read | `team down` |
 | `down.caller` | `down` | 1 | the caller may not change the team | `team down` |
 | `down.delegate` | `down` | 1 | the caller is not the approved delegate of any entry | `team down, from a pane no delegate entry names` |
 | `down.delegate-approval` | `down` | 1 | delegation needs a verified approval | `team down, with no approval in force` |
@@ -154,8 +157,11 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `down.delegate-placement` | `down` | 1 | the approved delegate must be an external non-seat pane | `team down, with a delegate entry naming a seat's pane` |
 | `down.file-owner` | `down` | 1 | --file is the owner's | `team down --file .agents/team.yaml` |
 | `down.held` | `down` | 1 | a step was held | `team down` |
+| `down.legacy` | `down` | 1 | a legacy approval record stops nobody | `team down` |
+| `down.never-approved` | `down` | 1 | a file that was never approved stops nobody | `team down` |
 | `down.no-launch` | `down` | 1 | this call has no way to reach herdr | `team down` |
 | `down.no-pane` | `down` | 1 | the state records no pane for the caller's seat | `team down` |
+| `down.refused` | `down` | 1 | a refused approval record stops nobody | `team down` |
 | `down.run-lock` | `down` | 1 | another session-mutating run is holding the session | `team down` |
 | `down.session-owner` | `down` | 1 | --session is the owner's | `team down --session other` |
 | `down.agents` | `down` | 2 | the agents can't be read | `team down` |
@@ -194,7 +200,9 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `remove.temporary` | `remove` | 0 | a temporary seat was removed | `team remove worker` |
 | `remove.abandon` | `remove` | 1 | only the owner abandons a seat | `team remove worker --abandon` |
 | `remove.agents` | `remove` | 1 | the agents can't be read | `team remove worker` |
+| `remove.ambiguous` | `remove` | 1 | herdr lists more than one agent of this name | `team remove lead` |
 | `remove.another-pane` | `remove` | 1 | the state records another pane for the caller's seat | `team remove worker` |
+| `remove.approved-copy` | `remove` | 1 | the approved copy of the team file cannot be read | `team remove lead` |
 | `remove.busy` | `remove` | 1 | the seat is not free | `team remove worker` |
 | `remove.caller` | `remove` | 1 | the caller may not change the team | `team remove worker` |
 | `remove.coordinator` | `remove` | 1 | only the owner removes the orchestrator's or the operator's seat | `team remove lead` |
@@ -218,6 +226,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `remove.run-lock` | `remove` | 1 | another session-mutating run is holding the session | `team remove worker` |
 | `remove.session-owner` | `remove` | 1 | --session is the owner's | `team remove worker --session other` |
 | `remove.stop-failed` | `remove` | 1 | the seat could not be stopped | `team remove worker` |
+| `remove.unverified` | `remove` | 1 | a name the approved copy does not carry is left as it is | `team remove extra` |
 | `remove.edit` | `remove` | 2 | the edit would not validate | `team remove lead` |
 | `remove.file` | `remove` | 2 | the team file can't be read | `team remove worker --file missing.yaml` |
 | `remove.file-invalid` | `remove` | 2 | the team file can't be parsed | `team remove worker --file team.yaml` |

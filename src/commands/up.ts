@@ -281,13 +281,17 @@ function seatPlan(
   // reads the pane fresh and verifies it before doing anything, and a pane that is gone is a
   // fail-closed refusal there, not a reason to create another workspace.
   if (recorded.waiting) {
+    // The pane is herdr's one agent of this seat's name. The pane the state records selects
+    // nothing: a waiting seat with no such agent, or with two, is left out and not launched.
+    const named = agents.filter((agent) => agent.name === seat.name);
+    const live = named.length === 1 ? named[0] : undefined;
     return {
       ...planned,
       ...(recorded.stage ? { stage: recorded.stage } : {}),
-      ...(recorded.pane ? { pane: recorded.pane } : {}),
-      ...(recorded.workspace ? { workspace: recorded.workspace } : {}),
+      ...(live ? { pane: live.pane, workspace: live.workspace } : {}),
       waiting: recorded.waiting,
       ...(recorded.launched ? { waitingLaunched: recorded.launched } : {}),
+      ...(live ? {} : { resumeGap: named.length === 0 ? 'none' as const : 'many' as const }),
     };
   }
   // The pane is the seat only while the process team launched is still in it: a pane that runs

@@ -29,9 +29,11 @@ Writes the team file (the seat's entry taken out, or `stopped: true` added to it
 `.agents/team.state.json` (the seat's record is dropped), `.agents/team.log`, and, through herdr:
 the exit typed into the pane, the wait for its shell, and the workspace closed — or, on the leave
 of a caller other than the owner (below), no typing and no close at all, and the
-pane's agent renamed out of the seat's name, best effort. A temporary seat's
-rules file goes with it, out of the project state folder; a seat left in the file as stopped keeps
-its file for the next `up`. A file edit that
+pane's agent renamed out of the seat's name, best effort. A name the approved copy carries is
+a declared seat, even when the state still marks it temporary, and its rules file stays. A name
+the copy does not carry is left as it is; the owner's `--abandon` removes it, and a temporary
+seat's rules file goes with it, out of the project state folder; a seat left in the file as stopped
+keeps its file for the next `up`. A file edit that
 would not validate is refused before the seat is stopped, so a broken file never costs a live seat.
 
 ## Who may run it
@@ -140,10 +142,13 @@ with the text named, in the refusal below.
 | `team remove: a temporary seat is not in the file; there is nothing to keep` | 1 |
 | `team remove: herdr doesn't answer; nothing was changed` | 1 |
 | `team remove: session <session> runs, and its agents can't be read; nothing was changed` | 1 |
+| `team remove: <name>: its record is not an approved seat; left as it is (the owner cleans it: team remove <name> --abandon)` | 1 |
+| `team remove: <name>: herdr lists more than one agent of this name; left as it is` | 1 |
+| `team remove: the approved copy of the team file cannot be read` | 1 |
 | `team remove: <seat> is working; left as it is` | 1 |
 | `team remove: <seat> is blocked at a prompt, which team never answers` | 1 |
 | `team remove: <seat> sits at its own exit question; left as it is (team remove <seat> --abandon closes it)` | 1 |
-| `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` — the owner's; a caller other than the owner meeting a seat herdr reports idle or done takes the seat out instead (above), and meets this line with `(run this again once herdr reports the seat idle or done)` where herdr reports the seat working | 1 |
+| `team remove: <seat> shows a screen the profile does not recognise; left as it is (team remove <seat> --abandon closes its workspace without typing)` — the owner's; a caller other than the owner meeting a seat herdr reports idle or done takes the seat out instead (above), and meets this line with `(run this again once herdr reports the seat idle or done)` where herdr reports the seat anything but idle or done | 1 |
 | `team remove: <seat> holds unsent text in its input box; left as it is` | 1 |
 | `team remove: <seat> holds this CLI's exit text (<exit>) unsent in its input box; left as it is (the owner sends it or clears it in its pane)` | 1 |
 | ``team remove: no launch profile for `<cli>`; left as it is`` | 1 |
@@ -267,10 +272,11 @@ team remove: only the owner abandons a seat, from a terminal outside herdr
 exit 1
 ```
 
-A temporary seat is recorded in the state, not in the file, so it is removed by the name `add` gave
-it — and `--keep` has nothing to keep. It comes before the seats the file declares change: taking a
-seat out of the file moves the `limits` the file defaults to, and `add --temporary` refuses a file
-that is no longer the approved one.
+A temporary seat is recorded in the state, not in the approved copy, so a plain `remove` leaves it.
+`--keep` has nothing to keep. The owner's `--abandon` removes it, typing nothing, and its rules
+file goes with it. It comes before the seats the file declares change: taking a seat out of the
+file moves the `limits` the file defaults to, and `add --temporary` refuses a file that is no
+longer the approved one.
 
 ```console
 $ team add --temporary --like claude-beacon --until result:notes/result.md ; echo "exit $?"
@@ -280,6 +286,9 @@ $ team remove claude-beacon-tmp-1 --keep ; echo "exit $?"
 team remove: a temporary seat is not in the file; there is nothing to keep
 exit 1
 $ team remove claude-beacon-tmp-1 ; echo "exit $?"
+team remove: claude-beacon-tmp-1: its record is not an approved seat; left as it is (the owner cleans it: team remove claude-beacon-tmp-1 --abandon)
+exit 1
+$ team remove claude-beacon-tmp-1 --abandon ; echo "exit $?"
 claude-beacon-tmp-1: stopped
 removed temporary claude-beacon-tmp-1
 exit 0

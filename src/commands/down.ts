@@ -1,10 +1,12 @@
 import { homedir } from 'node:os';
+import { notInForce } from '../approve/approval.ts';
 import { dirname } from 'node:path';
 import { readArgs } from '../args.ts';
 import { anotherPaneRefusal, callerOf, describeCaller, fileOwnerRefusal, isOwner, judgeCallerIn, mayChangeTeamVerdict, noPaneRefusal, sessionOwnerRefusal, standingOf, walkCaller, type Caller } from '../caller.ts';
 import { delegateGate, logDelegated, type DelegateSources, type DelegateVerdict } from '../delegate.ts';
 import { currentTeam, rememberCurrent, type Current } from '../file/current.ts';
 import { loadTeamFile } from '../file/load.ts';
+import { validateTeamFile } from '../file/validate.ts';
 import type { TeamFile } from '../file/types.ts';
 import {
   agentList,
@@ -28,8 +30,7 @@ import { reportedLiveAgent } from '../launch/agent.ts';
 import { downPlan, formatPlan, type DownSeat } from '../launch/plan.ts';
 import { acquireRunLock, runLockText } from '../launch/run-lock.ts';
 import { boxHoldsOther, boxHoldsText, DRAW_WAIT_MS, settleScreen } from '../launch/deliver.ts';
-import { removeRulesFile } from '../launch/rules-file.ts';
-import { approvalStanding } from '../store/store.ts';
+import { approvalStanding, type Standing } from '../store/store.ts';
 import { profileFor } from '../profiles/index.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
@@ -54,6 +55,8 @@ export type DownSources = {
   sleep?(ms: number): Promise<void>;
   /** Approval store home. The real command uses the owner's home. */
   home?: string;
+  /** The approval standing. Tests hand in a record; the shipped command reads the store. */
+  standing?(root: string): Standing;
   // Present on the shipped command. A dry run never calls it.
   launch?: DownLaunch;
   /** The delegate gate. Tests hand in a verdict; the shipped command asks the real one. */
@@ -557,17 +560,30 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   const branchRun = branching();
 
   const state = readState(dir).sessions[session];
-  const known = new Set([...team.seats.map((seat) => seat.name), ...Object.keys(state?.seats ?? {})]);
-  const cliOf = new Map(team.seats.map((seat) => [seat.name, seat.cli]));
-  // The CLI a running seat was launched with: the file's for the seats it still names, the
-  // state's for the rest, so a seat the file renamed is still stopped. A temporary seat falls
-  // back to the seat it is like. A state too old to say leaves the seat to its owner, named
-  // in the plan.
-  const cliFor = (name: string): string => {
-    const recorded = state?.seats[name];
-    const like = recorded?.temporary?.like;
-    return cliOf.get(name) ?? recorded?.cli ?? (like ? cliOf.get(like) ?? state?.seats[like]?.cli : undefined) ?? 'unknown';
-  };
+  const home = sources.home ?? homedir();
+  let acting = team;
+  if (refusals.length === 0) {
+    const standing = sources.standing?.(root) ?? approvalStanding(root, home);
+    if (standing.kind !== 'verified') {
+      io.stderr(`team down: ${notInForce(standing)}\n`);
+      // exit: down.never-approved
+      // exit: down.legacy
+      // exit: down.refused
+      return 1;
+    }
+    const approved = validateTeamFile(standing.record.file);
+    if (!approved.ok) {
+      io.stderr('team down: the approved copy of the team file cannot be read\n');
+      // exit: down.approved-copy
+      return 1;
+    }
+    acting = approved.team;
+  }
+  // The stop list is the copy in force. The state contributes no name and no CLI. A caller
+  // already refused keeps the live file's names, so the dry-run plan is that refusal's.
+  const known = new Set(acting.seats.map((seat) => seat.name));
+  const cliOf = new Map(acting.seats.map((seat) => [seat.name, seat.cli]));
+  const cliFor = (name: string): string => cliOf.get(name) ?? 'unknown';
 
   if (!dry && args.flags.has('wait') && refusals.length === 0) {
     const deadline = sources.now().getTime() + WAIT_SECONDS * 1000;
@@ -589,13 +605,32 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   }
 
   const seats: DownSeat[] = [];
+  const notes: string[] = [];
   let extra = 0;
+  const named = new Map<string, HerdrAgent[]>();
   for (const agent of agents) {
-    if (!agent.name || !known.has(agent.name)) {
+    if (!agent.name) {
       extra++;
       continue;
     }
-    const cli = cliFor(agent.name);
+    const listed = named.get(agent.name) ?? [];
+    listed.push(agent);
+    named.set(agent.name, listed);
+  }
+  for (const [name, listed] of named) {
+    if (!known.has(name) || listed.length !== 1) {
+      extra += listed.length;
+      if (refusals.length === 0) {
+        notes.push(
+          known.has(name)
+            ? `${name}: herdr lists more than one agent of this name; left as it is`
+            : `${name}: its record is not an approved seat; left running (the owner cleans it: team remove ${name} --abandon)`,
+        );
+      }
+      continue;
+    }
+    const agent = listed[0] as HerdrAgent;
+    const cli = cliFor(agent.name as string);
     const profile = profileFor(cli);
     const liveCwd = sources.foregroundCwd ? sources.foregroundCwd(session, agent.pane) : null;
     const shown = sources.screen(session, agent.pane, cli, liveCwd);
@@ -607,7 +642,7 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
     const exitInBox = state === 'unsent' && profile !== null
       && boxHoldsText(cli, profile.exit, sources.screenText(session, agent.pane, cli), { cwd: liveCwd ?? undefined, home: sources.home });
     seats.push({
-      name: agent.name,
+      name,
       cli,
       pane: agent.pane,
       workspace: agent.workspace,
@@ -618,14 +653,17 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
   }
 
   const watch = state?.watch;
+  const watchAlive = Boolean(watch && sources.alive(watch.pid));
+  if (watchAlive && refusals.length === 0) notes.push('watch: its pid is only in the state; left running');
+  for (const note of notes) io.stdout(`${note}\n`);
   const plan = downPlan({
     session,
     seats,
     extra,
-    watchPid: watch && sources.alive(watch.pid) ? watch.pid : null,
+    watchPid: refusals.length === 0 ? null : watchAlive && watch ? watch.pid : null,
     // A delegated run stops the whole team: no seat is kept back, the orchestrator and the
     // operator included. The delegate sits outside the session, so it never stops itself.
-    keep: !branchRun && caller.kind === 'seat' ? [team.orchestrator, team.operator] : [],
+    keep: !branchRun && caller.kind === 'seat' ? [acting.orchestrator, acting.operator] : [],
     abandon: abandon && callerOwns(caller),
     // A free seat is still asked. When that ask cannot be typed or confirmed, the owner's
     // `--abandon` closes it in this same run; every other run names that close and leaves it.
@@ -761,12 +799,6 @@ export async function runDown(argv: string[], io: Io, sources: DownSources): Pro
           const seatsOf = (file.sessions[session] ??= emptySession()).seats;
           delete seatsOf[name];
         });
-        // A temporary seat's rules file goes with the seat, as `remove` takes one; a declared
-        // seat's stays, ready for the next `up`. No home set is a test with no store at all. The
-        // remover builds the path itself, from the approval in force and the seat's name.
-        if (state?.seats[name]?.temporary && sources.home) {
-          removeRulesFile(approvalStanding(root, sources.home), name, root, sources.home);
-        }
       },
       say: (line) => io.stdout(line),
       log: (who, what) => logLine(dir, 'down', describeCaller(caller), `${who}: ${what}`, now()),
