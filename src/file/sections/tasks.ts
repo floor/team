@@ -78,6 +78,10 @@ function readTasks(entry: YamlEntry | undefined, ctx: Ctx): TeamFile['tasks'] {
   const pull = choice(fields.get('pull'), ['self', 'any'] as const, 'tasks.pull must be self or any', ctx);
   const fallback = choice(fields.get('fallback'), ['file', 'id'] as const, 'tasks.fallback must be file or id', ctx);
   const cadence = ctx.check.measure(fields.get('cadence'), 'tasks.cadence', DURATION, '120s or 10m');
+  // A pause of zero is not a pause: it would make `--wait` a spin, not a wait. Zero refuses the
+  // section the way the path and policy refusals here do.
+  const zeroCadence = cadence === 0;
+  if (zeroCadence) ctx.check.fail(fields.get('cadence')?.value.line ?? entry.value.line, 'tasks.cadence must be greater than zero');
   const badChoice = (fields.get('pull') && pull === undefined) || (fields.get('fallback') && fallback === undefined);
   const source = text(fields.get('source'));
   if (source === 'file') {
@@ -89,7 +93,7 @@ function readTasks(entry: YamlEntry | undefined, ctx: Ctx): TeamFile['tasks'] {
     if (!path || !taskPathStaysInside(path, ctx.rootDir)) {
       ctx.check.fail(fields.get('path')?.value.line ?? entry.value.line, 'tasks.path must stay inside the checkout');
     }
-    if (badChoice || fields.get('linear') || fields.get('policy') || !path || !taskPathStaysInside(path, ctx.rootDir)) return null;
+    if (badChoice || fields.get('linear') || fields.get('policy') || !path || !taskPathStaysInside(path, ctx.rootDir) || zeroCadence) return null;
     const tasks: Extract<NonNullable<TeamFile['tasks']>, { source: 'file' }> = { source: 'file', path };
     if (pull) tasks.pull = pull;
     if (fallback) tasks.fallback = fallback;
@@ -100,7 +104,7 @@ function readTasks(entry: YamlEntry | undefined, ctx: Ctx): TeamFile['tasks'] {
     if (fields.get('path')) ctx.check.fail(fields.get('path')!.value.line, 'tasks.path is for source: file');
     const linear = readLinear(fields.get('linear'), entry, ctx);
     const policy = readPolicy(fields.get('policy'), ctx);
-    if (badChoice || fields.get('path') || !linear || (fields.get('policy') && !policy)) return null;
+    if (badChoice || fields.get('path') || !linear || (fields.get('policy') && !policy) || zeroCadence) return null;
     const tasks: Extract<NonNullable<TeamFile['tasks']>, { source: 'linear' }> = { source: 'linear', linear };
     if (pull) tasks.pull = pull;
     if (fallback) tasks.fallback = fallback;

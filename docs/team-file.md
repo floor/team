@@ -62,8 +62,9 @@ tasks:
 - `cadence` is optional: a duration with its unit written, in `s`, `m` or `h`, such as `120s` or
   `10m`. Omitted, the parsed section does not gain the key, and no default is supplied.
   `cadence` is the pace `team next --wait` re-reads the source at. It governs nothing else: not
-  the watch, not the lease. Any other value, including a quoted one, is
-  `tasks.cadence needs a value with its unit (s, m, h), such as 120s or 10m`.
+  the watch, not the lease. Zero is not a pause: a value that measures to zero, such as `0s` or
+  `0.0m`, is `tasks.cadence must be greater than zero`. Any other value, including a quoted one,
+  is `tasks.cadence needs a value with its unit (s, m, h), such as 120s or 10m`.
 - Any other key, including `backoff` and `quiet_hours`, is an unknown field.
 
 The file at `path` is a YAML list of task records. `team issues` reads it. `team next` claims one

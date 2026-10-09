@@ -48,11 +48,8 @@ test('each section waits only on sections that exist', () => {
   }
 });
 
-// `tasks.cadence` is a measured duration with its unit written: the value lifts to seconds, an
-// omitted key stays off the parsed section, and a value the measure cannot read — a quoted one
-// included — refuses with the sentence the validator prints.
-test('tasks.cadence is a measured duration, and omission stays omission', () => {
-  const TEAM = `format: 1
+// The file the section tests here validate.
+const TEAM = `format: 1
 project: acme
 coordinator: lead
 operator: lead
@@ -70,6 +67,11 @@ tasks:
   source: file
   path: .agents/tasks.yaml
 `;
+
+// `tasks.cadence` is a measured duration with its unit written: the value lifts to seconds, an
+// omitted key stays off the parsed section, and a value the measure cannot read — a quoted one
+// included — refuses with the sentence the validator prints.
+test('tasks.cadence is a measured duration, and omission stays omission', () => {
   const plain = validateTeamFile(TEAM);
   if (!plain.ok) throw new Error('the fixture does not validate');
   expect(plain.team.tasks).toEqual({ source: 'file', path: '.agents/tasks.yaml' });
@@ -85,6 +87,31 @@ tasks:
       );
     }
   }
+  // A pause of zero is not a pause: a value that measures to zero refuses on the key's own line
+  // — line 18, the appended cadence key — and it is the only problem. `120s` still lifts.
+  for (const zero of ['0s', '0m', '0h', '0.0s']) {
+    const checked = validateTeamFile(`${TEAM}  cadence: ${zero}\n`);
+    expect(checked.ok).toBe(false);
+    if (!checked.ok) {
+      expect(checked.errors).toEqual([{ line: 18, message: 'tasks.cadence must be greater than zero' }]);
+    }
+  }
+  const positive = validateTeamFile(`${TEAM}  cadence: 120s\n`);
+  if (!positive.ok) throw new Error('the 120s cadence fixture does not validate');
+  expect(positive.team.tasks).toEqual({ source: 'file', path: '.agents/tasks.yaml', cadence: 120 });
+});
+
+// `budgets.check_every` is the other pause — the least gap between the check commands' runs.
+// Zero refuses the same way, on its own line; a positive duration still parses.
+test('budgets.check_every refuses a zero pause too', () => {
+  const zeroed = validateTeamFile(`${TEAM}budgets:\n  check_every: 0s\n`);
+  expect(zeroed.ok).toBe(false);
+  if (!zeroed.ok) {
+    expect(zeroed.errors).toEqual([{ line: 19, message: 'budgets.check_every must be greater than zero' }]);
+  }
+  const clean = validateTeamFile(`${TEAM}budgets:\n  check_every: 10m\n`);
+  if (!clean.ok) throw new Error('the budgets fixture does not validate');
+  expect(clean.team.budgets.checkEvery).toBe(600);
 });
 
 // An approval record written by main's code today (test/fixtures/approval-main.json, its

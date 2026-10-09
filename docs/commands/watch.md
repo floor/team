@@ -187,12 +187,13 @@ with no reset known, which is a new window's.
 The check commands run outside the pass, at most every `budgets.check_every`, in an empty
 environment with only `PATH` and `HOME`, with a ten-second timeout: one to three lines for a
 subscription (`session 21% used resets 3h`, `weekly 39% used resets 114h4m at 1791091200`), one
-line for a spend account (`12.40 USD`, in its `floor`'s currency). Only their state is ever logged,
-never a line of what they printed — a failure is `<account>: its check is unreadable`, a timeout
-and a contract break alike. A check whose file changed since the approval, or that was never
-approved, is not run at all. The money a spend check reads is kept in the state with the pass's
-screen figures, so `up` and `add` measure the account's floor against it; a reading that is stale by
-then reads unknown there.
+line for a spend account (`12.40 USD`, in its `floor`'s currency). `check_every` is a pause above
+zero: a value that measures to zero is refused, `budgets.check_every must be greater than zero`.
+Only their state is ever logged, never a line of what they printed — a failure is `<account>: its
+check is unreadable`, a timeout and a contract break alike. A check whose file changed since the
+approval, or that was never approved, is not run at all. The money a spend check reads is kept in
+the state with the pass's screen figures, so `up` and `add` measure the account's floor against
+it; a reading that is stale by then reads unknown there.
 
 The whole section is the owner's, like the watch's own timings: an edit to a reserve, a floor, the
 marks, `stale_after`, `check_every` or the accounts changes nothing until the owner approves it.

@@ -591,6 +591,17 @@ describe('team next --wait', () => {
     });
     expect(leaseNames()).toEqual([]);
   });
+
+  test('a zero cadence is refused before the wait begins: no pause, no waiting line', async () => {
+    ready(`${WITH}  cadence: 0s\n`, '[]\n');
+    let sleeps = 0;
+    const result = await waiting(['--wait'], async () => {
+      sleeps += 1;
+      return true;
+    });
+    expect(sleeps).toBe(0);
+    expect(result).toEqual({ code: 1, out: '', err: 'team next: tasks.cadence must be greater than zero\n' });
+  });
 });
 
 describe('team next over the broker', () => {
