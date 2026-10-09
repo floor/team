@@ -1277,7 +1277,9 @@ describe('the start protocol', () => {
     // rounds 156, 163, 206, every one a `.takeover` lane; ≈0.23 s/round). Pooled with the
     // lab's 2/150 on the same shape, p̂ = 5/450 = 1.111% → the pre-registered pick
     // ceil(ln 0.01 / ln(1 − p̂)) = 413 rounds ((89/90)^413 ≈ 0.99% miss at p̂; at the pooled
-    // one-sided 90% exact-binomial lower bound, 1.768%, (1 − p_L)^413 ≈ 0.06% miss). Never
+    // one-sided 90% exact-binomial (Clopper–Pearson) lower bound, 0.5415%, (1 − p_L)^413 ≈
+    // 10.6% miss — the conservative tail; 1.768%, the figure this comment first named, is a
+    // one-sided normal upper bound). Never
     // resize this pin after seeing a result: a pin-only head whose CI misses is re-run, both
     // runs quoted. Every round must still be exactly one serving that cleared nothing plus
     // five busy that cleared nothing — and the wire must have seen zero unlinks of a live lock
