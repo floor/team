@@ -82,10 +82,16 @@ function readBudgets(
   if (marks && legacyMarks) {
     check.warnings.push({ line: fields.get('marks')?.line ?? entry.line, message: 'budgets.marks replaces watch.quota_marks' });
   }
+  // A pause of zero is not a pause: it would run the check commands on every pass. Zero falls
+  // back to the default like an unmeasurable value — the fail has already invalidated the file.
+  const checkEvery = check.measure(fields.get('check_every'), 'budgets.check_every', DURATION, '10m');
+  if (checkEvery === 0) {
+    check.fail(fields.get('check_every')?.value.line ?? entry.value.line, 'budgets.check_every must be greater than zero');
+  }
   return {
     budgets: {
       staleAfter: check.measure(fields.get('stale_after'), 'budgets.stale_after', DURATION, '30m') ?? base.staleAfter,
-      checkEvery: check.measure(fields.get('check_every'), 'budgets.check_every', DURATION, '10m') ?? base.checkEvery,
+      checkEvery: checkEvery !== undefined && checkEvery > 0 ? checkEvery : base.checkEvery,
       marks: marks ?? fallbackMarks,
       accounts: readAccounts(fields.get('accounts'), check),
     },
