@@ -11,6 +11,7 @@ import { agentStatus, PANE_WINDOW, paneForeground, paneProcesses, paneRead, pres
 import type { Command, Io } from '../io.ts';
 import { logLine } from '../log.ts';
 import { emptySession, readState, updateState } from '../state.ts';
+import { waitOrStop } from '../wait.ts';
 import type { Live } from '../status/compare.ts';
 import { readMachine, readingsText } from '../watch/machine.ts';
 import type { Machine } from '../watch/machine.ts';
@@ -71,22 +72,6 @@ export type WatchSources = {
   /** The home whose store holds the override file. Absent in a test that does not set one. */
   home?: string;
 };
-
-function waitOrStop(seconds: number): Promise<boolean> {
-  return new Promise((done) => {
-    const stop = () => {
-      clearTimeout(timer);
-      done(false);
-    };
-    const timer = setTimeout(() => {
-      process.off('SIGINT', stop);
-      process.off('SIGTERM', stop);
-      done(true);
-    }, seconds * 1000);
-    process.once('SIGINT', stop);
-    process.once('SIGTERM', stop);
-  });
-}
 
 export const realWatchSources: WatchSources = {
   // The status live read, handed no state: the watch compares each live pane's process with its
