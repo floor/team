@@ -215,6 +215,7 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `next.none` | `next` | 0 | nothing to take or to release | `team next` |
 | `next.released` | `next` | 0 | the caller's lease was released | `team next --release` |
 | `next.taken` | `next` | 0 | a record was claimed, or the caller's live lease was renewed | `team next` |
+| `next.wait` | `next` | 0 | the wait was stopped, or a clock that did not advance ended it | `team next --wait` |
 | `next.broker` | `next` | 1 | no broker is running, or its answer was not one this build knows | `team next` |
 | `next.caller` | `next` | 1 | the caller is not a seat of this team on its recorded pane | `team next` |
 | `next.file` | `next` | 1 | the team file can't be read, or it declares no task source | `team next` |

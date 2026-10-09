@@ -329,7 +329,7 @@ Hidden: no
 
 Usage:
 
-    team next [--mine | --release]
+    team next [--mine | --release] [--wait]
 
 ### Flags
 
@@ -338,6 +338,7 @@ Usage:
 | `--help` | no | no | no |
 | `--mine` | no | no | no |
 | `--release` | no | no | no |
+| `--wait` | no | no | no |
 | `-h` | no | no | yes |
 
 ### Positionals

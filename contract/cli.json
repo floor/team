@@ -513,6 +513,12 @@
           "takesValue": false
         },
         {
+          "hidden": false,
+          "name": "--wait",
+          "repeatable": false,
+          "takesValue": false
+        },
+        {
           "hidden": true,
           "name": "-h",
           "repeatable": false,
@@ -524,7 +530,7 @@
       "positionals": [],
       "subcommands": [],
       "usage": [
-        "team next [--mine | --release]"
+        "team next [--mine | --release] [--wait]"
       ]
     },
     {

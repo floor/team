@@ -450,7 +450,7 @@ describe('team next', () => {
     expect(await run(['extra'])).toEqual({
       code: 2,
       out: '',
-      err: 'team next: unexpected "extra"\nUsage: team next [--mine | --release]\n',
+      err: 'team next: unexpected "extra"\nUsage: team next [--mine | --release] [--wait]\n',
     });
     const io = testIo(base, lead);
     expect(await runNext([], io, { home, now: () => now })).toBe(2);
@@ -487,6 +487,109 @@ describe('team next', () => {
     const page = readFileSync(join(import.meta.dir, '..', 'docs', 'commands', 'issues.md'), 'utf8');
     expect(page).not.toContain('`team plan` is not a command.');
     expect(page).toContain('`team plan` prints the takeable queue and claims nothing.');
+  });
+});
+
+// `--wait`: the pace is the team file's own `tasks.cadence`, the clock and the pause are
+// injected, and every test here finishes in microseconds — nothing sleeps and nothing reads the
+// real clock. The one real-time loop run lives in the evidence harness (test/plan-run.ts).
+describe('team next --wait', () => {
+  async function waiting(argv: string[], wait: (seconds: number) => Promise<boolean>, cwd = root) {
+    const io = testIo(cwd, lead);
+    const code = await runNext(argv, io, { home, now: () => now, wait });
+    return { code, out: io.out, err: io.err };
+  }
+
+  test('a take on the first pass means the wait never begins', async () => {
+    ready(`${WITH}  cadence: 10m\n`);
+    let sleeps = 0;
+    const result = await waiting(['--wait'], async () => {
+      sleeps += 1;
+      return true;
+    });
+    expect(sleeps).toBe(0);
+    expect(result).toEqual({ code: 0, out: 'm1  the task title\n', err: '' });
+    expect(leaseNames()).toEqual(['m1.json']);
+  });
+
+  test('the empty answer prints once, then the wait re-reads until a record appears', async () => {
+    ready(`${WITH}  cadence: 10m\n`, '[]\n');
+    const polls: number[] = [];
+    const result = await waiting(['--wait'], async (seconds) => {
+      polls.push(seconds);
+      // The record appears during the second pause: pass 1 was empty, pass 2 is empty and
+      // silent, and pass 3 takes it.
+      if (polls.length === 2) list('- id: m1\n  title: the task title\n');
+      now += seconds * 1000;
+      return true;
+    });
+    expect(polls).toEqual([600, 600]);
+    expect(result).toEqual({
+      code: 0,
+      out: 'team next: nothing is takeable\nteam next: waiting every 600s\nm1  the task title\n',
+      err: '',
+    });
+    expect(lease()).toMatchObject({ id: 'm1', seat: 'lead', pane: 'w1:p1' });
+  });
+
+  test('a stop ends the wait with the one line, and --mine keeps its own empty sentence', async () => {
+    ready(`${WITH}  cadence: 10m\n`, '[]\n');
+    expect(await waiting(['--wait'], async () => false)).toEqual({
+      code: 0,
+      out: 'team next: nothing is takeable\nteam next: waiting every 600s\nteam next: stopped waiting\n',
+      err: '',
+    });
+    expect(await waiting(['--wait', '--mine'], async () => false)).toEqual({
+      code: 0,
+      out: 'team next: nothing is assigned to you\nteam next: waiting every 600s\nteam next: stopped waiting\n',
+      err: '',
+    });
+    expect(leaseNames()).toEqual([]);
+  });
+
+  test('a clock that does not advance ends the wait too, after exactly one wait', async () => {
+    ready(`${WITH}  cadence: 10m\n`, '[]\n');
+    let sleeps = 0;
+    const result = await waiting(['--wait'], async () => {
+      sleeps += 1;
+      return true;
+    });
+    expect(sleeps).toBe(1);
+    expect(result).toEqual({
+      code: 0,
+      out: 'team next: nothing is takeable\nteam next: waiting every 600s\nteam next: stopped waiting\n',
+      err: '',
+    });
+  });
+
+  test('a source that breaks during the wait ends it with the refusal, not with more waiting', async () => {
+    ready(`${WITH}  cadence: 10m\n`, '[]\n');
+    const result = await waiting(['--wait'], async () => {
+      rmSync(join(root, '.agents', 'tasks.yaml'));
+      now += 600_000;
+      return true;
+    });
+    expect(result).toEqual({
+      code: 1,
+      out: 'team next: nothing is takeable\nteam next: waiting every 600s\n',
+      err: 'team next: the task file is not there\n',
+    });
+  });
+
+  test('--wait without a cadence refuses, and with --release refuses, both writing nothing', async () => {
+    ready();
+    expect(await run(['--wait'])).toEqual({
+      code: 2,
+      out: '',
+      err: 'team next: --wait needs tasks.cadence in the team file\n',
+    });
+    ready(`${WITH}  cadence: 10m\n`, '[]\n');
+    expect(await run(['--wait', '--release'])).toEqual({
+      code: 2,
+      out: '',
+      err: 'team next: --wait and --release are not used together\n',
+    });
+    expect(leaseNames()).toEqual([]);
   });
 });
 

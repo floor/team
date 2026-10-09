@@ -4,7 +4,9 @@
 // request line out and one answer line back, and never sees the key — the answer is the record
 // after the team file's task policy filtered it. With no broker running, a broker source
 // refuses and claims nothing. The lease stays local either way: a tracker-side claim is a write,
-// and this build does not write to a tracker. `team plan` prints the takeable queue and claims nothing.
+// and this build does not write to a tracker. `team plan` prints the takeable queue and claims
+// nothing. `--wait` re-reads the source at `tasks.cadence` while a pass finds nothing takeable;
+// without the key it refuses, and a stop ends the wait with one line.
 import { join } from 'node:path';
 import { readArgs } from '../args.ts';
 import { askBroker, DEADLINE, NOT_RUNNING, WRONG_ANSWER } from '../broker/client.ts';
@@ -24,8 +26,9 @@ import type { TaskAdapter, TaskRecord, TaskRefusal } from '../tasks/adapter.ts';
 import { fileRegistry } from '../tasks/file.ts';
 import { formatRecords } from '../tasks/format.ts';
 import { claimLocal, releaseLocal } from '../tasks/lease.ts';
+import { waitOrStop } from '../wait.ts';
 
-export const USAGE = 'Usage: team next [--mine | --release]\n';
+export const USAGE = 'Usage: team next [--mine | --release] [--wait]\n';
 
 export type NextSources = {
   home?: string;
@@ -35,15 +38,22 @@ export type NextSources = {
   /** The broker client's deadline, injected the way the release check injects its timeout: a
    *  test shortens it instead of hanging. Production leaves it at the client's own. */
   deadlineMs?: number;
+  /** The pause between `--wait`'s polls, in seconds; false ends the wait, the shape the watch's
+   *  own wait has. Injected the way the watch's sleep is: a test steps a virtual clock through
+   *  it and never sleeps. The shipped wait is `waitOrStop`. */
+  wait?: (seconds: number) => Promise<boolean>;
 };
 
 export const next: Command = (argv, io) => runNext(argv, io);
 export default next;
 
 export async function runNext(argv: string[], io: Io, sources: NextSources = {}): Promise<number> {
-  const args = readArgs(argv, [], ['mine', 'release']);
+  const args = readArgs(argv, [], ['mine', 'release', 'wait']);
   if (args.flags.has('mine') && args.flags.has('release')) {
     return invocation(io, '--mine and --release are not used together', false);
+  }
+  if (args.flags.has('wait') && args.flags.has('release')) {
+    return invocation(io, '--wait and --release are not used together', false);
   }
   if (args.error || args.rest.length) {
     return invocation(io, args.error ?? `unexpected "${args.rest[0]}"`, true);
@@ -58,9 +68,58 @@ export async function runNext(argv: string[], io: Io, sources: NextSources = {})
   if (!loaded.ok) return file(io, loaded.errors[0]?.message ?? 'the team file can\'t be read');
   const tasks = loaded.team.tasks;
   if (!tasks) return file(io, 'the team file declares no task source');
-  if (tasks.source === 'linear') {
-    return nextFromBroker(io, loaded, tasks, sources, args.flags.has('release'), args.flags.has('mine'));
+  const mine = args.flags.has('mine');
+  if (args.flags.has('wait')) {
+    const cadence = tasks.cadence;
+    if (cadence === undefined) {
+      return invocation(io, '--wait needs tasks.cadence in the team file', false);
+    }
+    return pass(io, loaded, tasks, sources, mine, false, true, {
+      loaded,
+      tasks,
+      sources,
+      mine,
+      cadence,
+      wait: sources.wait ?? waitOrStop,
+      now: sources.now ?? Date.now,
+    });
   }
+  return pass(io, loaded, tasks, sources, mine, args.flags.has('release'), true, undefined);
+}
+
+/**
+ * The `--wait` loop's carry, built once by `runNext` — the one place that already holds every
+ * piece — and handed down the take's chain: the cadence, the pause and the clock the loop
+ * re-reads through, and what one re-pass needs to run again. A run without `--wait` carries
+ * `undefined`, and its empty answer stays the one stand-down answer.
+ */
+type Hold = {
+  loaded: { team: TeamFile; root: string };
+  tasks: NonNullable<TeamFile['tasks']>;
+  sources: NextSources;
+  mine: boolean;
+  cadence: number;
+  wait: (seconds: number) => Promise<boolean>;
+  now: () => number;
+};
+
+/**
+ * One read-and-take pass: the whole of what a stand-down run does once the flags are read, and
+ * the wait's one unit of work. `speak` decides whether the empty answer is printed: the first
+ * pass prints it once, and an empty re-pass in the wait stays silent. Everything but the empty
+ * answer ends the wait too, through its own printer — waiting is for emptiness, not for errors.
+ */
+async function pass(
+  io: Io,
+  loaded: { team: TeamFile; root: string },
+  tasks: NonNullable<TeamFile['tasks']>,
+  sources: NextSources,
+  mine: boolean,
+  release: boolean,
+  speak: boolean,
+  hold: Hold | undefined,
+): Promise<number> {
+  if (tasks.source === 'linear') return nextFromBroker(io, loaded, tasks, sources, mine, release, speak, hold);
   const registry = sources.registry ?? fileRegistry;
   const adapter = registry[tasks.source];
   if (!adapter) return file(io, 'tasks.source must be file');
@@ -68,7 +127,7 @@ export async function runNext(argv: string[], io: Io, sources: NextSources = {})
   if (placed.kind === 'refused') return callerRefuse(io, placed.message);
   const now = sources.now ?? Date.now;
   const at = now();
-  if (args.flags.has('release')) {
+  if (release) {
     const result = adapter.release
       ? adapter.release({ root: loaded.root, seat: placed.seat, pane: placed.pane, now: at })
       : releaseLocal(loaded.root, placed.seat, placed.pane, at);
@@ -87,7 +146,7 @@ export async function runNext(argv: string[], io: Io, sources: NextSources = {})
     ? (record: TaskRecord) =>
         claimFn({ root: loaded.root, path: tasks.path, record, seat: placed.seat, pane: placed.pane, now: at }).kind === 'held'
     : undefined;
-  return take(io, loaded.root, read, placed, tasks.pull ?? 'self', tasks.fallback ?? 'file', args.flags.has('mine'), at, claim);
+  return take(io, loaded.root, read, placed, tasks.pull ?? 'self', tasks.fallback ?? 'file', mine, at, claim, speak, hold);
 }
 
 /**
@@ -101,8 +160,10 @@ async function nextFromBroker(
   loaded: { team: TeamFile; root: string },
   tasks: Extract<NonNullable<TeamFile['tasks']>, { source: 'linear' }>,
   sources: NextSources,
-  release: boolean,
   mine: boolean,
+  release: boolean,
+  speak: boolean,
+  hold: Hold | undefined,
 ): Promise<number> {
   const placed = place(loaded.team, loaded.root, io);
   if (placed.kind === 'refused') return callerRefuse(io, placed.message);
@@ -129,16 +190,17 @@ async function nextFromBroker(
   // the seat fails safe on, exactly like an unparseable line.
   if (outcome.read.kind !== 'records') return broker(io, WRONG_ANSWER);
   if (outcome.notice !== undefined) io.stderr(`team next: ${outcome.notice}\n`);
-  return take(io, loaded.root, outcome.read, placed, tasks.pull ?? 'self', tasks.fallback ?? 'file', mine, at, undefined);
+  return take(io, loaded.root, outcome.read, placed, tasks.pull ?? 'self', tasks.fallback ?? 'file', mine, at, undefined, speak, hold);
 }
 
 /**
  * The take itself, identical for both sources once a read exists: order the takeable records,
  * claim one — through the adapter when it carries a tracker-side claim, through the local lease
  * otherwise — and report. A notice about the read has already gone to stderr; a refusal in the
- * read is named and the exit is the shape's.
+ * read is named and the exit is the shape's. The two empty answers leave through `blank`, which
+ * is also where `--wait` starts and where a wait's silent re-pass continues.
  */
-function take(
+async function take(
   io: Io,
   root: string,
   read: { records: readonly TaskRecord[]; refusals: readonly TaskRefusal[] },
@@ -148,7 +210,9 @@ function take(
   mine: boolean,
   at: number,
   claim: ((record: TaskRecord) => boolean) | undefined,
-): number {
+  speak: boolean,
+  hold: Hold | undefined,
+): Promise<number> {
   const known = new Map(read.records.map((record) => [record.id, record]));
   const candidates = order(takeable(read.records, placed.seat, pull, mine), fallback);
   let outcome: { kind: 'held'; record: TaskRecord } | { kind: 'none' } | { kind: 'kept' };
@@ -170,8 +234,8 @@ function take(
   }
   if (outcome.kind === 'held') return taken(io, outcome.record);
   if (read.refusals.length) return shape();
-  if (outcome.kind === 'none' && mine) return none(io, 'nothing is assigned to you');
-  return none(io, 'nothing is takeable');
+  if (outcome.kind === 'none' && mine) return blank(io, 'nothing is assigned to you', speak, hold);
+  return blank(io, 'nothing is takeable', speak, hold);
 }
 
 /** The seat gate both `team next` and `team plan` run first: a named seat of this team, on the
@@ -265,8 +329,8 @@ function readFail(io: Io, message: string): number {
   return 1;
 }
 
-function none(io: Io, sentence: string): number {
-  io.stdout(`team next: ${sentence}\n`);
+function none(io: Io, sentence: string, speak = true): number {
+  if (speak) io.stdout(`team next: ${sentence}\n`);
   // exit: next.none
   return 0;
 }
@@ -281,4 +345,47 @@ function taken(io: Io, record: TaskRecord): number {
   io.stdout(formatRecords([record]));
   // exit: next.taken
   return 0;
+}
+
+/** The wait's own end: the signal, or a clock that did not advance. One line, exit 0, and the
+ *  wait's own row — a take or a refusal ends the wait through its own printer instead. */
+function stopped(io: Io): number {
+  io.stdout('team next: stopped waiting\n');
+  // exit: next.wait
+  return 0;
+}
+
+/**
+ * The take's two empty answers, and the wait's door. Without a hold it is one answer and the
+ * stand-down exit. Under `--wait` the first empty pass prints the shipped sentence once and the
+ * waiting line, and the loop takes over; an empty re-pass is silent, and the loop's pace and
+ * clock are the hold's.
+ */
+async function blank(io: Io, sentence: string, speak: boolean, hold: Hold | undefined): Promise<number> {
+  if (!hold) return none(io, sentence, speak);
+  if (speak) {
+    io.stdout(`team next: ${sentence}\n`);
+    return begin(io, hold);
+  }
+  return poll(io, hold);
+}
+
+/** The wait's opening: the one waiting line, then the first poll. Reached from the first empty
+ *  pass alone — that pass has already printed the shipped sentence once. */
+async function begin(io: Io, hold: Hold): Promise<number> {
+  io.stdout(`team next: waiting every ${hold.cadence}s\n`);
+  return poll(io, hold);
+}
+
+/**
+ * One poll of the wait: pause, then re-read and re-take. The pause's false — a stop signal —
+ * ends the wait, and so does a clock that did not move past the reading taken before it: a
+ * stuck time must not spin a seat's pane forever. The re-pass is a full pass: a record taken,
+ * and a refusal, end the wait through their own printers and their own bytes.
+ */
+async function poll(io: Io, hold: Hold): Promise<number> {
+  const before = hold.now();
+  if (!(await hold.wait(hold.cadence))) return stopped(io);
+  if (hold.now() <= before) return stopped(io);
+  return pass(io, hold.loaded, hold.tasks, hold.sources, hold.mine, false, false, hold);
 }

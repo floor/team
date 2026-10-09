@@ -2607,6 +2607,14 @@ scene('next.taken', async (place) => {
   recordLead(place);
   return show(await nexted(place), 'm1  the task title');
 });
+scene('next.wait', async (place) => {
+  write(place, `${TASKS}  cadence: 10m\n`);
+  writeFileSync(join(place.root, '.agents', 'tasks.yaml'), '[]\n');
+  recordLead(place);
+  const io = testIo(place.root, leadSeat);
+  const code = await runNext(['--wait'], io, { home: place.home, wait: async () => false });
+  return show({ code, out: io.out, err: io.err }, 'stopped waiting');
+});
 scene('next.caller', async (place) => {
   write(place, TASKS);
   return show(await nexted(place, [], owner), 'this call is owner');
