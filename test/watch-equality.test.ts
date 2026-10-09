@@ -278,8 +278,9 @@ function valid(source: string): TeamFile {
 }
 
 const team = () => valid(example);
-// The example with codex-acme stopped instead of parked: a stopped seat whose screen the watch
-// can read (grok-acme, the example's own stopped seat, is a grok CLI, and the watch reads none).
+// The example with codex-acme stopped instead of parked — a stopped seat whose screen the watch
+// can read. (The example's own stopped seat, grok-acme, was a CLI with no screens at all to read
+// before the grok profile shipped; the captures these tests read are codex's either way.)
 const stoppedTeam = () => valid(example.replace('parked: true', 'stopped: true'));
 
 // Screens of Claude Code, as the live team shows them.

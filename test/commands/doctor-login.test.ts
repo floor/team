@@ -171,7 +171,7 @@ describe('team doctor --login', () => {
       [
         'ok    claude-code: logged in',
         'ok    codex: logged in',
-        '--    grok: no launch profile in this version',
+        '--    grok: the login is not checked in this version',
         'team doctor: nothing missing, 0 warnings',
         '',
       ].join('\n'),
@@ -192,7 +192,7 @@ describe('team doctor --login', () => {
     expect(io.err).toBe('');
     expect(io.out).toContain('ok    claude-code: logged in\n');
     expect(io.out).toContain('MISS  log in to codex: `codex login`\n');
-    expect(io.out).toContain('--    grok: no launch profile in this version\n');
+    expect(io.out).toContain('--    grok: the login is not checked in this version\n');
     expect(io.out).toContain('team doctor: 1 missing, 0 warnings: 1 of them block `up` and `add`\n');
   });
 
@@ -240,7 +240,7 @@ describe('team doctor --login', () => {
     expect(findings.map((f) => f.text)).toEqual([
       'claude-code: logged in',
       'codex: logged in',
-      'grok: no launch profile in this version',
+      'grok: logged in',
     ]);
   });
 

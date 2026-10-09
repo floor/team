@@ -111,12 +111,12 @@ profiles:
   test('refuses a profile this version does not ship', () => {
     const parsed = parseOverrides(`format: 1
 profiles:
-  grok:
+  constructor:
     screen:
       question:
         - any: ['x']
 `);
     expect(parsed.ok).toBe(false);
-    if (!parsed.ok) expect(parsed.errors[0]?.message).toBe('unknown profile "grok"');
+    if (!parsed.ok) expect(parsed.errors[0]?.message).toBe('unknown profile "constructor"');
   });
 });

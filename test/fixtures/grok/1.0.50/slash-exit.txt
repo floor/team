@@ -1,0 +1,22 @@
+
+  <workspace>    20K / 256K │ [Dashboard]
+
+
+     ❯ RULES_RECEIVED                     9:07 AM
+
+
+     ◆ Thought for 0.3s
+
+     Ready. Send the task whenever you    9:07 AM
+     want.
+
+     Worked for 3.7s
+
+  ───────────────────────────────────────────────1─
+    ❯ /exit Quit the application
+  ─────────────────────────────────────────────────
+  ╭───────────────────────────────────────────────╮
+  │ ❯ /exit                                       │
+  ╰─────────── Grok 4.7 (xhigh) · always-approve ─╯
+
+  Enter:send  │  Shift+Enter/Opt+Enter:newline  │

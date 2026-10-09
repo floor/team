@@ -72,7 +72,7 @@ describe('team init', () => {
         'seats:',
         '  - role: orchestrator',
         '    name: orchestrator',
-        '    cli: claude-code          # the first shipped CLI this machine is signed in to: claude-code | codex | cursor | antigravity; any CLI in any role',
+        '    cli: claude-code          # the first shipped CLI this machine is signed in to: claude-code | codex | cursor | antigravity | grok; any CLI in any role',
         '    vendor: anthropic',
         '    model: Claude Opus        # the model\'s name without its version',
         '    version: "0"              # the release number alone, quoted',
@@ -159,22 +159,24 @@ describe('team init', () => {
       loggedIn: (profile: Profile) => (yes.includes(profile.cli) ? true : unknown.includes(profile.cli) ? null : false),
     });
     // The fixed order: the earlier CLI wins whatever later ones answer.
-    expect(firstLoggedInCli(login(['claude-code', 'codex', 'cursor', 'antigravity']))).toBe('claude-code');
-    expect(firstLoggedInCli(login(['codex', 'cursor', 'antigravity']))).toBe('codex');
-    expect(firstLoggedInCli(login(['cursor', 'antigravity']))).toBe('cursor');
-    expect(firstLoggedInCli(login(['antigravity']))).toBe('antigravity');
+    expect(firstLoggedInCli(login(['claude-code', 'codex', 'cursor', 'antigravity', 'grok']))).toBe('claude-code');
+    expect(firstLoggedInCli(login(['codex', 'cursor', 'antigravity', 'grok']))).toBe('codex');
+    expect(firstLoggedInCli(login(['cursor', 'antigravity', 'grok']))).toBe('cursor');
+    expect(firstLoggedInCli(login(['antigravity', 'grok']))).toBe('antigravity');
+    expect(firstLoggedInCli(login(['grok']))).toBe('grok');
     // A check that can't tell is not a yes: it neither selects that CLI nor ends the walk.
     expect(firstLoggedInCli(login(['cursor'], ['claude-code', 'codex']))).toBe('cursor');
     expect(firstLoggedInCli(login(['antigravity'], ['claude-code', 'codex', 'cursor']))).toBe('antigravity');
+    expect(firstLoggedInCli(login(['grok'], ['claude-code', 'codex', 'cursor', 'antigravity']))).toBe('grok');
     // Nothing answers yes: claude-code.
-    expect(firstLoggedInCli(login([], ['claude-code', 'codex', 'cursor', 'antigravity']))).toBe('claude-code');
+    expect(firstLoggedInCli(login([], ['claude-code', 'codex', 'cursor', 'antigravity', 'grok']))).toBe('claude-code');
     expect(firstLoggedInCli(login([]))).toBe('claude-code');
   });
 
   test('a machine signed in beyond claude-code writes that CLI\'s seat', () => {
     const only = (cli: string) => ({ loggedIn: (profile: Profile) => profile.cli === cli });
     const codex = skeleton('acme', null, version(), undefined, firstLoggedInCli(only('codex')));
-    expect(codex).toMatch(/^    cli: codex +# the first shipped CLI this machine is signed in to: claude-code \| codex \| cursor \| antigravity; any CLI in any role$/m);
+    expect(codex).toMatch(/^    cli: codex +# the first shipped CLI this machine is signed in to: claude-code \| codex \| cursor \| antigravity \| grok; any CLI in any role$/m);
     expect(codex).toContain('    vendor: openai\n');
     expect(codex).toMatch(/^    model: GPT Sol +# the model's name without its version$/m);
     expect(codex).toMatch(/^    launch: codex +# the command and its model options; no approval flags$/m);
@@ -183,6 +185,11 @@ describe('team init', () => {
     expect(antigravity).toContain('    vendor: google\n');
     expect(antigravity).toMatch(/^    launch: agy +# the command and its model options; no approval flags$/m);
     expect(validateTeamFile(antigravity).ok).toBe(true);
+    const grok = skeleton('acme', null, version(), undefined, firstLoggedInCli(only('grok')));
+    expect(grok).toContain('    vendor: xai\n');
+    expect(grok).toMatch(/^    model: Grok +# the model's name without its version$/m);
+    expect(grok).toMatch(/^    launch: grok +# the command and its model options; no approval flags$/m);
+    expect(validateTeamFile(grok).ok).toBe(true);
   });
 
   test('a team file with and without the schema line produces identical approval fingerprints and zero drift', () => {

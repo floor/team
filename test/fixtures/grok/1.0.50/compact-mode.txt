@@ -1,0 +1,23 @@
+ <workspace>     1.3K / 256K │ [Dashboard]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                ✓ Compact mode: on
+ ╭─────────────────────────────────────────────────╮
+ │ ❯                                               │
+ ╰───────────── Grok 4.7 (xhigh) · always-approve ─╯
+
+ Ctrl+.:shortcuts

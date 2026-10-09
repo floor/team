@@ -4,7 +4,8 @@
     "antigravity",
     "claude-code",
     "codex",
-    "cursor"
+    "cursor",
+    "grok"
   ],
   "kinds": [
     "idle",
@@ -205,13 +206,61 @@
         "constructed": 0,
         "undocumented": 0
       }
+    },
+    "grok": {
+      "idle": {
+        "real": 3,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "working": {
+        "real": 2,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "unsent": {
+        "real": 5,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "permission": {
+        "real": 0,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "question": {
+        "real": 0,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "exit question": {
+        "real": 0,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "trust": {
+        "real": 0,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "vendor notice": {
+        "real": 0,
+        "constructed": 0,
+        "undocumented": 0
+      },
+      "unknown": {
+        "real": 2,
+        "constructed": 0,
+        "undocumented": 0
+      }
     }
   },
   "notProduced": {
     "antigravity": {},
     "claude-code": {},
     "codex": {},
-    "cursor": {}
+    "cursor": {},
+    "grok": {}
   },
   "fixtures": [
     {
@@ -1232,6 +1281,78 @@
       "file": "exit-typing/cursor-unsent-ansi.txt",
       "cli": "cursor",
       "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/after-turn.txt",
+      "cli": "grok",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/compact-mode.txt",
+      "cli": "grok",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/exit-typed.txt",
+      "cli": "grok",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/exit.txt",
+      "cli": "grok",
+      "kind": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/idle-ansi.txt",
+      "cli": "grok",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/idle.txt",
+      "cli": "grok",
+      "kind": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/slash-exit.txt",
+      "cli": "grok",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/slash-menu.txt",
+      "cli": "grok",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/unsent-wrap.txt",
+      "cli": "grok",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/unsent.txt",
+      "cli": "grok",
+      "kind": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/working-start.txt",
+      "cli": "grok",
+      "kind": "working",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/working-tool.txt",
+      "cli": "grok",
+      "kind": "working",
       "provenance": "capture"
     },
     {

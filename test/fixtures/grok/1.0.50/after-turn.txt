@@ -1,0 +1,22 @@
+
+  <workspace>    20K / 256K │ [Dashboard]
+
+
+     ❯ RULES_RECEIVED                     9:07 AM
+
+
+     ◆ Thought for 0.3s
+
+     Ready. Send the task whenever you    9:07 AM
+     want.
+
+     Worked for 3.7s
+
+
+
+
+  ╭───────────────────────────────────────────────╮
+  │ ❯                                             │
+  ╰─────────── Grok 4.7 (xhigh) · always-approve ─╯
+
+  Shift+Tab:mode  │  Ctrl+.:shortcuts

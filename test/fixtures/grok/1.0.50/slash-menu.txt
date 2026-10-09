@@ -1,0 +1,22 @@
+
+  <workspace>    20K / 256K │ [Dashboard]
+
+
+     ❯ RULES_RECEIVED                     9:07 AM
+
+
+  ─────────────────────────────────────────────128─
+    ❯ /effort                   Set reasoning     █
+                                 effort for the
+                                 current model
+      /new                      Start a new
+                                 session
+      /resume                   Resume a
+                                 previous session
+      /mcps                     Show MCP server
+  ─────────────────────────────────────────────────
+  ╭───────────────────────────────────────────────╮
+  │ ❯ /                                           │
+  ╰─────────── Grok 4.7 (xhigh) · always-approve ─╯
+
+  Enter:send  │  Shift+Enter/Opt+Enter:newline  │

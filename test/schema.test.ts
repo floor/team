@@ -5,7 +5,7 @@
 // JSON Schema the fragments use, and the reader throws on any keyword it does not know, so a
 // schema that outgrows it fails here rather than passing unnoticed.
 //
-// The profiles' schema (src/profiles/profile.schema.json) is applied to the four shipped
+// The profiles' schema (src/profiles/profile.schema.json) is applied to the five shipped
 // profiles by test/profile-schema.test.ts and is not applied a second time here.
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';

@@ -252,12 +252,13 @@ describe('the lobby_files a profile may name', () => {
     expect(profileFor('codex')?.lobbyFiles).toEqual([]);
     expect(profileFor('cursor')?.lobbyFiles).toEqual([]);
     expect(profileFor('antigravity')?.lobbyFiles).toEqual([]);
+    expect(profileFor('grok')?.lobbyFiles).toEqual([]);
   });
 
   test('the union of every shipped profile is what a lobby may hold, whatever the team runs', () => {
     // The set a lobby gate reads cannot depend on a team's seats: it is every shipped
     // declaration together, sorted and deduped, so a CLI another team runs is covered too.
-    const perCli = ['claude-code', 'codex', 'cursor', 'antigravity']
+    const perCli = ['claude-code', 'codex', 'cursor', 'antigravity', 'grok']
       .flatMap((cli) => profileFor(cli)?.lobbyFiles ?? []);
     expect(shippedLobbyFiles()).toEqual([...new Set(perCli)].sort());
     expect(shippedLobbyFiles()).toContain('.claude/scheduled_tasks.lock');
@@ -271,7 +272,7 @@ describe('the lobby_files a profile may name', () => {
     // files the tool itself writes for a seat to read, `<state>/rules/<seat>.md`
     // (`launch/rules-file.ts`). A declaration matching either fails here: the lobby is shared,
     // so no file a CLI might obey at start may sit in it.
-    const shipped = ['claude-code', 'codex', 'cursor', 'antigravity'];
+    const shipped = ['claude-code', 'codex', 'cursor', 'antigravity', 'grok'];
     const named = new Set<string>();
     for (const name of shipped) {
       const yaml = readFileSync(new URL(`../src/profiles/${name}.yaml`, import.meta.url), 'utf8');

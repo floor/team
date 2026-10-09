@@ -462,14 +462,16 @@ function composerOf(node: YamlNode): Composer {
   const frameEntry = optional(entries, 'frame_rows');
   const frameRows = frameEntry ? frameRowsOf(frameEntry) : 0;
   if (name === 'box-to-rule') {
-    only(entries, ['mode', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style', 'wrap', 'frame_rows']);
+    only(entries, ['mode', 'prompt', 'rule', 'footers', 'placeholders', 'placeholder_style', 'strip_suffix', 'wrap', 'frame_rows']);
     // For a scrolled-out box, the non-blank lines under the closing rule must match
     // every pattern, in order, and the counts must be equal.
     const footers = optional(entries, 'footers');
+    const suffix = optional(entries, 'strip_suffix');
     return {
       mode: name,
       prompt: regexField(entries, 'prompt', node.line),
       rule: regexField(entries, 'rule', node.line),
+      stripSuffix: suffix ? composerString(suffix.value, 'strip_suffix', suffix.line) : null,
       footers: footers ? footersOf(footers, false) : [],
       placeholders: placeholdersOf(required(entries, 'placeholders', node.line).value),
       placeholderStyle,

@@ -1,0 +1,11 @@
+❯ AGENT_UNATTENDED=1 <grok-path> --al
+ways-approve
+
+Rules Received Session Initialization
+> RULES_RECEIVED
+  Ready. Send the task whenever you want.
+
+Resume this session with:
+  grok --resume <session-id>
+<workspace>          2m 47s 09:08:25
+❯

@@ -1,0 +1,22 @@
+
+  <workspace> 21K / 256K │ [Dashboard]
+
+
+     ❯ Run one shell command: sleep 20;   9:24 AM
+       echo LONG_EXERCISE_DONE. Then
+       reply with just that word.
+
+
+     I'll run that command and reply      9:24 AM
+     with only the word it prints.                  █
+                                                    █
+     ◆ Running sleep 20 seconds then print LONG_…   █
+                                                    █
+
+   ⠋ Sleep 20 seconds then …   10s ⇣21.0k [↓][stop]
+
+  ╭───────────────────────────────────────────────╮
+  │ ❯                                             │
+  ╰────── Grok 4.7 Fast (xhigh) · always-approve ─╯
+
+  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+b:

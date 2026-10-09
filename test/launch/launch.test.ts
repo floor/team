@@ -21,10 +21,12 @@ const claudeCode = profileFor('claude-code');
 if (!claudeCode) throw new Error('claude-code has no profile');
 
 describe('profiles', () => {
-  test('claude-code, codex and cursor have launch profiles', () => {
+  test('every shipped CLI has a launch profile: claude-code, codex, cursor, antigravity, grok', () => {
     expect(profileFor('claude-code')).toBe(claudeCode);
     expect(profileFor('codex')?.cli).toBe('codex');
     expect(profileFor('cursor')?.cli).toBe('cursor');
+    expect(profileFor('antigravity')?.cli).toBe('antigravity');
+    expect(profileFor('grok')?.cli).toBe('grok');
     expect(profileFor('constructor')).toBeNull();
   });
 
@@ -166,7 +168,8 @@ describe('up --dry-run', () => {
       sessionRunning: false,
       seats: [
         seat('claude-coordinator-acme'),
-        seat('grok-acme', { cli: 'grok' }),
+        seat('grok-acme', { cli: 'grok', launch: 'grok' }),
+        seat('constructor-acme', { cli: 'constructor' }),
         seat('grok-acme', { stopped: true }),
         seat('claude-docs', { cwd: 'docs', label: 'docs' }),
       ],
@@ -180,7 +183,11 @@ describe('up --dry-run', () => {
         "+ herdr --session acme-web pane run <pane of claude-coordinator-acme> 'AGENT_UNATTENDED=1 claude --model claude-opus-5-5 --dangerously-skip-permissions --append-system-prompt Rules.'",
         '  wait until claude-coordinator-acme shows its idle prompt (90 s at most); anything else is reported, its workspace closed without input, and the seat left out',
         '+ herdr --session acme-web agent rename <pane of claude-coordinator-acme> claude-coordinator-acme',
-        '  skip grok-acme: no launch profile for `grok` in this version; left out',
+        '+ herdr --session acme-web workspace create --cwd /work/acme-web --label grok-acme --no-focus',
+        "+ herdr --session acme-web pane run <pane of grok-acme> 'AGENT_UNATTENDED=1 grok --always-approve --rules Rules.'",
+        '  wait until grok-acme shows its idle prompt (90 s at most); anything else is reported, its workspace closed without input, and the seat left out',
+        '+ herdr --session acme-web agent rename <pane of grok-acme> grok-acme',
+        '  skip constructor-acme: no launch profile for `constructor` in this version; left out',
         '  skip grok-acme: stopped in the file; start it with `team add grok-acme`',
         '+ herdr --session acme-web workspace create --cwd /work/acme-web/docs --label docs --no-focus',
         "+ herdr --session acme-web pane run <pane of claude-docs> 'AGENT_UNATTENDED=1 claude --model claude-opus-5-5 --dangerously-skip-permissions --append-system-prompt Rules.'",
@@ -355,14 +362,14 @@ describe('down --dry-run', () => {
   test('a seat of a CLI without a profile is left running', () => {
     const plan = downPlan({
       session: 's',
-      seats: [{ ...seat('grok-acme'), cli: 'grok' }],
+      seats: [{ ...seat('constructor-acme'), cli: 'constructor' }],
       extra: 0,
       watchPid: null,
       keep: [],
     });
     expect(plan[0]).toEqual({
       kind: 'skip',
-      text: 'grok-acme: no launch profile for `grok` in this version; left running',
+      text: 'constructor-acme: no launch profile for `constructor` in this version; left running',
     });
   });
 });

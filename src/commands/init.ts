@@ -30,9 +30,9 @@ function git(root: string, ...args: string[]): string | null {
   }
 }
 
-/** The four shipped CLIs, in the order `init` tries them for the skeleton's seat (README's
+/** The five shipped CLIs, in the order `init` tries them for the skeleton's seat (README's
  *  table of the CLIs with launch profiles). */
-const PICKED_CLIS = ['claude-code', 'codex', 'cursor', 'antigravity'] as const;
+const PICKED_CLIS = ['claude-code', 'codex', 'cursor', 'antigravity', 'grok'] as const;
 
 /** The vendor and model the skeleton names for each picked CLI: the vendor's own name, no lab
  *  assumed for the lead's role. */
@@ -41,6 +41,7 @@ const PICKED_SEATS: Record<(typeof PICKED_CLIS)[number], { vendor: string; model
   codex: { vendor: 'openai', model: 'GPT Sol' },
   cursor: { vendor: 'meridian', model: 'Meridian' },
   antigravity: { vendor: 'google', model: 'Gemini' },
+  grok: { vendor: 'xai', model: 'Grok' },
 };
 
 /**
@@ -104,7 +105,7 @@ workspace:
 seats:
   - role: orchestrator
     name: orchestrator
-${padded(`    cli: ${cli}`, '# the first shipped CLI this machine is signed in to: claude-code | codex | cursor | antigravity; any CLI in any role')}
+${padded(`    cli: ${cli}`, '# the first shipped CLI this machine is signed in to: claude-code | codex | cursor | antigravity | grok; any CLI in any role')}
     vendor: ${picked.vendor}
 ${padded(`    model: ${picked.model}`, "# the model's name without its version")}
 ${padded('    version: "0"', '# the release number alone, quoted')}
