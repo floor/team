@@ -103,6 +103,11 @@ export async function runBroker(argv: string[], io: Io, sources: BrokerSources =
     // exit: broker.busy
     return 1;
   }
+  if (started.kind === 'locked') {
+    io.stderr(`team broker: another start is binding ${relativeSocket()}; try again\n`);
+    // exit: broker.locked
+    return 1;
+  }
   if (started.kind === 'bind-failed') {
     io.stderr(`team broker: the socket could not be bound${started.code === undefined ? '' : `: ${started.code}`}\n`);
     // exit: broker.bind

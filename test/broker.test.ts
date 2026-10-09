@@ -6,8 +6,8 @@
 // a clean close removes the file, a kill leaves it (probe run under bun 1.4.2 and node v26.8.1:
 // afterBind true, afterClose false on both).
 import { afterEach, describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer, connect, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -177,6 +177,478 @@ function leaveStaleSocket(at: string = brokerSocket(root)): void {
   } catch (error) {
     if ((error as { signal?: string }).signal !== 'SIGKILL') throw error;
   }
+}
+
+/** The fixture child the start-serialization pin runs: the real start path in a real process,
+ *  with its listen call deliberately held back a fixed number of milliseconds. The hold sits
+ *  inside a patched `net.Server.prototype.listen`, a busy-wait before the real call — measured
+ *  before it was written into a pin (mine: node v26.8.1 and bun 1.4.2, one observer process
+ *  polling the path every 100ms while the holder ran an 800ms hold: "0ms patched listen
+ *  entered, exists=false / 800ms the delay is over, exists=false / 801ms the listen call
+ *  returned, exists=true" — identical timelines, the path clean for the whole hold, so a
+ *  second start arriving in the window reads no entry and binds first). The hold is before the
+ *  listen call on purpose: there is no JS-holdable window after it — the syscall lands with
+ *  the file created and the callback within the same beat even with the loop blocked (the same
+ *  probe), and a genuinely bound-not-listening socket answers ECONNREFUSED on macOS exactly as
+ *  on Linux (mine: a python bind, 3s before listen, connects refused throughout). What a
+ *  serialized start must prevent is a second start taking a path this one is still on its way
+ *  to; a second start arriving after the file exists reads a live socket and is refused busy
+ *  either way.
+ *  It prints `ready` with a raw write — out before the hold can block the loop — then one JSON
+ *  line with the outcome. A serving child stays alive; anything else runs out of work and
+ *  exits on its own. */
+const FIXTURE = `import { lstatSync, readFileSync, writeSync } from 'node:fs';
+import { join } from 'node:path';
+import net from 'node:net';
+import { pathToFileURL } from 'node:url';
+
+const [root, delay, repo] = process.argv.slice(2);
+const real = net.Server.prototype.listen;
+net.Server.prototype.listen = function (...args) {
+  const end = Date.now() + Number(delay);
+  while (Date.now() < end) {}
+  return real.apply(this, args);
+};
+const at = (p) => pathToFileURL(join(repo, p)).href;
+const { validateTeamFile } = await import(at('src/file/validate.ts'));
+const { startBroker } = await import(at('src/broker/server.ts'));
+const { brokerSocket } = await import(at('src/broker/protocol.ts'));
+const checked = validateTeamFile(readFileSync(join(root, '.agents', 'team.yaml'), 'utf8'));
+if (!checked.ok) {
+  writeSync(2, 'the fixture team file does not validate\\n');
+  process.exit(2);
+}
+writeSync(1, 'ready\\n');
+const result = await startBroker({
+  root,
+  team: checked.team,
+  read: async () => ({ kind: 'read', read: { kind: 'records', records: [{ id: 'm1', title: 't' }], refusals: [] } }),
+  stderr: (text) => writeSync(2, text),
+});
+let entry;
+try { entry = lstatSync(brokerSocket(root)); } catch {}
+writeSync(1, JSON.stringify({
+  kind: result.kind,
+  cleared: result.kind === 'serving' ? result.cleared : false,
+  dev: entry?.dev,
+  ino: entry?.ino,
+}) + '\\n');
+`;
+
+type FixtureOutcome = { kind: 'serving' | 'busy' | 'bind-failed' | 'locked'; cleared: boolean; dev: number | undefined; ino: number | undefined; ms?: number };
+
+/** The burst fixture: the same real start path in a real process, but released together with
+ *  its siblings — it says `ready`, then waits for the go file, so the test can hold every
+ *  starter in the wait and write the go file only once all of them are about to start. One
+ *  JSON line with the outcome and the elapsed is the whole answer. Used for the rounds where
+ *  a crash left a dead start's lock (and a corpse socket) behind and several starts arrive at
+ *  once. */
+const BURST_FIXTURE = `import { existsSync, readFileSync, writeSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const [root, go, repo] = process.argv.slice(2);
+const at = (p) => pathToFileURL(join(repo, p)).href;
+const { validateTeamFile } = await import(at('src/file/validate.ts'));
+const { startBroker } = await import(at('src/broker/server.ts'));
+const checked = validateTeamFile(readFileSync(join(root, '.agents', 'team.yaml'), 'utf8'));
+if (!checked.ok) {
+  writeSync(2, 'the fixture team file does not validate\\n');
+  process.exit(2);
+}
+writeSync(1, 'ready\\n');
+while (!existsSync(go)) await new Promise((tick) => setTimeout(tick, 1));
+const started = Date.now();
+const result = await startBroker({
+  root,
+  team: checked.team,
+  read: async () => ({ kind: 'read', read: { kind: 'records', records: [{ id: 'm1', title: 't' }], refusals: [] } }),
+  stderr: (text) => writeSync(2, text),
+});
+writeSync(1, JSON.stringify({ kind: result.kind, cleared: result.kind === 'serving' ? result.cleared : false, ms: Date.now() - started }) + '\\n');
+`;
+
+/** The gap fixture: the real start path in a real process, with the writer itself held inside
+ *  its own create. The hold rides a redefined `process.pid` getter, installed after the imports
+ *  and before `ready`: in `server.ts` the first read of `process.pid` after arming is the pid
+ *  written into the lock or the claim, so the getter's busy-wait lands exactly in the
+ *  create→write gap — the interval the finding is about. The seam is measured, never assumed:
+ *  patching a named `node:fs` import from the child could not work (bun 1.4.2 binds named
+ *  imports to the function itself; a probe router process recorded `openHits= 0 writeHits= 0`
+ *  through a patched default import), while the getter fires on the first read and every later
+ *  read answers the real pid (probe: `getter-installed ok`, `paused`, `read-again=true`). The
+ *  hold is 1500ms: past `LOCK_YOUNG_MS` (1000), so an aged empty entry can be taken over while
+ *  the writer is still alive — the finding's exact shape — and under `LOCK_WAIT_MS` (2000), so
+ *  the writer resumes into its own section and answers, rather than timing out on its own
+ *  artificial hold. It says `ready`, then `paused` with a raw write — out before the busy-wait
+ *  can block the loop — then one JSON line with the outcome. */
+const GAP_FIXTURE = `import { readFileSync, writeSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const [root, gap, repo] = process.argv.slice(2);
+const at = (p) => pathToFileURL(join(repo, p)).href;
+const { validateTeamFile } = await import(at('src/file/validate.ts'));
+const { startBroker } = await import(at('src/broker/server.ts'));
+const checked = validateTeamFile(readFileSync(join(root, '.agents', 'team.yaml'), 'utf8'));
+if (!checked.ok) {
+  writeSync(2, 'the fixture team file does not validate\\n');
+  process.exit(2);
+}
+const real = process.pid;
+let armed = true;
+Object.defineProperty(process, 'pid', {
+  get() {
+    if (armed) {
+      armed = false;
+      writeSync(1, 'paused\\n');
+      const end = Date.now() + Number(gap);
+      while (Date.now() < end) {}
+    }
+    return real;
+  },
+});
+writeSync(1, 'ready\\n');
+const result = await startBroker({
+  root,
+  team: checked.team,
+  read: async () => ({ kind: 'read', read: { kind: 'records', records: [{ id: 'm1', title: 't' }], refusals: [] } }),
+  stderr: (text) => writeSync(2, text),
+});
+writeSync(1, JSON.stringify({ kind: result.kind, cleared: result.kind === 'serving' ? result.cleared : false }) + '\\n');
+`;
+
+type FixtureChild = {
+  pid: number | undefined;
+  said: string[];
+  outcome: FixtureOutcome | undefined;
+  failure: string | undefined;
+  /** Resolves on the child's `exit` — after it is reaped, its pid is gone. */
+  exited: Promise<void>;
+  kill: () => void;
+};
+
+/** One fixture child, spawned with its hold; its stdout is read line by line, its stderr kept
+ *  for the failure message. `kill` leaves the corpse exactly as any SIGKILL does. */
+function spawnFixture(script: string, args: string[]): FixtureChild {
+  const child = spawn(process.execPath, [script, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let exitedDone: () => void = () => {};
+  const exited = new Promise<void>((done) => (exitedDone = done));
+  child.once('exit', () => exitedDone());
+  const fixture: FixtureChild = { pid: child.pid, said: [], outcome: undefined, failure: undefined, exited, kill: () => child.kill('SIGKILL') };
+  let buffer = '';
+  let err = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    buffer += chunk;
+    let at: number;
+    while ((at = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, at);
+      buffer = buffer.slice(at + 1);
+      fixture.said.push(line);
+      if (line.startsWith('{')) fixture.outcome = JSON.parse(line) as FixtureOutcome;
+      else if (line !== 'ready' && line !== 'paused') fixture.failure = `the fixture said: ${line}`;
+    }
+  });
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk: string) => (err += chunk));
+  child.once('close', (code, signal) => {
+    fixture.failure ??= `the fixture exited before an outcome (${code ?? signal})${err ? `: ${err.trim()}` : ''}`;
+  });
+  return fixture;
+}
+
+function startFixture(delayMs: number): FixtureChild {
+  const script = join(base, `start-${delayMs}.mjs`);
+  writeFileSync(script, FIXTURE);
+  return spawnFixture(script, [root, String(delayMs), join(import.meta.dir, '..')]);
+}
+
+/** One burst child for a per-round root: it waits for that round's go file. */
+function burstFixture(roundRoot: string, go: string): FixtureChild {
+  const script = join(base, 'burst.mjs');
+  writeFileSync(script, BURST_FIXTURE);
+  return spawnFixture(script, [roundRoot, go, join(import.meta.dir, '..')]);
+}
+
+/** One gap child: a real start whose writer holds inside its own create for `gapMs`. */
+function gapFixture(gapMs: number): FixtureChild {
+  const script = join(base, `gap-${gapMs}.mjs`);
+  writeFileSync(script, GAP_FIXTURE);
+  return spawnFixture(script, [root, String(gapMs), join(import.meta.dir, '..')]);
+}
+
+/** The claim-burst fixture: the burst fixture plus the instrumented claim lane — `unlinkSync`
+ *  wrapped so every unlink of a `*.lock` / `*.lock.takeover` path whose bytes named a live pid
+ *  other than the unlinker is logged, one buffered `EVENTS` line at the outcome, never a write
+ *  mid-race (the delta-2 lab's `UNLINK_LIVE` form, the finding's own instrument). The wrap
+ *  rides the first route that proves itself (`A1`/`A2`: a `bun:test`
+ *  `mock.module('node:fs', …)` registered before the server import, as a copy or a prototype;
+ *  `M`: the namespace object; `R`: the require object): a route is taken only after a canary
+ *  import's own call fires the wrap — bun 1.4.2 binds a named import to the function itself,
+ *  so a patch that never fires must never be believed. The `touched` counter is the wire's
+ *  positive control: the winning start's takeover unlinks the dead lock every round, so
+ *  `touched ≥ rounds` proves the wrap sits in the server's call path and an events=0 is a
+ *  measured zero, not a dead wire. */
+const CLAIM_BURST_FIXTURE = `import { createRequire } from 'node:module';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, writeSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const [mode, root, go, repo] = process.argv.slice(2);
+const DETECT = mode === 'selftest' || process.env.DS_DETECT === '1';
+const ROUTE = process.env.DS_ROUTE || 'A1';
+const PARENT = Number(process.env.DS_PARENT || '0');
+const events = [];
+let touched = 0;
+let wireErr = null;
+
+function alive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return !!e && e.code === 'EPERM'; } }
+function wrap(orig) {
+  return function (p) {
+    try {
+      const s = String(p);
+      if (/\\.lock$|\\.lock\\.takeover$/.test(s)) {
+        touched += 1;
+        let data = null;
+        try { data = readFileSync(s, 'utf8'); } catch {}
+        const pid = data === null ? NaN : Number.parseInt(data.trim(), 10);
+        if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid)) {
+          events.push({ path: s, pid, me: process.pid, bytes: data });
+        }
+      }
+    } catch {}
+    return orig.apply(this, arguments);
+  };
+}
+const canarySrc = "import { unlinkSync } from 'node:fs';\\nexport function go(p) { unlinkSync(p); }\\n";
+async function install() {
+  const det = mkdtempSync(join(tmpdir(), 'team-claim-det-'));
+  const canary = join(det, 'canary-' + ROUTE + '.mjs');
+  writeFileSync(canary, canarySrc);
+  if (ROUTE === 'A1' || ROUTE === 'A2') {
+    const { mock } = await import('bun:test');
+    const fs = await import('node:fs');
+    const m = ROUTE === 'A1' ? Object.assign({}, fs) : Object.create(fs);
+    m.unlinkSync = wrap(fs.unlinkSync);
+    mock.module('node:fs', () => m);
+  } else if (ROUTE === 'M') {
+    const fs = await import('node:fs');
+    fs.unlinkSync = wrap(fs.unlinkSync);
+  } else if (ROUTE === 'R') {
+    const req = createRequire(import.meta.url);
+    const rfs = req('node:fs');
+    rfs.unlinkSync = wrap(rfs.unlinkSync);
+  } else {
+    throw new Error('unknown route ' + ROUTE);
+  }
+  return canary;
+}
+if (DETECT) {
+  try {
+    const canary = await install();
+    const m = await import(pathToFileURL(canary).href);
+    const dummy = join(dirname(canary), 'selftest.lock');
+    writeFileSync(dummy, String(PARENT));
+    const before = events.length;
+    m.go(dummy);
+    const fires = events.length - before;
+    if (mode === 'selftest') {
+      writeSync(1, JSON.stringify({ selftest: fires > 0 ? 'ok' : 'fail', route: ROUTE, fires, touched }) + '\\n');
+      process.exit(fires > 0 ? 0 : 4);
+    }
+    writeSync(1, JSON.stringify({ event: 'DET', route: ROUTE, fires, errs: wireErr }) + '\\n');
+    if (fires === 0) { writeSync(1, JSON.stringify({ event: 'DET-BROKEN', route: ROUTE }) + '\\n'); }
+  } catch (e) {
+    wireErr = String((e && e.message) || e);
+    if (mode === 'selftest') {
+      writeSync(1, JSON.stringify({ selftest: 'fail', route: ROUTE, fires: 0, errs: wireErr }) + '\\n');
+      process.exit(4);
+    }
+    writeSync(1, JSON.stringify({ event: 'DET-BROKEN', route: ROUTE, errs: wireErr }) + '\\n');
+  }
+}
+if (mode === 'selftest') {
+  writeSync(1, JSON.stringify({ selftest: 'fail', route: ROUTE, fires: 0, errs: 'no wrap fired' }) + '\\n');
+  process.exit(4);
+}
+events.length = 0; // the canary's own unlink is the wire's test, not a round event
+touched = 0;
+const at = (p) => pathToFileURL(join(repo, p)).href;
+const { validateTeamFile } = await import(at('src/file/validate.ts'));
+const srv = await import(at('src/broker/server.ts'));
+const checked = validateTeamFile(readFileSync(join(root, '.agents', 'team.yaml'), 'utf8'));
+if (!checked.ok) { writeSync(2, 'the fixture team file does not validate\\n'); process.exit(2); }
+writeSync(1, 'ready\\n');
+while (!existsSync(go)) await new Promise((tick) => setTimeout(tick, 1));
+const t0 = Date.now();
+const result = await srv.startBroker({
+  root,
+  team: checked.team,
+  read: async () => ({ kind: 'read', read: { kind: 'records', records: [{ id: 'm1', title: 't' }], refusals: [] } }),
+  stderr: (text) => writeSync(2, text),
+});
+const ms = Date.now() - t0;
+if (events.length > 0 || touched > 0) {
+  writeSync(1, JSON.stringify({ event: 'EVENTS', list: events, touched }) + '\\n');
+}
+writeSync(1, JSON.stringify({ kind: result.kind, cleared: result.kind === 'serving' ? result.cleared : false, ms, pid: process.pid }) + '\\n');
+`;
+
+type ClaimEvent = { path: string; pid: number; me: number; bytes: string };
+type ClaimChild = FixtureChild & {
+  claim: () => { list: ClaimEvent[]; touched: number };
+  detBroken: () => boolean;
+  selftest: () => string | undefined;
+};
+
+/** One claim-burst child; `extraEnv` carries the detector route and the parent pid the
+ *  selftest's planted lock names as its live writer. The detector's own lines are not the
+ *  fixture's answers: only a line that is neither `ready` nor JSON fails it, and only a line
+ *  with a `kind` is its outcome. */
+function spawnClaimKid(args: string[], extraEnv: Record<string, string>): ClaimChild {
+  const script = join(base, 'claim-burst.mjs');
+  writeFileSync(script, CLAIM_BURST_FIXTURE);
+  const proc = spawn(process.execPath, [script, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...extraEnv } });
+  let list: ClaimEvent[] = [];
+  let touched = 0;
+  let broken = false;
+  let selftestLine: string | undefined;
+  const fixture: ClaimChild = {
+    pid: proc.pid,
+    said: [],
+    outcome: undefined,
+    failure: undefined,
+    exited: new Promise<void>((done) => proc.once('exit', () => done())),
+    kill: () => proc.kill('SIGKILL'),
+    claim: () => ({ list, touched }),
+    detBroken: () => broken,
+    selftest: () => selftestLine,
+  };
+  let buffer = '';
+  let err = '';
+  proc.stdout.setEncoding('utf8');
+  proc.stdout.on('data', (chunk: string) => {
+    buffer += chunk;
+    let at: number;
+    while ((at = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, at);
+      buffer = buffer.slice(at + 1);
+      fixture.said.push(line);
+      if (!line.startsWith('{')) {
+        if (line !== 'ready') fixture.failure = `the fixture said: ${line}`;
+        continue;
+      }
+      const parsed = JSON.parse(line) as { event?: string; selftest?: string; list?: ClaimEvent[]; touched?: number; kind?: string; cleared?: boolean };
+      if (parsed.event === 'EVENTS') { list = parsed.list ?? []; touched = parsed.touched ?? 0; }
+      else if (parsed.event === 'DET-BROKEN') broken = true;
+      else if (parsed.selftest !== undefined) selftestLine = line;
+      else if (parsed.kind !== undefined) fixture.outcome = parsed as FixtureOutcome;
+    }
+  });
+  proc.stderr.setEncoding('utf8');
+  proc.stderr.on('data', (chunk: string) => (err += chunk));
+  proc.once('close', (code, signal) => {
+    fixture.failure ??= `the fixture exited before an outcome (${code ?? signal})${err ? `: ${err.trim()}` : ''}`;
+  });
+  return fixture;
+}
+
+/** The detector's selftest for one route: a child that installs the wrap, fires it through a
+ *  canary import's own call, and answers `ok` only when the event was logged. */
+async function claimSelftest(candidate: string): Promise<{ ok: boolean; line: string }> {
+  const kid = spawnClaimKid(['selftest', 'x', 'x', join(import.meta.dir, '..')], { DS_ROUTE: candidate, DS_PARENT: String(process.pid) });
+  const until = Date.now() + 10_000;
+  while (Date.now() < until) {
+    const verdict = kid.selftest();
+    if (verdict !== undefined) { kid.kill(); return { ok: verdict.includes('"ok"'), line: verdict }; }
+    await new Promise((tick) => setTimeout(tick, 20));
+  }
+  kid.kill();
+  return { ok: false, line: 'no selftest line' };
+}
+
+/** While a writer holds inside its create, watch one path: every sighting of the file present
+ *  with no positive pid in it is counted, first and last with the elapsed since the watch began.
+ *  A path that is absent is not a sighting — absence is the one state both protocols agree on,
+ *  the pre-create and the post-release state. The counters are the pin's byte: a create that
+ *  publishes ownership atomically never shows the shared name without its writer, while the
+ *  base head's `openSync(path,'wx')`-then-write state exists — empty — for the whole hold. */
+function watchNoPid(path: string): { stop: () => Promise<void>; empty: { count: number; firstMs: number; lastMs: number } } {
+  const empty = { count: 0, firstMs: 0, lastMs: 0 };
+  const t0 = Date.now();
+  let stopped = false;
+  const done = (async () => {
+    while (!stopped) {
+      try {
+        const value = Number(readFileSync(path, 'utf8').trim());
+        if (!(Number.isInteger(value) && value > 0)) {
+          const at = Date.now() - t0;
+          if (empty.count === 0) empty.firstMs = at;
+          empty.lastMs = at;
+          empty.count += 1;
+        }
+      } catch {}
+      await new Promise((tick) => setTimeout(tick, 5));
+    }
+  })();
+  return { stop: async () => { stopped = true; await done; }, empty };
+}
+
+/** The private temps an atomic create keeps only while it runs: any `.new` name under the
+ *  clone's `.agents` at rest is residue the released protocol must not leave — the one a
+ *  killed create left behind is swept by the next start. */
+function newResidue(): string[] {
+  return readdirSync(join(root, '.agents')).filter((name) => name.endsWith('.new')).sort();
+}
+
+/** A fixture's `ready`, with the deadline failing the pin on what the child has said so far
+ *  instead of hanging the suite. */
+async function readyOf(fixture: FixtureChild, deadlineMs = 8000): Promise<void> {
+  const until = Date.now() + deadlineMs;
+  while (Date.now() < until) {
+    if (fixture.said.includes('ready')) return;
+    if (fixture.failure) throw new Error(fixture.failure);
+    await new Promise((tick) => setTimeout(tick, 25));
+  }
+  throw new Error(`the fixture never said ready: ${fixture.said.join(' | ')}`);
+}
+
+/** A fixture's outcome line, with the same deadline and the same failure message. */
+async function outcomeOf(fixture: FixtureChild, deadlineMs = 8000): Promise<FixtureOutcome> {
+  const until = Date.now() + deadlineMs;
+  while (Date.now() < until) {
+    if (fixture.outcome) return fixture.outcome;
+    if (fixture.failure) throw new Error(fixture.failure);
+    await new Promise((tick) => setTimeout(tick, 25));
+  }
+  throw new Error(`the fixture never answered: ${fixture.said.join(' | ')}`);
+}
+
+/** Wait until the start lock names the fixture's own process — its start section has begun and
+ *  the lock is observably its own. */
+async function lockedBy(fixture: FixtureChild): Promise<void> {
+  const lockPath = `${brokerSocket(root)}.lock`;
+  await waitFor(() => {
+    try {
+      return Number(readFileSync(lockPath, 'utf8').trim()) === fixture.pid;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** The pid is gone, not merely signalled: a reaped process answers no signal at all. */
+async function gone(pid: number): Promise<void> {
+  await waitFor(() => {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  });
 }
 
 /** The answer map, the release world's shape: one recorded attempt, every request kept. */
@@ -391,6 +863,520 @@ describe('the start protocol', () => {
     expect(existsSync(path)).toBe(false);
   });
 
+  test('a second start cannot take the path from a start that is still starting', async () => {
+    // The window the walk alone cannot close: a start is not instantaneous, and this owner —
+    // the real start path in a real process — has its listen call deliberately held back a
+    // fixed 1500ms by the fixture. The second start is a real start too, spawned the moment
+    // the owner says ready, while the owner is still on its way to binding. At the base head
+    // the path is clean through the whole hold: the racer's walk reads no entry, binds first,
+    // and the owner's listen fails EADDRINUSE — the start that began first is the one refused
+    // (rehearsed at the base head, macOS: 3/3 rounds; the push of this pin alone was the red
+    // on CI — ubuntu run 37798070215 at head 982c4b0, `Expected: "serving"` / `Received:
+    // "bind-failed"`, 1548.59ms — the proof the fix flips). The fix this pin holds: the
+    // owner takes the start lock before its walk, the racer waits on that lock and then reads
+    // the owner's socket live — busy — and the path carries the owner's very entry (dev+ino)
+    // through everything the racer did.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const owner = startFixture(1500);
+    try {
+      await readyOf(owner);
+      const racer = startFixture(0);
+      try {
+        const ownerOutcome = await outcomeOf(owner);
+        const racerOutcome = await outcomeOf(racer);
+        expect(ownerOutcome.kind).toBe('serving');
+        expect(racerOutcome.kind).toBe('busy');
+        expect(ownerOutcome.cleared).toBe(false);
+        expect(racerOutcome.cleared).toBe(false);
+        const entry = lstatSync(path);
+        expect(entry.isSocket()).toBe(true);
+        const seen: Pick<FixtureOutcome, 'dev' | 'ino'> = { dev: entry.dev, ino: entry.ino };
+        expect(seen).toEqual({ dev: ownerOutcome.dev, ino: ownerOutcome.ino });
+        expect(seen).toEqual({ dev: racerOutcome.dev, ino: racerOutcome.ino });
+        expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
+        // The lock covers the start section, not the serve: the owner released it as its
+        // listen landed, and the racer released the very hold it waited for — none is left.
+        expect(existsSync(`${path}.lock`)).toBe(false);
+      } finally {
+        racer.kill();
+      }
+    } finally {
+      owner.kill();
+    }
+  });
+
+  test('a start\'s release leaves a lock a second start holds', async () => {
+    // The release-identity shape, deterministic: A is a real start held pre-listen by the
+    // fixture's listen hold (1500ms). Once A holds the lock, the same-principal removal the
+    // finding's own step uses drops that entry, and B — a real start, held the same way —
+    // creates its own lock in the free name. A's walk then lands and A's release runs while B
+    // is alive and still mid-section: the release must unlink only the entry A created, so B's
+    // lock survives A's exit — bytes and inode both. A release that unlinks the path
+    // unconditionally removes a live replacement's lock; this pin is red until the release is
+    // identity-bound. B's own walk, arriving after A bound, answers the pinned bind sentence;
+    // B's release then removes its own lock.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const a = startFixture(1500);
+    try {
+      await readyOf(a);
+      if (a.pid === undefined) throw new Error('the fixture has no pid');
+      // The lock naming A itself, not mere existence: the file exists a beat before its pid
+      // lands, and this pin needs A's section begun — the lock observably A's own.
+      await lockedBy(a);
+      expect(Number(readFileSync(lockPath, 'utf8').trim())).toBe(a.pid);
+      unlinkSync(lockPath);
+      const b = startFixture(1500);
+      try {
+        await readyOf(b);
+        if (b.pid === undefined) throw new Error('the fixture has no pid');
+        await lockedBy(b);
+        expect(Number(readFileSync(lockPath, 'utf8').trim())).toBe(b.pid);
+        const bEntry = lstatSync(lockPath);
+        expect((await outcomeOf(a)).kind).toBe('serving');
+        // A has left its section: B is alive, mid-section, and the lock at the path is still
+        // B's entry.
+        expect(existsSync(lockPath)).toBe(true);
+        if (existsSync(lockPath)) {
+          expect(Number(readFileSync(lockPath, 'utf8').trim())).toBe(b.pid);
+          expect(lstatSync(lockPath).ino).toBe(bEntry.ino);
+          expect(lstatSync(lockPath).dev).toBe(bEntry.dev);
+        }
+        expect((await outcomeOf(b)).kind).toBe('bind-failed');
+      } finally {
+        b.kill();
+      }
+    } finally {
+      a.kill();
+    }
+    expect(existsSync(lockPath)).toBe(false); // B's own release removed its own entry
+  }, 15000);
+
+  test('a start lock a killed start left behind is taken over', async () => {
+    // A start killed mid-section — the fixture SIGKILLed while it holds the lock and is still
+    // on its way to binding — leaves the lock file with its dead pid. The next start must not
+    // wedge on it: `withLock`'s discipline, the dead file taken over under a takeover claim,
+    // serves it. Nothing was there to clear (the killed section never bound), and the lock the
+    // next start took is released with it.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const killed = startFixture(60000);
+    try {
+      await readyOf(killed);
+      if (killed.pid === undefined) throw new Error('the fixture has no pid');
+      await lockedBy(killed);
+      killed.kill();
+      await killed.exited;
+      await gone(killed.pid);
+      expect(existsSync(lockPath)).toBe(true);
+      expect(Number(readFileSync(lockPath, 'utf8').trim())).toBe(killed.pid);
+      const started = await startBroker({ root, team: teamOf(), read: () => Promise.resolve(records([{ id: 'm1', title: 't' }])), stderr: () => {} });
+      if (started.kind !== 'serving') throw new Error(`the broker did not start: ${started.kind}`);
+      expect(started.cleared).toBe(false);
+      expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
+      expect(existsSync(lockPath)).toBe(false);
+      expect(existsSync(`${lockPath}.${process.pid}.stale`)).toBe(false);
+      expect(existsSync(`${lockPath}.takeover`)).toBe(false);
+      await started.handle.close();
+      expect(existsSync(path)).toBe(false);
+    } finally {
+      killed.kill();
+      await killed.exited;
+    }
+  });
+
+  test('an empty lock file is waited on, not taken over', async () => {
+    // The create→write gap, made observable: the lock exists the instant `openSync(path,'wx')`
+    // returns, its pid one beat later — an empty read is what a sibling lands on in that gap,
+    // and what a writer killed exactly there leaves behind. The too-young guard was written for
+    // garbage reads only: an empty read parses to `0`, `Number.isInteger(0)` is true, so the
+    // guard was skipped, `0 > 0` kept it out of the live-holder branch, and the lock was taken
+    // over in the same instant it appeared (rehearsed at the frozen head on my own export:
+    // `broker young EMPTY "": outcome=serving in 0ms`). The pin: the start must serve only
+    // after the lock's age passed the young window — the empty file waited on like any lock
+    // too young to hold its pid, then taken over where no writer is coming (nothing here ever
+    // writes a pid into it; LOCK_YOUNG_MS is 1000). At the frozen head the serve lands within
+    // a few ms of the create, so the elapsed is the observable: a wait that never happened
+    // cannot be faked by a slow machine, only by the bug.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const t0 = Date.now();
+    writeFileSync(lockPath, '');
+    const started = await startBroker({ root, team: teamOf(), read: () => Promise.resolve(records([{ id: 'm1', title: 't' }])), stderr: () => {} });
+    const waited = Date.now() - t0;
+    if (started.kind !== 'serving') throw new Error(`the broker did not start: ${started.kind}`);
+    expect(waited).toBeGreaterThanOrEqual(900);
+    expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
+    await started.handle.close();
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  test('an interrupted writer\'s empty lock is waited on, then taken over', async () => {
+    // The create→write gap with a real writer killed inside it (the review's C2 shape): a
+    // child exclusive-creates the lock and SIGKILLs itself before writing its pid. The empty
+    // file is now a dead writer's, and the second start is a real start: it must not take the
+    // file over inside the young window — nothing has had a chance to write, and the oldest a
+    // fresh entry can be is microseconds — and with no writer coming, the empty file is taken
+    // over once it has aged past LOCK_YOUNG_MS (1000) and serves.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const writer = join(base, 'interrupted.mjs');
+    writeFileSync(writer, "import { openSync } from 'node:fs';\nopenSync(process.argv[2], 'wx');\nprocess.kill(process.pid, 'SIGKILL');\n");
+    try {
+      execFileSync(process.execPath, [writer, lockPath], { stdio: 'ignore' });
+    } catch (error) {
+      if ((error as { signal?: string }).signal !== 'SIGKILL') throw error;
+    }
+    expect(existsSync(lockPath)).toBe(true);
+    expect(readFileSync(lockPath, 'utf8')).toBe('');
+    const t0 = Date.now();
+    const started = await startBroker({ root, team: teamOf(), read: () => Promise.resolve(records([{ id: 'm1', title: 't' }])), stderr: () => {} });
+    const waited = Date.now() - t0;
+    if (started.kind !== 'serving') throw new Error(`the broker did not start: ${started.kind}`);
+    expect(waited).toBeGreaterThanOrEqual(950);
+    expect(await ask(leadSeat)).toMatchObject({ kind: 'read' });
+    await started.handle.close();
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  test('a live writer paused in the lock\'s create is never evicted', async () => {
+    // The finding, against real processes: a writer alive and inside its own create — the
+    // fixture's pid getter holds the real start path for 1500ms, a watched window an order of
+    // magnitude past LOCK_YOUNG_MS — is not dead, and a second real start arriving mid-hold
+    // must not serve through it. At the base head the lock's name exists at the create's
+    // `openSync(path,'wx')` return and stays empty for the whole hold; the second start waits
+    // out the young window, `takeOver` ages the entry out and unlinks it while the writer is
+    // still to resume — the writer then publishes its pid into an unlinked file (the review's
+    // own bytes: `writer:["opened"]`, `starter:["ready","prelisten","out:serving"]`,
+    // `writerAlive:true`, `lock:false`). The pin judges the protocol's state, not the
+    // schedule: whatever anyone answers, the shared name must never exist without a pid in it
+    // — an entry is published whole — and at rest no start serves through the other: the
+    // second serves, the writer resumes into its own section and answers busy, and no lock, no
+    // claim, no private temp is left. The outcome pair is the same on both heads; the empty
+    // sighting is the discriminator.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const writer = gapFixture(1500);
+    const watcher = watchNoPid(lockPath);
+    try {
+      await readyOf(writer);
+      await waitFor(() => writer.said.includes('paused')); // the writer is in its create's gap
+      const second = startFixture(0);
+      try {
+        const secondOutcome = await outcomeOf(second, 15000);
+        const writerOutcome = await outcomeOf(writer, 15000);
+        await watcher.stop();
+        expect(watcher.empty).toEqual({ count: 0, firstMs: 0, lastMs: 0 });
+        expect(secondOutcome.kind).toBe('serving');
+        expect(secondOutcome.cleared).toBe(false);
+        expect(writerOutcome.kind).toBe('busy');
+        expect(existsSync(lockPath)).toBe(false);
+        expect(existsSync(`${lockPath}.takeover`)).toBe(false);
+        expect(newResidue()).toEqual([]);
+      } finally {
+        second.kill();
+      }
+    } finally {
+      writer.kill();
+      await watcher.stop();
+    }
+  }, 15000);
+
+  test('a live writer paused in the takeover claim\'s create is never evicted', async () => {
+    // The claim's own create→write gap, the same finding one file over: a start arriving at a
+    // dead pid's lock enters `takeOver`, and its claim — `.agents/broker.sock.lock.takeover` —
+    // is created empty, its pid one beat behind; the fixture holds exactly there for 1500ms.
+    // A second real start on the same dead lock reads the claim empty and young, waits, then —
+    // at the base head — ages it out and unlinks it while its writer is alive, takes the lock
+    // over and serves; the writer resumes, finds its claim gone, and backs off on the pid check
+    // (`readPid(claim) !== process.pid`): a live claim-holder evicted mid-create is the same
+    // defect the lock's own gap was. The same watch applies — the claim must never exist
+    // without its pid — and the same resting shape: the second serves (nothing to clear; the
+    // dead start left no socket), the writer answers busy, and lock, claim and temps all end
+    // absent.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const claimPath = `${lockPath}.takeover`;
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    if (dead.pid === undefined) throw new Error('the dead-pid fixture has no pid');
+    writeFileSync(lockPath, `${dead.pid}\n`); // a dead start's lock: the takeover path at once
+    const writer = gapFixture(1500);
+    const watcher = watchNoPid(claimPath);
+    try {
+      await readyOf(writer);
+      await waitFor(() => writer.said.includes('paused')); // inside the claim's create
+      const second = startFixture(0);
+      try {
+        const secondOutcome = await outcomeOf(second, 15000);
+        const writerOutcome = await outcomeOf(writer, 15000);
+        await watcher.stop();
+        expect(watcher.empty).toEqual({ count: 0, firstMs: 0, lastMs: 0 });
+        expect(secondOutcome.kind).toBe('serving');
+        expect(secondOutcome.cleared).toBe(false);
+        expect(writerOutcome.kind).toBe('busy');
+        expect(existsSync(lockPath)).toBe(false);
+        expect(existsSync(claimPath)).toBe(false);
+        expect(newResidue()).toEqual([]);
+      } finally {
+        second.kill();
+      }
+    } finally {
+      writer.kill();
+      await watcher.stop();
+    }
+  }, 15000);
+
+  test('a killed create\'s private temp is cleared by the next start, a live one kept', async () => {
+    // The one residue an atomic create can leave: a start killed between its private temp's
+    // create and its removal leaves `<lock>.<pid>.new` — and, for the claim, the same pattern
+    // one segment further. The temp names its writer, so the next start clears the dead ones
+    // and never touches a live pid's: a live pid's temp is a create in flight. Neither is ever
+    // read by the protocol — the sweep is hygiene — and a start whose temp was wrongly swept
+    // would fail its link with the same EEXIST a rival's win answers, so the race direction is
+    // safe.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    if (dead.pid === undefined) throw new Error('the dead-pid fixture has no pid');
+    const deadTemp = `${lockPath}.${dead.pid}.new`;
+    const liveTemp = `${lockPath}.takeover.${process.pid}.new`;
+    writeFileSync(deadTemp, 'x\n');
+    writeFileSync(liveTemp, 'x\n');
+    const started = await startBroker({ root, team: teamOf(), read: () => Promise.resolve(records([{ id: 'm1', title: 't' }])), stderr: () => {} });
+    if (started.kind !== 'serving') throw new Error(`the broker did not start: ${started.kind}`);
+    expect(existsSync(deadTemp)).toBe(false);
+    expect(existsSync(liveTemp)).toBe(true);
+    unlinkSync(liveTemp);
+    await started.handle.close();
+  });
+
+  test('starts released together onto a dead start\'s lock serialize: one serves, every other busy', async () => {
+    // The crash-recovery burst, four starts to a round: a start SIGKILLed mid-section leaves
+    // the lock naming its dead pid, and a broker SIGKILLed leaves its socket file (the h9
+    // shape); four real starts are spawned, held at a go file, and released together. The advertised
+    // property — "a lock a killed start left behind is taken over, not waited on" — and the
+    // three-answer discipline the page states: the winner clears the corpse and serves, "a
+    // second start waits on that lock and then asks the path as any start does: it finds a
+    // broker answering and stops with the refusal below, having cleared and bound nothing". At
+    // the frozen head the burst breaches: my own export of it, 13/60 rounds of this shape, and
+    // 10/30 of the six-way dead-pid shape with `bind-failed` losers finishing in 4ms — they
+    // never waited (the review lab measured the same, 47/120 and 6/25). Every round's tuple
+    // must be exactly one serving with the corpse cleared plus three busy that cleared
+    // nothing; any other tuple — a `bind-failed`, a second serving, a cleared loser — is the
+    // breach this pin names. The timeout is the pin's own: thirty rounds of four processes
+    // outrun the runner's five-second default.
+    project();
+    record();
+    const breaches: string[] = [];
+    const kids: FixtureChild[] = [];
+    try {
+      for (let round = 0; round < 30; round++) {
+        const roundRoot = join(base, `burst-${round}`);
+        mkdirSync(join(roundRoot, '.agents'), { recursive: true });
+        writeFileSync(join(roundRoot, '.agents', 'team.yaml'), LINEAR);
+        const at = brokerSocket(roundRoot);
+        leaveStaleSocket(at);
+        const dead = spawnSync(process.execPath, ['-e', '']);
+        if (dead.pid === undefined) throw new Error('the dead-pid fixture has no pid');
+        writeFileSync(`${at}.lock`, `${dead.pid}\n`);
+        const go = join(base, `go-${round}`);
+        const roundKids = Array.from({ length: 4 }, () => burstFixture(roundRoot, go));
+        kids.push(...roundKids);
+        await Promise.all(roundKids.map((kid) => readyOf(kid)));
+        writeFileSync(go, 'go\n');
+        const outcomes = await Promise.all(roundKids.map((kid) => outcomeOf(kid)));
+        const serving = outcomes.filter((outcome) => outcome.kind === 'serving' && outcome.cleared);
+        const busy = outcomes.filter((outcome) => outcome.kind === 'busy' && !outcome.cleared);
+        if (serving.length !== 1 || busy.length !== 3) {
+          breaches.push(`round ${round}: [${outcomes.map((outcome) => `${outcome.kind}${outcome.cleared ? '+cleared' : ''}`).join(' ')}]`);
+        }
+      }
+    } finally {
+      for (const kid of kids) kid.kill();
+    }
+    expect(breaches).toEqual([]);
+  }, 120_000);
+
+  test('the dead-lock burst, sized: six starts released together onto a dead start\'s lock, one serves and every other busy', async () => {
+    // The sized twin of the corpse burst above, on the dead-lock shape alone — sized from a
+    // measurement, not picked: the race it guards is the takeover reading an already-gone lock
+    // path (a NaN read, ENOENT), judging it like aged junk, and unlinking a rival's fresh
+    // atomic lock that landed the freed name between the read and the unlink — two starts
+    // walk, and the loser's bind fails. The window is microseconds inside one function, so no
+    // deterministic pin exists and no shipped seam is worth its review surface; the durable
+    // artifact is this repetition. Measured on the frozen bytes (`src/broker/server.ts`
+    // `46bbb778…`), 300 rounds a shape: six starts 5/300 (p̂ 1.667%), nine 1/300 (0.333%),
+    // twelve 5/300 (1.667%) → the pre-registered pick is cheapest cost = ceil(ln 0.01 /
+    // ln(1 − p̂)) × measured per-round wall: six starts at 275 rounds, where a nine-start pin
+    // would need 1380 rounds and twelve starts the same 275 at twice the per-round wall.
+    // (59/60)^275 ≈ 0.98% miss — ≈99% to catch the race on the old bytes. Never resize this
+    // pin after seeing a result: a pin-only head whose CI misses is re-run, both runs quoted.
+    // Every round's tuple must be exactly one serving that cleared nothing plus five busy
+    // that cleared nothing — a `bind-failed` at any seat, a second serving, a cleared loser,
+    // is the breach this pin names. The timeout is the pin's own: 275 rounds of six real
+    // processes outrun the runner's five-second default by orders.
+    project();
+    record();
+    const breaches: string[] = [];
+    const kids: FixtureChild[] = [];
+    try {
+      for (let round = 0; round < 275; round++) {
+        const roundRoot = join(base, `lockburst-${round}`);
+        mkdirSync(join(roundRoot, '.agents'), { recursive: true });
+        writeFileSync(join(roundRoot, '.agents', 'team.yaml'), LINEAR);
+        const at = brokerSocket(roundRoot);
+        const dead = spawnSync(process.execPath, ['-e', '']);
+        if (dead.pid === undefined) throw new Error('the dead-pid fixture has no pid');
+        writeFileSync(`${at}.lock`, `${dead.pid}\n`);
+        const go = join(base, `lockgo-${round}`);
+        const roundKids = Array.from({ length: 6 }, () => burstFixture(roundRoot, go));
+        kids.push(...roundKids);
+        await Promise.all(roundKids.map((kid) => readyOf(kid)));
+        writeFileSync(go, 'go\n');
+        const outcomes = await Promise.all(roundKids.map((kid) => outcomeOf(kid)));
+        const serving = outcomes.filter((outcome) => outcome.kind === 'serving' && !outcome.cleared);
+        const busy = outcomes.filter((outcome) => outcome.kind === 'busy' && !outcome.cleared);
+        if (serving.length !== 1 || busy.length !== 5) {
+          breaches.push(`round ${round}: [${outcomes.map((outcome) => `${outcome.kind}${outcome.cleared ? '+cleared' : ''}`).join(' ')}]`);
+        }
+      }
+    } finally {
+      for (const kid of kids) kid.kill();
+    }
+    expect(breaches).toEqual([]);
+  }, 600_000);
+
+  test('the claim lane, sized and instrumented: six starts released together onto a dead start\'s lock never unlink a live lock or claim', async () => {
+    // The pin for the claim path's own residual, carrying the delta-2 lab's finding instrument:
+    // a wrap of `node:fs`'s `unlinkSync` that logs, one buffered line at the child's outcome,
+    // every unlink of a `*.lock` / `*.lock.takeover` path whose bytes named a live pid other
+    // than the unlinker (the lab's `UNLINK_LIVE` form: `…broker.sock.lock.takeover pid=16164
+    // me=16167 bytes="16164"`, 2/150 six-way rounds on the frozen bytes). The seam: the
+    // takeover's claim eviction read the claim, judged it dead, and unlinked it unanchored — a
+    // rival's fresh claim landing in the read→unlink gap loses its claim, the stolen claimant
+    // judges the lock without holding it, and two straddling judges can rebuild the
+    // two-holders walk the dead-lock burst above pins down. Sizing, measured before this pin
+    // was written — the same six-start dead-lock round with the wrap installed, on an export of
+    // the unfixed `src/broker/server.ts` `6e0b54e0…`: 300 rounds → 3 events (1.00%/round;
+    // rounds 156, 163, 206, every one a `.takeover` lane; ≈0.23 s/round). Pooled with the
+    // lab's 2/150 on the same shape, p̂ = 5/450 = 1.111% → the pre-registered pick
+    // ceil(ln 0.01 / ln(1 − p̂)) = 413 rounds ((89/90)^413 ≈ 0.99% miss at p̂; at the pooled
+    // one-sided 90% exact-binomial lower bound, 1.768%, (1 − p_L)^413 ≈ 0.06% miss). Never
+    // resize this pin after seeing a result: a pin-only head whose CI misses is re-run, both
+    // runs quoted. Every round must still be exactly one serving that cleared nothing plus
+    // five busy that cleared nothing — and the wire must have seen zero unlinks of a live lock
+    // or claim, with its control: the winner's takeover unlinks the dead lock every round, so
+    // `touched ≥ rounds` carries the zero. The detector rides the first route that proves
+    // itself on this runner (a canary import's own call must fire the wrap before any round is
+    // scored); where no route arms, the tuples are pinned and the unlink event is unasserted,
+    // loudly. The timeout is the pin's own: 413 rounds of six real processes.
+    project();
+    record();
+    const routes = ['A1', 'A2', 'M', 'R'];
+    let route: string | undefined;
+    const selftestLog: string[] = [];
+    for (const candidate of routes) {
+      const verdict = await claimSelftest(candidate);
+      selftestLog.push(`${candidate}: ${verdict.line}`);
+      if (verdict.ok) { route = candidate; break; }
+    }
+    const breaches: string[] = [];
+    const kids: ClaimChild[] = [];
+    let events = 0;
+    let touched = 0;
+    let broken = 0;
+    try {
+      for (let round = 0; round < 413; round++) {
+        const roundRoot = join(base, `claimburst-${round}`);
+        mkdirSync(join(roundRoot, '.agents'), { recursive: true });
+        writeFileSync(join(roundRoot, '.agents', 'team.yaml'), LINEAR);
+        const at = brokerSocket(roundRoot);
+        const dead = spawnSync(process.execPath, ['-e', '']);
+        if (dead.pid === undefined) throw new Error('the dead-pid fixture has no pid');
+        writeFileSync(`${at}.lock`, `${dead.pid}\n`);
+        const go = join(base, `claimgo-${round}`);
+        const roundKids = Array.from({ length: 6 }, () =>
+          spawnClaimKid(['run', roundRoot, go, join(import.meta.dir, '..')], route ? { DS_DETECT: '1', DS_ROUTE: route, DS_PARENT: String(process.pid) } : {}),
+        );
+        kids.push(...roundKids);
+        await Promise.all(roundKids.map((kid) => readyOf(kid)));
+        writeFileSync(go, 'go\n');
+        const outcomes = await Promise.all(roundKids.map((kid) => outcomeOf(kid)));
+        const serving = outcomes.filter((outcome) => outcome.kind === 'serving' && !outcome.cleared);
+        const busy = outcomes.filter((outcome) => outcome.kind === 'busy' && !outcome.cleared);
+        if (serving.length !== 1 || busy.length !== 5) {
+          breaches.push(`round ${round}: [${outcomes.map((outcome) => `${outcome.kind}${outcome.cleared ? '+cleared' : ''}`).join(' ')}]`);
+        }
+        for (const kid of roundKids) {
+          const seen = kid.claim();
+          events += seen.list.length;
+          touched += seen.touched;
+          if (kid.detBroken()) broken += 1;
+          for (const item of seen.list) {
+            breaches.push(`round ${round}: UNLINK_LIVE ${item.path.replace(base, '…')} pid=${item.pid} me=${item.me} bytes="${String(item.bytes).trim()}"`);
+          }
+        }
+      }
+    } finally {
+      for (const kid of kids) kid.kill();
+    }
+    if (route === undefined) {
+      console.log(`the claim-lane pin: no detector route fired here (${selftestLog.join(' | ')}) — the tuples are pinned, the unlink event is unasserted on this runner`);
+      expect(breaches).toEqual([]);
+      return;
+    }
+    expect(broken).toBe(0);
+    expect(touched).toBeGreaterThanOrEqual(413);
+    expect(breaches).toEqual([]);
+    expect(events).toBe(0);
+  }, 600_000);
+
+  test('a start that waits out the lock deadline refuses with the one line and touches nothing', async () => {
+    // A live holder — a real start, held pre-listen for a minute — keeps the lock past every
+    // waiter's deadline. The module and the command both wait it out and then fail closed: the
+    // pinned line, exit 1, the socket path exactly as the holder left it (nothing yet: the
+    // holder is still on its way to binding), and the lock file still the holder's own bytes.
+    // Neither waiter clears, binds, or writes the lock.
+    project();
+    record();
+    const path = brokerSocket(root);
+    const lockPath = `${path}.lock`;
+    const holder = startFixture(60000);
+    try {
+      await readyOf(holder);
+      if (holder.pid === undefined) throw new Error('the fixture has no pid');
+      await lockedBy(holder);
+      const viaModule = startBroker({ root, team: teamOf(), read: () => Promise.resolve(records([])), stderr: () => {} });
+      const io = testIo(root, { kind: 'owner' });
+      const viaCommand = runBroker([], io, { home, keyReader: async () => ({ ok: true, key: KEY }) });
+      const [moduleResult, commandCode] = await Promise.all([viaModule, viaCommand]);
+      expect(moduleResult).toEqual({ kind: 'locked' });
+      expect(commandCode).toBe(1);
+      expect(io.err).toContain('team broker: another start is binding .agents/broker.sock; try again\n');
+      expect(existsSync(path)).toBe(false);
+      expect(Number(readFileSync(lockPath, 'utf8').trim())).toBe(holder.pid);
+    } finally {
+      holder.kill();
+      await holder.exited;
+    }
+  });
+
   test('a path that cannot bind is a line and exit 1, not a crash, and the file stays', async () => {
     // A regular file where the socket belongs: the lstat gate refuses the entry before any
     // probe, with the pinned bare sentence and the file untouched. The errno story is why the
@@ -411,6 +1397,8 @@ describe('the start protocol', () => {
     expect(io.out).toBe('');
     // Fail closed: the walk refused the entry, and never unlinked the file.
     expect(readFileSync(path, 'utf8')).toBe('not a socket');
+    // The refusal was made under the start lock, and the lock left with it.
+    expect(existsSync(`${path}.lock`)).toBe(false);
   });
 
   test('the walk clears only a socket: a symlink to a dead broker is left where it is', async () => {
@@ -431,6 +1419,8 @@ describe('the start protocol', () => {
     expect(io.out).toBe('');
     expect(lstatSync(path).isSymbolicLink()).toBe(true);
     expect(lstatSync(target).isSocket()).toBe(true);
+    // The refusal was made under the start lock, and the lock left with it.
+    expect(existsSync(`${path}.lock`)).toBe(false);
   });
 });
 
