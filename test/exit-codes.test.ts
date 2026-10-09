@@ -99,11 +99,6 @@ workspace:
 seats:
 ${LEAD}${WORKER}`;
 
-const GROK = TWO.replace('    name: worker\n    label: worker\n    cli: claude-code', '    name: worker\n    label: worker\n    cli: grok').replace(
-  'launch: claude --model claude-opus-5-5\n    stopped: true\n',
-  'launch: grok\n',
-);
-
 const BUDGET = `format: 1
 project: acme
 coordinator: lead
@@ -626,10 +621,6 @@ scene('add.already-running', async (place) => {
   return show(await added(place, ['worker', '--file', place.file], owner, addSources(place, {
     sessionState: () => 'running', agents: () => [agent('worker')], workspaces: () => [{ id: 'w1' }],
   })), 'already running');
-});
-scene('add.no-profile', async (place) => {
-  approve(place, GROK);
-  return show(await added(place, ['worker', '--file', place.file], owner, addSources(place)), 'no launch profile');
 });
 scene('add.placed', async (place) => {
   const side = join(place.base, 'side');
@@ -1462,12 +1453,6 @@ scene('remove.busy', async (place) => {
   return show(await removed(place, ['worker'], owner, downSources({
     sessionRunning: () => true, agents: () => [agent('worker', 'working')], screen: () => ({ kind: 'working' }), home: place.home,
   })), 'is working');
-});
-scene('remove.no-profile', async (place) => {
-  approve(place, GROK);
-  return show(await removed(place, ['worker'], owner, downSources({
-    sessionRunning: () => true, agents: () => [agent('worker')], home: place.home,
-  })), 'no launch profile');
 });
 scene('remove.edit', async (place) => {
   approve(place, TWO);
@@ -2803,7 +2788,14 @@ scene('plan.read', async (place) => {
   }
 });
 
-const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed', 'answer.action', 'up.delegate-placement']);
+// Outcomes that are listed and kept, and that no scene can produce. An edit the earlier checks
+// have already validated reads here (add.prepared, add.locked, add.not-restored, approve.revalidate,
+// approve.placed), and so do answer.action and up.delegate-placement. add.no-profile and
+// remove.no-profile joined them when grok's profile shipped: the file loader accepts exactly the
+// CLIs this version knows, and every one of them now has a launch profile, so no team file can
+// reach the refusals — they stand, rows and exit sites whole, for a CLI listed before its profile
+// ships, which is the state grok itself was in until now.
+const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'add.no-profile', 'approve.revalidate', 'approve.placed', 'remove.no-profile', 'answer.action', 'up.delegate-placement']);
 
 const contract = loadContract();
 for (const row of contract.rows) {

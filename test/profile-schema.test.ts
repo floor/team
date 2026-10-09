@@ -1,7 +1,7 @@
 // The profiles' JSON Schema is the shape's documentation — the package carries no schema
 // validator, screen-file.ts is what refuses a file, in words — so nothing checked the
 // schema against the profiles it describes. This applies it, with a reader for the subset
-// the schema uses, to the four shipped profiles, and pins the two shapes that had drifted
+// the schema uses, to the five shipped profiles, and pins the two shapes that had drifted
 // from the loader: the rule flags it omitted, and the composer's flag on its one mode.
 // The reader throws on any keyword it does not know, so a schema that outgrows it fails
 // here rather than passing unnoticed.
@@ -111,8 +111,8 @@ const errors = (doc: unknown): Errors => check(schema, doc, 'profile', schema);
 const COMPOSER = { mode: 'box-to-rule', prompt: '^>', rule: '^-{8}$', placeholders: [{ equals: '' }] };
 
 describe("the profiles' schema", () => {
-  test('the four shipped profiles pass it', () => {
-    for (const name of ['claude-code', 'codex', 'cursor', 'antigravity']) {
+  test('the five shipped profiles pass it', () => {
+    for (const name of ['claude-code', 'codex', 'cursor', 'antigravity', 'grok']) {
       expect([name, errors(profile(name))]).toEqual([name, []]);
     }
   });

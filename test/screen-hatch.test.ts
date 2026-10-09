@@ -694,7 +694,7 @@ screen:
   });
 
   test('rule for main on screens: no screen origin/main reads unknown/working/permission/trust/question may read idle or unsent', () => {
-    const clis = ['claude-code', 'codex', 'cursor', 'antigravity'];
+    const clis = ['claude-code', 'codex', 'cursor', 'antigravity', 'grok'];
     for (const cli of clis) {
       const data = loadScreen(readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8'));
       // Verify stage order holds in shipped data
@@ -750,12 +750,12 @@ screen:
     }
   });
 
-  test('a hatch composer on each of the four shipped profiles is refused at load in source and built code', async () => {
+  test('a hatch composer on each of the five shipped profiles is refused at load in source and built code', async () => {
     const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-composer-test-'));
     writeFileSync(resolve(tempDir, 'composer-hatch.cjs'), 'module.exports = { composer: () => ({ kind: "idle" }) };');
 
     try {
-      const clis = ['claude-code', 'codex', 'cursor', 'antigravity'];
+      const clis = ['claude-code', 'codex', 'cursor', 'antigravity', 'grok'];
       for (const cli of clis) {
         const rawYaml = readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8');
         const withHatch = `${rawYaml}\nscreen_module: "composer-hatch.cjs"\n`;
@@ -931,11 +931,11 @@ seats:
     }
   });
 
-  test('stateful composer getter is refused at load on all four shipped profiles in source and built code', async () => {
+  test('stateful composer getter is refused at load on all five shipped profiles in source and built code', async () => {
     const tempDir = mkdtempSync(resolve(tmpdir(), 'hatch-stateful-composer-'));
 
     try {
-      const clis = ['claude-code', 'codex', 'cursor', 'antigravity'];
+      const clis = ['claude-code', 'codex', 'cursor', 'antigravity', 'grok'];
       const dist = await getBuiltScreenFile();
 
       for (const cli of clis) {
@@ -1072,7 +1072,7 @@ module.exports = { default: def };`,
     );
 
     try {
-      const clis = ['claude-code', 'codex', 'cursor', 'antigravity'];
+      const clis = ['claude-code', 'codex', 'cursor', 'antigravity', 'grok'];
       const variants = [
         { file: 'proto-composer.cjs', desc: 'prototype export' },
         { file: 'default-composer.cjs', desc: 'default export' },
@@ -1136,7 +1136,7 @@ module.exports = fn;`,
     );
 
     try {
-      const clis = ['claude-code', 'codex', 'cursor', 'antigravity'];
+      const clis = ['claude-code', 'codex', 'cursor', 'antigravity', 'grok'];
       const variants = [
         { file: 'disagreeing-proxy-composer.cjs', desc: 'disagreeing Proxy hiding default' },
         { file: 'fn-default-accessor-composer.cjs', desc: 'function-valued export with default accessor' },
@@ -1166,7 +1166,7 @@ module.exports = fn;`,
 
   test('what loadScreen returns is deeply frozen against post-load mutations', () => {
     // 1. Shipped profiles (no hatch)
-    for (const cli of ['claude-code', 'codex', 'cursor', 'antigravity']) {
+    for (const cli of ['claude-code', 'codex', 'cursor', 'antigravity', 'grok']) {
       const rawYaml = readFileSync(fileURLToPath(new URL(`../src/profiles/${cli}.yaml`, import.meta.url)), 'utf8');
       const data = loadScreen(rawYaml, undefined, `${cli}.yaml`);
 

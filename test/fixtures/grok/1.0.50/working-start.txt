@@ -1,0 +1,22 @@
+
+  <workspace>   1.3K / 256K │ [Dashboard]
+
+
+     ❯ RULES_RECEIVED                     9:07 AM
+
+
+
+
+
+
+
+
+
+
+   ⠴ Waiting for response…       2.0s ⇣1.32k [stop]
+
+  ╭───────────────────────────────────────────────╮
+  │ ❯                                             │
+  ╰─────────── Grok 4.7 (xhigh) · always-approve ─╯
+
+  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+.:

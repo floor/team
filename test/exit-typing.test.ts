@@ -651,9 +651,9 @@ describe('the kind is kept apart from the ordinary question', () => {
   test('the stage is the profile\'s, and beside it the one key that confirms that screen', () => {
     expect(screenData('claude-code')?.exit_question).toBeDefined();
     expect(profileFor('claude-code')?.exitConfirm).toBe('enter');
-    // No run established a question for the other three, so none declares a key: a seat that
+    // No run established a question for the other four, so none declares a key: a seat that
     // asked one would be one this program cannot stop by asking.
-    for (const cli of ['codex', 'cursor', 'antigravity']) expect(profileFor(cli)?.exitConfirm).toBe(null);
+    for (const cli of ['codex', 'cursor', 'antigravity', 'grok']) expect(profileFor(cli)?.exitConfirm).toBe(null);
   });
 
   test('the loader takes `enter` and nothing else as `exit_confirm`', () => {

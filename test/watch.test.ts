@@ -90,8 +90,9 @@ function withAccounts(accounts: string): string {
   return example.replace(MARKS, `${MARKS}\n${accounts}`);
 }
 
-// The example with codex-acme stopped instead of parked — a stopped seat whose screens the watch
-// can read (grok-acme, the example's own stopped seat, is a grok CLI, and the watch reads none).
+// The example with codex-acme stopped instead of parked — a stopped seat whose screen the watch
+// can read. (The example's own stopped seat, grok-acme, was a CLI with no screens at all to read
+// before the grok profile shipped; the captures these tests read are codex's either way.)
 function stoppedTeam(): TeamFile {
   const result = validateTeamFile(example.replace('parked: true', 'stopped: true'));
   if (!result.ok) throw new Error(JSON.stringify(result.errors));
@@ -366,8 +367,9 @@ describe('a pass of the watch', () => {
     const quiet = live({ 'deepseek-acme': { status: 'idle', screen: idle } });
     quiet.agents.push(agent('grok-acme', 'w5', 'idle', 'grok'));
     quiet.workspaces.push({ id: 'w5', label: 'grok-acme' });
-    // Nothing reads a grok screen, and the fail-safe reports the running stopped seat's screen as
-    // unreadable — once. Its idleness is still not a report: a stopped seat may sit idle all day.
+    // The pane carries no screen to read at all, and the fail-safe reports the running stopped
+    // seat's screen as unreadable — once. Its idleness is still not a report: a stopped seat may
+    // sit idle all day.
     expect(pass({ team: team(), watch: team().watch, state: emptySession(), live: quiet, machine: fine, now: 0, memory }).reports.map((report) => report.text))
       .toEqual(['grok-acme: herdr reports the status "idle"']);
     // Ten minutes in, the unparked neighbour's report lands: the shelf works, the stopped seat is

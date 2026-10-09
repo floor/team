@@ -1191,6 +1191,90 @@
       "provenance": "capture"
     },
     {
+      "file": "grok/1.0.50/after-turn.txt",
+      "cli": "grok",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/compact-mode.txt",
+      "cli": "grok",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/exit-typed.txt",
+      "cli": "grok",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/exit.txt",
+      "cli": "grok",
+      "classify": "unknown",
+      "composer": "unknown",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/idle-ansi.txt",
+      "cli": "grok",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/idle.txt",
+      "cli": "grok",
+      "classify": "idle",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/slash-exit.txt",
+      "cli": "grok",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/slash-menu.txt",
+      "cli": "grok",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/unsent-wrap.txt",
+      "cli": "grok",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/unsent.txt",
+      "cli": "grok",
+      "classify": "unsent",
+      "composer": "unsent",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/working-start.txt",
+      "cli": "grok",
+      "classify": "working",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
+      "file": "grok/1.0.50/working-tool.txt",
+      "cli": "grok",
+      "classify": "working",
+      "composer": "idle",
+      "provenance": "capture"
+    },
+    {
       "file": "nudge-typing/claude-code-nudge-idle-ansi.txt",
       "cli": "claude-code",
       "classify": "idle",

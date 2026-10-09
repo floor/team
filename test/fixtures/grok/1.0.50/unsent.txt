@@ -1,0 +1,22 @@
+
+  <workspace>   1.3K / 256K │ [Dashboard]
+
+
+
+
+
+
+
+
+
+
+
+
+
+   Tight on space? Try /compact-mode
+
+  ╭───────────────────────────────────────────────╮
+  │ ❯ RULES_RECEIVED                              │
+  ╰─────────── Grok 4.7 (xhigh) · always-approve ─╯
+
+  Enter:send  │  Shift+Enter/Opt+Enter:newline  │
