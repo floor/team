@@ -4,6 +4,7 @@ import { TASK_FIELDS, type TaskField, type TaskPolicy } from '../../broker/polic
 import type { YamlEntry } from '../../yaml.ts';
 import type { TeamFile } from '../types.ts';
 import type { Ctx, Section } from './section.ts';
+import { measureSchema, DURATION } from './units.ts';
 
 /**
  * The team's one task source. Omitted, it is null and `team issues` refuses rather than
@@ -44,6 +45,10 @@ export const tasks: Section = {
       },
       pull: { enum: ['self', 'any'] },
       fallback: { enum: ['file', 'id'] },
+      cadence: {
+        ...measureSchema(DURATION),
+        $comment: 'optional, with no default: a duration with its unit (s, m, h), such as 120s or 10m; an omitted key stays absent',
+      },
       policy: {
         type: 'object',
         additionalProperties: false,
@@ -68,10 +73,11 @@ export const tasks: Section = {
 
 function readTasks(entry: YamlEntry | undefined, ctx: Ctx): TeamFile['tasks'] {
   if (!entry) return null;
-  const fields = ctx.check.fields(entry.value, 'tasks', ['source', 'path', 'linear', 'pull', 'fallback', 'policy']);
+  const fields = ctx.check.fields(entry.value, 'tasks', ['source', 'path', 'linear', 'pull', 'fallback', 'policy', 'cadence']);
   if (entry.value.kind !== 'map') return null;
   const pull = choice(fields.get('pull'), ['self', 'any'] as const, 'tasks.pull must be self or any', ctx);
   const fallback = choice(fields.get('fallback'), ['file', 'id'] as const, 'tasks.fallback must be file or id', ctx);
+  const cadence = ctx.check.measure(fields.get('cadence'), 'tasks.cadence', DURATION, '120s or 10m');
   const badChoice = (fields.get('pull') && pull === undefined) || (fields.get('fallback') && fallback === undefined);
   const source = text(fields.get('source'));
   if (source === 'file') {
@@ -87,6 +93,7 @@ function readTasks(entry: YamlEntry | undefined, ctx: Ctx): TeamFile['tasks'] {
     const tasks: Extract<NonNullable<TeamFile['tasks']>, { source: 'file' }> = { source: 'file', path };
     if (pull) tasks.pull = pull;
     if (fallback) tasks.fallback = fallback;
+    if (cadence !== undefined) tasks.cadence = cadence;
     return tasks;
   }
   if (source === 'linear') {
@@ -97,6 +104,7 @@ function readTasks(entry: YamlEntry | undefined, ctx: Ctx): TeamFile['tasks'] {
     const tasks: Extract<NonNullable<TeamFile['tasks']>, { source: 'linear' }> = { source: 'linear', linear };
     if (pull) tasks.pull = pull;
     if (fallback) tasks.fallback = fallback;
+    if (cadence !== undefined) tasks.cadence = cadence;
     if (policy) tasks.policy = policy;
     return tasks;
   }

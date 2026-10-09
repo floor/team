@@ -10,14 +10,20 @@ export function descriptionLines(value: string): string[] {
   return lines;
 }
 
-/** The issues block, byte for byte: one record per block, a blank line between, one trailing newline. */
-export function formatRecords(records: readonly TaskRecord[]): string {
+/** The issues block, byte for byte: one record per block, a blank line between, one trailing newline.
+ *  `at` is `team plan`'s caller clock: a deadline it has passed gains ` (overdue)`. The mark decides
+ *  nothing — it is the same block either way. `issues` and `next` pass no `at`, so their bytes do not
+ *  change, and a deadline `Date.parse` cannot read is printed as written and unmarked. */
+export function formatRecords(records: readonly TaskRecord[], at?: number): string {
   const blocks = records.map((record) => {
     const lines = [`${record.id}  ${record.title}`];
     if (record.priority !== undefined) lines.push(`  priority: ${record.priority}`);
     if (record.assignee !== undefined) lines.push(`  assignee: ${record.assignee}`);
     if (record.milestone !== undefined) lines.push(`  milestone: ${record.milestone}`);
-    if (record.deadline !== undefined) lines.push(`  deadline: ${record.deadline}`);
+    if (record.deadline !== undefined) {
+      const overdue = at !== undefined && Date.parse(record.deadline) < at;
+      lines.push(`  deadline: ${record.deadline}${overdue ? ' (overdue)' : ''}`);
+    }
     if (record.blockedBy && record.blockedBy.length) lines.push(`  blocked-by: ${record.blockedBy.join(', ')}`);
     if (record.repos && record.repos.length) lines.push(`  repos: ${record.repos.join(', ')}`);
     if (record.needs && record.needs.length) lines.push(`  needs: ${record.needs.join(', ')}`);

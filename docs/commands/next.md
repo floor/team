@@ -14,7 +14,7 @@ An expired lease returns the record to the queue. Another seat may take it, and 
 be done twice.
 The file is the intake for a file source. A record is takeable because the owner wrote it there.
 For a broker source the intake is the tracker's read, with the team's policy deciding which
-fields cross. That is not the owner-set intake rule. `team plan` is not a command.
+fields cross. That is not the owner-set intake rule. `team plan` prints the takeable queue and claims nothing.
 `title` and `description` are the owner's text. They are not scrubbed. A broker source's policy
 may keep a field from crossing, and a field left out is absent from the record, never blank.
 A record with `blocked-by`, `repos`, or `needs` is listed by `team issues` and is not taken.
@@ -24,7 +24,7 @@ The watch's ring is unchanged: `Team: run team messages`.
 
 ## Synopsis
 
-    team next [--mine | --release]
+    team next [--mine | --release] [--wait]
 
 ## What it reads and writes
 
@@ -71,9 +71,12 @@ team next: the state records pane <pane> for seat <name> in this session, not th
 | --- | --- |
 | `--mine` | a new take keeps only records whose `assignee` is the caller's seat name. It does not filter a renewal |
 | `--release` | unlink the caller's lease and print `team next: released <id>`. Records no progress |
+| `--wait` | re-reads the source every `tasks.cadence` while a pass finds nothing takeable, until a record is taken, the wait is stopped, or a read breaks. Without `tasks.cadence` it refuses. Off unless set |
 | `--help`, `-h` | the usage, and exit 0 |
 
-`--mine` and `--release` together are refused, and no file is written.
+`--mine` and `--release` together are refused, and no file is written. `--wait` and `--release`
+together are refused the same way, and so is `--wait` without `tasks.cadence` in the team file:
+the pace is always the team's own declared one.
 
 ## What it prints
 
@@ -87,6 +90,15 @@ poll and not a stand-down.
 `team next: nothing is held` when `--release` finds no file of the caller's.
 
 `team next: released <id>` when the caller's file was unlinked.
+
+`--wait` re-reads the source every `tasks.cadence` while a pass finds nothing takeable; without
+`tasks.cadence` it refuses. Without `--wait` the command stands down with one answer, as before.
+The wait polls at a constant pace; a refused read ends it — back-off is not implemented.
+
+With `--wait` and an empty takeable set, the one answer above prints once, then
+`team next: waiting every <n>s` with `<n>` the cadence in seconds, and the wait begins. A re-read
+that finds a record prints that record's block; an empty re-read prints nothing;
+`team next: stopped waiting` when a stop signal, or a clock that did not advance, ends the wait.
 
 `team next: the tracker holds more tasks than this read; the take still proceeds` on stderr when
 the broker's answer says the tracker holds another page. The read is bounded, and it says so: the
@@ -104,6 +116,8 @@ team next: the task file is not there
 team next: the task file is not a list
 team next: m1 is not a task: title is required
 team next: --mine and --release are not used together
+team next: --wait and --release are not used together
+team next: --wait needs tasks.cadence in the team file
 team next: the broker is not running; the owner starts it with `team broker`
 team next: the broker's answer is not one this build knows; the owner restarts it
 team next: the broker accepted the request and did not answer; nothing is claimed
@@ -125,7 +139,7 @@ block and the exit is 1.
 
 ## Exit codes
 
-- `0` — a record was claimed, the caller's live lease was renewed, a lease was released, or there was nothing to take or to release.
+- `0` — a record was claimed, the caller's live lease was renewed, a lease was released, there was nothing to take or to release, or the wait ended on a stop signal or a clock that did not advance.
 - `1` — the caller is not a seat of this team on its recorded pane, the team file can't be read or its policy is refused, the task file is missing or not a list, nothing was taken and a record is not a task, or the broker path refused: no broker answered, the broker's answer was not one this build knows, the deadline passed, the broker refused the caller, or the broker failed the read.
 - `2` — the invocation can't be read, or this folder is not a git checkout.
 

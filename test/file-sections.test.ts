@@ -48,6 +48,45 @@ test('each section waits only on sections that exist', () => {
   }
 });
 
+// `tasks.cadence` is a measured duration with its unit written: the value lifts to seconds, an
+// omitted key stays off the parsed section, and a value the measure cannot read — a quoted one
+// included — refuses with the sentence the validator prints.
+test('tasks.cadence is a measured duration, and omission stays omission', () => {
+  const TEAM = `format: 1
+project: acme
+coordinator: lead
+operator: lead
+workspace:
+  mode: shared
+seats:
+  - role: coordinator
+    name: lead
+    cli: claude-code
+    vendor: anthropic
+    model: Claude Opus
+    version: "5.5"
+    launch: claude --model claude-opus-5-5
+tasks:
+  source: file
+  path: .agents/tasks.yaml
+`;
+  const plain = validateTeamFile(TEAM);
+  if (!plain.ok) throw new Error('the fixture does not validate');
+  expect(plain.team.tasks).toEqual({ source: 'file', path: '.agents/tasks.yaml' });
+  const lifted = validateTeamFile(`${TEAM}  cadence: 10m\n`);
+  if (!lifted.ok) throw new Error('the cadence fixture does not validate');
+  expect(lifted.team.tasks).toEqual({ source: 'file', path: '.agents/tasks.yaml', cadence: 600 });
+  for (const bad of ['10minutes', '"10m"', 'always']) {
+    const checked = validateTeamFile(`${TEAM}  cadence: ${bad}\n`);
+    expect(checked.ok).toBe(false);
+    if (!checked.ok) {
+      expect(checked.errors.map((error) => error.message)).toContain(
+        'tasks.cadence needs a value with its unit (s, m, h), such as 120s or 10m',
+      );
+    }
+  }
+});
+
 // An approval record written by main's code today (test/fixtures/approval-main.json, its
 // fingerprints taken with main's own reader) still verifies the same file on this branch: the
 // modules produce the digests main's monolith does. The record carries its own copy of the

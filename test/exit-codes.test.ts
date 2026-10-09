@@ -23,6 +23,7 @@ import { runInit } from '../src/commands/init.ts';
 import { plantMessage, runMessages, type MessagePayload } from '../src/commands/messages.ts';
 import { runIssues } from '../src/commands/issues.ts';
 import { runNext } from '../src/commands/next.ts';
+import { runPlan } from '../src/commands/plan.ts';
 import { pr } from '../src/commands/pr.ts';
 import { runRemove, type RemoveSources } from '../src/commands/remove.ts';
 import { runStatus, type StatusSources } from '../src/commands/status.ts';
@@ -2606,6 +2607,14 @@ scene('next.taken', async (place) => {
   recordLead(place);
   return show(await nexted(place), 'm1  the task title');
 });
+scene('next.wait', async (place) => {
+  write(place, `${TASKS}  cadence: 10m\n`);
+  writeFileSync(join(place.root, '.agents', 'tasks.yaml'), '[]\n');
+  recordLead(place);
+  const io = testIo(place.root, leadSeat);
+  const code = await runNext(['--wait'], io, { home: place.home, wait: async () => false });
+  return show({ code, out: io.out, err: io.err }, 'stopped waiting');
+});
 scene('next.caller', async (place) => {
   write(place, TASKS);
   return show(await nexted(place, [], owner), 'this call is owner');
@@ -2733,6 +2742,65 @@ scene('next.policy', async (place) => {
 `);
   recordLead(place);
   return show(await nexted(place), 'tasks.policy.omit must not name id or title, the record itself');
+});
+
+async function planned(place: Place, argv: string[] = [], caller: Caller = leadSeat): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  return { code: await runPlan(argv, io, { home: place.home }), out: io.out, err: io.err };
+}
+
+scene('plan.none', async (place) => {
+  write(place, TASKS);
+  writeFileSync(join(place.root, '.agents', 'tasks.yaml'), '[]\n');
+  recordLead(place);
+  return show(await planned(place), 'nothing is takeable');
+});
+scene('plan.shown', async (place) => {
+  write(place, TASKS);
+  writeFileSync(join(place.root, '.agents', 'tasks.yaml'), '- id: m1\n  title: the task title\n');
+  recordLead(place);
+  return show(await planned(place), 'm1  the task title');
+});
+scene('plan.caller', async (place) => {
+  write(place, TASKS);
+  return show(await planned(place, [], owner), 'this call is owner');
+});
+scene('plan.file', async (place) => show(await planned(place), 'no team file'));
+scene('plan.missing', async (place) => {
+  write(place, TASKS);
+  recordLead(place);
+  return show(await planned(place), 'the task file is not there');
+});
+scene('plan.shape', async (place) => {
+  write(place, TASKS);
+  writeFileSync(join(place.root, '.agents', 'tasks.yaml'), '- id: m1\n');
+  recordLead(place);
+  return show(await planned(place), 'title is required');
+});
+scene('plan.invocation', async (place) => show(await planned(place, ['extra']), 'unexpected'));
+scene('plan.not-a-repo', async (place) => show(await planned(place), 'not inside a git repository'), false);
+scene('plan.broker', async (place) => {
+  write(place, LINEAR);
+  recordLead(place);
+  return show(await planned(place), 'the broker is not running');
+});
+scene('plan.read', async (place) => {
+  write(place, LINEAR);
+  recordLead(place);
+  const loaded = loadTeamFile(place.root, { home: place.home });
+  if (!loaded.ok) throw new Error('the fixture does not validate');
+  const serving = await startBroker({
+    root: loaded.root,
+    team: loaded.team,
+    read: async () => ({ kind: 'failed', message: 'the tracker could not be read' }),
+    stderr: () => {},
+  });
+  if (serving.kind !== 'serving') throw new Error(serving.kind);
+  try {
+    return show(await planned(place), 'the broker failed this read');
+  } finally {
+    await serving.handle.close();
+  }
 });
 
 const defensive = new Set(['add.prepared', 'add.locked', 'add.not-restored', 'approve.revalidate', 'approve.placed', 'answer.action', 'up.delegate-placement']);

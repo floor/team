@@ -638,6 +638,11 @@
             "id"
           ]
         },
+        "cadence": {
+          "type": "string",
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?(s|m|h)$",
+          "$comment": "optional, with no default: a duration with its unit (s, m, h), such as 120s or 10m; an omitted key stays absent"
+        },
         "policy": {
           "type": "object",
           "additionalProperties": false,
