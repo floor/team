@@ -54,7 +54,7 @@ identity:
       exempt: [merge]         # merge commits need no signature
 
 rules:                        # lines added to every seat's rules at launch. Rules delivered as a launch
-                              # option (claude-code) close with "These are standing rules, not a task.";
+                              # option (claude-code, grok) close with "These are standing rules, not a task.";
                               # rules typed as a first message (codex, cursor, antigravity) close with
                               # "These are standing rules, not a task: reply ready and wait for your brief."
   - Run the tests your change touches, not the whole suite.
@@ -121,7 +121,7 @@ budgets:                      # the owner's: reserve or floor per account, marks
   the lab's own spelling. `identity.since` skips an older history, `identity.humans` lists commit
   authors who don't sign, and `identity.forbidden` adds to the defaults — `^Claude-Session:` lines
   and session links are always refused.
-- `seats[*].cli` picks the launch profile; `claude-code`, `codex`, `cursor` and `antigravity` are available, and `team
+- `seats[*].cli` picks the launch profile; `claude-code`, `codex`, `cursor`, `antigravity` and `grok` are available, and `team
   doctor` says what the others still need. `vendor`, `model` and `version` spell one seat's model.
   `account` names the budget account the seat spends when one lab has two; without it, the seat
   spends its `vendor`, and changing either is an edit the owner re-approves.

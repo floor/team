@@ -116,7 +116,7 @@ export type ModelRule = {
 
 type Shipped = { profile: Profile; status: ModelRule[]; quota: QuotaPattern[] };
 
-const NAMES = ['claude-code', 'codex', 'cursor', 'antigravity'] as const;
+const NAMES = ['claude-code', 'codex', 'cursor', 'antigravity', 'grok'] as const;
 // The keys every profile carries. `status_model` and `last_used_model` are optional: a profile
 // without the first belongs to a CLI whose screen doesn't show its model; the second says the
 // CLI starts on its last-used model when a launch names none, and no shipped profile sets it.

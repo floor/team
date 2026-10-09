@@ -35,6 +35,7 @@ const DATA: Record<string, ScreenData> = {
   codex: load('codex'),
   cursor: load('cursor'),
   antigravity: load('antigravity'),
+  grok: load('grok'),
 };
 
 /** The shipped screen for a CLI, or null when this version has none. */

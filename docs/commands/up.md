@@ -497,7 +497,7 @@ before its workspace is made. The words after `would refuse:` are the same as th
 already running keeps its setup, with that reading in a note. A seat whose account is unknown
 carries `(<account> is unknown; would launch)` under its first command. A first sight carries
 `(<account>: first sight only, not yet counted; would launch)`. A launch carries the seat's rules
-when they travel as a launch option (claude-code), so its line is long; a first-message seat's
+when they travel as a launch option (claude-code, grok), so its line is long; a first-message seat's
 launch is the plain CLI command, and the plan shows the one line it types at the seat's idle
 prompt, with the note that the rules go to a per-seat file in the project state folder first.
 
