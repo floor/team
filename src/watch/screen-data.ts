@@ -60,6 +60,10 @@ type Box = {
   mode: 'box-to-rule';
   prompt: RegExp;
   rule: RegExp;
+  /** The frame's own tail on the input row — a box's closing edge, or a hint the pane draws
+   *  after the text — dropped before the row is read as the text's own. Null where none is
+   *  drawn. */
+  stripSuffix?: RegExp | null;
   /**
    * For a scrolled-out box, the non-blank lines under the closing rule must match
    * every pattern, in order, and the counts must be equal.
