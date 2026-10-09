@@ -153,11 +153,11 @@ describe('team next', () => {
     expect(listed.out).toBe('m1  the task title\n');
   });
 
-  test('team plan stays an unknown command', async () => {
+  test('team plan is a command, and the owner is refused', async () => {
     ready();
-    const plan = testIo(root);
-    expect(await main(['plan'], plan)).toBe(2);
-    expect(plan.err.startsWith('team: unknown command "plan"\n')).toBe(true);
+    const plan = testIo(root, { kind: 'owner' });
+    expect(await main(['plan'], plan)).toBe(1);
+    expect(plan.err).toBe('team plan: only a seat of this team pulls a task; this call is owner\n');
   });
 
   test('pull and fallback validate, and an omitted key stays off the parsed section', () => {
@@ -485,8 +485,8 @@ describe('team next', () => {
     expect(result.ring).toBeNull();
     expect(JSON.stringify(result)).not.toContain('team next');
     const page = readFileSync(join(import.meta.dir, '..', 'docs', 'commands', 'issues.md'), 'utf8');
-    expect(page).not.toContain('`team next` and `team plan` are not commands.');
-    expect(page).toContain('`team plan` is not a command.');
+    expect(page).not.toContain('`team plan` is not a command.');
+    expect(page).toContain('`team plan` prints the takeable queue and claims nothing.');
   });
 });
 

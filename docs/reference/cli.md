@@ -344,6 +344,25 @@ Usage:
 
 None.
 
+## `plan`
+
+Hidden: no
+
+Usage:
+
+    team plan
+
+### Flags
+
+| Flag | Takes a value | Repeatable | Hidden |
+| --- | --- | --- | --- |
+| `--help` | no | no | no |
+| `-h` | no | no | yes |
+
+### Positionals
+
+None.
+
 ## `pr`
 
 Hidden: no

@@ -14,7 +14,7 @@ An expired lease returns the record to the queue. Another seat may take it, and 
 be done twice.
 The file is the intake for a file source. A record is takeable because the owner wrote it there.
 For a broker source the intake is the tracker's read, with the team's policy deciding which
-fields cross. That is not the owner-set intake rule. `team plan` is not a command.
+fields cross. That is not the owner-set intake rule. `team plan` prints the takeable queue and claims nothing.
 `title` and `description` are the owner's text. They are not scrubbed. A broker source's policy
 may keep a field from crossing, and a field left out is absent from the record, never blank.
 A record with `blocked-by`, `repos`, or `needs` is listed by `team issues` and is not taken.

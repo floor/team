@@ -224,6 +224,16 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `next.shape` | `next` | 1 | nothing was taken, and a record is not a task or the task file is not a list | `team next` |
 | `next.invocation` | `next` | 2 | the invocation can't be read | `team next extra` |
 | `next.not-a-repo` | `next` | 2 | not inside a git repository | `team next` |
+| `plan.none` | `plan` | 0 | nothing is takeable | `team plan` |
+| `plan.shown` | `plan` | 0 | the takeable queue was printed | `team plan` |
+| `plan.broker` | `plan` | 1 | no broker is running, or its answer was not one this build knows | `team plan` |
+| `plan.caller` | `plan` | 1 | the caller is not a seat of this team on its recorded pane | `team plan` |
+| `plan.file` | `plan` | 1 | the team file can't be read, or it declares no task source | `team plan` |
+| `plan.missing` | `plan` | 1 | the task file is not there | `team plan` |
+| `plan.read` | `plan` | 1 | the broker failed the read | `team plan` |
+| `plan.shape` | `plan` | 1 | nothing was printed, and a record is not a task or the task file is not a list | `team plan` |
+| `plan.invocation` | `plan` | 2 | the invocation can't be read | `team plan extra` |
+| `plan.not-a-repo` | `plan` | 2 | not inside a git repository | `team plan` |
 | `pr.passed` | `pr` | 0 | the pull request body passed | `team pr check body.md` |
 | `pr.refused` | `pr` | 1 | the pull request body was refused | `team pr check body.md` |
 | `pr.body` | `pr` | 2 | the pull request body can't be read | `team pr check missing.md` |

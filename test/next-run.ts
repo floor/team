@@ -1,15 +1,18 @@
-// Evidence for `team next`. The scratch session's panes are shells. Recording an agent needs
-// `paneRun` of the seat's CLI the way `team up` launches one, and this harness does not start a
-// composer. It attempts that recording — two panes, a pane run, the agent list — quotes the
-// refusal, and only then claims in process. The scratch session could not record an agent.
-// The claim, the second seat's "nothing is takeable", the renewal, and the linked-worktree
-// lease path run with `io.caller` set to a seat whose pane the state file records.
+// Evidence for `team next` and `team plan`. The scratch session's panes are shells. Recording an
+// agent needs `paneRun` of the seat's CLI the way `team up` launches one, and this harness does
+// not start a composer. It attempts that recording — two panes, a pane run, the agent list —
+// quotes the refusal, and only then plans and claims in process. The scratch session could not
+// record an agent: both commands run in the panes and each refuses a caller that is no seat of
+// the team, and the in-process section runs them as seats whose panes the state file records —
+// the claim, the second seat's "nothing is takeable", the plan that still lists the held record,
+// the renewal, and the linked-worktree lease path.
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import { runNext } from '../src/commands/next.ts';
+import { runPlan } from '../src/commands/plan.ts';
 import { findRoot } from '../src/file/load.ts';
 import { emptySession, updateState } from '../src/state.ts';
 import { testIo } from './helpers.ts';
@@ -84,6 +87,16 @@ function git(cwd: string, ...args: string[]): void {
   execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd, stdio: 'ignore' });
 }
 
+/** The printed slice between one `--- <name> ---` marker and the next: each pane run echoes a
+ *  marker per step, so a needle is proven in its own section and not in the neighbouring one. */
+function section(glass: string, marker: string): string {
+  const from = glass.indexOf(marker);
+  if (from < 0) return '';
+  const rest = glass.slice(from + marker.length);
+  const to = rest.indexOf('--- ');
+  return to < 0 ? rest : rest.slice(0, to);
+}
+
 const base = mkdtempSync(join(tmpdir(), 'team-next-run-'));
 const root = join(base, 'acme');
 const home = join(base, 'home');
@@ -143,10 +156,14 @@ try {
     seat.glass = glass;
     console.log(`--- ${seat.name} ---`);
     console.log(glass);
-    if (!glass.includes('unknown command "plan"')) throw new Error(`${seat.name}: plan was not refused`);
-    if (!glass.includes('exit:2')) throw new Error(`${seat.name}: plan did not exit 2`);
-    if (!glass.includes('only a seat of this team pulls a task')) throw new Error(`${seat.name}: next did not refuse the caller`);
-    if (!glass.includes('exit:1')) throw new Error(`${seat.name}: next did not exit 1`);
+    // The caller this pane runs as is no seat of the team: both commands refuse it the same way,
+    // each in its own echoed section.
+    const planned = section(glass, '--- plan ---');
+    if (!planned.includes('team plan: only a seat of this team pulls a task')) throw new Error(`${seat.name}: plan did not refuse the caller`);
+    if (!planned.includes('exit:1')) throw new Error(`${seat.name}: plan did not exit 1`);
+    const nexted = section(glass, '--- next ---');
+    if (!nexted.includes('only a seat of this team pulls a task')) throw new Error(`${seat.name}: next did not refuse the caller`);
+    if (!nexted.includes('exit:1')) throw new Error(`${seat.name}: next did not exit 1`);
   }
   if (existsSync(join(checkout, '.agents', 'leases'))) throw new Error('the pane wrote a lease');
 
@@ -175,6 +192,20 @@ try {
   console.log(JSON.stringify(written));
   if (written.seat !== 'lead' || written.pane !== lead.pane) throw new Error('the lease does not name the seat and pane');
   if (existsSync(join(worktree, '.agents', 'leases', 'm1.json'))) throw new Error('the lease was written in the linked worktree');
+
+  const planOf = async (name: string, pane: string, cwd: string, argv: string[] = []) => {
+    const io = testIo(cwd, { kind: 'seat', name, pane, session: 'acme' });
+    const code = await runPlan(argv, io, { home, now: () => clock });
+    return { code, out: io.out, err: io.err };
+  };
+  // The record the other seat holds still appears — the plan claims nothing, so the lease bytes
+  // and the lease list are the same after it as before it.
+  const leaseBefore = readFileSync(leasePath, 'utf8');
+  const planned = await planOf('worker', other.pane, checkout);
+  console.log('--- plan ---');
+  console.log(JSON.stringify(planned));
+  if (planned.code !== 0 || planned.out !== 'm1  the task title\n' || planned.err !== '') throw new Error(`plan: ${planned.out}${planned.err}`);
+  if (readFileSync(leasePath, 'utf8') !== leaseBefore) throw new Error('the plan wrote the lease');
 
   const second = await claim('worker', other.pane, checkout);
   console.log('--- second ---');

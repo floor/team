@@ -1529,6 +1529,76 @@
     },
     {
       "code": 0,
+      "command": "plan",
+      "id": "plan.none",
+      "meaning": "nothing is takeable",
+      "trigger": "team plan"
+    },
+    {
+      "code": 0,
+      "command": "plan",
+      "id": "plan.shown",
+      "meaning": "the takeable queue was printed",
+      "trigger": "team plan"
+    },
+    {
+      "code": 1,
+      "command": "plan",
+      "id": "plan.broker",
+      "meaning": "no broker is running, or its answer was not one this build knows",
+      "trigger": "team plan"
+    },
+    {
+      "code": 1,
+      "command": "plan",
+      "id": "plan.caller",
+      "meaning": "the caller is not a seat of this team on its recorded pane",
+      "trigger": "team plan"
+    },
+    {
+      "code": 1,
+      "command": "plan",
+      "id": "plan.file",
+      "meaning": "the team file can't be read, or it declares no task source",
+      "trigger": "team plan"
+    },
+    {
+      "code": 1,
+      "command": "plan",
+      "id": "plan.missing",
+      "meaning": "the task file is not there",
+      "trigger": "team plan"
+    },
+    {
+      "code": 1,
+      "command": "plan",
+      "id": "plan.read",
+      "meaning": "the broker failed the read",
+      "trigger": "team plan"
+    },
+    {
+      "code": 1,
+      "command": "plan",
+      "id": "plan.shape",
+      "meaning": "nothing was printed, and a record is not a task or the task file is not a list",
+      "trigger": "team plan"
+    },
+    {
+      "code": 2,
+      "command": "plan",
+      "id": "plan.invocation",
+      "meaning": "the invocation can't be read",
+      "trigger": "team plan extra"
+    },
+    {
+      "code": 2,
+      "command": "plan",
+      "id": "plan.not-a-repo",
+      "meaning": "not inside a git repository",
+      "trigger": "team plan"
+    },
+    {
+      "code": 0,
       "command": "pr",
       "id": "pr.passed",
       "meaning": "the pull request body passed",

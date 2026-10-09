@@ -164,14 +164,14 @@ describe('team issues', () => {
     });
   });
 
-  test('team plan stays an unknown command', async () => {
+  test('team plan is a command of this build, and the owner is refused', async () => {
     expect(commands.issues).toBeDefined();
     expect(commands.next).toBeDefined();
-    expect('plan' in commands).toBe(false);
+    expect('plan' in commands).toBe(true);
     project();
-    const plan = testIo(root);
-    expect(await main(['plan'], plan)).toBe(2);
-    expect(plan.err.startsWith('team: unknown command "plan"\n')).toBe(true);
+    const plan = testIo(root, { kind: 'owner' });
+    expect(await main(['plan'], plan)).toBe(1);
+    expect(plan.err.startsWith('team plan: only a seat of this team pulls a task')).toBe(true);
   });
 
   test('a listing creates no key, and a pass with no mailbox record does not ring', () => {

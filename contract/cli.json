@@ -543,6 +543,29 @@
         }
       ],
       "hidden": false,
+      "name": "plan",
+      "positionals": [],
+      "subcommands": [],
+      "usage": [
+        "team plan"
+      ]
+    },
+    {
+      "flags": [
+        {
+          "hidden": false,
+          "name": "--help",
+          "repeatable": false,
+          "takesValue": false
+        },
+        {
+          "hidden": true,
+          "name": "-h",
+          "repeatable": false,
+          "takesValue": false
+        }
+      ],
+      "hidden": false,
       "name": "pr",
       "positionals": [],
       "subcommands": [

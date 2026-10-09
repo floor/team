@@ -4,7 +4,7 @@
 // request line out and one answer line back, and never sees the key — the answer is the record
 // after the team file's task policy filtered it. With no broker running, a broker source
 // refuses and claims nothing. The lease stays local either way: a tracker-side claim is a write,
-// and this build does not write to a tracker. `team plan` is not a command.
+// and this build does not write to a tracker. `team plan` prints the takeable queue and claims nothing.
 import { join } from 'node:path';
 import { readArgs } from '../args.ts';
 import { askBroker, DEADLINE, NOT_RUNNING, WRONG_ANSWER } from '../broker/client.ts';
@@ -174,7 +174,9 @@ function take(
   return none(io, 'nothing is takeable');
 }
 
-function place(team: TeamFile, root: string, io: Io): { kind: 'ok'; seat: string; pane: string } | { kind: 'refused'; message: string } {
+/** The seat gate both `team next` and `team plan` run first: a named seat of this team, on the
+ *  pane the state records for it. Shared so the two commands cannot drift. */
+export function place(team: TeamFile, root: string, io: Io): { kind: 'ok'; seat: string; pane: string } | { kind: 'refused'; message: string } {
   const { caller, shown } = judgeCallerOf(io, team.session);
   const named = caller.kind === 'seat' && team.seats.some((seat) => seat.name === caller.name) ? caller : null;
   if (!named) return { kind: 'refused', message: `only a seat of this team pulls a task; this call is ${describeCaller(shown)}` };
@@ -185,7 +187,8 @@ function place(team: TeamFile, root: string, io: Io): { kind: 'ok'; seat: string
   return { kind: 'ok', seat: named.name, pane: named.pane };
 }
 
-function takeable(records: readonly TaskRecord[], seat: string, pull: 'self' | 'any', mine: boolean): TaskRecord[] {
+/** The records a claim would consider for this seat — `team plan` shows what this returns. */
+export function takeable(records: readonly TaskRecord[], seat: string, pull: 'self' | 'any', mine: boolean): TaskRecord[] {
   return records.filter((record) => {
     if (record.blockedBy && record.blockedBy.length) return false;
     if (record.repos && record.repos.length) return false;
@@ -196,7 +199,8 @@ function takeable(records: readonly TaskRecord[], seat: string, pull: 'self' | '
   });
 }
 
-function order(records: readonly TaskRecord[], fallback: 'file' | 'id'): TaskRecord[] {
+/** The claim order both commands show: priority first, then `fallback`. */
+export function order(records: readonly TaskRecord[], fallback: 'file' | 'id'): TaskRecord[] {
   return records
     .map((record, index) => ({ record, index }))
     .sort((a, b) => {

@@ -9,7 +9,7 @@ The broker runs as the same OS principal as the seat: that is integrity, not aut
 this command does not isolate anything.
 `title` and `description` are the owner's text. They are not scrubbed.
 The list is file order. A priority is shown and does not reorder.
-A listing is not a claim and not the intake rule. `team plan` is not a command.
+A listing is not a claim and not the intake rule. `team plan` prints the takeable queue and claims nothing.
 `repos` and `needs` are shown when the file has them. They are not a grant, and they are not checked.
 The watch's ring is unchanged: `Team: run team messages`.
 
