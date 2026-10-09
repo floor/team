@@ -184,6 +184,34 @@ describe('team next', () => {
     expect(drifted.sections.tasks).not.toBe(fingerprints(pulled.team).sections.tasks);
   });
 
+  test('cadence validates as a measured duration, and an omitted key stays off the parsed section', () => {
+    expect(validateTeamFile(WITH).ok).toBe(true);
+    expect(validateTeamFile(`${WITH}  cadence: 10m\n`).ok).toBe(true);
+    expect(validateTeamFile(`${WITH}  cadence: 0.5m\n`).ok).toBe(true);
+    for (const bad of ['10minutes', '"10m"']) {
+      const checked = validateTeamFile(`${WITH}  cadence: ${bad}\n`);
+      expect(checked.ok).toBe(false);
+      if (!checked.ok) {
+        expect(checked.errors.map((error) => error.message)).toContain(
+          'tasks.cadence needs a value with its unit (s, m, h), such as 120s or 10m',
+        );
+      }
+    }
+    const lifted = validateTeamFile(`${WITH}  cadence: 10m\n`);
+    if (!lifted.ok) throw new Error('the fixture does not validate');
+    expect(lifted.team.tasks).toEqual({ source: 'file', path: '.agents/tasks.yaml', cadence: 600 });
+    const plain = validateTeamFile(WITH);
+    if (!plain.ok) throw new Error('the fixture does not validate');
+    expect(plain.team.tasks).toEqual({ source: 'file', path: '.agents/tasks.yaml' });
+    // The S2 rule: an approval of a section without the key still matches it, and a section that
+    // gains the key is a difference.
+    const stored = fingerprints(plain.team);
+    const again = approvedFingerprints({ approval: { fingerprints: stored }, file: WITH } as never);
+    expect(again.sections.tasks).toBe(fingerprints(plain.team).sections.tasks);
+    const drifted = approvedFingerprints({ approval: { fingerprints: stored }, file: `${WITH}  cadence: 10m\n` } as never);
+    expect(drifted.sections.tasks).not.toBe(fingerprints(lifted.team).sections.tasks);
+  });
+
   test('two seats in one clone leave one lease file', async () => {
     ready(WITH_BOTH);
     expect(await run()).toEqual({ code: 0, out: 'm1  the task title\n', err: '' });

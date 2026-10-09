@@ -59,7 +59,11 @@ tasks:
 - `fallback` is optional: `file` or `id`. It orders records that have no priority. Omitted, those
   records keep file order. It does not reorder a record that has a priority. Any other value is
   `tasks.fallback must be file or id`.
-- Any other key, including `cadence`, is an unknown field.
+- `cadence` is optional: a duration with its unit written, in `s`, `m` or `h`, such as `120s` or
+  `10m`. Omitted, the parsed section does not gain the key, and no default is supplied. Any other
+  value, including a quoted one, is
+  `tasks.cadence needs a value with its unit (s, m, h), such as 120s or 10m`.
+- Any other key, including `backoff` and `quiet_hours`, is an unknown field.
 
 The file at `path` is a YAML list of task records. `team issues` reads it. `team next` claims one
 record from it, and claims one from a broker source's read the same way — the lease stays local

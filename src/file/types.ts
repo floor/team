@@ -132,12 +132,13 @@ export type TeamFile = {
    * and the Keychain service, and `policy` names which fields cross the broker's boundary.
    */
   tasks:
-    | { source: 'file'; path: string; pull?: 'self' | 'any'; fallback?: 'file' | 'id' }
+    | { source: 'file'; path: string; pull?: 'self' | 'any'; fallback?: 'file' | 'id'; cadence?: number }
     | {
         source: 'linear';
         linear: { project: string; keychainService: string };
         pull?: 'self' | 'any';
         fallback?: 'file' | 'id';
+        cadence?: number;
         policy?: TaskPolicy;
       }
     | null;
