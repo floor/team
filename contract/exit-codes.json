@@ -1964,9 +1964,23 @@
     {
       "code": 0,
       "command": "send",
+      "id": "send.answered",
+      "meaning": "the seat's reply came back within the window",
+      "trigger": "team send worker hello --wait"
+    },
+    {
+      "code": 0,
+      "command": "send",
       "id": "send.delivered",
       "meaning": "the seat's socket took the frame",
       "trigger": "team send worker hello"
+    },
+    {
+      "code": 0,
+      "command": "send",
+      "id": "send.listed",
+      "meaning": "the addressable seats were printed, nothing was sent",
+      "trigger": "team send --list"
     },
     {
       "code": 1,
@@ -1974,6 +1988,13 @@
       "id": "send.refused",
       "meaning": "nothing was sent, on purpose",
       "trigger": "team send missing hello"
+    },
+    {
+      "code": 1,
+      "command": "send",
+      "id": "send.timeout",
+      "meaning": "delivered, but the seat's reply did not arrive in the window",
+      "trigger": "team send worker hello --wait --timeout 10"
     },
     {
       "code": 1,

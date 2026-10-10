@@ -2,8 +2,8 @@
 // real unix socket (a listener this test owns). No pane is read and no live session is touched.
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer, type Server } from 'node:net';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { createConnection, createServer, type Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runSend, type SendHost } from '../src/commands/send.ts';
@@ -369,5 +369,288 @@ describe('team send: usage and configuration', () => {
 
     expect(code).toBe(2);
     expect(io.err).toContain('the message file cannot be read: missing.txt');
+  });
+});
+
+/** `fake`, whose deliver also makes the seat answer: a message written back to the sender's
+ *  own pid socket, the address the receiving side derives. `reply === null` answers nothing
+ *  (the timeout case). */
+function replying(sockets: string, reply: string | null, patch: Partial<SendHost> = {}): Fake {
+  const host = fake(sockets, patch);
+  const record = host.deliver;
+  host.deliver = async (socketPath, frame) => {
+    const outcome = await record(socketPath, frame);
+    if (reply !== null) {
+      const back = createConnection(senderSocket(sockets));
+      back.on('error', () => {});
+      back.on('connect', () => back.end(`${reply}\n`));
+    }
+    return outcome;
+  };
+  return host;
+}
+
+/** The sender's own listener path: `<sockets>/<this process's pid>.sock`, as the session on
+ *  the other side computes it from the connection's verified pid. */
+function senderSocket(sockets: string): string {
+  return join(sockets, `${String(process.pid)}.sock`);
+}
+
+const REPLY_FRAME = '{"type":"user","message":{"role":"user","content":"pong"},"msg_id":"reply-1"}';
+
+/** The measured shape a replying session's harness writes: the body inside its attribution
+ *  wrapper (see reply.ts). */
+const WRAPPED_REPLY = JSON.stringify({
+  type: 'user',
+  message: {
+    role: 'user',
+    content: '<cross-session-message from="uds:/tmp/cc-socks/14495.sock" from-name="lobby-93" from-mode="bypass">\npong\n</cross-session-message>',
+  },
+  msg_id: 'reply-2',
+});
+
+describe('team send: --wait', () => {
+  test("the seat's reply is printed, the listener is gone and the log keeps no text", async () => {
+    const { root, dir, sockets } = world();
+    writeFileSync(join(sockets, '222.sock'), '');
+    const io = owner(root);
+
+    const code = await runSend(['lead', 'ping', '--wait'], io, replying(sockets, REPLY_FRAME));
+
+    expect(code).toBe(0);
+    expect(io.out).toBe('lead: answered\npong\n');
+    expect(io.err).toBe('');
+    expect(existsSync(senderSocket(sockets))).toBe(false);
+    const log = readFileSync(join(dir, LOG_FILE), 'utf8');
+    expect(log).toContain('lead: answered (reply 4 characters)');
+    expect(log).not.toContain('pong');
+  });
+
+  test('--json answered: the document carries the reply and both ids', async () => {
+    const { root, sockets } = world();
+    writeFileSync(join(sockets, '222.sock'), '');
+    const host = replying(sockets, REPLY_FRAME);
+    const io = owner(root);
+
+    const code = await runSend(['lead', 'ping', '--wait', '--json'], io, host);
+
+    expect(code).toBe(0);
+    expect(io.err).toBe('');
+    const doc = JSON.parse(io.out) as { seat: string; status: string; exit: number; reply: string; ids: { sent: string; reply: string } };
+    const sent = JSON.parse((host.frames[0] as string).trim()) as { msg_id: string };
+    expect(doc).toEqual({ seat: 'lead', status: 'answered', exit: 0, reply: 'pong', ids: { sent: sent.msg_id, reply: 'reply-1' } });
+  });
+
+  test("a reply line that is not this channel's frame is kept whole", async () => {
+    const { root, sockets } = world();
+    writeFileSync(join(sockets, '222.sock'), '');
+    const io = owner(root);
+
+    const code = await runSend(['lead', 'ping', '--wait'], io, replying(sockets, 'plain words, not JSON'));
+
+    expect(code).toBe(0);
+    expect(io.out).toBe('lead: answered\nplain words, not JSON\n');
+  });
+
+  test("the replying harness's wrapper is peeled off, and the frame's own id is kept", async () => {
+    const { root, sockets } = world();
+    writeFileSync(join(sockets, '222.sock'), '');
+    const io = owner(root);
+
+    const code = await runSend(['lead', 'ping', '--wait'], io, replying(sockets, WRAPPED_REPLY));
+
+    expect(code).toBe(0);
+    expect(io.out).toBe('lead: answered\npong\n');
+
+    const doc = owner(root);
+    expect(await runSend(['lead', 'ping', '--wait', '--json'], doc, replying(sockets, WRAPPED_REPLY))).toBe(0);
+    const parsed = JSON.parse(doc.out) as { reply: string; ids: { reply: string } };
+    expect(parsed.reply).toBe('pong');
+    expect(parsed.ids.reply).toBe('reply-2');
+  });
+
+  test('no reply within the window: timeout, exit 1, nothing on stdout', async () => {
+    const { root, dir, sockets } = world();
+    writeFileSync(join(sockets, '222.sock'), '');
+    const io = owner(root);
+
+    const code = await runSend(['lead', 'ping', '--wait', '--timeout', '1'], io, replying(sockets, null));
+
+    expect(code).toBe(1);
+    expect(io.out).toBe('');
+    expect(io.err).toContain('lead: timeout: delivered, but no reply within 1s');
+    expect(existsSync(senderSocket(sockets))).toBe(false);
+    const log = readFileSync(join(dir, LOG_FILE), 'utf8');
+    // The delivery is recorded first; the window closing is its own line.
+    expect(log).toContain('lead: delivered (');
+    expect(log).toContain('lead: timeout (delivered, no reply within 1s)');
+  });
+
+  test('--json timeout: a document that says delivered with no reply', async () => {
+    const { root, sockets } = world();
+    writeFileSync(join(sockets, '222.sock'), '');
+    const io = owner(root);
+
+    const code = await runSend(['lead', 'ping', '--wait', '--timeout', '1', '--json'], io, replying(sockets, null));
+
+    expect(code).toBe(1);
+    expect(io.err).toBe('');
+    const doc = JSON.parse(io.out) as { seat: string; status: string; exit: number; error: string; ids: { sent: string | null } };
+    expect(doc.status).toBe('timeout');
+    expect(doc.exit).toBe(1);
+    expect(doc.error).toBe('delivered, but no reply within 1s');
+    expect(typeof doc.ids.sent).toBe('string');
+    expect('reply' in doc).toBe(false);
+  });
+
+  test("a dead file at the sender's own pid path is cleared, and the reply still lands", async () => {
+    const { root, sockets } = world();
+    writeFileSync(join(sockets, '222.sock'), '');
+    writeFileSync(senderSocket(sockets), '');
+    const io = owner(root);
+
+    const code = await runSend(['lead', 'ping', '--wait'], io, replying(sockets, 'pong'));
+
+    expect(code).toBe(0);
+    expect(io.out).toBe('lead: answered\npong\n');
+  });
+
+  test("a live listener at the sender's own pid path refuses before anything is sent", async () => {
+    const { root, sockets } = world();
+    writeFileSync(join(sockets, '222.sock'), '');
+    await listen(sockets, process.pid);
+    const host = replying(sockets, 'pong');
+    const io = owner(root);
+
+    const code = await runSend(['lead', 'ping', '--wait'], io, host);
+
+    expect(code).toBe(1);
+    expect(io.err).toContain('refused');
+    expect(io.err).toContain('a listener already answers at');
+    expect(host.frames).toEqual([]);
+  });
+});
+
+describe('team send: --timeout', () => {
+  test('--timeout without --wait is a usage error', async () => {
+    const { root, sockets } = world();
+    const io = owner(root);
+
+    const code = await runSend(['lead', 'ping', '--timeout', '5'], io, fake(sockets));
+
+    expect(code).toBe(2);
+    expect(io.err).toContain('--timeout is only meaningful with --wait');
+  });
+
+  test('--timeout takes a whole number of seconds within the day', async () => {
+    const { root, sockets } = world();
+
+    for (const value of ['abc', '0', '86401', '-3']) {
+      const io = owner(root);
+      const code = await runSend(['lead', 'ping', '--wait', '--timeout', value], io, fake(sockets));
+      expect(code).toBe(2);
+      expect(io.err).toContain(`--timeout takes a whole number of seconds, 1 to 86400 (got "${value}")`);
+    }
+  });
+});
+
+describe('team send: --list', () => {
+  test("the file's seats print with their cli and their role", async () => {
+    const { root, sockets } = world();
+    const io = owner(root);
+
+    const code = await runSend(['--list'], io, fake(sockets));
+
+    expect(code).toBe(0);
+    expect(io.err).toBe('');
+    expect(io.out).toBe('lead  claude-code  coordinator\nhelper  claude-code  implementer\nnative  codex  reviewer\n');
+  });
+
+  test('a worker seat may read the roster: no caller check', async () => {
+    const { root, dir, sockets } = world();
+    record(dir, 'helper', 'w2:p1');
+    const io = testIo(root, { kind: 'seat', name: 'helper', pane: 'w2:p1', session: 'acme' });
+
+    const code = await runSend(['--list'], io, fake(sockets));
+
+    expect(code).toBe(0);
+    expect(io.out).toContain('lead  claude-code  coordinator');
+  });
+
+  test('--list marks a stopped seat; --json carries the same roster as a document', async () => {
+    const { root, sockets } = world();
+    const file = join(root, '.agents', 'team.yaml');
+    writeFileSync(file, readFileSync(file, 'utf8').replace('  - role: reviewer', '  - role: reviewer\n    stopped: true'));
+    const io = owner(root);
+
+    const code = await runSend(['--list', '--json'], io, fake(sockets));
+
+    expect(code).toBe(0);
+    const doc = JSON.parse(io.out) as { seat: null; status: string; exit: number; ids: { sent: null; reply: null }; seats: unknown[] };
+    expect(doc).toEqual({
+      seat: null,
+      status: 'listed',
+      exit: 0,
+      ids: { sent: null, reply: null },
+      seats: [
+        { name: 'lead', cli: 'claude-code', role: 'coordinator', stopped: false },
+        { name: 'helper', cli: 'claude-code', role: 'implementer', stopped: false },
+        { name: 'native', cli: 'codex', role: 'reviewer', stopped: true },
+      ],
+    });
+    const plain = owner(root);
+    expect(await runSend(['--list'], plain, fake(sockets))).toBe(0);
+    expect(plain.out).toContain('native  codex  reviewer  (stopped)');
+  });
+});
+
+describe('team send: --json documents', () => {
+  test('a refused send is a document on stdout; stderr stays empty', async () => {
+    const { root, sockets } = world();
+    const io = owner(root);
+
+    const code = await runSend(['ghost', 'hello', '--json'], io, fake(sockets));
+
+    expect(code).toBe(1);
+    expect(io.err).toBe('');
+    const doc = JSON.parse(io.out) as { status: string; error: string };
+    expect(doc.status).toBe('refused');
+    expect(doc.error).toContain('ghost: it is not a declared seat');
+  });
+
+  test('a usage error carries no seat and exit 2', async () => {
+    const { root, sockets } = world();
+    const io = owner(root);
+
+    const code = await runSend(['--json'], io, fake(sockets));
+
+    expect(code).toBe(2);
+    expect(io.err).toBe('');
+    expect(JSON.parse(io.out)).toEqual({ seat: null, status: 'usage', exit: 2, error: 'a seat and a message are required', ids: { sent: null, reply: null } });
+  });
+
+  test('an unreachable seat is a document too', async () => {
+    const { root, sockets } = world();
+    const io = owner(root);
+
+    const code = await runSend(['lead', 'hello', '--json'], io, fake(sockets, { agents: () => null }));
+
+    expect(code).toBe(1);
+    const doc = JSON.parse(io.out) as { status: string; error: string };
+    expect(doc.status).toBe('unreachable');
+    expect(doc.error).toContain('could not be read');
+  });
+
+  test('a delivered send carries the composed frame\'s id', async () => {
+    const { root, sockets } = world();
+    writeFileSync(join(sockets, '222.sock'), '');
+    const host = fake(sockets);
+    const io = owner(root);
+
+    const code = await runSend(['lead', 'hello', '--json'], io, host);
+
+    expect(code).toBe(0);
+    const sent = JSON.parse((host.frames[0] as string).trim()) as { msg_id: string };
+    expect(JSON.parse(io.out)).toEqual({ seat: 'lead', status: 'delivered', exit: 0, ids: { sent: sent.msg_id, reply: null } });
   });
 });

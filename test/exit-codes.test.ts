@@ -2,6 +2,7 @@
 // injectable stand-ins the other command tests use: no herdr session, no user-level store.
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -2790,8 +2791,9 @@ scene('plan.read', async (place) => {
 });
 
 /** `team send`'s fixtures: a fake seat of the fixture's own file, a sockets folder with a file
- *  at the pid the fake pane process reports, and a deliver that accepts. No session is read. */
-function sendHost(place: Place, over: { agents?: boolean; socket?: boolean } = {}): SendHost & { frames: string[] } {
+ *  at the pid the fake pane process reports, and a deliver that accepts — with `reply` set,
+ *  the seat also answers at the sender's own pid path, as a session does. No session is read. */
+function sendHost(place: Place, over: { agents?: boolean; socket?: boolean; reply?: string } = {}): SendHost & { frames: string[] } {
   const sockets = join(place.base, 'cc-socks');
   mkdirSync(sockets, { recursive: true });
   if (over.socket !== false) writeFileSync(join(sockets, '400.sock'), '');
@@ -2802,6 +2804,11 @@ function sendHost(place: Place, over: { agents?: boolean; socket?: boolean } = {
     socketsDir: sockets,
     deliver: async (_socketPath, frame) => {
       host.frames.push(frame);
+      if (over.reply !== undefined) {
+        const back = createConnection(join(sockets, `${String(process.pid)}.sock`));
+        back.on('error', () => {});
+        back.on('connect', () => back.end(`${over.reply}\n`));
+      }
       return { ok: true };
     },
     now: () => NOW,
@@ -2830,6 +2837,18 @@ scene('send.unreachable', async (place) => {
 scene('send.delivered', async (place) => {
   write(place, TEAM);
   return show(await sent(place, ['lead', 'hello'], owner, sendHost(place)), 'lead: delivered');
+});
+scene('send.answered', async (place) => {
+  write(place, TEAM);
+  return show(await sent(place, ['lead', 'hello', '--wait'], owner, sendHost(place, { reply: 'pong' })), 'lead: answered\npong');
+});
+scene('send.timeout', async (place) => {
+  write(place, TEAM);
+  return show(await sent(place, ['lead', 'hello', '--wait', '--timeout', '1'], owner, sendHost(place)), 'timeout: delivered, but no reply within 1s');
+});
+scene('send.listed', async (place) => {
+  write(place, TEAM);
+  return show(await sent(place, ['--list'], owner, sendHost(place)), 'lead  claude-code');
 });
 
 // Outcomes that are listed and kept, and that no scene can produce. An edit the earlier checks

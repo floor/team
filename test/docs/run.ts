@@ -2,6 +2,7 @@
 // world, the home and the caller are handed in, so no example reaches herdr, a CLI, or the owner's
 // home. A `$ ` line is run, the lines under it must match byte for byte.
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createConnection } from 'node:net';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAdd } from '../../src/commands/add.ts';
@@ -159,7 +160,7 @@ async function setup(page: Page): Promise<void> {
   page.ready = true;
 }
 
-async function command(page: Page, line: string, io: Io, answer?: string, waiting: Waiting = 'empty'): Promise<number> {
+async function command(page: Page, line: string, io: Io, answer?: string, waiting: Waiting = 'empty', reply?: string): Promise<number> {
   const [first, ...argv] = words(line);
   if (first !== 'team') throw new Error(`a console line runs \`team …\`, not "${first ?? ''}"`);
   const name = argv[0];
@@ -216,8 +217,10 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
       return runRemove(rest, io, world.removeSources());
     case 'send': {
       // The seat is the first the page's file names; the page's examples are deterministic.
+      // `reply="…"` on the fence is the fake seat's answer: with it, a `--wait` example has a
+      // reply to print; without it, the seat stays silent and the wait times out.
       const seat = page.team?.seats[0]?.name ?? 'claude-keeper';
-      return runSend(rest, io, sendHost(fixture, seat, spec.now));
+      return runSend(rest, io, sendHost(fixture, seat, spec.now, reply));
     }
     case 'pr':
       return pr(rest, io, (cwd, file) => loadConfig(cwd, file, fixture.home));
@@ -239,7 +242,8 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
 }
 
 /** The docs page's only `answer` example fails before any pane is read. */
-function answerHost(home: string): AnswerHost {  const unused = (): never => { throw new Error('the docs example does not read a pane'); };
+function answerHost(home: string): AnswerHost {
+  const unused = (): never => { throw new Error('the docs example does not read a pane'); };
   return {
     version: unused,
     agents: unused,
@@ -260,10 +264,13 @@ function answerHost(home: string): AnswerHost {  const unused = (): never => { t
 }
 
 /** The docs page's send: a fake seat whose pane reports one process with a file at the socket's
- *  measured name, and a deliver that accepts. No session is read and no pane is touched. */
+ *  measured name, and a deliver that accepts. With `reply`, the delivery answers too: a
+ *  connection back to the sender's own measured `cc-socks/<pid>.sock` — the frame a replying
+ *  session writes — so a `--wait` example has a reply to print. No session is read and no pane
+ *  is touched. */
 const SEND_PID = 4200;
 
-function sendHost(fixture: Fixture, seat: string, now: string): SendHost {
+function sendHost(fixture: Fixture, seat: string, now: string, reply?: string): SendHost {
   const sockets = join(fixture.home, 'cc-socks');
   mkdirSync(sockets, { recursive: true });
   writeFileSync(join(sockets, `${String(SEND_PID)}.sock`), '');
@@ -271,7 +278,24 @@ function sendHost(fixture: Fixture, seat: string, now: string): SendHost {
     agents: () => [{ name: seat, pane: 'w1:p1' }],
     processInfo: () => ({ shell: SEND_PID, foreground: [] }),
     socketsDir: sockets,
-    deliver: async () => ({ ok: true }),
+    deliver: async () => {
+      if (reply !== undefined) {
+        await new Promise<void>((resolve) => {
+          const back = createConnection(join(sockets, `${String(process.pid)}.sock`));
+          back.on('connect', () => {
+            // The measured shape: the harness stamps its attribution wrapper around the body
+            // (see src/send/reply.ts), so the page's example exercises the peel.
+            const wrapped = `<cross-session-message from="uds:/tmp/cc-socks/${String(SEND_PID)}.sock" from-name="${seat}" from-mode="bypass">\n${reply}\n</cross-session-message>`;
+            const frame = JSON.stringify({ type: 'user', message: { role: 'user', content: wrapped }, msg_id: 'reply-1' });
+            back.end(`${frame}\n`, resolve);
+          });
+          // Without a listener at the sender's address the seat's answer has nowhere to go; the
+          // delivery itself still lands, exactly as the socket channel reports it.
+          back.on('error', () => resolve());
+        });
+      }
+      return { ok: true };
+    },
     now: () => new Date(now),
     home: fixture.home,
   };
@@ -362,7 +386,7 @@ async function consoleBlock(page: Page, block: Block, failures: Failure[]): Prom
       const waiting: Waiting =
         block.attrs.waiting === '1' ? 'waiting' : block.attrs.waiting === 'unreadable' ? 'unreadable' : 'empty';
       try {
-        code = await command(page, step.command, io, block.attrs.answer, waiting);
+        code = await command(page, step.command, io, block.attrs.answer, waiting, block.attrs.reply);
       } catch (error) {
         failures.push({ page: page.name, line: step.line, message: (error as Error).message });
         continue;
