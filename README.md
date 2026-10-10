@@ -10,7 +10,7 @@ and a history, and build and watch the team itself. It runs teams in
 
 The project's name is TeamCLI; the package and the command are `team`. The site is
 [teamcli.io](https://teamcli.io), and the founding text is
-[RFC 000](https://github.com/floor/team/discussions/147).
+[RFC 000](https://github.com/floor/teamcli/discussions/147).
 
 **Status: early, herdr only.** This build parses and
 validates the file, checks who is calling, and holds `add`, `answer`, `approve`, `check`, `doctor`,
@@ -197,7 +197,7 @@ them, one row per account and window, when there is an account or a stored readi
 
 `examples/checks/codex-quota` is a check for an openai account. It ships with the package: with a
 global install it is at `$(npm root -g)/team/examples/checks/codex-quota`, and it is
-[examples/checks/codex-quota](https://github.com/floor/team/blob/main/examples/checks/codex-quota)
+[examples/checks/codex-quota](https://github.com/floor/teamcli/blob/main/examples/checks/codex-quota)
 in the repository. It is a Bun script — the check needs Bun on `PATH`, whatever runs `team` — and
 it uses only built-in file modules, so there is no package to install beside it. Copy it onto
 `PATH` and name that command:
@@ -262,7 +262,7 @@ check, and this build acts on what the commands below read.
 | `team remove <name>` | stops one seat, then takes it out of the file; `--keep` leaves it stopped; `--abandon` is the owner's, and types nothing | the owner, the coordinator or the operator; only the owner removes the coordinator or the operator |
 | `team worktree new <task>` / `team worktree remove <task>` | creates a task worktree from an up-to-date base, or removes its folder; a failed setup is kept and recorded; the branch is never deleted; ignored files in the worktree are deleted with it | the owner, the coordinator or the operator |
 
-Each command has its own page in [docs/commands](https://github.com/floor/team/tree/main/docs/commands): the synopsis, what it reads and
+Each command has its own page in [docs/commands](https://github.com/floor/teamcli/tree/main/docs/commands): the synopsis, what it reads and
 writes, who may run it, every flag, the refusals with their exact text, the exit codes, and examples
 that `bun run ci` runs against a fixture team.
 
@@ -348,7 +348,7 @@ run — and `up` starts the team, from the owner's terminal outside herdr.
 To run this tree's command from a clone instead of npm:
 
 ```sh
-git clone https://github.com/floor/team.git
+git clone https://github.com/floor/teamcli.git
 cd team
 bun install
 bun run build
@@ -413,7 +413,7 @@ fails because that version is already on npm. A tag ruleset protecting `v*`, so 
 owner creates version tags, is recommended.
 
 Trusted publishing must be bound once, by the package owner, on npmjs.com: the package `team` →
-Publishing → trusted publishers → GitHub Actions, naming `floor/team` and the workflow file
+Publishing → trusted publishers → GitHub Actions, naming `floor/teamcli` and the workflow file
 `release.yml`; until then the workflow cannot publish.
 
 ## License

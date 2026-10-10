@@ -55,7 +55,7 @@ describe('team init', () => {
     expect(await runInit([], io, undefined, undefined, noLogin)).toBe(0);
     const content = readFileSync(join(project, '.agents', 'team.yaml'), 'utf8');
     const firstLine = content.split('\n')[0];
-    const expected = `# yaml-language-server: $schema=https://raw.githubusercontent.com/floor/team/v${version()}/schema/team.schema.json`;
+    const expected = `# yaml-language-server: $schema=https://raw.githubusercontent.com/floor/teamcli/v${version()}/schema/team.schema.json`;
     expect(firstLine).toBe(expected);
   });
 

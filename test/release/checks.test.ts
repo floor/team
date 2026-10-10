@@ -249,11 +249,11 @@ describe('the tag check', () => {
 
   test('an over-limit compare body reads its status from the head the fetch kept', async () => {
     // A compare of a tag far behind main runs over a megabyte of commit and file lists, but the
-    // compare's own `status` sits near the head: measured 2026-10-07 on floor/team's 06e01b8...main
+    // compare's own `status` sits near the head: measured 2026-10-07 on floor/teamcli's 06e01b8...main
     // compare, "status" at byte 14,398 of a 1,161,071-byte body (ahead_by 91). The fetch keeps the
     // head of an over-limit body, so this row reads its status without ever reading the diff.
-    const head = '{"url":"https://api.github.com/repos/floor/team/compare/06e01b8...main",'
-      + '"html_url":"https://github.com/floor/team/compare/06e01b8...main","permalink_url":"x",'
+    const head = '{"url":"https://api.github.com/repos/floor/teamcli/compare/06e01b8...main",'
+      + '"html_url":"https://github.com/floor/teamcli/compare/06e01b8...main","permalink_url":"x",'
       + '"diff_url":"x.diff","patch_url":"x.patch",'
       + '"base_commit":{"sha":"a","node_id":"n","commit":{"message":"a { brace ] and a \\"quote\\"","tree":{"sha":"t"}}},'
       + '"merge_base_commit":{"sha":"a","commit":{"message":"older"}},'

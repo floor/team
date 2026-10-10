@@ -47,11 +47,11 @@ the file stays private to your clone (it goes in `.git/info/exclude`, never `.gi
 ## Links
 
 - The site: [teamcli.io](https://teamcli.io)
-- The full README, and the command reference: [github.com/floor/team](https://github.com/floor/team#readme)
-- Changelog: [CHANGELOG.md](https://github.com/floor/team/blob/main/CHANGELOG.md)
-- Upgrading from an earlier release: [UPGRADE-0.3.md](https://github.com/floor/team/blob/main/UPGRADE-0.3.md)
-- RFC 000, what the project stands on: [floor/team discussion 147](https://github.com/floor/team/discussions/147)
+- The full README, and the command reference: [github.com/floor/teamcli](https://github.com/floor/teamcli#readme)
+- Changelog: [CHANGELOG.md](https://github.com/floor/teamcli/blob/main/CHANGELOG.md)
+- Upgrading from an earlier release: [UPGRADE-0.3.md](https://github.com/floor/teamcli/blob/main/UPGRADE-0.3.md)
+- RFC 000, what the project stands on: [floor/teamcli discussion 147](https://github.com/floor/teamcli/discussions/147)
 
 ## License
 
-MIT, see [LICENSE](https://github.com/floor/team/blob/main/LICENSE).
+MIT, see [LICENSE](https://github.com/floor/teamcli/blob/main/LICENSE).

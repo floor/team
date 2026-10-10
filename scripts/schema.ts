@@ -36,7 +36,7 @@ export function buildSchema(): JsonSchema {
   }
   return {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://github.com/floor/team/blob/main/schema/team.schema.json',
+    $id: 'https://github.com/floor/teamcli/blob/main/schema/team.schema.json',
     title: 'A team file',
     $comment: 'generated from the section modules by scripts/schema.ts: the validator is the source of truth',
     type: 'object',

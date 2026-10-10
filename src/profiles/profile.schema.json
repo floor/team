@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/floor/team/blob/main/src/profiles/profile.schema.json",
+  "$id": "https://github.com/floor/teamcli/blob/main/src/profiles/profile.schema.json",
   "title": "A CLI profile",
   "type": "object",
   "additionalProperties": false,

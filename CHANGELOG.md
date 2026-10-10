@@ -704,15 +704,15 @@ The first release: set up, change and watch a project's team of AI agents from o
   footer, or a Yes/No choice below the last rule. An idle seat that only quotes "Do you want to proceed?"
   stays idle.
 
-[Unreleased]: https://github.com/floor/team/compare/v0.3.5...HEAD
-[0.3.5]: https://github.com/floor/team/releases/tag/v0.3.5
-[0.3.4]: https://github.com/floor/team/releases/tag/v0.3.4
-[0.3.3]: https://github.com/floor/team/releases/tag/v0.3.3
-[0.3.2]: https://github.com/floor/team/releases/tag/v0.3.2
-[0.3.1]: https://github.com/floor/team/releases/tag/v0.3.1
-[0.3.0]: https://github.com/floor/team/releases/tag/v0.3.0
-[0.2.1]: https://github.com/floor/team/releases/tag/v0.2.1
-[0.2.0]: https://github.com/floor/team/releases/tag/v0.2.0
-[0.1.2]: https://github.com/floor/team/releases/tag/v0.1.2
-[0.1.1]: https://github.com/floor/team/releases/tag/v0.1.1
-[0.1.0]: https://github.com/floor/team/releases/tag/v0.1.0
+[Unreleased]: https://github.com/floor/teamcli/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/floor/teamcli/releases/tag/v0.3.5
+[0.3.4]: https://github.com/floor/teamcli/releases/tag/v0.3.4
+[0.3.3]: https://github.com/floor/teamcli/releases/tag/v0.3.3
+[0.3.2]: https://github.com/floor/teamcli/releases/tag/v0.3.2
+[0.3.1]: https://github.com/floor/teamcli/releases/tag/v0.3.1
+[0.3.0]: https://github.com/floor/teamcli/releases/tag/v0.3.0
+[0.2.1]: https://github.com/floor/teamcli/releases/tag/v0.2.1
+[0.2.0]: https://github.com/floor/teamcli/releases/tag/v0.2.0
+[0.1.2]: https://github.com/floor/teamcli/releases/tag/v0.1.2
+[0.1.1]: https://github.com/floor/teamcli/releases/tag/v0.1.1
+[0.1.0]: https://github.com/floor/teamcli/releases/tag/v0.1.0

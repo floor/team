@@ -4,10 +4,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/floor/team.git",
+    "url": "git+https://github.com/floor/teamcli.git",
     "directory": "packages/teamcli"
   },
-  "homepage": "https://github.com/floor/team#readme",
+  "homepage": "https://github.com/floor/teamcli#readme",
   "engines": { "node": ">=22" },
   "type": "module",
   "publishConfig": { "access": "public" },

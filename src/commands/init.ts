@@ -66,7 +66,7 @@ export function skeleton(project: string, head: string | null, teamVersion = ver
   const rootPath = root ?? `/path/to/${project}`;
   const picked = PICKED_SEATS[cli as (typeof PICKED_CLIS)[number]] ?? PICKED_SEATS['claude-code'];
   const launch = profileFor(cli)?.binary ?? 'claude';
-  return `# yaml-language-server: $schema=https://raw.githubusercontent.com/floor/team/v${teamVersion}/schema/team.schema.json
+  return `# yaml-language-server: $schema=https://raw.githubusercontent.com/floor/teamcli/v${teamVersion}/schema/team.schema.json
 # The team of ${project}. Private to this clone: see .git/info/exclude.
 # Nothing here runs until the owner has read it and run \`team approve\`.
 format: 1

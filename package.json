@@ -10,15 +10,15 @@
     "herdr",
     "cli"
   ],
-  "homepage": "https://github.com/floor/team#readme",
-  "bugs": { "url": "https://github.com/floor/team/issues" },
+  "homepage": "https://github.com/floor/teamcli#readme",
+  "bugs": { "url": "https://github.com/floor/teamcli/issues" },
   "license": "MIT",
   "type": "module",
   "bin": { "team": "dist/cli.js" },
   "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
   "files": ["dist", "examples", "schema", "README.md", "LICENSE"],
   "engines": { "node": ">=22" },
-  "repository": { "type": "git", "url": "git+https://github.com/floor/team.git" },
+  "repository": { "type": "git", "url": "git+https://github.com/floor/teamcli.git" },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test",

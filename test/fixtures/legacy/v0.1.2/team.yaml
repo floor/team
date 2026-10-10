@@ -40,7 +40,7 @@ seats:
     version: "5.5"
     launch: claude --model claude-opus-5-5
 
-  # Vendor seats: floor/team is also built by vendor agents, each signing with its display.
+  # Vendor seats: floor/teamcli is also built by vendor agents, each signing with its display.
   - role: implementer
     name: deepseek-implementer
     cli: claude-code

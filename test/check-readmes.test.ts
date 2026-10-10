@@ -141,7 +141,7 @@ describe('the version claims', () => {
       'git tag v0.1.0 && git push origin v0.1.0',
       '```',
       '',
-      '[UPGRADE-0.3.md](https://github.com/floor/team/blob/main/UPGRADE-0.3.md)',
+      '[UPGRADE-0.3.md](https://github.com/floor/teamcli/blob/main/UPGRADE-0.3.md)',
     ].join('\n');
     expect(run(fixture({ readme }))).toEqual([]);
   });

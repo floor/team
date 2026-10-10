@@ -10,7 +10,7 @@ const BUILD_TIMEOUT_MS = 30_000;
 
 test('the schema URL names the version the CLI reports', () => {
   const line = skeleton('demo', null).split('\n')[0] ?? '';
-  expect(line).toBe(`# yaml-language-server: $schema=https://raw.githubusercontent.com/floor/team/v${version()}/schema/team.schema.json`);
+  expect(line).toBe(`# yaml-language-server: $schema=https://raw.githubusercontent.com/floor/teamcli/v${version()}/schema/team.schema.json`);
 });
 
 test('the built CLI prints the same version the schema URL names', () => {

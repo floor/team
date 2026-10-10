@@ -13,7 +13,7 @@ identity:
     - "\\bFLO-[0-9]+\\b"   # internal tracker ids: this repository's issues are #<number>
     - "^[Cc][Oo]-[Aa][Uu][Tt][Hh][Oo][Rr][Ee][Dd]-[Bb][Yy]:"   # no co-authorship trailer: a commit carries its one Agent line only
     - "\\bw[0-9A-Z]+:p[0-9]+\\b"   # pane ids the session prints (w2A:p1): an internal pane is not for a public log
-    - "\\bfloor-[0-9a-f]{2}\\b"   # internal session names (floor-3a): the public name is floor/team
+    - "\\bfloor-[0-9a-f]{2}\\b"   # internal session names (floor-3a): the public name is floor/teamcli
 
 trust:
   - ~/.config/team/lobby
@@ -46,7 +46,7 @@ seats:
     version: "5.5"
     launch: claude --model claude-opus-5-5
 
-  # Vendor seats: floor/team is also built by vendor agents, each signing with its display.
+  # Vendor seats: floor/teamcli is also built by vendor agents, each signing with its display.
   - role: implementer
     name: deepseek-implementer
     cli: claude-code

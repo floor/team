@@ -52,7 +52,7 @@ ${SIGNATURE}`);
   hash.misses = repo.commit(`feat: near misses stay prose
 
 w3c, www:port and v2:p1 stay, and so do floor-io,
-floor/team, team.floor.io and floor-material.
+floor/teamcli, team.floor.io and floor-material.
 
 ${SIGNATURE}`);
 });
