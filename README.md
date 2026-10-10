@@ -1,15 +1,15 @@
 # team
 
-**Ship with a team that never sleeps.** Specialized agents, from any lab — you set the roster, they
-do the work, and you stay the one who decides.
+Ship with a team that never sleeps. Specialized agents, from any lab.
 
-`team` is a small command-line tool with no runtime dependencies. It runs teams in
-[herdr](https://herdr.dev).
+`team` is a small command-line tool with no runtime dependencies. You set the roster, the agents do
+the work, and you stay the one who decides. A project's team lives in `.agents/team.yaml` — the
+seats, the model each one runs, how each signs its work, the rules it follows, the folders it may
+touch; `team init`, or an agent, writes it for you. Commands check that file against a machine, a
+session and a history, then build and watch the team. It runs teams in [herdr](https://herdr.dev).
 
-- **One file declares the team.** A project declares its team in `.agents/team.yaml`: the seats, the
-  model each one runs, how each agent signs its work, the rules it works under, the folders it may
-  touch. Commands then check that file against a machine, a session and a history, and build and
-  watch the team itself.
+- **Any model, in any seat.** Put the right specialized agent — from any lab — on each role, and
+  swap it without rewriting the team.
 - **Safe by design.** A clear line between what agents decide and what only you can — the team moves
   fast inside its envelope and stops at the edge.
 - **The watch tells you.** It watches the session, reports idle seats, and nudges the operator.
