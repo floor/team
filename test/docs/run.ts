@@ -14,6 +14,7 @@ import { pr } from '../../src/commands/pr.ts';
 import { runDoctor } from '../../src/commands/doctor.ts';
 import { runDown } from '../../src/commands/down.ts';
 import { runInit } from '../../src/commands/init.ts';
+import { runMcp } from '../../src/commands/mcp.ts';
 import { runRemove } from '../../src/commands/remove.ts';
 import { runRelease } from '../../src/commands/release.ts';
 import { runStatus } from '../../src/commands/status.ts';
@@ -211,6 +212,8 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
     case 'init':
       // No login is probed in a doc run: the skeleton's seat is claude-code's, deterministically.
       return runInit(rest, io, fixture.home, undefined, { loggedIn: () => false });
+    case 'mcp':
+      return runMcp(rest, io, world.mcpSources());
     case 'remove':
       return runRemove(rest, io, world.removeSources());
     case 'pr':
