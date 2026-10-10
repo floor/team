@@ -26,6 +26,7 @@ import { runNext } from '../src/commands/next.ts';
 import { runPlan } from '../src/commands/plan.ts';
 import { pr } from '../src/commands/pr.ts';
 import { runRemove, type RemoveSources } from '../src/commands/remove.ts';
+import { runSend, type SendHost } from '../src/commands/send.ts';
 import { runStatus, type StatusSources } from '../src/commands/status.ts';
 import { runUp, type Launch, type UpSources } from '../src/commands/up.ts';
 import { runUsage } from '../src/commands/usage.ts';
@@ -2786,6 +2787,49 @@ scene('plan.read', async (place) => {
   } finally {
     await serving.handle.close();
   }
+});
+
+/** `team send`'s fixtures: a fake seat of the fixture's own file, a sockets folder with a file
+ *  at the pid the fake pane process reports, and a deliver that accepts. No session is read. */
+function sendHost(place: Place, over: { agents?: boolean; socket?: boolean } = {}): SendHost & { frames: string[] } {
+  const sockets = join(place.base, 'cc-socks');
+  mkdirSync(sockets, { recursive: true });
+  if (over.socket !== false) writeFileSync(join(sockets, '400.sock'), '');
+  const host: SendHost & { frames: string[] } = {
+    frames: [],
+    agents: () => (over.agents === false ? null : [{ name: 'lead', pane: 'w1:p1' }]),
+    processInfo: () => ({ shell: 400, foreground: [] }),
+    socketsDir: sockets,
+    deliver: async (_socketPath, frame) => {
+      host.frames.push(frame);
+      return { ok: true };
+    },
+    now: () => NOW,
+    home: place.home,
+  };
+  return host;
+}
+
+async function sent(place: Place, argv: string[], caller: Caller, host: SendHost): Promise<Ran> {
+  const io = testIo(place.root, caller);
+  const code = await runSend(argv, io, host);
+  return { code, out: io.out, err: io.err };
+}
+
+scene('send.usage', async (place) => show(await sent(place, [], owner, sendHost(place)), 'a seat and a message are required'));
+scene('send.configuration', async (place) =>
+  show(await sent(place, ['lead', '--file', 'missing.yaml'], owner, sendHost(place)), 'no team file'));
+scene('send.refused', async (place) => {
+  write(place, TWO);
+  return show(await sent(place, ['missing', 'hello'], owner, sendHost(place)), 'it is not a declared seat');
+});
+scene('send.unreachable', async (place) => {
+  write(place, TEAM);
+  return show(await sent(place, ['lead', 'hello'], owner, sendHost(place, { agents: false })), 'unreachable');
+});
+scene('send.delivered', async (place) => {
+  write(place, TEAM);
+  return show(await sent(place, ['lead', 'hello'], owner, sendHost(place)), 'lead: delivered');
 });
 
 // Outcomes that are listed and kept, and that no scene can produce. An edit the earlier checks

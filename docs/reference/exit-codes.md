@@ -286,6 +286,11 @@ The check keeps this list complete against ordinary changes to the commands (a n
 | `remove.invocation` | `remove` | 2 | the invocation can't be read | `team remove` |
 | `remove.locked` | `remove` | 2 | the locked edit does not validate | `team remove worker` |
 | `remove.not-a-repo` | `remove` | 2 | not inside a git repository | `team remove worker` |
+| `send.delivered` | `send` | 0 | the seat's socket took the frame | `team send worker hello` |
+| `send.refused` | `send` | 1 | nothing was sent, on purpose | `team send missing hello` |
+| `send.unreachable` | `send` | 1 | the seat's channel is not open | `team send worker hello` |
+| `send.configuration` | `send` | 2 | the team file can't be read | `team send worker hello --file missing.yaml` |
+| `send.usage` | `send` | 2 | the invocation can't be read | `team send` |
 | `status.agrees` | `status` | 0 | the file, the state and the session agree | `team status` |
 | `status.difference` | `status` | 1 | there is a difference | `team status` |
 | `status.file` | `status` | 2 | the team file can't be read | `team status --file missing.yaml` |

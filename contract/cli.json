@@ -748,6 +748,47 @@
           "takesValue": false
         },
         {
+          "hidden": true,
+          "name": "-h",
+          "repeatable": false,
+          "takesValue": false
+        }
+      ],
+      "hidden": false,
+      "name": "send",
+      "positionals": [
+        {
+          "name": "seat",
+          "optional": false,
+          "repeatable": false
+        },
+        {
+          "name": "message",
+          "optional": true,
+          "repeatable": false
+        }
+      ],
+      "subcommands": [],
+      "usage": [
+        "team send <seat> <message>",
+        "team send <seat> --file <path>"
+      ]
+    },
+    {
+      "flags": [
+        {
+          "hidden": false,
+          "name": "--file",
+          "repeatable": false,
+          "takesValue": true
+        },
+        {
+          "hidden": false,
+          "name": "--help",
+          "repeatable": false,
+          "takesValue": false
+        },
+        {
           "hidden": false,
           "name": "--json",
           "repeatable": false,

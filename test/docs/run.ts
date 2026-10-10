@@ -16,6 +16,7 @@ import { runDown } from '../../src/commands/down.ts';
 import { runInit } from '../../src/commands/init.ts';
 import { runRemove } from '../../src/commands/remove.ts';
 import { runRelease } from '../../src/commands/release.ts';
+import { runSend, type SendHost } from '../../src/commands/send.ts';
 import { runStatus } from '../../src/commands/status.ts';
 import { runUp } from '../../src/commands/up.ts';
 import { runMessages } from '../../src/commands/messages.ts';
@@ -213,6 +214,11 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
       return runInit(rest, io, fixture.home, undefined, { loggedIn: () => false });
     case 'remove':
       return runRemove(rest, io, world.removeSources());
+    case 'send': {
+      // The seat is the first the page's file names; the page's examples are deterministic.
+      const seat = page.team?.seats[0]?.name ?? 'claude-keeper';
+      return runSend(rest, io, sendHost(fixture, seat, spec.now));
+    }
     case 'pr':
       return pr(rest, io, (cwd, file) => loadConfig(cwd, file, fixture.home));
     case 'release':
@@ -233,8 +239,7 @@ async function command(page: Page, line: string, io: Io, answer?: string, waitin
 }
 
 /** The docs page's only `answer` example fails before any pane is read. */
-function answerHost(home: string): AnswerHost {
-  const unused = (): never => { throw new Error('the docs example does not read a pane'); };
+function answerHost(home: string): AnswerHost {  const unused = (): never => { throw new Error('the docs example does not read a pane'); };
   return {
     version: unused,
     agents: unused,
@@ -251,6 +256,24 @@ function answerHost(home: string): AnswerHost {
     sleep: async () => {},
     home,
     standing: unused,
+  };
+}
+
+/** The docs page's send: a fake seat whose pane reports one process with a file at the socket's
+ *  measured name, and a deliver that accepts. No session is read and no pane is touched. */
+const SEND_PID = 4200;
+
+function sendHost(fixture: Fixture, seat: string, now: string): SendHost {
+  const sockets = join(fixture.home, 'cc-socks');
+  mkdirSync(sockets, { recursive: true });
+  writeFileSync(join(sockets, `${String(SEND_PID)}.sock`), '');
+  return {
+    agents: () => [{ name: seat, pane: 'w1:p1' }],
+    processInfo: () => ({ shell: SEND_PID, foreground: [] }),
+    socketsDir: sockets,
+    deliver: async () => ({ ok: true }),
+    now: () => new Date(now),
+    home: fixture.home,
   };
 }
 

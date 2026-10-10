@@ -1963,6 +1963,41 @@
     },
     {
       "code": 0,
+      "command": "send",
+      "id": "send.delivered",
+      "meaning": "the seat's socket took the frame",
+      "trigger": "team send worker hello"
+    },
+    {
+      "code": 1,
+      "command": "send",
+      "id": "send.refused",
+      "meaning": "nothing was sent, on purpose",
+      "trigger": "team send missing hello"
+    },
+    {
+      "code": 1,
+      "command": "send",
+      "id": "send.unreachable",
+      "meaning": "the seat's channel is not open",
+      "trigger": "team send worker hello"
+    },
+    {
+      "code": 2,
+      "command": "send",
+      "id": "send.configuration",
+      "meaning": "the team file can't be read",
+      "trigger": "team send worker hello --file missing.yaml"
+    },
+    {
+      "code": 2,
+      "command": "send",
+      "id": "send.usage",
+      "meaning": "the invocation can't be read",
+      "trigger": "team send"
+    },
+    {
+      "code": 0,
       "command": "status",
       "id": "status.agrees",
       "meaning": "the file, the state and the session agree",

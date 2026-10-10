@@ -4,8 +4,10 @@ Shows a message that is already waiting and writes the receipt that says it was 
 the checkout may run it. It verifies the record, prints the body, and writes the receipt in that
 one step. A record that does not verify prints no body and writes nothing.
 
-Nothing in this build sends a real message. No command writes the first record: not `team watch`,
-not `team messages`, not a seat. A report still leaves as today's nudge,
+Nothing in this build writes a message record. No command writes the first record: not `team
+watch`, not `team messages`, not a seat. `team send` writes a frame to a seat's cross-session
+socket, which is not this mailbox and leaves no record here. A report still leaves as today's
+nudge,
 `Team watch: reports are waiting in .agents/team.log`. The watch only rings
 `Team: run team messages` when a record is already there.
 
