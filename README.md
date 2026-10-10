@@ -1,12 +1,18 @@
 # team
 
-Set up and run a team of AI agents for your project. Agents propose, you decide.
+**Ship with a team that never sleeps.** Specialized agents, from any lab — you set the roster, they
+do the work, and you stay the one who decides.
 
-`team` is a small command-line tool with no runtime dependencies. A project declares its team in
-`.agents/team.yaml`: the seats, the model each one runs, how each agent signs its work, the rules it
-works under, the folders it may touch. Commands then check that file against a machine, a session
-and a history, and build and watch the team itself. It runs teams in
+`team` is a small command-line tool with no runtime dependencies. It runs teams in
 [herdr](https://herdr.dev).
+
+- **One file declares the team.** A project declares its team in `.agents/team.yaml`: the seats, the
+  model each one runs, how each agent signs its work, the rules it works under, the folders it may
+  touch. Commands then check that file against a machine, a session and a history, and build and
+  watch the team itself.
+- **Safe by design.** A clear line between what agents decide and what only you can — the team moves
+  fast inside its envelope and stops at the edge.
+- **The watch tells you.** It watches the session, reports idle seats, and nudges the operator.
 
 The project's name is TeamCLI; the package and the command are `team`. The site is
 [teamcli.io](https://teamcli.io), and the founding text is
