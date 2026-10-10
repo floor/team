@@ -748,6 +748,30 @@
           "takesValue": false
         },
         {
+          "hidden": false,
+          "name": "--json",
+          "repeatable": false,
+          "takesValue": false
+        },
+        {
+          "hidden": false,
+          "name": "--list",
+          "repeatable": false,
+          "takesValue": false
+        },
+        {
+          "hidden": false,
+          "name": "--timeout",
+          "repeatable": false,
+          "takesValue": true
+        },
+        {
+          "hidden": false,
+          "name": "--wait",
+          "repeatable": false,
+          "takesValue": false
+        },
+        {
           "hidden": true,
           "name": "-h",
           "repeatable": false,
@@ -759,7 +783,7 @@
       "positionals": [
         {
           "name": "seat",
-          "optional": false,
+          "optional": true,
           "repeatable": false
         },
         {
@@ -770,8 +794,9 @@
       ],
       "subcommands": [],
       "usage": [
-        "team send <seat> <message>",
-        "team send <seat> --file <path>"
+        "team send <seat> <message> [--wait] [--timeout <s>] [--json]",
+        "team send <seat> --file <path> [--wait] [--timeout <s>] [--json]",
+        "team send --list [--json]"
       ]
     },
     {

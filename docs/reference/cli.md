@@ -478,8 +478,9 @@ Hidden: no
 
 Usage:
 
-    team send <seat> <message>
-    team send <seat> --file <path>
+    team send <seat> <message> [--wait] [--timeout <s>] [--json]
+    team send <seat> --file <path> [--wait] [--timeout <s>] [--json]
+    team send --list [--json]
 
 ### Flags
 
@@ -487,13 +488,17 @@ Usage:
 | --- | --- | --- | --- |
 | `--file` | yes | no | no |
 | `--help` | no | no | no |
+| `--json` | no | no | no |
+| `--list` | no | no | no |
+| `--timeout` | yes | no | no |
+| `--wait` | no | no | no |
 | `-h` | no | no | yes |
 
 ### Positionals
 
 | Name | Optional | Repeatable |
 | --- | --- | --- |
-| `seat` | no | no |
+| `seat` | yes | no |
 | `message` | yes | no |
 
 ## `status`
