@@ -311,9 +311,11 @@ describe('team send: unreachable', () => {
 
     expect(code).toBe(1);
     expect(io.err).toContain('lead: unreachable');
-    // What a non-socket file at the socket's path answers, measured by this run — the client's
-    // own reason printed through.
-    expect(io.err).toContain('the path is not a socket');
+    // What a non-socket file at the socket's path answers, measured on two platforms: ENOTSOCK on
+    // macOS (this build's own run) and ECONNREFUSED on the ubuntu runner (the pull request run's
+    // log, 2026-10-10T20:27:34.8654866Z). The client maps both to one sentence; the test accepts
+    // either, so neither platform's kernel is baked in.
+    expect(io.err).toMatch(/nothing is listening there \((the path is not a socket|the connection was refused)\)/);
   });
 });
 
