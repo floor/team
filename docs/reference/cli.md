@@ -472,6 +472,30 @@ Usage:
 | --- | --- | --- |
 | `name` | no | no |
 
+## `send`
+
+Hidden: no
+
+Usage:
+
+    team send <seat> <message>
+    team send <seat> --file <path>
+
+### Flags
+
+| Flag | Takes a value | Repeatable | Hidden |
+| --- | --- | --- | --- |
+| `--file` | yes | no | no |
+| `--help` | no | no | no |
+| `-h` | no | no | yes |
+
+### Positionals
+
+| Name | Optional | Repeatable |
+| --- | --- | --- |
+| `seat` | no | no |
+| `message` | yes | no |
+
 ## `status`
 
 Hidden: no

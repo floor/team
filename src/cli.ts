@@ -25,6 +25,7 @@ export const commands: Record<string, () => Promise<{ default: Command; USAGE: s
   answer: () => import('./commands/answer.ts'),
   pr: () => import('./commands/pr.ts'),
   remove: () => import('./commands/remove.ts'),
+  send: () => import('./commands/send.ts'),
   release: () => import('./commands/release.ts'),
   usage: () => import('./commands/usage.ts'),
   broker: () => import('./commands/broker.ts'),
